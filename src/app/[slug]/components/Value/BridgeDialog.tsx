@@ -22,6 +22,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { Project } from "@/generated/graphql";
 import { jbSuckerAbi } from "@/generated/jbSuckerAbi";
+import { jbSuckerV6Abi } from "@/generated/jbSuckerV6Abi";
 import { useAllowance } from "@/hooks/useAllowance";
 import { useSuckerPairs } from "@/hooks/useSuckerPairs";
 import { revalidateCacheTag } from "@/lib/cache";
@@ -36,7 +37,7 @@ import {
 } from "juice-sdk-react";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useMemo, useState } from "react";
-import { formatUnits, getAddress, parseUnits } from "viem";
+import { formatUnits, getAddress, pad, parseUnits, zeroHash } from "viem";
 import { useAccount, usePublicClient, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 
 interface Props {
@@ -124,13 +125,25 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
 
       const minTokens = 0n; // ToDo
 
-      await writeContractAsync({
-        abi: jbSuckerAbi,
-        functionName: "prepare",
-        address: suckerPair.local,
-        args: [amountObj.value, address, minTokens, getAddress(project.token)],
-        chainId: sourceChainId,
-      });
+      // v6 identifies the remote beneficiary as bytes32 (left-padded EVM address) and takes
+      // an opaque metadata payload.
+      if (version === 6) {
+        await writeContractAsync({
+          abi: jbSuckerV6Abi,
+          functionName: "prepare",
+          address: suckerPair.local,
+          args: [amountObj.value, pad(address), minTokens, getAddress(project.token), zeroHash],
+          chainId: sourceChainId,
+        });
+      } else {
+        await writeContractAsync({
+          abi: jbSuckerAbi,
+          functionName: "prepare",
+          address: suckerPair.local,
+          args: [amountObj.value, address, minTokens, getAddress(project.token)],
+          chainId: sourceChainId,
+        });
+      }
     } catch (error) {
       console.error(error);
       toast({ variant: "destructive", title: "Error", description: formatWalletError(error) });

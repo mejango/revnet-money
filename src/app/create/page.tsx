@@ -9,6 +9,7 @@ import { withZodSchema } from "formik-validator-zod";
 import {
   createSalt,
   jbContractAddress,
+  jbProjectsAbi,
   MappableAsset,
   parseSuckerDeployerConfig,
   revDeployerAbi,
@@ -55,9 +56,12 @@ export default function Page() {
     const relayrTransactions = [];
 
     for (const chainId of formData.chainIds) {
-      const suckerDeployerConfig = parseSuckerDeployerConfig(chainId, formData.chainIds, [
-        reserveAsset,
-      ]);
+      const suckerDeployerConfig = parseSuckerDeployerConfig(
+        chainId,
+        formData.chainIds,
+        [reserveAsset],
+        { version: 6 },
+      ) as Parameters<typeof parseDeployData>[1]["suckerDeployerConfig"];
       const deployData = parseDeployData(formData, {
         metadataCid,
         chainId,
@@ -70,7 +74,7 @@ export default function Page() {
 
       const encodedData = encodeFunctionData({
         abi: revDeployerAbi, // ABI of the contract
-        functionName: "deployWith721sFor",
+        functionName: "deployFor",
         args: deployData,
       });
 
@@ -82,26 +86,40 @@ export default function Page() {
         throw new Error("Public client not available");
       }
 
-      // Estimate gas for the transaction if it were to be send directly to the revDeployer.
-      const gasEstimate = await publicClient.estimateContractGas({
-        address: jbContractAddress["5"]["REVDeployer"][chainId],
-        abi: revDeployerAbi,
-        functionName: "deployWith721sFor",
-        args: deployData,
+      // Deploying a new revnet requires paying the exact project creation fee.
+      const creationFee = await publicClient.readContract({
+        address: jbContractAddress["6"]["JBProjects"][chainId],
+        abi: jbProjectsAbi,
+        functionName: "creationFee",
       });
+
+      // Estimate gas for the transaction if it were to be sent directly to the revDeployer.
+      // The estimate can fail if the deployer wallet doesn't hold the creation fee on this
+      // chain, so fall back to a generous limit (Relayr re-simulates server-side).
+      const gasEstimate = await publicClient
+        .estimateContractGas({
+          account: address,
+          address: jbContractAddress["6"]["REVDeployer"][chainId],
+          abi: revDeployerAbi,
+          functionName: "deployFor",
+          args: deployData,
+          value: creationFee,
+        })
+        .catch(() => 8_000_000n);
 
       console.log("create::deploy calldata", chainId, gasEstimate, encodedData, deployData);
 
       relayrTransactions.push({
         data: {
           from: address,
-          to: jbContractAddress["5"]["REVDeployer"][chainId],
-          value: 0n,
+          to: jbContractAddress["6"]["REVDeployer"][chainId],
+          value: creationFee,
           // Use the estimated gas but add a buffer for the trustedForwarder.
           gas: gasEstimate + BigInt(120_000n),
           data: encodedData,
         },
         chainId,
+        version: 6 as const,
       });
     }
 

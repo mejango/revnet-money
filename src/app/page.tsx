@@ -9,7 +9,7 @@ function RevLink({ network, id, text }: { network: string; id: number; text: str
   return (
     <span>
       $
-      <Link href={`/v5:${network}:${id}`} className="underline hover:text-black/70">
+      <Link href={`/v6:${network}:${id}`} className="underline hover:text-black/70">
         {text}
       </Link>
     </span>
@@ -100,7 +100,7 @@ export default function Page() {
             <li>
               Support the $REV network{" "}
               <Link
-                href="/v5:eth:3"
+                href="/v6:eth:3"
                 target="_blank"
                 rel="noopener norefererr"
                 className="underline"

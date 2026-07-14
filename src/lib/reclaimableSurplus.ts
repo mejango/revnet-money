@@ -5,6 +5,7 @@ import {
   JB_TOKEN_DECIMALS,
   JBChainId,
   jbTerminalStoreAbi,
+  jbTerminalStoreV5Abi,
   JBVersion,
   NATIVE_TOKEN_DECIMALS,
 } from "juice-sdk-core";
@@ -22,9 +23,11 @@ export async function getReclaimableSurplus(
   currencyId: 1 | 2 | 3,
 ) {
   try {
+    // The two array args are empty either way, but the selector differs: v6 takes
+    // (address[], address[]) where v4/v5 take (address[], tuple[]).
     const contract = getContract({
       address: getProjectTerminalStore(chainId, version),
-      abi: jbTerminalStoreAbi,
+      abi: version === 6 ? jbTerminalStoreAbi : jbTerminalStoreV5Abi,
       client: getViemPublicClient(chainId),
     });
 

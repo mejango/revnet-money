@@ -17,7 +17,8 @@ import {
 } from "@/generated/graphql";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatSeconds } from "@/lib/utils";
-import { getRevnetLoanContract, JB_CHAINS, JBChainId, revLoansAbi } from "juice-sdk-core";
+import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
+import { getRevnetLoanContract, JB_CHAINS, JBChainId } from "juice-sdk-core";
 import {
   useBendystrawQuery,
   useJBChainId,
@@ -25,7 +26,6 @@ import {
   useJBTokenContext,
 } from "juice-sdk-react";
 import { formatUnits } from "viem";
-import { useReadContract } from "wagmi";
 
 // Constants for loan calculations and display
 const LOAN_CONSTANTS = {
@@ -69,10 +69,8 @@ function LoanRow({
   const borrowAmount = Number(formatUnits(BigInt(loan.borrowAmount), baseTokenDecimals)).toFixed(4);
 
   // Calculate headroom: current value of collateral - borrowed amount
-  const { data: currentCollateralValue } = useReadContract({
-    abi: revLoansAbi,
+  const { data: currentCollateralValue } = useBorrowableAmountFrom({
     chainId: loan.chainId as JBChainId,
-    functionName: "borrowableAmountFrom",
     address: getRevnetLoanContract(version, loan.chainId as JBChainId),
     args: [
       revnetId,

@@ -5,6 +5,8 @@ import {
   JBCoreContracts,
   jbDirectoryAbi,
   jbMultiTerminalAbi,
+  jbRouterTerminalRegistryAbi,
+  JBRouterTerminalContracts,
   jbSwapTerminalAbi,
   JBSwapTerminalContracts,
   JBVersion,
@@ -35,21 +37,32 @@ export async function getPaymentTerminal(args: {
   }
 
   const swapTerminal = getSwapTerminalAddress(version, chainId, baseToken.isNative);
+  const swapTerminalAbi = version === 6 ? jbRouterTerminalRegistryAbi : jbSwapTerminalAbi;
 
   if (terminal === zeroAddress) {
-    return { address: swapTerminal, abi: jbSwapTerminalAbi, type: "swap" };
+    return { address: swapTerminal, abi: swapTerminalAbi, type: "swap" };
   }
 
   const isSwapTerminal = terminal.toLowerCase() === swapTerminal.toLowerCase();
 
   return {
     address: terminal,
-    abi: isSwapTerminal ? jbSwapTerminalAbi : jbMultiTerminalAbi,
+    abi: isSwapTerminal ? swapTerminalAbi : jbMultiTerminalAbi,
     type: isSwapTerminal ? "swap" : "multi",
   };
 }
 
 function getSwapTerminalAddress(version: JBVersion, chainId: JBChainId, isNative: boolean) {
+  // v6 replaced the swap terminal with the router terminal registry, which routes payments
+  // in any token regardless of the project's accounting token.
+  if (version === 6) {
+    return getJBContractAddress(
+      JBRouterTerminalContracts.JBRouterTerminalRegistry,
+      version,
+      chainId,
+    );
+  }
+
   if (version === 4) {
     return jbContractAddress[4].JBSwapTerminal1_1[chainId];
   }

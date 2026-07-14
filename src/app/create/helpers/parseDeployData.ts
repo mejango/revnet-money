@@ -5,7 +5,6 @@ import {
   ETH_CURRENCY_ID,
   JB_CHAINS,
   JBChainId,
-  jbContractAddress,
   NATIVE_TOKEN,
   NATIVE_TOKEN_DECIMALS,
   revDeployerAbi,
@@ -16,6 +15,12 @@ import {
 import { Address, ContractFunctionParameters, parseUnits, zeroAddress } from "viem";
 import { RevnetFormData } from "../types";
 
+// The 4-arg `deployFor` overload (the 6-arg one adds a 721 tiers config + croptop posts).
+export type DeployForArgs = Extract<
+  ContractFunctionParameters<typeof revDeployerAbi, "payable", "deployFor">["args"],
+  readonly [unknown, unknown, unknown, unknown]
+>;
+
 export function parseDeployData(
   _formData: RevnetFormData,
   extra: {
@@ -24,18 +29,18 @@ export function parseDeployData(
     suckerDeployerConfig: {
       deployerConfigurations: {
         deployer: Address;
+        peer: `0x${string}`;
         mappings: {
           localToken: Address;
-          remoteToken: Address;
           minGas: number;
-          minBridgeAmount: bigint;
+          remoteToken: `0x${string}`;
         }[];
       }[];
     };
     timestamp: number;
     salt: `0x${string}`;
   },
-): ContractFunctionParameters<typeof revDeployerAbi, "nonpayable", "deployWith721sFor">["args"] {
+): DeployForArgs {
   // hack: stringfy numbers
   const formData: RevnetFormData = JSON.parse(JSON.stringify(_formData), (_, value) =>
     typeof value === "number" ? String(value) : value,
@@ -51,32 +56,24 @@ export function parseDeployData(
   console.log(`[ Operator ] ${operator}`);
 
   // Determine asset settings based on reserveAsset
-  let baseCurrency, tokenAddress, tokenDecimals, swapTerminal;
+  let baseCurrency, tokenAddress, tokenDecimals;
 
   if (formData.reserveAsset === "USDC") {
     tokenAddress = USDC_ADDRESSES[extra.chainId];
     tokenDecimals = USDC_DECIMALS;
-    baseCurrency = USD_CURRENCY_ID(5);
-    swapTerminal = jbContractAddress[5].JBSwapTerminalUSDCRegistry[extra.chainId];
+    baseCurrency = USD_CURRENCY_ID(6);
   } else {
     tokenAddress = NATIVE_TOKEN;
     tokenDecimals = NATIVE_TOKEN_DECIMALS;
     baseCurrency = ETH_CURRENCY_ID;
-    swapTerminal = jbContractAddress[5].JBSwapTerminalRegistry[extra.chainId];
   }
 
+  // Accounting context currencies are token-keyed: uint32(uint160(token)).
   const accountingContextsToAccept = [
     {
       token: tokenAddress,
       decimals: tokenDecimals,
       currency: parseInt(tokenAddress.toLowerCase().replace(/^0x/, "").slice(-8), 16),
-    },
-  ];
-
-  const loanSources = [
-    {
-      token: tokenAddress,
-      terminal: jbContractAddress[5].JBMultiTerminal[extra?.chainId as JBChainId] as Address,
     },
   ];
 
@@ -161,6 +158,8 @@ export function parseDeployData(
     };
   });
 
+  // The v6 REVDeployer bakes in the terminals, buyback hook, and loans contract; a default
+  // 721 hook is deployed internally by the 4-arg `deployFor`.
   return [
     0n, // 0 for a new revnet
     {
@@ -171,67 +170,14 @@ export function parseDeployData(
         salt: extra.salt,
       },
       baseCurrency: baseCurrency,
-      splitOperator: operator as Address,
+      operator: operator as Address,
+      scopeCashOutsToLocalBalances: false,
       stageConfigurations,
-      loans: jbContractAddress["5"]["REVLoans"][extra.chainId],
-      loanSources,
     },
-    [
-      {
-        terminal: jbContractAddress[5].JBMultiTerminal[extra.chainId],
-        accountingContextsToAccept,
-      },
-      {
-        terminal: swapTerminal,
-        accountingContextsToAccept,
-      },
-    ],
-    {
-      dataHook: jbContractAddress[5].JBBuybackHookRegistry[extra.chainId],
-      hookToConfigure: jbContractAddress[5].JBBuybackHook[extra.chainId],
-      poolConfigurations: [
-        {
-          token: tokenAddress,
-          fee: 10_000,
-          twapWindow: 2 * 60 * 60 * 24,
-        },
-      ],
-    },
+    accountingContextsToAccept,
     {
       deployerConfigurations: extra.suckerDeployerConfig.deployerConfigurations,
       salt: extra.salt,
     },
-    {
-      baseline721HookConfiguration: {
-        name: formData.name,
-        symbol: formData.tokenSymbol,
-        baseUri: "",
-        tokenUriResolver: zeroAddress,
-        contractUri: "",
-        tiersConfig: {
-          tiers: [],
-          currency: baseCurrency,
-          decimals: tokenDecimals,
-          prices: jbContractAddress[5].JBPrices[extra.chainId],
-        },
-        reserveBeneficiary: zeroAddress,
-        flags: {
-          noNewTiersWithReserves: false,
-          noNewTiersWithVotes: false,
-          noNewTiersWithOwnerMinting: false,
-          preventOverspending: false,
-        },
-      },
-      salt: extra.salt,
-      splitOperatorCanAdjustTiers: true,
-      splitOperatorCanUpdateMetadata: true,
-      splitOperatorCanMint: true,
-      splitOperatorCanIncreaseDiscountPercent: true,
-    },
-    [],
-  ] satisfies ContractFunctionParameters<
-    typeof revDeployerAbi,
-    "nonpayable",
-    "deployWith721sFor"
-  >["args"];
+  ] satisfies DeployForArgs;
 }

@@ -21,7 +21,7 @@ export async function getTopProjects() {
       const balance = Number(formatUnits(BigInt(group.balance), project.decimals ?? 18));
       const balanceUsd = symbol === "ETH" ? balance * ethPrice : balance;
 
-      return { project, balanceUsd };
+      return { project, balanceUsd, version: group.version };
     })
     .filter((item) => item !== null)
     .sort((a, b) => b.balanceUsd - a.balanceUsd)
@@ -33,6 +33,7 @@ export async function getTopProjects() {
       return {
         rank: index + 1,
         projectId: project.projectId,
+        version: item.version,
         chainId: chainId,
         chainSlug: JB_CHAINS[chainId]?.slug ?? "eth",
         name: project.name ?? `Project #${project.projectId}`,

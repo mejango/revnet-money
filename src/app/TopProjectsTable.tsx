@@ -28,7 +28,7 @@ export async function TopProjectsTable() {
               <td className="py-3 pr-2 text-zinc-400 tabular-nums">{project.rank}</td>
               <td className="py-3 pr-4">
                 <Link
-                  href={`/v5:${project.chainSlug}:${project.projectId}`}
+                  href={`/v${project.version}:${project.chainSlug}:${project.projectId}`}
                   className="flex items-center gap-3 group"
                 >
                   {project.logoUrl ? (

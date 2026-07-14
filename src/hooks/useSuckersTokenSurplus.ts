@@ -4,6 +4,7 @@ import {
   JBCoreContracts,
   jbDirectoryAbi,
   jbMultiTerminalAbi,
+  jbMultiTerminalV5Abi,
 } from "juice-sdk-core";
 import { useJBChainId, useJBContractContext, useSuckers } from "juice-sdk-react";
 import { getContract } from "viem";
@@ -77,19 +78,32 @@ export function useSuckersTokenSurplus(
             client: config.getClient({ chainId: peerChainId }),
           });
 
-          const terminal = getContract({
-            address: await directory.read.primaryTerminalOf([projectId, token]),
-            abi: jbMultiTerminalAbi,
-            client: config.getClient({ chainId: peerChainId }),
-          });
+          const terminalAddress = await directory.read.primaryTerminalOf([projectId, token]);
 
           try {
-            const surplus = await terminal.read.currentSurplusOf([
-              projectId,
-              [{ token: token, decimals: decimals, currency: currency }],
-              BigInt(decimals),
-              BigInt(currency),
-            ]);
+            // v6 takes token addresses; v4/v5 take accounting context structs.
+            const surplus =
+              version === 6
+                ? await getContract({
+                    address: terminalAddress,
+                    abi: jbMultiTerminalAbi,
+                    client: config.getClient({ chainId: peerChainId }),
+                  }).read.currentSurplusOf([
+                    projectId,
+                    [token],
+                    BigInt(decimals),
+                    BigInt(currency),
+                  ])
+                : await getContract({
+                    address: terminalAddress,
+                    abi: jbMultiTerminalV5Abi,
+                    client: config.getClient({ chainId: peerChainId }),
+                  }).read.currentSurplusOf([
+                    projectId,
+                    [{ token: token, decimals: decimals, currency: currency }],
+                    BigInt(decimals),
+                    BigInt(currency),
+                  ]);
             return { surplus, chainId: peerChainId, projectId };
           } catch (error) {
             console.error(`Error getting surplus for chain ${peerChainId}:`, error);

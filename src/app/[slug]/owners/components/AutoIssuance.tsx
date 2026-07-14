@@ -16,7 +16,7 @@ import { useAutoIssuances } from "@/hooks/useAutoIssuances";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
 import { format } from "date-fns";
-import { formatUnits, revDeployerAbi, RevnetCoreContracts } from "juice-sdk-core";
+import { formatUnits, revDeployerV5Abi, revOwnerAbi, RevnetCoreContracts } from "juice-sdk-core";
 import { useJBContractContext, useJBTokenContext } from "juice-sdk-react";
 import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -27,7 +27,7 @@ export function AutoIssuance() {
   const autoIssuances = useAutoIssuances();
   const now = Math.floor(new Date().getTime() / 1000);
   const [autoIssueId, setAutoIssueId] = useState<string | null>(null);
-  const { contractAddress } = useJBContractContext();
+  const { contractAddress, version } = useJBContractContext();
 
   const { writeContract, isPending, data } = useWriteContract();
 
@@ -110,16 +110,27 @@ export function AutoIssuance() {
                         disabled={(autoIssuance?.startsAt || 0) >= now}
                         loading={(isPending || isLoading) && autoIssueId === autoIssuance.id}
                         onClick={() => {
-                          writeContract({
-                            abi: revDeployerAbi,
-                            functionName: "autoIssueFor",
-                            address: contractAddress(RevnetCoreContracts.REVDeployer),
-                            args: [
-                              BigInt(autoIssuance.projectId),
-                              autoIssuance.stageId,
-                              autoIssuance.beneficiary as `0x${string}`,
-                            ],
-                          });
+                          const args = [
+                            BigInt(autoIssuance.projectId),
+                            autoIssuance.stageId,
+                            autoIssuance.beneficiary as `0x${string}`,
+                          ] as const;
+                          // v6 moved auto issuance from the REVDeployer to the REVOwner.
+                          if (version === 6) {
+                            writeContract({
+                              abi: revOwnerAbi,
+                              functionName: "autoIssueFor",
+                              address: contractAddress(RevnetCoreContracts.REVOwner),
+                              args,
+                            });
+                          } else {
+                            writeContract({
+                              abi: revDeployerV5Abi,
+                              functionName: "autoIssueFor",
+                              address: contractAddress(RevnetCoreContracts.REVDeployer),
+                              args,
+                            });
+                          }
                           setAutoIssueId(autoIssuance.id);
                         }}
                       >
