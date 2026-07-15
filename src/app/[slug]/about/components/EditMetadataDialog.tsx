@@ -23,7 +23,7 @@ import { wagmiConfig } from "@/lib/wagmiConfig";
 import { getPublicClient } from "@wagmi/core";
 import { Formik } from "formik";
 import { withZodSchema } from "formik-validator-zod";
-import { JBChainId, jbControllerAbi, JBCoreContracts } from "juice-sdk-core";
+import { JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
 import {
   ChainPayment,
   RelayrPostBundleResponse,
@@ -31,7 +31,7 @@ import {
   useJBContractContext,
   useJBProjectMetadataContext,
   useSendRelayrTx,
-} from "juice-sdk-react";
+} from "@bananapus/nana-sdk-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData } from "viem";

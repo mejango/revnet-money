@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { JB_CHAINS } from "juice-sdk-core";
-import { JBChainId } from "juice-sdk-react";
+import { JB_CHAINS } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-react";
 import { FastForwardIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";

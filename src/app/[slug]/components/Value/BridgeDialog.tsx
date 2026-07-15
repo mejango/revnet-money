@@ -29,12 +29,12 @@ import { revalidateCacheTag } from "@/lib/cache";
 import { getTokenAddress } from "@/lib/token";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { FixedInt } from "fpnum";
-import { JB_CHAINS, JB_TOKEN_DECIMALS, JBChainId } from "juice-sdk-core";
+import { JB_CHAINS, JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
 import {
   useJBContractContext,
   useJBTokenContext,
   useSuckersUserTokenBalance,
-} from "juice-sdk-react";
+} from "@bananapus/nana-sdk-react";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useMemo, useState } from "react";
 import { formatUnits, getAddress, pad, parseUnits, zeroHash } from "viem";

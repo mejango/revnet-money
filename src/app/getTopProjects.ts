@@ -2,7 +2,7 @@ import { TopSuckerGroupsDocument, TopSuckerGroupsQuery } from "@/generated/graph
 import { getBendystrawClient } from "@/graphql/bendystrawClient";
 import { fetchEthPrice } from "@/lib/ethPrice";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
-import { JB_CHAINS, JBChainId } from "juice-sdk-core";
+import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
 import { mainnet } from "viem/chains";

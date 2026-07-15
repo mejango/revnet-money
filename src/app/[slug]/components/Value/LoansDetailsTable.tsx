@@ -18,13 +18,13 @@ import {
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatSeconds } from "@/lib/utils";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
-import { getRevnetLoanContract, JB_CHAINS, JBChainId } from "juice-sdk-core";
+import { getRevnetLoanContract, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import {
   useBendystrawQuery,
   useJBChainId,
   useJBContractContext,
   useJBTokenContext,
-} from "juice-sdk-react";
+} from "@bananapus/nana-sdk-react";
 import { formatUnits } from "viem";
 
 // Constants for loan calculations and display

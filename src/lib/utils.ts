@@ -1,8 +1,8 @@
 import { chainSortOrder } from "@/app/constants";
 import { clsx, type ClassValue } from "clsx";
 import { Duration, formatDuration, intervalToDuration } from "date-fns";
-import { CashOutTaxRate, JBRulesetData, JB_CHAINS, ReservedPercent } from "juice-sdk-core";
-import { JBChainId, JBTokenContextData } from "juice-sdk-react";
+import { CashOutTaxRate, JBRulesetData, JB_CHAINS, ReservedPercent } from "@bananapus/nana-sdk-core";
+import { JBChainId, JBTokenContextData } from "@bananapus/nana-sdk-react";
 import { twMerge } from "tailwind-merge";
 import { Address, Chain, formatEther } from "viem";
 import { mainnet } from "viem/chains";

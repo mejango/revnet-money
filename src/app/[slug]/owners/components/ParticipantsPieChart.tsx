@@ -3,7 +3,7 @@
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { Participant } from "@/generated/graphql";
 import { formatPortion } from "@/lib/utils";
-import { JBChainId, JBProjectToken } from "juice-sdk-core";
+import { JBChainId, JBProjectToken } from "@bananapus/nana-sdk-core";
 import { useMemo } from "react";
 import { Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Address } from "viem";

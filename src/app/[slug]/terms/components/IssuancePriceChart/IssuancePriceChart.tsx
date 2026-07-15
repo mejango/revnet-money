@@ -4,7 +4,7 @@ import { ChartConfig, ChartContainer, ChartTooltip } from "@/components/ui/chart
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { formatDecimals } from "@/lib/number";
 import { format } from "date-fns";
-import { useJBTokenContext } from "juice-sdk-react";
+import { useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import {

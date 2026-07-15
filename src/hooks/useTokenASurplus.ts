@@ -3,8 +3,8 @@ import {
   jbMultiTerminalV5Abi,
   NATIVE_TOKEN,
   NATIVE_TOKEN_DECIMALS,
-} from "juice-sdk-core";
-import { useJBChainId, useJBContractContext } from "juice-sdk-react";
+} from "@bananapus/nana-sdk-core";
+import { useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useReadContract } from "wagmi";
 
 export function useNativeTokenSurplus() {

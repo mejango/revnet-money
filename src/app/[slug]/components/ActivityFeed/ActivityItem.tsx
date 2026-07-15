@@ -6,8 +6,8 @@ import EtherscanLink from "@/components/EtherscanLink";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { formatTokenSymbol } from "@/lib/utils";
 import { sdk } from "@farcaster/frame-sdk";
-import { JB_CHAINS } from "juice-sdk-core";
-import { JBChainId, useJBTokenContext } from "juice-sdk-react";
+import { JB_CHAINS } from "@bananapus/nana-sdk-core";
+import { JBChainId, useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { useEffect, useState } from "react";
 import { Address } from "viem";
 

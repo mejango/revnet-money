@@ -17,8 +17,8 @@ import { isUsd } from "@/lib/currency";
 import { prettyNumber } from "@/lib/number";
 import { getUnitValue, Surplus } from "@/lib/reclaimableSurplus";
 import { formatPortion, formatTokenSymbol } from "@/lib/utils";
-import { formatUnits, JB_CHAINS, JBChainId } from "juice-sdk-core";
-import { useEtherPrice, useJBTokenContext, useSuckersUserTokenBalance } from "juice-sdk-react";
+import { formatUnits, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { useEtherPrice, useJBTokenContext, useSuckersUserTokenBalance } from "@bananapus/nana-sdk-react";
 import { use, useCallback } from "react";
 
 interface Props {

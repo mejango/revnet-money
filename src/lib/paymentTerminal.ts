@@ -10,7 +10,7 @@ import {
   jbSwapTerminalAbi,
   JBSwapTerminalContracts,
   JBVersion,
-} from "juice-sdk-core";
+} from "@bananapus/nana-sdk-core";
 import { getContract, PublicClient, zeroAddress } from "viem";
 import { Token } from "./token";
 

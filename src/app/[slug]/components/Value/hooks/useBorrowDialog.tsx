@@ -18,14 +18,14 @@ import {
   revLoansAbi,
   revLoansV5Abi,
   RevnetCoreContracts,
-} from "juice-sdk-core";
+} from "@bananapus/nana-sdk-core";
 import {
   useBendystrawQuery,
   useJBChainId,
   useJBContractContext,
   useJBTokenContext,
   useSuckersUserTokenBalance,
-} from "juice-sdk-react";
+} from "@bananapus/nana-sdk-react";
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import {

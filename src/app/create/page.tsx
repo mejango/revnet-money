@@ -13,8 +13,8 @@ import {
   MappableAsset,
   parseSuckerDeployerConfig,
   revDeployerAbi,
-} from "juice-sdk-core";
-import { useGetRelayrTxQuote } from "juice-sdk-react";
+} from "@bananapus/nana-sdk-core";
+import { useGetRelayrTxQuote } from "@bananapus/nana-sdk-react";
 import { encodeFunctionData } from "viem";
 import { useAccount } from "wagmi";
 import { DEFAULT_FORM_DATA } from "./constants";

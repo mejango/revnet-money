@@ -5,7 +5,7 @@ import { getCurrentCashOutTax } from "@/lib/cashOutTax";
 import { getStartTimeForRange, TimeRange } from "@/lib/timeRange";
 import { getTokenAddress } from "@/lib/token";
 import { getUniswapPool } from "@/lib/uniswap/pool";
-import { JB_TOKEN_DECIMALS, JBChainId, JBVersion, NATIVE_TOKEN } from "juice-sdk-core";
+import { JB_TOKEN_DECIMALS, JBChainId, JBVersion, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import { getAddress } from "viem";
 import { calculateIssuancePriceHistory } from "./calculateIssuancePriceHistory";
 import { getAmmPriceHistory } from "./getAmmPriceHistory";

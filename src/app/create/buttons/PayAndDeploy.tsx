@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useTokenA } from "@/hooks/useTokenA";
 import { formatWalletError } from "@/lib/utils";
-import { JB_CHAINS, JBChainId } from "juice-sdk-core";
+import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import {
   ChainPayment,
   RelayrPostBundleResponse,
   useGetRelayrTxBundle,
   useSendRelayrTx,
-} from "juice-sdk-react";
+} from "@bananapus/nana-sdk-react";
 import {
   CheckCircle,
   CircleDashedIcon,

@@ -4,8 +4,8 @@ import { useBoostRecipient } from "@/hooks/useBoostRecipient";
 import { useCountdownToDate } from "@/hooks/useCountdownToDate";
 import { useFormattedTokenIssuance } from "@/hooks/useFormattedTokenIssuance";
 import { formatSeconds } from "@/lib/utils";
-import { getNextRulesetWeight, ReservedPercent, RulesetWeight } from "juice-sdk-core";
-import { useJBRulesetContext } from "juice-sdk-react";
+import { getNextRulesetWeight, ReservedPercent, RulesetWeight } from "@bananapus/nana-sdk-core";
+import { useJBRulesetContext } from "@bananapus/nana-sdk-react";
 
 export function CurrentIssuanceSection() {
   const { ruleset, rulesetMetadata } = useJBRulesetContext();

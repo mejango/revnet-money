@@ -3,8 +3,8 @@
 import { ProfilesProvider } from "@/components/ProfilesContext";
 import { ActivityEventsDocument, SuckerGroupQuery } from "@/generated/graphql";
 import { formatDecimals } from "@/lib/number";
-import { JBProjectToken } from "juice-sdk-core";
-import { JBChainId, useBendystrawQuery } from "juice-sdk-react";
+import { JBProjectToken } from "@bananapus/nana-sdk-core";
+import { JBChainId, useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Address, formatUnits } from "viem";

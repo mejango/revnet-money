@@ -5,7 +5,7 @@ import {
   jbTerminalStoreAbi,
   jbTerminalStoreV5Abi,
   JBVersion,
-} from "juice-sdk-core";
+} from "@bananapus/nana-sdk-core";
 import { useReadContract } from "wagmi";
 
 export function useReclaimableSurplus(params: {

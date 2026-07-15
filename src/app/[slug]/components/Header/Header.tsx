@@ -8,7 +8,7 @@ import { Profile } from "@/lib/profile";
 import { getProjectLinks } from "@/lib/projectLinks";
 import { formatTokenSymbol } from "@/lib/utils";
 import { ForwardIcon } from "@heroicons/react/24/solid";
-import { JB_CHAINS } from "juice-sdk-core";
+import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import {
   JBChainId,
   useBendystrawQuery,
@@ -17,7 +17,7 @@ import {
   useJBProjectMetadataContext,
   useJBTokenContext,
   useSuckers,
-} from "juice-sdk-react";
+} from "@bananapus/nana-sdk-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense, use, useMemo } from "react";

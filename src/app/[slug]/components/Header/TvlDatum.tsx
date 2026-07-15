@@ -4,8 +4,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Project } from "@/generated/graphql";
 import { isUsd } from "@/lib/currency";
 import { formatTokenAmount, getTokenFractionDigits, isNativeToken } from "@/lib/token";
-import { DEFAULT_NATIVE_TOKEN_SYMBOL, JB_CHAINS, JBChainId } from "juice-sdk-core";
-import { useEtherPrice } from "juice-sdk-react";
+import { DEFAULT_NATIVE_TOKEN_SYMBOL, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { useEtherPrice } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 import { formatUnits } from "viem";
 

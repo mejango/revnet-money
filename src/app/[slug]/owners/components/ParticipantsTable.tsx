@@ -13,8 +13,8 @@ import {
 import { Participant } from "@/generated/graphql";
 import { prettyNumber } from "@/lib/number";
 import { formatPortion, formatTokenSymbol } from "@/lib/utils";
-import { formatUnits } from "juice-sdk-core";
-import { JBChainId } from "juice-sdk-react";
+import { formatUnits } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-react";
 import { Address } from "viem";
 import { UseTokenReturnType } from "wagmi";
 

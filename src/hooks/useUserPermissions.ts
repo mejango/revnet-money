@@ -1,6 +1,6 @@
 import { ProjectWithPermissionsDocument } from "@/generated/graphql";
 import { JB_PERMISSIONS, JBPermissionKey } from "@/lib/permissions";
-import { useBendystrawQuery, useJBChainId, useJBContractContext } from "juice-sdk-react";
+import { useBendystrawQuery, useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 import { useAccount } from "wagmi";
 

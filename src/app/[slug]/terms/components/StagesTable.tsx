@@ -24,8 +24,8 @@ import {
   jbSplitsAbi,
   ReservedPercent,
   RulesetWeight,
-} from "juice-sdk-core";
-import { useJBChainId, useJBContractContext, useJBTokenContext } from "juice-sdk-react";
+} from "@bananapus/nana-sdk-core";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { formatUnits, parseUnits } from "viem";
 import { useReadContracts } from "wagmi";
 import type { Ruleset } from "../getRulesets";

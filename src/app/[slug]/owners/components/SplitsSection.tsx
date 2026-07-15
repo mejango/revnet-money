@@ -30,7 +30,7 @@ import {
   formatUnits,
   jbControllerAbi,
   jbSplitsAbi,
-} from "juice-sdk-core";
+} from "@bananapus/nana-sdk-core";
 import {
   JBChainId,
   useJBChainId,
@@ -38,7 +38,7 @@ import {
   useJBRulesetContext,
   useJBTokenContext,
   useSuckers,
-} from "juice-sdk-react";
+} from "@bananapus/nana-sdk-react";
 import { useEffect, useState } from "react";
 import { twJoin } from "tailwind-merge";
 import { Address } from "viem";

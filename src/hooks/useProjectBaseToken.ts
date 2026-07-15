@@ -1,7 +1,7 @@
 import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { isNativeToken, Token } from "@/lib/token";
-import { JBChainId, NATIVE_TOKEN_DECIMALS } from "juice-sdk-core";
-import { useBendystrawQuery, useJBChainId, useJBContractContext } from "juice-sdk-react";
+import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
+import { useBendystrawQuery, useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
 
 type ReturnData = Token & { tokenMap: Record<JBChainId, Token> };
 

@@ -6,7 +6,7 @@ import { formatDecimals } from "@/lib/number";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { JBChainId, JBVersion } from "juice-sdk-core";
+import { JBChainId, JBVersion } from "@bananapus/nana-sdk-core";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";

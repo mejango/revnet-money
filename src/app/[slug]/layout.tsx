@@ -1,6 +1,6 @@
 import { Nav } from "@/components/layout/Nav";
 import { parseSlug } from "@/lib/slug";
-import { NATIVE_TOKEN_DECIMALS } from "juice-sdk-core";
+import { NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";

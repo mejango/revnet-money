@@ -16,7 +16,7 @@ import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { TrashIcon } from "@heroicons/react/24/outline";
 import { FieldArray, Form, Formik } from "formik";
 import { withZodSchema } from "formik-validator-zod";
-import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "juice-sdk-core";
+import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { useEffect, useMemo, useState } from "react";
 import { changeSplitsSchema } from "./changeSplitsSchema";
 import { useChainSplits } from "./hooks/useChainSplits";

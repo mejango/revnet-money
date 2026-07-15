@@ -10,7 +10,7 @@ import {
   useJBChainId,
   useJBContractContext,
   useJBTokenContext,
-} from "juice-sdk-react";
+} from "@bananapus/nana-sdk-react";
 import { useState } from "react";
 import { twJoin } from "tailwind-merge";
 import { AutoIssuance } from "./AutoIssuance";

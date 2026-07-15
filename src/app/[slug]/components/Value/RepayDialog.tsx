@@ -6,13 +6,13 @@ import { useToast } from "@/components/ui/use-toast";
 import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
-import { getRevnetLoanContract, JBChainId, revLoansAbi } from "juice-sdk-core";
+import { getRevnetLoanContract, JBChainId, revLoansAbi } from "@bananapus/nana-sdk-core";
 import {
   useBendystrawQuery,
   useJBChainId,
   useJBContractContext,
   useJBTokenContext,
-} from "juice-sdk-react";
+} from "@bananapus/nana-sdk-react";
 import { useEffect, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
 import {

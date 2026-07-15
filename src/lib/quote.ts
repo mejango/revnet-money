@@ -5,7 +5,7 @@ import {
   JBProjectToken,
   ReservedPercent,
   RulesetWeight,
-} from "juice-sdk-core";
+} from "@bananapus/nana-sdk-core";
 import { Address } from "viem";
 import { Token } from "./token";
 

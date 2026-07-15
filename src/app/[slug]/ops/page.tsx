@@ -1,7 +1,7 @@
 import { SuckerTransactionStatus } from "@/generated/graphql";
 import { getProjectsReclaimableSurplus } from "@/lib/reclaimableSurplus";
 import { parseSlug } from "@/lib/slug";
-import { NATIVE_TOKEN_DECIMALS } from "juice-sdk-core";
+import { NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { z } from "zod";

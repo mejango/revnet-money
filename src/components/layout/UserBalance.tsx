@@ -1,8 +1,8 @@
 "use client";
 
 import { formatTokenSymbol } from "@/lib/utils";
-import { JBProjectToken } from "juice-sdk-core";
-import { useJBTokenContext, useSuckersUserTokenBalance } from "juice-sdk-react";
+import { JBProjectToken } from "@bananapus/nana-sdk-core";
+import { useJBTokenContext, useSuckersUserTokenBalance } from "@bananapus/nana-sdk-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 

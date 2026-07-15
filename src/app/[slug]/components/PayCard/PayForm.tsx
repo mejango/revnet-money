@@ -6,7 +6,7 @@ import { getTokensForChain, Token } from "@/lib/token";
 import { formatTokenSymbol } from "@/lib/utils";
 import { Field, Formik } from "formik";
 import { FixedInt } from "fpnum";
-import { useJBTokenContext } from "juice-sdk-react";
+import { useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { parseUnits } from "viem";
 import { PayDialog } from "./PayDialog";
