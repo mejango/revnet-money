@@ -11,6 +11,7 @@ import {
   JBSwapTerminalContracts,
   JBVersion,
 } from "@bananapus/nana-sdk-core";
+import { resolvePaymentTerminal } from "@bananapus/nana-sdk-core/v6";
 import { getContract, PublicClient, zeroAddress } from "viem";
 import { Token } from "./token";
 
@@ -23,6 +24,30 @@ export async function getPaymentTerminal(args: {
   baseToken: Pick<Token, "isNative">;
 }) {
   const { client, version, chainId, projectId, tokenIn, baseToken } = args;
+
+  // v6 replaced the swap terminal with the router terminal registry, which routes payments
+  // in any token regardless of the project's accounting token. `resolvePaymentTerminal`
+  // falls back to it when the project has no primary terminal for the token.
+  if (version === 6) {
+    const resolved = await resolvePaymentTerminal(client, {
+      chainId,
+      projectId,
+      token: tokenIn.address,
+    });
+    const registry = getJBContractAddress(
+      JBRouterTerminalContracts.JBRouterTerminalRegistry,
+      version,
+      chainId,
+    );
+    const isRouter =
+      resolved.isRouter || resolved.address.toLowerCase() === registry.toLowerCase();
+
+    return {
+      address: resolved.address,
+      abi: isRouter ? jbRouterTerminalRegistryAbi : jbMultiTerminalAbi,
+      type: isRouter ? "swap" : "multi",
+    };
+  }
 
   const directory = getContract({
     address: getJBContractAddress(JBCoreContracts.JBDirectory, version, chainId),
@@ -37,32 +62,21 @@ export async function getPaymentTerminal(args: {
   }
 
   const swapTerminal = getSwapTerminalAddress(version, chainId, baseToken.isNative);
-  const swapTerminalAbi = version === 6 ? jbRouterTerminalRegistryAbi : jbSwapTerminalAbi;
 
   if (terminal === zeroAddress) {
-    return { address: swapTerminal, abi: swapTerminalAbi, type: "swap" };
+    return { address: swapTerminal, abi: jbSwapTerminalAbi, type: "swap" };
   }
 
   const isSwapTerminal = terminal.toLowerCase() === swapTerminal.toLowerCase();
 
   return {
     address: terminal,
-    abi: isSwapTerminal ? swapTerminalAbi : jbMultiTerminalAbi,
+    abi: isSwapTerminal ? jbSwapTerminalAbi : jbMultiTerminalAbi,
     type: isSwapTerminal ? "swap" : "multi",
   };
 }
 
 function getSwapTerminalAddress(version: JBVersion, chainId: JBChainId, isNative: boolean) {
-  // v6 replaced the swap terminal with the router terminal registry, which routes payments
-  // in any token regardless of the project's accounting token.
-  if (version === 6) {
-    return getJBContractAddress(
-      JBRouterTerminalContracts.JBRouterTerminalRegistry,
-      version,
-      chainId,
-    );
-  }
-
   if (version === 4) {
     return jbContractAddress[4].JBSwapTerminal1_1[chainId];
   }

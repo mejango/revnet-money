@@ -22,7 +22,6 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { Project } from "@/generated/graphql";
 import { jbSuckerAbi } from "@/generated/jbSuckerAbi";
-import { jbSuckerV6Abi } from "@/generated/jbSuckerV6Abi";
 import { useAllowance } from "@/hooks/useAllowance";
 import { useSuckerPairs } from "@/hooks/useSuckerPairs";
 import { revalidateCacheTag } from "@/lib/cache";
@@ -30,6 +29,7 @@ import { getTokenAddress } from "@/lib/token";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { FixedInt } from "fpnum";
 import { JB_CHAINS, JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
+import { buildBridgePrepareTx } from "@bananapus/nana-sdk-core/v6";
 import {
   useJBContractContext,
   useJBTokenContext,
@@ -37,7 +37,7 @@ import {
 } from "@bananapus/nana-sdk-react";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useMemo, useState } from "react";
-import { formatUnits, getAddress, pad, parseUnits, zeroHash } from "viem";
+import { formatUnits, getAddress, parseUnits } from "viem";
 import { useAccount, usePublicClient, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 
 interface Props {
@@ -125,16 +125,18 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
 
       const minTokens = 0n; // ToDo
 
-      // v6 identifies the remote beneficiary as bytes32 (left-padded EVM address) and takes
-      // an opaque metadata payload.
+      // v6 identifies the remote beneficiary as bytes32; the builder handles the padding
+      // and the opaque metadata payload.
       if (version === 6) {
-        await writeContractAsync({
-          abi: jbSuckerV6Abi,
-          functionName: "prepare",
-          address: suckerPair.local,
-          args: [amountObj.value, pad(address), minTokens, getAddress(project.token), zeroHash],
+        const request = buildBridgePrepareTx({
           chainId: sourceChainId,
+          sucker: suckerPair.local,
+          projectTokenCount: amountObj.value,
+          beneficiary: address,
+          minTokensReclaimed: minTokens,
+          token: getAddress(project.token),
         });
+        await writeContractAsync({ ...request, chainId: sourceChainId });
       } else {
         await writeContractAsync({
           abi: jbSuckerAbi,

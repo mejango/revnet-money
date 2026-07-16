@@ -19,6 +19,7 @@ import {
   revLoansV5Abi,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
+import { buildBorrowTx, buildReallocateCollateralTx } from "@bananapus/nana-sdk-core/v6";
 import {
   useBendystrawQuery,
   useJBChainId,
@@ -572,21 +573,18 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         // v6 identifies the loan source by token (terminal is baked in); v4/v5 take a
         // {token, terminal} source tuple.
         if (version === 6) {
-          await reallocateCollateralAsync({
-            abi: revLoansAbi,
-            functionName: "reallocateCollateralFromLoan",
-            address: revLoansContractAddress,
-            chainId: Number(cashOutChainId) as JBChainId,
-            args: [
-              internalSelectedLoan.id,
+          await reallocateCollateralAsync(
+            buildReallocateCollateralTx({
+              chainId: Number(cashOutChainId) as JBChainId,
+              loanId: BigInt(internalSelectedLoan.id),
               collateralCountToTransfer,
-              selectedChainTokenConfig.token,
+              token: selectedChainTokenConfig.token,
               minBorrowAmount,
               collateralCountToAdd,
-              address,
-              feePercent,
-            ],
-          });
+              beneficiary: address,
+              prepaidFeePercent: feePercent,
+            }),
+          );
         } else {
           await reallocateCollateralAsync({
             abi: revLoansV5Abi,
@@ -679,21 +677,18 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           // v6 identifies the loan source by token (terminal is baked in) and takes an
           // explicit holder; v4/v5 take a {token, terminal} source tuple.
           if (version === 6) {
-            await writeContractAsync({
-              abi: revLoansAbi,
-              functionName: "borrowFrom",
-              address: revLoansContractAddress,
-              chainId: Number(cashOutChainId) as JBChainId,
-              args: [
-                effectiveProjectId,
-                selectedChainTokenConfig.token,
-                0n,
-                collateralBigInt,
-                address as `0x${string}`,
-                BigInt(feeBasisPoints),
-                address as `0x${string}`,
-              ],
-            });
+            await writeContractAsync(
+              buildBorrowTx({
+                chainId: Number(cashOutChainId) as JBChainId,
+                revnetId: effectiveProjectId,
+                token: selectedChainTokenConfig.token,
+                minBorrowAmount: 0n,
+                collateralCount: collateralBigInt,
+                beneficiary: address as `0x${string}`,
+                prepaidFeePercent: BigInt(feeBasisPoints),
+                holder: address as `0x${string}`,
+              }),
+            );
           } else {
             await writeContractAsync({
               abi: revLoansV5Abi,

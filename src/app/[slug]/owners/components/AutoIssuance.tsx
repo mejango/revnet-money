@@ -16,8 +16,14 @@ import { useAutoIssuances } from "@/hooks/useAutoIssuances";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
 import { format } from "date-fns";
-import { formatUnits, revDeployerV5Abi, revOwnerAbi, RevnetCoreContracts } from "@bananapus/nana-sdk-core";
-import { useJBContractContext, useJBTokenContext } from "@bananapus/nana-sdk-react";
+import {
+  formatUnits,
+  JBChainId,
+  revDeployerV5Abi,
+  RevnetCoreContracts,
+} from "@bananapus/nana-sdk-core";
+import { buildAutoIssueTx } from "@bananapus/nana-sdk-core/v6";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
@@ -28,6 +34,7 @@ export function AutoIssuance() {
   const now = Math.floor(new Date().getTime() / 1000);
   const [autoIssueId, setAutoIssueId] = useState<string | null>(null);
   const { contractAddress, version } = useJBContractContext();
+  const chainId = useJBChainId();
 
   const { writeContract, isPending, data } = useWriteContract();
 
@@ -110,25 +117,26 @@ export function AutoIssuance() {
                         disabled={(autoIssuance?.startsAt || 0) >= now}
                         loading={(isPending || isLoading) && autoIssueId === autoIssuance.id}
                         onClick={() => {
-                          const args = [
-                            BigInt(autoIssuance.projectId),
-                            autoIssuance.stageId,
-                            autoIssuance.beneficiary as `0x${string}`,
-                          ] as const;
                           // v6 moved auto issuance from the REVDeployer to the REVOwner.
                           if (version === 6) {
-                            writeContract({
-                              abi: revOwnerAbi,
-                              functionName: "autoIssueFor",
-                              address: contractAddress(RevnetCoreContracts.REVOwner),
-                              args,
-                            });
+                            writeContract(
+                              buildAutoIssueTx({
+                                chainId: chainId as JBChainId,
+                                revnetId: BigInt(autoIssuance.projectId),
+                                stageId: BigInt(autoIssuance.stageId),
+                                beneficiary: autoIssuance.beneficiary as `0x${string}`,
+                              }),
+                            );
                           } else {
                             writeContract({
                               abi: revDeployerV5Abi,
                               functionName: "autoIssueFor",
                               address: contractAddress(RevnetCoreContracts.REVDeployer),
-                              args,
+                              args: [
+                                BigInt(autoIssuance.projectId),
+                                autoIssuance.stageId,
+                                autoIssuance.beneficiary as `0x${string}`,
+                              ] as const,
                             });
                           }
                           setAutoIssueId(autoIssuance.id);

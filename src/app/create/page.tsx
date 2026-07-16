@@ -6,16 +6,10 @@ import { wagmiConfig } from "@/lib/wagmiConfig";
 import { getPublicClient } from "@wagmi/core";
 import { Formik } from "formik";
 import { withZodSchema } from "formik-validator-zod";
-import {
-  createSalt,
-  jbContractAddress,
-  jbProjectsAbi,
-  MappableAsset,
-  parseSuckerDeployerConfig,
-  revDeployerAbi,
-} from "@bananapus/nana-sdk-core";
+import { createSalt, MappableAsset, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
+import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { useGetRelayrTxQuote } from "@bananapus/nana-sdk-react";
-import { encodeFunctionData } from "viem";
+import { encodeFunctionData, PublicClient } from "viem";
 import { useAccount } from "wagmi";
 import { DEFAULT_FORM_DATA } from "./constants";
 import { DeployRevnetForm } from "./form/DeployRevnetForm";
@@ -62,21 +56,6 @@ export default function Page() {
         [reserveAsset],
         { version: 6 },
       ) as Parameters<typeof parseDeployData>[1]["suckerDeployerConfig"];
-      const deployData = parseDeployData(formData, {
-        metadataCid,
-        chainId,
-        suckerDeployerConfig,
-        timestamp,
-        salt,
-      });
-
-      console.log({ deployData });
-
-      const encodedData = encodeFunctionData({
-        abi: revDeployerAbi, // ABI of the contract
-        functionName: "deployFor",
-        args: deployData,
-      });
 
       const publicClient = getPublicClient(wagmiConfig, {
         chainId: chainId,
@@ -87,10 +66,23 @@ export default function Page() {
       }
 
       // Deploying a new revnet requires paying the exact project creation fee.
-      const creationFee = await publicClient.readContract({
-        address: jbContractAddress["6"]["JBProjects"][chainId],
-        abi: jbProjectsAbi,
-        functionName: "creationFee",
+      const creationFee = await getProjectCreationFee(publicClient as PublicClient, chainId);
+
+      const request = parseDeployData(formData, {
+        metadataCid,
+        chainId,
+        suckerDeployerConfig,
+        timestamp,
+        salt,
+        creationFee,
+      });
+
+      console.log({ deployData: request.args });
+
+      const encodedData = encodeFunctionData({
+        abi: request.abi,
+        functionName: request.functionName,
+        args: request.args,
       });
 
       // Estimate gas for the transaction if it were to be sent directly to the revDeployer.
@@ -99,21 +91,21 @@ export default function Page() {
       const gasEstimate = await publicClient
         .estimateContractGas({
           account: address,
-          address: jbContractAddress["6"]["REVDeployer"][chainId],
-          abi: revDeployerAbi,
-          functionName: "deployFor",
-          args: deployData,
-          value: creationFee,
+          address: request.address,
+          abi: request.abi,
+          functionName: request.functionName,
+          args: request.args,
+          value: request.value,
         })
         .catch(() => 8_000_000n);
 
-      console.log("create::deploy calldata", chainId, gasEstimate, encodedData, deployData);
+      console.log("create::deploy calldata", chainId, gasEstimate, encodedData, request.args);
 
       relayrTransactions.push({
         data: {
           from: address,
-          to: jbContractAddress["6"]["REVDeployer"][chainId],
-          value: creationFee,
+          to: request.address,
+          value: request.value,
           // Use the estimated gas but add a buffer for the trustedForwarder.
           gas: gasEstimate + BigInt(120_000n),
           data: encodedData,

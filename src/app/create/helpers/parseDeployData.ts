@@ -7,19 +7,34 @@ import {
   JBChainId,
   NATIVE_TOKEN,
   NATIVE_TOKEN_DECIMALS,
-  revDeployerAbi,
   SPLITS_TOTAL_PERCENT,
   USD_CURRENCY_ID,
   WeightCutPercent,
 } from "@bananapus/nana-sdk-core";
-import { Address, ContractFunctionParameters, parseUnits, zeroAddress } from "viem";
+import {
+  buildAccountingContext,
+  buildDeployRevnetTx,
+  buildRevnetStageConfig,
+  fillSplitPercents,
+} from "@bananapus/nana-sdk-core/v6";
+import { Address, ContractFunctionArgs, parseUnits, zeroAddress } from "viem";
 import { RevnetFormData } from "../types";
 
-// The 4-arg `deployFor` overload (the 6-arg one adds a 721 tiers config + croptop posts).
+// The 4-arg `deployFor` overload (the 6-arg one adds a 721 tiers config + croptop posts,
+// which the app doesn't use). The args are typed against the ABI so viem's inference
+// accepts them at call sites (encodeFunctionData, estimateContractGas).
+type RevDeployerAbi = ReturnType<typeof buildDeployRevnetTx>["abi"];
 export type DeployForArgs = Extract<
-  ContractFunctionParameters<typeof revDeployerAbi, "payable", "deployFor">["args"],
+  ContractFunctionArgs<RevDeployerAbi, "payable", "deployFor">,
   readonly [unknown, unknown, unknown, unknown]
 >;
+export type DeployRevnetRequest = Omit<
+  Extract<
+    ReturnType<typeof buildDeployRevnetTx>,
+    { args: readonly [unknown, unknown, unknown, unknown] }
+  >,
+  "args"
+> & { args: DeployForArgs };
 
 export function parseDeployData(
   _formData: RevnetFormData,
@@ -39,8 +54,9 @@ export function parseDeployData(
     };
     timestamp: number;
     salt: `0x${string}`;
+    creationFee: bigint;
   },
-): DeployForArgs {
+): DeployRevnetRequest {
   // hack: stringfy numbers
   const formData: RevnetFormData = JSON.parse(JSON.stringify(_formData), (_, value) =>
     typeof value === "number" ? String(value) : value,
@@ -68,14 +84,9 @@ export function parseDeployData(
     baseCurrency = ETH_CURRENCY_ID;
   }
 
-  // Accounting context currencies are token-keyed: uint32(uint160(token)).
-  const accountingContextsToAccept = [
-    {
-      token: tokenAddress,
-      decimals: tokenDecimals,
-      currency: parseInt(tokenAddress.toLowerCase().replace(/^0x/, "").slice(-8), 16),
-    },
-  ];
+  // The accounting context's token-keyed currency (uint32(uint160(token))) is computed by
+  // the builder.
+  const accountingContextsToAccept = [buildAccountingContext(tokenAddress, tokenDecimals)];
 
   const stageConfigurations = formData.stages.map((stage, idx) => {
     console.log(`~~~~~~~~~~~~~~~~~~~~~~~~~~ Stage ${idx + 1} ~~~~~~~~~~~~~~~~~~~~~~~~~~`);
@@ -115,6 +126,13 @@ export function parseDeployData(
     console.log("----------------------------------------------------------------");
     const splitPercent =
       stage.splits.reduce((sum, split) => sum + (Number(split.percentage) || 0), 0) * 100;
+    // Scale each split to its share of the split bucket, then correct per-row rounding
+    // drift so the group sums to exactly SPLITS_TOTAL_PERCENT (JBSplits reverts otherwise).
+    const splitBucketPercents = fillSplitPercents(
+      stage.splits.map((split) =>
+        Math.round((Number(split.percentage) * 100 * SPLITS_TOTAL_PERCENT) / splitPercent),
+      ),
+    );
     const splits = stage.splits.map((split, splitIdx) => {
       let beneficiary = split.beneficiary?.find(
         (b) => Number(b?.chainId) === Number(extra.chainId),
@@ -123,14 +141,11 @@ export function parseDeployData(
         beneficiary = split.defaultBeneficiary;
       }
       if (!beneficiary) throw new Error("Beneficiary not found");
-      const percent = Math.round(
-        (Number(split.percentage) * 100 * SPLITS_TOTAL_PERCENT) / splitPercent,
-      );
       console.log(`[ SPLIT ${splitIdx + 1} ]\n\t\t${beneficiary} ${split.percentage}%`);
       return {
         preferAddToBalance: false,
         lockedUntil: 0,
-        percent: percent,
+        percent: splitBucketPercents[splitIdx],
         projectId: 0n,
         beneficiary: beneficiary as Address,
         hook: zeroAddress,
@@ -139,7 +154,7 @@ export function parseDeployData(
     console.log({ SPLITS_TOTAL_PERCENT, splitPercent, splits });
     console.log("----------------------------------------------------------------");
 
-    return {
+    return buildRevnetStageConfig({
       startsAtOrAfter,
       autoIssuances,
       splitPercent,
@@ -153,16 +168,17 @@ export function parseDeployData(
       issuanceCutFrequency: Math.floor(Number(stage.priceCeilingIncreaseFrequency) * 86400), // seconds
       issuanceCutPercent:
         Number(WeightCutPercent.parse(stage.priceCeilingIncreasePercentage, 9).value) / 100,
-      cashOutTaxRate: Number(CashOutTaxRate.parse(stage.priceFloorTaxIntensity, 4).value) / 100, //
-      extraMetadata: 0, // ??
-    };
+      cashOutTaxRate: Number(CashOutTaxRate.parse(stage.priceFloorTaxIntensity, 4).value) / 100,
+      extraMetadata: 0,
+    });
   });
 
   // The v6 REVDeployer bakes in the terminals, buyback hook, and loans contract; a default
-  // 721 hook is deployed internally by the 4-arg `deployFor`.
-  return [
-    0n, // 0 for a new revnet
-    {
+  // 721 hook is deployed internally by the 4-arg `deployFor`. `buildDeployRevnetTx` sends
+  // the creation fee as the transaction's value (revnetId defaults to 0n: a new revnet).
+  return buildDeployRevnetTx({
+    chainId: extra.chainId,
+    config: {
       description: {
         name: formData.name,
         ticker: formData.tokenSymbol,
@@ -174,10 +190,11 @@ export function parseDeployData(
       scopeCashOutsToLocalBalances: false,
       stageConfigurations,
     },
-    accountingContextsToAccept,
-    {
+    accountingContexts: accountingContextsToAccept,
+    suckerConfig: {
       deployerConfigurations: extra.suckerDeployerConfig.deployerConfigurations,
       salt: extra.salt,
     },
-  ] satisfies DeployForArgs;
+    creationFee: extra.creationFee,
+  }) as DeployRevnetRequest;
 }
