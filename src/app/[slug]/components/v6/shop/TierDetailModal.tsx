@@ -176,7 +176,7 @@ export function TierDetailModal({
                   ? "Sold out"
                   : tier.unlimited
                     ? "Unlimited inventory"
-                    : `${tier.remaining.toLocaleString("en-US")} left here`}
+                    : `${tier.remaining.toLocaleString("en-US")} left on ${JB_CHAINS[chainId]?.name ?? "this chain"}`}
               </span>
             </div>
 
@@ -214,7 +214,16 @@ export function TierDetailModal({
 
             <dl className="mt-4 space-y-1.5 border-t border-zinc-200 pt-4 text-xs">
               <Fact label="Item ID" value={`#${tier.id}`} />
-              <Fact label="Category" value={String(tier.category)} />
+              <Fact
+                label="Category"
+                value={
+                  media?.categoryName ??
+                  (tier.category === 0 ? "General" : `Category ${tier.category}`)
+                }
+              />
+              {discounted ? (
+                <Fact label="Current discount" value={discountLabel(tier.discountPercent)} />
+              ) : null}
               {tier.reserveFrequency > 0 ? (
                 <Fact label="Reserve mint" value={`1 per ${tier.reserveFrequency} sold`} />
               ) : null}
