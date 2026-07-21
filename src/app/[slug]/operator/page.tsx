@@ -11,16 +11,15 @@ interface Props {
 
 export default async function OperatorPage(props: Props) {
   const { slug } = props.params;
-  const { chainId, projectId, version } = parseSlug(slug);
-  if (version !== 6) notFound();
+  const { chainId, projectId } = parseSlug(slug);
 
-  const project = await getProject(projectId, chainId, version);
+  const project = await getProject(projectId, chainId);
   if (!project) notFound();
 
   const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId);
   if (!suckerGroup) notFound();
 
-  const operator = await getProjectOperator(Number(projectId), chainId, version);
+  const operator = await getProjectOperator(Number(projectId), chainId);
 
   return (
     <V6OperatorTab

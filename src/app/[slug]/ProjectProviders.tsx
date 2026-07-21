@@ -1,7 +1,7 @@
 "use client";
 
 import { OPEN_IPFS_GATEWAY_HOSTNAME } from "@/lib/ipfs";
-import { JBChainId, JBProjectProvider, JBVersion } from "@bananapus/nana-sdk-react";
+import { JBChainId, JBProjectProvider } from "@bananapus/nana-sdk-react";
 import { PropsWithChildren } from "react";
 
 const TESTNET_CHAIN_IDS = new Set([11155111, 11155420, 84532, 421614]);
@@ -10,7 +10,6 @@ export function ProjectProviders(
   props: PropsWithChildren<{
     projectId: bigint;
     chainId: JBChainId;
-    version: JBVersion;
   }>,
 ) {
   const bendystrawUrl = `${process.env.NEXT_PUBLIC_BENDYSTRAW_URL}`.split("/");
@@ -34,6 +33,7 @@ export function ProjectProviders(
   return (
     <JBProjectProvider
       {...props}
+      version={6}
       ctxProps={{ metadata: { ipfsGatewayHostname: OPEN_IPFS_GATEWAY_HOSTNAME } }}
       bendystraw={{ apiKey: apiKey || "public", url: `${origin}/api/bendystraw/${net}` }}
     />

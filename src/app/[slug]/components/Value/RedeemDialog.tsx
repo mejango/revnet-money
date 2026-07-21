@@ -61,7 +61,6 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
   const {
     contracts: { primaryNativeTerminal },
-    version,
   } = useJBContractContext();
 
   const { address } = useAccount();
@@ -85,7 +84,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // Get the suckerGroupId from the current project
   const { data: projectData } = useBendystrawQuery(
     ProjectDocument,
-    { chainId: Number(chainId), projectId: Number(projectId), version },
+    { chainId: Number(chainId), projectId: Number(projectId), version: 6 },
     { enabled: !!chainId && !!projectId },
   );
   const suckerGroupId = projectData?.project?.suckerGroupId;
@@ -141,7 +140,6 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
     projectId: redeemAmountBN ? effectiveProjectId : undefined,
     tokenAmount: redeemAmountBN || undefined,
-    version,
     decimals: baseDecimals,
     currencyId: selectedSurplus?.currencyId ?? 1,
   });

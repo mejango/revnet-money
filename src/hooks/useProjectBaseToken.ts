@@ -35,12 +35,12 @@ function resolveBaseToken(project: {
 }
 
 export function useProjectBaseToken(): ReturnData | undefined {
-  const { projectId, version } = useJBContractContext();
+  const { projectId } = useJBContractContext();
   const chainId = useJBChainId();
 
   const { data } = useBendystrawQuery(
     ProjectDocument,
-    { chainId: Number(chainId), projectId: Number(projectId), version },
+    { chainId: Number(chainId), projectId: Number(projectId), version: 6 },
     { enabled: !!chainId && !!projectId, pollInterval: 30000 },
   );
 

@@ -1,16 +1,14 @@
 import { Nav } from "@/components/layout/Nav";
 import { parseSlug } from "@/lib/slug";
-import { NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { PropsWithChildren, Suspense } from "react";
+import { PropsWithChildren } from "react";
 import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
 import { Header } from "./components/Header/Header";
 import { NewProjectNotice } from "./components/NewProjectNotice";
 import { PayCard } from "./components/PayCard/PayCard";
 import { ResponsiveProjectLayout } from "./components/ResponsiveProjectLayout";
-import { TokenPriceChart } from "./components/TokenPrice/TokenPriceChart";
 import { ShopCartProvider } from "./components/v6/ShopCartContext";
 import { getProject } from "./getProject";
 import { getProjectOperator } from "./getProjectOperator";
@@ -60,8 +58,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     });
   }
 
-  const { projectId, chainId, version } = parseSlug(slug);
-  const project = projectId ? await getProject(projectId, chainId, version) : null;
+  const { projectId, chainId } = parseSlug(slug);
+  const project = projectId ? await getProject(projectId, chainId) : null;
   const imageUrl = project?.logoUri || `${origin}/assets/img/rev-og-191-1.png`;
 
   const frame = {
@@ -89,16 +87,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function SlugLayout({ children, params }: PropsWithChildren<Props>) {
-  const { chainId, projectId, version } = parseSlug(params.slug);
+  const { chainId, projectId } = parseSlug(params.slug);
 
-  const project = await getProject(projectId, chainId, version);
+  const project = await getProject(projectId, chainId);
   if (!project || !project.token) notFound();
 
-  const operatorPromise = getProjectOperator(Number(projectId), chainId, version);
+  const operatorPromise = getProjectOperator(Number(projectId), chainId);
   const suckerGroupPromise = getSuckerGroup(project.suckerGroupId, chainId);
   const isRevnet = project.isRevnet !== false;
   const rulesetsPromise = isRevnet
-    ? getRulesets(projectId.toString(), chainId, version)
+    ? getRulesets(projectId.toString(), chainId)
     : Promise.resolve([]);
 
   const [suckerGroup, rulesets] = await Promise.all([suckerGroupPromise, rulesetsPromise]);
@@ -106,10 +104,9 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
 
   const projects = suckerGroup.projects?.items ?? [];
   const startDate = rulesets[0]?.start;
-  const hasStarted = !startDate || startDate <= Math.floor(Date.now() / 1000);
 
   return (
-    <ProjectProviders chainId={chainId} projectId={projectId} version={version}>
+    <ProjectProviders chainId={chainId} projectId={projectId}>
       <ShopCartProvider>
         <Nav />
 
@@ -127,21 +124,6 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
               </>
             }
             activity={<ActivityFeed suckerGroupId={suckerGroup.id} projects={projects} />}
-            preMenu={
-              hasStarted && version !== 6 ? (
-                <Suspense>
-                  <TokenPriceChart
-                    projectId={projectId.toString()}
-                    chainId={chainId}
-                    version={version}
-                    suckerGroupId={suckerGroup.id}
-                    token={project.token}
-                    tokenSymbol={project.tokenSymbol ?? "ETH"}
-                    tokenDecimals={project.decimals ?? NATIVE_TOKEN_DECIMALS}
-                  />
-                </Suspense>
-              ) : null
-            }
           >
             {children}
           </ResponsiveProjectLayout>

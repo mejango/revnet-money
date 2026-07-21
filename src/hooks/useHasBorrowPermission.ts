@@ -1,6 +1,6 @@
 import { HasPermissionDocument } from "@/generated/graphql";
 import { getRevnetLoanContract, JBChainId } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 
 export function useHasBorrowPermission({
   address,
@@ -15,9 +15,7 @@ export function useHasBorrowPermission({
   resolvedPermissionsAddress?: `0x${string}`;
   skip?: boolean;
 }) {
-  const { version } = useJBContractContext();
-
-  const operator = chainId ? getRevnetLoanContract(version, chainId) : undefined;
+  const operator = chainId ? getRevnetLoanContract(6, chainId) : undefined;
 
   const querySkip =
     skip || !address || !projectId || !chainId || !resolvedPermissionsAddress || !operator;
@@ -28,7 +26,7 @@ export function useHasBorrowPermission({
     chainId: chainId as number,
     projectId: Number(projectId),
     operator: operator as string,
-    version,
+    version: 6,
   });
 
   return data?.permissionHolder?.permissions?.includes(1) ?? undefined;

@@ -5,7 +5,7 @@ import { ActivityFeedSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ActivityEventsDocument, SuckerGroupQuery } from "@/generated/graphql";
 import { formatDecimals } from "@/lib/number";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
-import { JBChainId, useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { JBChainId, useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import { useState } from "react";
 import { Address, formatUnits } from "viem";
 import { ActivityEvent, ActivityItem } from "./ActivityItem";
@@ -28,20 +28,12 @@ function truncateAddress(address: string): string {
 
 export function ActivityFeed({ suckerGroupId, projects }: Props) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
-  const { version } = useJBContractContext();
-
-  // v6 gets the full multi-type feed (website/ parity); earlier versions keep the
-  // original pay/cash-out-only query and rendering.
-  const isV6 = version === 6;
-
   const { data, isLoading } = useBendystrawQuery(
     ActivityEventsDocument,
     {
       orderBy: "timestamp",
       orderDirection: "desc",
-      where: isV6
-        ? { suckerGroupId }
-        : { suckerGroupId, OR: [{ payEvent_not: null }, { cashOutTokensEvent_not: null }] },
+      where: { suckerGroupId },
     },
     { pollInterval: 15_000 },
   );
@@ -53,15 +45,13 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
   // cover (e.g. bridge receipts). Same idea for manual mints inside auto-issue txs.
   const mintCoveredTxs = new Set<string>();
   const autoIssueTxs = new Set<string>();
-  if (isV6) {
-    for (const event of items) {
-      if (!event) continue;
-      const key = `${event.chainId}:${event.txHash}`;
-      if (event.payEvent || event.manualMintTokensEvent || event.autoIssueEvent) {
-        mintCoveredTxs.add(key);
-      }
-      if (event.autoIssueEvent) autoIssueTxs.add(key);
+  for (const event of items) {
+    if (!event) continue;
+    const key = `${event.chainId}:${event.txHash}`;
+    if (event.payEvent || event.manualMintTokensEvent || event.autoIssueEvent) {
+      mintCoveredTxs.add(key);
     }
+    if (event.autoIssueEvent) autoIssueTxs.add(key);
   }
 
   const events: ActivityEvent[] = [];
@@ -113,8 +103,6 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
         baseTokenSymbol,
         tokenCount,
       });
-    } else if (!isV6) {
-      continue;
     } else if (event.addToBalanceEvent) {
       const e = event.addToBalanceEvent;
       events.push({

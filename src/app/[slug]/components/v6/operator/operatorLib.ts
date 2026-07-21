@@ -2,8 +2,8 @@ import { chainSortOrder } from "@/app/constants";
 import { PermissionHolder, PermissionHolderFilter } from "@/generated/graphql";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, jbContractAddress } from "@bananapus/nana-sdk-core";
-import { getAccount, getPublicClient, switchChain } from "@wagmi/core";
 import { TypedDocumentNode } from "@graphql-typed-document-node/core";
+import { getAccount, getPublicClient, switchChain } from "@wagmi/core";
 import gql from "graphql-tag";
 import { Abi, Address, PublicClient } from "viem";
 import { ProjectItem } from "../shared";
@@ -16,9 +16,7 @@ export function chainProjectRows(projects: ProjectItem[]): ChainProjectRow[] {
   return projects
     .filter((p) => Boolean(JB_CHAINS[p.chainId as JBChainId]))
     .map((p) => ({ chainId: p.chainId as JBChainId, projectId: p.projectId }))
-    .sort(
-      (a, b) => (chainSortOrder.get(a.chainId) ?? 0) - (chainSortOrder.get(b.chainId) ?? 0),
-    );
+    .sort((a, b) => (chainSortOrder.get(a.chainId) ?? 0) - (chainSortOrder.get(b.chainId) ?? 0));
 }
 
 export function chainName(chainId: number): string {
@@ -30,9 +28,7 @@ export function v6ContractAddress(
   contract: keyof (typeof jbContractAddress)["6"],
   chainId: JBChainId,
 ): Address | undefined {
-  const deployments = jbContractAddress["6"][contract] as Partial<
-    Record<number, Address>
-  >;
+  const deployments = jbContractAddress["6"][contract] as Partial<Record<number, Address>>;
   return deployments?.[chainId];
 }
 
@@ -71,17 +67,16 @@ export const PermissionHoldersDocument = gql`
   }
 ` as unknown as TypedDocumentNode<PermissionHoldersQuery, PermissionHoldersQueryVariables>;
 
-/** Per-project (chainId, projectId) filter, version-scoped on every branch. */
+/** Per-project (chainId, projectId) filter for v6 projects. */
 export function permissionHoldersWhere(
   rows: ChainProjectRow[],
-  version: number,
   extra?: Partial<PermissionHolderFilter>,
 ): PermissionHolderFilter {
   return {
     OR: rows.map((row) => ({
       chainId: row.chainId,
       projectId: row.projectId,
-      version,
+      version: 6,
       ...extra,
     })),
   };

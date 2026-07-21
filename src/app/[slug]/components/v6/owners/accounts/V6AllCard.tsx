@@ -2,8 +2,8 @@
 
 import { ParticipantsDocument, ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useTotalOutstandingTokens } from "@/hooks/useTotalOutstandingTokens";
-import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { prettyNumber } from "@/lib/number";
+import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import { formatUnits } from "@bananapus/nana-sdk-core";
 import {
@@ -21,14 +21,14 @@ import { ParticipantsTable } from "../../../../owners/components/ParticipantsTab
  */
 export function V6AllCard() {
   const chainId = useJBChainId();
-  const { projectId, version } = useJBContractContext();
+  const { projectId } = useJBContractContext();
   const { token } = useJBTokenContext();
   const totalOutstandingTokens = useTotalOutstandingTokens();
 
   const project = useBendystrawQuery(ProjectDocument, {
     projectId: Number(projectId),
     chainId: Number(chainId),
-    version,
+    version: 6,
   });
   const suckerGroupId = project.data?.project?.suckerGroupId;
 
@@ -109,8 +109,8 @@ export function V6AllCard() {
       </div>
       {participants.length > 0 ? (
         <p className="mt-4 text-sm text-melon-700">
-          {participants.length} holder{participants.length === 1 ? "" : "s"} — showing the {shownCount}{" "}
-          largest, as shares of the balances tracked here
+          {participants.length} holder{participants.length === 1 ? "" : "s"} — showing the{" "}
+          {shownCount} largest, as shares of the balances tracked here
         </p>
       ) : null}
     </div>

@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 import { ProjectItem } from "../shared";
 import { PayerAddressList } from "./PayerAddressList";
@@ -23,12 +23,11 @@ import { ProjectPayersDocument, chainProjectRows, payersWhere } from "./projectP
  * addresses from bendystraw below it.
  */
 export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
-  const { version } = useJBContractContext();
   const rows = useMemo(() => chainProjectRows(projects), [projects]);
 
   const payersQuery = useBendystrawQuery(
     ProjectPayersDocument,
-    { where: payersWhere(rows, version) },
+    { where: payersWhere(rows) },
     { enabled: rows.length > 0 },
   );
   const payerRows = payersQuery.data?.projectPayers?.items ?? [];

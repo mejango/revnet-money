@@ -1,8 +1,8 @@
-import { ETH_CURRENCY_ID, JBVersion, USD_CURRENCY_ID } from "@bananapus/nana-sdk-core";
+import { ETH_CURRENCY_ID, USD_CURRENCY_ID } from "@bananapus/nana-sdk-core";
 
-export function toBaseCurrencyId(currency: number | string, version: JBVersion) {
+export function toBaseCurrencyId(currency: number | string) {
   if (Number(currency) === 1 || Number(currency) === 61166) return ETH_CURRENCY_ID;
-  return USD_CURRENCY_ID(version);
+  return USD_CURRENCY_ID(6);
 }
 
 const usdSymbols = ["USDC", "USD", "USDT", "DAI"];

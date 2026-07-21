@@ -1,16 +1,16 @@
+import { TopProjectsTableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { MiniAppHello } from "./MiniAppHello";
 import { TopProjectsTable } from "./TopProjectsTable";
-import { TopProjectsTableSkeleton } from "@/components/loading/LoadingSkeletons";
 
 function RevLink({ network, id, text }: { network: string; id: number; text: string }) {
   return (
     <span>
       $
-      <Link href={`/v6:${network}:${id}`} className="underline hover:text-black/70">
+      <Link href={`/${network}:${id}`} className="underline hover:text-black/70">
         {text}
       </Link>
     </span>
@@ -100,12 +100,7 @@ export default function Page() {
             </li>
             <li>
               Support the REV network{" "}
-              <Link
-                href="/v6:eth:3"
-                target="_blank"
-                rel="noopener norefererr"
-                className="underline"
-              >
+              <Link href="/eth:3" target="_blank" rel="noopener norefererr" className="underline">
                 here
               </Link>
               , we run as a revnet ourselves.

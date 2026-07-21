@@ -2,14 +2,14 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { SkeletonLines } from "@/components/ui/skeleton";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Address, isAddress, zeroAddress } from "viem";
@@ -96,11 +96,9 @@ export function OperatorAccountCard({
   /** Server-resolved operator for the page chain (bendystraw fallback). */
   fallbackOperator?: string;
 }) {
-  const { version } = useJBContractContext();
-
   const holdersQuery = useBendystrawQuery(
     PermissionHoldersDocument,
-    { where: permissionHoldersWhere(rows, version, { isRevnetOperator: true }) },
+    { where: permissionHoldersWhere(rows, { isRevnetOperator: true }) },
     { enabled: rows.length > 0 },
   );
 

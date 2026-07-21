@@ -10,8 +10,8 @@ import { fetchProfile } from "@/lib/profile";
 import { unstable_cache } from "next/cache";
 
 export const getProjectOperator = unstable_cache(
-  async (projectId: number, chainId: number, version: number) => {
-    const address = await getProjectOperatorAddress(projectId, chainId, version);
+  async (projectId: number, chainId: number) => {
+    const address = await getProjectOperatorAddress(projectId, chainId);
     return address ? await fetchProfile(address) : null;
   },
   ["project-operator"],
@@ -20,12 +20,12 @@ export const getProjectOperator = unstable_cache(
   },
 );
 
-async function getProjectOperatorAddress(projectId: number, chainId: number, version: number) {
+async function getProjectOperatorAddress(projectId: number, chainId: number) {
   try {
     const client = getBendystrawClient(chainId);
     const result = await client.request<ProjectOperatorQuery, ProjectOperatorQueryVariables>(
       ProjectOperatorDocument,
-      { chainId, projectId, version },
+      { chainId, projectId, version: 6 },
     );
 
     return result.permissionHolders?.items?.[0]?.operator ?? null;

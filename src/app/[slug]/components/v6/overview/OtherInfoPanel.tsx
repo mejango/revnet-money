@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { ProjectOperatorDocument } from "@/generated/graphql";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import Link from "next/link";
 import { Address, isAddress } from "viem";
 import { ProjectItem } from "../shared";
@@ -27,7 +27,9 @@ import { ProjectItem } from "../shared";
  */
 export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
   const rows = projects
-    .filter((p): p is ProjectItem & { chainId: JBChainId } => Boolean(JB_CHAINS[p.chainId as JBChainId]))
+    .filter((p): p is ProjectItem & { chainId: JBChainId } =>
+      Boolean(JB_CHAINS[p.chainId as JBChainId]),
+    )
     .sort(
       (a, b) =>
         (chainSortOrder.get(a.chainId as JBChainId) ?? 0) -
@@ -44,9 +46,7 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
           <TableHeader>
             <TableRow className="bg-zinc-50 hover:bg-zinc-50">
               <TableHead className="whitespace-nowrap font-medium px-3">Chain</TableHead>
-              <TableHead className="whitespace-nowrap font-medium px-3">
-                Project ID
-              </TableHead>
+              <TableHead className="whitespace-nowrap font-medium px-3">Project ID</TableHead>
               <TableHead className="whitespace-nowrap font-medium px-3">Operator</TableHead>
             </TableRow>
           </TableHeader>
@@ -64,7 +64,7 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
                   </TableCell>
                   <TableCell className="whitespace-nowrap px-3 py-3">
                     <Link
-                      href={`/v6:${chain.slug}:${p.projectId}`}
+                      href={`/${chain.slug}:${p.projectId}`}
                       className="underline hover:text-black/70"
                       title={`Open #${p.projectId} on ${chain.name}`}
                     >
@@ -86,11 +86,10 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
 
 /** The revnet operator on one chain, ENS-resolved and explorer-linked. */
 function OperatorCell({ chainId, projectId }: { chainId: JBChainId; projectId: number }) {
-  const { version } = useJBContractContext();
   const { data, isLoading } = useBendystrawQuery(ProjectOperatorDocument, {
     chainId,
     projectId,
-    version,
+    version: 6,
   });
 
   const operator = data?.permissionHolders?.items?.[0]?.operator;

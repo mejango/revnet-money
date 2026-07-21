@@ -21,20 +21,15 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
 import { Project } from "@/generated/graphql";
-import { jbSuckerAbi } from "@/generated/jbSuckerAbi";
 import { useAllowance } from "@/hooks/useAllowance";
 import { useSuckerPairs } from "@/hooks/useSuckerPairs";
 import { revalidateCacheTag } from "@/lib/cache";
 import { getTokenAddress } from "@/lib/token";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
-import { FixedInt } from "fpnum";
 import { JB_CHAINS, JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
 import { buildBridgePrepareTx } from "@bananapus/nana-sdk-core/v6";
-import {
-  useJBContractContext,
-  useJBTokenContext,
-  useSuckersUserTokenBalance,
-} from "@bananapus/nana-sdk-react";
+import { useJBTokenContext, useSuckersUserTokenBalance } from "@bananapus/nana-sdk-react";
+import { FixedInt } from "fpnum";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useMemo, useState } from "react";
 import { formatUnits, getAddress, parseUnits } from "viem";
@@ -46,7 +41,6 @@ interface Props {
 
 export function BridgeDialog(props: PropsWithChildren<Props>) {
   const { children, projects } = props;
-  const { version } = useJBContractContext();
   const sourceChains = useMemo(() => projects.map((p) => p.chainId as JBChainId), [projects]);
   const [sourceChainId, setSourceChainId] = useState<JBChainId>(sourceChains[0]);
   const [targetChainId, setTargetChainId] = useState<JBChainId>();
@@ -105,7 +99,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         throw new Error("Please try again");
       }
 
-      const tokenAddress = await getTokenAddress(sourceChainId, projectId, version);
+      const tokenAddress = await getTokenAddress(sourceChainId, projectId);
 
       if (!tokenAddress) {
         throw new Error("Couldn't determine token address. Please try again");
@@ -125,27 +119,15 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
 
       const minTokens = 0n; // ToDo
 
-      // v6 identifies the remote beneficiary as bytes32; the builder handles the padding
-      // and the opaque metadata payload.
-      if (version === 6) {
-        const request = buildBridgePrepareTx({
-          chainId: sourceChainId,
-          sucker: suckerPair.local,
-          projectTokenCount: amountObj.value,
-          beneficiary: address,
-          minTokensReclaimed: minTokens,
-          token: getAddress(project.token),
-        });
-        await writeContractAsync({ ...request, chainId: sourceChainId });
-      } else {
-        await writeContractAsync({
-          abi: jbSuckerAbi,
-          functionName: "prepare",
-          address: suckerPair.local,
-          args: [amountObj.value, address, minTokens, getAddress(project.token)],
-          chainId: sourceChainId,
-        });
-      }
+      const request = buildBridgePrepareTx({
+        chainId: sourceChainId,
+        sucker: suckerPair.local,
+        projectTokenCount: amountObj.value,
+        beneficiary: address,
+        minTokensReclaimed: minTokens,
+        token: getAddress(project.token),
+      });
+      await writeContractAsync({ ...request, chainId: sourceChainId });
     } catch (error) {
       console.error(error);
       toast({ variant: "destructive", title: "Error", description: formatWalletError(error) });
@@ -158,7 +140,6 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     projects,
     publicClient,
     sourceChainId,
-    version,
     tokenDecimals,
     ensureAllowance,
     targetChainId,

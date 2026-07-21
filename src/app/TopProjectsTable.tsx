@@ -37,7 +37,7 @@ export async function TopProjectsTable() {
               </td>
               <td className="min-w-0 px-2 py-3 sm:px-4">
                 <Link
-                  href={`/v${project.version}:${project.chainSlug}:${project.projectId}`}
+                  href={`/${project.chainSlug}:${project.projectId}`}
                   className="group flex min-h-11 min-w-0 items-center gap-2 sm:gap-3"
                 >
                   {project.logoUrl ? (

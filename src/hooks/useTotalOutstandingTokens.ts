@@ -2,13 +2,13 @@ import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useBendystrawQuery, useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
 
 export function useTotalOutstandingTokens() {
-  const { projectId, version } = useJBContractContext();
+  const { projectId } = useJBContractContext();
   const chainId = useJBChainId();
 
   const { data } = useBendystrawQuery(ProjectDocument, {
     projectId: Number(projectId),
     chainId: Number(chainId),
-    version,
+    version: 6,
   });
 
   const { data: suckerGroup } = useBendystrawQuery(SuckerGroupDocument, {

@@ -16,11 +16,7 @@ import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
 import { getProjectsReclaimableSurplus } from "@/lib/reclaimableSurplus";
-import {
-  getTokenConfigForChain,
-  getTokenSymbolFromAddress,
-  TokenConfig,
-} from "@/lib/tokenUtils";
+import { getTokenConfigForChain, getTokenSymbolFromAddress, TokenConfig } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
   formatUnits,
@@ -29,8 +25,8 @@ import {
   JBCoreContracts,
   jbMultiTerminalAbi,
   jbTokensAbi,
-  revOwnerAbi,
   RevnetCoreContracts,
+  revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
 import {
   JBChainId,
@@ -68,7 +64,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   const {
     projectId,
     contractAddress,
-    version,
     contracts: { primaryNativeTerminal },
   } = useJBContractContext();
   const { token } = useJBTokenContext();
@@ -80,7 +75,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   // Full per-chain project rows (currency/decimals/token) for quotes.
   const { data: projectData } = useBendystrawQuery(
     ProjectDocument,
-    { projectId: Number(projectId), chainId: Number(chainId), version },
+    { projectId: Number(projectId), chainId: Number(chainId), version: 6 },
     { enabled: !!chainId && !!projectId },
   );
   const suckerGroupId = projectData?.project?.suckerGroupId;
@@ -94,8 +89,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     [suckerGroupData],
   );
 
-  // The same per-chain surpluses the server computes for the legacy Ops page —
-  // RedeemDialog uses them to resolve each chain's currency id.
+  // Per-chain surpluses used by RedeemDialog to resolve each chain's currency id.
   const { data: surpluses } = useQuery({
     queryKey: ["v6-reclaimable-surpluses", suckerGroupId],
     enabled: groupProjects.length > 0,
@@ -181,7 +175,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     chainId,
     address: contractAddress(RevnetCoreContracts.REVOwner),
     args: [projectId],
-    query: { enabled: version === 6 && !!chainId },
+    query: { enabled: !!chainId },
   });
   const locked =
     cashOutDelay != null && cashOutDelay > 0n && Number(cashOutDelay) > Date.now() / 1000;
@@ -235,7 +229,8 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   // Cross-chain monetary totals are only honest when every held chain produced
   // a value in the same accounting token.
   const heldConfigs = held.map(
-    (b) => accountingContextByChain.get(b.chainId) ?? getTokenConfigForChain(suckerGroupData, b.chainId),
+    (b) =>
+      accountingContextByChain.get(b.chainId) ?? getTokenConfigForChain(suckerGroupData, b.chainId),
   );
   const homogeneous =
     heldConfigs.length > 0 &&
@@ -246,8 +241,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     );
   const baseSymbol = heldConfigs[0] ? getTokenSymbolFromAddress(heldConfigs[0].token) : "ETH";
   const baseDecimals = heldConfigs[0]?.decimals ?? 18;
-  const cashComplete =
-    homogeneous && held.every((b) => quotes[b.chainId]?.cashout !== undefined);
+  const cashComplete = homogeneous && held.every((b) => quotes[b.chainId]?.cashout !== undefined);
   const loanComplete = homogeneous && held.every((b) => quotes[b.chainId]?.maxLoan !== undefined);
   const totalCashout = held.reduce((acc, b) => acc + (quotes[b.chainId]?.cashout ?? 0n), 0n);
   const totalMaxLoan = held.reduce((acc, b) => acc + (quotes[b.chainId]?.maxLoan ?? 0n), 0n);
@@ -440,7 +434,6 @@ function YouChainRow({
   suckerGroupData: any;
   onQuote: (chainId: number, quote: ChainQuote) => void;
 }) {
-  const { version } = useJBContractContext();
   const config = accountingContext ?? getTokenConfigForChain(suckerGroupData, chainId);
   const baseSymbol = getTokenSymbolFromAddress(config.token);
 
@@ -452,7 +445,6 @@ function YouChainRow({
     chainId,
     projectId: chainProjectId,
     tokenAmount: balanceValue,
-    version,
     decimals: config.decimals,
     currencyId: config.currency,
   });
@@ -460,7 +452,7 @@ function YouChainRow({
   // v6 borrowableAmountFrom returns a (borrowableNow, capacity) tuple; the hook
   // returns borrowableNow. Reads 0 while the cash out delay is active.
   const { data: maxLoan } = useBorrowableAmountFrom({
-    address: getRevnetLoanContract(version, chainId),
+    address: getRevnetLoanContract(6, chainId),
     chainId,
     args: [chainProjectId, balanceValue, BigInt(config.decimals), BigInt(config.currency)],
   });
@@ -496,9 +488,7 @@ function YouChainRow({
           main={`${formatUnits(balanceValue, projectTokenDecimals, {
             fractionDigits: 2,
           })} ${tokenSymbol}`}
-          sub={
-            credit != null ? subFor(credit > 0n, balanceValue > credit) : undefined
-          }
+          sub={credit != null ? subFor(credit > 0n, balanceValue > credit) : undefined}
         />
       </TableCell>
       <TableCell className="text-right tabular-nums whitespace-nowrap">

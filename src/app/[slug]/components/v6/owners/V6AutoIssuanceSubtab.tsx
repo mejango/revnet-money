@@ -2,10 +2,10 @@
 
 import { MAX_RULESET_COUNT } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import EtherscanLink from "@/components/EtherscanLink";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import {
   Table,
   TableBody,
@@ -96,7 +96,7 @@ const IssuedDocument = gql`
  * economically aligned).
  */
 export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) {
-  const { contractAddress, version } = useJBContractContext();
+  const { contractAddress } = useJBContractContext();
   const { token } = useJBTokenContext();
   const tokenSymbol = formatTokenSymbol(token);
   const now = Math.floor(Date.now() / 1000);
@@ -107,7 +107,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
 
   // One project can have different ids per chain — OR the exact pairs.
   const where = {
-    version,
+    version: 6,
     OR: chains.map((c) => ({ chainId: Number(c.chainId), projectId: c.projectId })),
   };
   const stored = useBendystrawQuery(StoredDocument, { where }, { enabled: chains.length > 0 });

@@ -397,15 +397,7 @@ export function AddStageDialog({
                               <span className="mr-2">•</span>
                               <span>
                                 You can write and deploy a custom split hook that automatically
-                                receives and processes the split {revnetTokenSymbol}. See{" "}
-                                <a
-                                  className="inline underline"
-                                  target="_blank"
-                                  href="https://docs.juicebox.money/v4/build/hooks/split-hook/"
-                                >
-                                  {" "}
-                                  the docs.
-                                </a>
+                                receives and processes the split {revnetTokenSymbol}.
                               </span>
                             </li>
                             <li className="flex">

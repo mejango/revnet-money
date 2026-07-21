@@ -5,7 +5,6 @@ import {
   JBChainId,
   JBCoreContracts,
   jbRulesetsAbi,
-  JBVersion,
   WeightCutPercent,
 } from "@bananapus/nana-sdk-core";
 import { unstable_cache } from "next/cache";
@@ -20,10 +19,10 @@ export type Ruleset = {
 };
 
 export const getRulesets = unstable_cache(
-  async (projectId: string, chainId: JBChainId, version: JBVersion): Promise<Ruleset[]> => {
+  async (projectId: string, chainId: JBChainId): Promise<Ruleset[]> => {
     const client = getViemPublicClient(chainId);
     const contract = getContract({
-      address: getJBContractAddress(JBCoreContracts.JBRulesets, version, chainId),
+      address: getJBContractAddress(JBCoreContracts.JBRulesets, 6, chainId),
       abi: jbRulesetsAbi,
       client,
     });

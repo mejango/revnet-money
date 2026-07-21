@@ -1,14 +1,12 @@
 import { type Project } from "@/generated/graphql";
-import { FixedInt } from "fpnum";
 import {
   getProjectTerminalStore,
   JB_TOKEN_DECIMALS,
   JBChainId,
   jbTerminalStoreAbi,
-  jbTerminalStoreV5Abi,
-  JBVersion,
   NATIVE_TOKEN_DECIMALS,
 } from "@bananapus/nana-sdk-core";
+import { FixedInt } from "fpnum";
 import { getContract, parseUnits } from "viem";
 import { toBaseCurrencyId } from "./currency";
 import { applyNanaFee, applyRevFee } from "./feeHelpers";
@@ -18,16 +16,13 @@ export async function getReclaimableSurplus(
   chainId: JBChainId,
   projectId: number,
   tokenAmountWei: bigint,
-  version: JBVersion,
   decimals: number,
   currencyId: 1 | 2 | 3,
 ) {
   try {
-    // The two array args are empty either way, but the selector differs: v6 takes
-    // (address[], address[]) where v4/v5 take (address[], tuple[]).
     const contract = getContract({
-      address: getProjectTerminalStore(chainId, version),
-      abi: version === 6 ? jbTerminalStoreAbi : jbTerminalStoreV5Abi,
+      address: getProjectTerminalStore(chainId, 6),
+      abi: jbTerminalStoreAbi,
       client: getViemPublicClient(chainId),
     });
 
@@ -42,28 +37,25 @@ export async function getReclaimableSurplus(
 
     return applyNanaFee(userReclaimable).toString();
   } catch (error) {
-    console.debug({ chainId, projectId, tokenAmountWei, version, decimals, currencyId });
+    console.debug({ chainId, projectId, tokenAmountWei, decimals, currencyId });
     console.error(error);
     return "0";
   }
 }
 
 export async function getProjectsReclaimableSurplus(
-  projects: Array<
-    Pick<Project, "chainId" | "projectId" | "tokenSupply" | "version" | "decimals" | "currency">
-  >,
+  projects: Array<Pick<Project, "chainId" | "projectId" | "tokenSupply" | "decimals" | "currency">>,
 ) {
   return await Promise.all(
     projects.map(async (project) => {
-      const { chainId, projectId, tokenSupply, version, currency, decimals } = project;
-      const currencyId = toBaseCurrencyId(currency, version as JBVersion);
+      const { chainId, projectId, tokenSupply, currency, decimals } = project;
+      const currencyId = toBaseCurrencyId(currency);
       const tokenDecimals = JB_TOKEN_DECIMALS;
 
       const value = await getReclaimableSurplus(
         chainId as JBChainId,
         projectId,
         BigInt(tokenSupply),
-        version as JBVersion,
         tokenDecimals,
         currencyId,
       );
@@ -74,7 +66,6 @@ export async function getProjectsReclaimableSurplus(
         currencyId,
         decimals: decimals || NATIVE_TOKEN_DECIMALS,
         chainId,
-        version,
         tokenDecimals,
       };
     }),

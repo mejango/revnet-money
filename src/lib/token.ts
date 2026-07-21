@@ -4,7 +4,6 @@ import {
   JBChainId,
   JBCoreContracts,
   jbTokensAbi,
-  JBVersion,
   NATIVE_TOKEN,
   NATIVE_TOKEN_DECIMALS,
   USDC_ADDRESSES,
@@ -20,7 +19,7 @@ export interface Token {
   decimals: number;
 }
 
-export function getTokensForChain(chainId: JBChainId | undefined, version?: JBVersion): Token[] {
+export function getTokensForChain(chainId: JBChainId | undefined): Token[] {
   if (!chainId) return [];
 
   const tokens: Token[] = [
@@ -32,19 +31,14 @@ export function getTokensForChain(chainId: JBChainId | undefined, version?: JBVe
     },
   ];
 
-  // USDC is only offered as a cross-token payment on v6, where the router terminal
-  // registry accepts any token; a v5 project paid in USDC still gets it via its own
-  // base token (see PayForm's token selection).
-  if (version === 6) {
-    const usdcAddress = USDC_ADDRESSES[chainId];
-    if (usdcAddress) {
-      tokens.push({
-        symbol: "USDC",
-        address: usdcAddress,
-        isNative: false,
-        decimals: 6,
-      });
-    }
+  const usdcAddress = USDC_ADDRESSES[chainId];
+  if (usdcAddress) {
+    tokens.push({
+      symbol: "USDC",
+      address: usdcAddress,
+      isNative: false,
+      decimals: 6,
+    });
   }
 
   return tokens;
@@ -69,15 +63,11 @@ export function isNativeToken(address: string | null) {
   return address?.toLowerCase() === NATIVE_TOKEN.toLowerCase();
 }
 
-export const getTokenAddress = async (
-  chainId: JBChainId,
-  projectId: number,
-  version: JBVersion,
-) => {
+export const getTokenAddress = async (chainId: JBChainId, projectId: number) => {
   const client = getViemPublicClient(chainId);
 
   const jbTokens = getContract({
-    address: getJBContractAddress(JBCoreContracts.JBTokens, version, chainId),
+    address: getJBContractAddress(JBCoreContracts.JBTokens, 6, chainId),
     abi: jbTokensAbi,
     client,
   });

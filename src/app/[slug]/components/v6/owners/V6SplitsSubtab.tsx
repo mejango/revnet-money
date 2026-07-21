@@ -3,8 +3,8 @@
 import { MAX_RULESET_COUNT, RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
-import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -20,8 +20,8 @@ import {
   formatUnits,
   JB_CHAINS,
   JBChainId,
-  JBCoreContracts,
   jbControllerAbi,
+  JBCoreContracts,
   jbRulesetsAbi,
   jbSplitsAbi,
 } from "@bananapus/nana-sdk-core";
@@ -55,7 +55,7 @@ type Split = {
  * burn sentinel.
  */
 export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
-  const { projectId, version, contractAddress } = useJBContractContext();
+  const { projectId, contractAddress } = useJBContractContext();
   const chainId = useJBChainId();
   const { token } = useJBTokenContext();
   const tokenSymbol = formatTokenSymbol(token);
@@ -71,7 +71,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
   const operatorQuery = useBendystrawQuery(ProjectOperatorDocument, {
     chainId: Number(chainId),
     projectId: Number(projectId),
-    version,
+    version: 6,
   });
   const operator = operatorQuery.data?.permissionHolders?.items?.[0]?.operator;
 
@@ -213,9 +213,15 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                       {splitReads.isLoading ? (
                         Array.from({ length: 3 }, (_, index) => (
                           <TableRow key={index}>
-                            <TableCell><Skeleton className="h-3 w-32" /></TableCell>
-                            <TableCell><Skeleton className="h-3 w-24" /></TableCell>
-                            <TableCell><Skeleton className="h-3 w-28" /></TableCell>
+                            <TableCell>
+                              <Skeleton className="h-3 w-32" />
+                            </TableCell>
+                            <TableCell>
+                              <Skeleton className="h-3 w-24" />
+                            </TableCell>
+                            <TableCell>
+                              <Skeleton className="h-3 w-28" />
+                            </TableCell>
                           </TableRow>
                         ))
                       ) : !splits ? (

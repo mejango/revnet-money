@@ -1,8 +1,8 @@
 "use client";
 
+import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
-import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
@@ -53,19 +53,11 @@ const AllLoansDocument = gql`
   }
 ` as TypedDocumentNode<AllLoansQuery, AllLoansVars>;
 
-function AllLoansCard({
-  projects,
-  tokenSymbol,
-  version,
-}: {
-  projects: ProjectItem[];
-  tokenSymbol: string;
-  version: number;
-}) {
+function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; tokenSymbol: string }) {
   const { data, isLoading } = useBendystrawQuery(AllLoansDocument, {
     where: {
       projectId_in: projects.map((p) => p.projectId),
-      version,
+      version: 6,
       chainId_in: projects.map((p) => p.chainId),
     },
   });
@@ -128,7 +120,7 @@ function AllLoansCard({
  * the Accounts subtab's You card.
  */
 export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
-  const { projectId, version } = useJBContractContext();
+  const { projectId } = useJBContractContext();
   const { token } = useJBTokenContext();
   const tokenSymbol = formatTokenSymbol(token);
   const { address } = useAccount();
@@ -142,7 +134,7 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
   if (!address) {
     return (
       <div className="flex flex-col items-start gap-3">
-        <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} version={version} />
+        <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} />
         <p className="text-md text-black font-light italic">
           Connect a wallet to see and manage your loans against {tokenSymbol} collateral.
         </p>
@@ -159,7 +151,7 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
 
   return (
     <div>
-      <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} version={version} />
+      <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} />
 
       <p className="text-md text-black font-light italic mb-2">
         Loans borrow against your {tokenSymbol} as collateral through REVLoans. Repay to reclaim
@@ -208,7 +200,6 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
           <div style={{ display: "none" }} />
         </ReallocateDialog>
       )}
-
     </div>
   );
 }

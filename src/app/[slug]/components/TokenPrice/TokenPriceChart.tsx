@@ -5,7 +5,7 @@ import { ChartConfig, ChartContainer, ChartTooltip } from "@/components/ui/chart
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatDecimals } from "@/lib/number";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
-import { JBChainId, JBVersion } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useSearchParams } from "next/navigation";
@@ -35,7 +35,6 @@ const chartConfig = {
 interface Props {
   projectId: string;
   chainId: JBChainId;
-  version: JBVersion;
   suckerGroupId: string;
   token: string;
   tokenSymbol: string;
@@ -45,7 +44,6 @@ interface Props {
 export function TokenPriceChart({
   projectId,
   chainId,
-  version,
   suckerGroupId,
   token,
   tokenSymbol,
@@ -55,12 +53,11 @@ export function TokenPriceChart({
   const range = parseTimeRange(searchParams.get("range"));
 
   const { data, isLoading } = useQuery({
-    queryKey: ["chartData", projectId, chainId, version, suckerGroupId, range],
+    queryKey: ["chartData", projectId, chainId, suckerGroupId, range],
     queryFn: () =>
       getTokenPriceChartData({
         projectId,
         chainId,
-        version,
         range,
         suckerGroupId,
         baseToken: { address: token, symbol: tokenSymbol, decimals: tokenDecimals },

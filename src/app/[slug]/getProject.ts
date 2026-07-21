@@ -2,19 +2,17 @@ import { ProjectDocument, ProjectQuery, ProjectQueryVariables } from "@/generate
 import { getBendystrawClient } from "@/graphql/bendystrawClient";
 import { cache } from "react";
 
-export const getProject = cache(
-  async (projectId: number | bigint, chainId: number, version: number) => {
-    try {
-      const client = getBendystrawClient(chainId);
-      const result = await client.request<ProjectQuery, ProjectQueryVariables>(ProjectDocument, {
-        projectId: Number(projectId),
-        chainId,
-        version,
-      });
-      return result.project;
-    } catch (err) {
-      console.error((err as any).message);
-      return null;
-    }
-  },
-);
+export const getProject = cache(async (projectId: number | bigint, chainId: number) => {
+  try {
+    const client = getBendystrawClient(chainId);
+    const result = await client.request<ProjectQuery, ProjectQueryVariables>(ProjectDocument, {
+      projectId: Number(projectId),
+      chainId,
+      version: 6,
+    });
+    return result.project;
+  } catch (err) {
+    console.error((err as any).message);
+    return null;
+  }
+});

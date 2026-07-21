@@ -1,28 +1,19 @@
 import { applyNanaFee, applyRevFee } from "@/lib/feeHelpers";
-import {
-  getProjectTerminalStore,
-  JBChainId,
-  jbTerminalStoreAbi,
-  jbTerminalStoreV5Abi,
-  JBVersion,
-} from "@bananapus/nana-sdk-core";
+import { getProjectTerminalStore, JBChainId, jbTerminalStoreAbi } from "@bananapus/nana-sdk-core";
 import { useReadContract } from "wagmi";
 
 export function useReclaimableSurplus(params: {
   chainId: JBChainId | undefined;
   projectId: bigint | undefined;
   tokenAmount: bigint | undefined;
-  version: JBVersion | undefined;
   decimals: number;
   currencyId: number;
 }) {
-  const { chainId, projectId, tokenAmount, version, decimals, currencyId } = params;
+  const { chainId, projectId, tokenAmount, decimals, currencyId } = params;
 
-  // The two array args are empty either way, but the selector differs: v6 takes
-  // (address[], address[]) where v4/v5 take (address[], tuple[]).
   const { data: raw, ...rest } = useReadContract({
-    abi: version === 6 ? jbTerminalStoreAbi : jbTerminalStoreV5Abi,
-    address: chainId && version ? getProjectTerminalStore(chainId, version) : undefined,
+    abi: jbTerminalStoreAbi,
+    address: chainId ? getProjectTerminalStore(chainId, 6) : undefined,
     functionName: "currentReclaimableSurplusOf",
     chainId,
     args:

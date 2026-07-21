@@ -2,8 +2,7 @@ import { JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 
 /**
  * Human labels + blurbs for the 39 v6 permission ids. The ids themselves come
- * from the SDK's JBPermissionIdsV6 (v6 renumbered them — never reuse the v5
- * map in src/lib/permissions.ts here).
+ * from the SDK's JBPermissionIdsV6.
  */
 const DESCRIPTIONS: Record<keyof typeof JBPermissionIdsV6, string> = {
   ROOT: "Every permission across all Juicebox contracts. Extreme caution.",

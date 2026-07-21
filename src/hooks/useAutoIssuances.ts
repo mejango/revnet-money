@@ -7,16 +7,16 @@ import { useMemo } from "react";
 import { useRulesets } from "./useRulesets";
 
 export function useAutoIssuances() {
-  const { projectId, version } = useJBContractContext();
+  const { projectId } = useJBContractContext();
 
   const chainId = useJBChainId();
 
   const { data: autoIssuancesData } = useBendystrawQuery(StoreAutoIssuanceAmountEventsDocument, {
-    where: { projectId: Number(projectId), chainId, version },
+    where: { projectId: Number(projectId), chainId, version: 6 },
   });
 
   const { data: autoIssueEventsQuery } = useBendystrawQuery(AutoIssueEventsDocument, {
-    where: { projectId: Number(projectId), chainId, version },
+    where: { projectId: Number(projectId), chainId, version: 6 },
   });
 
   const { rulesets } = useRulesets();

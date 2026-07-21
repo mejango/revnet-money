@@ -1,20 +1,15 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { SkeletonLines } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { getRevnetLoanContract, JBChainId, revLoansAbi } from "@bananapus/nana-sdk-core";
-import {
-  useBendystrawQuery,
-  useJBChainId,
-  useJBContractContext,
-  useJBTokenContext,
-} from "@bananapus/nana-sdk-react";
-import { useEffect, useState } from "react";
+import { useBendystrawQuery, useJBChainId, useJBTokenContext } from "@bananapus/nana-sdk-react";
+import { useCallback, useEffect, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
 import {
   useAccount,
@@ -54,7 +49,6 @@ export function RepayDialog({
   const currentChainId = useJBChainId();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
-  const { version } = useJBContractContext();
 
   // Check allowance for non-ETH base tokens before simulation
   const [allowanceChecked, setAllowanceChecked] = useState(false);
@@ -65,7 +59,7 @@ export function RepayDialog({
   const { data: loanData, isLoading: isLoadingLoan } = useReadContract({
     abi: revLoansAbi,
     functionName: "loanOf",
-    address: getRevnetLoanContract(version, chainId),
+    address: getRevnetLoanContract(6, chainId),
     chainId,
     args: [BigInt(loanId)],
   });
@@ -73,7 +67,7 @@ export function RepayDialog({
   // Get project data to find sucker group ID using the project ID
   const { data: projectData } = useBendystrawQuery(
     ProjectDocument,
-    { chainId: Number(currentChainId), projectId: Number(projectId), version },
+    { chainId: Number(currentChainId), projectId: Number(projectId), version: 6 },
     { enabled: !!currentChainId && !!projectId, pollInterval: 10000 },
   );
 
@@ -100,12 +94,15 @@ export function RepayDialog({
   });
 
   // ===== HELPER FUNCTIONS =====
-  const formatCollateralAmount = (amountWei: bigint) => {
-    const amountTokens = formatUnits(amountWei, projectTokenDecimals);
-    return Number(amountTokens)
-      .toFixed(6)
-      .replace(/\.?0+$/, "");
-  };
+  const formatCollateralAmount = useCallback(
+    (amountWei: bigint) => {
+      const amountTokens = formatUnits(amountWei, projectTokenDecimals);
+      return Number(amountTokens)
+        .toFixed(6)
+        .replace(/\.?0+$/, "");
+    },
+    [projectTokenDecimals],
+  );
 
   const calculateCollateralAmount = (input: string, maxCollateral: bigint): bigint => {
     try {
@@ -150,7 +147,7 @@ export function RepayDialog({
   } = useSimulateContract({
     abi: revLoansAbi,
     functionName: "repayLoan",
-    address: getRevnetLoanContract(version, chainId),
+    address: getRevnetLoanContract(6, chainId),
     chainId,
     args:
       shouldRunSimulation && simulationArgs
@@ -225,7 +222,7 @@ export function RepayDialog({
 
       try {
         const baseTokenAddress = chainTokenConfig.token;
-        const revLoansContractAddress = getRevnetLoanContract(version, chainId);
+        const revLoansContractAddress = getRevnetLoanContract(6, chainId);
 
         const allowance = await publicClient.readContract({
           address: baseTokenAddress,
@@ -260,7 +257,6 @@ export function RepayDialog({
     chainTokenConfig,
     chainId,
     baseTokenDecimals,
-    version,
   ]);
 
   // ===== EFFECTS =====
@@ -284,7 +280,7 @@ export function RepayDialog({
     } else {
       setCollateralError("");
     }
-  }, [collateralToReturn, loanData, tokenSymbol, projectTokenDecimals]);
+  }, [collateralToReturn, loanData, tokenSymbol, projectTokenDecimals, formatCollateralAmount]);
 
   // Handle transaction status updates
   useEffect(() => {
@@ -333,7 +329,7 @@ export function RepayDialog({
     try {
       setRepayStatus("approving");
       const baseTokenAddress = chainTokenConfig.token;
-      const revLoansContractAddress = getRevnetLoanContract(version, chainId);
+      const revLoansContractAddress = getRevnetLoanContract(6, chainId);
 
       const approveHash = await walletClient.writeContract({
         address: baseTokenAddress,
@@ -385,7 +381,7 @@ export function RepayDialog({
       // Check allowance for USDC-based projects
       if (baseTokenSymbol !== "ETH") {
         const baseTokenAddress = chainTokenConfig.token;
-        const revLoansContractAddress = getRevnetLoanContract(version, chainId);
+        const revLoansContractAddress = getRevnetLoanContract(6, chainId);
 
         const allowance = await publicClient.readContract({
           address: baseTokenAddress,
@@ -416,7 +412,7 @@ export function RepayDialog({
       const txHash = await repayLoanAsync({
         abi: revLoansAbi,
         functionName: "repayLoan",
-        address: getRevnetLoanContract(version, chainId),
+        address: getRevnetLoanContract(6, chainId),
         chainId,
         args: [
           loanIdBigInt,

@@ -16,7 +16,7 @@ export function useSuckersTokenBalance(tokens?: Record<number, `0x${string}`>) {
   const config = useConfig();
 
   const chainId = useJBChainId();
-  const { projectId, version } = useJBContractContext();
+  const { projectId } = useJBContractContext();
 
   const { data: pairs = [], isLoading, isError } = useSuckers();
 
@@ -54,8 +54,8 @@ export function useSuckersTokenBalance(tokens?: Record<number, `0x${string}`>) {
           const { peerChainId, projectId } = pair;
           const token = finalTokens[peerChainId];
           const [terminal, store] = await Promise.all([
-            getPrimaryNativeTerminal(config, peerChainId, projectId, version),
-            getProjectTerminalStore(peerChainId, version),
+            getPrimaryNativeTerminal(config, peerChainId, projectId, 6),
+            getProjectTerminalStore(peerChainId, 6),
           ]);
 
           const contract = getContract({

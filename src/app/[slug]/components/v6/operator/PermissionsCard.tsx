@@ -4,7 +4,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 import { Address, isAddress } from "viem";
 import {
@@ -74,10 +74,9 @@ function aggregateGrants(items: PermissionHolderRow[], rows: ChainProjectRow[]):
  * revnet itself (REVOwner), not via setPermissionsFor here.
  */
 export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
-  const { version } = useJBContractContext();
   const query = useBendystrawQuery(
     PermissionHoldersDocument,
-    { where: permissionHoldersWhere(rows, version) },
+    { where: permissionHoldersWhere(rows) },
     { enabled: rows.length > 0 },
   );
   const grants = useMemo(

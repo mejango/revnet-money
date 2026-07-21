@@ -1,6 +1,5 @@
 "use client";
 
-import { useJBContractContext } from "@bananapus/nana-sdk-react";
 import clsx from "clsx";
 import Link from "next/link";
 import { useParams, useSelectedLayoutSegment } from "next/navigation";
@@ -13,65 +12,6 @@ export function ProjectMenu({
   mobileActivityActive?: boolean;
   onMobileActivityChange?: (active: boolean) => void;
 }) {
-  const { version } = useJBContractContext();
-
-  // v6 projects get the full website/-parity tab set; earlier versions keep the
-  // original tabs untouched.
-  if (version === 6) {
-    return (
-      <div className="overflow-x-auto">
-        <ul className="flex w-max min-w-full gap-4 border-b border-zinc-200 sm:gap-6">
-          <MobileActivityOption
-            active={mobileActivityActive}
-            onSelect={() => onMobileActivityChange?.(true)}
-          />
-          <MenuOption
-            href=""
-            forceInactive={mobileActivityActive}
-            onSelect={() => onMobileActivityChange?.(false)}
-          >
-            Overview
-          </MenuOption>
-          <MenuOption
-            href="terms"
-            forceInactive={mobileActivityActive}
-            onSelect={() => onMobileActivityChange?.(false)}
-          >
-            Terms
-          </MenuOption>
-          <MenuOption
-            href="owners"
-            forceInactive={mobileActivityActive}
-            onSelect={() => onMobileActivityChange?.(false)}
-          >
-            Owners
-          </MenuOption>
-          <MenuOption
-            href="shop"
-            forceInactive={mobileActivityActive}
-            onSelect={() => onMobileActivityChange?.(false)}
-          >
-            Shop
-          </MenuOption>
-          <MenuOption
-            href="extras"
-            forceInactive={mobileActivityActive}
-            onSelect={() => onMobileActivityChange?.(false)}
-          >
-            Extras
-          </MenuOption>
-          <MenuOption
-            href="operator"
-            forceInactive={mobileActivityActive}
-            onSelect={() => onMobileActivityChange?.(false)}
-          >
-            Operator
-          </MenuOption>
-        </ul>
-      </div>
-    );
-  }
-
   return (
     <div className="overflow-x-auto">
       <ul className="flex w-max min-w-full gap-4 border-b border-zinc-200 sm:gap-6">
@@ -84,7 +24,7 @@ export function ProjectMenu({
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
         >
-          About
+          Overview
         </MenuOption>
         <MenuOption
           href="terms"
@@ -101,11 +41,25 @@ export function ProjectMenu({
           Owners
         </MenuOption>
         <MenuOption
-          href="ops"
+          href="shop"
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
         >
-          Ops
+          Shop
+        </MenuOption>
+        <MenuOption
+          href="extras"
+          forceInactive={mobileActivityActive}
+          onSelect={() => onMobileActivityChange?.(false)}
+        >
+          Extras
+        </MenuOption>
+        <MenuOption
+          href="operator"
+          forceInactive={mobileActivityActive}
+          onSelect={() => onMobileActivityChange?.(false)}
+        >
+          Operator
         </MenuOption>
       </ul>
     </div>

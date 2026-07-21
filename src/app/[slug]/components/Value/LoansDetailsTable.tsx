@@ -15,16 +15,11 @@ import {
   ProjectDocument,
   SuckerGroupDocument,
 } from "@/generated/graphql";
+import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatSeconds } from "@/lib/utils";
-import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { getRevnetLoanContract, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import {
-  useBendystrawQuery,
-  useJBChainId,
-  useJBContractContext,
-  useJBTokenContext,
-} from "@bananapus/nana-sdk-react";
+import { useBendystrawQuery, useJBChainId, useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { formatUnits } from "viem";
 
 // Constants for loan calculations and display
@@ -58,7 +53,6 @@ function LoanRow({
   suckerGroupData?: any;
 }) {
   const { token } = useJBTokenContext();
-  const { version } = useJBContractContext();
   const projectTokenDecimals = token?.data?.decimals ?? 18;
 
   const chainTokenConfig = getTokenConfigForChain(suckerGroupData, loan.chainId);
@@ -71,7 +65,7 @@ function LoanRow({
   // Calculate headroom: current value of collateral - borrowed amount
   const { data: currentCollateralValue } = useBorrowableAmountFrom({
     chainId: loan.chainId as JBChainId,
-    address: getRevnetLoanContract(version, loan.chainId as JBChainId),
+    address: getRevnetLoanContract(6, loan.chainId as JBChainId),
     args: [
       revnetId,
       BigInt(loan.collateral),
@@ -172,7 +166,6 @@ export function LoanDetailsTable({
   projects: Array<Pick<Project, "projectId" | "token">>;
 }) {
   const currentChainId = useJBChainId();
-  const { version } = useJBContractContext();
 
   // Get project data to find sucker group ID
   const { data: projectData } = useBendystrawQuery(
@@ -180,7 +173,7 @@ export function LoanDetailsTable({
     {
       chainId: Number(currentChainId),
       projectId: Number(revnetId),
-      version,
+      version: 6,
     },
     {
       enabled: !!currentChainId && !!revnetId,
@@ -207,7 +200,7 @@ export function LoanDetailsTable({
     LoansByAccountDocument,
     {
       owner: address,
-      version,
+      version: 6,
     },
     {
       pollInterval: LOAN_CONSTANTS.POLL_INTERVAL, // Refresh every 3 seconds

@@ -4,11 +4,8 @@ import { getRulesets } from "@/app/[slug]/terms/getRulesets";
 import { getCurrentCashOutTax } from "@/lib/cashOutTax";
 import { getStartTimeForRange, getTimeRangeConfig, TimeRange } from "@/lib/timeRange";
 import { getTokenAddress } from "@/lib/token";
-import { getUniswapPool } from "@/lib/uniswap/pool";
-import { JB_TOKEN_DECIMALS, JBChainId, JBVersion, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
-import { getAddress } from "viem";
+import { JBChainId, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import { calculateIssuancePriceHistory } from "./calculateIssuancePriceHistory";
-import { getAmmPriceHistory } from "./getAmmPriceHistory";
 import { getFloorPriceHistory } from "./getFloorPriceHistory";
 import { getV4AmmPriceHistory } from "./getV4AmmPriceHistory";
 
@@ -26,52 +23,33 @@ export type PriceDataPoint = {
 export async function getTokenPriceChartData(params: {
   projectId: string;
   chainId: JBChainId;
-  version: JBVersion;
   range: TimeRange;
   suckerGroupId: string;
   baseToken: { address: string; symbol: string; decimals: number };
 }) {
-  const { projectId, chainId, version, baseToken, suckerGroupId, range } = params;
+  const { projectId, chainId, baseToken, suckerGroupId, range } = params;
   const startTime = getStartTimeForRange(range);
 
-  const rulesets = await getRulesets(projectId, chainId, version);
+  const rulesets = await getRulesets(projectId, chainId);
   const projectStart = rulesets.length > 0 ? rulesets[0].start : 0;
   const issuanceData = calculateIssuancePriceHistory(rulesets, range);
 
-  const projectTokenAddress = await getTokenAddress(chainId, Number(projectId), version);
+  const projectTokenAddress = await getTokenAddress(chainId, Number(projectId));
   if (!projectTokenAddress || projectTokenAddress === NATIVE_TOKEN) {
     throw new Error("Could not get project token address");
   }
 
-  // V6 buyback pools are Uniswap V4 pools identified by bytes32 pool IDs, not
-  // V3 pool addresses. Prefer Bendystraw's canonical V4 event history, then
-  // retain the legacy V3/subgraph path for older projects and deploy overlap.
-  const v4History =
-    Number(version) === 6
-      ? await getV4AmmPriceHistory({
-          projectId,
-          chainId,
-          version,
-          terminalToken: baseToken.address,
-          terminalDecimals: baseToken.decimals,
-        }).catch(() => null)
-      : null;
+  // V6 buyback pools are Uniswap V4 pools identified by bytes32 pool IDs.
+  const v4History = await getV4AmmPriceHistory({
+    projectId,
+    chainId,
+    terminalToken: baseToken.address,
+    terminalDecimals: baseToken.decimals,
+  }).catch(() => null);
 
-  const pool = v4History?.hasPool
-    ? null
-    : await getUniswapPool(
-        { address: getAddress(baseToken.address), decimals: baseToken.decimals },
-        { address: projectTokenAddress, decimals: JB_TOKEN_DECIMALS },
-        chainId,
-      );
+  const ammData = v4History?.hasPool ? v4History.data : [];
 
-  const ammData = v4History?.hasPool
-    ? v4History.data
-    : pool
-      ? await getAmmPriceHistory(pool.address, projectTokenAddress, chainId, range, projectStart)
-      : [];
-
-  const currentCashOutTax = await getCurrentCashOutTax(projectId, chainId, version);
+  const currentCashOutTax = await getCurrentCashOutTax(projectId, chainId);
 
   const floorData = await getFloorPriceHistory({
     suckerGroupId,
@@ -86,7 +64,7 @@ export async function getTokenPriceChartData(params: {
 
   return {
     chartData: range === "all" ? data : data.filter((d) => d.timestamp >= startTime),
-    hasPool: !!v4History?.hasPool || pool !== null,
+    hasPool: !!v4History?.hasPool,
     stages: rulesets.map((ruleset, index) => ({
       name: `Stage ${index + 1}`,
       timestamp: normalizeToInterval(ruleset.start, interval),

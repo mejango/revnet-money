@@ -1,5 +1,5 @@
 import { getBendystrawClient } from "@/graphql/bendystrawClient";
-import { JBChainId, JBVersion } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import type { PriceDataPoint } from "./getTokenPriceChartData";
 
 const PAGE_SIZE = 1000;
@@ -89,13 +89,11 @@ export function v4PriceFromSqrtPriceX96(
 export async function getV4AmmPriceHistory({
   projectId,
   chainId,
-  version,
   terminalToken,
   terminalDecimals,
 }: {
   projectId: string;
   chainId: JBChainId;
-  version: JBVersion;
   terminalToken: string;
   terminalDecimals: number;
 }): Promise<{ data: PriceDataPoint[]; hasPool: boolean }> {
@@ -103,7 +101,7 @@ export async function getV4AmmPriceHistory({
   const variables = {
     projectId: Number(projectId),
     chainId: Number(chainId),
-    version: Number(version),
+    version: 6,
   };
   const poolResult = await client.request<{
     buybackPoolEvents: { items: RawPool[] };

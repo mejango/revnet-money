@@ -2,7 +2,6 @@ import { parseSlug } from "@/lib/slug";
 import { NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { DescriptionSection } from "./about/components/DescriptionSection";
 import { TokenPriceChart } from "./components/TokenPrice/TokenPriceChart";
 import { V6OverviewTab } from "./components/v6/overview/V6OverviewTab";
 import { getProject } from "./getProject";
@@ -15,9 +14,9 @@ interface Props {
 
 export default async function AboutPage(props: Props) {
   const { slug } = props.params;
-  const { chainId, projectId, version } = parseSlug(slug);
+  const { chainId, projectId } = parseSlug(slug);
 
-  const project = await getProject(projectId, chainId, version);
+  const project = await getProject(projectId, chainId);
   if (!project) notFound();
 
   const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId);
@@ -25,30 +24,25 @@ export default async function AboutPage(props: Props) {
 
   const projects = suckerGroup.projects?.items ?? [];
 
-  if (version === 6) {
-    const rulesets = await getRulesets(projectId.toString(), chainId, version);
-    const startDate = rulesets[0]?.start;
-    const hasStarted = !startDate || startDate <= Math.floor(Date.now() / 1000);
+  const rulesets = await getRulesets(projectId.toString(), chainId);
+  const startDate = rulesets[0]?.start;
+  const hasStarted = !startDate || startDate <= Math.floor(Date.now() / 1000);
 
-    return (
-      <div className="flex flex-col gap-6">
-        {hasStarted && (
-          <Suspense>
-            <TokenPriceChart
-              projectId={projectId.toString()}
-              chainId={chainId}
-              version={version}
-              suckerGroupId={suckerGroup.id}
-              token={project.token ?? ""}
-              tokenSymbol={project.tokenSymbol ?? "ETH"}
-              tokenDecimals={project.decimals ?? NATIVE_TOKEN_DECIMALS}
-            />
-          </Suspense>
-        )}
-        <V6OverviewTab projects={projects} />
-      </div>
-    );
-  }
-
-  return <DescriptionSection projects={projects} />;
+  return (
+    <div className="flex flex-col gap-6">
+      {hasStarted && (
+        <Suspense>
+          <TokenPriceChart
+            projectId={projectId.toString()}
+            chainId={chainId}
+            suckerGroupId={suckerGroup.id}
+            token={project.token ?? ""}
+            tokenSymbol={project.tokenSymbol ?? "ETH"}
+            tokenDecimals={project.decimals ?? NATIVE_TOKEN_DECIMALS}
+          />
+        </Suspense>
+      )}
+      <V6OverviewTab projects={projects} />
+    </div>
+  );
 }

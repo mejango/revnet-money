@@ -18,7 +18,7 @@ import { useReadContract } from "wagmi";
 
 export function CurrentIssuanceSection() {
   const { ruleset, rulesetMetadata } = useJBRulesetContext();
-  const { projectId, version, contractAddress } = useJBContractContext();
+  const { projectId, contractAddress } = useJBContractContext();
   const chainId = useJBChainId();
   const boostRecipient = useBoostRecipient();
 
@@ -26,23 +26,20 @@ export function CurrentIssuanceSection() {
   // indexer's base-token row; when that row is unavailable it interpolates
   // "undefined". For v6 the terminal's on-chain accounting context is
   // authoritative (e.g. Artizen's USDC context, currency uint32(token)), so
-  // fill the unit from it. v4/v5 output is untouched.
+  // fill the unit from it.
   const { data: accountingContexts } = useReadContract({
     abi: jbMultiTerminalAbi,
     functionName: "accountingContextsOf",
     chainId,
-    address:
-      version === 6 && chainId
-        ? contractAddress(JBCoreContracts.JBMultiTerminal, chainId)
-        : undefined,
+    address: chainId ? contractAddress(JBCoreContracts.JBMultiTerminal, chainId) : undefined,
     args: [projectId],
-    query: { enabled: version === 6 && !!chainId },
+    query: { enabled: !!chainId },
   });
   const accountingSymbol = accountingContexts?.[0]
     ? getTokenSymbolFromAddress(accountingContexts[0].token)
     : undefined;
   const withUnit = (issuance: string | undefined) => {
-    if (version !== 6 || !issuance?.endsWith(" / undefined")) return issuance;
+    if (!issuance?.endsWith(" / undefined")) return issuance;
     return accountingSymbol
       ? issuance.replace(/undefined$/, accountingSymbol)
       : issuance.slice(0, -" / undefined".length);

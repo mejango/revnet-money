@@ -1,12 +1,9 @@
-import { JBChainId, revLoansAbi, revLoansV5Abi } from "@bananapus/nana-sdk-core";
-import { useJBContractContext } from "@bananapus/nana-sdk-react";
+import { JBChainId, revLoansAbi } from "@bananapus/nana-sdk-core";
 import { Address } from "viem";
 import { useReadContract } from "wagmi";
 
 /**
- * `REVLoans.borrowableAmountFrom` across versions. v6 returns
- * `(borrowableNow, borrowableCapacity)` — this returns `borrowableNow`, matching the v4/v5
- * single return value.
+ * V6 returns `(borrowableNow, borrowableCapacity)`; expose `borrowableNow`.
  */
 export function useBorrowableAmountFrom({
   address,
@@ -17,26 +14,13 @@ export function useBorrowableAmountFrom({
   chainId?: JBChainId;
   args?: readonly [bigint, bigint, bigint, bigint];
 }) {
-  const { version } = useJBContractContext();
-
-  const v6Query = useReadContract({
+  const query = useReadContract({
     abi: revLoansAbi,
     functionName: "borrowableAmountFrom",
     address,
     chainId,
     args,
-    query: { enabled: version === 6 },
   });
 
-  const legacyQuery = useReadContract({
-    abi: revLoansV5Abi,
-    functionName: "borrowableAmountFrom",
-    address,
-    chainId,
-    args,
-    query: { enabled: version !== 6 },
-  });
-
-  if (version === 6) return { ...v6Query, data: v6Query.data?.[0] };
-  return legacyQuery;
+  return { ...query, data: query.data?.[0] };
 }

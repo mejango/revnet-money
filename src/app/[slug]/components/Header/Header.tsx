@@ -12,7 +12,6 @@ import {
   JBChainId,
   useBendystrawQuery,
   useJBChainId,
-  useJBContractContext,
   useJBProjectMetadataContext,
   useJBTokenContext,
   useSuckers,
@@ -37,7 +36,6 @@ interface Props {
 export function Header(props: Props) {
   const { isRevnet, operatorPromise, projects } = props;
   const operator = use(operatorPromise);
-  const { version } = useJBContractContext();
   const chainId = useJBChainId();
   const { metadata } = useJBProjectMetadataContext();
   const { token: tokenContext } = useJBTokenContext();
@@ -197,7 +195,7 @@ export function Header(props: Props) {
                           return (
                             <Link
                               key={networkSlug}
-                              href={`/v${version}:${networkSlug}:${pair.projectId}`}
+                              href={`/${networkSlug}:${pair.projectId}`}
                               className="inline-flex min-h-11 min-w-11 items-center justify-center transition-opacity hover:opacity-70"
                             >
                               <ChainLogo
