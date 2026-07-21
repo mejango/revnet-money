@@ -1,11 +1,12 @@
 "use client";
 
-import { ipfsGatewayUrl } from "@/lib/ipfs";
+import { ipfsGatewayUrl, ipfsPublicGatewayUrl } from "@/lib/ipfs";
 import {
   formatPayAmount,
   parseTierMetadataJson,
-  pickTierMetadata,
+  tierDisplayMetadata,
   TIER_UNLIMITED_SUPPLY,
+  TierDisplayMetadata,
 } from "@/lib/v6/pay";
 import {
   JB_CHAINS,
@@ -220,21 +221,25 @@ async function resolveShopPricingSymbol(
   }
 }
 
-export interface TierMedia {
-  name?: string;
-  description?: string;
-  image?: string;
-  animationUrl?: string;
-  mediaType?: string;
-  categoryName?: string;
+export type TierMedia = TierDisplayMetadata;
+
+/** The tier fields the media resolution chain needs (shop tab AND pay strip). */
+export interface TierMediaSource {
+  id: number;
+  resolvedUri: string;
+  encodedIpfsUri: `0x${string}`;
 }
 
 /**
  * Tier display metadata (name/image/category name), from the onchain
  * resolver's data URI first, then the tier's IPFS JSON. Best-effort — cards
- * render immediately and hydrate as this lands.
+ * render immediately and hydrate as this lands. Shared by the Shop tab and
+ * the pay card's shop strip (same query key, one resolution chain).
  */
-export function useTierMedia(chainId: JBChainId | undefined, shop: ShopInventory | null | undefined) {
+export function useTierMedia(
+  chainId: JBChainId | undefined,
+  shop: { hook: Address; tiers: TierMediaSource[] } | null | undefined,
+) {
   return useQuery({
     queryKey: ["v6Shop721Media", chainId, shop?.hook],
     enabled: !!shop && shop.tiers.length > 0,
@@ -249,71 +254,28 @@ export function useTierMedia(chainId: JBChainId | undefined, shop: ShopInventory
 }
 
 /** Best-effort tier metadata resolution — {} on any failure. */
-async function resolveTierMedia(tier: ShopTier): Promise<TierMedia> {
+async function resolveTierMedia(tier: TierMediaSource): Promise<TierMedia> {
   const resolved = tier.resolvedUri ? parseTierMetadataJson(tier.resolvedUri) : null;
-  if (resolved && Object.keys(resolved).length > 0) return pickTierMedia(resolved);
+  if (resolved && Object.keys(resolved).length > 0) return tierDisplayMetadata(resolved);
 
   if (!tier.encodedIpfsUri || tier.encodedIpfsUri === ZERO_BYTES32) return {};
-  try {
-    const cid = decodeEncodedIpfsUri(tier.encodedIpfsUri);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8_000);
-    const res = await fetch(ipfsGatewayUrl(cid), { signal: controller.signal }).finally(() =>
-      clearTimeout(timer),
-    );
-    if (!res.ok) return {};
-    const json = (await res.json()) as unknown;
-    return json && typeof json === "object" ? pickTierMedia(json as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function pickTierMedia(json: Record<string, unknown>): TierMedia {
-  const meta = pickTierMetadata(json);
-  return {
-    name: meta.name,
-    description: meta.description,
-    image: mediaImageUrl(meta.image),
-    animationUrl: mediaAssetUrl(json.animationUrl ?? json.animation_url),
-    mediaType: str(json.mediaType),
-    categoryName: str(json.categoryName),
-  };
-}
-
-function str(value: unknown): string | undefined {
-  return typeof value === "string" && value ? value : undefined;
-}
-
-/**
- * Make a metadata image renderable in an <img>. Resolvers sometimes return an
- * SVG data URI that merely wraps an external <image href="…"> (website/
- * parity) — browsers block external loads inside an <img> data URI, so pull
- * the href out and load the bitmap directly. Self-contained SVGs pass
- * through, and ipfs:// URLs go through the gateway.
- */
-function mediaImageUrl(image: unknown): string | undefined {
-  if (typeof image !== "string" || !image) return undefined;
-  const svg = /^data:image\/svg\+xml;base64,(.*)$/.exec(image);
-  if (svg) {
+  const cid = decodeEncodedIpfsUri(tier.encodedIpfsUri);
+  // Pinned gateway first, public gateway as the fallback (website/ parity).
+  for (const url of [ipfsGatewayUrl(cid), ipfsPublicGatewayUrl(cid)]) {
     try {
-      const inner = /<image[^>]+href="([^"]+)"/.exec(decodeURIComponent(escape(atob(svg[1]))));
-      if (inner) return gatewayUrl(inner[1]);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8_000);
+      const res = await fetch(url, { signal: controller.signal }).finally(() =>
+        clearTimeout(timer),
+      );
+      if (!res.ok) continue;
+      const json = (await res.json()) as unknown;
+      return json && typeof json === "object" ? tierDisplayMetadata(json as Record<string, unknown>) : {};
     } catch {
-      // Fall through to the data URI itself.
+      // Try the next gateway.
     }
-    return image;
   }
-  return gatewayUrl(image);
-}
-
-function mediaAssetUrl(value: unknown): string | undefined {
-  if (typeof value !== "string" || !value) return undefined;
-  return gatewayUrl(value) || undefined;
-}
-
-function gatewayUrl(url: string): string {
-  return url.startsWith("ipfs://") ? ipfsGatewayUrl(url.slice("ipfs://".length)) : url;
+  return {};
 }
 
 /** Shopper-facing "X% off" — discountPercent is out of 200. */

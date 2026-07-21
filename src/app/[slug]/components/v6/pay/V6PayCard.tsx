@@ -658,7 +658,7 @@ export function V6PayCard() {
       {shop && shop.tiers.length > 0 && mode === "pay" ? (
         <V6PayShopStrip
           shop={shop}
-          chainId={Number(chainId)}
+          chainId={chainId}
           pricingSymbol={shopPricingSymbol}
           busy={busy}
         />

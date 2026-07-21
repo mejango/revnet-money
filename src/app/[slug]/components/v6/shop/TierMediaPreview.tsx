@@ -5,8 +5,8 @@ import { TierMedia } from "./shopLib";
 
 type MediaKind = "image" | "video" | "audio" | "other";
 
-function mediaKind(mediaType: string | undefined, url: string): MediaKind {
-  const mime = mediaType?.toLowerCase() ?? "";
+function mediaKind(media: TierMedia | undefined, url: string): MediaKind {
+  const mime = media?.mediaType?.toLowerCase() ?? "";
   if (mime.startsWith("image/")) return "image";
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";
@@ -14,7 +14,9 @@ function mediaKind(mediaType: string | undefined, url: string): MediaKind {
   if (/\.(png|jpe?g|gif|webp|avif|svg)$/.test(path) || url.startsWith("data:image/")) return "image";
   if (/\.(mp4|webm|mov|m4v|ogv)$/.test(path)) return "video";
   if (/\.(mp3|wav|ogg|m4a|aac|flac)$/.test(path)) return "audio";
-  return "other";
+  // An extension-less URL from the `image` field is an image — IPFS gateway
+  // URLs carry no extension (website/ tierMediaKind parity).
+  return url === media?.image ? "image" : "other";
 }
 
 /** A tier's media (image/video/audio), with a "#id" placeholder fallback. */
@@ -42,7 +44,7 @@ export function TierMediaPreview({
     );
   }
 
-  const kind = mediaKind(media?.mediaType, source);
+  const kind = mediaKind(media, source);
 
   if (kind === "image") {
     return (

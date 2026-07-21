@@ -1,14 +1,18 @@
 "use client";
 
 import { formatPayAmount } from "@/lib/v6/pay";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { effectiveTierPrice } from "@bananapus/nana-sdk-core/v6";
 import { useShopCart } from "../ShopCartContext";
+import { useTierMedia } from "../shop/shopLib";
+import { TierMediaPreview } from "../shop/TierMediaPreview";
 import { V6PayShop, V6PayShopTier } from "./usePayShop";
 
 /**
  * The compact selectable NFT strip on the pay card (website/ renderPayShopStrip
  * parity). Selecting items feeds the shared shop cart, which the card turns
- * into 721 tier-mint metadata and a synced pay amount.
+ * into 721 tier-mint metadata and a synced pay amount. Item art resolves
+ * through the same useTierMedia chain (and query cache) as the Shop tab.
  */
 export function V6PayShopStrip({
   shop,
@@ -17,11 +21,12 @@ export function V6PayShopStrip({
   busy,
 }: {
   shop: V6PayShop;
-  chainId: number;
+  chainId: JBChainId;
   pricingSymbol: string;
   busy: boolean;
 }) {
   const cart = useShopCart();
+  const { data: mediaById } = useTierMedia(chainId, shop);
 
   const quantityOf = (tierId: number) =>
     cart.items.find((i) => Number(i.tierId) === tierId && i.chainId === chainId)?.quantity ?? 0;
@@ -31,13 +36,14 @@ export function V6PayShopStrip({
       (i) => Number(i.tierId) === tier.id && i.chainId === chainId,
     );
     if (!existing && quantity > 0) {
+      const media = mediaById?.[tier.id];
       cart.add({
         tierId: BigInt(tier.id),
         quantity,
         price: effectiveTierPrice(tier.price, tier.discountPercent),
         currency: shop.pricingCurrency,
-        name: tier.name ?? `Item #${tier.id}`,
-        imageUri: tier.image ?? undefined,
+        name: media?.name ?? `Item #${tier.id}`,
+        imageUri: media?.image,
         hook: shop.hook,
         chainId,
       });
@@ -57,7 +63,8 @@ export function V6PayShopStrip({
           const soldOut = !tier.unlimited && tier.remaining === 0;
           const cap = tier.unlimited ? 99 : tier.remaining;
           const price = effectiveTierPrice(tier.price, tier.discountPercent);
-          const name = tier.name ?? `Item #${tier.id}`;
+          const media = mediaById?.[tier.id];
+          const name = media?.name ?? `Item #${tier.id}`;
           return (
             <div
               key={tier.id}
@@ -80,20 +87,9 @@ export function V6PayShopStrip({
                 className="block w-full p-2 pb-1 disabled:cursor-not-allowed"
                 title={soldOut ? `${name} is sold out` : `Add ${name} to cart`}
               >
-                {tier.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={tier.image}
-                    alt={name}
-                    loading="lazy"
-                    decoding="async"
-                    className="mx-auto h-14 w-14 rounded object-cover"
-                  />
-                ) : (
-                  <span className="mx-auto flex h-14 w-14 items-center justify-center rounded bg-zinc-100 text-xs text-zinc-500">
-                    #{tier.id}
-                  </span>
-                )}
+                <span className="mx-auto block h-14 w-14 overflow-hidden rounded">
+                  <TierMediaPreview media={media} tierId={tier.id} alt={name} />
+                </span>
                 <span className="mt-1 block truncate text-[11px] text-zinc-900">{name}</span>
               </button>
               {soldOut ? (

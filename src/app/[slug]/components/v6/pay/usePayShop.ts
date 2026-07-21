@@ -1,10 +1,7 @@
 "use client";
 
-import { ipfsGatewayUrl } from "@/lib/ipfs";
 import {
-  parseTierMetadataJson,
   payTokenKey,
-  pickTierMetadata,
   TIER_UNLIMITED_SUPPLY,
   V6PayTokenOption,
 } from "@/lib/v6/pay";
@@ -36,8 +33,9 @@ export interface V6PayShopTier {
   unlimited: boolean;
   /** True when shop credits can't fund this tier — fresh payment required. */
   cantBuyWithCredits: boolean;
-  name: string | null;
-  image: string | null;
+  /** tokenUriResolver output (data URI), "" when the hook has no resolver. */
+  resolvedUri: string;
+  encodedIpfsUri: `0x${string}`;
 }
 
 export interface V6PayShop {
@@ -93,27 +91,19 @@ export function usePayShop(chainId: JBChainId, projectId: bigint) {
         idTarget: resolved.metadataIdTarget,
         pricingCurrency: resolved.pricing.currency,
         pricingDecimals: resolved.pricing.decimals,
-        tiers: resolved.tiers.map((t) => {
-          // Metadata is cosmetic — a tier without it still sells.
-          const json = t.resolvedUri ? parseTierMetadataJson(t.resolvedUri) : null;
-          const meta = json ? pickTierMetadata(json) : null;
-          const rawImage = meta?.image;
-          const image = rawImage?.startsWith("ipfs://")
-            ? ipfsGatewayUrl(rawImage.slice("ipfs://".length))
-            : (rawImage ?? null);
-          return {
-            id: t.id,
-            price: t.price,
-            discountPercent: t.discountPercent,
-            remaining: t.remainingSupply,
-            unlimited: t.initialSupply >= TIER_UNLIMITED_SUPPLY,
-            // Fail closed if the store doesn't return flags: charging fresh
-            // funds is safer than underfunding a credit-restricted mint.
-            cantBuyWithCredits: flagsById.get(t.id)?.cantBuyWithCredits ?? true,
-            name: meta?.name ?? null,
-            image,
-          };
-        }),
+        tiers: resolved.tiers.map((t) => ({
+          id: t.id,
+          price: t.price,
+          discountPercent: t.discountPercent,
+          remaining: t.remainingSupply,
+          unlimited: t.initialSupply >= TIER_UNLIMITED_SUPPLY,
+          // Fail closed if the store doesn't return flags: charging fresh
+          // funds is safer than underfunding a credit-restricted mint.
+          cantBuyWithCredits: flagsById.get(t.id)?.cantBuyWithCredits ?? true,
+          // Display metadata resolves through the shared useTierMedia chain.
+          resolvedUri: t.resolvedUri ?? "",
+          encodedIpfsUri: t.encodedIpfsUri,
+        })),
       };
     },
   });
