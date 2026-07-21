@@ -83,8 +83,8 @@ function OwnersTabInner({ projects }: { projects: ProjectItem[] }) {
       {panel("accounts", <V6AccountsSubtab projects={projects} />)}
       {panel("market", <V6MarketSubtab projects={projects} />)}
       {panel("settlement", <V6SettlementSubtab projects={projects} />)}
-      {panel("splits", <V6SplitsSubtab />)}
-      {panel("auto-issuance", <V6AutoIssuanceSubtab />)}
+      {panel("splits", <V6SplitsSubtab projects={projects} />)}
+      {panel("auto-issuance", <V6AutoIssuanceSubtab projects={projects} />)}
       {panel("loans", <V6LoansSubtab projects={projects} />)}
     </div>
   );

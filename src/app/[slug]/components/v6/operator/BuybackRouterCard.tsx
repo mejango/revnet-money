@@ -344,41 +344,84 @@ function ActionRow({
         </Button>
       </div>
 
-      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-        {states.map((state) => {
+      {(() => {
+        const cell = (state: BuybackChainState) => {
           const isAvailable =
             kind === "terminal" ? state.routerAvailable : state.buybackAvailable;
           const value =
             kind === "hook" ? state.hook : kind === "terminal" ? state.terminal : null;
+          return { isAvailable, value };
+        };
+        // When every chain reads the same, one value + a note beats four cards.
+        const cells = states.map(cell);
+        const summaries = states.map((state, i) =>
+          !cells[i].isAvailable
+            ? "unavailable"
+            : kind === "pool"
+              ? state.poolSummary
+              : (cells[i].value ?? "unset").toLowerCase(),
+        );
+        const allSame = states.length > 1 && summaries.every((s) => s === summaries[0]);
+
+        if (allSame) {
+          const first = states[0];
+          const { isAvailable, value } = cells[0];
           return (
-            <div
-              key={state.chainId}
-              className="flex items-start gap-2 bg-zinc-50 rounded px-2.5 py-1.5"
-            >
-              <ChainLogo chainId={state.chainId} width={14} height={14} className="mt-0.5" />
+            <div className="mt-2 flex items-start gap-2 bg-zinc-50 rounded px-2.5 py-1.5">
               <div className="min-w-0">
-                <p className="text-xs font-medium text-zinc-700">
-                  {chainName(state.chainId)}
-                </p>
                 {!isAvailable ? (
-                  <p className="text-xs text-zinc-400">No Uniswap v4 registry here</p>
+                  <p className="text-xs text-zinc-400">No Uniswap v4 registry on any chain</p>
                 ) : kind === "pool" ? (
-                  <p className="text-xs text-zinc-600">{state.poolSummary}</p>
+                  <p className="text-xs text-zinc-600">{first.poolSummary}</p>
                 ) : value ? (
                   <EthereumAddress
                     address={value}
                     short
-                    chain={JB_CHAINS[state.chainId]?.chain}
+                    chain={JB_CHAINS[first.chainId]?.chain}
                     className="text-xs font-mono"
                   />
                 ) : (
                   <p className="text-xs text-zinc-400">Not set</p>
                 )}
+                <p className="text-xs text-zinc-400 mt-0.5">Same on all chains</p>
               </div>
             </div>
           );
-        })}
-      </div>
+        }
+
+        return (
+          <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+            {states.map((state) => {
+              const { isAvailable, value } = cell(state);
+              return (
+                <div
+                  key={state.chainId}
+                  className="flex items-start gap-2 bg-zinc-50 rounded px-2.5 py-1.5"
+                >
+                  <ChainLogo chainId={state.chainId} width={14} height={14} className="mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-zinc-700">{chainName(state.chainId)}</p>
+                    {!isAvailable ? (
+                      <p className="text-xs text-zinc-400">No Uniswap v4 registry here</p>
+                    ) : kind === "pool" ? (
+                      <p className="text-xs text-zinc-600">{state.poolSummary}</p>
+                    ) : value ? (
+                      <EthereumAddress
+                        address={value}
+                        short
+                        chain={JB_CHAINS[state.chainId]?.chain}
+                        className="text-xs font-mono"
+                      />
+                    ) : (
+                      <p className="text-xs text-zinc-400">Not set</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {open ? (
         <BuybackActionForm

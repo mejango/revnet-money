@@ -40,9 +40,9 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
           <EditMetadataDialog projects={projects} />
         </div>
         <div className="border border-zinc-200 rounded p-4">
-          <p className="text-sm font-medium">Set reserved splits</p>
+          <p className="text-sm font-medium">Set splits</p>
           <p className="text-xs text-zinc-500 mt-1 mb-3">
-            Edit the reserved token recipients for the current stage. Requires the
+            Edit the split recipients for the current stage. Requires the
             operator&apos;s SET_SPLIT_GROUPS permission.
           </p>
           {chainId ? (
