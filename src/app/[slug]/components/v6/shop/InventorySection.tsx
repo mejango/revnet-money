@@ -334,12 +334,7 @@ function TierCard({
 
         {tier.reserveFrequency > 0 || tier.votingUnits > 0n ? (
           <p className="mt-1 text-[11px] text-zinc-400">
-            {[
-              tier.reserveFrequency > 0 ? `1 of every ${tier.reserveFrequency} reserved` : null,
-              tier.votingUnits > 0n ? `${tier.votingUnits.toLocaleString("en-US")} votes each` : null,
-            ]
-              .filter(Boolean)
-              .join(", ")}
+            {tier.reserveFrequency > 0 ? `1 of every ${tier.reserveFrequency} reserved` : null}
           </p>
         ) : null}
       </div>
