@@ -57,7 +57,7 @@ export function V6PayShopStrip({
   return (
     <div className="mb-3">
       <div className="text-sm text-zinc-500 mb-1.5">Shop</div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-3">
         {shop.tiers.slice(0, 12).map((tier) => {
           const qty = quantityOf(tier.id);
           const soldOut = !tier.unlimited && tier.remaining === 0;
