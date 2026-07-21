@@ -1,8 +1,7 @@
 "use client";
 
-import { useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
-import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
 import clsx from "clsx";
 import { useState } from "react";
 import { ProjectItem } from "../shared";
@@ -40,19 +39,7 @@ export function V6ShopTab({ projects }: { projects: ProjectItem[] }) {
   if (!chainId) return null;
 
   if (shopQuery.isLoading) {
-    return (
-      <div role="status" aria-label="Loading shop" className="space-y-4">
-        <span className="sr-only">Loading shop</span>
-        <div className="flex gap-5 border-b border-zinc-200 pb-2">
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-4 w-24" />
-        </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <CardSkeleton rows={3} />
-          <CardSkeleton rows={3} />
-        </div>
-      </div>
-    );
+    return <ShopInventorySkeleton />;
   }
   if (shopQuery.isError) {
     return (
@@ -109,6 +96,50 @@ export function V6ShopTab({ projects }: { projects: ProjectItem[] }) {
           <CustomersSection shop={shop} mediaById={mediaById} />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ShopInventorySkeleton() {
+  const chipWidths = ["w-16", "w-24", "w-20", "w-28", "w-20", "w-16", "w-24", "w-20"];
+
+  return (
+    <div role="status" aria-label="Loading shop" className="flex flex-col gap-4">
+      <span className="sr-only">Loading shop</span>
+
+      <div className="flex gap-5 border-b border-zinc-200 pb-2">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-4 w-24" />
+      </div>
+
+      <div className="border border-zinc-200 bg-white p-4">
+        <Skeleton className="h-5 w-14" />
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {chipWidths.map((width, index) => (
+            <Skeleton key={index} className={`h-8 ${width}`} />
+          ))}
+        </div>
+
+        <Skeleton className="mb-2 mt-4 h-3 w-24" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index} className="overflow-hidden border border-zinc-200 bg-white">
+              <Skeleton className="aspect-square w-full" />
+              <div className="space-y-2 border-t border-zinc-200 bg-melon-50 p-3">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-4 w-1/3" />
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="h-7 w-12" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <Skeleton className="mt-4 h-4 w-40" />
+      </div>
     </div>
   );
 }

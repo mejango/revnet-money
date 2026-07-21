@@ -101,14 +101,14 @@ export function Header(props: Props) {
         )}
 
         <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-col items-baseline sm:flex-row sm:gap-4">
+          <div className="mb-2 flex flex-col items-baseline sm:flex-row sm:gap-2">
             <span className="font-mono text-3xl font-bold">
               {tokenContext?.data ? (
                 <EtherscanLink
                   value={tokenContext.data.address}
                   type="token"
                   chain={chainId ? JB_CHAINS[chainId].chain : undefined}
-                  className="inline-flex min-h-11 items-center"
+                  className="inline-flex min-h-11 items-center sm:min-h-0"
                 >
                   {formatTokenSymbol(tokenContext)}
                 </EtherscanLink>
@@ -158,14 +158,14 @@ export function Header(props: Props) {
                         <span className="text-zinc-500">Operator:</span>{" "}
                         <EtherscanLink
                           value={operator.address}
-                          className="inline-flex min-h-11 items-center font-medium text-zinc-900"
+                          className="inline-flex min-h-11 items-center font-medium text-zinc-900 sm:min-h-0"
                         >
                           {operator.displayName}
                         </EtherscanLink>
                       </span>
                     )}
                     {operator && website ? (
-                      <span aria-hidden className="mx-2.5 text-zinc-300">
+                      <span aria-hidden className="mx-2 text-zinc-300">
                         |
                       </span>
                     ) : null}
@@ -176,14 +176,14 @@ export function Header(props: Props) {
                           href={website.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex min-h-11 items-center font-medium text-zinc-900 hover:underline"
+                          className="inline-flex min-h-11 items-center font-medium text-zinc-900 hover:underline sm:min-h-0"
                         >
                           {website.url.replace(/^https?:\/\//, "")}
                         </a>
                       </span>
                     )}
                     {(operator || website) && suckers?.length ? (
-                      <span aria-hidden className="mx-2.5 text-zinc-300">
+                      <span aria-hidden className="mx-2 text-zinc-300">
                         |
                       </span>
                     ) : null}
@@ -196,7 +196,7 @@ export function Header(props: Props) {
                             <Link
                               key={networkSlug}
                               href={`/${networkSlug}:${pair.projectId}`}
-                              className="inline-flex min-h-11 min-w-11 items-center justify-center transition-opacity hover:opacity-70"
+                              className="inline-flex min-h-11 min-w-11 items-center justify-center transition-opacity hover:opacity-70 sm:min-h-0 sm:min-w-0"
                             >
                               <ChainLogo
                                 chainId={pair.peerChainId as JBChainId}

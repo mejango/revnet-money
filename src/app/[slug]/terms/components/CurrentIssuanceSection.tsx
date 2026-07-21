@@ -78,17 +78,14 @@ export function CurrentIssuanceSection() {
 
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="self-start bg-peel-100 px-1 text-xl font-normal tabular-nums text-black">
+      <span className="self-start text-xl font-normal tabular-nums text-black">
         {currentIssuance}
       </span>
 
       {timeLeft && nextIssuance && (
         <p className="text-sm text-zinc-500">
-          Cut to{" "}
-          <span className="bg-peel-50 px-1 font-normal tabular-nums text-black">
-            {nextIssuance}
-          </span>{" "}
-          in {formatSeconds(timeLeft)}
+          Cut to <span className="font-normal tabular-nums text-black">{nextIssuance}</span> in{" "}
+          {formatSeconds(timeLeft)}
         </p>
       )}
 

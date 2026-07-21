@@ -43,7 +43,7 @@ export function TvlDatum(props: Props) {
 
   return (
     <Tooltip>
-      <TooltipTrigger className="min-h-11">
+      <TooltipTrigger className="min-h-11 sm:min-h-0">
         <span className="sm:text-xl text-lg">
           <span className="font-medium text-black">{total}</span>{" "}
           <span className="text-zinc-500">balance</span>
