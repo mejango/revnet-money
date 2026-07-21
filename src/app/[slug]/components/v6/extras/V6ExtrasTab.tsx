@@ -2,7 +2,6 @@
 
 import { useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 import { ProjectItem } from "../shared";
 import { PayerAddressList } from "./PayerAddressList";
 import { PayerDeployForm } from "./PayerDeployForm";
@@ -42,7 +41,6 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
           existingRows={payerRows}
           onDeployed={() => payersQuery.refetch()}
         />
-        <BuildPromptFooter title="Payer address" concept="project-payer" />
         <PayerAddressList
           rows={payerRows}
           isLoading={payersQuery.isLoading}

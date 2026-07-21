@@ -30,9 +30,21 @@ export function V6SettlementSubtab({ projects }: { projects: ProjectItem[] }) {
   return (
     <div className="flex flex-col gap-4">
       <AcrossChainsCard chains={chains} tokenSymbol={tokenSymbol} />
-      <BridgesCard chains={chains} tokenSymbol={tokenSymbol} />
-      <GossipCard chains={chains} />
-      {chains.length > 1 && <QueuedMovementsCard chains={chains} tokenSymbol={tokenSymbol} />}
+      {chains.length > 1 ? (
+        <>
+          <BridgesCard chains={chains} tokenSymbol={tokenSymbol} />
+          <GossipCard chains={chains} />
+          <QueuedMovementsCard chains={chains} tokenSymbol={tokenSymbol} />
+        </>
+      ) : (
+        // Single-chain projects have nothing to bridge, gossip, or claim — say so
+        // instead of silently hiding the sections.
+        <div className="text-zinc-500">
+          This project settles on one chain, so there are no bridges, cross-chain accounting
+          records, or queued token movements. If the operator deploys the project to more chains,
+          they&apos;ll show up here.
+        </div>
+      )}
     </div>
   );
 }

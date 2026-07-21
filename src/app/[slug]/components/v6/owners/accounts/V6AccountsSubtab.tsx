@@ -1,6 +1,5 @@
 "use client";
 
-import { BuildPromptFooter } from "../../BuildPromptFooter";
 import { ProjectItem } from "../../shared";
 import { V6AllCard } from "./V6AllCard";
 import { V6YouCard } from "./V6YouCard";
@@ -16,7 +15,6 @@ export function V6AccountsSubtab({ projects }: { projects: ProjectItem[] }) {
       <section>
         <h2 className="text-lg font-medium text-black mb-2">You</h2>
         <V6YouCard projects={projects} />
-        <BuildPromptFooter title="Cash out" concept="cashout" />
       </section>
 
       <section>

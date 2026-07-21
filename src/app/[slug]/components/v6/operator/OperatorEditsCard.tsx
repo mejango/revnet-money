@@ -4,7 +4,6 @@ import { EditMetadataDialog } from "@/app/[slug]/about/components/EditMetadataDi
 import { ChangeSplitRecipientsDialog } from "@/app/[slug]/owners/components/ChangeSplitRecipientsDialog";
 import { useFetchProjectRulesets } from "@/hooks/useFetchProjectRulesets";
 import { useJBChainId, useSuckers } from "@bananapus/nana-sdk-react";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 import { ProjectItem } from "../shared";
 
 /**
@@ -55,7 +54,6 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
             <p className="text-xs text-zinc-500">Loading chain context…</p>
           )}
         </div>
-        <BuildPromptFooter title="Edit project" concept="edit-project" />
       </div>
     </div>
   );

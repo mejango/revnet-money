@@ -19,7 +19,6 @@ import { useAccount } from "wagmi";
 import { LoanDetailsTable } from "../../Value/LoansDetailsTable";
 import { ReallocateDialog } from "../../Value/ReallocateDialog";
 import { RepayDialog } from "../../Value/RepayDialog";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 import { ProjectItem } from "../shared";
 
 type AllLoansRow = {
@@ -209,7 +208,6 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
         </ReallocateDialog>
       )}
 
-      <BuildPromptFooter title="Get a loan" concept="loan" />
     </div>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { AutoIssuance } from "../../../owners/components/AutoIssuance";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 
 /**
  * Auto issuance subtab (website/ parity: renderAutoIssuance): the per-stage
@@ -16,7 +15,6 @@ export function V6AutoIssuanceSubtab() {
         trigger the distribution once its unlock date passes.
       </p>
       <AutoIssuance />
-      <BuildPromptFooter title="Auto issuance" concept="mint" />
     </div>
   );
 }

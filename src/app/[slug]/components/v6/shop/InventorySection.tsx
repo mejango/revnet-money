@@ -9,7 +9,6 @@ import clsx from "clsx";
 import { useMemo, useState } from "react";
 import { PublicClient } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 import { usePayShopCredits } from "../pay/usePayShop";
 import { ProjectItem } from "../shared";
 import { AddItemsModal } from "./AddItemsModal";
@@ -194,7 +193,6 @@ export function InventorySection({
         <EtherscanLink value={shop.hook} truncateTo={6} className="font-mono text-zinc-600" />
       </div>
 
-      <BuildPromptFooter title="Items for sale" concept="items-for-sale" />
 
       {detailTier ? (
         <TierDetailModal

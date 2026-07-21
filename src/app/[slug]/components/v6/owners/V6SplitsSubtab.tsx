@@ -1,7 +1,6 @@
 "use client";
 
 import { SplitsSection } from "../../../owners/components/SplitsSection";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 
 /**
  * Splits subtab (website/ parity: renderOwnersSplits): the per-stage reserved
@@ -12,7 +11,6 @@ export function V6SplitsSubtab() {
   return (
     <div>
       <SplitsSection />
-      <BuildPromptFooter title="Edit splits" concept="split-groups" />
     </div>
   );
 }

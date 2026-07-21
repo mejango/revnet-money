@@ -1,7 +1,6 @@
 "use client";
 
 import { DescriptionSection } from "../../../about/components/DescriptionSection";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 import { ProjectItem } from "../shared";
 import { OtherInfoPanel } from "./OtherInfoPanel";
 
@@ -18,7 +17,6 @@ export function V6OverviewTab({ projects }: { projects: ProjectItem[] }) {
         <h3 className="text-sm font-medium text-zinc-500 mb-2">About</h3>
         <DescriptionSection projects={projects} />
         <div className="max-w-screen-sm">
-          <BuildPromptFooter title="Edit project" concept="edit-project" />
         </div>
       </div>
 

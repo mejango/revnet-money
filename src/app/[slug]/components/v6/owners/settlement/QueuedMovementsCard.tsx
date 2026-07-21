@@ -15,7 +15,6 @@ import { jbSuckerV6Abi } from "@bananapus/nana-sdk-core/v6";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
-import { BuildPromptFooter } from "../../BuildPromptFooter";
 import {
   bridgeEtaHint,
   bridgeTrackUrl,
@@ -337,7 +336,6 @@ export function QueuedMovementsCard({
           </table>
         )}
       </div>
-      <BuildPromptFooter title="Queued movements" concept="move" />
     </div>
   );
 }

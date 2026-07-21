@@ -2,7 +2,6 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { useQuery } from "@tanstack/react-query";
-import { BuildPromptFooter } from "../../BuildPromptFooter";
 import {
   ChainProject,
   chainName,
@@ -114,7 +113,6 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
           ))
         )}
       </div>
-      <BuildPromptFooter title="Market AMM" concept="add-liquidity" />
     </div>
   );
 }

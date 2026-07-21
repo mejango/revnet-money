@@ -123,7 +123,8 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
         </aside>
         <div className="flex-1 min-w-0">
           <div className="max-w-4xl mx-auto pb-10 gap-6 flex flex-col">
-            {hasStarted && (
+            {/* v6 renders the price chart inside the Overview tab (website/ parity). */}
+            {hasStarted && version !== 6 && (
               <Suspense>
                 <TokenPriceChart
                   projectId={projectId.toString()}

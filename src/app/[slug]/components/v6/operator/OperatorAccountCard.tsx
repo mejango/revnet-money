@@ -13,7 +13,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Address, isAddress, zeroAddress } from "viem";
 import { useAccount, useWriteContract } from "wagmi";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 import {
   ChainProjectRow,
   ChainWrite,
@@ -251,7 +250,6 @@ export function OperatorAccountCard({
             ))}
           </div>
         )}
-        <BuildPromptFooter title="Transfer operator" concept="transfer-operator" />
       </div>
     </div>
   );

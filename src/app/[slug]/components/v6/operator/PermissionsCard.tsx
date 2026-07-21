@@ -6,7 +6,6 @@ import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 import { Address, isAddress } from "viem";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 import {
   ChainProjectRow,
   PermissionHoldersDocument,
@@ -160,7 +159,6 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
             ))}
           </div>
         )}
-        <BuildPromptFooter title="Permissions" concept="permissions" />
       </div>
     </div>
   );

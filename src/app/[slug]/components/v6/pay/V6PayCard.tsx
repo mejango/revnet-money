@@ -46,7 +46,6 @@ import {
 } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
-import { BuildPromptFooter } from "../BuildPromptFooter";
 import { useShopCart } from "../ShopCartContext";
 import { TextSelect } from "./TextSelect";
 import { PreparedV6Pay, V6PayConfirmDialog, V6PayPhase } from "./V6PayConfirmDialog";
@@ -866,7 +865,6 @@ export function V6PayCard() {
         </p>
       ) : null}
 
-      <BuildPromptFooter title="Pay" concept="pay" />
 
       <V6PayConfirmDialog
         open={confirmOpen}
