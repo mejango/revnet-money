@@ -64,9 +64,150 @@ export function ChartSkeleton({ className = "" }: { className?: string }) {
   );
 }
 
+export function OverviewContentSkeleton() {
+  return (
+    <div role="status" aria-label="Loading overview" className="flex flex-col gap-6">
+      <span className="sr-only">Loading overview</span>
+      <div>
+        <div className="flex flex-col items-start gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex gap-4">
+            <Skeleton className="h-9 w-40" />
+            <Skeleton className="h-9 w-40" />
+          </div>
+          <div className="flex gap-1">
+            {Array.from({ length: 6 }, (_, index) => (
+              <Skeleton key={index} className="h-11 w-14" />
+            ))}
+          </div>
+        </div>
+        <ChartSkeleton className="mt-6 aspect-[4/3] w-full sm:aspect-[2/1] lg:aspect-[5/2]" />
+      </div>
+      <div>
+        <Skeleton className="mb-3 h-5 w-16" />
+        <SkeletonLines lines={3} className="max-w-screen-sm" />
+      </div>
+      <CardSkeleton rows={3} />
+    </div>
+  );
+}
+
+export function ShopInventorySkeleton() {
+  const chipWidths = ["w-16", "w-24", "w-20", "w-28", "w-20", "w-16", "w-24", "w-20"];
+
+  return (
+    <div role="status" aria-label="Loading shop" className="flex flex-col gap-4">
+      <span className="sr-only">Loading shop</span>
+      <div className="flex gap-5 border-b border-zinc-200 pb-2">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-4 w-24" />
+      </div>
+      <div className="border border-zinc-200 bg-white p-4">
+        <Skeleton className="h-5 w-14" />
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {chipWidths.map((width, index) => (
+            <Skeleton key={index} className={`h-8 ${width}`} />
+          ))}
+        </div>
+        <Skeleton className="mb-2 mt-4 h-3 w-24" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index} className="overflow-hidden border border-zinc-200 bg-white">
+              <Skeleton className="aspect-square w-full" />
+              <div className="space-y-2 border-t border-zinc-200 bg-melon-50 p-3">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-4 w-1/3" />
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="h-7 w-12" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <Skeleton className="mt-4 h-4 w-40" />
+      </div>
+    </div>
+  );
+}
+
+function TermsContentSkeleton() {
+  return (
+    <div role="status" aria-label="Loading terms">
+      <span className="sr-only">Loading terms</span>
+      <Skeleton className="mb-3 h-5 w-32" />
+      <SkeletonLines lines={2} className="w-72 max-w-full" />
+      <ChartSkeleton className="mt-5 aspect-[4/3] w-full sm:aspect-[2/1] lg:aspect-[5/2]" />
+      <Skeleton className="mb-3 mt-8 h-5 w-20" />
+      <TableSkeleton rows={4} columns={6} />
+    </div>
+  );
+}
+
+function OwnersContentSkeleton() {
+  return (
+    <div role="status" aria-label="Loading owner tools" className="space-y-6">
+      <span className="sr-only">Loading owner tools</span>
+      <CardSkeleton rows={4} />
+      <div className="flex gap-5 overflow-hidden border-b border-zinc-200 pb-2">
+        {Array.from({ length: 6 }, (_, index) => (
+          <Skeleton key={index} className="h-4 w-24 shrink-0" />
+        ))}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <CardSkeleton rows={4} />
+        <CardSkeleton rows={4} />
+      </div>
+    </div>
+  );
+}
+
+function ExtrasContentSkeleton() {
+  return (
+    <div role="status" aria-label="Loading extras" className="space-y-4">
+      <span className="sr-only">Loading extras</span>
+      <Skeleton className="h-5 w-32" />
+      <SkeletonLines lines={2} className="max-w-screen-sm" />
+      <Skeleton className="h-11 w-44" />
+      <TableSkeleton rows={4} columns={4} />
+    </div>
+  );
+}
+
+function OperatorContentSkeleton() {
+  return (
+    <div role="status" aria-label="Loading operator tools" className="space-y-8">
+      <span className="sr-only">Loading operator tools</span>
+      {Array.from({ length: 4 }, (_, index) => (
+        <CardSkeleton key={index} rows={index === 2 ? 5 : 3} />
+      ))}
+    </div>
+  );
+}
+
+export function ProjectContentSkeleton({ segment }: { segment: string | null }) {
+  switch (segment) {
+    case "shop":
+      return <ShopInventorySkeleton />;
+    case "terms":
+      return <TermsContentSkeleton />;
+    case "owners":
+      return <OwnersContentSkeleton />;
+    case "extras":
+      return <ExtrasContentSkeleton />;
+    case "operator":
+      return <OperatorContentSkeleton />;
+    default:
+      return <OverviewContentSkeleton />;
+  }
+}
+
 export function CardSkeleton({ rows = 3, className = "" }: { rows?: number; className?: string }) {
   return (
-    <div role="status" aria-label="Loading content" className={`border border-melon-100 bg-melon-50 p-4 ${className}`}>
+    <div
+      role="status"
+      aria-label="Loading content"
+      className={`border border-melon-100 bg-melon-50 p-4 ${className}`}
+    >
       <span className="sr-only">Loading content</span>
       <Skeleton className="mb-4 h-4 w-28" />
       <SkeletonLines lines={rows} />
@@ -114,7 +255,11 @@ export function TopProjectsTableSkeleton() {
 
 export function DiscoverGridSkeleton({ cards = 6 }: { cards?: number }) {
   return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3" role="status" aria-label="Loading projects">
+    <div
+      className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3"
+      role="status"
+      aria-label="Loading projects"
+    >
       <span className="sr-only">Loading projects</span>
       {Array.from({ length: cards }, (_, index) => (
         <div key={index} className="min-h-[180px] border border-zinc-200 bg-melon-50 p-4">
@@ -152,11 +297,7 @@ function NavigationSkeleton() {
 
 export function DiscoverPageSkeleton() {
   return (
-    <div
-      className="container mt-40 px-6 sm:px-8"
-      role="status"
-      aria-label="Loading discover page"
-    >
+    <div className="container mt-40 px-6 sm:px-8" role="status" aria-label="Loading discover page">
       <span className="sr-only">Loading discover page</span>
       <Skeleton className="aspect-[7/2] w-[840px] max-w-full" />
       <Skeleton className="mt-8 h-7 w-[34rem] max-w-[90%]" />
