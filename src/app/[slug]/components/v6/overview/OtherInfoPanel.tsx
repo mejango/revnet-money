@@ -3,6 +3,7 @@
 import { chainSortOrder } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -37,7 +38,7 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
 
   return (
     <div>
-      <h3 className="text-sm font-medium text-zinc-500 mb-2">Other info</h3>
+      <h3 className="mb-2 text-base font-semibold text-zinc-700">Other info</h3>
       <div className="max-w-screen-sm rounded-md border border-zinc-200 [&>div]:rounded-md">
         <Table>
           <TableHeader>
@@ -94,7 +95,7 @@ function OperatorCell({ chainId, projectId }: { chainId: JBChainId; projectId: n
 
   const operator = data?.permissionHolders?.items?.[0]?.operator;
 
-  if (isLoading) return <span className="text-zinc-400">…</span>;
+  if (isLoading) return <Skeleton className="h-4 w-24" />;
   if (!operator || !isAddress(operator)) return <span className="text-zinc-400">—</span>;
 
   return (

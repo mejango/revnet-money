@@ -1,3 +1,4 @@
+import { bendystrawFetch } from "@/graphql/bendystrawClient";
 import { NextRequest } from "next/server";
 
 /**
@@ -21,7 +22,7 @@ export async function POST(
     params.net === "testnet" ? "https://testnet.bendystraw.xyz" : "https://bendystraw.xyz";
   const keyPath = params.key && params.key !== "public" ? `/${params.key}` : "";
 
-  const upstream = await fetch(`${base}${keyPath}/graphql`, {
+  const upstream = await bendystrawFetch(`${base}${keyPath}/graphql`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: await req.text(),

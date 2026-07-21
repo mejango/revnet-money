@@ -1,8 +1,9 @@
 "use client";
 
-import { ChainLogo } from "@/components/ChainLogo";
-import { EthereumAddress } from "@/components/EthereumAddress";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { ChainLogo } from "@/components/ChainLogo";
+import { SkeletonLines } from "@/components/ui/skeleton";
+import { EthereumAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
@@ -61,7 +62,10 @@ function groupRows(rows: AccountRow[]): AccountGroup[] {
   const groups = new Map<string, AccountGroup>();
   for (const row of rows) {
     const safeKey = row.safe
-      ? `${row.safe.threshold}/${[...row.safe.owners].map((o) => o.toLowerCase()).sort().join(",")}`
+      ? `${row.safe.threshold}/${[...row.safe.owners]
+          .map((o) => o.toLowerCase())
+          .sort()
+          .join(",")}`
       : "";
     const key = `${row.operator?.toLowerCase() ?? "unknown"}:${row.accountType}:${safeKey}`;
     const group = groups.get(key) ?? {
@@ -170,24 +174,24 @@ export function OperatorAccountCard({
 
   return (
     <div>
-      <h3 className="text-sm font-medium text-zinc-500 mb-2">Account</h3>
+      <h3 className="mb-2 text-base font-semibold text-zinc-700">Account</h3>
       <div className="max-w-screen-sm">
         <p className="text-sm text-zinc-500">
-          Revnets have no owner. The operator holds only the permissions granted at launch,
-          and can pass the role on.
+          Revnets have no owner. The operator holds only the permissions granted at launch, and can
+          pass the role on.
         </p>
         {holdersQuery.isLoading || accountQuery.isLoading ? (
-          <p className="text-sm text-zinc-500 mt-3">Reading every chain…</p>
+          <SkeletonLines lines={4} className="mt-3" />
         ) : (
           <div className="mt-3 space-y-3">
             {differs ? (
               <div className="border border-amber-300 bg-amber-50 text-amber-800 text-xs p-3 rounded">
-                The operator differs by chain. The transfer action below is scoped to each
-                matching group so a change cannot silently target the wrong account.
+                The operator differs by chain. The transfer action below is scoped to each matching
+                group so a change cannot silently target the wrong account.
               </div>
             ) : null}
             {groups.map((group) => (
-              <div key={group.key} className="border border-zinc-200 rounded p-4">
+              <div key={group.key} className="bg-melon-50 p-4">
                 <div className="flex flex-wrap items-center gap-3">
                   {group.rows.map((row) => (
                     <span
@@ -219,8 +223,7 @@ export function OperatorAccountCard({
                     <>
                       <dt className="text-zinc-500">Policy</dt>
                       <dd>
-                        Requires {group.safe.threshold} of {group.safe.owners.length}{" "}
-                        signatures
+                        Requires {group.safe.threshold} of {group.safe.owners.length} signatures
                       </dd>
                       <dt className="text-zinc-500">Signers</dt>
                       <dd className="flex flex-wrap gap-x-3 gap-y-1">
@@ -315,7 +318,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
   if (!open) {
     return (
       <Button
-        variant="outline"
+        variant="default"
         size="sm"
         className="mt-3"
         onClick={() => {
@@ -330,7 +333,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
   }
 
   return (
-    <div className="mt-3 border border-zinc-200 rounded p-3">
+    <div className="mt-3 bg-melon-100 p-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium">Transfer operator</p>
         <button
@@ -344,8 +347,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
       </div>
       {!isCurrentOperator ? (
         <p className="text-xs text-amber-700 mt-2">
-          Only the current operator ({group.operator}) can transfer this role — connect that
-          account to proceed. The transaction is simulated first and will not send otherwise.
+          Only the current operator ({group.operator}) can transfer this role — connect that account
+          to proceed. The transaction is simulated first and will not send otherwise.
         </p>
       ) : null}
       <div className="mt-2">

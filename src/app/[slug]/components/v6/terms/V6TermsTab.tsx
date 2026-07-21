@@ -60,7 +60,7 @@ export function V6TermsTab({ rulesets }: { rulesets: Ruleset[] }) {
   return (
     <div className="flex flex-col min-w-0">
       <div>
-        <h3 className="text-sm font-medium text-zinc-500 mb-1">Token issuance</h3>
+        <h3 className="mb-1 text-base font-semibold text-zinc-700">Token issuance</h3>
         <CurrentIssuanceSection />
         {stages.length > 0 && (
           <IssuanceLadder stages={stages} symbol={symbol} baseSymbol={baseSymbol} />
@@ -68,7 +68,7 @@ export function V6TermsTab({ rulesets }: { rulesets: Ruleset[] }) {
       </div>
 
       <div className="mt-8">
-        <h3 className="text-sm font-medium text-zinc-500">Stages</h3>
+        <h3 className="text-base font-semibold text-zinc-700">Stages</h3>
         {/* StagesTable carries its own top margin; tuck it under the heading. */}
         <div className="[&>div]:mt-2">
           <StagesTable rulesets={rulesets} />

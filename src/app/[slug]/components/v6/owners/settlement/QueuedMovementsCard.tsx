@@ -1,6 +1,7 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { toast } from "@/components/ui/use-toast";
@@ -238,11 +239,11 @@ export function QueuedMovementsCard({
     claimable: rows.filter((r) => r.status === "claimable").length,
   };
 
-  const cellHead = "text-left text-xs uppercase tracking-wide text-zinc-400 font-normal pb-2 pr-4";
-  const cell = "py-2 pr-4 align-middle text-sm text-zinc-700 whitespace-nowrap";
+  const cellHead = "h-12 px-4 text-left align-middle text-sm font-bold text-zinc-500";
+  const cell = "whitespace-nowrap p-4 align-middle text-sm text-zinc-700";
 
   return (
-    <div className="border border-zinc-200 bg-white p-4">
+    <div className="border border-zinc-200 bg-melon-50 p-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="font-medium text-zinc-900">Queued movements</h3>
         <div className="flex gap-1">
@@ -266,9 +267,11 @@ export function QueuedMovementsCard({
       <p className="text-sm text-zinc-500 mt-1">
         Anything moving between chains shows here until it clears.
       </p>
-      <div className="mt-3 overflow-x-auto">
+      <div
+        className={visible.length > 0 && !isLoading ? "-mx-4 mt-3 overflow-x-auto" : "mt-3"}
+      >
         {isLoading ? (
-          <div className="text-sm text-zinc-400 py-4">Reconstructing bridge outboxes…</div>
+          <TableSkeleton rows={4} columns={7} />
         ) : isError && rows.length === 0 ? (
           <div className="text-sm text-zinc-500 py-4">Could not load bridge transactions.</div>
         ) : visible.length === 0 ? (
@@ -276,8 +279,8 @@ export function QueuedMovementsCard({
             No queued movements — anything in flight shows here until it clears.
           </div>
         ) : (
-          <table className="w-full min-w-[760px]">
-            <thead>
+          <table className="w-full min-w-[1040px]">
+            <thead className="bg-melon-100">
               <tr className="border-b border-zinc-100">
                 <th className={cellHead}>Initiated</th>
                 <th className={cellHead}>Chains</th>

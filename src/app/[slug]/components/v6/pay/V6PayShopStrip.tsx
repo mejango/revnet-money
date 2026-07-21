@@ -55,9 +55,9 @@ export function V6PayShopStrip({
   if (shop.tiers.length === 0) return null;
 
   return (
-    <div className="mb-3">
+    <div>
       <div className="text-sm text-zinc-500 mb-1.5">Shop</div>
-      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-3">
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
         {shop.tiers.slice(0, 12).map((tier) => {
           const qty = quantityOf(tier.id);
           const soldOut = !tier.unlimited && tier.remaining === 0;
@@ -73,7 +73,7 @@ export function V6PayShopStrip({
               } ${soldOut ? "opacity-40" : ""}`}
             >
               {qty > 0 ? (
-                <span className="absolute right-1.5 top-1.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-500 px-1 text-[10px] font-medium text-white">
+                <span className="absolute right-1.5 top-1.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-500 px-1 text-[10px] font-medium text-melon-950">
                   {qty}
                 </span>
               ) : null}

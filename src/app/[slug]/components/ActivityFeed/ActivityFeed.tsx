@@ -1,15 +1,11 @@
 "use client";
 
 import { ProfilesProvider } from "@/components/ProfilesContext";
+import { ActivityFeedSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ActivityEventsDocument, SuckerGroupQuery } from "@/generated/graphql";
 import { formatDecimals } from "@/lib/number";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
-import {
-  JBChainId,
-  useBendystrawQuery,
-  useJBContractContext,
-} from "@bananapus/nana-sdk-react";
-import { Loader2 } from "lucide-react";
+import { JBChainId, useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useState } from "react";
 import { Address, formatUnits } from "viem";
 import { ActivityEvent, ActivityItem } from "./ActivityItem";
@@ -47,7 +43,7 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
         ? { suckerGroupId }
         : { suckerGroupId, OR: [{ payEvent_not: null }, { cashOutTokensEvent_not: null }] },
     },
-    { pollInterval: 5000 },
+    { pollInterval: 15_000 },
   );
 
   const items = data?.activityEvents.items ?? [];
@@ -178,7 +174,7 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
         timestamp: e.timestamp,
         beneficiary: e.from as Address,
         chainId,
-        detail: `$${e.symbol}`,
+        detail: e.symbol.replace(/^\$+/, ""),
       });
     } else if (event.projectCreateEvent) {
       const e = event.projectCreateEvent;
@@ -242,7 +238,7 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
     <div className="mt-6">
       <h3 className="text-lg font-medium mb-2">Activity</h3>
       <ProfilesProvider addresses={addresses}>
-        <div className="max-h-[400px] overflow-y-auto pr-1">
+        <div className="pr-1">
           {visibleEvents.length > 0 ? (
             <div className="flex flex-col">
               {visibleEvents.map((event) => (
@@ -250,12 +246,9 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
               ))}
             </div>
           ) : (
-            <div className="py-4 text-center">
+            <div className={isLoading ? "py-2" : "py-4 text-center"}>
               {isLoading ? (
-                <div className="flex flex-col items-center gap-2">
-                  <Loader2 className="animate-spin text-zinc-400" size={24} />
-                  <p className="text-sm text-zinc-500">Loading activity…</p>
-                </div>
+                <ActivityFeedSkeleton />
               ) : (
                 <p className="text-sm text-zinc-500">No activity yet</p>
               )}

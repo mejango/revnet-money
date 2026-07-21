@@ -28,7 +28,7 @@ export function TextSelect({
 }) {
   const current = options.find((o) => o.value === value)?.label ?? "";
   return (
-    <span className={`${className} ${disabled ? "opacity-60" : ""}`}>
+    <span className={`min-h-11 ${className} ${disabled ? "opacity-60" : ""}`}>
       <span className={labelClassName || undefined}>{current}</span>
       <svg
         viewBox="0 0 24 24"

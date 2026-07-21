@@ -2,6 +2,7 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { effectiveTierPrice, getProject721Shop } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
@@ -15,8 +16,8 @@ import {
   ShopInventory,
   ShopTier,
   TIER_UNLIMITED_SUPPLY,
-  TierMedia,
   tierDisplayName,
+  TierMedia,
   useTierCart,
 } from "./shopLib";
 import { TierMediaPreview } from "./TierMediaPreview";
@@ -115,9 +116,7 @@ export function TierDetailModal({
       ),
   });
 
-  const setFlags = tier.flags
-    ? FLAG_DESCRIPTIONS.filter(([flag]) => tier.flags![flag])
-    : [];
+  const setFlags = tier.flags ? FLAG_DESCRIPTIONS.filter(([flag]) => tier.flags![flag]) : [];
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -127,7 +126,7 @@ export function TierDetailModal({
             <TierMediaPreview media={media} tierId={tier.id} alt={name} detail />
           </div>
 
-          <div className="bg-zinc-50 p-5">
+          <div className="bg-melon-50 p-5">
             <DialogTitle className="pr-8 text-xl font-medium text-zinc-900">{name}</DialogTitle>
             {media?.description ? (
               <p className="mt-2 text-sm leading-relaxed text-zinc-600">{media.description}</p>
@@ -142,7 +141,7 @@ export function TierDetailModal({
                   <span className="text-sm text-zinc-500 line-through">
                     {formatShopAmount(tier.price, shop.pricing.decimals)} {shop.pricing.symbol}
                   </span>
-                  <span className="rounded-full bg-teal-500 px-2 py-0.5 text-[11px] font-medium text-white">
+                  <span className="rounded-full bg-teal-500 px-2 py-0.5 text-[11px] font-medium text-melon-950">
                     {discountLabel(tier.discountPercent)}
                   </span>
                 </>
@@ -167,7 +166,7 @@ export function TierDetailModal({
                 onClick={() => setTierQuantity(tier, media, Math.min(cap, quantity + 1))}
                 disabled={soldOut || quantity >= cap}
                 aria-label={`Add one ${name}`}
-                className="flex h-9 min-w-9 items-center justify-center bg-zinc-900 px-3 text-zinc-50 hover:bg-zinc-900/90 disabled:opacity-40"
+                className="flex h-9 min-w-9 items-center justify-center bg-melon-500 px-3 text-melon-950 hover:bg-melon-600 disabled:opacity-40"
               >
                 +
               </button>
@@ -186,7 +185,7 @@ export function TierDetailModal({
               </p>
               <div className="mt-2 space-y-1.5">
                 {supply.isLoading ? (
-                  <p className="text-xs text-zinc-500">Reading supply…</p>
+                  <SkeletonLines lines={Math.max(projects.length, 2)} />
                 ) : (
                   supply.data?.map((row) => (
                     <div

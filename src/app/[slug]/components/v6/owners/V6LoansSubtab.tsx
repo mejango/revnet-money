@@ -1,6 +1,7 @@
 "use client";
 
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
 import { formatTokenSymbol } from "@/lib/utils";
@@ -72,9 +73,9 @@ function AllLoansCard({
 
   return (
     <div className="mb-8">
-      <h3 className="text-sm font-medium text-zinc-500 mb-2">Active loans</h3>
+      <h3 className="mb-2 text-base font-semibold text-zinc-700">Active loans</h3>
       {isLoading ? (
-        <div className="text-zinc-500">Loading…</div>
+        <TableSkeleton rows={4} columns={5} />
       ) : rows.length === 0 ? (
         <div className="text-zinc-500">No active loans indexed.</div>
       ) : (

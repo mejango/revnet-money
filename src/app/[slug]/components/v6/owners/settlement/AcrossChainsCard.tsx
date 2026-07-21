@@ -1,6 +1,7 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { useQuery } from "@tanstack/react-query";
 import {
   AcrossChainRow,
@@ -32,14 +33,18 @@ export function AcrossChainsCard({
   });
 
   return (
-    <div className="border border-zinc-200 bg-white p-4">
+    <div className="border border-zinc-200 bg-melon-50 p-4">
       <h3 className="font-medium text-zinc-900">Across chains</h3>
       <p className="text-sm text-zinc-500 mt-1">
         A project can settle funds on many chains, and holders can move funds between them.
       </p>
-      <div className="mt-3 overflow-x-auto">
+      <div
+        className={
+          !isLoading && !isError && data ? "-mx-4 mt-3 overflow-x-auto" : "mt-3"
+        }
+      >
         {isLoading ? (
-          <div className="text-sm text-zinc-400 py-4">Reading cross-chain state…</div>
+          <TableSkeleton rows={Math.max(chains.length, 2)} columns={4} />
         ) : isError || !data ? (
           <div className="text-sm text-zinc-500 py-4">Could not read cross-chain state.</div>
         ) : (
@@ -73,12 +78,12 @@ function AcrossChainsTable({ rows, tokenSymbol }: { rows: AcrossChainRow[]; toke
     }
   }
 
-  const cellHead = "text-left text-xs uppercase tracking-wide text-zinc-400 font-normal pb-2 pr-4";
-  const cell = "py-2 pr-4 align-top text-sm text-zinc-700";
+  const cellHead = "h-12 px-4 text-left align-middle text-sm font-bold text-zinc-500";
+  const cell = "p-4 text-left align-middle text-sm text-zinc-700";
 
   return (
-    <table className="w-full min-w-[560px]">
-      <thead>
+    <table className="w-full min-w-[720px] table-fixed">
+      <thead className="bg-melon-100">
         <tr className="border-b border-zinc-100">
           <th className={cellHead}>Chain</th>
           <th className={cellHead}>Supply ({tokenSymbol})</th>

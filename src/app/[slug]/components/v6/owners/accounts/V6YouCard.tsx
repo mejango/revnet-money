@@ -1,6 +1,7 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -262,11 +263,15 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   return (
     <div>
       {held.length === 0 ? (
-        <p className="text-md text-black font-light italic">
-          {isLoadingBalances ? "Checking your balances…" : `You don't hold any ${tokenSymbol} yet.`}
-        </p>
+        isLoadingBalances ? (
+          <TableSkeleton rows={Math.max(projects.length, 2)} columns={4} />
+        ) : (
+          <p className="text-md text-black font-light italic">
+            You don&apos;t hold any {tokenSymbol} yet.
+          </p>
+        )
       ) : (
-        <div className="overflow-auto bg-zinc-50 border-zinc-200 border">
+        <div className="overflow-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -347,7 +352,11 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
       <div className="flex flex-wrap gap-2 mt-4">
         {hasErc20 && primaryNativeTerminal.data ? (
           <RedeemDialog projectId={projectId} tokenSymbol={tokenSymbol} surpluses={surpluses ?? []}>
-            <Button variant="outline" disabled={totalBalance === 0n}>
+            <Button
+              variant="outline"
+              disabled={totalBalance === 0n}
+              className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
+            >
               Cash out
             </Button>
           </RedeemDialog>
@@ -355,7 +364,11 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
         {hasErc20 && primaryNativeTerminal.data ? (
           <BorrowDialog projectId={projectId} tokenSymbol={tokenSymbol}>
-            <Button variant="outline" disabled={totalBalance === 0n}>
+            <Button
+              variant="outline"
+              disabled={totalBalance === 0n}
+              className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
+            >
               Get a loan
             </Button>
           </BorrowDialog>
@@ -363,7 +376,11 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
         {projects.length > 1 && (
           <BridgeDialog projects={projects}>
-            <Button variant="outline" disabled={totalBalance === 0n}>
+            <Button
+              variant="outline"
+              disabled={totalBalance === 0n}
+              className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
+            >
               Move between chains
             </Button>
           </BridgeDialog>
@@ -371,7 +388,12 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
         {hasErc20 && creditRows.length > 0 && (
           <V6ClaimCreditsDialog creditRows={creditRows} tokenSymbol={tokenSymbol}>
-            <Button variant="outline">Claim credits</Button>
+            <Button
+              variant="outline"
+              className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
+            >
+              Claim credits
+            </Button>
           </V6ClaimCreditsDialog>
         )}
       </div>

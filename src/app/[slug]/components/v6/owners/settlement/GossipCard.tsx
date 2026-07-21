@@ -1,6 +1,7 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ChainLogo } from "@/components/ChainLogo";
 import { toast } from "@/components/ui/use-toast";
 import { formatWalletError } from "@/lib/utils";
@@ -109,7 +110,7 @@ function SyncButton({
 }
 
 function PeerRow({ peer, onSynced }: { peer: GossipPeerRow; onSynced: () => void }) {
-  const cell = "py-2 pr-4 align-middle text-sm text-zinc-700";
+  const cell = "p-4 align-middle text-sm text-zinc-700";
   const showSync =
     peer.syncSucker != null && peer.level !== "synced" && peer.level !== "unknown";
   return (
@@ -161,17 +162,17 @@ export function GossipCard({ chains }: { chains: ChainProject[] }) {
 
   if (chains.length < 2) return null;
 
-  const cellHead = "text-left text-xs uppercase tracking-wide text-zinc-400 font-normal pb-2 pr-4";
+  const cellHead = "h-12 px-4 text-left align-middle text-sm font-bold text-zinc-500";
 
   return (
-    <div className="border border-zinc-200 bg-white p-4">
+    <div className="border border-zinc-200 bg-melon-50 p-4">
       <h3 className="font-medium text-zinc-900">Gossip</h3>
       <p className="text-sm text-zinc-500 mt-1">
         Each chain&apos;s cash out and loan availability depends on knowledge of the project&apos;s
         composition on other chains.
       </p>
       {isLoading ? (
-        <div className="text-sm text-zinc-400 py-4">Reading cross-chain gossip state…</div>
+        <TableSkeleton rows={Math.max(chains.length, 2)} columns={6} />
       ) : isError || !data ? (
         <div className="text-sm text-zinc-500 py-4">Could not verify cross-chain gossip state.</div>
       ) : (
@@ -181,9 +182,9 @@ export function GossipCard({ chains }: { chains: ChainProject[] }) {
               <ChainLogo chainId={view.chainId} width={16} height={16} />
               {chainName(view.chainId)} knows
             </div>
-            <div className="mt-2 overflow-x-auto">
-              <table className="w-full min-w-[640px]">
-                <thead>
+            <div className="-mx-4 mt-2 overflow-x-auto">
+              <table className="w-full min-w-[900px]">
+                <thead className="bg-melon-100">
                   <tr className="border-b border-zinc-100">
                     <th className={cellHead}>Chain</th>
                     <th className={cellHead}>Status</th>

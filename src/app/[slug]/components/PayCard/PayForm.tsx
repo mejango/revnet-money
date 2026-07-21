@@ -1,5 +1,6 @@
 "use client";
 
+import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
 import { PaymentQuotes, usePaymentQuote } from "@/hooks/usePaymentQuote";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { getTokensForChain, Token } from "@/lib/token";
@@ -90,7 +91,7 @@ export function PayForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deferredAmountA, deferredTokenIn, isPriceLoading, chainId, projectId]);
 
-  if (!tokenB) return "Loading...";
+  if (!tokenB) return <CardSkeleton rows={4} />;
 
   const _amountA = {
     amount: new FixedInt(
@@ -165,15 +166,15 @@ export function PayForm() {
             component="textarea"
             id="memo"
             name="memo"
-            rows={2}
+            rows={1}
             className={
-              "flex w-full border border-zinc-200 bg-white px-3 py-1.5 text-md ring-offset-white file:border-0 file:bg-transparent file:text-md file:font-medium placeholder:text-zinc-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:ring-offset-zinc-950 dark:placeholder:text-zinc-400 dark:focus-visible:ring-zinc-300 z-10"
+              "z-10 flex min-h-14 w-full border border-zinc-200 bg-white px-3 py-1.5 text-md ring-offset-white file:border-0 file:bg-transparent file:text-md file:font-medium placeholder:text-zinc-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:ring-offset-zinc-950 dark:placeholder:text-zinc-400 dark:focus-visible:ring-zinc-300"
             }
             onChange={(e: any) => setMemo?.(e.target.value)}
-            placeholder="Leave a note"
+            placeholder="Add a note"
           />
         </Formik>
-        <div className="w-[150px] flex">
+        <div className="flex w-[150px] shrink-0 items-start">
           {tokenIn ? (
             <PayDialog
               key={resetKey}

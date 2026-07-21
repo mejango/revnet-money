@@ -1,8 +1,9 @@
 "use client";
 
+import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
-import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
@@ -191,15 +192,12 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
   // Chains without a full Uniswap v4 AMM have a registry with no default hook
   // or allowlisted terminal — setHookFor/initializePoolFor would revert there.
   const buybackAvailable = !!buybackRegistry && !!defaultHook && defaultHook !== zeroAddress;
-  const routerAvailable =
-    !!routerRegistry && !!defaultTerminal && defaultTerminal !== zeroAddress;
+  const routerAvailable = !!routerRegistry && !!defaultTerminal && defaultTerminal !== zeroAddress;
 
   let poolSummary = hook ? "Not initialized" : "Set the hook first";
   if (hook) {
     const projectId = BigInt(row.projectId);
-    const probes: { label: string; token: Address }[] = [
-      { label: "Native", token: zeroAddress },
-    ];
+    const probes: { label: string; token: Address }[] = [{ label: "Native", token: zeroAddress }];
     const usdc = USDC_ADDRESSES[row.chainId];
     if (usdc) probes.push({ label: "USDC", token: usdc });
     const windows = await Promise.all(
@@ -245,8 +243,7 @@ const ACTIONS: Record<
     title: "Set buyback hook",
     description:
       "Points the project at the hook that chooses, on every payment, whether to issue tokens or buy them on the AMM. Requires SET_BUYBACK_HOOK.",
-    danger:
-      "The buyback hook intercepts every payment. A wrong hook can misroute or strand funds.",
+    danger: "The buyback hook intercepts every payment. A wrong hook can misroute or strand funds.",
     fieldLabel: "Buyback hook",
   },
   terminal: {
@@ -289,19 +286,19 @@ export function BuybackRouterCard({ rows }: { rows: ChainProjectRow[] }) {
 
   return (
     <div>
-      <h3 className="text-sm font-medium text-zinc-500 mb-2">Buyback &amp; swap router</h3>
+      <h3 className="mb-2 text-base font-semibold text-zinc-700">Buyback &amp; swap router</h3>
       <div className="max-w-screen-sm">
         <p className="text-sm text-zinc-500">
-          Wire up the project&apos;s buyback hook and swap router, then initialize its
-          Uniswap pool. Each action runs on the chains you select as sequential
-          transactions from the operator&apos;s wallet.
+          Wire up the project&apos;s buyback hook and swap router, then initialize its Uniswap pool.
+          Each action runs on the chains you select as sequential transactions from the
+          operator&apos;s wallet.
         </p>
         {stateQuery.isLoading ? (
-          <p className="text-sm text-zinc-500 mt-3">Reading every chain…</p>
+          <SkeletonLines lines={4} className="mt-3" />
         ) : stateQuery.isError ? (
           <p className="text-sm text-red-600 mt-3">Could not read the buyback registries.</p>
         ) : (
-          <div className="mt-3 divide-y divide-zinc-100 border border-zinc-200 rounded px-4">
+          <div className="mt-3 divide-y divide-melon-200 bg-melon-50 px-4">
             <ActionRow kind="hook" states={states} onDone={() => stateQuery.refetch()} />
             <ActionRow kind="terminal" states={states} onDone={() => stateQuery.refetch()} />
             <ActionRow kind="pool" states={states} onDone={() => stateQuery.refetch()} />
@@ -329,27 +326,15 @@ function ActionRow({
 
   return (
     <div className="py-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{action.title}</p>
-          <p className="text-xs text-zinc-500 mt-1">{action.description}</p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!available.length}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? "Close" : action.title}
-        </Button>
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{action.title}</p>
+        <p className="text-xs text-zinc-500 mt-1">{action.description}</p>
       </div>
 
       {(() => {
         const cell = (state: BuybackChainState) => {
-          const isAvailable =
-            kind === "terminal" ? state.routerAvailable : state.buybackAvailable;
-          const value =
-            kind === "hook" ? state.hook : kind === "terminal" ? state.terminal : null;
+          const isAvailable = kind === "terminal" ? state.routerAvailable : state.buybackAvailable;
+          const value = kind === "hook" ? state.hook : kind === "terminal" ? state.terminal : null;
           return { isAvailable, value };
         };
         // When every chain reads the same, one value + a note beats four cards.
@@ -367,7 +352,7 @@ function ActionRow({
           const first = states[0];
           const { isAvailable, value } = cells[0];
           return (
-            <div className="mt-2 flex items-start gap-2 bg-zinc-50 rounded px-2.5 py-1.5">
+            <div className="mt-2 flex items-start gap-2 bg-melon-100 px-2.5 py-1.5">
               <div className="min-w-0">
                 {!isAvailable ? (
                   <p className="text-xs text-zinc-400">No Uniswap v4 registry on any chain</p>
@@ -396,7 +381,7 @@ function ActionRow({
               return (
                 <div
                   key={state.chainId}
-                  className="flex items-start gap-2 bg-zinc-50 rounded px-2.5 py-1.5"
+                  className="flex items-start gap-2 bg-melon-100 px-2.5 py-1.5"
                 >
                   <ChainLogo chainId={state.chainId} width={14} height={14} className="mt-0.5" />
                   <div className="min-w-0">
@@ -422,6 +407,16 @@ function ActionRow({
           </div>
         );
       })()}
+
+      <Button
+        variant="default"
+        size="sm"
+        className="mt-3"
+        disabled={!available.length}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? "Close" : action.title}
+      </Button>
 
       {open ? (
         <BuybackActionForm
@@ -461,9 +456,9 @@ function BuybackActionForm({
       available.map((state) => [
         state.chainId,
         kind === "hook"
-          ? state.hook ?? ""
+          ? (state.hook ?? "")
           : kind === "terminal"
-            ? state.terminal ?? ""
+            ? (state.terminal ?? "")
             : NATIVE_TOKEN,
       ]),
     ),
@@ -495,9 +490,7 @@ function BuybackActionForm({
       } | null = null;
       if (kind === "pool") {
         if (![fee, tickSpacing, twapWindow, sqrtPriceX96].every((v) => DIGITS.test(v))) {
-          throw new Error(
-            "Fee, tick spacing, TWAP window, and price must be whole numbers.",
-          );
+          throw new Error("Fee, tick spacing, TWAP window, and price must be whole numbers.");
         }
         poolValues = {
           fee: Number(fee),
@@ -588,7 +581,7 @@ function BuybackActionForm({
   };
 
   return (
-    <div className="mt-3 border border-zinc-200 rounded p-3">
+    <div className="mt-3 bg-melon-100 p-3">
       <div className="mb-2">
         <label className="block text-sm font-medium mb-1">Run on</label>
         <div className="flex flex-wrap gap-x-5 gap-y-1.5">
@@ -615,9 +608,7 @@ function BuybackActionForm({
       </div>
 
       <div className="mt-3">
-        <label className="block text-sm font-medium mb-1">
-          {action.fieldLabel} per chain
-        </label>
+        <label className="block text-sm font-medium mb-1">{action.fieldLabel} per chain</label>
         <div className="space-y-2">
           {chosen.map((state) => (
             <div key={state.chainId} className="flex items-center gap-2">
@@ -643,9 +634,8 @@ function BuybackActionForm({
         </div>
         {kind === "pool" ? (
           <p className="text-xs text-zinc-500 mt-1">
-            Use the native-token sentinel ({NATIVE_TOKEN}) for native ETH pools; the hook
-            stores that pool key under address(0). USDC and other pair-token addresses can
-            differ by chain.
+            Use the native-token sentinel ({NATIVE_TOKEN}) for native ETH pools; the hook stores
+            that pool key under address(0). USDC and other pair-token addresses can differ by chain.
           </p>
         ) : null}
       </div>

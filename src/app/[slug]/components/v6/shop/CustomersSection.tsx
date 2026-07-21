@@ -1,6 +1,7 @@
 "use client";
 
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import EtherscanLink from "@/components/EtherscanLink";
 import { DateRelative } from "@/components/DateRelative";
 import { useOwnedShopItems, useShopPurchases } from "@bananapus/nana-sdk-react";
@@ -64,7 +65,7 @@ export function CustomersSection({
             Connect your wallet to see the items you own.
           </p>
         ) : owned.isLoading ? (
-          <p className="mt-2 text-sm text-zinc-500">Loading your items…</p>
+          <SkeletonLines lines={2} className="mt-3" />
         ) : owned.isError ? (
           <p className="mt-2 text-sm text-zinc-600">
             Couldn&apos;t load your items right now.
@@ -97,7 +98,7 @@ export function CustomersSection({
       <div className="border border-zinc-200 bg-white p-4">
         <h2 className="font-medium text-zinc-900">All</h2>
         {purchases.isLoading ? (
-          <p className="mt-2 text-sm text-zinc-500">Loading customers…</p>
+          <SkeletonLines lines={4} className="mt-3" />
         ) : purchases.isError ? (
           <p className="mt-2 text-sm text-zinc-600">Couldn&apos;t load customers right now.</p>
         ) : customers.length === 0 ? (
@@ -137,7 +138,7 @@ export function CustomersSection({
       <div className="border border-zinc-200 bg-white p-4">
         <h2 className="font-medium text-zinc-900">Recent purchases</h2>
         {purchases.isLoading ? (
-          <p className="mt-2 text-sm text-zinc-500">Loading purchases…</p>
+          <SkeletonLines lines={4} className="mt-3" />
         ) : purchaseRows.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-500">No purchases yet.</p>
         ) : (

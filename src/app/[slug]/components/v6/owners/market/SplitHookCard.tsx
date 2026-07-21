@@ -2,6 +2,7 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
+import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
 import { toast } from "@/components/ui/use-toast";
 import { formatWalletError } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -178,8 +179,10 @@ export function SplitHookCard({ chains, tokenSymbol }: { chains: ChainProject[];
     queryFn: () => fetchSplitHookStates(chains),
   });
 
+  if (isLoading) return <CardSkeleton rows={5} />;
+
   // Hidden entirely when no reserved split routes to the LP hook anywhere.
-  if (isLoading || !data || data.length === 0) return null;
+  if (!data || data.length === 0) return null;
 
   return (
     <div className="border border-zinc-200 bg-white p-4">

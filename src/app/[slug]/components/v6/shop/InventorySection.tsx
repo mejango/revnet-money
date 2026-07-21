@@ -178,7 +178,7 @@ export function InventorySection({
         <button
           type="button"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="mt-4 flex w-full items-center justify-between gap-3 bg-teal-500 px-4 py-3 text-sm font-medium text-white hover:bg-teal-600"
+          className="mt-4 flex w-full items-center justify-between gap-3 bg-teal-500 px-4 py-3 text-sm font-medium text-melon-950 hover:bg-teal-600"
         >
           <span>
             {count} item{count === 1 ? "" : "s"} selected —{" "}
@@ -256,7 +256,7 @@ function TierCard({
       >
         <TierMediaPreview media={media} tierId={tier.id} alt={name} />
         {discounted ? (
-          <span className="absolute left-2 top-2 rounded-full bg-teal-500 px-2 py-0.5 text-[11px] font-medium text-white">
+          <span className="absolute left-2 top-2 rounded-full bg-teal-500 px-2 py-0.5 text-[11px] font-medium text-melon-950">
             {discountLabel(tier.discountPercent)}
           </span>
         ) : null}
@@ -266,13 +266,13 @@ function TierCard({
           </span>
         ) : null}
         {quantity > 0 ? (
-          <span className="absolute bottom-2 right-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-teal-500 px-1.5 text-xs font-medium text-white">
+          <span className="absolute bottom-2 right-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-teal-500 px-1.5 text-xs font-medium text-melon-950">
             {quantity}
           </span>
         ) : null}
       </button>
 
-      <div className="bg-zinc-50 border-t border-zinc-200 p-3">
+      <div className="border-t border-zinc-200 bg-melon-50 p-3">
         <button
           type="button"
           onClick={onOpen}

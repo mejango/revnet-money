@@ -241,7 +241,7 @@ export function LoanDetailsTable({
           LOAN_CONSTANTS.TABLE_MAX_HEIGHT + " overflow-auto bg-zinc-50 border border-zinc-200"
         }
       >
-        <div className="flex flex-col p-2 overflow-x-auto">
+        <div className="flex flex-col overflow-x-auto">
           <div className="min-w-full">
             <Table>
               <TableHeader>

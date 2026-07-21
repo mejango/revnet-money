@@ -1,6 +1,8 @@
 "use client";
 
 import { useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import clsx from "clsx";
 import { useState } from "react";
 import { ProjectItem } from "../shared";
@@ -38,7 +40,19 @@ export function V6ShopTab({ projects }: { projects: ProjectItem[] }) {
   if (!chainId) return null;
 
   if (shopQuery.isLoading) {
-    return <div className="text-zinc-500">Loading the shop…</div>;
+    return (
+      <div role="status" aria-label="Loading shop" className="space-y-4">
+        <span className="sr-only">Loading shop</span>
+        <div className="flex gap-5 border-b border-zinc-200 pb-2">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-24" />
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <CardSkeleton rows={3} />
+          <CardSkeleton rows={3} />
+        </div>
+      </div>
+    );
   }
   if (shopQuery.isError) {
     return (

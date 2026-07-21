@@ -1,6 +1,7 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import {
   ChainProject,
@@ -99,7 +100,7 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
       </p>
       <div className="mt-2">
         {isLoading ? (
-          <div className="text-sm text-zinc-400 py-3">Reading the buyback pool…</div>
+          <SkeletonLines lines={Math.max(chains.length, 2)} className="py-3" />
         ) : isError || !data ? (
           <div className="text-sm text-zinc-500 py-3">Could not read the buyback pool.</div>
         ) : !anyHook ? (

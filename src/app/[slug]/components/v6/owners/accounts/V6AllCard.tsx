@@ -3,7 +3,9 @@
 import { ParticipantsDocument, ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useTotalOutstandingTokens } from "@/hooks/useTotalOutstandingTokens";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import { prettyNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
+import { formatUnits } from "@bananapus/nana-sdk-core";
 import {
   useBendystrawQuery,
   useJBChainId,
@@ -67,6 +69,13 @@ export function V6AllCard() {
       },
       {} as Record<string, any>,
     ) ?? {};
+  const participants = Object.values(participantsDataAggregate);
+  const shownCount = Math.min(10, participants.length);
+  const totalLabel = token?.data
+    ? `${prettyNumber(
+        formatUnits(totalOutstandingTokens, token.data.decimals, { fractionDigits: 1 }),
+      )} ${formatTokenSymbol(token.data.symbol)}`
+    : null;
 
   return (
     <div>
@@ -74,22 +83,36 @@ export function V6AllCard() {
         {formatTokenSymbol(token)} owners are accounts who either paid in, received splits, received
         auto issuance, or traded for them on the secondary market.
       </p>
-      <div className="flex flex-col sm:items-start items-center">
-        <ParticipantsPieChart
-          participants={Object.values(participantsDataAggregate)}
-          totalSupply={totalOutstandingTokens}
-          token={token?.data}
-        />
-        <div className="overflow-auto p-2 bg-zinc-50 border-zinc-200 border w-full">
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(280px,0.72fr)_minmax(560px,1.28fr)]">
+        <div className="min-w-0">
+          <ParticipantsPieChart
+            participants={participants}
+            totalSupply={totalOutstandingTokens}
+            token={token?.data}
+            showOwnerCount
+          />
+          {totalLabel ? (
+            <p className="-mt-4 text-center text-sm text-melon-700">Total: {totalLabel}</p>
+          ) : null}
+        </div>
+        <div className="w-full min-w-0 overflow-auto">
           <ParticipantsTable
-            participants={Object.values(participantsDataAggregate)}
+            participants={participants}
             token={token?.data}
             totalSupply={totalOutstandingTokens}
             baseTokenSymbol={baseTokenSymbol}
             baseTokenDecimals={baseTokenDecimals}
+            condensed
+            maxRows={10}
           />
         </div>
       </div>
+      {participants.length > 0 ? (
+        <p className="mt-4 text-sm text-melon-700">
+          {participants.length} holder{participants.length === 1 ? "" : "s"} — showing the {shownCount}{" "}
+          largest, as shares of the balances tracked here
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { MAX_RULESET_COUNT } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import EtherscanLink from "@/components/EtherscanLink";
@@ -167,7 +168,9 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
     })
     .sort((a, b) => (a.stage ?? 99) - (b.stage ?? 99) || a.chainId - b.chainId);
 
-  if (stored.isLoading) return <div className="text-zinc-500">Loading…</div>;
+  if (stored.isLoading || rulesetReads.isLoading) {
+    return <TableSkeleton rows={4} columns={6} />;
+  }
   if (rows.length === 0) return <div className="text-center text-zinc-400">No auto issuances</div>;
 
   return (
@@ -176,8 +179,8 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
         Auto issuance mints a fixed amount to a preset account when a stage starts. Anyone can
         trigger the distribution once its unlock date passes.
       </p>
-      <div className="max-h-96 overflow-auto bg-zinc-50 border-zinc-200 border mb-4">
-        <div className="flex flex-col p-2">
+      <div className="mb-4 max-h-96 overflow-auto">
+        <div className="flex flex-col">
           <Table>
             <TableHeader>
               <TableRow>

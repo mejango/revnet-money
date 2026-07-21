@@ -14,7 +14,7 @@ export function V6OverviewTab({ projects }: { projects: ProjectItem[] }) {
   return (
     <div className="flex flex-col min-w-0 gap-8">
       <div>
-        <h3 className="text-sm font-medium text-zinc-500 mb-2">About</h3>
+        <h3 className="mb-2 text-base font-semibold text-zinc-700">About</h3>
         <DescriptionSection projects={projects} />
         <div className="max-w-screen-sm">
         </div>

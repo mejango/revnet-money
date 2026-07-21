@@ -144,7 +144,7 @@ export function V6PayConfirmDialog({
                     </a>
                   ) : null}
                   <div className="mt-4">
-                    <Button className="bg-teal-500 hover:bg-teal-600" onClick={onDone}>
+                    <Button className="bg-teal-500 text-melon-950 hover:bg-teal-600" onClick={onDone}>
                       Done
                     </Button>
                   </div>
@@ -247,7 +247,7 @@ export function V6PayConfirmDialog({
                       loading={busy || (phase === "preparing" && !!address)}
                       onClick={onConfirm}
                       connectWalletText="Connect Wallet"
-                      className="bg-teal-500 hover:bg-teal-600"
+                      className="bg-teal-500 text-melon-950 hover:bg-teal-600"
                     >
                       {prepared?.needsApproval
                         ? "Approve and send"

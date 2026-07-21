@@ -19,8 +19,8 @@ import {
  * dashed gridlines, muted HTML labels.
  */
 
-export const ISSUANCE_COLOR = "#0d9488"; // teal-600
-export const NOW_COLOR = "#fb923c"; // orange-400
+export const ISSUANCE_COLOR = "#4FA270"; // melon-600
+export const NOW_COLOR = "#EE6F3A"; // peel-400
 
 // Plot area gutters inside a 320×140 viewBox. Text lives in HTML overlays so
 // the gutters only pad the plot itself.
@@ -129,6 +129,7 @@ export function StepChartBase({
   const span = t1 - t0;
   const nowX = X(Math.min(now, t1));
   const geom: ChartGeom = { X, Y, nowX, maxV };
+  const axisTimes = [0, 1, 2, 3, 4].map((i) => t0 + ((t1 - t0) * i) / 4);
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -141,14 +142,33 @@ export function StepChartBase({
     <div className="mt-3 w-full">
       {header}
       <div className="relative mt-2">
-        <svg
-          viewBox={`0 0 ${VW} ${VH}`}
-          className="h-auto w-full cursor-crosshair touch-none"
-          role="img"
-          aria-label={ariaLabel}
-          onPointerMove={onPointerMove}
-          onPointerLeave={() => setHoverT(null)}
-        >
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-20 text-sm text-[#666666]">
+          {[0, 1, 2, 3, 4].map((i) => {
+            const y = PT + ((VH - PT - PB) * i) / 4;
+            const value = maxV * (1 - i / 4);
+            return (
+              <span
+                key={i}
+                className={cn(
+                  "absolute right-2 whitespace-nowrap leading-none",
+                  i === 0 ? "translate-y-0" : i === 4 ? "-translate-y-full" : "-translate-y-1/2",
+                )}
+                style={{ top: `${(y / VH) * 100}%` }}
+              >
+                {formatPrice(value)}{i === 0 ? ` ${baseSymbol}` : ""}
+              </span>
+            );
+          })}
+        </div>
+        <div className="relative ml-20">
+          <svg
+            viewBox={`0 0 ${VW} ${VH}`}
+            className="h-auto w-full cursor-crosshair touch-none"
+            role="img"
+            aria-label={ariaLabel}
+            onPointerMove={onPointerMove}
+            onPointerLeave={() => setHoverT(null)}
+          >
           {/* Horizontal gridlines only, like TokenPriceChart's CartesianGrid. */}
           {[0, 1, 2, 3, 4].map((i) => {
             const y = PT + ((VH - PT - PB) * i) / 4;
@@ -159,7 +179,7 @@ export function StepChartBase({
                 y1={y}
                 x2={VW - PR}
                 y2={y}
-                stroke="#e4e4e7"
+                stroke="#CCCCCC"
                 strokeWidth="1"
                 strokeDasharray="3 3"
                 vectorEffect="non-scaling-stroke"
@@ -175,8 +195,8 @@ export function StepChartBase({
                 y1={PT}
                 x2={X(s.start)}
                 y2={VH - PB}
-                stroke="#d4d4d8"
-                strokeWidth="1"
+                stroke="#A5E0BD"
+                strokeWidth="2"
                 strokeDasharray="3 3"
                 vectorEffect="non-scaling-stroke"
               />
@@ -191,7 +211,7 @@ export function StepChartBase({
               x2={nowX}
               y2={VH - PB}
               stroke={NOW_COLOR}
-              strokeWidth="1"
+              strokeWidth="2"
               strokeDasharray="4 3"
               vectorEffect="non-scaling-stroke"
             />
@@ -214,7 +234,7 @@ export function StepChartBase({
                 y1={VH - PB}
                 x2={X(t)}
                 y2={Y(price)}
-                stroke="#a1a1aa"
+                stroke={ISSUANCE_COLOR}
                 strokeWidth="1"
                 strokeDasharray="2 2"
                 vectorEffect="non-scaling-stroke"
@@ -224,7 +244,7 @@ export function StepChartBase({
                 y1={Y(price)}
                 x2={X(t)}
                 y2={Y(price)}
-                stroke="#a1a1aa"
+                stroke={ISSUANCE_COLOR}
                 strokeWidth="1"
                 strokeDasharray="2 2"
                 vectorEffect="non-scaling-stroke"
@@ -233,40 +253,48 @@ export function StepChartBase({
             </>
           ) : null}
           {renderOverlay?.(geom)}
-        </svg>
-        {/* Constant-size labels overlay the plot as HTML so they don't scale
-            with the svg. */}
-        <span className="pointer-events-none absolute left-0 top-0 bg-white/70 pr-1 text-[11px] leading-none text-zinc-400">
-          {formatPrice(maxV)} {baseSymbol}
-        </span>
-        {resolved.map((s, i) =>
-          i > 0 && s.start > t0 && s.start < t1 ? (
+          </svg>
+          {/* Constant-size labels overlay the plot as HTML so they don't scale
+              with the svg. */}
+          {resolved.map((s, i) =>
+            i > 0 && s.start > t0 && s.start < t1 ? (
+              <span
+                key={s.start}
+                className="pointer-events-none absolute top-0 -translate-x-full text-base font-medium leading-none text-[#3D7955]"
+                style={{ left: `calc(${pct(X(s.start))} - 8px)` }}
+              >
+                Stage {i + 1}
+              </span>
+            ) : null,
+          )}
+          {showNowMarker ? (
             <span
-              key={s.start}
-              className="pointer-events-none absolute top-4 text-[10px] leading-none text-zinc-400"
-              style={{ left: `calc(${pct(X(s.start))} + 3px)` }}
+              className="pointer-events-none absolute top-0 -translate-x-full text-base font-semibold leading-none text-[#EE6F3A]"
+              style={{ left: `calc(${pct(nowX)} - 8px)` }}
             >
-              Stage {i + 1}
+              Now
             </span>
-          ) : null,
-        )}
-        {showNowMarker ? (
+          ) : null}
+        </div>
+      </div>
+      <div className="relative ml-20 mt-1 h-5 text-sm text-[#666666]">
+        {axisTimes.map((timestamp, i) => (
           <span
+            key={timestamp}
             className={cn(
-              "pointer-events-none absolute top-0 text-[10px] leading-none text-zinc-400",
-              nowX > VW - 24 && "-translate-x-full",
+              "absolute top-0 whitespace-nowrap",
+              i === 0 ? "" : i === axisTimes.length - 1 ? "-translate-x-full" : "-translate-x-1/2",
             )}
-            style={{ left: `calc(${pct(nowX)} + ${nowX > VW - 24 ? "-3px" : "3px"})` }}
+            style={{ left: `${(i / (axisTimes.length - 1)) * 100}%` }}
           >
-            Now
+            {new Date(timestamp * 1000).toLocaleDateString("en-US", {
+              month: "short",
+              year: "numeric",
+            })}
           </span>
-        ) : null}
+        ))}
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-zinc-400">
-        <span>{chartDateLabel(t0, span)}</span>
-        <span>{chartDateLabel(t1, span)}</span>
-      </div>
-      <p className="mt-1.5 text-xs text-zinc-500" aria-live="polite">
+      <p className="mt-1.5 text-sm text-zinc-500" aria-live="polite">
         <span className="text-zinc-600">{chartDateLabel(t, span)}</span>
         {" — "}
         {price !== null ? (

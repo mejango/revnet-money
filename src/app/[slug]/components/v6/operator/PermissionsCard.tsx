@@ -2,14 +2,15 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 import { Address, isAddress } from "viem";
 import {
   ChainProjectRow,
-  PermissionHoldersDocument,
   PermissionHolderRow,
+  PermissionHoldersDocument,
   permissionHoldersWhere,
 } from "./operatorLib";
 import { permissionInfo } from "./permissionMeta";
@@ -86,21 +87,20 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
 
   return (
     <div>
-      <h3 className="text-sm font-medium text-zinc-500 mb-2">Permissions</h3>
+      <h3 className="mb-2 text-base font-semibold text-zinc-700">Permissions</h3>
       <div className="max-w-screen-sm">
         <p className="text-sm text-zinc-500">
-          What this revnet&apos;s operator is allowed to do. These powers come with the
-          operator role — the default revnet powers plus any NFT powers granted when the
-          revnet was deployed.
+          What this revnet&apos;s operator is allowed to do. These powers come with the operator
+          role — the default revnet powers plus any NFT powers granted when the revnet was deployed.
         </p>
         {query.isLoading ? (
-          <p className="text-sm text-zinc-500 mt-3">Loading permissions…</p>
+          <SkeletonLines lines={4} className="mt-3" />
         ) : query.isError ? (
           <p className="text-sm text-zinc-500 mt-3">Could not read permissions.</p>
         ) : grants.length === 0 ? (
           <p className="text-sm text-zinc-500 mt-3">No operator permissions found.</p>
         ) : (
-          <div className="mt-3 divide-y divide-zinc-100 border border-zinc-200 rounded px-4">
+          <div className="mt-3 divide-y divide-melon-200 bg-melon-50 px-4">
             {grants.map((grant) => (
               <div key={grant.operator} className="py-4">
                 <div className="flex flex-wrap items-center gap-2">
@@ -125,9 +125,7 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
                   {grant.union.map((id) => {
                     const info = permissionInfo(id);
                     const onChains = grant.rows
-                      .filter((row) =>
-                        (row.permissions ?? []).map(Number).includes(id),
-                      )
+                      .filter((row) => (row.permissions ?? []).map(Number).includes(id))
                       .map((row) => row.chainId);
                     return (
                       <div
@@ -136,9 +134,7 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
                       >
                         <span className="text-sm font-medium">
                           {info.label}
-                          <span className="ml-1 font-mono text-[10px] text-zinc-400">
-                            #{id}
-                          </span>
+                          <span className="ml-1 font-mono text-[10px] text-zinc-400">#{id}</span>
                         </span>
                         <span className="text-xs text-zinc-500">{info.description}</span>
                         <span className="flex items-center gap-1" title="Granted on">

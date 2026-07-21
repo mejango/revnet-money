@@ -174,7 +174,10 @@ export function PayDialog(props: Props) {
   return (
     <Dialog open={disabled === true ? false : undefined}>
       <DialogTrigger asChild>
-        <Button disabled={disabled} className="w-full bg-teal-500 hover:bg-teal-600">
+        <Button
+          disabled={disabled}
+          className="h-14 w-full bg-teal-500 text-melon-950 hover:bg-teal-600"
+        >
           Pay
         </Button>
       </DialogTrigger>
@@ -212,7 +215,7 @@ export function PayDialog(props: Props) {
                 targetChainId={chainId}
                 loading={loading}
                 onClick={handlePay}
-                className="bg-teal-500 hover:bg-teal-600"
+                className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
                 Pay
               </ButtonWithWallet>

@@ -5,9 +5,9 @@ import { DateRelative } from "@/components/DateRelative";
 import EtherscanLink from "@/components/EtherscanLink";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { formatTokenSymbol } from "@/lib/utils";
-import { sdk } from "@farcaster/frame-sdk";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { JBChainId, useJBTokenContext } from "@bananapus/nana-sdk-react";
+import { sdk } from "@farcaster/frame-sdk";
 import { useEffect, useState } from "react";
 import { Address } from "viem";
 
@@ -35,7 +35,7 @@ export interface ActivityEvent {
   baseTokenSymbol?: string;
   tokenCount?: string;
   memo?: string;
-  /** Pre-formatted suffix detail, e.g. "$ART" for deployErc20 or a truncated address for transfers. */
+  /** Pre-formatted suffix detail, e.g. "ART" for deployErc20 or a truncated address for transfers. */
   detail?: string;
 }
 

@@ -69,7 +69,7 @@ export function BalanceTable(props: Props) {
         a proportional amount of the revnet's funds moves too, which rebalances each token's cash
         out value.
       </p>
-      <Table className="bg-zinc-50 border-zinc-200 border mt-4">
+      <Table className="mt-4">
         <TableHeader>
           <TableRow>
             <TableHead>Chain</TableHead>

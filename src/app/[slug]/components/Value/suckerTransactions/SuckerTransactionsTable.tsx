@@ -51,7 +51,7 @@ export async function SuckerTransactionsTable(props: Props) {
         <h2 className="text-lg font-medium">Bridge Transactions</h2>
         <TransactionsFilter />
       </div>
-      <Table className="bg-zinc-50 border-zinc-200 border">
+      <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Initiated</TableHead>

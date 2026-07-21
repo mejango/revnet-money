@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Suspense, useState } from "react";
 import { twJoin } from "tailwind-merge";
 import { ProjectItem } from "../shared";
@@ -10,6 +11,7 @@ import { V6SettlementSubtab } from "./settlement/V6SettlementSubtab";
 import { V6AutoIssuanceSubtab } from "./V6AutoIssuanceSubtab";
 import { V6LoansSubtab } from "./V6LoansSubtab";
 import { V6SplitsSubtab } from "./V6SplitsSubtab";
+import { V6TokenPanel } from "./V6TokenPanel";
 
 const SUBTABS = [
   { key: "accounts", label: "Accounts" },
@@ -31,7 +33,7 @@ type SubtabKey = (typeof SUBTABS)[number]["key"];
 export function V6OwnersTab({ projects }: { projects: ProjectItem[] }) {
   return (
     // useSearchParams (for the ?subtab= deep link) requires a Suspense boundary.
-    <Suspense fallback={<div className="text-zinc-500">Loading…</div>}>
+    <Suspense fallback={<CardSkeleton rows={4} />}>
       <OwnersTabInner projects={projects} />
     </Suspense>
   );
@@ -62,6 +64,8 @@ function OwnersTabInner({ projects }: { projects: ProjectItem[] }) {
 
   return (
     <div className="text-gray-600 text-md">
+      <V6TokenPanel projects={projects} />
+
       <div className="flex gap-4 sm:gap-6 overflow-x-auto mb-6">
         {SUBTABS.map((t) => (
           <button

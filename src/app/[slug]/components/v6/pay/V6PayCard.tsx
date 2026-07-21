@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { useAllowance } from "@/hooks/useAllowance";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
@@ -653,13 +654,21 @@ export function V6PayCard() {
     (mode === "pay" && !previewReady);
 
   const hasShopStrip = Boolean(shop && shop.tiers.length > 0 && mode === "pay");
+  const showPayReceipt =
+    mode === "pay" &&
+    (cartCount > 0 ||
+      (amountRaw > 0n &&
+        !previewError &&
+        (previewLoading || (!!preview && preview.beneficiaryTokenCount > 0n))));
 
   return (
     <div>
-      <div className="w-full border border-zinc-200">
+      <div
+        className="w-full border border-b-0 border-melon-600"
+      >
       {/* 721 shop strip — same gray as the pay block, flush inside the outline. */}
       {hasShopStrip ? (
-        <div className="w-full bg-zinc-100 px-4 pt-3 pb-1 border-b border-zinc-200">
+        <div className="w-full bg-zinc-100 px-4 pt-3">
           <V6PayShopStrip
             shop={shop!}
             chainId={chainId}
@@ -667,7 +676,13 @@ export function V6PayCard() {
             busy={busy}
           />
           {cartCount > 0 && shopRoutesLoading ? (
-            <p className="mb-2 text-xs text-zinc-500">Checking checkout currencies…</p>
+            <div
+              className="mb-2 flex items-center gap-2"
+              role="status"
+              aria-label="Loading checkout currencies"
+            >
+              <Skeleton className="h-3 w-36" />
+            </div>
           ) : cartCount > 0 && supportedShopTokenIndexes.length === 0 ? (
             <p className="mb-2 text-xs text-red-600">
               No directly accepted payment token has a verified price feed for these items.
@@ -682,9 +697,12 @@ export function V6PayCard() {
 
       <div className="flex justify-center items-center flex-col">
         {/* Pay block: mode dropdown in the label spot, big amount input, token selector at right */}
-        <div className="flex h-30 px-4 py-4 w-full items-center justify-between focus-within:ring-1 focus-within:ring-inset focus-within:ring-zinc-500 bg-zinc-100 border-b border-zinc-200">
-          <div className="flex flex-col flex-1">
-            <div className="flex items-center gap-1.5 self-start">
+        <div
+          className={`grid h-30 w-full grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] content-center bg-zinc-100 px-4 py-4 ${
+            showPayReceipt ? "border-b border-melon-200" : ""
+          }`}
+        >
+            <div className="col-start-1 row-start-1 flex items-center gap-1.5 self-start">
               <TextSelect
                 value={mode}
                 onChange={(v) => setMode(v as V6PayMode)}
@@ -723,9 +741,8 @@ export function V6PayCard() {
               disabled={busy}
               placeholder="0.00"
               aria-label="Amount"
-              className="border-0 bg-transparent pl-0 pr-3 pt-1 pb-0 text-zinc-900 text-2xl w-full placeholder:text-zinc-400 focus:ring-0 focus:outline-none sm:leading-6 disabled:opacity-60"
+              className="col-start-1 row-start-2 min-h-11 border-0 bg-transparent pl-0 pr-3 pt-1 pb-0 text-zinc-900 text-2xl w-full placeholder:text-zinc-400 focus:ring-0 focus:outline-none sm:leading-6 disabled:opacity-60"
             />
-          </div>
           {tokens.length > 1 ? (
             // Valued by INDEX, not address — a token can appear direct and
             // via-router, so the option stays in lock-step with the selection.
@@ -740,7 +757,7 @@ export function V6PayCard() {
               }}
               disabled={busy}
               ariaLabel="Payment token"
-              className="relative inline-flex shrink-0 items-center gap-1"
+              className="relative col-start-2 row-start-2 inline-flex shrink-0 self-center items-center gap-1"
               labelClassName="text-right select-none text-lg text-zinc-900"
               options={tokens.map((t, i) => ({
                 value: String(i),
@@ -749,74 +766,96 @@ export function V6PayCard() {
               }))}
             />
           ) : (
-            <span className="text-right select-none text-lg">
+            <span className="col-start-2 row-start-2 self-center text-right select-none text-lg">
               {selected?.symbol ?? nativeSymbol}
             </span>
           )}
         </div>
 
-        {/* You get block */}
-        <div className="w-full bg-zinc-100 p-4">
-          {mode === "addbalance" ? (
-            <p className="text-sm text-zinc-600">
-              Adds to the project balance — no tokens are minted.
+        {/* Receipt — hidden while idle; item checkouts expand into a detailed cart. */}
+        {showPayReceipt ? (
+          <div className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2.5">
+            <p className="text-sm text-zinc-500">
+              {routeIsRouter ? "You get at least" : "You get"}
             </p>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex flex-col flex-1">
-                  <label className="text-md text-black-700">You get</label>
-                  <div
-                    aria-live="polite"
-                    aria-busy={previewLoading}
-                    className={`text-2xl transition-colors ${
-                      previewLoading || previewIsPrevious ? "text-zinc-400" : "text-zinc-900"
-                    }`}
-                  >
-                    {amountRaw > 0n || cartCount > 0
-                      ? previewError
-                        ? "—"
-                        : preview
-                          ? formatPayAmount(preview.beneficiaryTokenCount, 18)
-                          : "…"
-                      : "0.00"}
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <span className="text-right select-none text-lg">{projectTokenLabel}</span>
-                </div>
-              </div>
+            {preview && preview.beneficiaryTokenCount > 0n ? (
+              <p
+                aria-live="polite"
+                aria-busy={previewLoading}
+                className={`text-xl font-semibold transition-colors ${
+                  previewLoading || previewIsPrevious ? "text-zinc-400" : "text-zinc-900"
+                }`}
+              >
+                {formatPayAmount(preview.beneficiaryTokenCount, 18)} {projectTokenLabel}
+              </p>
+            ) : amountRaw > 0n && previewLoading ? (
+              <Skeleton
+                className="mt-1 h-5 w-24"
+                role="status"
+                aria-label="Calculating token return"
+              />
+            ) : null}
 
-              {previewError && (amountRaw > 0n || cartCount > 0) ? (
-                <p className="mt-1 text-xs text-red-600">
-                  Couldn&apos;t verify what this payment returns — paying is disabled until the
-                  preview works.
-                </p>
-              ) : null}
-              {routeIsRouter && preview && !previewError ? (
-                <p className="mt-1 text-xs text-zinc-500">
-                  You get at least this amount — your payment is swapped in for you.
-                </p>
-              ) : null}
-              {preview &&
-              !previewError &&
-              preview.beneficiaryTokenCount === 0n &&
-              !previewLoading &&
-              (amountRaw > 0n || cartCount > 0) ? (
-                <p className="mt-1 text-xs text-zinc-500">
-                  This payment mints no {projectTokenLabel} under the current rules.
-                </p>
-              ) : null}
+            {cartCount > 0 && shop ? (
+              <div className="mt-3 rounded-md border border-zinc-200 bg-white p-3 text-sm">
+                <div className="space-y-3">
+                  {chainCartItems.map((item) => {
+                    const tier = shop.tiers.find((candidate) => candidate.id === Number(item.tierId));
+                    const canIncrement =
+                      !tier || tier.unlimited || item.quantity < tier.remaining;
+                    const itemName = item.name ?? `Item #${item.tierId}`;
 
-              {cartCount > 0 && shop ? (
-                <div className="mt-3 space-y-1 border-t border-zinc-200 pt-2 text-xs">
-                  {chainCartItems.map((item) => (
-                    <div key={item.tierId.toString()} className="flex justify-between gap-3">
-                      <span className="truncate text-zinc-600">
-                        {item.quantity}× {item.name ?? `Item #${item.tierId}`}
-                      </span>
-                    </div>
-                  ))}
+                    return (
+                      <div key={item.tierId.toString()} className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border border-zinc-200 bg-zinc-100 text-xs text-zinc-500">
+                          {item.imageUri ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={item.imageUri}
+                              alt=""
+                              className="h-full w-full object-contain"
+                            />
+                          ) : (
+                            <span>#{item.tierId.toString()}</span>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium text-zinc-900">{itemName}</p>
+                          <p className="text-xs tabular-nums text-zinc-500">
+                            {formatPayAmount(item.price, shop.pricingDecimals)} {shopPricingSymbol}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              cart.setQuantity(item.tierId, item.chainId, item.quantity - 1)
+                            }
+                            disabled={busy}
+                            aria-label={`Remove one ${itemName}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
+                          >
+                            −
+                          </button>
+                          <span className="min-w-4 text-center tabular-nums">{item.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              cart.setQuantity(item.tierId, item.chainId, item.quantity + 1)
+                            }
+                            disabled={busy || !canIncrement}
+                            aria-label={`Add one ${itemName}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-3 space-y-1.5 border-t border-zinc-200 pt-3">
                   <div className="flex justify-between gap-3">
                     <span className="text-zinc-600">
                       {cartCount} item{cartCount === 1 ? "" : "s"}
@@ -828,7 +867,7 @@ export function V6PayCard() {
                   {address && shopCreditsLoading ? (
                     <div className="flex justify-between gap-3 text-zinc-500">
                       <span>Shop credit</span>
-                      <span>Checking…</span>
+                      <Skeleton className="h-4 w-16" role="status" aria-label="Loading shop credit" />
                     </div>
                   ) : shopCreditApplied > 0n ? (
                     <div className="flex justify-between gap-3 text-teal-700">
@@ -848,54 +887,81 @@ export function V6PayCard() {
                       </span>
                     </div>
                   ) : null}
-                  <div className="flex justify-between gap-3 pt-0.5 font-medium text-zinc-900">
+                  <div className="flex justify-between gap-3 pt-0.5 font-semibold text-zinc-900">
                     <span>Amount due</span>
                     <span className="tabular-nums">
                       {formatPayAmount(cartAmountDue, shop.pricingDecimals)} {shopPricingSymbol}
                     </span>
                   </div>
                 </div>
-              ) : null}
-            </>
-          )}
-          {notStarted ? (
-            <p className="mt-1 text-xs text-zinc-500">
-              Starts in {formatStartCountdown(startsAt - now)}.
-            </p>
-          ) : null}
-        </div>
+              </div>
+            ) : null}
 
-        {/* Splits strip */}
-        <div className="flex gap-1 p-3 bg-zinc-200 w-full text-md text-zinc-700 overflow-x-auto whitespace-nowrap">
-          Splits get{" "}
-          {mode === "pay" && preview && !previewError && (amountRaw > 0n || cartCount > 0)
-            ? formatPayAmount(preview.reservedTokenCount, 18)
-            : 0}{" "}
-          {projectTokenLabel}
-        </div>
+            {preview && preview.reservedTokenCount > 0n ? (
+              <p className="mt-1.5 text-xs font-medium text-zinc-500">
+                Splits get {formatPayAmount(preview.reservedTokenCount, 18)} {projectTokenLabel}
+              </p>
+            ) : null}
+          </div>
+        ) : mode === "addbalance" ? (
+          <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
+            Adds to the project balance — no tokens are minted.
+          </p>
+        ) : null}
+
+        {mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
+          <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
+            Couldn&apos;t verify what this payment returns — paying is disabled until the preview
+            works.
+          </p>
+        ) : null}
+
+        {notStarted ? (
+          <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-500">
+            Starts in {formatStartCountdown(startsAt - now)}.
+          </p>
+        ) : null}
+      </div>
       </div>
 
-      {/* Memo + Pay */}
-      <div className="flex flex-row w-full border-t border-zinc-200">
-        <textarea
-          rows={2}
-          value={memo}
-          onChange={(e) => setMemo(e.target.value.slice(0, 256))}
-          disabled={busy}
-          placeholder="Leave a note"
-          className="flex w-full border-0 border-r border-zinc-200 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 z-10"
-        />
-        <div className="w-[150px] flex">
+      {/* Memo + Pay — compact by default; the button keeps its height if the memo is resized. */}
+      <div className="relative flex w-full flex-row items-start">
+        <div className="relative min-w-0 flex-1 self-stretch">
+          <textarea
+            rows={1}
+            value={memo}
+            onChange={(e) => setMemo(e.target.value.slice(0, 256))}
+            disabled={busy}
+            placeholder="Add a note"
+            className="z-10 flex min-h-14 w-full border-0 border-r border-r-zinc-200 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-px bottom-0 left-0 z-20 border-l border-melon-600"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 border-b border-melon-600"
+          />
+        </div>
+        <div className="relative flex min-h-14 w-[150px] shrink-0 self-stretch items-start">
           <Button
             disabled={payDisabled}
             loading={busy}
             onClick={openConfirm}
-            className="w-full bg-teal-500 hover:bg-teal-600"
+            className="h-14 w-full bg-teal-500 text-melon-950 hover:bg-teal-600"
           >
             {notStarted ? "Soon" : mode === "pay" ? "Pay" : "Add"}
           </Button>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-px left-0 right-0 z-20 h-[57px] border-b border-r border-melon-600"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-0 left-0 top-[55px] z-20 border-l border-melon-600"
+          />
         </div>
-      </div>
       </div>
 
       {/* Notices */}

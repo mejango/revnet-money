@@ -4,6 +4,8 @@ import { MAX_RULESET_COUNT, RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constant
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -137,6 +139,8 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
     query: { enabled: chains.length > 0 && rulesetsByChain.size > 0 },
   });
 
+  if (rulesetReads.isLoading) return <TableSkeleton rows={4} columns={3} />;
+
   return (
     <div>
       <p className="text-md text-black font-light italic mb-2">
@@ -154,7 +158,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
             withEnsName
           />
         ) : (
-          "…"
+          <Skeleton className="inline-block h-3 w-28 align-middle" />
         )}
       </div>
 
@@ -195,8 +199,8 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                 <ChainLogo chainId={c.chainId} />
                 {JB_CHAINS[c.chainId].name}
               </div>
-              <div className="bg-zinc-50 border-zinc-200 border">
-                <div className="p-2">
+              <div className="overflow-auto">
+                <div>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -207,11 +211,13 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                     </TableHeader>
                     <TableBody>
                       {splitReads.isLoading ? (
-                        <TableRow>
-                          <TableCell colSpan={3} className="text-center text-zinc-400">
-                            Loading…
-                          </TableCell>
-                        </TableRow>
+                        Array.from({ length: 3 }, (_, index) => (
+                          <TableRow key={index}>
+                            <TableCell><Skeleton className="h-3 w-32" /></TableCell>
+                            <TableCell><Skeleton className="h-3 w-24" /></TableCell>
+                            <TableCell><Skeleton className="h-3 w-28" /></TableCell>
+                          </TableRow>
+                        ))
                       ) : !splits ? (
                         <TableRow>
                           <TableCell colSpan={3} className="text-center text-zinc-400">

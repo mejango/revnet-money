@@ -2,6 +2,7 @@
 
 import { EditMetadataDialog } from "@/app/[slug]/about/components/EditMetadataDialog";
 import { ChangeSplitRecipientsDialog } from "@/app/[slug]/owners/components/ChangeSplitRecipientsDialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useFetchProjectRulesets } from "@/hooks/useFetchProjectRulesets";
 import { useJBChainId, useSuckers } from "@bananapus/nana-sdk-react";
 import { ProjectItem } from "../shared";
@@ -9,7 +10,8 @@ import { ProjectItem } from "../shared";
 /**
  * website/-parity renderEditsCard: the operator's edit actions, each reusing
  * the app's existing dialog. "Set token metadata" is intentionally absent —
- * revnet-app has no setTokenMetadataOf/deployERC20 flow to reuse.
+ * Token identity edits live in the Owners Token panel, immediately above the
+ * Owners subtabs, where their omnichain state is visible in context.
  */
 export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
   const chainId = useJBChainId();
@@ -29,29 +31,30 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
 
   return (
     <div>
-      <h3 className="text-sm font-medium text-zinc-500 mb-2">Edits</h3>
+      <h3 className="mb-2 text-base font-semibold text-zinc-700">Edits</h3>
       <div className="max-w-screen-sm space-y-4">
-        <div className="border border-zinc-200 rounded p-4">
+        <div className="bg-melon-50 p-4">
           <p className="text-sm font-medium">Set project metadata</p>
           <p className="text-xs text-zinc-500 mt-1 mb-3">
             Update the project&apos;s name, logo, description, links, and tags. Requires the
             operator&apos;s SET_PROJECT_URI permission.
           </p>
-          <EditMetadataDialog projects={projects} />
+          <EditMetadataDialog projects={projects} triggerVariant="default" />
         </div>
-        <div className="border border-zinc-200 rounded p-4">
+        <div className="bg-melon-50 p-4">
           <p className="text-sm font-medium">Set splits</p>
           <p className="text-xs text-zinc-500 mt-1 mb-3">
-            Edit the split recipients for the current stage. Requires the
-            operator&apos;s SET_SPLIT_GROUPS permission.
+            Edit the split recipients for the current stage. Requires the operator&apos;s
+            SET_SPLIT_GROUPS permission.
           </p>
           {chainId ? (
             <ChangeSplitRecipientsDialog
               stageId={currentStageIdx}
               initialChainId={chainId}
+              triggerVariant="default"
             />
           ) : (
-            <p className="text-xs text-zinc-500">Loading chain context…</p>
+            <Skeleton className="h-8 w-36" />
           )}
         </div>
       </div>
