@@ -90,7 +90,6 @@ export function V6PayShopStrip({
                 <span className="mx-auto block h-14 w-14 overflow-hidden rounded">
                   <TierMediaPreview media={media} tierId={tier.id} alt={name} />
                 </span>
-                <span className="mt-1 block truncate text-[11px] text-zinc-900">{name}</span>
               </button>
               {soldOut ? (
                 <p className="px-2 pb-2 text-[10px] text-zinc-500">Sold out</p>

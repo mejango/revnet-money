@@ -652,43 +652,69 @@ export function V6PayCard() {
     (amountRaw <= 0n && !creditOnlyCheckout) ||
     (mode === "pay" && !previewReady);
 
+  const hasShopStrip = Boolean(shop && shop.tiers.length > 0 && mode === "pay");
+
   return (
     <div>
-      {/* 721 shop strip */}
-      {shop && shop.tiers.length > 0 && mode === "pay" ? (
-        <V6PayShopStrip
-          shop={shop}
-          chainId={chainId}
-          pricingSymbol={shopPricingSymbol}
-          busy={busy}
-        />
-      ) : null}
-      {cartCount > 0 && shopRoutesLoading ? (
-        <p className="mb-2 text-xs text-zinc-500">Checking checkout currencies…</p>
-      ) : cartCount > 0 && supportedShopTokenIndexes.length === 0 ? (
-        <p className="mb-2 text-xs text-red-600">
-          No directly accepted payment token has a verified price feed for these items.
-        </p>
-      ) : cartCount > 0 && !shopMatchesToken ? (
-        <p className="mb-2 text-xs text-zinc-500">Switching to a supported checkout currency…</p>
+      <div className="w-full border border-zinc-200">
+      {/* 721 shop strip — same gray as the pay block, flush inside the outline. */}
+      {hasShopStrip ? (
+        <div className="w-full bg-zinc-100 px-4 pt-3 pb-1 border-b border-zinc-200">
+          <V6PayShopStrip
+            shop={shop!}
+            chainId={chainId}
+            pricingSymbol={shopPricingSymbol}
+            busy={busy}
+          />
+          {cartCount > 0 && shopRoutesLoading ? (
+            <p className="mb-2 text-xs text-zinc-500">Checking checkout currencies…</p>
+          ) : cartCount > 0 && supportedShopTokenIndexes.length === 0 ? (
+            <p className="mb-2 text-xs text-red-600">
+              No directly accepted payment token has a verified price feed for these items.
+            </p>
+          ) : cartCount > 0 && !shopMatchesToken ? (
+            <p className="mb-2 text-xs text-zinc-500">
+              Switching to a supported checkout currency…
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="flex justify-center items-center flex-col">
         {/* Pay block: mode dropdown in the label spot, big amount input, token selector at right */}
-        <div className="flex h-30 px-4 py-4 w-full items-center justify-between shadow-sm focus-within:ring-1 focus-within:ring-inset focus-within:ring-zinc-500 bg-zinc-100 border-b border-t border-l border-r border-zinc-200">
+        <div className="flex h-30 px-4 py-4 w-full items-center justify-between focus-within:ring-1 focus-within:ring-inset focus-within:ring-zinc-500 bg-zinc-100 border-b border-zinc-200">
           <div className="flex flex-col flex-1">
-            <TextSelect
-              value={mode}
-              onChange={(v) => setMode(v as V6PayMode)}
-              disabled={busy}
-              ariaLabel="Payment mode"
-              className="relative inline-flex items-center gap-1 self-start"
-              labelClassName="text-md text-black-700"
-              options={[
-                { value: "pay", label: "Pay" },
-                { value: "addbalance", label: "Add to balance" },
-              ]}
-            />
+            <div className="flex items-center gap-1.5 self-start">
+              <TextSelect
+                value={mode}
+                onChange={(v) => setMode(v as V6PayMode)}
+                disabled={busy}
+                ariaLabel="Payment mode"
+                className="relative inline-flex items-center gap-1"
+                labelClassName="text-md text-black-700"
+                options={[
+                  { value: "pay", label: "Pay" },
+                  { value: "addbalance", label: "Add to balance" },
+                ]}
+              />
+              <span className="text-md text-zinc-500">on</span>
+              {chainOptions.length > 1 ? (
+                <TextSelect
+                  value={String(chainId)}
+                  onChange={switchChain}
+                  disabled={busy}
+                  ariaLabel="Chain"
+                  className="relative inline-flex items-center gap-1"
+                  labelClassName="text-md text-black-700"
+                  options={chainOptions.map((option) => ({
+                    value: String(option.peerChainId),
+                    label: JB_CHAINS[option.peerChainId]?.name ?? String(option.peerChainId),
+                  }))}
+                />
+              ) : (
+                <span className="text-md text-black-700">{JB_CHAINS[chainId]?.name}</span>
+              )}
+            </div>
             <input
               type="text"
               inputMode="decimal"
@@ -730,7 +756,7 @@ export function V6PayCard() {
         </div>
 
         {/* You get block */}
-        <div className="w-full border-r border-l border-zinc-200 bg-zinc-100 p-4">
+        <div className="w-full bg-zinc-100 p-4">
           {mode === "addbalance" ? (
             <p className="text-sm text-zinc-600">
               Adds to the project balance — no tokens are minted.
@@ -840,7 +866,7 @@ export function V6PayCard() {
         </div>
 
         {/* Splits strip */}
-        <div className="flex gap-1 p-3 bg-zinc-200 border-r border-l border-zinc-300 w-full text-md text-zinc-700 overflow-x-auto whitespace-nowrap">
+        <div className="flex gap-1 p-3 bg-zinc-200 w-full text-md text-zinc-700 overflow-x-auto whitespace-nowrap">
           Splits get{" "}
           {mode === "pay" && preview && !previewError && (amountRaw > 0n || cartCount > 0)
             ? formatPayAmount(preview.reservedTokenCount, 18)
@@ -850,14 +876,14 @@ export function V6PayCard() {
       </div>
 
       {/* Memo + Pay */}
-      <div className="flex flex-row">
+      <div className="flex flex-row w-full border-t border-zinc-200">
         <textarea
           rows={2}
           value={memo}
           onChange={(e) => setMemo(e.target.value.slice(0, 256))}
           disabled={busy}
           placeholder="Leave a note"
-          className="flex w-full border border-zinc-200 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 z-10"
+          className="flex w-full border-0 border-r border-zinc-200 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 z-10"
         />
         <div className="w-[150px] flex">
           <Button
@@ -869,6 +895,7 @@ export function V6PayCard() {
             {notStarted ? "Soon" : mode === "pay" ? "Pay" : "Add"}
           </Button>
         </div>
+      </div>
       </div>
 
       {/* Notices */}
