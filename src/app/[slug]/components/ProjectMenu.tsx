@@ -13,7 +13,7 @@ export function ProjectMenu() {
   // original tabs untouched.
   if (version === 6) {
     return (
-      <ul className="flex gap-4 sm:gap-6 overflow-x-auto">
+      <ul className="flex gap-4 sm:gap-6 overflow-x-auto border-b border-zinc-200">
         <MenuOption href="">Overview</MenuOption>
         <MenuOption href="terms">Terms</MenuOption>
         <MenuOption href="owners">Owners</MenuOption>
@@ -25,7 +25,7 @@ export function ProjectMenu() {
   }
 
   return (
-    <ul className="flex gap-4 sm:gap-6">
+    <ul className="flex gap-4 sm:gap-6 border-b border-zinc-200">
       <MenuOption href="">About</MenuOption>
       <MenuOption href="terms">Terms</MenuOption>
       <MenuOption href="owners">Owners</MenuOption>
@@ -48,10 +48,11 @@ function MenuOption({
       <Link
         href={`/${decodeURIComponent(params.slug)}/${href}`}
         className={clsx(
-          "flex items-start text-xl sm:text-2xl font-medium transition-all whitespace-nowrap",
+          // -mb-px drops the active border onto the row's persistent baseline.
+          "flex items-start text-xl sm:text-2xl font-medium transition-all whitespace-nowrap -mb-px border-b-2 pb-2",
           {
-            "text-black underline decoration-teal-500 underline-offset-8 decoration-2": isSelected,
-            "text-zinc-500 hover:text-zinc-800": !isSelected,
+            "text-black border-teal-500": isSelected,
+            "text-zinc-500 hover:text-zinc-800 border-transparent": !isSelected,
           },
         )}
       >
