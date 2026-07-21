@@ -123,11 +123,11 @@ export function TierDetailModal({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl p-0 gap-0">
         <div className="grid md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <div className="flex min-h-56 items-center justify-center bg-zinc-100 p-4">
+          <div className="flex min-h-56 items-center justify-center bg-white p-4">
             <TierMediaPreview media={media} tierId={tier.id} alt={name} detail />
           </div>
 
-          <div className="p-5">
+          <div className="bg-zinc-50 p-5">
             <DialogTitle className="pr-8 text-xl font-medium text-zinc-900">{name}</DialogTitle>
             {media?.description ? (
               <p className="mt-2 text-sm leading-relaxed text-zinc-600">{media.description}</p>

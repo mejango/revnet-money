@@ -252,7 +252,7 @@ function TierCard({
         type="button"
         onClick={onOpen}
         aria-label={`View details for ${name}`}
-        className="relative block aspect-square w-full bg-zinc-100 text-left"
+        className="relative block aspect-square w-full bg-white text-left"
       >
         <TierMediaPreview media={media} tierId={tier.id} alt={name} />
         {discounted ? (
@@ -272,7 +272,7 @@ function TierCard({
         ) : null}
       </button>
 
-      <div className="p-3">
+      <div className="bg-zinc-50 border-t border-zinc-200 p-3">
         <button
           type="button"
           onClick={onOpen}
