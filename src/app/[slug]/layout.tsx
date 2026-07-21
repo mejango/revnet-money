@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { PropsWithChildren, Suspense } from "react";
 import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
 import { Header } from "./components/Header/Header";
+import { ShopCartProvider } from "./components/v6/ShopCartContext";
 import { NewProjectNotice } from "./components/NewProjectNotice";
 import { PayCard } from "./components/PayCard/PayCard";
 import { ProjectMenu } from "./components/ProjectMenu";
@@ -106,6 +107,7 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
 
   return (
     <ProjectProviders chainId={chainId} projectId={projectId} version={version}>
+      <ShopCartProvider>
       <Nav />
 
       <div className="w-full px-4 sm:container pt-6">
@@ -141,6 +143,7 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
           </div>
         </div>
       </div>
+      </ShopCartProvider>
     </ProjectProviders>
   );
 }
