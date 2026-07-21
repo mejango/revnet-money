@@ -55,7 +55,7 @@ export function TierMediaPreview({
         loading={detail ? "eager" : "lazy"}
         decoding="async"
         onError={() => setFailed(true)}
-        className={detail ? "max-h-96 w-full object-contain" : "h-full w-full object-cover"}
+        className={detail ? "max-h-96 w-full object-contain" : "h-full w-full object-contain"}
       />
     );
   }
@@ -73,7 +73,7 @@ export function TierMediaPreview({
         playsInline
         preload={detail ? "metadata" : "none"}
         onError={() => setFailed(true)}
-        className={detail ? "max-h-96 w-full object-contain" : "h-full w-full object-cover"}
+        className={detail ? "max-h-96 w-full object-contain" : "h-full w-full object-contain"}
       />
     );
   }

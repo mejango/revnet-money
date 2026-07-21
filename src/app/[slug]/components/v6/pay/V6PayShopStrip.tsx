@@ -84,10 +84,10 @@ export function V6PayShopStrip({
                   setTierQuantity(tier, 1);
                 }}
                 disabled={busy || soldOut}
-                className="block w-full p-2 pb-1 disabled:cursor-not-allowed"
+                className="block w-full disabled:cursor-not-allowed"
                 title={soldOut ? `${name} is sold out` : `Add ${name} to cart`}
               >
-                <span className="mx-auto block h-14 w-14 overflow-hidden rounded">
+                <span className="block aspect-square w-full overflow-hidden">
                   <TierMediaPreview media={media} tierId={tier.id} alt={name} />
                 </span>
               </button>
