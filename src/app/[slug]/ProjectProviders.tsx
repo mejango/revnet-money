@@ -15,14 +15,11 @@ export function ProjectProviders(
 
   // Extract API key: if URL ends with domain only, return empty string
   // If URL has a path after domain, use that as the API key
-  //
-  // Keyless fallback: the SDK posts to `https://[testnet.]bendystraw.xyz/<apiKey>`
-  // and the BARE origin 404s — passing "graphql" as the path lands on the public
-  // endpoint on both networks.
+  // (the SDK appends /graphql itself, so a keyless setup needs exactly "").
   const apiKey =
-    (bendystrawUrl.length > 3 && bendystrawUrl[bendystrawUrl.length - 1]
+    bendystrawUrl.length > 3 && bendystrawUrl[bendystrawUrl.length - 1]
       ? bendystrawUrl[bendystrawUrl.length - 1]
-      : "") || "graphql";
+      : "";
 
   return (
     <JBProjectProvider

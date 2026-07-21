@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   buildStepPoints,
@@ -11,21 +12,24 @@ import {
 
 /**
  * SVG scaffold for the stepped issuance-price schedule chart (website/ parity:
- * issuanceChartSvg + mountChart): axes, stage-boundary dividers, the "Now"
- * marker, the price ladder polyline, hover crosshair + inspected point, and
- * scale/date labels. Pure SVG — no chart library.
+ * issuanceChartSvg + mountChart): light horizontal gridlines, stage-boundary
+ * dividers, the "Now" marker, the price ladder polyline, hover crosshair, and
+ * scale/date labels. Pure SVG — no chart library. Styled to match
+ * TokenPriceChart's quiet chrome: no card box, thin non-scaling strokes,
+ * dashed gridlines, muted HTML labels.
  */
 
 export const ISSUANCE_COLOR = "#0d9488"; // teal-600
 export const NOW_COLOR = "#fb923c"; // orange-400
 
-// Plot area gutters inside a 320×180 viewBox.
+// Plot area gutters inside a 320×140 viewBox. Text lives in HTML overlays so
+// the gutters only pad the plot itself.
 const VW = 320;
-const VH = 180;
-const PL = 12;
-const PR = 12;
-const PT = 16;
-const PB = 22;
+const VH = 140;
+const PL = 0;
+const PR = 0;
+const PT = 4;
+const PB = 4;
 
 export type ChartGeom = {
   /** Time → x in viewBox units. */
@@ -38,7 +42,7 @@ export type ChartGeom = {
   maxV: number;
 };
 
-/** One range-selector pill; the caller maps its own range model over these. */
+/** One range-selector pill, styled like the ui RangeSelector's options. */
 export function ChartRangeButton({
   label,
   active,
@@ -53,11 +57,10 @@ export function ChartRangeButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-sm border px-2 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none ${
-        active
-          ? "border-teal-500 bg-teal-50 text-teal-700"
-          : "border-zinc-200 bg-white text-zinc-500 hover:border-teal-300 hover:text-teal-600"
-      }`}
+      className={cn(
+        "px-2.5 py-1 text-sm font-medium rounded-md transition-all focus-visible:outline-none",
+        active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700",
+      )}
     >
       {label}
     </button>
@@ -86,11 +89,11 @@ export function StepChartBase({
   ariaLabel: string;
   /** Whether to draw the Now marker (e.g. only inside a projected window). */
   showNowMarker?: boolean;
-  /** Rendered inside the card above the svg (summary tiles, range pills). */
+  /** Rendered above the plot (summary tiles, range pills). */
   header?: ReactNode;
   /** Extra series drawn after the stage boundaries, behind the Now marker. */
   renderSeries?: (geom: ChartGeom) => ReactNode;
-  /** Extra marks drawn after the inspected point, under the scale labels. */
+  /** Extra marks drawn after the hover crosshair. */
   renderOverlay?: (geom: ChartGeom) => ReactNode;
 }) {
   const [hoverT, setHoverT] = useState<number | null>(null);
@@ -106,15 +109,13 @@ export function StepChartBase({
   const maxV = points.reduce((m, [, v]) => (v !== null && v > m ? v : m), 0);
 
   if (resolved.length === 0 || maxV <= 0) {
-    return (
-      <div className="mt-3 rounded-md border border-zinc-200 bg-white p-4">
-        <p className="text-xs text-zinc-500">No issuance to chart.</p>
-      </div>
-    );
+    return <p className="mt-3 text-xs text-zinc-500">No issuance to chart.</p>;
   }
 
   const X = (t: number) => PL + ((VW - PL - PR) * (t - t0)) / (t1 - t0);
   const Y = (v: number) => PT + (VH - PT - PB) * (1 - Math.max(0, Math.min(1, v / maxV)));
+  /** viewBox x → CSS percentage, for constant-size HTML overlays. */
+  const pct = (x: number) => `${((x / VW) * 100).toFixed(2)}%`;
 
   const path = points
     // No issuance has an infinite price; pin it to the top of the finite
@@ -137,24 +138,39 @@ export function StepChartBase({
   };
 
   return (
-    <div className="mt-3 rounded-md border border-zinc-200 bg-white p-4">
+    <div className="mt-3 w-full">
       {header}
-      <svg
-        viewBox={`0 0 ${VW} ${VH}`}
-        className="mt-2 h-auto w-full cursor-crosshair touch-none"
-        role="img"
-        aria-label={ariaLabel}
-        onPointerMove={onPointerMove}
-        onPointerLeave={() => setHoverT(null)}
-      >
-        {/* Axes */}
-        <line x1={PL} y1={VH - PB} x2={VW - PR} y2={VH - PB} stroke="#e4e4e7" strokeWidth="1" />
-        <line x1={PL} y1={VH - PB} x2={PL} y2={PT} stroke="#e4e4e7" strokeWidth="1" />
-        {/* Stage boundaries */}
-        {resolved.map((s, i) =>
-          i > 0 && s.start > t0 && s.start < t1 ? (
-            <g key={s.start}>
+      <div className="relative mt-2">
+        <svg
+          viewBox={`0 0 ${VW} ${VH}`}
+          className="h-auto w-full cursor-crosshair touch-none"
+          role="img"
+          aria-label={ariaLabel}
+          onPointerMove={onPointerMove}
+          onPointerLeave={() => setHoverT(null)}
+        >
+          {/* Horizontal gridlines only, like TokenPriceChart's CartesianGrid. */}
+          {[0, 1, 2, 3, 4].map((i) => {
+            const y = PT + ((VH - PT - PB) * i) / 4;
+            return (
               <line
+                key={i}
+                x1={PL}
+                y1={y}
+                x2={VW - PR}
+                y2={y}
+                stroke="#e4e4e7"
+                strokeWidth="1"
+                strokeDasharray="3 3"
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+          {/* Stage boundaries */}
+          {resolved.map((s, i) =>
+            i > 0 && s.start > t0 && s.start < t1 ? (
+              <line
+                key={s.start}
                 x1={X(s.start)}
                 y1={PT}
                 x2={X(s.start)}
@@ -162,17 +178,13 @@ export function StepChartBase({
                 stroke="#d4d4d8"
                 strokeWidth="1"
                 strokeDasharray="3 3"
+                vectorEffect="non-scaling-stroke"
               />
-              <text x={X(s.start) + 3} y={PT + 8} fontSize="6.5" fill="#a1a1aa">
-                Stage {i + 1}
-              </text>
-            </g>
-          ) : null,
-        )}
-        {renderSeries?.(geom)}
-        {/* Now marker */}
-        {showNowMarker ? (
-          <>
+            ) : null,
+          )}
+          {renderSeries?.(geom)}
+          {/* Now marker */}
+          {showNowMarker ? (
             <line
               x1={nowX}
               y1={PT}
@@ -181,77 +193,85 @@ export function StepChartBase({
               stroke={NOW_COLOR}
               strokeWidth="1"
               strokeDasharray="4 3"
+              vectorEffect="non-scaling-stroke"
             />
-            <text
-              x={nowX > VW - PR - 24 ? nowX - 3 : nowX + 3}
-              y={PT - 4}
-              fontSize="7"
-              fill="#71717a"
-              textAnchor={nowX > VW - PR - 24 ? "end" : "start"}
-            >
-              Now
-            </text>
-          </>
-        ) : null}
-        {/* The price ladder */}
-        <polyline
-          points={path}
-          fill="none"
-          stroke={ISSUANCE_COLOR}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* Crosshair guides while hovering */}
-        {hoverT !== null && price !== null ? (
-          <>
-            <line
-              x1={X(t)}
-              y1={VH - PB}
-              x2={X(t)}
-              y2={Y(price)}
-              stroke="#a1a1aa"
-              strokeWidth="1"
-              strokeDasharray="2 2"
-            />
-            <line
-              x1={PL}
-              y1={Y(price)}
-              x2={X(t)}
-              y2={Y(price)}
-              stroke="#a1a1aa"
-              strokeWidth="1"
-              strokeDasharray="2 2"
-            />
-          </>
-        ) : null}
-        {/* The inspected point */}
-        <circle
-          cx={X(t)}
-          cy={Y(price ?? maxV)}
-          r="3.5"
-          fill={NOW_COLOR}
-          stroke="#18181b"
-          strokeWidth="1"
-        />
-        {renderOverlay?.(geom)}
-        {/* Scale + date labels */}
-        <text x={PL + 3} y={PT + 7} fontSize="7" fill="#a1a1aa">
+          ) : null}
+          {/* The price ladder */}
+          <polyline
+            points={path}
+            fill="none"
+            stroke={ISSUANCE_COLOR}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+          {/* Crosshair guides + inspected point while hovering */}
+          {hoverT !== null && price !== null ? (
+            <>
+              <line
+                x1={X(t)}
+                y1={VH - PB}
+                x2={X(t)}
+                y2={Y(price)}
+                stroke="#a1a1aa"
+                strokeWidth="1"
+                strokeDasharray="2 2"
+                vectorEffect="non-scaling-stroke"
+              />
+              <line
+                x1={PL}
+                y1={Y(price)}
+                x2={X(t)}
+                y2={Y(price)}
+                stroke="#a1a1aa"
+                strokeWidth="1"
+                strokeDasharray="2 2"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle cx={X(t)} cy={Y(price)} r="2.5" fill={ISSUANCE_COLOR} />
+            </>
+          ) : null}
+          {renderOverlay?.(geom)}
+        </svg>
+        {/* Constant-size labels overlay the plot as HTML so they don't scale
+            with the svg. */}
+        <span className="pointer-events-none absolute left-0 top-0 bg-white/70 pr-1 text-[11px] leading-none text-zinc-400">
           {formatPrice(maxV)} {baseSymbol}
-        </text>
-        <text x={PL} y={VH - 6} fontSize="7.5" fill="#a1a1aa">
-          {chartDateLabel(t0, span)}
-        </text>
-        <text x={VW - PR} y={VH - 6} textAnchor="end" fontSize="7.5" fill="#a1a1aa">
-          {chartDateLabel(t1, span)}
-        </text>
-      </svg>
-      <p className="mt-2 text-xs leading-relaxed text-zinc-500" aria-live="polite">
-        <span className="font-medium text-zinc-900">{chartDateLabel(t, span)}</span>
+        </span>
+        {resolved.map((s, i) =>
+          i > 0 && s.start > t0 && s.start < t1 ? (
+            <span
+              key={s.start}
+              className="pointer-events-none absolute top-4 text-[10px] leading-none text-zinc-400"
+              style={{ left: `calc(${pct(X(s.start))} + 3px)` }}
+            >
+              Stage {i + 1}
+            </span>
+          ) : null,
+        )}
+        {showNowMarker ? (
+          <span
+            className={cn(
+              "pointer-events-none absolute top-0 text-[10px] leading-none text-zinc-400",
+              nowX > VW - 24 && "-translate-x-full",
+            )}
+            style={{ left: `calc(${pct(nowX)} + ${nowX > VW - 24 ? "-3px" : "3px"})` }}
+          >
+            Now
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-1 flex justify-between text-[11px] text-zinc-400">
+        <span>{chartDateLabel(t0, span)}</span>
+        <span>{chartDateLabel(t1, span)}</span>
+      </div>
+      <p className="mt-1.5 text-xs text-zinc-500" aria-live="polite">
+        <span className="text-zinc-600">{chartDateLabel(t, span)}</span>
         {" — "}
         {price !== null ? (
           <>
-            <span className="font-medium text-zinc-900 tabular-nums">
+            <span className="font-medium text-zinc-600 tabular-nums">
               {formatPrice(price)} {baseSymbol}
             </span>{" "}
             per {symbol}

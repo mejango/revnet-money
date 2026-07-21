@@ -14,15 +14,19 @@ import {
 import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
-import { toBaseCurrencyId } from "@/lib/currency";
 import { getProjectsReclaimableSurplus } from "@/lib/reclaimableSurplus";
-import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import {
+  getTokenConfigForChain,
+  getTokenSymbolFromAddress,
+  TokenConfig,
+} from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
   formatUnits,
   getRevnetLoanContract,
   JB_CHAINS,
   JBCoreContracts,
+  jbMultiTerminalAbi,
   jbTokensAbi,
   revOwnerAbi,
   RevnetCoreContracts,
@@ -125,6 +129,50 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     return map;
   }, [balances, creditsData]);
 
+  // Per-chain accounting contexts read on-chain from the canonical
+  // JBMultiTerminal — the authoritative (token, currency, decimals) for cash
+  // out and loan quotes (e.g. Artizen's USDC context: currency
+  // uint32(token) = 3181390099, 6 decimals). The indexer's sucker-group rows
+  // are only a fallback: quoting in anything but the accounting currency
+  // reverts (no price feed) and rendered every quote as "—".
+  const contextContracts = useMemo(
+    () =>
+      balances
+        ? balances.map((b) => ({
+            chainId: b.chainId,
+            abi: jbMultiTerminalAbi,
+            address: contractAddress(JBCoreContracts.JBMultiTerminal, b.chainId),
+            functionName: "accountingContextsOf" as const,
+            args: [b.projectId] as const,
+          }))
+        : [],
+    [balances, contractAddress],
+  );
+  const { data: contextsData } = useReadContracts({
+    contracts: contextContracts,
+    query: { enabled: contextContracts.length > 0 },
+  });
+  const accountingContextByChain = useMemo(() => {
+    const map = new Map<number, TokenConfig>();
+    balances?.forEach((b, i) => {
+      const contexts = contextsData?.[i]?.result as
+        | readonly { token: `0x${string}`; decimals: number; currency: number }[]
+        | undefined;
+      if (!contexts?.length) return;
+      // Projects can hold several contexts; prefer the one for the indexed
+      // accounting token, else the first.
+      const indexedToken = getTokenConfigForChain(suckerGroupData, b.chainId).token;
+      const context =
+        contexts.find((c) => c.token.toLowerCase() === indexedToken.toLowerCase()) ?? contexts[0];
+      map.set(b.chainId, {
+        token: context.token,
+        currency: Number(context.currency),
+        decimals: Number(context.decimals),
+      });
+    });
+    return map;
+  }, [balances, contextsData, suckerGroupData]);
+
   // The revnet's cash out delay gates BOTH direct cash outs and loans.
   const { data: cashOutDelay } = useReadContract({
     abi: revOwnerAbi,
@@ -185,7 +233,9 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
   // Cross-chain monetary totals are only honest when every held chain produced
   // a value in the same accounting token.
-  const heldConfigs = held.map((b) => getTokenConfigForChain(suckerGroupData, b.chainId));
+  const heldConfigs = held.map(
+    (b) => accountingContextByChain.get(b.chainId) ?? getTokenConfigForChain(suckerGroupData, b.chainId),
+  );
   const homogeneous =
     heldConfigs.length > 0 &&
     heldConfigs.every(
@@ -237,6 +287,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                   locked={locked}
                   tokenSymbol={tokenSymbol}
                   projectTokenDecimals={projectTokenDecimals}
+                  accountingContext={accountingContextByChain.get(b.chainId)}
                   suckerGroupData={suckerGroupData}
                   onQuote={reportQuote}
                 />
@@ -352,6 +403,7 @@ function YouChainRow({
   locked,
   tokenSymbol,
   projectTokenDecimals,
+  accountingContext,
   suckerGroupData,
   onQuote,
 }: {
@@ -362,22 +414,25 @@ function YouChainRow({
   locked: boolean;
   tokenSymbol: string;
   projectTokenDecimals: number;
+  accountingContext: TokenConfig | undefined;
   suckerGroupData: any;
   onQuote: (chainId: number, quote: ChainQuote) => void;
 }) {
   const { version } = useJBContractContext();
-  const config = getTokenConfigForChain(suckerGroupData, chainId);
+  const config = accountingContext ?? getTokenConfigForChain(suckerGroupData, chainId);
   const baseSymbol = getTokenSymbolFromAddress(config.token);
 
   // v6 currentReclaimableSurplusOf takes empty (terminals, tokens) arrays,
-  // meaning "across all of them"; the hook applies the protocol fees.
+  // meaning "across all of them"; the hook applies the protocol fees. Both
+  // quotes are asked in the accounting context's own currency and decimals —
+  // any other currency needs a price feed the project may not have.
   const { data: cashout } = useReclaimableSurplus({
     chainId,
     projectId: chainProjectId,
     tokenAmount: balanceValue,
     version,
     decimals: config.decimals,
-    currencyId: toBaseCurrencyId(config.currency, version),
+    currencyId: config.currency,
   });
 
   // v6 borrowableAmountFrom returns a (borrowableNow, capacity) tuple; the hook

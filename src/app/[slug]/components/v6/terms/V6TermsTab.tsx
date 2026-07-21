@@ -1,9 +1,12 @@
 "use client";
 
 import { useTokenA } from "@/hooks/useTokenA";
+import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
-import { useJBTokenContext } from "@bananapus/nana-sdk-react";
+import { JBCoreContracts, jbMultiTerminalAbi } from "@bananapus/nana-sdk-core";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
+import { useReadContract } from "wagmi";
 import { CurrentIssuanceSection } from "../../../terms/components/CurrentIssuanceSection";
 import { StagesTable } from "../../../terms/components/StagesTable";
 import type { Ruleset } from "../../../terms/getRulesets";
@@ -20,9 +23,26 @@ import type { ChartStage } from "./chartUtils";
 export function V6TermsTab({ rulesets }: { rulesets: Ruleset[] }) {
   const { token } = useJBTokenContext();
   const tokenA = useTokenA();
+  const { projectId, contractAddress } = useJBContractContext();
+  const chainId = useJBChainId();
+
+  // The chart's price unit comes from the terminal's on-chain accounting
+  // context (authoritative for v6 — e.g. USDC, currency uint32(token)); the
+  // indexer-backed base token is only a fallback.
+  const { data: accountingContexts } = useReadContract({
+    abi: jbMultiTerminalAbi,
+    functionName: "accountingContextsOf",
+    chainId,
+    address: chainId ? contractAddress(JBCoreContracts.JBMultiTerminal, chainId) : undefined,
+    args: [projectId],
+    query: { enabled: !!chainId },
+  });
+  const accountingSymbol = accountingContexts?.[0]
+    ? getTokenSymbolFromAddress(accountingContexts[0].token)
+    : undefined;
 
   const symbol = formatTokenSymbol(token);
-  const baseSymbol = tokenA?.symbol ?? "ETH";
+  const baseSymbol = accountingSymbol ?? tokenA?.symbol ?? "ETH";
 
   // getRulesets stores weightCutPercent as a fraction (WeightCutPercent.toFloat,
   // 0.38 = 38%); the chart math runs on the protocol's raw 1e9 scale.

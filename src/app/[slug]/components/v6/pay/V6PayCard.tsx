@@ -1,6 +1,6 @@
 "use client";
 
-import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useAllowance } from "@/hooks/useAllowance";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
@@ -17,7 +17,6 @@ import {
 } from "@/lib/v6/pay";
 import {
   JB_CHAINS,
-  JBChainId,
   jbContractAddress,
   JBCoreContracts,
   jbMultiTerminalAbi,
@@ -398,8 +397,8 @@ export function V6PayCard() {
 
   const creditOnlyCheckout = mode === "pay" && cartCount > 0 && cartAmountDue === 0n;
 
-  const openConfirm = async () => {
-    if (!selected || !publicClient || !address) return;
+  const openConfirm = () => {
+    if (!selected) return;
     if (amountRaw <= 0n && !creditOnlyCheckout) return;
     if (notStarted || surfaceError || addBalanceViaRouter || insufficientBalance) return;
     if (mode === "pay" && (surface?.pausePay || !previewReady)) return;
@@ -410,9 +409,18 @@ export function V6PayCard() {
     setPrepared(null);
     setPhase("preparing");
     setConfirmOpen(true);
+  };
 
-    try {
-      const client = publicClient as PublicClient;
+  // Preparing runs as an effect so the confirm dialog can open BEFORE a wallet
+  // is connected (connect/switch-chain prompts live inside the dialog, old
+  // PayDialog style) and re-prepares after an in-dialog connect or chain
+  // switch — always from a fresh route + preview, never a stale quote.
+  useEffect(() => {
+    if (!confirmOpen || phase !== "preparing") return;
+    if (!address || !publicClient || !selected) return;
+    let cancelled = false;
+    const client = publicClient as PublicClient;
+    (async () => {
       const cartRows = chainCartItems.map((item) => ({
         tierId: Number(item.tierId),
         quantity: item.quantity,
@@ -540,16 +548,28 @@ export function V6PayCard() {
           }),
         };
       }
+      if (cancelled) return;
       setPrepared(next);
       setPhase("ready");
-    } catch (err) {
+    })().catch((err) => {
+      if (cancelled) return;
       setPhase("ready");
       setTxError(formatWalletError(err, "Couldn't prepare the transaction. Please try again."));
-    }
-  };
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmOpen, phase, address, publicClient, chainId, selected, amountRaw, metadata, mode]);
 
   const confirm = async () => {
-    if (!prepared || !publicClient || !address) return;
+    if (!publicClient || !address) return;
+    if (!prepared) {
+      // Preparing failed — retry with a fresh quote.
+      setTxError(null);
+      setPhase("preparing");
+      return;
+    }
     setTxError(null);
     try {
       if (prepared.needsApproval) {
@@ -604,15 +624,20 @@ export function V6PayCard() {
     for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
   };
 
+  // Chain switching lives in the confirm dialog (old PayDialog style). The
+  // token selection re-maps to the same token on the new chain via the
+  // key-remap effect; an open confirm re-prepares from a fresh quote.
   const switchChain = (value: string) => {
+    if (busy) return;
     const next = chainOptions.find((s) => Number(s.peerChainId) === Number(value));
     if (!next) return;
     setSelectedSucker(next);
-    setTokenIndex(0);
-    setTokenTouched(false);
-    selectedKeyRef.current = null;
-    setAmount("");
-    setDebouncedAmount("");
+    if (confirmOpen) {
+      setPrepared(null);
+      setTxError(null);
+      setTxHash(undefined);
+      setPhase("preparing");
+    }
   };
 
   const payDisabled =
@@ -628,36 +653,7 @@ export function V6PayCard() {
     (mode === "pay" && !previewReady);
 
   return (
-    <div className="flex flex-col">
-      {/* Mode on chain */}
-      <div className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-base text-zinc-700">
-        <TextSelect
-          value={mode}
-          onChange={(v) => setMode(v as V6PayMode)}
-          disabled={busy}
-          ariaLabel="Payment mode"
-          options={[
-            { value: "pay", label: "Pay" },
-            { value: "addbalance", label: "Add to balance" },
-          ]}
-        />
-        {chainOptions.length > 1 ? (
-          <>
-            <span>on</span>
-            <TextSelect
-              value={String(chainId)}
-              onChange={switchChain}
-              disabled={busy}
-              ariaLabel="Chain"
-              options={chainOptions.map((s) => ({
-                value: String(s.peerChainId),
-                label: JB_CHAINS[s.peerChainId as JBChainId]?.name ?? String(s.peerChainId),
-              }))}
-            />
-          </>
-        ) : null}
-      </div>
-
+    <div>
       {/* 721 shop strip */}
       {shop && shop.tiers.length > 0 && mode === "pay" ? (
         <V6PayShopStrip
@@ -677,115 +673,112 @@ export function V6PayCard() {
         <p className="mb-2 text-xs text-zinc-500">Switching to a supported checkout currency…</p>
       ) : null}
 
-      {/* Amount + token + pay */}
-      <div className="flex items-stretch overflow-hidden border border-zinc-200 bg-white">
-        <input
-          type="text"
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          disabled={busy}
-          placeholder="0.00"
-          aria-label="Amount"
-          className="min-w-0 flex-1 bg-transparent px-4 py-3 text-lg outline-none placeholder:text-zinc-400 disabled:opacity-60"
-        />
-        {tokens.length > 1 ? (
-          // Valued by INDEX, not address — a token can appear direct and
-          // via-router, so the option stays in lock-step with the selection.
-          <TextSelect
-            value={String(Math.min(tokenIndex, tokens.length - 1))}
-            onChange={(value) => {
-              const i = Number(value);
-              setTokenIndex(i);
-              const picked = tokens[i];
-              if (picked) selectedKeyRef.current = payTokenKey(picked);
-              setTokenTouched(true);
-            }}
-            disabled={busy}
-            ariaLabel="Payment token"
-            className="relative flex shrink-0 items-center gap-1 px-2 text-sm font-medium text-zinc-700"
-            labelClassName=""
-            selectClassName="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
-            options={tokens.map((t, i) => ({
-              value: String(i),
-              label: t.viaRouter ? `${t.symbol}*` : t.symbol,
-              disabled: cartCount > 0 && !shopRoutes?.[payTokenKey(t)]?.supported,
-            }))}
-          />
-        ) : (
-          <span className="flex shrink-0 items-center pr-3 text-sm font-medium text-zinc-700">
-            {selected?.symbol ?? nativeSymbol}
-          </span>
-        )}
-        <ButtonWithWallet
-          targetChainId={chainId}
-          disabled={isConnected ? payDisabled : false}
-          loading={busy}
-          onClick={openConfirm}
-          connectWalletText="Connect"
-          className="h-auto shrink-0 rounded-none bg-teal-500 px-5 text-sm hover:bg-teal-600"
-        >
-          {notStarted ? "Soon" : mode === "pay" ? "Pay" : "Add"}
-        </ButtonWithWallet>
-      </div>
-      {notStarted ? (
-        <p className="mt-1.5 text-xs text-zinc-500">
-          Starts in {formatStartCountdown(startsAt - now)}.
-        </p>
-      ) : null}
-      {insufficientBalance && selected ? (
-        <p className="mt-1.5 text-xs text-red-600">
-          You don&apos;t have enough {selected.symbol} on {JB_CHAINS[chainId]?.name}.
-        </p>
-      ) : null}
+      <div className="flex justify-center items-center flex-col">
+        {/* Pay block: mode dropdown in the label spot, big amount input, token selector at right */}
+        <div className="flex h-30 px-4 py-4 w-full items-center justify-between shadow-sm focus-within:ring-1 focus-within:ring-inset focus-within:ring-zinc-500 bg-zinc-100 border-b border-t border-l border-r border-zinc-200">
+          <div className="flex flex-col flex-1">
+            <TextSelect
+              value={mode}
+              onChange={(v) => setMode(v as V6PayMode)}
+              disabled={busy}
+              ariaLabel="Payment mode"
+              className="relative inline-flex items-center gap-1 self-start"
+              labelClassName="text-md text-black-700"
+              options={[
+                { value: "pay", label: "Pay" },
+                { value: "addbalance", label: "Add to balance" },
+              ]}
+            />
+            <input
+              type="text"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              disabled={busy}
+              placeholder="0.00"
+              aria-label="Amount"
+              className="border-0 bg-transparent pl-0 pr-3 pt-1 pb-0 text-zinc-900 text-2xl w-full placeholder:text-zinc-400 focus:ring-0 focus:outline-none sm:leading-6 disabled:opacity-60"
+            />
+          </div>
+          {tokens.length > 1 ? (
+            // Valued by INDEX, not address — a token can appear direct and
+            // via-router, so the option stays in lock-step with the selection.
+            <TextSelect
+              value={String(Math.min(tokenIndex, tokens.length - 1))}
+              onChange={(value) => {
+                const i = Number(value);
+                setTokenIndex(i);
+                const picked = tokens[i];
+                if (picked) selectedKeyRef.current = payTokenKey(picked);
+                setTokenTouched(true);
+              }}
+              disabled={busy}
+              ariaLabel="Payment token"
+              className="relative inline-flex shrink-0 items-center gap-1"
+              labelClassName="text-right select-none text-lg text-zinc-900"
+              options={tokens.map((t, i) => ({
+                value: String(i),
+                label: t.symbol,
+                disabled: cartCount > 0 && !shopRoutes?.[payTokenKey(t)]?.supported,
+              }))}
+            />
+          ) : (
+            <span className="text-right select-none text-lg">
+              {selected?.symbol ?? nativeSymbol}
+            </span>
+          )}
+        </div>
 
-      {/* Note */}
-      <input
-        type="text"
-        value={memo}
-        onChange={(e) => setMemo(e.target.value.slice(0, 256))}
-        disabled={busy}
-        placeholder="Add a note (optional)"
-        aria-label="Note"
-        className="border border-t-0 border-zinc-200 bg-white px-4 py-2.5 text-sm outline-none placeholder:text-zinc-400 disabled:opacity-60"
-      />
-
-      {/* Preview */}
-      <div className="border border-t-0 border-zinc-200 bg-zinc-100 p-4">
-        {mode === "addbalance" ? (
-          <p className="text-sm text-zinc-600">Adds to the project balance — nothing else.</p>
-        ) : amountRaw > 0n || cartCount > 0 ? (
-          previewError ? (
-            <p className="text-sm text-red-600">
-              Couldn&apos;t verify what this payment returns — paying is disabled until the
-              preview works.
+        {/* You get block */}
+        <div className="w-full border-r border-l border-zinc-200 bg-zinc-100 p-4">
+          {mode === "addbalance" ? (
+            <p className="text-sm text-zinc-600">
+              Adds to the project balance — no tokens are minted.
             </p>
           ) : (
-            <div>
-              <div className="text-sm text-zinc-500">
-                You get{routeIsRouter ? " at least" : ""}
+            <>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-col flex-1">
+                  <label className="text-md text-black-700">You get</label>
+                  <div
+                    aria-live="polite"
+                    aria-busy={previewLoading}
+                    className={`text-2xl transition-colors ${
+                      previewLoading || previewIsPrevious ? "text-zinc-400" : "text-zinc-900"
+                    }`}
+                  >
+                    {amountRaw > 0n || cartCount > 0
+                      ? previewError
+                        ? "—"
+                        : preview
+                          ? formatPayAmount(preview.beneficiaryTokenCount, 18)
+                          : "…"
+                      : "0.00"}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <span className="text-right select-none text-lg">{projectTokenLabel}</span>
+                </div>
               </div>
-              <div
-                aria-live="polite"
-                aria-busy={previewLoading}
-                className={`text-2xl transition-colors ${
-                  previewLoading || previewIsPrevious ? "text-zinc-400" : "text-zinc-900"
-                }`}
-              >
-                {preview ? formatPayAmount(preview.beneficiaryTokenCount, 18) : "…"}{" "}
-                {projectTokenLabel}
-                {routeIsRouter ? (
-                  <span className="ml-2 align-middle text-xs text-zinc-500">via router</span>
-                ) : null}
-              </div>
-              {preview && preview.beneficiaryTokenCount === 0n && !previewLoading ? (
-                <p className="mt-1 text-xs text-zinc-500">
-                  This payment mints no {projectTokenLabel} under the current rules.
+
+              {previewError && (amountRaw > 0n || cartCount > 0) ? (
+                <p className="mt-1 text-xs text-red-600">
+                  Couldn&apos;t verify what this payment returns — paying is disabled until the
+                  preview works.
                 </p>
               ) : null}
-              {preview && preview.reservedTokenCount > 0n ? (
-                <p className="mt-1 text-sm text-zinc-500">
-                  Splits get {formatPayAmount(preview.reservedTokenCount, 18)} {projectTokenLabel}
+              {routeIsRouter && preview && !previewError ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  You get at least this amount — your payment is swapped in for you.
+                </p>
+              ) : null}
+              {preview &&
+              !previewError &&
+              preview.beneficiaryTokenCount === 0n &&
+              !previewLoading &&
+              (amountRaw > 0n || cartCount > 0) ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  This payment mints no {projectTokenLabel} under the current rules.
                 </p>
               ) : null}
 
@@ -837,14 +830,53 @@ export function V6PayCard() {
                   </div>
                 </div>
               ) : null}
-            </div>
-          )
-        ) : (
-          <p className="text-sm text-zinc-400">Enter an amount to preview what you get.</p>
-        )}
+            </>
+          )}
+          {notStarted ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              Starts in {formatStartCountdown(startsAt - now)}.
+            </p>
+          ) : null}
+        </div>
+
+        {/* Splits strip */}
+        <div className="flex gap-1 p-3 bg-zinc-200 border-r border-l border-zinc-300 w-full text-md text-zinc-700 overflow-x-auto whitespace-nowrap">
+          Splits get{" "}
+          {mode === "pay" && preview && !previewError && (amountRaw > 0n || cartCount > 0)
+            ? formatPayAmount(preview.reservedTokenCount, 18)
+            : 0}{" "}
+          {projectTokenLabel}
+        </div>
+      </div>
+
+      {/* Memo + Pay */}
+      <div className="flex flex-row">
+        <textarea
+          rows={2}
+          value={memo}
+          onChange={(e) => setMemo(e.target.value.slice(0, 256))}
+          disabled={busy}
+          placeholder="Leave a note"
+          className="flex w-full border border-zinc-200 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 z-10"
+        />
+        <div className="w-[150px] flex">
+          <Button
+            disabled={payDisabled}
+            loading={busy}
+            onClick={openConfirm}
+            className="w-full bg-teal-500 hover:bg-teal-600"
+          >
+            {notStarted ? "Soon" : mode === "pay" ? "Pay" : "Add"}
+          </Button>
+        </div>
       </div>
 
       {/* Notices */}
+      {insufficientBalance && selected ? (
+        <p className="mt-2 text-xs text-red-600">
+          You don&apos;t have enough {selected.symbol} on {JB_CHAINS[chainId]?.name}.
+        </p>
+      ) : null}
       {surfaceError ? (
         <p className="mt-2 text-sm text-red-600">
           Couldn&apos;t verify this project&apos;s accepted tokens — payments are disabled.
@@ -859,22 +891,18 @@ export function V6PayCard() {
           token, or use Pay to route this one.
         </p>
       ) : null}
-      {tokens.some((t) => t.viaRouter) ? (
-        <p className="mt-2 text-xs text-zinc-400">
-          * Swapped into the project&apos;s accounting token via the router.
-        </p>
-      ) : null}
-
 
       <V6PayConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         prepared={prepared}
         phase={phase}
+        mode={mode}
         error={txError}
         projectTokenSymbol={projectTokenLabel}
         txHash={txHash}
         onConfirm={confirm}
+        onSwitchChain={switchChain}
         onDone={resetAfterSuccess}
       />
     </div>

@@ -36,9 +36,8 @@ export function IssuanceLadder({
       ariaLabel={`Projected ${symbol} issuance price in ${baseSymbol} over time`}
       showNowMarker={now < t1}
       header={
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-zinc-500">Projected issuance price</span>
-          <div className="flex gap-1">
+        <div className="flex justify-end">
+          <div className="flex gap-1 p-1 bg-zinc-100 rounded-lg shrink-0">
             {CHART_RANGES.map((r) => (
               <ChartRangeButton
                 key={r.label}
