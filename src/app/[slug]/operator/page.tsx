@@ -1,18 +1,18 @@
 import { parseSlug } from "@/lib/slug";
 import { notFound } from "next/navigation";
-import { V6OwnersTab } from "../components/v6/owners/V6OwnersTab";
+import { V6OperatorTab } from "../components/v6/operator/V6OperatorTab";
 import { getProject } from "../getProject";
+import { getProjectOperator } from "../getProjectOperator";
 import { getSuckerGroup } from "../getSuckerGroup";
-import { OwnersSection } from "./components/OwnersSection";
 
 interface Props {
   params: { slug: string };
 }
 
-export default async function Owners(props: Props) {
+export default async function OperatorPage(props: Props) {
   const { slug } = props.params;
   const { chainId, projectId, version } = parseSlug(slug);
-  if (version !== 6) return <OwnersSection />;
+  if (version !== 6) notFound();
 
   const project = await getProject(projectId, chainId, version);
   if (!project) notFound();
@@ -20,5 +20,12 @@ export default async function Owners(props: Props) {
   const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId);
   if (!suckerGroup) notFound();
 
-  return <V6OwnersTab projects={suckerGroup.projects?.items ?? []} />;
+  const operator = await getProjectOperator(Number(projectId), chainId, version);
+
+  return (
+    <V6OperatorTab
+      projects={suckerGroup.projects?.items ?? []}
+      operator={operator?.address ?? undefined}
+    />
+  );
 }
