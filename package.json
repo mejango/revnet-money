@@ -106,6 +106,9 @@
     "typescript": "^5.0.4",
     "vitest": "^4.1.9"
   },
+  "optionalDependencies": {
+    "@rolldown/binding-linux-x64-gnu": "1.1.5"
+  },
   "overrides": {
     "@graphql-tools/executor-graphql-ws": {
       "ws": "8.21.1"
