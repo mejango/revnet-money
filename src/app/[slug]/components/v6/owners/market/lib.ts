@@ -1,43 +1,37 @@
 import { getViemPublicClient } from "@/lib/wagmiConfig";
 import {
   JBBuybackHookContracts,
-  JBChainId,
   jbBuybackHookRegistryAbi,
+  JBChainId,
   jbContractAddress,
   jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
   jbOmnichainDeployerAbi,
-  jbSplitsAbi,
   JBOmnichainDeployerContracts,
+  jbSplitsAbi,
   NATIVE_TOKEN,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
-import { getAccountingContexts } from "@bananapus/nana-sdk-core/v6";
 import {
-  Address,
-  encodeAbiParameters,
-  erc20Abi,
-  Hex,
-  keccak256,
-  parseAbiItem,
-  PublicClient,
-  zeroAddress,
-} from "viem";
+  getAccountingContexts,
+  UNISWAP_V4_POOL_MANAGER_ADDRESSES,
+  uniswapV4AmountsForLiquidity,
+  uniswapV4PoolId,
+  uniswapV4PoolStateSlot,
+  uniswapV4PriceFromSqrtPriceX96,
+  uniswapV4SqrtPriceX96AtTick,
+  uniswapV4SqrtPriceX96FromSlot0,
+  type UniswapV4PoolKey,
+} from "@bananapus/nana-sdk-core/v6";
+import { Address, erc20Abi, Hex, parseAbiItem, PublicClient, zeroAddress } from "viem";
 import { ChainProject } from "../settlement/lib";
 
 // ── Uniswap V4 singletons (from deploy-all-v6 Deploy.s.sol) ──────────────────
 
-export const POOL_MANAGER_BY_CHAIN: Partial<Record<number, Address>> = {
-  1: "0x000000000004444c5dc75cb358380d2e3de08a90",
-  11155111: "0xe03a1074c86cfedd5c142c4f04f1a1536e203543",
-  10: "0x9a13f98cb987694c9f086b1f5eb990eea8264ec3",
-  11155420: "0x000000000004444c5dc75cb358380d2e3de08a90",
-  8453: "0x498581ff718922c3f8e6a244956af099b2652b2b",
-  84532: "0x05e73354cfdd6745c338b50bcfdfa3aa6fa03408",
-  42161: "0x360e68faccca8ca495c1b759fd9eee466db9fb32",
-  421614: "0xfb3e0c6f74eb1a21cc1da29aec80d2dfe6c9a317",
-};
+export const POOL_MANAGER_BY_CHAIN = UNISWAP_V4_POOL_MANAGER_ADDRESSES as Readonly<
+  Partial<Record<number, Address>>
+>;
 
 const POOL_KEY_OF_ABI = [
   {
@@ -74,33 +68,7 @@ const EXTSLOAD_ABI = [
   },
 ] as const;
 
-export interface PoolKey {
-  currency0: Address;
-  currency1: Address;
-  fee: number;
-  tickSpacing: number;
-  hooks: Address;
-}
-
-function poolIdOf(key: PoolKey): Hex {
-  return keccak256(
-    encodeAbiParameters(
-      [
-        {
-          type: "tuple",
-          components: [
-            { type: "address" },
-            { type: "address" },
-            { type: "uint24" },
-            { type: "int24" },
-            { type: "address" },
-          ],
-        },
-      ],
-      [[key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks]],
-    ),
-  );
-}
+export type PoolKey = UniswapV4PoolKey;
 
 // ── Buyback hook resolution ───────────────────────────────────────────────────
 
@@ -275,11 +243,8 @@ export async function readPoolSnapshot(
   const c1 = key.currency1.toLowerCase();
   if (c0 === zeroAddress && c1 === zeroAddress) return { hook, pool: null };
 
-  const poolId = poolIdOf(key);
-  // slot0 lives at keccak(poolId . POOLS_SLOT=6); sqrtPriceX96 = its low 160 bits.
-  const stateSlot = keccak256(
-    encodeAbiParameters([{ type: "bytes32" }, { type: "uint256" }], [poolId, 6n]),
-  );
+  const poolId = uniswapV4PoolId(key);
+  const stateSlot = uniswapV4PoolStateSlot(poolId);
   let sqrtP = 0n;
   try {
     const slot0 = await client.readContract({
@@ -288,18 +253,14 @@ export async function readPoolSnapshot(
       functionName: "extsload",
       args: [stateSlot],
     });
-    sqrtP = BigInt(slot0) & ((1n << 160n) - 1n);
+    sqrtP = uniswapV4SqrtPriceX96FromSlot0(slot0);
   } catch {
     return { hook, pool: null };
   }
   if (sqrtP === 0n) return { hook, pool: null };
 
   const pairIsC0 = c0 === pair.addr.toLowerCase();
-  const sp = Number(sqrtP) / 2 ** 96;
-  const rawP = sp * sp;
-  const rawRatio = pairIsC0 ? (rawP > 0 ? 1 / rawP : null) : rawP;
-  const price =
-    rawRatio == null ? null : rawRatio * 10 ** (18 - pair.decimals);
+  const price = uniswapV4PriceFromSqrtPriceX96(sqrtP, pairIsC0, pair.decimals);
 
   return {
     hook,
@@ -311,72 +272,10 @@ export async function readPoolSnapshot(
       sqrtP,
       pair,
       pairIsC0,
-      price: price != null && isFinite(price) && price > 0 ? price : null,
+      price,
       poolManager,
     },
   };
-}
-
-// ── V4 tick math (exact integer ports of v4-core TickMath / LiquidityAmounts) ─
-
-const Q96 = 1n << 96n;
-
-export function sqrtAtTick(tick: number): bigint {
-  const absTick = tick < 0 ? -tick : tick;
-  if (absTick > 887272) throw new Error("tick out of range");
-  let price = (absTick & 0x1) !== 0 ? 0xfffcb933bd6fad37aa2d162d1a594001n : 1n << 128n;
-  const muls: [number, bigint][] = [
-    [0x2, 0xfff97272373d413259a46990580e213an],
-    [0x4, 0xfff2e50f5f656932ef12357cf3c7fdccn],
-    [0x8, 0xffe5caca7e10e4e61c3624eaa0941cd0n],
-    [0x10, 0xffcb9843d60f6159c9db58835c926644n],
-    [0x20, 0xff973b41fa98c081472e6896dfb254c0n],
-    [0x40, 0xff2ea16466c96a3843ec78b326b52861n],
-    [0x80, 0xfe5dee046a99a2a811c461f1969c3053n],
-    [0x100, 0xfcbe86c7900a88aedcffc83b479aa3a4n],
-    [0x200, 0xf987a7253ac413176f2b074cf7815e54n],
-    [0x400, 0xf3392b0822b70005940c7a398e4b70f3n],
-    [0x800, 0xe7159475a2c29b7443b29c7fa6e889d9n],
-    [0x1000, 0xd097f3bdfd2022b8845ad8f792aa5825n],
-    [0x2000, 0xa9f746462d870fdf8a65dc1f90e061e5n],
-    [0x4000, 0x70d869a156d2a1b890bb3df62baf32f7n],
-    [0x8000, 0x31be135f97d08fd981231505542fcfa6n],
-    [0x10000, 0x9aa508b5b7a84e1c677de54f3e99bc9n],
-    [0x20000, 0x5d6af8dedb81196699c329225ee604n],
-    [0x40000, 0x2216e584f5fa1ea926041bedfe98n],
-    [0x80000, 0x48a170391f7dc42444e8fa2n],
-  ];
-  for (const [bit, mul] of muls) {
-    if (absTick & bit) price = (price * mul) >> 128n;
-  }
-  if (tick > 0) price = ((1n << 256n) - 1n) / price;
-  return (price + 0xffffffffn) >> 32n; // Q128.128 → sqrtPriceX96, round up
-}
-
-function sortPair(a: bigint, b: bigint): [bigint, bigint] {
-  return a > b ? [b, a] : [a, b];
-}
-
-function amount0ForL(saIn: bigint, sbIn: bigint, L: bigint): bigint {
-  const [sa, sb] = sortPair(saIn, sbIn);
-  return ((L << 96n) * (sb - sa)) / sb / sa;
-}
-
-function amount1ForL(saIn: bigint, sbIn: bigint, L: bigint): bigint {
-  const [sa, sb] = sortPair(saIn, sbIn);
-  return (L * (sb - sa)) / Q96;
-}
-
-export function amountsForLiquidity(
-  sp: bigint,
-  saIn: bigint,
-  sbIn: bigint,
-  L: bigint,
-): { amount0: bigint; amount1: bigint } {
-  const [sa, sb] = sortPair(saIn, sbIn);
-  if (sp <= sa) return { amount0: amount0ForL(sa, sb, L), amount1: 0n };
-  if (sp < sb) return { amount0: amount0ForL(sp, sb, L), amount1: amount1ForL(sa, sp, L) };
-  return { amount0: 0n, amount1: amount1ForL(sa, sb, L) };
 }
 
 // ── Pool composition via net ModifyLiquidity deltas ───────────────────────────
@@ -468,10 +367,10 @@ export async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComp
   let amount1 = 0n;
   for (const r of ranges.values()) {
     if (r.liquidity <= 0n) continue;
-    const amounts = amountsForLiquidity(
+    const amounts = uniswapV4AmountsForLiquidity(
       pool.sqrtP,
-      sqrtAtTick(r.tickLower),
-      sqrtAtTick(r.tickUpper),
+      uniswapV4SqrtPriceX96AtTick(r.tickLower),
+      uniswapV4SqrtPriceX96AtTick(r.tickUpper),
       r.liquidity,
     );
     amount0 += amounts.amount0;
@@ -511,26 +410,162 @@ export async function fetchAmmStates(chains: ChainProject[]): Promise<AmmChainSt
 // ── LP split hook (JBP6FeeLPSplitHook / JBUniswapV4LPSplitHook) ───────────────
 
 export const lpSplitHookAbi = [
-  { type: "function", name: "initialWeightOf", stateMutability: "view", inputs: [{ name: "projectId", type: "uint256" }], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "accumulatedProjectTokens", stateMutability: "view", inputs: [{ name: "projectId", type: "uint256" }], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "hasDeployedPool", stateMutability: "view", inputs: [{ name: "projectId", type: "uint256" }], outputs: [{ type: "bool" }] },
-  { type: "function", name: "claimableFeeTokens", stateMutability: "view", inputs: [{ name: "projectId", type: "uint256" }], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "tokenIdOf", stateMutability: "view", inputs: [{ name: "projectId", type: "uint256" }, { name: "terminalToken", type: "address" }], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "activeTickLowerOf", stateMutability: "view", inputs: [{ name: "projectId", type: "uint256" }, { name: "terminalToken", type: "address" }], outputs: [{ type: "int24" }] },
-  { type: "function", name: "activeTickUpperOf", stateMutability: "view", inputs: [{ name: "projectId", type: "uint256" }, { name: "terminalToken", type: "address" }], outputs: [{ type: "int24" }] },
-  { type: "function", name: "deployPool", stateMutability: "nonpayable", inputs: [{ name: "projectId", type: "uint256" }, { name: "minCashOutReturn", type: "uint256" }], outputs: [] },
-  { type: "function", name: "collectAndRouteLPFees", stateMutability: "nonpayable", inputs: [{ name: "projectId", type: "uint256" }, { name: "terminalToken", type: "address" }], outputs: [] },
+  {
+    type: "function",
+    name: "initialWeightOf",
+    stateMutability: "view",
+    inputs: [{ name: "projectId", type: "uint256" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "accumulatedProjectTokens",
+    stateMutability: "view",
+    inputs: [{ name: "projectId", type: "uint256" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "hasDeployedPool",
+    stateMutability: "view",
+    inputs: [{ name: "projectId", type: "uint256" }],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "claimableFeeTokens",
+    stateMutability: "view",
+    inputs: [{ name: "projectId", type: "uint256" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "tokenIdOf",
+    stateMutability: "view",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "terminalToken", type: "address" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "activeTickLowerOf",
+    stateMutability: "view",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "terminalToken", type: "address" },
+    ],
+    outputs: [{ type: "int24" }],
+  },
+  {
+    type: "function",
+    name: "activeTickUpperOf",
+    stateMutability: "view",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "terminalToken", type: "address" },
+    ],
+    outputs: [{ type: "int24" }],
+  },
+  {
+    type: "function",
+    name: "deployPool",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "minCashOutReturn", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "collectAndRouteLPFees",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "terminalToken", type: "address" },
+    ],
+    outputs: [],
+  },
   // Custom errors so a reverting simulate decodes to the real reason.
-  { type: "error", name: "JBUniswapV4LPSplitHook_ZeroLiquidity", inputs: [{ name: "amount0", type: "uint256" }, { name: "amount1", type: "uint256" }] },
-  { type: "error", name: "JBUniswapV4LPSplitHook_InsufficientLiquidity", inputs: [{ name: "liquidity", type: "uint128" }] },
-  { type: "error", name: "JBUniswapV4LPSplitHook_InsufficientBalance", inputs: [{ name: "available", type: "uint256" }, { name: "required", type: "uint256" }] },
-  { type: "error", name: "JBUniswapV4LPSplitHook_NoTokensAccumulated", inputs: [{ name: "projectId", type: "uint256" }] },
-  { type: "error", name: "JBUniswapV4LPSplitHook_PoolAlreadyDeployed", inputs: [{ name: "projectId", type: "uint256" }, { name: "terminalToken", type: "address" }, { name: "tokenId", type: "uint256" }] },
-  { type: "error", name: "JBUniswapV4LPSplitHook_OnlyOneTerminalTokenSupported", inputs: [{ name: "projectId", type: "uint256" }, { name: "terminalToken", type: "address" }] },
-  { type: "error", name: "JBUniswapV4LPSplitHook_InvalidStageForAction", inputs: [{ name: "projectId", type: "uint256" }, { name: "terminalToken", type: "address" }, { name: "tokenId", type: "uint256" }] },
-  { type: "error", name: "JBUniswapV4LPSplitHook_TwapUnavailable", inputs: [{ name: "projectId", type: "uint256" }, { name: "terminalToken", type: "address" }] },
-  { type: "error", name: "JBUniswapV4LPSplitHook_PriceDeviationTooHigh", inputs: [{ name: "spotTick", type: "int24" }, { name: "twapTick", type: "int24" }, { name: "maxDeviationTicks", type: "int24" }] },
-  { type: "error", name: "JBUniswapV4LPSplitHook_InvalidTerminalToken", inputs: [{ name: "projectId", type: "uint256" }, { name: "terminalToken", type: "address" }] },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_ZeroLiquidity",
+    inputs: [
+      { name: "amount0", type: "uint256" },
+      { name: "amount1", type: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_InsufficientLiquidity",
+    inputs: [{ name: "liquidity", type: "uint128" }],
+  },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_InsufficientBalance",
+    inputs: [
+      { name: "available", type: "uint256" },
+      { name: "required", type: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_NoTokensAccumulated",
+    inputs: [{ name: "projectId", type: "uint256" }],
+  },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_PoolAlreadyDeployed",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "terminalToken", type: "address" },
+      { name: "tokenId", type: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_OnlyOneTerminalTokenSupported",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "terminalToken", type: "address" },
+    ],
+  },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_InvalidStageForAction",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "terminalToken", type: "address" },
+      { name: "tokenId", type: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_TwapUnavailable",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "terminalToken", type: "address" },
+    ],
+  },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_PriceDeviationTooHigh",
+    inputs: [
+      { name: "spotTick", type: "int24" },
+      { name: "twapTick", type: "int24" },
+      { name: "maxDeviationTicks", type: "int24" },
+    ],
+  },
+  {
+    type: "error",
+    name: "JBUniswapV4LPSplitHook_InvalidTerminalToken",
+    inputs: [
+      { name: "projectId", type: "uint256" },
+      { name: "terminalToken", type: "address" },
+    ],
+  },
 ] as const;
 
 /** Reserved-token split group id (JBSplitGroupIds.RESERVED_TOKENS). */
@@ -590,8 +625,18 @@ export async function fetchSplitHookStates(chains: ChainProject[]): Promise<Spli
         for (const candidate of candidates) {
           try {
             await Promise.all([
-              client.readContract({ address: candidate, abi: lpSplitHookAbi, functionName: "accumulatedProjectTokens", args: [projectId] }),
-              client.readContract({ address: candidate, abi: lpSplitHookAbi, functionName: "hasDeployedPool", args: [projectId] }),
+              client.readContract({
+                address: candidate,
+                abi: lpSplitHookAbi,
+                functionName: "accumulatedProjectTokens",
+                args: [projectId],
+              }),
+              client.readContract({
+                address: candidate,
+                abi: lpSplitHookAbi,
+                functionName: "hasDeployedPool",
+                args: [projectId],
+              }),
             ]);
             hook = candidate;
             break;
@@ -605,7 +650,8 @@ export async function fetchSplitHookStates(chains: ChainProject[]): Promise<Spli
         const primary = contexts[0];
         if (!primary) return null;
         const native =
-          primary.token.toLowerCase() === NATIVE_TOKEN.toLowerCase() || primary.token === zeroAddress;
+          primary.token.toLowerCase() === NATIVE_TOKEN.toLowerCase() ||
+          primary.token === zeroAddress;
         const pairSymbol = native
           ? "ETH"
           : await client
@@ -615,13 +661,62 @@ export async function fetchSplitHookStates(chains: ChainProject[]): Promise<Spli
         const rd = <T>(p: Promise<T>): Promise<T | null> => p.catch(() => null);
         const [accumulated, hasPool, fees, initialWeight, tokenId, tickLower, tickUpper] =
           await Promise.all([
-            rd(client.readContract({ address: hook, abi: lpSplitHookAbi, functionName: "accumulatedProjectTokens", args: [projectId] })),
-            rd(client.readContract({ address: hook, abi: lpSplitHookAbi, functionName: "hasDeployedPool", args: [projectId] })),
-            rd(client.readContract({ address: hook, abi: lpSplitHookAbi, functionName: "claimableFeeTokens", args: [projectId] })),
-            rd(client.readContract({ address: hook, abi: lpSplitHookAbi, functionName: "initialWeightOf", args: [projectId] })),
-            rd(client.readContract({ address: hook, abi: lpSplitHookAbi, functionName: "tokenIdOf", args: [projectId, primary.token] })),
-            rd(client.readContract({ address: hook, abi: lpSplitHookAbi, functionName: "activeTickLowerOf", args: [projectId, primary.token] })),
-            rd(client.readContract({ address: hook, abi: lpSplitHookAbi, functionName: "activeTickUpperOf", args: [projectId, primary.token] })),
+            rd(
+              client.readContract({
+                address: hook,
+                abi: lpSplitHookAbi,
+                functionName: "accumulatedProjectTokens",
+                args: [projectId],
+              }),
+            ),
+            rd(
+              client.readContract({
+                address: hook,
+                abi: lpSplitHookAbi,
+                functionName: "hasDeployedPool",
+                args: [projectId],
+              }),
+            ),
+            rd(
+              client.readContract({
+                address: hook,
+                abi: lpSplitHookAbi,
+                functionName: "claimableFeeTokens",
+                args: [projectId],
+              }),
+            ),
+            rd(
+              client.readContract({
+                address: hook,
+                abi: lpSplitHookAbi,
+                functionName: "initialWeightOf",
+                args: [projectId],
+              }),
+            ),
+            rd(
+              client.readContract({
+                address: hook,
+                abi: lpSplitHookAbi,
+                functionName: "tokenIdOf",
+                args: [projectId, primary.token],
+              }),
+            ),
+            rd(
+              client.readContract({
+                address: hook,
+                abi: lpSplitHookAbi,
+                functionName: "activeTickLowerOf",
+                args: [projectId, primary.token],
+              }),
+            ),
+            rd(
+              client.readContract({
+                address: hook,
+                abi: lpSplitHookAbi,
+                functionName: "activeTickUpperOf",
+                args: [projectId, primary.token],
+              }),
+            ),
           ]);
 
         const iw = initialWeight ?? 0n;

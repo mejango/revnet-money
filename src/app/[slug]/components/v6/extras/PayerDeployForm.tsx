@@ -15,17 +15,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { buildDeployProjectPayerTx, projectPayerFromDeployLogs } from "@bananapus/nana-sdk-core/v6";
 import { getAccount, getPublicClient } from "@wagmi/core";
 import { useMemo, useState } from "react";
-import { Address, isAddress, parseEventLogs, PublicClient, zeroAddress } from "viem";
+import { Address, isAddress, PublicClient, zeroAddress } from "viem";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
-import {
-  ChainProjectRow,
-  PayerRow,
-  PROJECT_PAYER_CHAIN_IDS,
-  PROJECT_PAYER_DEPLOYER,
-  projectPayerDeployerAbi,
-} from "./projectPayers";
+import { ChainProjectRow, PayerRow } from "./projectPayers";
 
 type DeployedPayer = { chainId: JBChainId; payer: Address | null; txHash: `0x${string}` };
 
@@ -34,15 +29,13 @@ type ReviewedDeploy = {
   calls: {
     chainId: JBChainId;
     projectId: number;
-    args: readonly [bigint, Address, string, `0x${string}`, boolean, Address];
+    request: ReturnType<typeof buildDeployProjectPayerTx>;
   }[];
   addToBalance: boolean;
   memo: string;
   /** The account the review was made for. */
   account: Address;
 };
-
-const HEX_BYTES = /^0x([0-9a-fA-F]{2})*$/;
 
 function resolveAddressInput(raw: string): Address | null {
   const trimmed = raw.trim();
@@ -70,10 +63,7 @@ export function PayerDeployForm({
   const { writeContractAsync } = useWriteContract();
   const { toast } = useToast();
 
-  const deployableRows = useMemo(
-    () => rows.filter((row) => PROJECT_PAYER_CHAIN_IDS.has(row.chainId)),
-    [rows],
-  );
+  const deployableRows = rows;
 
   const [addToBalance, setAddToBalance] = useState(false);
   const [originalPayer, setOriginalPayer] = useState(true);
@@ -125,10 +115,6 @@ export function PayerDeployForm({
       return;
     }
     const trimmedMetadata = metadata.trim() || "0x";
-    if (!HEX_BYTES.test(trimmedMetadata)) {
-      setError("Metadata must be even-length hex bytes (or 0x).");
-      return;
-    }
     const calls: ReviewedDeploy["calls"] = [];
     for (const row of selectedRows) {
       const chainName = JB_CHAINS[row.chainId]?.name ?? row.chainId;
@@ -152,18 +138,24 @@ export function PayerDeployForm({
         }
         owner = resolved;
       }
-      calls.push({
-        chainId: row.chainId,
-        projectId: row.projectId,
-        args: [
-          BigInt(row.projectId),
-          beneficiaryAddress,
-          memo.trim(),
-          trimmedMetadata as `0x${string}`,
-          addToBalance,
-          owner,
-        ],
-      });
+      try {
+        calls.push({
+          chainId: row.chainId,
+          projectId: row.projectId,
+          request: buildDeployProjectPayerTx({
+            chainId: row.chainId,
+            projectId: BigInt(row.projectId),
+            beneficiary: beneficiaryAddress,
+            memo: memo.trim(),
+            metadata: trimmedMetadata,
+            addToBalance,
+            owner,
+          }),
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not build the payer deploy.");
+        return;
+      }
     }
     setReview({ calls, addToBalance, memo: memo.trim(), account: address });
   };
@@ -196,34 +188,15 @@ export function PayerDeployForm({
         setStatus(`Simulating the deploy on ${chainName}…`);
         await client.simulateContract({
           account: address,
-          address: PROJECT_PAYER_DEPLOYER,
-          abi: projectPayerDeployerAbi,
-          functionName: "deployProjectPayer",
-          args: call.args,
+          ...call.request,
         });
         setStatus(`Confirm the deploy on ${chainName} in your wallet…`);
-        const txHash = await writeContractAsync({
-          chainId: call.chainId,
-          address: PROJECT_PAYER_DEPLOYER,
-          abi: projectPayerDeployerAbi,
-          functionName: "deployProjectPayer",
-          args: call.args,
-        });
+        const txHash = await writeContractAsync(call.request);
         setStatus(`Waiting for confirmation on ${chainName}…`);
         const receipt = await client.waitForTransactionReceipt({ hash: txHash });
         // The new payer address comes from the DeployProjectPayer event — the
         // function's return value isn't available from a transaction.
-        let payer: Address | null = null;
-        try {
-          const logs = parseEventLogs({
-            abi: projectPayerDeployerAbi,
-            eventName: "DeployProjectPayer",
-            logs: receipt.logs,
-          });
-          payer = logs[0]?.args.projectPayer ?? null;
-        } catch {
-          payer = null;
-        }
+        const payer = projectPayerFromDeployLogs(receipt.logs);
         results.push({ chainId: call.chainId, payer, txHash });
         setDeployed([...results]);
       }
@@ -508,9 +481,9 @@ export function PayerDeployForm({
                 <p key={call.chainId} className="font-mono break-all">
                   {JB_CHAINS[call.chainId]?.name ?? call.chainId}: project #{call.projectId}
                   {!review.addToBalance
-                    ? ` · tokens to ${call.args[1] === zeroAddress ? "the sender" : call.args[1]}`
+                    ? ` · tokens to ${call.request.args[1] === zeroAddress ? "the sender" : call.request.args[1]}`
                     : ""}
-                  {` · admin ${call.args[5] === zeroAddress ? "none (immutable)" : call.args[5]}`}
+                  {` · admin ${call.request.args[5] === zeroAddress ? "none (immutable)" : call.request.args[5]}`}
                 </p>
               ))}
               {review.memo ? <p>Memo: {review.memo}</p> : null}

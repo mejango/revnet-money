@@ -1,4 +1,4 @@
-import { JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
+import { JBPermissionCatalogV6, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 
 /**
  * Human labels + blurbs for the 39 v6 permission ids. The ids themselves come
@@ -53,16 +53,12 @@ function labelFromName(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export const V6_PERMISSIONS: PermissionInfo[] = (
-  Object.entries(JBPermissionIdsV6) as [keyof typeof JBPermissionIdsV6, number][]
-)
-  .map(([name, id]) => ({
-    id,
-    name,
-    label: labelFromName(name),
-    description: DESCRIPTIONS[name],
-  }))
-  .sort((a, b) => a.id - b.id);
+export const V6_PERMISSIONS: PermissionInfo[] = JBPermissionCatalogV6.map(({ key: name, id }) => ({
+  id,
+  name,
+  label: labelFromName(name),
+  description: DESCRIPTIONS[name],
+}));
 
 const BY_ID = new Map(V6_PERMISSIONS.map((p) => [p.id, p]));
 

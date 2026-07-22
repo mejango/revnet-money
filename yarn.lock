@@ -867,10 +867,10 @@
     bs58 "^5.0.0"
     fpnum "^1.0.0"
 
-"@bananapus/nana-sdk-react@^4.0.0":
-  version "4.0.0"
-  resolved "https://registry.yarnpkg.com/@bananapus/nana-sdk-react/-/nana-sdk-react-4.0.0.tgz#40b5ed2d393c581f3dd4f4ebd89ed23d7f754151"
-  integrity sha512-r5lSdkxGqF86RRjpZyOsvl9Mg6q5x7l+qrFI2E32TocU8oMAeQVxdqR366TDkcIahCjIBXnuAWqy+wOG1NmAsw==
+"@bananapus/nana-sdk-react@^5.0.0":
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/@bananapus/nana-sdk-react/-/nana-sdk-react-5.0.0.tgz#a18115a5db0e28009ab9d0e9ec68c52cf60f67ad"
+  integrity sha512-SsOSD6EYR7JPu4lW3fy9l87BsBcHmztMgpvVAfTCxuKsTPDXWesbLuS87+9of8aQjmR2BXpJ3hPJgnAwa5XD/g==
   dependencies:
     graphql-request "^7.2.0"
 

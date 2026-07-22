@@ -3,52 +3,7 @@ import { ProjectPayer, ProjectPayerFilter } from "@/generated/graphql";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { TypedDocumentNode } from "@graphql-typed-document-node/core";
 import gql from "graphql-tag";
-import { Address } from "viem";
 import { ProjectItem } from "../shared";
-
-/**
- * JBProjectPayerDeployer singleton (same address on every supported chain).
- * Sourced from deploy-all-v6 deployments via website/src/abi-registry.js —
- * @bananapus/nana-sdk-core@1.3 does not ship this contract.
- */
-export const PROJECT_PAYER_DEPLOYER: Address = "0x7321740fd0dcf73dd3e2aa8fc060454abfce9517";
-
-export const PROJECT_PAYER_CHAIN_IDS = new Set<number>([
-  1, 10, 8453, 42161, 84532, 421614, 11155111, 11155420,
-]);
-
-export const projectPayerDeployerAbi = [
-  {
-    type: "function",
-    name: "deployProjectPayer",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "defaultProjectId", type: "uint256" },
-      { name: "defaultBeneficiary", type: "address" },
-      { name: "defaultMemo", type: "string" },
-      { name: "defaultMetadata", type: "bytes" },
-      { name: "defaultAddToBalance", type: "bool" },
-      { name: "owner", type: "address" },
-    ],
-    outputs: [{ name: "projectPayer", type: "address" }],
-  },
-  {
-    type: "event",
-    name: "DeployProjectPayer",
-    anonymous: false,
-    inputs: [
-      { name: "projectPayer", type: "address", indexed: true },
-      { name: "defaultProjectId", type: "uint256", indexed: false },
-      { name: "defaultBeneficiary", type: "address", indexed: false },
-      { name: "defaultMemo", type: "string", indexed: false },
-      { name: "defaultMetadata", type: "bytes", indexed: false },
-      { name: "defaultAddToBalance", type: "bool", indexed: false },
-      { name: "directory", type: "address", indexed: false },
-      { name: "owner", type: "address", indexed: false },
-      { name: "caller", type: "address", indexed: false },
-    ],
-  },
-] as const;
 
 /** A sucker-group project on a chain this UI understands. */
 export type ChainProjectRow = { chainId: JBChainId; projectId: number };
