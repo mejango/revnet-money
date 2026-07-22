@@ -1,4 +1,4 @@
-import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
+import { ipfsUriToGatewayUrl, OPEN_IPFS_GATEWAY_HOSTNAME } from "@/lib/ipfs";
 import { isIpfsCid, isIpfsUri } from "@/lib/ipfs-cid";
 import { describe, expect, it } from "vitest";
 
@@ -8,7 +8,7 @@ const CID_V0 = "QmYwAPJzv5CZsnAzt8auVZRnA3iE3m6XJqFqQ5h6XqFQwP";
 describe("project image policy", () => {
   it("routes content-addressed project images through the configured gateway", () => {
     expect(ipfsUriToGatewayUrl(`ipfs://${CID_V1}/path/logo.png`)).toBe(
-      `https://ipfs.io/ipfs/${CID_V1}/path/logo.png`,
+      `https://${OPEN_IPFS_GATEWAY_HOSTNAME}/ipfs/${CID_V1}/path/logo.png`,
     );
   });
 
