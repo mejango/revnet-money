@@ -1,5 +1,6 @@
 import { getBendystrawClient } from "@/graphql/bendystrawClient";
 import { JBChainId } from "@bananapus/nana-sdk-core";
+import { uniswapV4PriceFromSqrtPriceX96 } from "@bananapus/nana-sdk-core/v6";
 import type { PriceDataPoint } from "./getTokenPriceChartData";
 
 const PAGE_SIZE = 1000;
@@ -75,15 +76,12 @@ export function v4PriceFromSqrtPriceX96(
   sqrtPriceX96: string | bigint,
   projectTokenIsCurrency0: boolean,
   terminalDecimals: number,
-  projectTokenDecimals = 18,
 ): number | null {
-  const sqrt = Number(BigInt(sqrtPriceX96));
-  if (!Number.isFinite(sqrt) || sqrt <= 0) return null;
-  const ratio = sqrt / 2 ** 96;
-  const currency1PerCurrency0 = ratio * ratio;
-  const raw = projectTokenIsCurrency0 ? currency1PerCurrency0 : 1 / currency1PerCurrency0;
-  const price = raw * 10 ** (projectTokenDecimals - terminalDecimals);
-  return Number.isFinite(price) && price > 0 ? price : null;
+  return uniswapV4PriceFromSqrtPriceX96(
+    BigInt(sqrtPriceX96),
+    !projectTokenIsCurrency0,
+    terminalDecimals,
+  );
 }
 
 export async function getV4AmmPriceHistory({
