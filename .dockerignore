@@ -16,4 +16,7 @@ Dockerfile*
 README.md
 TESTING.md
 docs
-test
+test/*
+!test/fixtures
+test/fixtures/*
+!test/fixtures/browser-project.json

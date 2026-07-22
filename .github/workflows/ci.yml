@@ -217,7 +217,12 @@ jobs:
 
       - name: Show container logs
         if: failure()
-        run: docker logs revnet-money-ci
+        run: |
+          if docker container inspect revnet-money-ci >/dev/null 2>&1; then
+            docker logs revnet-money-ci
+          else
+            echo "Smoke-test container was not created; no container logs are available."
+          fi
 
       - name: Stop smoke-test container
         if: always()
