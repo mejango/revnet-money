@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { useAllowance } from "@/hooks/useAllowance";
+import {
+  isSafeProposalPendingError,
+  requireOnchainExecution,
+  submittedViaSafe,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
 import { minReturnedTokens } from "@/lib/quote";
@@ -44,13 +51,12 @@ import {
   PublicClient,
   zeroAddress,
 } from "viem";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
 import { useShopCart } from "../ShopCartContext";
 import { TextSelect } from "./TextSelect";
 import { PreparedV6Pay, V6PayConfirmDialog, V6PayPhase } from "./V6PayConfirmDialog";
 import { V6PayShopStrip } from "./V6PayShopStrip";
-import { usePaySurface } from "./usePaySurface";
 import {
   BASE_CURRENCY_ETH,
   BASE_CURRENCY_USD,
@@ -58,6 +64,7 @@ import {
   usePayShopCredits,
   usePayShopRoutes,
 } from "./usePayShop";
+import { usePaySurface } from "./usePaySurface";
 
 /**
  * The full-featured v6 pay card (website/ pay-card parity): mode + chain
@@ -84,7 +91,9 @@ export function V6PayCard() {
   const { toast } = useToast();
 
   const projectToken = useJBTokenContext().token.data;
-  const projectTokenLabel = projectToken?.symbol ? formatTokenSymbol(projectToken.symbol) : "tokens";
+  const projectTokenLabel = projectToken?.symbol
+    ? formatTokenSymbol(projectToken.symbol)
+    : "tokens";
   const nativeSymbol = JB_CHAINS[chainId]?.nativeTokenSymbol ?? "ETH";
 
   // ---- Form state ----
@@ -170,7 +179,9 @@ export function V6PayCard() {
   const chainCartItems = useMemo(
     () =>
       cart.items.filter(
-        (i) => i.chainId === Number(chainId) && (!shop || i.hook.toLowerCase() === shop.hook.toLowerCase()),
+        (i) =>
+          i.chainId === Number(chainId) &&
+          (!shop || i.hook.toLowerCase() === shop.hook.toLowerCase()),
       ),
     [cart.items, chainId, shop],
   );
@@ -194,8 +205,7 @@ export function V6PayCard() {
   const selectedShopRoute = selected ? shopRoutes?.[payTokenKey(selected)] : undefined;
   const shopMatchesToken = !!selectedShopRoute?.supported;
   const supportedShopTokenIndexes = useMemo(
-    () =>
-      tokens.flatMap((t, index) => (shopRoutes?.[payTokenKey(t)]?.supported ? [index] : [])),
+    () => tokens.flatMap((t, index) => (shopRoutes?.[payTokenKey(t)]?.supported ? [index] : [])),
     [tokens, shopRoutes],
   );
 
@@ -234,8 +244,7 @@ export function V6PayCard() {
   const cartTotal = useMemo(() => {
     if (!shop || cartCount === 0) return 0n;
     return shop.tiers.reduce((sum, tier) => {
-      const qty =
-        chainCartItems.find((i) => Number(i.tierId) === tier.id)?.quantity ?? 0;
+      const qty = chainCartItems.find((i) => Number(i.tierId) === tier.id)?.quantity ?? 0;
       return sum + effectiveTierPrice(tier.price, tier.discountPercent) * BigInt(qty);
     }, 0n);
   }, [shop, chainCartItems, cartCount]);
@@ -243,8 +252,7 @@ export function V6PayCard() {
     if (!shop) return 0n;
     return shop.tiers.reduce((sum, tier) => {
       if (!tier.cantBuyWithCredits) return sum;
-      const qty =
-        chainCartItems.find((i) => Number(i.tierId) === tier.id)?.quantity ?? 0;
+      const qty = chainCartItems.find((i) => Number(i.tierId) === tier.id)?.quantity ?? 0;
       return sum + effectiveTierPrice(tier.price, tier.discountPercent) * BigInt(qty);
     }, 0n);
   }, [shop, chainCartItems]);
@@ -283,9 +291,7 @@ export function V6PayCard() {
 
   const tierIds = useMemo(
     () =>
-      chainCartItems.flatMap((item) =>
-        Array.from({ length: item.quantity }, () => item.tierId),
-      ),
+      chainCartItems.flatMap((item) => Array.from({ length: item.quantity }, () => item.tierId)),
     [chainCartItems],
   );
   // Metadata ids key off the hook's METADATA_ID_TARGET (the shared
@@ -311,8 +317,7 @@ export function V6PayCard() {
       metadata ?? "0x",
       address ?? zeroAddress,
     ],
-    enabled:
-      !!publicClient && !!selected && mode === "pay" && (amountRaw > 0n || cartCount > 0),
+    enabled: !!publicClient && !!selected && mode === "pay" && (amountRaw > 0n || cartCount > 0),
     placeholderData: (previous) => previous,
     retry: false,
     queryFn: async () => {
@@ -335,7 +340,11 @@ export function V6PayCard() {
           beneficiary,
           metadata,
         });
-        return { ...p, terminal: resolved.address, routeType: resolved.isRouter ? "swap" : "multi" } as const;
+        return {
+          ...p,
+          terminal: resolved.address,
+          routeType: resolved.isRouter ? "swap" : "multi",
+        } as const;
       }
       const route = await resolveBestV6PayRoute({
         client,
@@ -358,8 +367,7 @@ export function V6PayCard() {
   // A VERIFIED zero preview may submit (zero-issuance pay is legitimate); an
   // unavailable preview blocks — never send blind.
   const previewReady =
-    mode === "addbalance" ||
-    (!!preview && !previewError && !previewLoading && !previewIsPrevious);
+    mode === "addbalance" || (!!preview && !previewError && !previewLoading && !previewIsPrevious);
   const routeIsRouter = preview?.routeType === "swap";
 
   // ---- Wallet balance ----
@@ -379,7 +387,8 @@ export function V6PayCard() {
   );
   const { balances } = useTokenBalances(balanceToken, chainId);
   const walletBalance = selected ? (balances.get(selected.token) ?? 0n) : 0n;
-  const insufficientBalance = isConnected && !!selected && amountRaw > 0n && amountRaw > walletBalance;
+  const insufficientBalance =
+    isConnected && !!selected && amountRaw > 0n && amountRaw > walletBalance;
 
   // Add-to-balance has no on-chain minimum-output field, so a router swap
   // can't be bounded — refuse it; only direct tokens top up.
@@ -391,14 +400,23 @@ export function V6PayCard() {
   const [phase, setPhase] = useState<V6PayPhase>("preparing");
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
   const [txError, setTxError] = useState<string | null>(null);
+  const safeReceipt = useWaitForTransactionReceipt({
+    hash: txHash,
+    chainId: prepared?.chainId,
+  });
 
   const busy =
-    confirmOpen &&
-    (phase === "approving" || phase === "simulating" || phase === "signing" || phase === "pending");
+    phase === "safe-proposed" ||
+    (confirmOpen &&
+      (phase === "approving" ||
+        phase === "simulating" ||
+        phase === "signing" ||
+        phase === "pending"));
 
   const creditOnlyCheckout = mode === "pay" && cartCount > 0 && cartAmountDue === 0n;
 
   const openConfirm = () => {
+    if (phase === "safe-proposed") return;
     if (!selected) return;
     if (amountRaw <= 0n && !creditOnlyCheckout) return;
     if (notStarted || surfaceError || addBalanceViaRouter || insufficientBalance) return;
@@ -598,7 +616,20 @@ export function V6PayCard() {
       } as unknown as Parameters<typeof writeContractAsync>[0]);
       setTxHash(hash);
       setPhase("pending");
-      await publicClient.waitForTransactionReceipt({ hash });
+      if (submittedViaSafe(hash)) {
+        setPhase("safe-proposed");
+        toast({
+          title: "Safe proposal submitted",
+          description:
+            "The payment is awaiting Safe approvals and execution. It has not reached the project yet; do not submit it again.",
+        });
+        return;
+      }
+      requireOnchainExecution(hash, prepared.mode === "pay" ? "Payment" : "Balance addition");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") {
+        throw new Error(`Transaction ${hash} reverted onchain.`);
+      }
       setPhase("success");
       toast({
         title: prepared.mode === "pay" ? "Payment confirmed" : "Added to the balance",
@@ -608,6 +639,12 @@ export function V6PayCard() {
             : "The project balance grew — no tokens were minted.",
       });
     } catch (err) {
+      if (isSafeProposalPendingError(err)) {
+        setPhase("safe-proposed");
+        setTxHash(err.hash);
+        toast({ title: "Safe proposal submitted", description: err.message });
+        return;
+      }
       setPhase("ready");
       setTxError(formatWalletError(err));
     }
@@ -624,6 +661,44 @@ export function V6PayCard() {
     setMemo("");
     for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
   };
+
+  useEffect(() => {
+    if (phase !== "safe-proposed") return;
+    if (safeReceipt.isSuccess) {
+      setPhase("success");
+      setTxError(null);
+      setAmount("");
+      setDebouncedAmount("");
+      setMemo("");
+      for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
+      toast({
+        title: prepared?.mode === "pay" ? "Safe payment confirmed" : "Safe top-up confirmed",
+        description: "The Safe proposal executed successfully onchain.",
+      });
+    } else if (safeReceipt.isError) {
+      setPhase("ready");
+      setTxError(
+        safeReceipt.error instanceof Error
+          ? safeReceipt.error.message
+          : "The Safe proposal executed but failed onchain.",
+      );
+      toast({
+        variant: "destructive",
+        title: "Safe execution failed",
+        description:
+          "The proposal did not complete the payment. Review its status before retrying.",
+      });
+    }
+  }, [
+    cart,
+    chainCartItems,
+    phase,
+    prepared?.mode,
+    safeReceipt.error,
+    safeReceipt.isError,
+    safeReceipt.isSuccess,
+    toast,
+  ]);
 
   // Chain switching lives in the confirm dialog (old PayDialog style). The
   // token selection re-maps to the same token on the new chain via the
@@ -663,45 +738,43 @@ export function V6PayCard() {
 
   return (
     <div>
-      <div
-        className="w-full border border-b-0 border-melon-600"
-      >
-      {/* 721 shop strip — same gray as the pay block, flush inside the outline. */}
-      {hasShopStrip ? (
-        <div className="w-full bg-zinc-100 px-4 pt-3">
-          <V6PayShopStrip
-            shop={shop!}
-            chainId={chainId}
-            pricingSymbol={shopPricingSymbol}
-            busy={busy}
-          />
-          {cartCount > 0 && shopRoutesLoading ? (
-            <div
-              className="mb-2 flex items-center gap-2"
-              role="status"
-              aria-label="Loading checkout currencies"
-            >
-              <Skeleton className="h-3 w-36" />
-            </div>
-          ) : cartCount > 0 && supportedShopTokenIndexes.length === 0 ? (
-            <p className="mb-2 text-xs text-red-600">
-              No directly accepted payment token has a verified price feed for these items.
-            </p>
-          ) : cartCount > 0 && !shopMatchesToken ? (
-            <p className="mb-2 text-xs text-zinc-500">
-              Switching to a supported checkout currency…
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+      <div className="w-full border border-b-0 border-melon-600">
+        {/* 721 shop strip — same gray as the pay block, flush inside the outline. */}
+        {hasShopStrip ? (
+          <div className="w-full bg-zinc-100 px-4 pt-3">
+            <V6PayShopStrip
+              shop={shop!}
+              chainId={chainId}
+              pricingSymbol={shopPricingSymbol}
+              busy={busy}
+            />
+            {cartCount > 0 && shopRoutesLoading ? (
+              <div
+                className="mb-2 flex items-center gap-2"
+                role="status"
+                aria-label="Loading checkout currencies"
+              >
+                <Skeleton className="h-3 w-36" />
+              </div>
+            ) : cartCount > 0 && supportedShopTokenIndexes.length === 0 ? (
+              <p className="mb-2 text-xs text-red-600">
+                No directly accepted payment token has a verified price feed for these items.
+              </p>
+            ) : cartCount > 0 && !shopMatchesToken ? (
+              <p className="mb-2 text-xs text-zinc-500">
+                Switching to a supported checkout currency…
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
-      <div className="flex justify-center items-center flex-col">
-        {/* Pay block: mode dropdown in the label spot, big amount input, token selector at right */}
-        <div
-          className={`grid h-30 w-full grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] content-center bg-zinc-100 px-4 py-4 ${
-            showPayReceipt ? "border-b border-melon-200" : ""
-          }`}
-        >
+        <div className="flex justify-center items-center flex-col">
+          {/* Pay block: mode dropdown in the label spot, big amount input, token selector at right */}
+          <div
+            className={`grid h-30 w-full grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] content-center bg-zinc-100 px-4 py-4 ${
+              showPayReceipt ? "border-b border-melon-200" : ""
+            }`}
+          >
             <div className="col-start-1 row-start-1 flex items-center gap-1.5 self-start">
               <TextSelect
                 value={mode}
@@ -743,185 +816,194 @@ export function V6PayCard() {
               aria-label="Amount"
               className="col-start-1 row-start-2 min-h-11 border-0 bg-transparent pl-0 pr-3 pt-1 pb-0 text-zinc-900 text-2xl w-full placeholder:text-zinc-400 focus:ring-0 focus:outline-none sm:leading-6 disabled:opacity-60"
             />
-          {tokens.length > 1 ? (
-            // Valued by INDEX, not address — a token can appear direct and
-            // via-router, so the option stays in lock-step with the selection.
-            <TextSelect
-              value={String(Math.min(tokenIndex, tokens.length - 1))}
-              onChange={(value) => {
-                const i = Number(value);
-                setTokenIndex(i);
-                const picked = tokens[i];
-                if (picked) selectedKeyRef.current = payTokenKey(picked);
-                setTokenTouched(true);
-              }}
-              disabled={busy}
-              ariaLabel="Payment token"
-              className="relative col-start-2 row-start-2 inline-flex shrink-0 self-center items-center gap-1"
-              labelClassName="text-right select-none text-lg text-zinc-900"
-              options={tokens.map((t, i) => ({
-                value: String(i),
-                label: t.symbol,
-                disabled: cartCount > 0 && !shopRoutes?.[payTokenKey(t)]?.supported,
-              }))}
-            />
-          ) : (
-            <span className="col-start-2 row-start-2 self-center text-right select-none text-lg">
-              {selected?.symbol ?? nativeSymbol}
-            </span>
-          )}
-        </div>
-
-        {/* Receipt — hidden while idle; item checkouts expand into a detailed cart. */}
-        {showPayReceipt ? (
-          <div className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2.5">
-            <p className="text-sm text-zinc-500">
-              {routeIsRouter ? "You get at least" : "You get"}
-            </p>
-            {preview && preview.beneficiaryTokenCount > 0n ? (
-              <p
-                aria-live="polite"
-                aria-busy={previewLoading}
-                className={`text-xl font-semibold transition-colors ${
-                  previewLoading || previewIsPrevious ? "text-zinc-400" : "text-zinc-900"
-                }`}
-              >
-                {formatPayAmount(preview.beneficiaryTokenCount, 18)} {projectTokenLabel}
-              </p>
-            ) : amountRaw > 0n && previewLoading ? (
-              <Skeleton
-                className="mt-1 h-5 w-24"
-                role="status"
-                aria-label="Calculating token return"
+            {tokens.length > 1 ? (
+              // Valued by INDEX, not address — a token can appear direct and
+              // via-router, so the option stays in lock-step with the selection.
+              <TextSelect
+                value={String(Math.min(tokenIndex, tokens.length - 1))}
+                onChange={(value) => {
+                  const i = Number(value);
+                  setTokenIndex(i);
+                  const picked = tokens[i];
+                  if (picked) selectedKeyRef.current = payTokenKey(picked);
+                  setTokenTouched(true);
+                }}
+                disabled={busy}
+                ariaLabel="Payment token"
+                className="relative col-start-2 row-start-2 inline-flex shrink-0 self-center items-center gap-1"
+                labelClassName="text-right select-none text-lg text-zinc-900"
+                options={tokens.map((t, i) => ({
+                  value: String(i),
+                  label: t.symbol,
+                  disabled: cartCount > 0 && !shopRoutes?.[payTokenKey(t)]?.supported,
+                }))}
               />
-            ) : null}
-
-            {cartCount > 0 && shop ? (
-              <div className="mt-3 rounded-md border border-zinc-200 bg-white p-3 text-sm">
-                <div className="space-y-3">
-                  {chainCartItems.map((item) => {
-                    const tier = shop.tiers.find((candidate) => candidate.id === Number(item.tierId));
-                    const canIncrement =
-                      !tier || tier.unlimited || item.quantity < tier.remaining;
-                    const itemName = item.name ?? `Item #${item.tierId}`;
-
-                    return (
-                      <div key={item.tierId.toString()} className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border border-zinc-200 bg-zinc-100 text-xs text-zinc-500">
-                          {item.imageUri ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={item.imageUri}
-                              alt=""
-                              className="h-full w-full object-contain"
-                            />
-                          ) : (
-                            <span>#{item.tierId.toString()}</span>
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-zinc-900">{itemName}</p>
-                          <p className="text-xs tabular-nums text-zinc-500">
-                            {formatPayAmount(item.price, shop.pricingDecimals)} {shopPricingSymbol}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              cart.setQuantity(item.tierId, item.chainId, item.quantity - 1)
-                            }
-                            disabled={busy}
-                            aria-label={`Remove one ${itemName}`}
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
-                          >
-                            −
-                          </button>
-                          <span className="min-w-4 text-center tabular-nums">{item.quantity}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              cart.setQuantity(item.tierId, item.chainId, item.quantity + 1)
-                            }
-                            disabled={busy || !canIncrement}
-                            aria-label={`Add one ${itemName}`}
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-3 space-y-1.5 border-t border-zinc-200 pt-3">
-                  <div className="flex justify-between gap-3">
-                    <span className="text-zinc-600">
-                      {cartCount} item{cartCount === 1 ? "" : "s"}
-                    </span>
-                    <span className="tabular-nums text-zinc-900">
-                      {formatPayAmount(cartTotal, shop.pricingDecimals)} {shopPricingSymbol}
-                    </span>
-                  </div>
-                  {address && shopCreditsLoading ? (
-                    <div className="flex justify-between gap-3 text-zinc-500">
-                      <span>Shop credit</span>
-                      <Skeleton className="h-4 w-16" role="status" aria-label="Loading shop credit" />
-                    </div>
-                  ) : shopCreditApplied > 0n ? (
-                    <div className="flex justify-between gap-3 text-teal-700">
-                      <span>Shop credit applied</span>
-                      <span className="tabular-nums">
-                        −{formatPayAmount(shopCreditApplied, shop.pricingDecimals)}{" "}
-                        {shopPricingSymbol}
-                      </span>
-                    </div>
-                  ) : null}
-                  {restrictedCartTotal > 0n && shopCreditApplied > 0n ? (
-                    <div className="flex justify-between gap-3 text-zinc-500">
-                      <span>Fresh payment required</span>
-                      <span className="tabular-nums">
-                        {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
-                        {shopPricingSymbol}
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className="flex justify-between gap-3 pt-0.5 font-semibold text-zinc-900">
-                    <span>Amount due</span>
-                    <span className="tabular-nums">
-                      {formatPayAmount(cartAmountDue, shop.pricingDecimals)} {shopPricingSymbol}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {preview && preview.reservedTokenCount > 0n ? (
-              <p className="mt-1.5 text-xs font-medium text-zinc-500">
-                Splits get {formatPayAmount(preview.reservedTokenCount, 18)} {projectTokenLabel}
-              </p>
-            ) : null}
+            ) : (
+              <span className="col-start-2 row-start-2 self-center text-right select-none text-lg">
+                {selected?.symbol ?? nativeSymbol}
+              </span>
+            )}
           </div>
-        ) : mode === "addbalance" ? (
-          <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
-            Adds to the project balance — no tokens are minted.
-          </p>
-        ) : null}
 
-        {mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
-          <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
-            Couldn&apos;t verify what this payment returns — paying is disabled until the preview
-            works.
-          </p>
-        ) : null}
+          {/* Receipt — hidden while idle; item checkouts expand into a detailed cart. */}
+          {showPayReceipt ? (
+            <div className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2.5">
+              <p className="text-sm text-zinc-500">
+                {routeIsRouter ? "You get at least" : "You get"}
+              </p>
+              {preview && preview.beneficiaryTokenCount > 0n ? (
+                <p
+                  aria-live="polite"
+                  aria-busy={previewLoading}
+                  className={`text-xl font-semibold transition-colors ${
+                    previewLoading || previewIsPrevious ? "text-zinc-400" : "text-zinc-900"
+                  }`}
+                >
+                  {formatPayAmount(preview.beneficiaryTokenCount, 18)} {projectTokenLabel}
+                </p>
+              ) : amountRaw > 0n && previewLoading ? (
+                <Skeleton
+                  className="mt-1 h-5 w-24"
+                  role="status"
+                  aria-label="Calculating token return"
+                />
+              ) : null}
 
-        {notStarted ? (
-          <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-500">
-            Starts in {formatStartCountdown(startsAt - now)}.
-          </p>
-        ) : null}
-      </div>
+              {cartCount > 0 && shop ? (
+                <div className="mt-3 rounded-md border border-zinc-200 bg-white p-3 text-sm">
+                  <div className="space-y-3">
+                    {chainCartItems.map((item) => {
+                      const tier = shop.tiers.find(
+                        (candidate) => candidate.id === Number(item.tierId),
+                      );
+                      const canIncrement =
+                        !tier || tier.unlimited || item.quantity < tier.remaining;
+                      const itemName = item.name ?? `Item #${item.tierId}`;
+
+                      return (
+                        <div key={item.tierId.toString()} className="flex items-center gap-3">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border border-zinc-200 bg-zinc-100 text-xs text-zinc-500">
+                            {item.imageUri ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={item.imageUri}
+                                alt=""
+                                className="h-full w-full object-contain"
+                              />
+                            ) : (
+                              <span>#{item.tierId.toString()}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-zinc-900">{itemName}</p>
+                            <p className="text-xs tabular-nums text-zinc-500">
+                              {formatPayAmount(item.price, shop.pricingDecimals)}{" "}
+                              {shopPricingSymbol}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                cart.setQuantity(item.tierId, item.chainId, item.quantity - 1)
+                              }
+                              disabled={busy}
+                              aria-label={`Remove one ${itemName}`}
+                              className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
+                            >
+                              −
+                            </button>
+                            <span className="min-w-4 text-center tabular-nums">
+                              {item.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                cart.setQuantity(item.tierId, item.chainId, item.quantity + 1)
+                              }
+                              disabled={busy || !canIncrement}
+                              aria-label={`Add one ${itemName}`}
+                              className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-3 space-y-1.5 border-t border-zinc-200 pt-3">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-zinc-600">
+                        {cartCount} item{cartCount === 1 ? "" : "s"}
+                      </span>
+                      <span className="tabular-nums text-zinc-900">
+                        {formatPayAmount(cartTotal, shop.pricingDecimals)} {shopPricingSymbol}
+                      </span>
+                    </div>
+                    {address && shopCreditsLoading ? (
+                      <div className="flex justify-between gap-3 text-zinc-500">
+                        <span>Shop credit</span>
+                        <Skeleton
+                          className="h-4 w-16"
+                          role="status"
+                          aria-label="Loading shop credit"
+                        />
+                      </div>
+                    ) : shopCreditApplied > 0n ? (
+                      <div className="flex justify-between gap-3 text-teal-700">
+                        <span>Shop credit applied</span>
+                        <span className="tabular-nums">
+                          −{formatPayAmount(shopCreditApplied, shop.pricingDecimals)}{" "}
+                          {shopPricingSymbol}
+                        </span>
+                      </div>
+                    ) : null}
+                    {restrictedCartTotal > 0n && shopCreditApplied > 0n ? (
+                      <div className="flex justify-between gap-3 text-zinc-500">
+                        <span>Fresh payment required</span>
+                        <span className="tabular-nums">
+                          {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
+                          {shopPricingSymbol}
+                        </span>
+                      </div>
+                    ) : null}
+                    <div className="flex justify-between gap-3 pt-0.5 font-semibold text-zinc-900">
+                      <span>Amount due</span>
+                      <span className="tabular-nums">
+                        {formatPayAmount(cartAmountDue, shop.pricingDecimals)} {shopPricingSymbol}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {preview && preview.reservedTokenCount > 0n ? (
+                <p className="mt-1.5 text-xs font-medium text-zinc-500">
+                  Splits get {formatPayAmount(preview.reservedTokenCount, 18)} {projectTokenLabel}
+                </p>
+              ) : null}
+            </div>
+          ) : mode === "addbalance" ? (
+            <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
+              Adds to the project balance — no tokens are minted.
+            </p>
+          ) : null}
+
+          {mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
+            <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
+              Couldn&apos;t verify what this payment returns — paying is disabled until the preview
+              works.
+            </p>
+          ) : null}
+
+          {notStarted ? (
+            <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-500">
+              Starts in {formatStartCountdown(startsAt - now)}.
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {/* Memo + Pay — compact by default; the button keeps its height if the memo is resized. */}

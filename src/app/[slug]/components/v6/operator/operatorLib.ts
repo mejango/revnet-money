@@ -1,5 +1,6 @@
 import { chainSortOrder } from "@/app/constants";
 import { PermissionHolder, PermissionHolderFilter } from "@/generated/graphql";
+import { requireOnchainExecution } from "@/hooks/useReviewedWriteContract";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, jbContractAddress } from "@bananapus/nana-sdk-core";
 import { TypedDocumentNode } from "@graphql-typed-document-node/core";
@@ -135,7 +136,11 @@ export async function runSequentialWrites({
       args: write.args as unknown[],
     });
     onProgress(`Waiting for confirmation on ${name}…`);
-    await client.waitForTransactionReceipt({ hash });
+    requireOnchainExecution(hash, `${write.functionName} on ${name}`);
+    const receipt = await client.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") {
+      throw new Error(`${write.functionName} reverted on ${name} (${hash}).`);
+    }
     done += 1;
   }
   return done;

@@ -2,13 +2,13 @@
 
 import { Nav } from "@/components/layout/Nav";
 import { useToast } from "@/components/ui/use-toast";
+import { useGetRelayrTxQuote } from "@/hooks/useReviewedRelayr";
 import { wagmiConfig } from "@/lib/wagmiConfig";
+import { createSalt, MappableAsset, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
+import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { getPublicClient } from "@wagmi/core";
 import { Formik } from "formik";
 import { withZodSchema } from "formik-validator-zod";
-import { createSalt, MappableAsset, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
-import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
-import { useGetRelayrTxQuote } from "@bananapus/nana-sdk-react";
 import { encodeFunctionData, PublicClient } from "viem";
 import { useAccount } from "wagmi";
 import { DEFAULT_FORM_DATA } from "./constants";
@@ -112,6 +112,13 @@ export default function Page() {
         },
         chainId,
         version: 6 as const,
+        review: {
+          abi: request.abi,
+          functionName: request.functionName,
+          args: request.args,
+          label: `Deploy ${formData.name} on ${chainId}`,
+          contractName: "REVDeployer",
+        },
       });
     }
 

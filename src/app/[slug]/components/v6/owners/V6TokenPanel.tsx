@@ -16,28 +16,36 @@ import {
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
-import { wagmiConfig } from "@/lib/wagmiConfig";
+import {
+  useGetRelayrTxQuote,
+  useSendRelayrTx,
+  waitForRelayrBundle,
+} from "@/hooks/useReviewedRelayr";
+import {
+  requireOnchainExecution,
+  submittedViaSafe,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { formatEthAddress, formatWalletError } from "@/lib/utils";
-import { getPublicClient } from "@wagmi/core";
+import { wagmiConfig } from "@/lib/wagmiConfig";
 import {
   JB_CHAINS,
   JBChainId,
   jbControllerAbi,
+  JBCoreContracts,
   jbDirectoryAbi,
   jbProjectsAbi,
-  JBCoreContracts,
 } from "@bananapus/nana-sdk-core";
 import { getTokenAddress, hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import {
   ChainPayment,
   RelayrPostBundleResponse,
-  useGetRelayrTxQuote,
   useJBContractContext,
   useJBProjectMetadataContext,
   useJBTokenContext,
-  useSendRelayrTx,
 } from "@bananapus/nana-sdk-react";
 import { useQuery } from "@tanstack/react-query";
+import { getPublicClient } from "@wagmi/core";
 import { useMemo, useState } from "react";
 import {
   Address,
@@ -48,7 +56,7 @@ import {
   PublicClient,
   zeroAddress,
 } from "viem";
-import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { ProjectItem } from "../shared";
 
 type TokenChainState = {
@@ -74,7 +82,11 @@ function clientFor(chainId: JBChainId) {
 }
 
 function Pipe() {
-  return <span aria-hidden="true" className="text-melon-200">|</span>;
+  return (
+    <span aria-hidden="true" className="text-melon-200">
+      |
+    </span>
+  );
 }
 
 function TokenField({ label, children }: { label: string; children: React.ReactNode }) {
@@ -344,7 +356,18 @@ function TokenEditDialog({
               functionName: "deployERC20For",
               args: call.args as readonly [bigint, string, string, `0x${string}`],
             });
-        await clientFor(state.chainId).waitForTransactionReceipt({ hash });
+        if (submittedViaSafe(hash)) {
+          toast({
+            title: "Safe proposal submitted",
+            description: `The ${deployed ? "token update" : "token deployment"} is awaiting Safe approvals and execution.`,
+          });
+          return;
+        }
+        requireOnchainExecution(hash, deployed ? "Token metadata update" : "Token deployment");
+        const receipt = await clientFor(state.chainId).waitForTransactionReceipt({ hash });
+        if (receipt.status !== "success") {
+          throw new Error(`Token transaction ${hash} reverted onchain.`);
+        }
         finish(deployed ? "The name and symbol are now updated." : "The ERC-20 is now deployed.");
         return;
       }
@@ -377,6 +400,14 @@ function TokenEditDialog({
               gas: gas + (state.token ? 50_000n : 150_000n),
               data: call.data,
             },
+            version: 6 as const,
+            review: {
+              abi: jbControllerAbi,
+              functionName: call.functionName,
+              args: call.args,
+              label: deployed ? "Update token metadata" : "Deploy project ERC-20",
+              contractName: "JBController",
+            },
           };
         }),
       );
@@ -399,9 +430,18 @@ function TokenEditDialog({
     if (!quote || !selectedPayment || !sendRelayrTx) return;
     setBusy(true);
     try {
-      await sendRelayrTx(selectedPayment);
+      const hash = await sendRelayrTx(selectedPayment);
+      if (submittedViaSafe(hash)) {
+        toast({
+          title: "Safe payment proposal submitted",
+          description:
+            "The Relayr bundle is not paid yet. Complete the payment proposal in Safe; do not submit another payment.",
+        });
+        return;
+      }
+      await waitForRelayrBundle(quote.bundle_uuid);
       finish(
-        `Relayr is executing the ${deployed ? "update" : "deployment"} on ${states.length} chains.`,
+        `Relayr confirmed the ${deployed ? "update" : "deployment"} on ${states.length} chains.`,
       );
     } catch (error) {
       toast({
@@ -439,7 +479,9 @@ function TokenEditDialog({
       </DialogTrigger>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>{deployed ? "Edit token name & symbol" : "Set token name & symbol"}</DialogTitle>
+          <DialogTitle>
+            {deployed ? "Edit token name & symbol" : "Set token name & symbol"}
+          </DialogTitle>
           <DialogDescription>
             {deployed
               ? `Renames the ERC-20 on ${states.length} chain${states.length === 1 ? "" : "s"}: ${chainNames}. The contract address stays the same.`
@@ -506,11 +548,21 @@ function TokenEditDialog({
             Cancel
           </Button>
           {quote ? (
-            <Button type="button" onClick={payAndSubmit} loading={busy} disabled={!selectedPayment || busy}>
+            <Button
+              type="button"
+              onClick={payAndSubmit}
+              loading={busy}
+              disabled={!selectedPayment || busy}
+            >
               Pay and submit
             </Button>
           ) : (
-            <Button type="button" onClick={submit} loading={busy} disabled={!address || !canManage || busy}>
+            <Button
+              type="button"
+              onClick={submit}
+              loading={busy}
+              disabled={!address || !canManage || busy}
+            >
               {states.length > 1 ? "Get quote" : deployed ? "Save token" : "Deploy token"}
             </Button>
           )}

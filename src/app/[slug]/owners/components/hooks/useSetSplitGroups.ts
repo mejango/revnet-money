@@ -2,13 +2,23 @@
 
 import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { useToast } from "@/components/ui/use-toast";
+import {
+  useGetRelayrTxQuote,
+  useSendRelayrTx,
+  waitForRelayrBundle,
+} from "@/hooks/useReviewedRelayr";
+import {
+  submittedViaSafe,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { getPublicClient } from "@wagmi/core";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
-import { useGetRelayrTxQuote, useJBContractContext, useSendRelayrTx } from "@bananapus/nana-sdk-react";
+import { useJBContractContext } from "@bananapus/nana-sdk-react";
+import { getPublicClient } from "@wagmi/core";
 import { useCallback, useEffect, useState } from "react";
 import { Address, encodeFunctionData } from "viem";
-import { useAccount, useSwitchChain, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { ChainFormData } from "../ChangeSplitRecipientsDialog";
 
 export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }) {
@@ -105,6 +115,14 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
               }),
             },
             chainId: chain.chainId,
+            version: 6 as const,
+            review: {
+              abi: jbControllerAbi,
+              functionName: "setSplitGroupsOf",
+              args,
+              label: "Update reserved token recipients",
+              contractName: "JBController",
+            },
           });
         }
 
@@ -112,6 +130,16 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
         if (!quote) throw new Error("Failed to get relayr tx quote");
 
         const hash = await sendRelayrTx?.(quote.payment_info[0]);
+        if (!hash) throw new Error("Relayr payment was not submitted.");
+        if (submittedViaSafe(hash)) {
+          toast({
+            title: "Safe payment proposal submitted",
+            description:
+              "The split changes are not executing yet. Complete the Relayr payment proposal in Safe and do not submit another payment.",
+          });
+          return { success: true };
+        }
+        await waitForRelayrBundle(quote.bundle_uuid);
         onSuccess(hash);
         setOnSuccessCalled(true);
         resetRelayr();

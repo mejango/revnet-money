@@ -3,6 +3,12 @@ import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useHasBorrowPermission } from "@/hooks/useHasBorrowPermission";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
+import {
+  isSafeProposalPendingError,
+  requireOnchainExecution,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { toBaseCurrencyId } from "@/lib/currency";
 import { generateFeeData } from "@/lib/feeHelpers";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
@@ -27,14 +33,7 @@ import {
 } from "@bananapus/nana-sdk-react";
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
-import {
-  useAccount,
-  usePublicClient,
-  useReadContract,
-  useWaitForTransactionReceipt,
-  useWalletClient,
-  useWriteContract,
-} from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWalletClient } from "wagmi";
 
 // Types
 type BorrowState =
@@ -309,6 +308,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     isPending: isReallocating,
     data: reallocationTxHash,
   } = useWriteContract();
+  const { writeContractAsync: permissionWriteAsync } = useWriteContract();
 
   // Transaction status hooks
   const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({
@@ -585,7 +585,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         if (!userHasPermission) {
           setBorrowStatus("granting-permission");
           try {
-            const txHash = await walletClient.writeContract({
+            const txHash = await permissionWriteAsync({
+              chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
               account: address,
               address: resolvedPermissionsAddress,
               abi: jbPermissionsAbi,
@@ -599,9 +600,23 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
                 },
               ],
             });
-            await publicClient.waitForTransactionReceipt({ hash: txHash });
+            requireOnchainExecution(txHash, "Borrow permission grant");
+            const permissionReceipt = await publicClient.waitForTransactionReceipt({
+              hash: txHash,
+            });
+            if (permissionReceipt.status !== "success") {
+              throw new Error(`Permission grant ${txHash} reverted onchain.`);
+            }
             setBorrowStatus("permission-granted");
           } catch (err) {
+            if (isSafeProposalPendingError(err)) {
+              setBorrowStatus("pending");
+              toast({
+                title: "Safe permission proposal submitted",
+                description: err.message,
+              });
+              return;
+            }
             setBorrowStatus("error-permission-denied");
             toast({
               variant: "destructive",
@@ -666,6 +681,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     selectedLoanReallocAmount,
     prepaidPercent,
     reallocateCollateralAsync,
+    permissionWriteAsync,
     toast,
     userHasPermission,
     borrowableAmountRaw,

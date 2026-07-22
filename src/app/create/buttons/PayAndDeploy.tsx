@@ -2,15 +2,12 @@ import EtherscanLink from "@/components/EtherscanLink";
 import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
+import { useGetRelayrTxBundle, useSendRelayrTx } from "@/hooks/useReviewedRelayr";
+import { submittedViaSafe } from "@/hooks/useReviewedWriteContract";
 import { useTokenA } from "@/hooks/useTokenA";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import {
-  ChainPayment,
-  RelayrPostBundleResponse,
-  useGetRelayrTxBundle,
-  useSendRelayrTx,
-} from "@bananapus/nana-sdk-react";
+import { ChainPayment, RelayrPostBundleResponse } from "@bananapus/nana-sdk-react";
 import {
   CheckCircle,
   CircleDashedIcon,
@@ -45,7 +42,7 @@ export function PayAndDeploy({ relayrResponse, revnetTokenSymbol }: PaymentAndDe
   const [selectedPayment, selectPayment] = useState<ChainPayment | null>(null);
   const [payIsProcessing, setPayIsProcessing] = useState(false);
   const { sendRelayrTx } = useSendRelayrTx();
-  const { startPolling, response: bundleResponse } = useGetRelayrTxBundle();
+  const { startPolling, response: bundleResponse, isComplete, hasFailed } = useGetRelayrTxBundle();
   const { toast } = useToast();
   const { symbol } = useTokenA();
 
@@ -68,7 +65,16 @@ export function PayAndDeploy({ relayrResponse, revnetTokenSymbol }: PaymentAndDe
             setPayIsProcessing(true);
             try {
               if (!selectedPayment || !sendRelayrTx) throw new Error("No payment selected");
-              await sendRelayrTx(selectedPayment);
+              const hash = await sendRelayrTx(selectedPayment);
+              if (submittedViaSafe(hash)) {
+                setPayIsProcessing(false);
+                toast({
+                  title: "Safe payment proposal submitted",
+                  description:
+                    "The Relayr bundle is not paid yet. Approve and execute the payment in Safe, then check this bundle; do not propose another payment.",
+                });
+                return;
+              }
               startPolling(relayrResponse.bundle_uuid);
             } catch (e: any) {
               setPayIsProcessing(false);
@@ -81,7 +87,7 @@ export function PayAndDeploy({ relayrResponse, revnetTokenSymbol }: PaymentAndDe
           }}
         >
           Pay and ship
-          {!!bundleResponse ? (
+          {isComplete ? (
             <CheckCircle className={"h-4 w-4 ml-2 fill-none text-emerald-500"} />
           ) : (
             <FastForwardIcon
@@ -129,10 +135,21 @@ export function PayAndDeploy({ relayrResponse, revnetTokenSymbol }: PaymentAndDe
                 </div>
               ),
           )}
-          <GoToProjectButton
-            txHash={(bundleResponse.transactions[0].status?.data as { hash: Hash })?.hash}
-            chainId={bundleResponse.transactions[0].request.chain}
-          />
+          {isComplete ? (
+            <GoToProjectButton
+              txHash={(bundleResponse.transactions[0].status?.data as { hash: Hash })?.hash}
+              chainId={bundleResponse.transactions[0].request.chain}
+            />
+          ) : hasFailed ? (
+            <p className="border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800">
+              At least one destination transaction failed. Review the per-chain status above; do not
+              make another Relayr payment.
+            </p>
+          ) : (
+            <p className="text-sm text-melon-700">
+              Relayr payment confirmed. Destination transactions are still pending.
+            </p>
+          )}
         </div>
       )}
     </div>

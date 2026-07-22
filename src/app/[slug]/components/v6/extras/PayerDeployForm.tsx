@@ -12,6 +12,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import {
+  requireOnchainExecution,
+  submittedViaSafe,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
@@ -19,7 +24,7 @@ import { buildDeployProjectPayerTx, projectPayerFromDeployLogs } from "@bananapu
 import { getAccount, getPublicClient } from "@wagmi/core";
 import { useMemo, useState } from "react";
 import { Address, isAddress, PublicClient, zeroAddress } from "viem";
-import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { ChainProjectRow, PayerRow } from "./projectPayers";
 
 type DeployedPayer = { chainId: JBChainId; payer: Address | null; txHash: `0x${string}` };
@@ -193,7 +198,19 @@ export function PayerDeployForm({
         setStatus(`Confirm the deploy on ${chainName} in your wallet…`);
         const txHash = await writeContractAsync(call.request);
         setStatus(`Waiting for confirmation on ${chainName}…`);
+        if (submittedViaSafe(txHash)) {
+          results.push({ chainId: call.chainId, payer: null, txHash });
+          setDeployed([...results]);
+          setStatus(
+            `Safe proposal submitted on ${chainName}. Approve and execute it in Safe before deploying on another chain.`,
+          );
+          return;
+        }
+        requireOnchainExecution(txHash, `Payer deployment on ${chainName}`);
         const receipt = await client.waitForTransactionReceipt({ hash: txHash });
+        if (receipt.status !== "success") {
+          throw new Error(`Payer deployment ${txHash} reverted on ${chainName}.`);
+        }
         // The new payer address comes from the DeployProjectPayer event — the
         // function's return value isn't available from a transaction.
         const payer = projectPayerFromDeployLogs(receipt.logs);

@@ -15,6 +15,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "@/components/ui/use-toast";
+import {
+  submittedViaSafe,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
@@ -35,7 +40,7 @@ import { format } from "date-fns";
 import gql from "graphql-tag";
 import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useReadContracts, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useReadContracts } from "wagmi";
 import { ProjectItem } from "../shared";
 
 type StoredRow = {
@@ -136,7 +141,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
   });
 
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const { writeContract, isPending, data: txHash } = useWriteContract();
+  const { writeContractAsync, isPending, data: txHash } = useWriteContract();
   const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => {
@@ -232,16 +237,33 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
                         size="sm"
                         disabled={(row.startsAt ?? 0) >= now}
                         loading={(isPending || isTxLoading) && pendingId === row.id}
-                        onClick={() => {
+                        onClick={async () => {
                           setPendingId(row.id);
-                          writeContract(
-                            buildAutoIssueTx({
-                              chainId: row.chainId as JBChainId,
-                              revnetId: BigInt(row.projectId),
-                              stageId: BigInt(row.stageId),
-                              beneficiary: row.beneficiary as `0x${string}`,
-                            }),
-                          );
+                          try {
+                            const hash = await writeContractAsync(
+                              buildAutoIssueTx({
+                                chainId: row.chainId as JBChainId,
+                                revnetId: BigInt(row.projectId),
+                                stageId: BigInt(row.stageId),
+                                beneficiary: row.beneficiary as `0x${string}`,
+                              }),
+                            );
+                            if (submittedViaSafe(hash)) {
+                              toast({
+                                title: "Safe proposal submitted",
+                                description:
+                                  "Auto issuance is awaiting Safe approvals and execution.",
+                              });
+                              setPendingId(null);
+                            }
+                          } catch (error) {
+                            toast({
+                              variant: "destructive",
+                              title: "Could not distribute auto issuance",
+                              description: error instanceof Error ? error.message : "Unknown error",
+                            });
+                            setPendingId(null);
+                          }
                         }}
                       >
                         {(row.startsAt ?? 0) >= now ? "Locked" : "Distribute"}

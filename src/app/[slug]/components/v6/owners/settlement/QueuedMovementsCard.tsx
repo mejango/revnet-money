@@ -1,10 +1,11 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { toast } from "@/components/ui/use-toast";
+import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { formatWalletError } from "@/lib/utils";
 import {
   buildV6ClaimTxFromRow,
@@ -15,12 +16,12 @@ import {
 import { jbSuckerV6Abi } from "@bananapus/nana-sdk-core/v6";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 import {
   bridgeEtaHint,
   bridgeTrackUrl,
-  ChainProject,
   chainName,
+  ChainProject,
   chainProjectsKey,
   fmtUnits,
   timeAgo,
@@ -67,7 +68,19 @@ function ClaimButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }) 
           setBusy(true);
           const tx = buildV6ClaimTxFromRow(row);
           await publicClient?.simulateContract({ account: address, ...tx });
-          await writeContractAsync(tx);
+          const hash = await writeContractAsync(tx);
+          if (submittedViaSafe(hash)) {
+            toast({
+              title: "Safe proposal submitted",
+              description: `The claim is awaiting Safe approvals and execution on ${chainName(row.peerChainId)}.`,
+            });
+            return;
+          }
+          if (!publicClient) throw new Error("Public client unavailable.");
+          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          if (receipt.status !== "success") {
+            throw new Error(`Claim ${hash} reverted onchain.`);
+          }
           toast({
             title: "Claimed",
             description: `Tokens claimed on ${chainName(row.peerChainId)}.`,
@@ -75,7 +88,11 @@ function ClaimButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }) 
           onDone();
         } catch (error) {
           console.error(error);
-          toast({ variant: "destructive", title: "Claim failed", description: formatWalletError(error) });
+          toast({
+            variant: "destructive",
+            title: "Claim failed",
+            description: formatWalletError(error),
+          });
         } finally {
           setBusy(false);
         }
@@ -135,7 +152,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
             args: [row.token],
             value,
           });
-          await writeContractAsync({
+          const hash = await writeContractAsync({
             chainId: row.chainId,
             address: row.sourceSucker,
             abi: jbSuckerV6Abi,
@@ -143,8 +160,20 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
             args: [row.token],
             value,
           });
+          if (submittedViaSafe(hash)) {
+            toast({
+              title: "Safe proposal submitted",
+              description: `The bridge message is awaiting Safe approvals and execution on ${chainName(row.chainId)}.`,
+            });
+            return;
+          }
+          if (!publicClient) throw new Error("Public client unavailable.");
+          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          if (receipt.status !== "success") {
+            throw new Error(`Bridge transaction ${hash} reverted onchain.`);
+          }
           toast({
-            title: "Bridge message sent",
+            title: "Bridge message confirmed",
             description: `The queued outbox is on its way to ${chainName(row.peerChainId)} — rows flip to claimable once it lands.`,
           });
           onDone();
@@ -214,7 +243,9 @@ export function QueuedMovementsCard({
     refetchInterval: 45_000,
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      const rows = await fetchV6BridgeRows(chains.map((c) => ({ chainId: c.chainId, projectId: c.projectId })));
+      const rows = await fetchV6BridgeRows(
+        chains.map((c) => ({ chainId: c.chainId, projectId: c.projectId })),
+      );
       const live = rows.filter((r) => r.status !== "claimed");
       // Resolve terminal-token symbols once per (chain, token) for the Value column.
       const symbols = new Map<string, string>();
@@ -267,9 +298,7 @@ export function QueuedMovementsCard({
       <p className="text-sm text-zinc-500 mt-1">
         Anything moving between chains shows here until it clears.
       </p>
-      <div
-        className={visible.length > 0 && !isLoading ? "-mx-4 mt-3 overflow-x-auto" : "mt-3"}
-      >
+      <div className={visible.length > 0 && !isLoading ? "-mx-4 mt-3 overflow-x-auto" : "mt-3"}>
         {isLoading ? (
           <TableSkeleton rows={4} columns={7} />
         ) : isError && rows.length === 0 ? (

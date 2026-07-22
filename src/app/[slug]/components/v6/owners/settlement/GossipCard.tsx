@@ -4,13 +4,14 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { toast } from "@/components/ui/use-toast";
+import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { formatWalletError } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { buildSyncAccountingDataTx } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Address } from "viem";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 import {
   chainName,
   ChainProject,
@@ -88,10 +89,23 @@ function SyncButton({
             account: address,
             ...request,
           });
-          await writeContractAsync(request);
+          const hash = await writeContractAsync(request);
+          if (submittedViaSafe(hash)) {
+            setState("sent");
+            toast({
+              title: "Safe proposal submitted",
+              description: `The sync is awaiting Safe approvals and execution on ${chainName(peerChainId)}.`,
+            });
+            return;
+          }
+          if (!publicClient) throw new Error("Public client unavailable.");
+          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          if (receipt.status !== "success") {
+            throw new Error(`Accounting sync ${hash} reverted onchain.`);
+          }
           setState("sent");
           toast({
-            title: "Sync sent",
+            title: "Sync confirmed",
             description: `${chainName(peerChainId)} is pushing its accounting snapshot over the bridge — it lands in a few minutes.`,
           });
           onSynced();
