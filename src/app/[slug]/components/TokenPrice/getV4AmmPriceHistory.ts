@@ -76,12 +76,16 @@ export function v4PriceFromSqrtPriceX96(
   sqrtPriceX96: string | bigint,
   projectTokenIsCurrency0: boolean,
   terminalDecimals: number,
+  projectTokenDecimals = 18,
 ): number | null {
-  return uniswapV4PriceFromSqrtPriceX96(
+  const price = uniswapV4PriceFromSqrtPriceX96(
     BigInt(sqrtPriceX96),
     !projectTokenIsCurrency0,
     terminalDecimals,
   );
+  if (price === null) return null;
+  const adjusted = price * 10 ** (projectTokenDecimals - 18);
+  return Number.isFinite(adjusted) && adjusted > 0 ? adjusted : null;
 }
 
 export async function getV4AmmPriceHistory({

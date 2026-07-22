@@ -1,25 +1,25 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ChainLogo } from "@/components/ChainLogo";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { toast } from "@/components/ui/use-toast";
 import { formatWalletError } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
+import { buildSyncAccountingDataTx } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Address } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import {
-  ChainProject,
   chainName,
+  ChainProject,
   chainProjectsKey,
   fetchGossip,
   findSyncValue,
   fmtUnits,
   GossipLevel,
   GossipPeerRow,
-  suckerSyncAbi,
   timeAgo,
 } from "./lib";
 
@@ -32,7 +32,9 @@ function StatusBadge({ level, label }: { level: GossipLevel; label: string }) {
     unknown: "bg-zinc-100 text-zinc-500 border-zinc-200",
   };
   return (
-    <span className={`inline-block border px-1.5 py-0.5 text-xs whitespace-nowrap ${styles[level]}`}>
+    <span
+      className={`inline-block border px-1.5 py-0.5 text-xs whitespace-nowrap ${styles[level]}`}
+    >
       {label}
     </span>
   );
@@ -76,21 +78,17 @@ function SyncButton({
               "Could not determine the bridge messaging fee — the sync simulation did not succeed at any budget. Try again shortly.",
             );
           }
+          const request = buildSyncAccountingDataTx({
+            chainId: peerChainId,
+            sucker: syncSucker,
+            value,
+          });
           // Simulate the exact tx (account + value) before prompting the wallet.
           await publicClient?.simulateContract({
             account: address,
-            address: syncSucker,
-            abi: suckerSyncAbi,
-            functionName: "syncAccountingData",
-            value,
+            ...request,
           });
-          await writeContractAsync({
-            chainId: peerChainId,
-            address: syncSucker,
-            abi: suckerSyncAbi,
-            functionName: "syncAccountingData",
-            value,
-          });
+          await writeContractAsync(request);
           setState("sent");
           toast({
             title: "Sync sent",
@@ -100,7 +98,11 @@ function SyncButton({
         } catch (error) {
           console.error(error);
           setState("idle");
-          toast({ variant: "destructive", title: "Sync failed", description: formatWalletError(error) });
+          toast({
+            variant: "destructive",
+            title: "Sync failed",
+            description: formatWalletError(error),
+          });
         }
       }}
     >
@@ -111,8 +113,7 @@ function SyncButton({
 
 function PeerRow({ peer, onSynced }: { peer: GossipPeerRow; onSynced: () => void }) {
   const cell = "p-4 align-middle text-sm text-zinc-700";
-  const showSync =
-    peer.syncSucker != null && peer.level !== "synced" && peer.level !== "unknown";
+  const showSync = peer.syncSucker != null && peer.level !== "synced" && peer.level !== "unknown";
   return (
     <tr className="border-b border-zinc-50 last:border-b-0">
       <td className={cell}>
@@ -139,7 +140,11 @@ function PeerRow({ peer, onSynced }: { peer: GossipPeerRow; onSynced: () => void
       <td className={cell}>{peer.snapshot ? timeAgo(peer.snapshot) : "never"}</td>
       <td className={`${cell} text-right`}>
         {showSync && peer.syncSucker && (
-          <SyncButton peerChainId={peer.peerChainId} syncSucker={peer.syncSucker} onSynced={onSynced} />
+          <SyncButton
+            peerChainId={peer.peerChainId}
+            syncSucker={peer.syncSucker}
+            onSynced={onSynced}
+          />
         )}
       </td>
     </tr>

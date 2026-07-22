@@ -16,6 +16,7 @@ import {
   buildDeployRevnetTx,
   buildRevnetStageConfig,
   fillSplitPercents,
+  RULESET_WEIGHT_INHERIT,
 } from "@bananapus/nana-sdk-core/v6";
 import { Address, ContractFunctionArgs, parseUnits, zeroAddress } from "viem";
 import { RevnetFormData } from "../types";
@@ -161,7 +162,7 @@ export function parseDeployData(
       splits,
       initialIssuance:
         stage.pickUpFromPrevious && idx > 0
-          ? 1n // "Pick up from previous stage"
+          ? RULESET_WEIGHT_INHERIT
           : stage.initialIssuance && stage.initialIssuance !== ""
             ? parseUnits(`${stage.initialIssuance}`, 18)
             : 0n,

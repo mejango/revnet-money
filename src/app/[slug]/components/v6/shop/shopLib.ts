@@ -4,14 +4,16 @@ import { ipfsGatewayUrl, ipfsPublicGatewayUrl } from "@/lib/ipfs";
 import {
   formatPayAmount,
   parseTierMetadataJson,
-  tierDisplayMetadata,
   TIER_UNLIMITED_SUPPLY,
+  tierDisplayMetadata,
   TierDisplayMetadata,
 } from "@/lib/v6/pay";
 import {
+  decodeEncodedIpfsUriCandidates,
+  encodeIpfsUri,
+  jb721TiersHookStoreAbi,
   JB_CHAINS,
   JBChainId,
-  jb721TiersHookStoreAbi,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
 import {
@@ -30,62 +32,16 @@ export { TIER_UNLIMITED_SUPPLY };
 
 const ZERO_BYTES32 = `0x${"0".repeat(64)}`;
 
-// Onchain 721 tier metadata is a CIDv0 sha2-256 digest packed into bytes32
-// (the 0x1220 multihash prefix is implied). The SDK core ships this codec but
-// doesn't export it from its package barrel, so it's re-implemented here.
-const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-
-function base58Encode(bytes: Uint8Array): string {
-  let n = 0n;
-  for (const byte of bytes) n = (n << 8n) | BigInt(byte);
-  let out = "";
-  while (n > 0n) {
-    out = BASE58_ALPHABET[Number(n % 58n)] + out;
-    n /= 58n;
-  }
-  for (const byte of bytes) {
-    if (byte !== 0) break;
-    out = "1" + out;
-  }
-  return out;
-}
-
-function base58Decode(value: string): Uint8Array {
-  let n = 0n;
-  for (const char of value) {
-    const index = BASE58_ALPHABET.indexOf(char);
-    if (index < 0) throw new Error(`Invalid base58 character: ${char}`);
-    n = n * 58n + BigInt(index);
-  }
-  const bytes: number[] = [];
-  while (n > 0n) {
-    bytes.unshift(Number(n & 0xffn));
-    n >>= 8n;
-  }
-  for (const char of value) {
-    if (char !== "1") break;
-    bytes.unshift(0);
-  }
-  return Uint8Array.from(bytes);
-}
-
-/** bytes32 (onchain `encodedIpfsUri`) → CIDv0 (`Qm…`). */
+/** bytes32 (onchain `encodedIpfsUri`) → canonical DAG-PB CIDv0 (`Qm…`). */
 export function decodeEncodedIpfsUri(hex: string): string {
-  const digest = hex.replace(/^0x/, "");
-  const bytes = new Uint8Array(34);
-  bytes[0] = 0x12; // sha2-256
-  bytes[1] = 0x20; // 32 bytes
-  for (let i = 0; i < 32; i++) bytes[i + 2] = parseInt(digest.slice(i * 2, i * 2 + 2), 16);
-  return base58Encode(bytes);
+  const candidates = decodeEncodedIpfsUriCandidates(hex);
+  if (!candidates) throw new Error("The tier does not contain a valid IPFS digest.");
+  return candidates[0];
 }
 
-/** CIDv0 (`Qm…`) → bytes32 for onchain `encodedIpfsUri`. */
+/** DAG-PB CIDv0/CIDv1 → bytes32 for onchain `encodedIpfsUri`. */
 export function encodeIpfsCid(cid: string): `0x${string}` {
-  const bytes = base58Decode(cid);
-  if (bytes.length !== 34 || bytes[0] !== 0x12 || bytes[1] !== 0x20) {
-    throw new Error("Only CIDv0 (Qm…, sha2-256) hashes can be stored onchain.");
-  }
-  return `0x${Array.from(bytes.slice(2), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  return encodeIpfsUri(cid);
 }
 
 /** Stored-tier flags (`tiersOf`'s 5-bool shape — not the 7-bool config shape). */
@@ -259,9 +215,11 @@ async function resolveTierMedia(tier: TierMediaSource): Promise<TierMedia> {
   if (resolved && Object.keys(resolved).length > 0) return tierDisplayMetadata(resolved);
 
   if (!tier.encodedIpfsUri || tier.encodedIpfsUri === ZERO_BYTES32) return {};
-  const cid = decodeEncodedIpfsUri(tier.encodedIpfsUri);
-  // Pinned gateway first, public gateway as the fallback (website/ parity).
-  for (const url of [ipfsGatewayUrl(cid), ipfsPublicGatewayUrl(cid)]) {
+  const candidates = decodeEncodedIpfsUriCandidates(tier.encodedIpfsUri);
+  if (!candidates) return {};
+  // Try both equivalent CID forms, pinned gateway first then public. Some
+  // historical tier content was pinned as a raw CIDv1 block.
+  for (const url of candidates.flatMap((cid) => [ipfsGatewayUrl(cid), ipfsPublicGatewayUrl(cid)])) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8_000);
@@ -270,7 +228,9 @@ async function resolveTierMedia(tier: TierMediaSource): Promise<TierMedia> {
       );
       if (!res.ok) continue;
       const json = (await res.json()) as unknown;
-      return json && typeof json === "object" ? tierDisplayMetadata(json as Record<string, unknown>) : {};
+      return json && typeof json === "object"
+        ? tierDisplayMetadata(json as Record<string, unknown>)
+        : {};
     } catch {
       // Try the next gateway.
     }
@@ -298,7 +258,9 @@ export function categoryLabel(
   tiers: ShopTier[],
   mediaById: Record<number, TierMedia> | undefined,
 ): string {
-  const named = tiers.find((tier) => tier.category === category && mediaById?.[tier.id]?.categoryName);
+  const named = tiers.find(
+    (tier) => tier.category === category && mediaById?.[tier.id]?.categoryName,
+  );
   return (
     (named && mediaById?.[named.id]?.categoryName) ||
     (category === 0 ? "General" : `Category ${category}`)
@@ -345,10 +307,7 @@ export function useTierCart(shop: ShopInventory | null | undefined, chainId: num
   };
 
   const count = shopItems.reduce((total, item) => total + item.quantity, 0);
-  const total = shopItems.reduce(
-    (sum, item) => sum + item.price * BigInt(item.quantity),
-    0n,
-  );
+  const total = shopItems.reduce((sum, item) => sum + item.price * BigInt(item.quantity), 0n);
 
   return { quantityOf, setTierQuantity, count, total };
 }

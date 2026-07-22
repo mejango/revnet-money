@@ -3,16 +3,29 @@ import {
   JB_CHAINS,
   JBChainId,
   jbContractAddress,
+  jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
-  jbControllerAbi,
   jbMultiTerminalAbi,
+  JBSuckerContracts,
   jbSuckerRegistryAbi,
   jbTerminalStoreAbi,
-  JBSuckerContracts,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
-import { getAccountingContexts, getV6SuckerPairs } from "@bananapus/nana-sdk-core/v6";
+import {
+  assertSuckerTransportValue,
+  buildSyncAccountingDataTx,
+  CCIP_SUCKER_TRANSPORT_VALUES,
+  classifySuckerTransport,
+  findSuckerTransportValue,
+  getAccountingContexts,
+  getV6SuckerPairs,
+  NATIVE_SUCKER_TRANSPORT_VALUES,
+  relativeSuckerDrift,
+  suckerBytes32ToAddress,
+  suckerTimestampSeconds,
+  type JBSuckerTransport,
+} from "@bananapus/nana-sdk-core/v6";
 import {
   Address,
   Chain,
@@ -127,7 +140,11 @@ export async function tokenSymbolOf(chainId: JBChainId, token: Address): Promise
   if (cached) return cached;
   try {
     const client = getViemPublicClient(chainId) as PublicClient;
-    const symbol = await client.readContract({ address: token, abi: erc20Abi, functionName: "symbol" });
+    const symbol = await client.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: "symbol",
+    });
     symbolCache.set(key, symbol);
     return symbol;
   } catch {
@@ -231,7 +248,8 @@ export async function fetchAcrossChains(chains: ChainProject[]): Promise<AcrossC
           }),
         );
         // A -1 marker means that context's surplus was unreadable — drop to null-safe form.
-        if (balances.some((b) => b.balance < 0n)) balances = balances.filter((b) => b.balance >= 0n);
+        if (balances.some((b) => b.balance < 0n))
+          balances = balances.filter((b) => b.balance >= 0n);
 
         // Unit value: what a 1M-token cash out reclaims, scaled back down — a
         // single-token probe floors to 0 against big supplies on 6-dec tokens.
@@ -272,13 +290,7 @@ export async function fetchAcrossChains(chains: ChainProject[]): Promise<AcrossC
 
 // ── Bridges card data ─────────────────────────────────────────────────────────
 
-export type SuckerInfra = "ccip" | "native" | "unknown";
-
-const INFRA_PROBE_ABI = [
-  { type: "function", name: "CCIP_ROUTER", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-  { type: "function", name: "OPMESSENGER", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-  { type: "function", name: "ARBINBOX", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-] as const;
+export type SuckerInfra = JBSuckerTransport;
 
 const infraCache = new Map<string, SuckerInfra>();
 
@@ -287,30 +299,15 @@ const infraCache = new Map<string, SuckerInfra>();
  * native suckers are identified positively via their bridge getters (a CCIP_ROUTER
  * revert alone could just be an RPC failure).
  */
-export async function classifySuckerInfra(chainId: JBChainId, sucker: Address): Promise<SuckerInfra> {
+export async function classifySuckerInfra(
+  chainId: JBChainId,
+  sucker: Address,
+): Promise<SuckerInfra> {
   const key = `${chainId}:${sucker.toLowerCase()}`;
   const cached = infraCache.get(key);
   if (cached) return cached;
   const client = getViemPublicClient(chainId) as PublicClient;
-  const probe = (fn: "CCIP_ROUTER" | "OPMESSENGER" | "ARBINBOX") =>
-    client.readContract({ address: sucker, abi: INFRA_PROBE_ABI, functionName: fn });
-  let infra: SuckerInfra = "unknown";
-  try {
-    await probe("CCIP_ROUTER");
-    infra = "ccip";
-  } catch {
-    try {
-      await probe("OPMESSENGER");
-      infra = "native";
-    } catch {
-      try {
-        await probe("ARBINBOX");
-        infra = "native";
-      } catch {
-        infra = "unknown";
-      }
-    }
-  }
+  const infra = await classifySuckerTransport(client, sucker);
   if (infra !== "unknown") infraCache.set(key, infra);
   return infra;
 }
@@ -376,11 +373,7 @@ export interface GossipChainView {
 }
 
 function relDrift(a: bigint, b: bigint): number {
-  if (a === 0n && b === 0n) return 0;
-  const hi = a > b ? a : b;
-  if (hi === 0n) return 0;
-  const d = a > b ? a - b : b - a;
-  return Number((d * 10000n) / hi) / 10000;
+  return relativeSuckerDrift(a, b);
 }
 
 function levelFromDrift(worst: number): { level: GossipLevel; label: string } {
@@ -410,10 +403,7 @@ export async function fetchGossip(chains: ChainProject[]): Promise<GossipChainVi
   if (chains.length < 2) return [];
 
   // Live actuals per chain: supply + raw terminal-store balances per context.
-  const live = new Map<
-    number,
-    { supply: bigint | null; buckets: Map<string, bigint> | null }
-  >();
+  const live = new Map<number, { supply: bigint | null; buckets: Map<string, bigint> | null }>();
   // Peer-side sync suckers: pairs of B keyed by remote chain A.
   const pairsByChain = new Map<number, { local: Address; remoteChainId: number }[]>();
 
@@ -467,7 +457,11 @@ export async function fetchGossip(chains: ChainProject[]): Promise<GossipChainVi
       const registry = jbContractAddress[6][JBSuckerContracts.JBSuckerRegistry][A] as Address;
       const records = new Map<
         number,
-        { supply: bigint; snapshot: number; contexts: { token: Address; decimals: number; balance: bigint }[] }
+        {
+          supply: bigint;
+          snapshot: number;
+          contexts: { token: Address; decimals: number; balance: bigint }[];
+        }
       >();
       let registryReadable = true;
       try {
@@ -480,9 +474,9 @@ export async function fetchGossip(chains: ChainProject[]): Promise<GossipChainVi
         for (const a of accounts) {
           records.set(Number(a.chainId), {
             supply: a.totalSupply,
-            snapshot: Number(BigInt(a.timestamp) >> 128n), // packed (ts << 128 | seq)
+            snapshot: suckerTimestampSeconds(BigInt(a.timestamp)),
             contexts: a.contexts.map((c) => ({
-              token: `0x${String(c.token).slice(-40)}` as Address,
+              token: suckerBytes32ToAddress(c.token),
               decimals: Number(c.decimals),
               balance: BigInt(c.balance),
             })),
@@ -512,7 +506,15 @@ export async function fetchGossip(chains: ChainProject[]): Promise<GossipChainVi
             );
 
             if (!registryReadable) {
-              return { peerChainId: B, supply: 0n, balances: [], snapshot: 0, level: "unknown", label: "Unverified", syncSucker };
+              return {
+                peerChainId: B,
+                supply: 0n,
+                balances: [],
+                snapshot: 0,
+                level: "unknown",
+                label: "Unverified",
+                syncSucker,
+              };
             }
             if (!record || record.snapshot === 0) {
               return {
@@ -528,7 +530,15 @@ export async function fetchGossip(chains: ChainProject[]): Promise<GossipChainVi
 
             const actual = live.get(Number(B));
             if (!actual || actual.supply == null) {
-              return { peerChainId: B, supply: record.supply, balances, snapshot: record.snapshot, level: "unknown", label: "Unverified", syncSucker };
+              return {
+                peerChainId: B,
+                supply: record.supply,
+                balances,
+                snapshot: record.snapshot,
+                level: "unknown",
+                label: "Unverified",
+                syncSucker,
+              };
             }
 
             let worst = relDrift(record.supply, actual.supply);
@@ -551,12 +561,28 @@ export async function fetchGossip(chains: ChainProject[]): Promise<GossipChainVi
                 worst = Math.max(worst, relDrift(snap, act));
               }
               if (unmatched) {
-                return { peerChainId: B, supply: record.supply, balances, snapshot: record.snapshot, level: "unknown", label: "Unverified", syncSucker };
+                return {
+                  peerChainId: B,
+                  supply: record.supply,
+                  balances,
+                  snapshot: record.snapshot,
+                  level: "unknown",
+                  label: "Unverified",
+                  syncSucker,
+                };
               }
             }
 
             const { level, label } = levelFromDrift(worst);
-            return { peerChainId: B, supply: record.supply, balances, snapshot: record.snapshot, level, label, syncSucker };
+            return {
+              peerChainId: B,
+              supply: record.supply,
+              balances,
+              snapshot: record.snapshot,
+              level,
+              label,
+              syncSucker,
+            };
           }),
       );
 
@@ -566,10 +592,6 @@ export async function fetchGossip(chains: ChainProject[]): Promise<GossipChainVi
 }
 
 // ── Gossip sync (syncAccountingData) ─────────────────────────────────────────
-
-export const suckerSyncAbi = [
-  { type: "function", name: "syncAccountingData", stateMutability: "payable", inputs: [], outputs: [] },
-] as const;
 
 /**
  * The msg.value `syncAccountingData` needs, discovered by simulating the call
@@ -587,25 +609,24 @@ export async function findSyncValue(
   const infra = await classifySuckerInfra(chainId, sucker);
   if (infra === "unknown") return null;
   const client = getViemPublicClient(chainId) as PublicClient;
-  const ladder =
-    infra === "ccip"
-      ? [1_000_000_000_000_000n, 5_000_000_000_000_000n, 20_000_000_000_000_000n, 50_000_000_000_000_000n, 200_000_000_000_000_000n]
-      : [0n, 1_000_000_000_000_000n, 10_000_000_000_000_000n];
-  for (const value of ladder) {
-    try {
-      await client.call({
-        account,
-        to: sucker,
-        data: encodeFunctionData({ abi: suckerSyncAbi, functionName: "syncAccountingData" }),
-        value,
-        stateOverride: [{ address: account, balance: 10n ** 21n }],
-      });
-      return value;
-    } catch {
-      // Insufficient / sim limitation — try a larger budget.
-    }
-  }
-  return null;
+  const request = buildSyncAccountingDataTx({ chainId, sucker });
+  const data = encodeFunctionData({
+    abi: request.abi,
+    functionName: request.functionName,
+    args: request.args,
+  });
+  const values = infra === "ccip" ? CCIP_SUCKER_TRANSPORT_VALUES : NATIVE_SUCKER_TRANSPORT_VALUES;
+  const value = await findSuckerTransportValue(values, (candidate) =>
+    client.call({
+      account,
+      to: sucker,
+      data,
+      value: candidate,
+      stateOverride: [{ address: account, balance: 10n ** 21n }],
+    }),
+  );
+  if (value !== null) assertSuckerTransportValue(infra, value);
+  return value;
 }
 
 // ── Movement helpers ─────────────────────────────────────────────────────────
@@ -623,7 +644,8 @@ export function bridgeEtaHint(args: {
   const isL1 = (id: number) => id === 1 || id === 11155111;
   if (args.infra === "ccip") return "20–30 min";
   if (args.infra !== "native") return null;
-  if (!isL1(Number(args.chainId)) && isL1(Number(args.peerChainId))) return "7 days (challenge period)";
+  if (!isL1(Number(args.chainId)) && isL1(Number(args.peerChainId)))
+    return "7 days (challenge period)";
   return "a few min";
 }
 

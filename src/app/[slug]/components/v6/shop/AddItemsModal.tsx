@@ -12,7 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cidFromIpfsUri } from "@/lib/ipfs";
-import { JBChainId, jb721TiersHookAbi } from "@bananapus/nana-sdk-core";
+import { jb721TiersHookAbi, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Address, Hex, isAddress, parseUnits, PublicClient, zeroAddress } from "viem";
@@ -21,7 +21,7 @@ import { waitForTransactionReceipt } from "wagmi/actions";
 import { encodeIpfsCid, ShopInventory, TIER_UNLIMITED_SUPPLY } from "./shopLib";
 
 interface DraftItem {
-  /** ipfs:// URI (or bare CIDv0) of the item's metadata JSON. Optional. */
+  /** ipfs:// URI (or bare DAG-PB CID) of the item's metadata JSON. Optional. */
   uri: string;
   price: string;
   /** Empty = unlimited. */
@@ -32,7 +32,14 @@ interface DraftItem {
 }
 
 function newDraftItem(): DraftItem {
-  return { uri: "", price: "", supply: "", category: "0", reserveFrequency: "", reserveBeneficiary: "" };
+  return {
+    uri: "",
+    price: "",
+    supply: "",
+    category: "0",
+    reserveFrequency: "",
+    reserveBeneficiary: "",
+  };
 }
 
 const MAX_UINT104 = (1n << 104n) - 1n;
@@ -120,14 +127,11 @@ function buildTierConfigs(items: DraftItem[], decimals: number): TierConfig[] | 
     const uri = item.uri.trim();
     if (uri) {
       const cid = uri.startsWith("ipfs://") ? cidFromIpfsUri(uri) : uri;
-      // Only CIDv0 (Qm…, a 32-byte sha2-256 digest) packs into bytes32 onchain.
-      if (!cid || !/^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(cid)) {
-        return `${label}the media URI must be an ipfs:// URI with a CIDv0 (Qm…) hash.`;
-      }
+      if (!cid) return `${label}the media URI must contain an IPFS CID.`;
       try {
         encodedIpfsUri = encodeIpfsCid(cid);
       } catch {
-        return `${label}could not encode the IPFS CID.`;
+        return `${label}the metadata must use a DAG-PB CIDv0 or CIDv1 without a path.`;
       }
     }
 
@@ -314,7 +318,7 @@ export function AddItemsModal({
                       <p className="mt-1 text-[11px] text-zinc-500">
                         A pinned JSON file with <span className="font-mono">name</span>,{" "}
                         <span className="font-mono">description</span> and{" "}
-                        <span className="font-mono">image</span>. CIDv0 (Qm…) only — it&apos;s
+                        <span className="font-mono">image</span>. DAG-PB CIDv0 or CIDv1 — it&apos;s
                         stored onchain as bytes32.
                       </p>
                     </div>
@@ -341,8 +345,7 @@ export function AddItemsModal({
                         1 of every N sold is minted to the beneficiary.
                       </p>
                     </div>
-                    {item.reserveFrequency.trim() !== "" &&
-                    item.reserveFrequency.trim() !== "0" ? (
+                    {item.reserveFrequency.trim() !== "" && item.reserveFrequency.trim() !== "0" ? (
                       <div className="col-span-2">
                         <Label className="text-xs">Reserve beneficiary</Label>
                         <Input
