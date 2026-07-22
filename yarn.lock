@@ -859,10 +859,10 @@
     "@babel/helper-string-parser" "^7.27.1"
     "@babel/helper-validator-identifier" "^7.27.1"
 
-"@bananapus/nana-sdk-core@^1.3.0":
-  version "1.3.0"
-  resolved "https://registry.yarnpkg.com/@bananapus/nana-sdk-core/-/nana-sdk-core-1.3.0.tgz#7e18db9111b05b0daafaae7b7eb4f4898357b543"
-  integrity sha512-rwnny4f2yFEk1q5fMz6U+ivlC7H7Utw87y3/jiBKI/BbWdRM1cVtcEbCzqkV68jE3mxuecXIaL/BK0AJesc8Zg==
+"@bananapus/nana-sdk-core@^1.4.0":
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/@bananapus/nana-sdk-core/-/nana-sdk-core-1.4.0.tgz#41aaf5f46a62148c0a3a0f49167de287816549fe"
+  integrity sha512-1M6Oxe0l6e6jmY5ZtKpRLWZ6Wjf9HWkN/mn8e0WKkKSghDPsEEe8ns2KYNTuUhZqHgUJeM4oAO4PwvEvTaMRpw==
   dependencies:
     bs58 "^5.0.0"
     fpnum "^1.0.0"
