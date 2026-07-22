@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
+import { isSafeProposalPendingError, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
 import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Address, isAddress, zeroAddress } from "viem";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount } from "wagmi";
 import {
   ChainProjectRow,
   ChainWrite,
@@ -307,7 +308,11 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
     } catch (e) {
       const message = formatWalletError(e) || "Could not transfer the operator.";
       setError(message);
-      toast({ variant: "destructive", title: "Error", description: message });
+      toast(
+        isSafeProposalPendingError(e)
+          ? { title: "Safe proposal submitted", description: message }
+          : { variant: "destructive", title: "Error", description: message },
+      );
     } finally {
       setBusy(false);
     }

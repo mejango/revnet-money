@@ -4,13 +4,14 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
 import { toast } from "@/components/ui/use-toast";
+import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { formatWalletError } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 import {
-  ChainProject,
   chainName,
+  ChainProject,
   chainProjectsKey,
   explorerAddressUrl,
   fmtUnits,
@@ -49,6 +50,7 @@ function HookActionButton({
       onClick={async () => {
         try {
           setBusy(true);
+          if (!publicClient) throw new Error("Public client unavailable.");
           const sim = await publicClient?.simulateContract({
             account: address,
             address: state.hook,
@@ -57,12 +59,30 @@ function HookActionButton({
             args: args as never,
           });
           if (!sim) throw new Error("Could not simulate the transaction.");
-          await writeContractAsync(sim.request);
-          toast({ title: `${label} confirmed`, description: `${label} on ${chainName(state.chainId)}.` });
+          const hash = await writeContractAsync(sim.request);
+          if (submittedViaSafe(hash)) {
+            toast({
+              title: "Safe proposal submitted",
+              description: `${label} is awaiting Safe approvals and execution on ${chainName(state.chainId)}.`,
+            });
+            return;
+          }
+          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          if (receipt.status !== "success") {
+            throw new Error(`${label} ${hash} reverted onchain.`);
+          }
+          toast({
+            title: `${label} confirmed`,
+            description: `${label} on ${chainName(state.chainId)}.`,
+          });
           onDone();
         } catch (error) {
           console.error(error);
-          toast({ variant: "destructive", title: `${label} failed`, description: formatWalletError(error) });
+          toast({
+            variant: "destructive",
+            title: `${label} failed`,
+            description: formatWalletError(error),
+          });
         } finally {
           setBusy(false);
         }
@@ -83,7 +103,8 @@ function SplitHookChainBlock({
   onDone: () => void;
 }) {
   const explorer = explorerAddressUrl(state.chainId, state.hook);
-  const row = "flex justify-between text-sm text-zinc-700 py-1 border-b border-zinc-50 last:border-b-0";
+  const row =
+    "flex justify-between text-sm text-zinc-700 py-1 border-b border-zinc-50 last:border-b-0";
   return (
     <div className="mt-3">
       <div className="flex items-center justify-between">
@@ -171,7 +192,13 @@ function SplitHookChainBlock({
  * the issuance decay threshold), after which Collect fees is permissionless and
  * routes trading fees back into the project.
  */
-export function SplitHookCard({ chains, tokenSymbol }: { chains: ChainProject[]; tokenSymbol: string }) {
+export function SplitHookCard({
+  chains,
+  tokenSymbol,
+}: {
+  chains: ChainProject[];
+  tokenSymbol: string;
+}) {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["v6SplitHookStates", chainProjectsKey(chains)],
     enabled: chains.length > 0,

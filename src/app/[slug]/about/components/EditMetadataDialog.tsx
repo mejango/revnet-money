@@ -16,6 +16,16 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { Project } from "@/generated/graphql";
+import {
+  useGetRelayrTxQuote,
+  useSendRelayrTx,
+  waitForRelayrBundle,
+} from "@/hooks/useReviewedRelayr";
+import {
+  submittedViaSafe,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { useTokenA } from "@/hooks/useTokenA";
 import { ipfsUri } from "@/lib/ipfs";
 import { formatWalletError } from "@/lib/utils";
@@ -24,10 +34,8 @@ import { JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk
 import {
   ChainPayment,
   RelayrPostBundleResponse,
-  useGetRelayrTxQuote,
   useJBContractContext,
   useJBProjectMetadataContext,
-  useSendRelayrTx,
 } from "@bananapus/nana-sdk-react";
 import { getPublicClient } from "@wagmi/core";
 import { Formik } from "formik";
@@ -35,7 +43,7 @@ import { withZodSchema } from "formik-validator-zod";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData } from "viem";
-import { useAccount, useSwitchChain, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { z } from "zod";
 
 const metadataSchema = z.object({
@@ -174,6 +182,14 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             data: encodeFunctionData({ abi: jbControllerAbi, functionName: "setUriOf", args }),
           },
           chainId,
+          version: 6 as const,
+          review: {
+            abi: jbControllerAbi,
+            functionName: "setUriOf",
+            args,
+            label: "Update project metadata",
+            contractName: "JBController",
+          },
         });
       }
 
@@ -198,11 +214,20 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     if (!relayrQuote || !selectedPayment || !sendRelayrTx) return;
 
     try {
-      await sendRelayrTx(selectedPayment);
+      const hash = await sendRelayrTx(selectedPayment);
+      if (submittedViaSafe(hash)) {
+        toast({
+          title: "Safe payment proposal submitted",
+          description:
+            "The Relayr bundle is not paid yet. Approve and execute this proposal in Safe; do not submit another payment.",
+        });
+        return;
+      }
+      await waitForRelayrBundle(relayrQuote.bundle_uuid);
 
       toast({
-        title: "Metadata updated!",
-        description: "New data will be visible shortly.",
+        title: "Metadata updated on every chain",
+        description: "Relayr confirmed every destination transaction.",
       });
       onSuccess();
     } catch (e: any) {

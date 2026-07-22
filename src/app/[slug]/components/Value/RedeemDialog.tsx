@@ -22,6 +22,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
+import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { formatDecimals } from "@/lib/number";
 import { Surplus } from "@/lib/reclaimableSurplus";
 import { getTokenConfigForChain } from "@/lib/tokenUtils";
@@ -46,7 +47,7 @@ import {
 } from "@bananapus/nana-sdk-react";
 import { PropsWithChildren, useState } from "react";
 import { parseUnits } from "viem";
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount } from "wagmi";
 
 interface Props {
   projectId: bigint;

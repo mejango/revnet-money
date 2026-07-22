@@ -11,12 +11,17 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  requireOnchainExecution,
+  submittedViaSafe,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { cidFromIpfsUri } from "@/lib/ipfs";
 import { jb721TiersHookAbi, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Address, Hex, isAddress, parseUnits, PublicClient, zeroAddress } from "viem";
-import { useAccount, useConfig, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { encodeIpfsCid, ShopInventory, TIER_UNLIMITED_SUPPLY } from "./shopLib";
 
@@ -184,9 +189,9 @@ export function AddItemsModal({
   const { writeContractAsync } = useWriteContract();
 
   const [items, setItems] = useState<DraftItem[]>([newDraftItem()]);
-  const [phase, setPhase] = useState<"form" | "simulating" | "sending" | "confirming" | "done">(
-    "form",
-  );
+  const [phase, setPhase] = useState<
+    "form" | "simulating" | "sending" | "confirming" | "safe-proposed" | "done"
+  >("form");
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
 
@@ -226,6 +231,11 @@ export function AddItemsModal({
       setTxHash(hash);
 
       setPhase("confirming");
+      if (submittedViaSafe(hash)) {
+        setPhase("safe-proposed");
+        return;
+      }
+      requireOnchainExecution(hash, "Shop item update");
       const receipt = await waitForTransactionReceipt(config, { chainId, hash });
       if (receipt.status !== "success") throw new Error("The transaction failed.");
 
@@ -252,11 +262,19 @@ export function AddItemsModal({
           </DialogDescription>
         </DialogHeader>
 
-        {phase === "done" ? (
+        {phase === "done" || phase === "safe-proposed" ? (
           <div className="py-6 text-center">
             <p className="text-sm font-medium text-zinc-900">
-              {items.length} item{items.length === 1 ? "" : "s"} added.
+              {phase === "safe-proposed"
+                ? "Safe proposal submitted"
+                : `${items.length} item${items.length === 1 ? "" : "s"} added.`}
             </p>
+            {phase === "safe-proposed" ? (
+              <p className="mx-auto mt-2 max-w-md text-sm text-zinc-600">
+                The items have not been added yet. The Safe still needs its approvals and onchain
+                execution; follow the persistent transaction status before trying again.
+              </p>
+            ) : null}
             {txHash ? (
               <p className="mt-1 break-all font-mono text-xs text-zinc-500">{txHash}</p>
             ) : null}

@@ -31,6 +31,7 @@ export type V6PayPhase =
   | "simulating"
   | "signing"
   | "pending"
+  | "safe-proposed"
   | "success";
 
 /** A fully resolved, encodable pay/add-to-balance transaction. */
@@ -59,7 +60,7 @@ export interface PreparedV6Pay {
   calldata: Hex;
 }
 
-const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "success">, string> = {
+const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "safe-proposed" | "success">, string> = {
   preparing: "Getting a fresh quote…",
   approving: "Approving the terminal to pull your tokens…",
   simulating: "Simulating the transaction…",
@@ -120,9 +121,11 @@ export function V6PayConfirmDialog({
               ? mode === "pay"
                 ? "Payment confirmed"
                 : "Added to the balance"
-              : mode === "pay"
-                ? "Confirm payment"
-                : "Confirm add to balance"}
+              : phase === "safe-proposed"
+                ? "Safe proposal submitted"
+                : mode === "pay"
+                  ? "Confirm payment"
+                  : "Confirm add to balance"}
           </DialogTitle>
           <DialogDescription asChild>
             <div className="text-left">
@@ -144,10 +147,30 @@ export function V6PayConfirmDialog({
                     </a>
                   ) : null}
                   <div className="mt-4">
-                    <Button className="bg-teal-500 text-melon-950 hover:bg-teal-600" onClick={onDone}>
+                    <Button
+                      className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+                      onClick={onDone}
+                    >
                       Done
                     </Button>
                   </div>
+                </div>
+              ) : phase === "safe-proposed" ? (
+                <div className="py-2">
+                  <p className="text-sm leading-relaxed text-zinc-700">
+                    The Safe has accepted this proposal, but the payment has not reached the project
+                    yet. It still needs the required approvals and successful onchain execution.
+                    Track the persistent transaction status and do not submit it again.
+                  </p>
+                  {txHash ? (
+                    <p className="mt-2 break-all font-mono text-xs text-zinc-500">{txHash}</p>
+                  ) : null}
+                  <Button
+                    className="mt-4 bg-teal-500 text-melon-950 hover:bg-teal-600"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    Close and track status
+                  </Button>
                 </div>
               ) : (
                 <>
@@ -189,13 +212,11 @@ export function V6PayConfirmDialog({
                             .join(", ")}
                         </SummaryRow>
                       ) : null}
-                      {prepared.memo ? (
-                        <SummaryRow label="Note">{prepared.memo}</SummaryRow>
-                      ) : null}
+                      {prepared.memo ? <SummaryRow label="Note">{prepared.memo}</SummaryRow> : null}
                       {prepared.viaRouterRoute ? (
                         <p className="text-xs text-zinc-500">
-                          Your {prepared.token.symbol} is swapped into the project&apos;s
-                          accounting token via the router.
+                          Your {prepared.token.symbol} is swapped into the project&apos;s accounting
+                          token via the router.
                         </p>
                       ) : null}
                       {prepared.needsApproval ? (

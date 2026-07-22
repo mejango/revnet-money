@@ -5,6 +5,12 @@ import { Label } from "@/components/ui/label";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
+import {
+  isSafeProposalPendingError,
+  requireOnchainExecution,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { getRevnetLoanContract, JBChainId, revLoansAbi } from "@bananapus/nana-sdk-core";
@@ -16,9 +22,7 @@ import {
   usePublicClient,
   useReadContract,
   useSimulateContract,
-  useWaitForTransactionReceipt,
   useWalletClient,
-  useWriteContract,
 } from "wagmi";
 
 export function RepayDialog({
@@ -331,14 +335,19 @@ export function RepayDialog({
       const baseTokenAddress = chainTokenConfig.token;
       const revLoansContractAddress = getRevnetLoanContract(6, chainId);
 
-      const approveHash = await walletClient.writeContract({
+      const approveHash = await repayLoanAsync({
+        chainId,
         address: baseTokenAddress,
         abi: erc20Abi,
         functionName: "approve",
         args: [revLoansContractAddress as Address, loanData.amount],
       });
 
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      requireOnchainExecution(approveHash, "Token approval");
+      const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      if (approvalReceipt.status !== "success") {
+        throw new Error(`Token approval ${approveHash} reverted onchain.`);
+      }
 
       // Reset allowance check to trigger re-check
       setAllowanceChecked(false);
@@ -349,6 +358,11 @@ export function RepayDialog({
         description: "Token allowance approved. You can now proceed with repayment.",
       });
     } catch (error: any) {
+      if (isSafeProposalPendingError(error)) {
+        setRepayStatus("pending");
+        toast({ title: "Safe approval proposal submitted", description: error.message });
+        return;
+      }
       setRepayStatus("error");
       toast({
         variant: "destructive",
@@ -397,14 +411,21 @@ export function RepayDialog({
             throw new Error("Wallet client not available");
           }
 
-          const approveHash = await walletClient.writeContract({
+          const approveHash = await repayLoanAsync({
+            chainId,
             address: baseTokenAddress,
             abi: erc20Abi,
             functionName: "approve",
             args: [revLoansContractAddress as Address, maxRepayBorrowAmount],
           });
 
-          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          requireOnchainExecution(approveHash, "Token approval");
+          const approvalReceipt = await publicClient.waitForTransactionReceipt({
+            hash: approveHash,
+          });
+          if (approvalReceipt.status !== "success") {
+            throw new Error(`Token approval ${approveHash} reverted onchain.`);
+          }
           setRepayStatus("waiting-signature");
         }
       }
@@ -433,6 +454,11 @@ export function RepayDialog({
 
       setRepayTxHash(txHash);
     } catch (error: any) {
+      if (isSafeProposalPendingError(error)) {
+        setRepayStatus("pending");
+        toast({ title: "Safe approval proposal submitted", description: error.message });
+        return;
+      }
       setRepayStatus("error");
       toast({
         variant: "destructive",

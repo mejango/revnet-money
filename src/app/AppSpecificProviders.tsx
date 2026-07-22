@@ -1,12 +1,13 @@
 "use client";
 
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLoadingSkeleton } from "@/components/loading/LoadingSkeletons";
+import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ConnectKitProvider } from "connectkit";
-import * as React from "react";
 import { usePathname } from "next/navigation";
+import * as React from "react";
 import { WagmiProvider } from "wagmi";
 
 const queryClient = new QueryClient({
@@ -90,7 +91,7 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
           }}
         >
           <TooltipProvider delayDuration={200} skipDelayDuration={100}>
-            {children}
+            <TransactionReviewProvider>{children}</TransactionReviewProvider>
           </TooltipProvider>
         </ConnectKitProvider>
       </QueryClientProvider>

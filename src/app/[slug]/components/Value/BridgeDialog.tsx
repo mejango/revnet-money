@@ -22,6 +22,11 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { Project } from "@/generated/graphql";
 import { useAllowance } from "@/hooks/useAllowance";
+import {
+  isSafeProposalPendingError,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { useSuckerPairs } from "@/hooks/useSuckerPairs";
 import { revalidateCacheTag } from "@/lib/cache";
 import { getTokenAddress } from "@/lib/token";
@@ -33,7 +38,7 @@ import { FixedInt } from "fpnum";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useMemo, useState } from "react";
 import { formatUnits, getAddress, parseUnits } from "viem";
-import { useAccount, usePublicClient, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 
 interface Props {
   projects: Array<Pick<Project, "projectId" | "chainId" | "token">>;
@@ -130,7 +135,11 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       await writeContractAsync({ ...request, chainId: sourceChainId });
     } catch (error) {
       console.error(error);
-      toast({ variant: "destructive", title: "Error", description: formatWalletError(error) });
+      toast(
+        isSafeProposalPendingError(error)
+          ? { title: "Safe proposal submitted", description: formatWalletError(error) }
+          : { variant: "destructive", title: "Error", description: formatWalletError(error) },
+      );
     } finally {
       setIsSubmitting(false);
     }
