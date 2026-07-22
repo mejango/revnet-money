@@ -133,7 +133,7 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
                       >
                         <span className="text-sm font-medium">
                           {info.label}
-                          <span className="ml-1 font-mono text-[10px] text-zinc-400">#{id}</span>
+                          <span className="ml-1 font-mono text-[10px] text-zinc-500">#{id}</span>
                         </span>
                         <span className="text-xs text-zinc-500">{info.description}</span>
                         <span className="flex items-center gap-1" title="Granted on">

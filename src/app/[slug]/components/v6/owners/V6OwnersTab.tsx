@@ -1,17 +1,34 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
+import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { twJoin } from "tailwind-merge";
 import { ProjectItem } from "../shared";
 import { V6AccountsSubtab } from "./accounts/V6AccountsSubtab";
-import { V6MarketSubtab } from "./market/V6MarketSubtab";
-import { V6SettlementSubtab } from "./settlement/V6SettlementSubtab";
-import { V6AutoIssuanceSubtab } from "./V6AutoIssuanceSubtab";
-import { V6LoansSubtab } from "./V6LoansSubtab";
-import { V6SplitsSubtab } from "./V6SplitsSubtab";
 import { V6TokenPanel } from "./V6TokenPanel";
+
+const V6MarketSubtab = dynamic(
+  () => import("./market/V6MarketSubtab").then((module) => module.V6MarketSubtab),
+  { loading: () => <CardSkeleton rows={4} /> },
+);
+const V6SettlementSubtab = dynamic(
+  () => import("./settlement/V6SettlementSubtab").then((module) => module.V6SettlementSubtab),
+  { loading: () => <CardSkeleton rows={4} /> },
+);
+const V6AutoIssuanceSubtab = dynamic(
+  () => import("./V6AutoIssuanceSubtab").then((module) => module.V6AutoIssuanceSubtab),
+  { loading: () => <CardSkeleton rows={4} /> },
+);
+const V6LoansSubtab = dynamic(
+  () => import("./V6LoansSubtab").then((module) => module.V6LoansSubtab),
+  { loading: () => <CardSkeleton rows={4} /> },
+);
+const V6SplitsSubtab = dynamic(
+  () => import("./V6SplitsSubtab").then((module) => module.V6SplitsSubtab),
+  { loading: () => <CardSkeleton rows={4} /> },
+);
 
 const SUBTABS = [
   { key: "accounts", label: "Accounts" },

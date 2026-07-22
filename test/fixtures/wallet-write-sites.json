@@ -1,0 +1,623 @@
+{
+  "format": "revnet-wallet-write-sites-1",
+  "surfaces": [
+    {
+      "id": "central-write",
+      "label": "Central direct and Safe write boundary",
+      "sites": [
+        [
+          "raw-wallet-import",
+          "src/hooks/useReviewedWriteContract.ts",
+          "<module>",
+          "wagmi:useWriteContract",
+          1
+        ],
+        [
+          "raw-wallet-hook",
+          "src/hooks/useReviewedWriteContract.ts",
+          "useWriteContract",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/hooks/useReviewedWriteContract.ts",
+          "writeContract",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "raw-wallet-call",
+          "src/hooks/useReviewedWriteContract.ts",
+          "writeContractAsync",
+          "writeContractAsync",
+          1
+        ]
+      ]
+    },
+    {
+      "id": "relayr",
+      "label": "Cross-chain Relayr authorization and payment boundary",
+      "sites": [
+        [
+          "raw-wallet-import",
+          "src/hooks/useReviewedRelayr.ts",
+          "<module>",
+          "wagmi:useSendTransaction",
+          1
+        ],
+        [
+          "raw-wallet-import",
+          "src/hooks/useReviewedRelayr.ts",
+          "<module>",
+          "wagmi:useSignTypedData",
+          1
+        ],
+        [
+          "raw-wallet-call",
+          "src/hooks/useReviewedRelayr.ts",
+          "getRelayrTxQuote",
+          "signTypedDataAsync",
+          1
+        ],
+        [
+          "raw-wallet-call",
+          "src/hooks/useReviewedRelayr.ts",
+          "sendRelayrTx",
+          "sendTransactionAsync",
+          1
+        ],
+        [
+          "raw-wallet-hook",
+          "src/hooks/useReviewedRelayr.ts",
+          "useGetRelayrTxQuote",
+          "useSignTypedData",
+          1
+        ],
+        [
+          "raw-wallet-hook",
+          "src/hooks/useReviewedRelayr.ts",
+          "useSendRelayrTx",
+          "useSendTransaction",
+          1
+        ]
+      ]
+    },
+    {
+      "id": "create",
+      "label": "Revnet creation",
+      "sites": [
+        [
+          "reviewed-relayr-payment-hook",
+          "src/app/create/buttons/PayAndDeploy.tsx",
+          "PayAndDeploy",
+          "useSendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-payment",
+          "src/app/create/buttons/PayAndDeploy.tsx",
+          "PayAndDeploy",
+          "sendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote",
+          "src/app/create/page.tsx",
+          "deployProject",
+          "getRelayrTxQuote",
+          1
+        ],
+        ["reviewed-relayr-quote-hook", "src/app/create/page.tsx", "Page", "useGetRelayrTxQuote", 1]
+      ]
+    },
+    {
+      "id": "pay-allowance",
+      "label": "Pay, add-balance, and token allowance",
+      "sites": [
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
+          "confirm",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
+          "V6PayCard",
+          "useWriteContract",
+          1
+        ],
+        ["reviewed-write", "src/hooks/useAllowance.ts", "ensureAllowance", "writeContractAsync", 1],
+        ["reviewed-write-hook", "src/hooks/useAllowance.ts", "useAllowance", "useWriteContract", 1]
+      ]
+    },
+    {
+      "id": "value",
+      "label": "Cash out, borrow, repay, collateral, and bridge",
+      "sites": [
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/Value/BridgeDialog.tsx",
+          "BridgeDialog",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/Value/BridgeDialog.tsx",
+          "moveTokens",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
+          "handleBorrow",
+          "writeContractAsync",
+          3
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
+          "useBorrowDialog",
+          "useWriteContract",
+          3
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/Value/RedeemDialog.tsx",
+          "RedeemDialog",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/Value/RedeemDialog.tsx",
+          "RedeemDialog",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/Value/RepayDialog.tsx",
+          "handleApproveAllowance",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/Value/RepayDialog.tsx",
+          "handleRepay",
+          "writeContractAsync",
+          2
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/Value/RepayDialog.tsx",
+          "RepayDialog",
+          "useWriteContract",
+          1
+        ]
+      ]
+    },
+    {
+      "id": "owners",
+      "label": "Token, issuance, splits, and reserved-token owner actions",
+      "sites": [
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx",
+          "claim",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx",
+          "ClaimRow",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
+          "HookActionButton",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
+          "HookActionButton",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/V6AutoIssuanceSubtab.tsx",
+          "V6AutoIssuanceSubtab",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/V6AutoIssuanceSubtab.tsx",
+          "V6AutoIssuanceSubtab",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-relayr-payment",
+          "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
+          "payAndSubmit",
+          "sendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote",
+          "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
+          "submit",
+          "getRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
+          "submit",
+          "writeContractAsync",
+          2
+        ],
+        [
+          "reviewed-relayr-payment-hook",
+          "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
+          "TokenEditDialog",
+          "useSendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote-hook",
+          "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
+          "TokenEditDialog",
+          "useGetRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
+          "TokenEditDialog",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/owners/components/DistributeReservedTokensButton.tsx",
+          "DistributeReservedTokensButton",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/owners/components/DistributeReservedTokensButton.tsx",
+          "DistributeReservedTokensButton",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-relayr-payment",
+          "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
+          "submitSplits",
+          "sendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote",
+          "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
+          "submitSplits",
+          "getRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
+          "submitSplits",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-relayr-payment-hook",
+          "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
+          "useSetSplitGroups",
+          "useSendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote-hook",
+          "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
+          "useSetSplitGroups",
+          "useGetRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
+          "useSetSplitGroups",
+          "useWriteContract",
+          1
+        ]
+      ]
+    },
+    {
+      "id": "admin-shop-metadata",
+      "label": "Operator, settlement, shop, payer, and metadata writes",
+      "sites": [
+        [
+          "reviewed-relayr-payment-hook",
+          "src/app/[slug]/about/components/EditMetadataDialog.tsx",
+          "EditMetadataDialog",
+          "useSendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote-hook",
+          "src/app/[slug]/about/components/EditMetadataDialog.tsx",
+          "EditMetadataDialog",
+          "useGetRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/about/components/EditMetadataDialog.tsx",
+          "EditMetadataDialog",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-relayr-payment",
+          "src/app/[slug]/about/components/EditMetadataDialog.tsx",
+          "handlePayAndSubmit",
+          "sendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote",
+          "src/app/[slug]/about/components/EditMetadataDialog.tsx",
+          "handleSubmit",
+          "getRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/about/components/EditMetadataDialog.tsx",
+          "handleSubmit",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/extras/PayerDeployForm.tsx",
+          "PayerDeployForm",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/extras/PayerDeployForm.tsx",
+          "submitDeploys",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/operator/BuybackRouterCard.tsx",
+          "BuybackActionForm",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/operator/OperatorAccountCard.tsx",
+          "TransferOperatorFlow",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/operator/operatorLib.ts",
+          "runSequentialWrites",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
+          "SyncButton",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
+          "SyncButton",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
+          "ClaimButton",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
+          "ClaimButton",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
+          "ExecuteButton",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
+          "ExecuteButton",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/shop/AddItemsModal.tsx",
+          "AddItemsModal",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/shop/AddItemsModal.tsx",
+          "submit",
+          "writeContractAsync",
+          1
+        ]
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "reviewed-write-boundary",
+      "risk": "boundary",
+      "files": ["src/hooks/useReviewedWriteContract.ts"],
+      "tests": ["test/reviewed-write-contract.test.ts", "test/reviewed-write-hook.test.tsx"]
+    },
+    {
+      "id": "relayr-boundary",
+      "risk": "boundary",
+      "files": ["src/hooks/useReviewedRelayr.ts"],
+      "tests": ["test/reviewed-relayr.test.ts", "test/reviewed-relayr-hooks.test.tsx"]
+    },
+    {
+      "id": "create-revnet",
+      "risk": "money",
+      "files": ["src/app/create/buttons/PayAndDeploy.tsx", "src/app/create/page.tsx"],
+      "tests": ["test/deploy-encoding.test.ts"]
+    },
+    {
+      "id": "pay",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/v6/pay/V6PayCard.tsx"],
+      "tests": ["test/pay-route.test.ts"]
+    },
+    {
+      "id": "allowance",
+      "risk": "money",
+      "files": ["src/hooks/useAllowance.ts"],
+      "tests": ["test/allowance-hook.test.tsx"]
+    },
+    {
+      "id": "bridge-prepare",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/Value/BridgeDialog.tsx"],
+      "tests": ["test/bridge-prepare.test.ts"]
+    },
+    {
+      "id": "loans",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx"],
+      "tests": ["test/loan-transactions.test.ts"]
+    },
+    {
+      "id": "cash-out",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/Value/RedeemDialog.tsx"],
+      "tests": ["test/cash-out-quote.test.ts"]
+    },
+    {
+      "id": "repay",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/Value/RepayDialog.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "claim-credits",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "split-hook",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "auto-issuance",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/components/v6/owners/V6AutoIssuanceSubtab.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "token-admin",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/components/v6/owners/V6TokenPanel.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "reserved-distribution",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/owners/components/DistributeReservedTokensButton.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "split-groups",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "metadata",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/about/components/EditMetadataDialog.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "project-payer",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/components/v6/extras/PayerDeployForm.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "operator-writes",
+      "risk": "project-control",
+      "files": [
+        "src/app/[slug]/components/v6/operator/BuybackRouterCard.tsx",
+        "src/app/[slug]/components/v6/operator/OperatorAccountCard.tsx",
+        "src/app/[slug]/components/v6/operator/operatorLib.ts"
+      ],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "settlement-sync",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "queued-movements",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "shop-items",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/components/v6/shop/AddItemsModal.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts"]
+    }
+  ]
+}

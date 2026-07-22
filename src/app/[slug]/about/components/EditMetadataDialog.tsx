@@ -27,6 +27,7 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useTokenA } from "@/hooks/useTokenA";
+import { withZodSchema } from "@/lib/formikZod";
 import { ipfsUri } from "@/lib/ipfs";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
@@ -39,7 +40,6 @@ import {
 } from "@bananapus/nana-sdk-react";
 import { getPublicClient } from "@wagmi/core";
 import { Formik } from "formik";
-import { withZodSchema } from "formik-validator-zod";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData } from "viem";

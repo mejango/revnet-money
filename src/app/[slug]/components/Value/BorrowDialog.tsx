@@ -56,6 +56,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     displayYears,
     displayMonths,
     estimatedBorrowFromInputOnly,
+    minimumBorrowAmountPreview,
     selectedLoanReallocAmount,
     handleOpenChange,
     handleBorrow,
@@ -278,6 +279,21 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           }
           return null;
         })()}
+        {minimumBorrowAmountPreview !== undefined && selectedChainTokenConfig ? (
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm">
+            <div className="flex justify-between gap-3">
+              <span className="text-zinc-600">Protected minimum borrowed</span>
+              <span className="font-medium">
+                {formatUnits(minimumBorrowAmountPreview, selectedChainTokenConfig.decimals)}{" "}
+                {selectedChainTokenSymbol}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-zinc-500">
+              Based on the live contract quote with a 1% safety tolerance; refreshed again before
+              submission.
+            </p>
+          </div>
+        ) : null}
         {/* Fee Structure Over Time toggleable chart */}
         <button
           type="button"
@@ -342,6 +358,12 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           <ButtonWithWallet
             targetChainId={Number(cashOutChainId) as JBChainId}
             loading={loading}
+            disabled={
+              !cashOutChainId ||
+              !collateralAmount ||
+              Number(collateralAmount) <= 0 ||
+              minimumBorrowAmountPreview === undefined
+            }
             onClick={() => {
               handleBorrow();
             }}

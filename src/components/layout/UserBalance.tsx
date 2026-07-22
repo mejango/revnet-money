@@ -12,6 +12,10 @@ export function UserBalance() {
   const { token } = useJBTokenContext();
   const { slug } = useParams<{ slug: string }>();
 
+  // Global pages such as /create have no project route. Rendering a project
+  // balance link there made Next prefetch /undefined/owners on every visit.
+  if (!slug) return null;
+
   const totalBalance = new JBProjectToken(
     balances?.reduce((acc, curr) => acc + curr.balance.value, 0n) ?? 0n,
   );
@@ -27,7 +31,7 @@ export function UserBalance() {
       aria-label={`View ${formatTokenSymbol(token)} balance in Owners accounts`}
     >
       {totalBalance.format(2)}{" "}
-      <span className="text-teal-500 ml-1.5 font-medium">{formatTokenSymbol(token)}</span>
+      <span className="text-teal-700 ml-1.5 font-medium">{formatTokenSymbol(token)}</span>
     </Link>
   );
 }

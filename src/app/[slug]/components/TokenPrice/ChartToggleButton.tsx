@@ -19,16 +19,16 @@ export function ChartToggleButton({ label, active, disabled = false, colorVar, o
       disabled={disabled}
       className={cn(
         "flex min-h-11 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
-        disabled && "opacity-50 cursor-not-allowed",
+        disabled && "cursor-not-allowed",
         isActive
           ? `bg-[${colorVar}]/10 text-[${colorVar}] ring-1 ring-[${colorVar}]/30`
-          : "bg-zinc-100 text-zinc-400 hover:bg-zinc-200",
+          : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200",
       )}
       style={
         isActive
           ? {
               backgroundColor: `color-mix(in srgb, var(${colorVar}) 10%, transparent)`,
-              color: `var(${colorVar})`,
+              color: "rgb(24 24 27)",
               boxShadow: `inset 0 0 0 1px color-mix(in srgb, var(${colorVar}) 30%, transparent)`,
             }
           : undefined

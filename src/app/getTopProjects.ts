@@ -8,7 +8,30 @@ import { formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
 export async function getTopProjects() {
-  const [top, ethPrice] = await Promise.all([fetchTopProjects(), fetchEthPrice()]);
+  let top: TopSuckerGroupsQuery;
+  try {
+    top = await fetchTopProjects();
+  } catch (error) {
+    // Bendystraw is a derivative view. Its availability must never make the
+    // canonical landing page unavailable or prevent a production build.
+    console.error("Failed to load top projects:", error);
+    return [];
+  }
+
+  const needsEthPrice = top.suckerGroups.items.some(
+    (group) =>
+      group.projects?.items[0]?.isRevnet &&
+      group.projects.items[0].tokenSymbol?.toUpperCase() === "ETH",
+  );
+  let ethPrice = 0;
+  if (needsEthPrice) {
+    try {
+      ethPrice = await fetchEthPrice();
+    } catch (error) {
+      console.error("Failed to load the ETH price for top projects:", error);
+      return [];
+    }
+  }
 
   return top.suckerGroups.items
     .map((group) => {
@@ -37,7 +60,7 @@ export async function getTopProjects() {
         chainSlug: JB_CHAINS[chainId]?.slug ?? "eth",
         name: project.name ?? `Project #${project.projectId}`,
         tagline: project.projectTagline,
-        logoUrl: project.logoUri ? ipfsUriToGatewayUrl(project.logoUri) : null,
+        logoUrl: project.logoUri ? (ipfsUriToGatewayUrl(project.logoUri) ?? null) : null,
         balanceUsd,
       };
     });

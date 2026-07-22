@@ -24,13 +24,13 @@ export function useTokenBalances(tokens: Token[], chainId: number) {
 
   const { data: erc20Data, isLoading: isErc20Loading } = useReadContracts({
     contracts: erc20Contracts,
-    query: { refetchOnMount: false },
+    query: { enabled: !!address && erc20Contracts.length > 0, refetchOnMount: false },
   });
 
   const { data: nativeData, isLoading: isNativeLoading } = useBalance({
     address,
     chainId,
-    query: { refetchOnMount: false },
+    query: { enabled: !!address, refetchOnMount: false },
   });
 
   const balances = useMemo(() => {

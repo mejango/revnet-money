@@ -5,11 +5,13 @@
 /node_modules
 /.pnp
 .pnp.js
-package-lock.json
 
 # testing
 
 /coverage
+/playwright-report
+/test-results
+/.contract-source
 
 # next.js
 
@@ -23,7 +25,8 @@ package-lock.json
 # misc
 
 .DS_Store
-\*.pem
+*.pem
+*.key
 
 # debug
 
@@ -43,7 +46,7 @@ yarn-error.log*
 
 # typescript
 
-\*.tsbuildinfo
+*.tsbuildinfo
 next-env.d.ts
 tsconfig.tsbuildinfo
 .gstack/

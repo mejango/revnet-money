@@ -7,7 +7,7 @@ import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { JBChainId, useJBTokenContext } from "@bananapus/nana-sdk-react";
-import { sdk } from "@farcaster/frame-sdk";
+import { sdk } from "@farcaster/miniapp-sdk";
 import { useEffect, useState } from "react";
 import { Address } from "viem";
 

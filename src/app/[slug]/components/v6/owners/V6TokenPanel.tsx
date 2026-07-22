@@ -92,7 +92,7 @@ function Pipe() {
 function TokenField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <span className="text-melon-600">{label}:</span>
+      <span className="text-melon-700">{label}:</span>
       <span className="text-black">{children}</span>
     </span>
   );
@@ -472,7 +472,7 @@ function TokenEditDialog({
       <DialogTrigger asChild>
         <button
           type="button"
-          className="text-xs text-melon-600 underline decoration-melon-300 underline-offset-4 transition-colors hover:text-black"
+          className="text-xs text-melon-700 underline decoration-melon-300 underline-offset-4 transition-colors hover:text-black"
         >
           {deployed ? "Edit" : "Deploy ERC-20"}
         </button>

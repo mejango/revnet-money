@@ -13,7 +13,9 @@ export const bendystrawFetch: typeof fetch = async (input, init) => {
         return response;
       }
     } catch (error) {
-      const aborted = (error as { name?: string }).name === "AbortError";
+      const errorName = (error as { name?: string }).name;
+      const aborted =
+        errorName === "AbortError" || errorName === "TimeoutError" || init?.signal?.aborted;
       if (aborted || attempt === RETRY_DELAYS_MS.length) throw error;
     }
 

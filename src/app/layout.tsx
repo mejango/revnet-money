@@ -1,7 +1,6 @@
 import { Footer } from "@/components/layout/Footer";
 import { Toaster } from "@/components/ui/toaster";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { twMerge } from "tailwind-merge";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -26,12 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" href="/assets/img/small-bw.svg" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
-      <body
-        className={twMerge(
-          simplonMono.variable,
-          "min-h-screen font-sans text-zinc-950",
-        )}
-      >
+      <body className={twMerge(simplonMono.variable, "min-h-screen font-sans text-zinc-950")}>
         <Providers>
           <main className="min-h-screen">{children}</main>
           <Footer />
@@ -44,10 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const headersList = headers();
-  const host = headersList.get("host");
-  const proto = headersList.get("x-forwarded-proto") || "http";
-  const origin = `${proto}://${host}`;
+  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
   // For the root layout, our fullPath is '/'
   const fullPath = "/";

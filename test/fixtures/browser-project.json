@@ -1,0 +1,10 @@
+{
+  "appPort": 4173,
+  "fixturePort": 4174,
+  "cid": "bafkreihz5xk2crdko5mllpxbfa443m2o6pmzcmbg5b3uvif6ho4x45z674",
+  "metadata": {
+    "name": "Fixture Revnet",
+    "description": "A deterministic, contract-hydrated revnet used to protect the production project shape.",
+    "projectTagline": "Protocol-backed and deterministic."
+  }
+}

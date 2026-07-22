@@ -1,46 +1,92 @@
+import { isIpfsCid } from "@/lib/ipfs-cid";
 import { NextRequest } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 
 export type InfuraPinResponse = {
   Hash: string;
 };
 
 const INFURA_IPFS_API_BASE_URL = "https://ipfs.infura.io:5001";
-const INFURA_IPFS_PROJECT_ID = process.env.INFURA_IPFS_PROJECT_ID;
-const INFURA_IPFS_API_SECRET = process.env.INFURA_IPFS_API_SECRET;
+const MAX_METADATA_BYTES = 128 * 1024;
+const PINNING_TIMEOUT_MS = 15_000;
 
-const AUTH_HEADER = `Basic ${Buffer.from(
-  `${INFURA_IPFS_PROJECT_ID}:${INFURA_IPFS_API_SECRET}`,
-).toString("base64")}`;
+function configuredOrigin() {
+  return new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").origin;
+}
 
-const DEV_ORIGIN = "http://localhost:3000";
-const MAINNET_ORIGIN = "https://juicebox.money";
+function hasValidIngressToken(req: NextRequest) {
+  const expected = process.env.IPFS_PINNING_INGRESS_TOKEN;
+  const supplied = req.headers.get("x-revnet-pinning-ingress-token");
+  if (!expected || !supplied) return false;
 
-const origin = process.env.NODE_ENV === "development" ? DEV_ORIGIN : MAINNET_ORIGIN;
+  const expectedBytes = Buffer.from(expected);
+  const suppliedBytes = Buffer.from(supplied);
+  return (
+    expectedBytes.length === suppliedBytes.length && timingSafeEqual(expectedBytes, suppliedBytes)
+  );
+}
 
 /**
  * https://docs.infura.io/infura/networks/ipfs/http-api-methods/pin
  */
 async function pinFile(file: string | Blob): Promise<InfuraPinResponse> {
+  const projectId = process.env.INFURA_IPFS_PROJECT_ID;
+  const apiSecret = process.env.INFURA_IPFS_API_SECRET;
+  if (!projectId || !apiSecret) throw new Error("IPFS pinning is not configured");
+
   const formData = new FormData();
   formData.append("file", file);
 
   const res = await fetch(`${INFURA_IPFS_API_BASE_URL}/api/v0/add`, {
     method: "POST",
     headers: {
-      Authorization: AUTH_HEADER,
-      origin,
+      Authorization: `Basic ${Buffer.from(`${projectId}:${apiSecret}`).toString("base64")}`,
+      origin: configuredOrigin(),
     },
     body: formData,
-  }).then((res) => res.json());
+    signal: AbortSignal.timeout(PINNING_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`IPFS provider returned ${res.status}`);
 
-  return res;
+  const payload = (await res.json()) as Partial<InfuraPinResponse>;
+  if (!isIpfsCid(payload.Hash)) throw new Error("IPFS provider response contains an invalid CID");
+
+  return { Hash: payload.Hash };
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const data = await req.json();
+    if (process.env.ENABLE_PUBLIC_IPFS_PINNING !== "true") {
+      return Response.json({ error: "IPFS pinning is disabled" }, { status: 503 });
+    }
+    if (!hasValidIngressToken(req)) {
+      return Response.json({ error: "pinning ingress is not authorized" }, { status: 401 });
+    }
 
-    console.log("pinning::", data);
+    const requestOrigin = req.headers.get("origin");
+    if (requestOrigin !== configuredOrigin()) {
+      return Response.json({ error: "origin not allowed" }, { status: 403 });
+    }
+
+    if (!req.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+      return Response.json({ error: "content type must be application/json" }, { status: 415 });
+    }
+
+    const declaredSize = Number(req.headers.get("content-length") ?? 0);
+    if (declaredSize > MAX_METADATA_BYTES) {
+      return Response.json({ error: "metadata is too large" }, { status: 413 });
+    }
+
+    const body = await req.text();
+    if (Buffer.byteLength(body, "utf8") > MAX_METADATA_BYTES) {
+      return Response.json({ error: "metadata is too large" }, { status: 413 });
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(body) as unknown;
+    } catch {
+      return Response.json({ error: "invalid JSON metadata" }, { status: 400 });
+    }
 
     const pinJson = await pinFile(JSON.stringify(data));
 

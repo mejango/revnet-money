@@ -39,13 +39,21 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { ConnectKitButton } from "connectkit";
 import { format } from "date-fns";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
-import { BorrowDialog } from "../../../Value/BorrowDialog";
-import { BridgeDialog } from "../../../Value/BridgeDialog";
-import { RedeemDialog } from "../../../Value/RedeemDialog";
 import { ProjectItem } from "../../shared";
 import { CreditRow, V6ClaimCreditsDialog } from "./V6ClaimCreditsDialog";
+
+const BorrowDialog = dynamic(() =>
+  import("../../../Value/BorrowDialog").then((module) => module.BorrowDialog),
+);
+const BridgeDialog = dynamic(() =>
+  import("../../../Value/BridgeDialog").then((module) => module.BridgeDialog),
+);
+const RedeemDialog = dynamic(() =>
+  import("../../../Value/RedeemDialog").then((module) => module.RedeemDialog),
+);
 
 type ChainQuote = { cashout: bigint | undefined; maxLoan: bigint | undefined };
 

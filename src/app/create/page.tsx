@@ -3,12 +3,12 @@
 import { Nav } from "@/components/layout/Nav";
 import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxQuote } from "@/hooks/useReviewedRelayr";
+import { withZodSchema } from "@/lib/formikZod";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, MappableAsset, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { getPublicClient } from "@wagmi/core";
 import { Formik } from "formik";
-import { withZodSchema } from "formik-validator-zod";
 import { encodeFunctionData, PublicClient } from "viem";
 import { useAccount } from "wagmi";
 import { DEFAULT_FORM_DATA } from "./constants";

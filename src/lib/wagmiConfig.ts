@@ -1,4 +1,4 @@
-import { farcasterFrame as miniAppConnector } from "@farcaster/frame-wagmi-connector";
+import { farcasterFrame as miniAppConnector } from "@farcaster/miniapp-wagmi-connector";
 import { cache } from "react";
 import { createPublicClient, PublicClient } from "viem";
 import {
@@ -11,12 +11,24 @@ import {
   optimismSepolia,
   sepolia,
 } from "viem/chains";
-import { createConfig, fallback, http } from "wagmi";
+import { createConfig, fallback, http, type Transport } from "wagmi";
 import { coinbaseWallet, safe, walletConnect } from "wagmi/connectors";
+
+function rpcFallback(urls: string | undefined): Transport {
+  const configured = urls
+    ?.split(",")
+    .map((url) => url.trim())
+    .filter(Boolean)
+    .map((url) => http(url));
+
+  // Production builds validate every RPC list before Next compiles this module.
+  // The default transport only keeps isolated unit imports usable without env.
+  return fallback(configured?.length ? configured : [http()]);
+}
 
 const safeConnector = safe({
   allowedDomains: [/^app\.safe\.global$/],
-  debug: true,
+  debug: process.env.NODE_ENV !== "production",
   shimDisconnect: true,
 });
 
@@ -32,41 +44,14 @@ const chains = [
 ] as const;
 
 const transports = {
-  [sepolia.id]: fallback([
-    http(`https://sepolia.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_ID}`),
-    http("https://eth-sepolia.g.alchemy.com/v2/Y7igjs135LhJTJbYavxq9WlhuAZQVn03"),
-  ]),
-  [optimismSepolia.id]: fallback([
-    http(`https://optimism-sepolia.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_ID}`),
-    http("https://opt-sepolia.g.alchemy.com/v2/Y7igjs135LhJTJbYavxq9WlhuAZQVn03"),
-  ]),
-  [baseSepolia.id]: fallback([
-    http("https://base-sepolia.g.alchemy.com/v2/Y7igjs135LhJTJbYavxq9WlhuAZQVn03"),
-    http(
-      `https://api.developer.coinbase.com/rpc/v1/base-sepolia/${process.env.NEXT_PUBLIC_BASE_ID}`,
-    ),
-  ]),
-  [arbitrumSepolia.id]: fallback([
-    http(`https://arbitrum-sepolia.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_ID}`),
-    http("https://arb-sepolia.g.alchemy.com/v2/Y7igjs135LhJTJbYavxq9WlhuAZQVn03"),
-  ]),
-  [mainnet.id]: fallback([
-    http(`https://mainnet.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_ID}`),
-    http("https://eth-mainnet.g.alchemy.com/v2/Y7igjs135LhJTJbYavxq9WlhuAZQVn03"),
-  ]),
-  [optimism.id]: fallback([
-    http(`https://optimism-mainnet.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_ID}`),
-    http("https://opt-mainnet.g.alchemy.com/v2/Y7igjs135LhJTJbYavxq9WlhuAZQVn03"),
-  ]),
-  [base.id]: fallback([
-    http(`https://base-mainnet.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_ID}`),
-    http(`https://api.developer.coinbase.com/rpc/v1/base/${process.env.NEXT_PUBLIC_BASE_ID}`),
-    http("https://base-mainnet.g.alchemy.com/v2/Y7igjs135LhJTJbYavxq9WlhuAZQVn03"),
-  ]),
-  [arbitrum.id]: fallback([
-    http(`https://arbitrum-mainnet.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_ID}`),
-    http("https://arb-mainnet.g.alchemy.com/v2/Y7igjs135LhJTJbYavxq9WlhuAZQVn03"),
-  ]),
+  [sepolia.id]: rpcFallback(process.env.NEXT_PUBLIC_RPC_ETHEREUM_SEPOLIA_URLS),
+  [optimismSepolia.id]: rpcFallback(process.env.NEXT_PUBLIC_RPC_OPTIMISM_SEPOLIA_URLS),
+  [baseSepolia.id]: rpcFallback(process.env.NEXT_PUBLIC_RPC_BASE_SEPOLIA_URLS),
+  [arbitrumSepolia.id]: rpcFallback(process.env.NEXT_PUBLIC_RPC_ARBITRUM_SEPOLIA_URLS),
+  [mainnet.id]: rpcFallback(process.env.NEXT_PUBLIC_RPC_ETHEREUM_URLS),
+  [optimism.id]: rpcFallback(process.env.NEXT_PUBLIC_RPC_OPTIMISM_URLS),
+  [base.id]: rpcFallback(process.env.NEXT_PUBLIC_RPC_BASE_URLS),
+  [arbitrum.id]: rpcFallback(process.env.NEXT_PUBLIC_RPC_ARBITRUM_URLS),
 };
 
 export const wagmiConfig = createConfig({
@@ -76,7 +61,9 @@ export const wagmiConfig = createConfig({
     safeConnector,
     coinbaseWallet({
       appName: "REVNET",
-      appLogoUrl: "https://app.revnet.eth.sucks/assets/img/small-bw.svg",
+      appLogoUrl: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.revnet.eth.sucks"}/assets/img/small-bw.svg`,
+      // Wallet support must not opt every visitor into Coinbase analytics.
+      preference: { options: "all", telemetry: false },
     }),
     // Only initialize WalletConnect in the browser
     ...(typeof window !== "undefined"
@@ -87,8 +74,10 @@ export const wagmiConfig = createConfig({
             metadata: {
               name: "REVNET",
               description: "Tokenize revenues and fundraises. 100% autonomous.",
-              url: "https://app.revnet.eth.sucks",
-              icons: ["https://app.revnet.eth.sucks/assets/img/small-bw.svg"],
+              url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.revnet.eth.sucks",
+              icons: [
+                `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.revnet.eth.sucks"}/assets/img/small-bw.svg`,
+              ],
             },
           }),
         ]

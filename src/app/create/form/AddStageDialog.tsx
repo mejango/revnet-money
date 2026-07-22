@@ -9,10 +9,10 @@ import {
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
+import { withZodSchema } from "@/lib/formikZod";
 import { commaNumber } from "@/lib/number";
 import { TrashIcon } from "@heroicons/react/24/outline";
 import { FieldArray, Form, Formik } from "formik";
-import { withZodSchema } from "formik-validator-zod";
 import { useState } from "react";
 import { defaultStageData } from "../constants";
 import { getResolvedIssuance } from "../helpers/calculatePickupIssuance";

@@ -42,14 +42,18 @@ export function V6AllCard() {
   const baseTokenSymbol = getTokenSymbolFromAddress(chainTokenConfig.token);
   const baseTokenDecimals = chainTokenConfig.decimals;
 
-  const participantsQuery = useBendystrawQuery(ParticipantsDocument, {
-    orderBy: "balance",
-    orderDirection: "desc",
-    where: {
-      suckerGroupId,
-      balance_gt: 0,
+  const participantsQuery = useBendystrawQuery(
+    ParticipantsDocument,
+    {
+      orderBy: "balance",
+      orderDirection: "desc",
+      where: {
+        suckerGroupId,
+        balance_gt: 0,
+      },
     },
-  });
+    { enabled: !!suckerGroupId },
+  );
 
   // Aggregate each account's balance/volume across the chains it holds on.
   const participantsDataAggregate =

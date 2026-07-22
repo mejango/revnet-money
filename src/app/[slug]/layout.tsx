@@ -1,7 +1,6 @@
 import { Nav } from "@/components/layout/Nav";
 import { parseSlug } from "@/lib/slug";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { PropsWithChildren } from "react";
 import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
@@ -19,15 +18,13 @@ import { getRulesets } from "./terms/getRulesets";
 export const revalidate = 300;
 
 interface Props {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const headersList = headers();
-  const host = headersList.get("host");
-  const proto = headersList.get("x-forwarded-proto") || "http";
-  const origin = `${proto}://${host}`;
-  const slug = decodeURIComponent(params?.slug ?? "");
+  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const { slug: encodedSlug } = await params;
+  const slug = decodeURIComponent(encodedSlug ?? "");
 
   const url = new URL(`/${slug}`, origin);
 
@@ -87,7 +84,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function SlugLayout({ children, params }: PropsWithChildren<Props>) {
-  const { chainId, projectId } = parseSlug(params.slug);
+  const { slug } = await params;
+  const { chainId, projectId } = parseSlug(slug);
 
   const project = await getProject(projectId, chainId);
   if (!project || !project.token) notFound();

@@ -1,0 +1,14 @@
+overwrite: true
+# CI validates documents against the reviewed, committed schema. Refreshing the
+# schema from live Bendystraw is an explicit maintainer operation, not a PR gate.
+schema: ./graphql.schema.json
+documents: "src/graphql/**/*.graphql"
+generates:
+  src/generated/:
+    preset: client
+config:
+  namingConvention:
+    enumValues: keep
+  avoidOptionals:
+    field: true
+  skipTypename: true

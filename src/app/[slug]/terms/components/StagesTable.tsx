@@ -204,7 +204,7 @@ export function StagesTable({ rulesets }: Props) {
                       : " – forever"}
                   </span>
                   {stage.durationDays !== null && stage.durationDays > 0 && (
-                    <span className="text-xs text-zinc-400">{stage.durationDays} days</span>
+                    <span className="text-xs text-zinc-500">{stage.durationDays} days</span>
                   )}
                 </div>
               </TableCell>
@@ -214,7 +214,7 @@ export function StagesTable({ rulesets }: Props) {
               <TableCell className="text-zinc-600 whitespace-nowrap px-2 py-3">
                 <div className="flex flex-col">
                   <span>{stage.cutPercent}%</span>
-                  <span className="text-xs text-zinc-400">every {stage.cutFrequencyDays} days</span>
+                  <span className="text-xs text-zinc-500">every {stage.cutFrequencyDays} days</span>
                 </div>
               </TableCell>
               <TableCell className="text-zinc-600 whitespace-nowrap px-2 py-3">

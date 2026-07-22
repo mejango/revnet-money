@@ -1,0 +1,224 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Type, lint, test, generate, build, and browser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      INFURA_IPFS_API_SECRET: ci-runtime-secret
+      INFURA_IPFS_PROJECT_ID: ci-runtime-project
+      ENABLE_PUBLIC_IPFS_PINNING: "false"
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:4173
+      NEXT_PUBLIC_BENDYSTRAW_URL: http://127.0.0.1:4174
+      NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: http://127.0.0.1:4174
+      NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ci
+      NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: 127.0.0.1
+      NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
+      NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
+      NEXT_PUBLIC_BASE_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
+      NEXT_PUBLIC_ARBITRUM_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
+      NEXT_PUBLIC_SEPOLIA_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
+      NEXT_PUBLIC_OPTIMISM_SEPOLIA_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
+      NEXT_PUBLIC_BASE_SEPOLIA_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
+      NEXT_PUBLIC_ARBITRUM_SEPOLIA_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
+      NEXT_PUBLIC_RPC_ETHEREUM_URLS: http://127.0.0.1:4174/rpc
+      NEXT_PUBLIC_RPC_OPTIMISM_URLS: http://127.0.0.1:4174/rpc
+      NEXT_PUBLIC_RPC_BASE_URLS: http://127.0.0.1:4174/rpc
+      NEXT_PUBLIC_RPC_ARBITRUM_URLS: http://127.0.0.1:4174/rpc
+      NEXT_PUBLIC_RPC_ETHEREUM_SEPOLIA_URLS: http://127.0.0.1:4174/rpc
+      NEXT_PUBLIC_RPC_OPTIMISM_SEPOLIA_URLS: http://127.0.0.1:4174/rpc
+      NEXT_PUBLIC_RPC_BASE_SEPOLIA_URLS: http://127.0.0.1:4174/rpc
+      NEXT_PUBLIC_RPC_ARBITRUM_SEPOLIA_URLS: http://127.0.0.1:4174/rpc
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned deploy-all-v6 deployment artifacts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Bananapus/deploy-all-v6
+          ref: 316e9d4d3f9e1c5b41a5df7c0ad6183abbeccc7f
+          path: .contract-source/deploy-all-v6
+          sparse-checkout: deployments
+          persist-credentials: false
+
+      - name: Use pinned Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify installed dependency integrity
+        run: npm run dependencies:check
+
+      - name: Reject high or critical production dependency advisories
+        run: npm run audit:production
+
+      - name: Validate environment and deployment policy fixtures
+        run: npm run env:test && npm run deployment:check
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Reject new or silently changed formatting debt
+        run: npm run format:ratchet
+
+      - name: Verify pinned contract deployment
+        env:
+          PROTOCOL_DEPLOYMENTS_DIR: ${{ github.workspace }}/.contract-source/deploy-all-v6
+        run: npm run protocol:check
+
+      - name: Verify wallet-write inventory and run invariant tests with coverage
+        run: npm run test:ci
+
+      - name: Verify deterministic GraphQL artifacts
+        run: npm run generate:gql:check
+
+      - name: Build production application
+        run: npm run build:browser
+
+      - name: Verify standalone deployment artifact
+        run: npm run standalone:check
+
+      - name: Enforce client bundle budgets
+        run: npm run bundle:check
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Test production shape and accessibility
+        run: npm run test:browser
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-diagnostics
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  container:
+    name: Build and smoke-test OCI image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_BENDYSTRAW_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ci
+      NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: 127.0.0.1
+      NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_BASE_SUBGRAPH_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_ARBITRUM_SUBGRAPH_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_SEPOLIA_SUBGRAPH_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_OPTIMISM_SEPOLIA_SUBGRAPH_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_BASE_SEPOLIA_SUBGRAPH_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_ARBITRUM_SEPOLIA_SUBGRAPH_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_RPC_ETHEREUM_URLS: http://127.0.0.1:9
+      NEXT_PUBLIC_RPC_OPTIMISM_URLS: http://127.0.0.1:9
+      NEXT_PUBLIC_RPC_BASE_URLS: http://127.0.0.1:9
+      NEXT_PUBLIC_RPC_ARBITRUM_URLS: http://127.0.0.1:9
+      NEXT_PUBLIC_RPC_ETHEREUM_SEPOLIA_URLS: http://127.0.0.1:9
+      NEXT_PUBLIC_RPC_OPTIMISM_SEPOLIA_URLS: http://127.0.0.1:9
+      NEXT_PUBLIC_RPC_BASE_SEPOLIA_URLS: http://127.0.0.1:9
+      NEXT_PUBLIC_RPC_ARBITRUM_SEPOLIA_URLS: http://127.0.0.1:9
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build production image
+        env:
+          DOCKER_BUILDKIT: 1
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_SITE_URL \
+            --build-arg NEXT_PUBLIC_BENDYSTRAW_URL \
+            --build-arg NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL \
+            --build-arg NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID \
+            --build-arg NEXT_PUBLIC_INFURA_IPFS_HOSTNAME \
+            --build-arg NEXT_PUBLIC_MAINNET_SUBGRAPH_URL \
+            --build-arg NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL \
+            --build-arg NEXT_PUBLIC_BASE_SUBGRAPH_URL \
+            --build-arg NEXT_PUBLIC_ARBITRUM_SUBGRAPH_URL \
+            --build-arg NEXT_PUBLIC_SEPOLIA_SUBGRAPH_URL \
+            --build-arg NEXT_PUBLIC_OPTIMISM_SEPOLIA_SUBGRAPH_URL \
+            --build-arg NEXT_PUBLIC_BASE_SEPOLIA_SUBGRAPH_URL \
+            --build-arg NEXT_PUBLIC_ARBITRUM_SEPOLIA_SUBGRAPH_URL \
+            --build-arg NEXT_PUBLIC_RPC_ETHEREUM_URLS \
+            --build-arg NEXT_PUBLIC_RPC_OPTIMISM_URLS \
+            --build-arg NEXT_PUBLIC_RPC_BASE_URLS \
+            --build-arg NEXT_PUBLIC_RPC_ARBITRUM_URLS \
+            --build-arg NEXT_PUBLIC_RPC_ETHEREUM_SEPOLIA_URLS \
+            --build-arg NEXT_PUBLIC_RPC_OPTIMISM_SEPOLIA_URLS \
+            --build-arg NEXT_PUBLIC_RPC_BASE_SEPOLIA_URLS \
+            --build-arg NEXT_PUBLIC_RPC_ARBITRUM_SEPOLIA_URLS \
+            --tag revnet-money:ci .
+
+      - name: Start least-privilege container
+        run: |
+          docker run --detach --name revnet-money-ci \
+            --read-only \
+            --tmpfs /app/.next/cache:uid=1001,gid=1001 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --env INFURA_IPFS_PROJECT_ID=ci-runtime-project \
+            --env INFURA_IPFS_API_SECRET=ci-runtime-secret \
+            --env ENABLE_PUBLIC_IPFS_PINNING=false \
+            --env APP_REVISION=${{ github.sha }} \
+            --publish 127.0.0.1:3000:3000 \
+            revnet-money:ci
+
+      - name: Verify health and immutable revision
+        run: |
+          for attempt in {1..30}; do
+            body=$(curl --fail --silent http://127.0.0.1:3000/api/healthz) && break
+            sleep 1
+          done
+          test "$(node -e 'const body=JSON.parse(process.argv[1]); process.stdout.write(body.status)' "$body")" = ok
+          test "$(node -e 'const body=JSON.parse(process.argv[1]); process.stdout.write(body.revision)' "$body")" = "${{ github.sha }}"
+          curl --fail --silent --output /dev/null \
+            "http://127.0.0.1:3000/_next/image?url=%2Fassets%2Fimg%2Ficon-64x64.png&w=64&q=75"
+
+      - name: Show container logs
+        if: failure()
+        run: docker logs revnet-money-ci
+
+      - name: Stop smoke-test container
+        if: always()
+        run: docker rm --force revnet-money-ci || true

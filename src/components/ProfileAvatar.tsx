@@ -3,9 +3,8 @@
 
 import EtherscanLink from "@/components/EtherscanLink";
 import { useProfile } from "@/components/ProfilesContext";
-import sdk from "@farcaster/frame-sdk";
-import Image from "next/image";
-import { useEffect, useState } from "react";
+import { sdk } from "@farcaster/miniapp-sdk";
+import { useEffect } from "react";
 import { twMerge } from "tailwind-merge";
 import { Address, Chain } from "viem";
 import { ensAvatarUrlForAddress } from "./EthereumAddress";
@@ -36,8 +35,6 @@ export function ProfileAvatar({
   const avatarSize = avatarProps?.size ?? "md";
   const avatarDimensions = avatarSize === "md" ? 36 : 24;
 
-  const [useImgFallback, setUseImgFallback] = useState(false);
-
   useEffect(() => {
     const init = async () => {
       if (sdk?.actions) {
@@ -51,13 +48,9 @@ export function ProfileAvatar({
     ? profile.avatar
     : ensAvatarUrlForAddress(address, { size: avatarDimensions });
 
-  const isSvg = src.endsWith(".svg") || src.includes("image/svg+xml");
-
-  useEffect(() => {
-    if (isSvg) setUseImgFallback(true);
-  }, [isSvg]);
-
-  const avatarElement = useImgFallback ? (
+  // Social avatars are user-controlled. Fetch them directly in the browser
+  // instead of exposing the server-side Next image optimizer as an open proxy.
+  const avatarElement = (
     <img
       src={src}
       alt={profile?.identity ?? address}
@@ -68,19 +61,8 @@ export function ProfileAvatar({
       )}
       width={avatarDimensions}
       height={avatarDimensions}
-    />
-  ) : (
-    <Image
-      src={src}
-      alt={profile?.identity ?? address}
-      className={twMerge(
-        "inline-block rounded-full",
-        avatarSize === "md" ? "w-9 h-9" : "w-6 h-6",
-        withAvatar && !profile?.social?.uid ? "mr-2" : "",
-      )}
-      width={avatarDimensions}
-      height={avatarDimensions}
-      onError={() => setUseImgFallback(true)}
+      loading="lazy"
+      referrerPolicy="no-referrer"
     />
   );
 

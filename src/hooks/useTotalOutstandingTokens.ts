@@ -11,9 +11,12 @@ export function useTotalOutstandingTokens() {
     version: 6,
   });
 
-  const { data: suckerGroup } = useBendystrawQuery(SuckerGroupDocument, {
-    id: data?.project?.suckerGroupId ?? "",
-  });
+  const suckerGroupId = data?.project?.suckerGroupId;
+  const { data: suckerGroup } = useBendystrawQuery(
+    SuckerGroupDocument,
+    { id: suckerGroupId ?? "" },
+    { enabled: !!suckerGroupId },
+  );
 
   return BigInt(suckerGroup?.suckerGroup?.tokenSupply ?? 0);
 }

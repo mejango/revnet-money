@@ -11,6 +11,12 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { toBaseCurrencyId } from "@/lib/currency";
 import { generateFeeData } from "@/lib/feeHelpers";
+import {
+  buildProtectedBorrowTx,
+  buildProtectedReallocateCollateralTx,
+  minimumBorrowAmount,
+  readFreshBorrowableAmount,
+} from "@/lib/loanTransactions";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -23,7 +29,6 @@ import {
   revLoansAbi,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
-import { buildBorrowTx, buildReallocateCollateralTx } from "@bananapus/nana-sdk-core/v6";
 import {
   useBendystrawQuery,
   useJBChainId,
@@ -99,7 +104,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   // Account and wallet hooks
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
-  const publicClient = usePublicClient();
+  const selectedBorrowChainId = cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined;
+  const publicClient = usePublicClient({ chainId: selectedBorrowChainId });
 
   // ===== PHASE 1: BASE TOKEN CONTEXT =====
 
@@ -352,10 +358,24 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       ? currentBorrowableOnSelectedCollateral - BigInt(internalSelectedLoan.borrowAmount)
       : 0n;
 
-  // Calculate borrowable amount for just the new loan (headroom + additional collateral)
-  const newLoanCollateral =
-    collateralHeadroom +
-    (collateralAmount ? parseUnits(collateralAmount, projectTokenDecimals) : 0n);
+  // Convert the source-token headroom to project-token collateral with exact
+  // integer math. This replaces the previous Number conversion, which lost
+  // precision and mixed source-token and project-token units.
+  const collateralCountToTransfer =
+    internalSelectedLoan &&
+    currentBorrowableOnSelectedCollateral !== undefined &&
+    currentBorrowableOnSelectedCollateral > 0n &&
+    collateralHeadroom > 0n
+      ? (collateralHeadroom * BigInt(internalSelectedLoan.collateral)) /
+        currentBorrowableOnSelectedCollateral
+      : 0n;
+
+  // Quote the exact collateral count the reallocation transaction will place
+  // into its new loan, in the source token's own decimals and currency.
+  const collateralCountToAdd = collateralAmount
+    ? parseUnits(collateralAmount, projectTokenDecimals)
+    : 0n;
+  const newLoanCollateral = collateralCountToTransfer + collateralCountToAdd;
   const { data: newLoanBorrowableAmount } = useBorrowableAmountFrom({
     address: revLoansContractAddress,
     chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
@@ -371,16 +391,15 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         : undefined,
   });
 
-  const collateralCountToTransfer =
-    internalSelectedLoan && currentBorrowableOnSelectedCollateral
-      ? BigInt(
-          Math.floor(
-            Number(collateralHeadroom) /
-              (Number(currentBorrowableOnSelectedCollateral) /
-                Number(internalSelectedLoan.collateral)),
-          ),
-        )
-      : BigInt(0);
+  const minimumBorrowAmountPreview = (() => {
+    const quote = internalSelectedLoan ? newLoanBorrowableAmount : estimatedBorrowFromInputOnly;
+    if (quote === undefined || quote <= 0n) return undefined;
+    try {
+      return minimumBorrowAmount(quote);
+    } catch {
+      return undefined;
+    }
+  })();
 
   // ===== PHASE 4: UPDATE FEE CALCULATIONS =====
 
@@ -507,16 +526,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         return;
       }
 
-      // Fix the parameter calculations based on the guidance:
-      // Calculate the safe transfer amount to avoid under-collateralization
-      const principalCover = BigInt(internalSelectedLoan.borrowAmount);
-      const maxRemovable = currentBorrowableOnSelectedCollateral
-        ? currentBorrowableOnSelectedCollateral - principalCover
-        : 0n;
-
-      // Only transfer the safe amount (or less)
-      const collateralCountToTransfer = maxRemovable > 0n ? maxRemovable : 0n;
-
       // collateralCountToAdd: The amount of collateral to add to the new loan (can be 0)
       // Should be in project token decimals, not base token decimals
       const collateralCountToAdd = parseUnits(collateralAmount || "0", projectTokenDecimals);
@@ -539,19 +548,29 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         return;
       }
 
-      // Set minBorrowAmount to 0 as per the guidance
-      const minBorrowAmount = 0n;
-
       try {
+        if (!publicClient) {
+          throw new Error("The selected chain is unavailable. Nothing was submitted.");
+        }
+
+        const newLoanCollateralCount = collateralCountToTransfer + collateralCountToAdd;
+        const freshBorrowableAmount = await readFreshBorrowableAmount(publicClient, {
+          chainId: Number(cashOutChainId) as JBChainId,
+          revnetId: projectId,
+          collateralCount: newLoanCollateralCount,
+          decimals: BigInt(selectedChainTokenConfig.decimals),
+          currency: BigInt(selectedChainTokenConfig.currency),
+        });
+
         setBorrowStatus("waiting-signature");
 
         await reallocateCollateralAsync(
-          buildReallocateCollateralTx({
+          buildProtectedReallocateCollateralTx({
             chainId: Number(cashOutChainId) as JBChainId,
             loanId: BigInt(internalSelectedLoan.id),
             collateralCountToTransfer,
             token: selectedChainTokenConfig.token,
-            minBorrowAmount,
+            quotedBorrowAmount: freshBorrowableAmount,
             collateralCountToAdd,
             beneficiary: address,
             prepaidFeePercent: feePercent,
@@ -570,13 +589,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       try {
         setBorrowStatus("checking");
 
-        if (
-          !walletClient ||
-          !publicClient ||
-          !address ||
-          !borrowableAmountRaw ||
-          !resolvedPermissionsAddress
-        ) {
+        if (!walletClient || !publicClient || !address || !resolvedPermissionsAddress) {
           setBorrowStatus("error");
           return;
         }
@@ -639,13 +652,21 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         }
 
         try {
+          const freshBorrowableAmount = await readFreshBorrowableAmount(publicClient, {
+            chainId: Number(cashOutChainId) as JBChainId,
+            revnetId: effectiveProjectId,
+            collateralCount: collateralBigInt,
+            decimals: BigInt(selectedChainTokenConfig.decimals),
+            currency: BigInt(selectedChainTokenConfig.currency),
+          });
+
           setBorrowStatus("waiting-signature");
           await writeContractAsync(
-            buildBorrowTx({
+            buildProtectedBorrowTx({
               chainId: Number(cashOutChainId) as JBChainId,
               revnetId: effectiveProjectId,
               token: selectedChainTokenConfig.token,
-              minBorrowAmount: 0n,
+              quotedBorrowAmount: freshBorrowableAmount,
               collateralCount: collateralBigInt,
               beneficiary: address as `0x${string}`,
               prepaidFeePercent: BigInt(feeBasisPoints),
@@ -653,11 +674,11 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             }),
           );
         } catch (err) {
-          setBorrowStatus("error-loan-canceled");
+          setBorrowStatus("error");
           toast({
             variant: "destructive",
-            title: "Transaction Cancelled",
-            description: "Loan creation was cancelled by user",
+            title: "Loan not submitted",
+            description: formatWalletError(err),
           });
           setTimeout(() => setBorrowStatus("idle"), 5000);
           return;
@@ -677,14 +698,12 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     cashOutChainId,
     address,
     walletClient,
-    currentBorrowableOnSelectedCollateral,
     selectedLoanReallocAmount,
     prepaidPercent,
     reallocateCollateralAsync,
     permissionWriteAsync,
     toast,
     userHasPermission,
-    borrowableAmountRaw,
     resolvedPermissionsAddress,
     writeContractAsync,
     effectiveProjectId,
@@ -692,6 +711,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     projectTokenDecimals,
     revLoansContractAddress,
     tokenConfigForChain,
+    projectId,
+    collateralCountToTransfer,
   ]);
 
   // ===== EFFECTS =====
@@ -891,6 +912,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     // isEstimatingRepayment,
     estimatedNewBorrowableAmount,
     newLoanBorrowableAmount,
+    minimumBorrowAmountPreview,
     borrowableAmountRaw,
 
     // Actions

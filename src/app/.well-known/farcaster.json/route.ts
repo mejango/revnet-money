@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-// @ts-expect-error - TODO: fix this
 import { externalBaseUrl, isProduction } from "@/app/constants";
 
 const accountAssociation = isProduction

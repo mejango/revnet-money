@@ -211,6 +211,18 @@ export function useGetRelayrTxQuote() {
           "A Safe cannot authorize these ERC-2771 requests as an EOA. Submit each action through the Safe proposal flow instead.",
         );
       }
+      const requestChains = new Set<number>();
+      for (const request of requests) {
+        if (request.data.from.toLowerCase() !== address.toLowerCase()) {
+          throw new Error("Relayr request sender does not match the connected account.");
+        }
+        if (requestChains.has(request.chainId)) {
+          throw new Error(
+            `Relayr cannot safely sign two requests for account ${address} on chain ${request.chainId} with the same onchain nonce.`,
+          );
+        }
+        requestChains.add(request.chainId);
+      }
       setIsPending(true);
       setError(null);
       try {
@@ -223,9 +235,14 @@ export function useGetRelayrTxQuote() {
         }> = [];
         for (const request of requests) {
           await switchChainAsync({ chainId: request.chainId });
-          const current = getAccount(config).address;
-          if (!current || current.toLowerCase() !== address.toLowerCase()) {
+          const current = getAccount(config);
+          if (!current.address || current.address.toLowerCase() !== address.toLowerCase()) {
             throw new Error("Connected account changed. Review the Relayr authorization again.");
+          }
+          if (current.chainId !== request.chainId) {
+            throw new Error(
+              "Connected chain did not switch. Review the Relayr authorization again.",
+            );
           }
           const version = request.version ?? 6;
           const forwarder = jbContractAddress[version].ERC2771Forwarder[request.chainId];
@@ -316,6 +333,13 @@ export function useGetRelayrTxQuote() {
         });
         if (!response.ok) throw new Error(await response.text());
         const quote = (await response.json()) as RelayrPostBundleResponse;
+        if (
+          !quote.bundle_uuid?.trim() ||
+          !Array.isArray(quote.payment_info) ||
+          !quote.payment_info.length
+        ) {
+          throw new Error("Relayr returned an incomplete quote without a payable bundle.");
+        }
         rememberQuote(quote, requests);
         setData(quote);
         return quote;
@@ -354,14 +378,17 @@ export function useSendRelayrTx() {
       }
       const value = BigInt(payment.amount);
       if (value < 0n) throw new Error("Relayr returned an invalid payment amount.");
-      const deadline = (payment as ChainPayment & { payment_deadline?: number }).payment_deadline;
-      if (deadline && deadline <= Math.floor(Date.now() / 1_000) + 15) {
+      const deadline = Number(payment.payment_deadline);
+      if (!Number.isSafeInteger(deadline) || deadline <= Math.floor(Date.now() / 1_000) + 15) {
         throw new Error("This Relayr quote expired. Review the action again for a new quote.");
       }
       await switchChainAsync({ chainId: payment.chain });
-      const current = getAccount(config).address;
-      if (!current || current.toLowerCase() !== address.toLowerCase()) {
+      const current = getAccount(config);
+      if (!current.address || current.address.toLowerCase() !== address.toLowerCase()) {
         throw new Error("Connected account changed. Review the Relayr payment again.");
+      }
+      if (current.chainId !== payment.chain) {
+        throw new Error("Connected chain did not switch. Review the Relayr payment again.");
       }
       await requireTransactionReview({
         kind: "transaction",

@@ -28,13 +28,18 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useSuckerPairs } from "@/hooks/useSuckerPairs";
+import {
+  buildProtectedBridgePrepareTx,
+  quoteBridgePrepare,
+  slippagePercentToBps,
+} from "@/lib/bridgePrepare";
 import { revalidateCacheTag } from "@/lib/cache";
 import { getTokenAddress } from "@/lib/token";
+import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
-import { buildBridgePrepareTx } from "@bananapus/nana-sdk-core/v6";
 import { useJBTokenContext, useSuckersUserTokenBalance } from "@bananapus/nana-sdk-react";
-import { FixedInt } from "fpnum";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useMemo, useState } from "react";
 import { formatUnits, getAddress, parseUnits } from "viem";
@@ -50,6 +55,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const [sourceChainId, setSourceChainId] = useState<JBChainId>(sourceChains[0]);
   const [targetChainId, setTargetChainId] = useState<JBChainId>();
   const [amount, setAmount] = useState<string>();
+  const [slippagePercent, setSlippagePercent] = useState("1");
   const { token } = useJBTokenContext();
   const tokenSymbol = formatTokenSymbol(token);
   const { ensureAllowance, isApproving } = useAllowance(sourceChainId);
@@ -71,6 +77,69 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
 
   const project = projects.find((p) => p.chainId === sourceChainId)!;
   const { suckerPairs } = useSuckerPairs(project.projectId, sourceChainId);
+  const suckerPair = suckerPairs.find(
+    (candidate) => Number(candidate.remoteChainId) === targetChainId,
+  );
+  const amountValue = useMemo(() => {
+    if (!amount) return undefined;
+    try {
+      const value = parseUnits(amount, tokenDecimals);
+      return value > 0n ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [amount, tokenDecimals]);
+  const slippageBps = useMemo(() => {
+    try {
+      return slippagePercentToBps(slippagePercent);
+    } catch {
+      return undefined;
+    }
+  }, [slippagePercent]);
+  const terminalToken = useMemo(() => {
+    try {
+      return project.token ? getAddress(project.token) : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [project.token]);
+  const backingTokenSymbol = terminalToken ? getTokenSymbolFromAddress(terminalToken) : "tokens";
+
+  const prepareQuote = useQuery({
+    queryKey: [
+      "bridge-prepare-quote",
+      sourceChainId,
+      project.projectId,
+      suckerPair?.local,
+      amountValue?.toString(),
+      terminalToken,
+      slippageBps?.toString(),
+    ],
+    enabled:
+      !!publicClient &&
+      !!suckerPair &&
+      amountValue !== undefined &&
+      !!terminalToken &&
+      slippageBps !== undefined,
+    queryFn: async () => {
+      if (!publicClient || !suckerPair || amountValue === undefined || !terminalToken) {
+        throw new Error("The bridge quote is incomplete.");
+      }
+      if (slippageBps === undefined) throw new Error("Enter a valid slippage tolerance.");
+
+      return quoteBridgePrepare(publicClient, {
+        chainId: sourceChainId,
+        projectId: BigInt(project.projectId),
+        sucker: suckerPair.local,
+        projectTokenCount: amountValue,
+        terminalToken,
+        slippageBps,
+      });
+    },
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+    retry: 1,
+  });
 
   const targetChains = useMemo(
     () =>
@@ -90,18 +159,23 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         throw new Error("Please connect your wallet");
       }
 
-      if (!amount || Number(amount) <= 0) {
+      if (!amount || amountValue === undefined) {
         throw new Error("Please enter an amount");
       }
 
-      if (Number(amount) > Number(maxAmount)) {
+      if (amountValue > balance.value) {
         throw new Error("Insufficient balance");
       }
 
-      const projectId = projects.find((p) => p.chainId === sourceChainId)?.projectId;
+      const projectId = project.projectId;
 
-      if (!publicClient || !projectId || !writeContractAsync || !project.token) {
+      if (!publicClient || !projectId || !writeContractAsync || !terminalToken) {
         throw new Error("Please try again");
+      }
+
+      const reviewedQuote = prepareQuote.data;
+      if (!reviewedQuote || Date.now() - prepareQuote.dataUpdatedAt > 30_000) {
+        throw new Error("The bridge quote is unavailable or stale. Wait for it to refresh.");
       }
 
       const tokenAddress = await getTokenAddress(sourceChainId, projectId);
@@ -110,27 +184,29 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         throw new Error("Couldn't determine token address. Please try again");
       }
 
-      const suckerPair = suckerPairs.find(
-        (sucker) => Number(sucker.remoteChainId) === targetChainId,
-      );
-
       if (!suckerPair) {
         throw new Error("Couldn't determine sucker pair. Please try again");
       }
 
-      const amountObj = new FixedInt(parseUnits(amount, tokenDecimals), tokenDecimals);
+      await ensureAllowance(tokenAddress, suckerPair.local, amountValue);
 
-      await ensureAllowance(tokenAddress, suckerPair.local, amountObj.value);
+      // An approval can leave the dialog open for minutes. Re-read immediately
+      // before the write and preserve the minimum the user actually reviewed.
+      const freshQuote = await prepareQuote.refetch();
+      if (freshQuote.error || !freshQuote.data) {
+        throw new Error("The live bridge quote could not be refreshed. Nothing was submitted.");
+      }
+      if (freshQuote.data.netReclaimAmount < reviewedQuote.minTokensReclaimed) {
+        throw new Error("The live bridge quote fell below your reviewed minimum. Review it again.");
+      }
 
-      const minTokens = 0n; // ToDo
-
-      const request = buildBridgePrepareTx({
+      const request = buildProtectedBridgePrepareTx({
         chainId: sourceChainId,
         sucker: suckerPair.local,
-        projectTokenCount: amountObj.value,
+        projectTokenCount: amountValue,
         beneficiary: address,
-        minTokensReclaimed: minTokens,
-        token: getAddress(project.token),
+        minTokensReclaimed: reviewedQuote.minTokensReclaimed,
+        token: terminalToken,
       });
       await writeContractAsync({ ...request, chainId: sourceChainId });
     } catch (error) {
@@ -145,17 +221,17 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     }
   }, [
     amount,
-    maxAmount,
-    projects,
+    amountValue,
+    balance.value,
+    prepareQuote,
     publicClient,
+    project.projectId,
     sourceChainId,
-    tokenDecimals,
     ensureAllowance,
-    targetChainId,
-    suckerPairs,
+    suckerPair,
     writeContractAsync,
     address,
-    project.token,
+    terminalToken,
   ]);
 
   return (
@@ -164,6 +240,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         if (!open) {
           reset();
           setAmount(undefined);
+          setSlippagePercent("1");
           setSourceChainId(sourceChains[0]);
           setTargetChainId(undefined);
           revalidateCacheTag("suckerTransactions", 8000).then(router.refresh);
@@ -308,6 +385,66 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 ))}
               </div>
             </div>
+            <div>
+              <Label htmlFor="bridge-slippage" className="text-zinc-900">
+                Max quote change
+              </Label>
+              <div className="relative">
+                <Input
+                  id="bridge-slippage"
+                  name="bridge-slippage"
+                  value={slippagePercent}
+                  onChange={(event) => setSlippagePercent(event.target.value.trim())}
+                  disabled={isDisabled}
+                  inputMode="decimal"
+                  min="0"
+                  max="5"
+                  step="0.1"
+                  type="number"
+                />
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 z-10">
+                  <span className="text-zinc-500 sm:text-md">%</span>
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-zinc-500">
+                The transaction reverts below this floor.
+              </p>
+            </div>
+            <div
+              className="col-span-2 rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm"
+              aria-live="polite"
+            >
+              {prepareQuote.isPending && prepareQuote.fetchStatus === "fetching" ? (
+                <span className="text-zinc-600">Reading the live source-chain cash-out quote…</span>
+              ) : prepareQuote.data ? (
+                <div className="grid gap-1 sm:grid-cols-2">
+                  <span className="text-zinc-600">Estimated backing received</span>
+                  <span className="font-medium sm:text-right">
+                    {formatUnits(
+                      prepareQuote.data.netReclaimAmount,
+                      prepareQuote.data.tokenDecimals,
+                    )}{" "}
+                    {backingTokenSymbol}
+                  </span>
+                  <span className="text-zinc-600">Protected minimum</span>
+                  <span className="font-medium sm:text-right">
+                    {formatUnits(
+                      prepareQuote.data.minTokensReclaimed,
+                      prepareQuote.data.tokenDecimals,
+                    )}{" "}
+                    {backingTokenSymbol}
+                  </span>
+                </div>
+              ) : (
+                <span className="text-amber-700">
+                  {prepareQuote.error instanceof Error
+                    ? prepareQuote.error.message
+                    : slippageBps === undefined
+                      ? "Enter a slippage tolerance from 0% to 5%."
+                      : "Choose both chains and enter an amount to review the protected minimum."}
+                </span>
+              )}
+            </div>
           </fieldset>
 
           <DialogFooter className="flex items-center sm:justify-between w-full gap-4">
@@ -321,7 +458,16 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
               {isSuccess &&
                 "Success! Close the dialog and check transactions in the table to complete."}
             </div>
-            <ButtonWithWallet targetChainId={sourceChainId} disabled={isDisabled}>
+            <ButtonWithWallet
+              targetChainId={sourceChainId}
+              disabled={
+                isDisabled ||
+                !prepareQuote.data ||
+                prepareQuote.isError ||
+                amountValue === undefined ||
+                amountValue > balance.value
+              }
+            >
               Move {tokenSymbol}
             </ButtonWithWallet>
           </DialogFooter>

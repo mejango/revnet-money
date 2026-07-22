@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const LEGACY_V6_PROJECT_PATH = /^\/v6:([^/:]+):([1-9]\d*)(\/.*)?$/;
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const match = request.nextUrl.pathname.match(LEGACY_V6_PROJECT_PATH);
   if (!match) return NextResponse.next();
 

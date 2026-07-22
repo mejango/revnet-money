@@ -1,43 +1,17 @@
 import { Address, isAddress, PublicClient } from "viem";
-import { mainnet, sepolia } from "viem/chains";
+import { mainnet } from "viem/chains";
 import { usePublicClient } from "wagmi";
 import { useQuery } from "wagmi/query";
 
-const ENS_IDEAS_BASE_URL = "https://api.ensideas.com";
-
 /**
- * Try to resolve an Eth address to an ENS name using ENS Ideas API.
- *
- * NOTE: only works on mainnet.
- */
-async function resolveAddressEnsIdeas(addressOrEnsName: string) {
-  const response: { name: string | null; address: string } = await fetch(
-    `${ENS_IDEAS_BASE_URL}/ens/resolve/${addressOrEnsName}`,
-  ).then((res) => res.json());
-
-  return response;
-}
-
-/**
- * Try to resolve an ENS name or address.
- *
- * If mainnet, first tries ENSIdeas API. Then, falls back to our API.
+ * Resolve an address through ENS on the configured mainnet transport. Keeping
+ * this onchain avoids leaking every displayed account to a third-party API.
  * @param address
  * @returns
  */
-async function resolveAddress(
-  address: Address,
-  { chainId, publicClient }: { chainId: number; publicClient: PublicClient },
-) {
-  if (chainId === sepolia.id) {
-    const data = await publicClient.getEnsName({ address });
-    return {
-      name: data,
-      address,
-    };
-  }
-
-  return resolveAddressEnsIdeas(address);
+async function resolveAddress(address: Address, { publicClient }: { publicClient: PublicClient }) {
+  const name = await publicClient.getEnsName({ address });
+  return { name, address };
 }
 
 /**
@@ -55,7 +29,7 @@ export function useEnsName(address: string | undefined, { enabled }: { enabled?:
         throw new Error("Public client not available");
       }
 
-      const data = await resolveAddress(address, { chainId, publicClient });
+      const data = await resolveAddress(address, { publicClient });
       return data.name;
     },
     enabled,

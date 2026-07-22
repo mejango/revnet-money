@@ -5,9 +5,11 @@ import { Project } from "@/generated/graphql";
 import { isUsd } from "@/lib/currency";
 import { formatTokenAmount, getTokenFractionDigits, isNativeToken } from "@/lib/token";
 import { DEFAULT_NATIVE_TOKEN_SYMBOL, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useEtherPrice } from "@bananapus/nana-sdk-react";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { formatUnits } from "viem";
+
+const PRICE_REFRESH_INTERVAL = 5 * 60_000;
 
 interface Props {
   projects: Array<
@@ -18,8 +20,6 @@ interface Props {
 export function TvlDatum(props: Props) {
   const { projects } = props;
 
-  const { data: ethPrice } = useEtherPrice();
-
   const token = useMemo(() => {
     return {
       address: projects[0].token as `0x${string}`,
@@ -28,6 +28,23 @@ export function TvlDatum(props: Props) {
       isNative: isNativeToken(projects[0].token),
     };
   }, [projects]);
+
+  // Non-ETH projects do not need this external price. Keeping the query
+  // disabled avoids unnecessary traffic, latency, and a needless failure
+  // dependency for USDC-denominated project headers.
+  const { data: ethPrice } = useQuery({
+    queryKey: ["revnet", "etherPrice"],
+    queryFn: async () => {
+      const response = await fetch("https://juicebox.money/api/juicebox/prices/ethusd");
+      if (!response.ok) throw new Error(`ETH price request failed (${response.status})`);
+      const data = (await response.json()) as { price: number | string };
+      const price = Number(data.price);
+      if (!Number.isFinite(price) || price <= 0) throw new Error("ETH price response is invalid");
+      return price;
+    },
+    enabled: token.symbol === "ETH",
+    staleTime: PRICE_REFRESH_INTERVAL,
+  });
 
   const total = useMemo(() => {
     const value = projects.reduce((acc, project) => acc + BigInt(project.balance), 0n);

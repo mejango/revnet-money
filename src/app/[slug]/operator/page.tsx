@@ -6,11 +6,11 @@ import { getProjectOperator } from "../getProjectOperator";
 import { getSuckerGroup } from "../getSuckerGroup";
 
 interface Props {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export default async function OperatorPage(props: Props) {
-  const { slug } = props.params;
+  const { slug } = await props.params;
   const { chainId, projectId } = parseSlug(slug);
 
   const project = await getProject(projectId, chainId);

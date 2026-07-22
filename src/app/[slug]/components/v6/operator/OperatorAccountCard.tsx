@@ -213,7 +213,7 @@ export function OperatorAccountCard({
                         chain={JB_CHAINS[group.rows[0].chainId]?.chain}
                       />
                     ) : (
-                      <span className="text-zinc-400">Unknown</span>
+                      <span className="text-zinc-500">Unknown</span>
                     )}
                   </dd>
                   <dt className="text-zinc-500">Type</dt>

@@ -56,6 +56,7 @@ export function ReallocateDialog({
     displayYears,
     displayMonths,
     newLoanBorrowableAmount,
+    minimumBorrowAmountPreview,
     collateralHeadroom,
     collateralCountToTransfer,
     handleOpenChange,
@@ -179,6 +180,13 @@ export function ReallocateDialog({
                 {newLoanBorrowableAmount
                   ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)
                   : "0.000000"}{" "}
+                {selectedChainTokenSymbol}
+              </div>
+              <div className="text-sm text-zinc-600 mb-2">
+                Protected minimum (1% tolerance):{" "}
+                {minimumBorrowAmountPreview !== undefined
+                  ? Number(formatUnits(minimumBorrowAmountPreview, baseTokenDecimals)).toFixed(8)
+                  : "Unavailable"}{" "}
                 {selectedChainTokenSymbol}
               </div>
               <div className="text-sm text-zinc-600 mb-2">
@@ -388,7 +396,8 @@ export function ReallocateDialog({
                 disabled={
                   !collateralAmount ||
                   Number(collateralAmount) > Number(borrowableAmountFormatted) ||
-                  Number(collateralAmount) < 0
+                  Number(collateralAmount) < 0 ||
+                  minimumBorrowAmountPreview === undefined
                 }
               >
                 Reallocate Loan

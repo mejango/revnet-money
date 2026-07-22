@@ -1,4 +1,5 @@
 import { ipfsGatewayUrl } from "@/lib/ipfs";
+import { isIpfsCid } from "@/lib/ipfs-cid";
 import Image from "next/image";
 import { twMerge } from "tailwind-merge";
 import { useMutation } from "wagmi/query";
@@ -22,8 +23,9 @@ export const pinFile = async (file: File | Blob | string, options?: { signal?: A
     throw new Error(`HTTP error! status: ${res.status}`);
   }
 
-  const data: InfuraPinResponse = await res.json();
-  return data;
+  const data = (await res.json()) as Partial<InfuraPinResponse>;
+  if (!isIpfsCid(data.Hash)) throw new Error("IPFS provider returned an invalid CID");
+  return { Hash: data.Hash };
 };
 
 export function IpfsImageUploader({

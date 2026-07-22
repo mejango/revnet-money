@@ -356,7 +356,7 @@ function ActionRow({
             <div className="mt-2 flex items-start gap-2 bg-melon-100 px-2.5 py-1.5">
               <div className="min-w-0">
                 {!isAvailable ? (
-                  <p className="text-xs text-zinc-400">No Uniswap v4 registry on any chain</p>
+                  <p className="text-xs text-zinc-500">No Uniswap v4 registry on any chain</p>
                 ) : kind === "pool" ? (
                   <p className="text-xs text-zinc-600">{first.poolSummary}</p>
                 ) : value ? (
@@ -367,9 +367,9 @@ function ActionRow({
                     className="text-xs font-mono"
                   />
                 ) : (
-                  <p className="text-xs text-zinc-400">Not set</p>
+                  <p className="text-xs text-zinc-500">Not set</p>
                 )}
-                <p className="text-xs text-zinc-400 mt-0.5">Same on all chains</p>
+                <p className="text-xs text-zinc-500 mt-0.5">Same on all chains</p>
               </div>
             </div>
           );
@@ -388,7 +388,7 @@ function ActionRow({
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-zinc-700">{chainName(state.chainId)}</p>
                     {!isAvailable ? (
-                      <p className="text-xs text-zinc-400">No Uniswap v4 registry here</p>
+                      <p className="text-xs text-zinc-500">No Uniswap v4 registry here</p>
                     ) : kind === "pool" ? (
                       <p className="text-xs text-zinc-600">{state.poolSummary}</p>
                     ) : value ? (
@@ -399,7 +399,7 @@ function ActionRow({
                         className="text-xs font-mono"
                       />
                     ) : (
-                      <p className="text-xs text-zinc-400">Not set</p>
+                      <p className="text-xs text-zinc-500">Not set</p>
                     )}
                   </div>
                 </div>

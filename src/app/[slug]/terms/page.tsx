@@ -5,11 +5,12 @@ import { getProject } from "../getProject";
 import { getRulesets } from "./getRulesets";
 
 interface Props {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export default async function Terms({ params }: Props) {
-  const { chainId, projectId } = parseSlug(params.slug);
+  const { slug } = await params;
+  const { chainId, projectId } = parseSlug(slug);
 
   const project = await getProject(projectId, chainId);
   if (!project) notFound();

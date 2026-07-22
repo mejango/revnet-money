@@ -100,7 +100,13 @@ export default function Page() {
             </li>
             <li>
               Support the REV network{" "}
-              <Link href="/eth:3" target="_blank" rel="noopener norefererr" className="underline">
+              <Link
+                href="/eth:3"
+                target="_blank"
+                rel="noopener norefererr"
+                prefetch={false}
+                className="underline"
+              >
                 here
               </Link>
               , we run as a revnet ourselves.

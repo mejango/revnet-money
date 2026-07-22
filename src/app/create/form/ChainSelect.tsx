@@ -105,7 +105,10 @@ export function ChainSelect({
               defaultValue="production"
               disabled={disabled}
             >
-              <SelectTrigger className="col-span-1 border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus:border-melon-600 focus:ring-0">
+              <SelectTrigger
+                aria-label="Deployment environment"
+                className="col-span-1 border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

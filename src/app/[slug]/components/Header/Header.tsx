@@ -60,6 +60,7 @@ export function Header(props: Props) {
 
   const { data: suckers } = useSuckers();
   const { name: projectName, logoUri } = metadata?.data ?? {};
+  const logoUrl = logoUri ? ipfsUriToGatewayUrl(logoUri) : undefined;
 
   // const totalSupply = useTotalOutstandingTokens();
   // const totalSupplyFormatted =
@@ -73,11 +74,11 @@ export function Header(props: Props) {
   return (
     <header>
       <div className="flex flex-col sm:flex-row sm:items-center items-start gap-4 sm:mb-6 mb-4">
-        {logoUri ? (
+        {logoUrl ? (
           <>
             <div className="sm:hidden">
               <Image
-                src={ipfsUriToGatewayUrl(logoUri)}
+                src={logoUrl}
                 className="overflow-hidden block border border-zinc-200"
                 alt={`${projectName} logo`}
                 width={120}
@@ -86,7 +87,7 @@ export function Header(props: Props) {
             </div>
             <div className="sm:block hidden">
               <Image
-                src={ipfsUriToGatewayUrl(logoUri)}
+                src={logoUrl}
                 className="overflow-hidden block border border-zinc-200"
                 alt={`${projectName} logo`}
                 width={144}

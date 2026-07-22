@@ -2,18 +2,18 @@ import { parseSlug } from "@/lib/slug";
 import { NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { TokenPriceChart } from "./components/TokenPrice/TokenPriceChart";
+import { LazyTokenPriceChart } from "./components/TokenPrice/LazyTokenPriceChart";
 import { V6OverviewTab } from "./components/v6/overview/V6OverviewTab";
 import { getProject } from "./getProject";
 import { getSuckerGroup } from "./getSuckerGroup";
 import { getRulesets } from "./terms/getRulesets";
 
 interface Props {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export default async function AboutPage(props: Props) {
-  const { slug } = props.params;
+  const { slug } = await props.params;
   const { chainId, projectId } = parseSlug(slug);
 
   const project = await getProject(projectId, chainId);
@@ -32,7 +32,7 @@ export default async function AboutPage(props: Props) {
     <div className="flex flex-col gap-6">
       {hasStarted && (
         <Suspense>
-          <TokenPriceChart
+          <LazyTokenPriceChart
             projectId={projectId.toString()}
             chainId={chainId}
             suckerGroupId={suckerGroup.id}

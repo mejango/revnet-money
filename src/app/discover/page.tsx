@@ -11,9 +11,10 @@ type RevnetProject = {
   tags?: string[];
   infoUri?: string;
 };
-import { Button } from "@/components/ui/button";
 import { DiscoverGridSkeleton } from "@/components/loading/LoadingSkeletons";
-import { sdk } from "@farcaster/frame-sdk";
+import { Button } from "@/components/ui/button";
+import { isIpfsUri } from "@/lib/ipfs-cid";
+import { sdk } from "@farcaster/miniapp-sdk";
 import { useQuery } from "@tanstack/react-query";
 import { request } from "graphql-request";
 import Image from "next/image";
@@ -51,15 +52,18 @@ async function fetchDiscoverProjects(): Promise<RevnetProject[]> {
   const data: { projects: RevnetProject[] } = await request(subgraphUrl, query);
   const projectsWithMetadata = await Promise.all(
     (data.projects || []).map(async (project) => {
-      if (!project.metadataUri?.startsWith("ipfs://")) return project;
+      if (!isIpfsUri(project.metadataUri)) return project;
 
       const ipfsHash = project.metadataUri.replace("ipfs://", "");
       try {
         // Project metadata is content-addressed, so the browser can safely
         // reuse it across revisits instead of refetching every card.
-        const metadataRes = await fetch(`https://ipfs.io/ipfs/${ipfsHash}`, {
-          cache: "force-cache",
-        });
+        const metadataRes = await fetch(
+          `https://${process.env.NEXT_PUBLIC_INFURA_IPFS_HOSTNAME ?? "ipfs.io"}/ipfs/${ipfsHash}`,
+          {
+            cache: "force-cache",
+          },
+        );
         if (!metadataRes.ok) return project;
         const metadata = await metadataRes.json();
         const rawDescription = metadata.description || "";
@@ -67,7 +71,7 @@ async function fetchDiscoverProjects(): Promise<RevnetProject[]> {
           ...project,
           logoUri: metadata.logoUri?.startsWith("ipfs://")
             ? `https://${process.env.NEXT_PUBLIC_INFURA_IPFS_HOSTNAME}/ipfs/${metadata.logoUri.replace("ipfs://", "")}`
-            : metadata.logoUri,
+            : undefined,
           name: metadata.name,
           description: rawDescription.replace(/<[^>]*>?/gm, ""),
           projectTagline: metadata.projectTagline,
@@ -163,34 +167,34 @@ export default function Page() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             {projects.map((p) => (
-            <Link
-              key={p.projectId}
-              href={`/eth:${p.projectId}`}
-              className="border border-zinc-200 rounded-lg p-4 shadow hover:shadow-md transition block"
-            >
-              <MiniHeaderCard
-                logoUri={p.logoUri}
-                name={p.name}
-                infoUri={p.infoUri}
-                projectId={p.projectId}
-                handle={p.handle}
-              />
-              <p className="text-zinc-600 text-sm line-clamp-2">
-                {p.projectTagline || p.description || "No description available."}
-              </p>
-              {Array.isArray(p.tags) && p.tags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {p.tags?.slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="text-xs bg-zinc-100 px-2 py-0.5 rounded-full text-zinc-600"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </Link>
+              <Link
+                key={p.projectId}
+                href={`/eth:${p.projectId}`}
+                className="border border-zinc-200 rounded-lg p-4 shadow hover:shadow-md transition block"
+              >
+                <MiniHeaderCard
+                  logoUri={p.logoUri}
+                  name={p.name}
+                  infoUri={p.infoUri}
+                  projectId={p.projectId}
+                  handle={p.handle}
+                />
+                <p className="text-zinc-600 text-sm line-clamp-2">
+                  {p.projectTagline || p.description || "No description available."}
+                </p>
+                {Array.isArray(p.tags) && p.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {p.tags?.slice(0, 3).map((tag) => (
+                      <span
+                        key={tag}
+                        className="text-xs bg-zinc-100 px-2 py-0.5 rounded-full text-zinc-600"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </Link>
             ))}
           </div>
         )}
