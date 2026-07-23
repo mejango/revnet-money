@@ -22,7 +22,7 @@ updates:
     # automated manifest-only updates.
     ignore:
       - dependency-name: prettier
-        versions: [">=3.9.6 <4"]
+        versions: [">=3.7.0 <4"]
       - dependency-name: prettier-plugin-organize-imports
         versions: [">=4.3.0 <5"]
       - dependency-name: prettier-plugin-tailwindcss
@@ -30,13 +30,15 @@ updates:
       - dependency-name: typescript
         versions: [">=5.9.0 <6"]
       - dependency-name: "@tanstack/react-query"
-        versions: [">=5.101.4 <6"]
+        versions: [">=5.89.0 <6"]
       - dependency-name: recharts
-        versions: [">=3.9.0 <4"]
+        versions: [">=3.6.0 <4"]
       - dependency-name: wagmi
         versions: [">=2.18.0 <3"]
       - dependency-name: "@rolldown/binding-linux-x64-gnu"
         versions: [">=1.2.0 <2"]
+      # npm alias supplied by @wagmi/connectors, not a registry name.
+      - dependency-name: cbw-sdk
     labels: [dependencies]
     commit-message:
       prefix: "chore(deps)"
