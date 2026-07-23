@@ -27,11 +27,9 @@ import {
   getAddress,
   multicall3Abi,
   toFunctionSelector,
-  toHex,
   zeroAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
-import { packetToBytes } from "viem/ens";
 import browserProject from "../test/fixtures/browser-project.json" with { type: "json" };
 
 const port = browserProject.fixturePort;
@@ -50,23 +48,22 @@ const fixtureParticipant = getAddress("0x222222222222222222222222222222222222222
 const fixtureOwners = [fixtureOwner, fixtureParticipant];
 const ensReverseAbi = [
   {
-    name: "reverse",
+    name: "reverseWithGateways",
     type: "function",
     stateMutability: "view",
-    inputs: [{ type: "bytes", name: "reverseName" }],
+    inputs: [
+      { type: "bytes", name: "reverseName" },
+      { type: "uint256", name: "coinType" },
+      { type: "string[]", name: "gateways" },
+    ],
     outputs: [
       { type: "string", name: "resolvedName" },
-      { type: "address", name: "resolvedAddress" },
-      { type: "address", name: "reverseResolver" },
       { type: "address", name: "resolver" },
+      { type: "address", name: "reverseResolver" },
     ],
   },
 ];
-const allowedEnsReverseNames = new Set(
-  fixtureOwners.map((address) =>
-    toHex(packetToBytes(`${address.toLowerCase().slice(2)}.addr.reverse`)).toLowerCase(),
-  ),
-);
+const allowedEnsReverseAddresses = new Set(fixtureOwners.map((address) => address.toLowerCase()));
 
 function base32(bytes) {
   const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
@@ -885,16 +882,21 @@ for (const [functionName, result] of [
 }
 registerCall({
   abi: ensReverseAbi,
-  functionName: "reverse",
+  functionName: "reverseWithGateways",
   address: addresses.ensUniversalResolver,
-  result: ([reverseName]) => {
+  result: ([reverseName, coinType, gateways]) => {
     requireFixture(
-      allowedEnsReverseNames.has(reverseName.toLowerCase()),
+      allowedEnsReverseAddresses.has(reverseName.toLowerCase()),
       `ENS reverseName=${reverseName}`,
     );
-    // A mismatched resolved address is the universal resolver's canonical
-    // "no verified reverse record" result as interpreted by viem.
-    return ["", zeroAddress, zeroAddress, zeroAddress];
+    requireFixture(coinType === 60n, `ENS coinType=${coinType}`);
+    requireFixture(
+      gateways.length === 1 && gateways[0] === "x-batch-gateway:true",
+      `ENS gateways=${gateways.join(",")}`,
+    );
+    // An empty name is the universal resolver's canonical "no verified
+    // reverse record" result as interpreted by viem.
+    return ["", zeroAddress, zeroAddress];
   },
 });
 

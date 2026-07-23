@@ -133,9 +133,9 @@ curl --fail --output /dev/null \
   'http://127.0.0.1:3000/_next/image?url=%2Fassets%2Fimg%2Ficon-64x64.png&w=64&q=75'
 ```
 
-The base is the official Node 22.16.0 Bookworm slim image pinned to Docker Hub
+The base is the official Node 22.23.1 Bookworm slim image pinned to Docker Hub
 index digest
-`sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34`.
+`sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3`.
 Dependabot proposes digest/version updates; never replace it with a mutable-only
 tag.
 

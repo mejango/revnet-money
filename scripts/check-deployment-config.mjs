@@ -19,8 +19,8 @@ const packageManifest = JSON.parse(await readFile("package.json", "utf8"));
 if (existsSync("yarn.lock")) {
   throw new Error("Only package-lock.json is allowed; remove the stale Yarn Classic lockfile");
 }
-if (!existsSync("package-lock.json") || packageManifest.packageManager !== "npm@10.9.2") {
-  throw new Error("The deployment must use the npm 10.9.2 package lock");
+if (!existsSync("package-lock.json") || packageManifest.packageManager !== "npm@10.9.8") {
+  throw new Error("The deployment must use the npm 10.9.8 package lock");
 }
 if (
   !dockerfile.includes("COPY package.json package-lock.json ./") ||
