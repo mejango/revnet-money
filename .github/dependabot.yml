@@ -7,36 +7,13 @@ updates:
       day: tuesday
       time: "09:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 1
-    cooldown:
-      default-days: 7
-      semver-minor-days: 14
-      semver-patch-days: 7
-    versioning-strategy: lockfile-only
-    allow:
-      - dependency-type: all
-        update-types:
-          - version-update:semver-minor
-          - version-update:semver-patch
-    # These lines need coordinated source or formatting migrations rather than
-    # automated manifest-only updates.
-    ignore:
-      - dependency-name: prettier
-        versions: [">=3.7.0 <4"]
-      - dependency-name: prettier-plugin-organize-imports
-        versions: [">=4.3.0 <5"]
-      - dependency-name: prettier-plugin-tailwindcss
-        versions: [">=0.8.0 <1"]
-      - dependency-name: "@rolldown/binding-linux-x64-gnu"
-        versions: [">=1.2.0 <2"]
+    # Routine version updates are reviewed deliberately. A zero limit disables
+    # version-update PRs without disabling Dependabot security updates.
+    open-pull-requests-limit: 0
     labels: [dependencies]
     commit-message:
       prefix: "chore(deps)"
     groups:
-      routine:
-        applies-to: version-updates
-        patterns: ["*"]
-        update-types: [minor, patch]
       security:
         applies-to: security-updates
         patterns: ["*"]
@@ -48,22 +25,11 @@ updates:
       day: tuesday
       time: "09:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 1
-    cooldown:
-      default-days: 7
-    allow:
-      - dependency-type: all
-        update-types:
-          - version-update:semver-minor
-          - version-update:semver-patch
+    open-pull-requests-limit: 0
     labels: [dependencies, ci]
     commit-message:
       prefix: "chore(actions)"
     groups:
-      routine:
-        applies-to: version-updates
-        patterns: ["*"]
-        update-types: [minor, patch]
       security:
         applies-to: security-updates
         patterns: ["*"]
@@ -75,22 +41,11 @@ updates:
       day: tuesday
       time: "09:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 1
-    cooldown:
-      default-days: 7
-    allow:
-      - dependency-type: all
-        update-types:
-          - version-update:semver-minor
-          - version-update:semver-patch
+    open-pull-requests-limit: 0
     labels: [dependencies, deployment]
     commit-message:
       prefix: "chore(container)"
     groups:
-      routine:
-        applies-to: version-updates
-        patterns: ["*"]
-        update-types: [minor, patch]
       security:
         applies-to: security-updates
         patterns: ["*"]
