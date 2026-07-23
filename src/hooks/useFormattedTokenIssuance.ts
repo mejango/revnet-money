@@ -1,8 +1,8 @@
+import { quotePayerTokensForOneUnit } from "@/lib/fixedPoint";
 import { useJBRulesetContext, useJBTokenContext } from "@/lib/nana/project";
 import { formatTokenSymbol } from "@/lib/utils";
-import { ReservedPercent, RulesetWeight, getTokenAToBQuote } from "@bananapus/nana-sdk-core";
-import { FixedInt } from "fpnum";
-import { formatUnits, parseUnits } from "viem";
+import { ReservedPercent, RulesetWeight } from "@bananapus/nana-sdk-core";
+import { formatUnits } from "viem";
 import { useProjectBaseToken } from "./useProjectBaseToken";
 import { useTokenA } from "./useTokenA";
 
@@ -28,14 +28,14 @@ export function useFormattedTokenIssuance(params?: TokenIssuanceParams) {
   }
   const weight = params?.weight || ruleset.data.weight;
   const reservedPercent = params?.reservedPercent || rulesetMetadata.data.reservedPercent;
-  const quote = getTokenAToBQuote(
-    new FixedInt(parseUnits("1", tokenA?.decimals || 18), tokenA?.decimals || 18),
-    {
+  const amount = formatUnits(
+    quotePayerTokensForOneUnit({
+      decimals: tokenA?.decimals || 18,
       weight,
       reservedPercent,
-    },
+    }),
+    18,
   );
-  const amount = formatUnits(quote.payerTokens, 18);
   const formattedAmount = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 3,
   }).format(Number(amount));

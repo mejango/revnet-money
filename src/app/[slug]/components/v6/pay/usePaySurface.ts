@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  payTokenCurrencyId,
-  routerPayRouteWorks,
-  V6PayTokenOption,
-} from "@/lib/v6/pay";
+import { payTokenCurrencyId, routerPayRouteWorks, V6PayTokenOption } from "@/lib/v6/pay";
 import {
   JB_CHAINS,
   JBChainId,
@@ -82,8 +78,7 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
 
       const terminals = (terminalsRaw ?? []).filter(Boolean) as Address[];
       const hasRouter =
-        !!routerRegistry &&
-        terminals.some((t) => t.toLowerCase() === routerRegistry.toLowerCase());
+        !!routerRegistry && terminals.some((t) => t.toLowerCase() === routerRegistry.toLowerCase());
 
       // Router candidates: ETH/USDC that aren't already accepted directly,
       // each gated by an actual previewPayFor route probe (cached).
@@ -112,7 +107,14 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
         }
         const gated = await Promise.all(
           candidates.map(async (c) =>
-            (await routerPayRouteWorks(client, chainId, projectId, routerRegistry, c.token, c.decimals))
+            (await routerPayRouteWorks(
+              client,
+              chainId,
+              projectId,
+              routerRegistry,
+              c.token,
+              c.decimals,
+            ))
               ? c
               : null,
           ),

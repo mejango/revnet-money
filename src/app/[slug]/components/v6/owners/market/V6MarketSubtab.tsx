@@ -2,11 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ProjectItem } from "../../shared";
-import {
-  chainProjectsKey,
-  projectTokenSymbol,
-  toChainProjects,
-} from "../settlement/lib";
+import { chainProjectsKey, projectTokenSymbol, toChainProjects } from "../settlement/lib";
 import { AmmCard } from "./AmmCard";
 import { SplitHookCard } from "./SplitHookCard";
 

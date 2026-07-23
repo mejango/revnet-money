@@ -8,10 +8,10 @@ import {
   type ChartSeries,
 } from "@/components/ui/chart";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
+import { formatShortDate, formatYear } from "@/lib/date";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { formatDecimals } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
-import { format } from "date-fns";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import type { Ruleset } from "../../getRulesets";
@@ -99,7 +99,7 @@ export function IssuancePriceChart({ rulesets }: Props) {
       className="aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
       margin={{ left: 88, right: 20, top: 24, bottom: 38 }}
       xDomain={[firstVisualX, lastVisualX]}
-      formatXTick={(value) => format(new Date(toReal(value) * 1000), "yyyy")}
+      formatXTick={(value) => formatYear(new Date(toReal(value) * 1000))}
       formatYTick={(value) => formatDecimals(value, 6)}
       bands={bands}
       referenceLines={referenceLines}
@@ -111,7 +111,7 @@ export function IssuancePriceChart({ rulesets }: Props) {
         return (
           <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-3 text-sm whitespace-nowrap">
             <div className="font-medium mb-1 text-zinc-300">
-              {format(new Date(datum.timestamp * 1000), "MMM d, yyyy")}
+              {formatShortDate(new Date(datum.timestamp * 1000))}
             </div>
             {stage && (
               <div className="text-xs text-zinc-500 mb-2 uppercase tracking-wider font-semibold">

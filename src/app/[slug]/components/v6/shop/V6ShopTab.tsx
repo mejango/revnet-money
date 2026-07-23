@@ -2,7 +2,7 @@
 
 import { ShopInventorySkeleton } from "@/components/loading/LoadingSkeletons";
 import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
-import clsx from "clsx";
+import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { ProjectItem } from "../shared";
 import { CustomersSection } from "./CustomersSection";
@@ -67,7 +67,7 @@ export function V6ShopTab({ projects }: { projects: ProjectItem[] }) {
                 current[tab.key] ? current : { ...current, [tab.key]: true },
               );
             }}
-            className={clsx(
+            className={cn(
               "-mb-px pb-2 text-sm font-medium tracking-wide transition-colors",
               subtab === tab.key
                 ? "border-b-2 border-teal-500 text-zinc-900"

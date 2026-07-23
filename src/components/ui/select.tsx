@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, ChevronDown, ChevronUp } from "@/components/ui/icons";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
@@ -239,7 +239,7 @@ const SelectTrigger = React.forwardRef<
     const context = useSelect("SelectTrigger");
     const ref = composeRefs(forwardedRef, context.triggerRef);
     const searchRef = React.useRef("");
-    const searchTimerRef = React.useRef<ReturnType<typeof setTimeout>>();
+    const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     React.useEffect(
       () => () => {

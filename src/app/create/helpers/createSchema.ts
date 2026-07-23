@@ -62,12 +62,10 @@ export const createSchema = schema<RevnetFormData>((input) => {
     issue(issues, ["chainIds"], "At least one chain must be selected");
   } else {
     input.chainIds.forEach((chainId, index) => {
-      if (
-        !(
-          (typeof chainId === "string" && chainId.length > 0) ||
-          (typeof chainId === "number" && Number.isFinite(chainId))
-        )
-      ) {
+      if (!(
+        (typeof chainId === "string" && chainId.length > 0) ||
+        (typeof chainId === "number" && Number.isFinite(chainId))
+      )) {
         issue(issues, ["chainIds", index], "Invalid chain");
       } else {
         selectedChainIds.push(chainId);
@@ -84,12 +82,10 @@ export const createSchema = schema<RevnetFormData>((input) => {
         return;
       }
       const chainId = operator.chainId;
-      if (
-        !(
-          (typeof chainId === "string" && chainId.length > 0) ||
-          (typeof chainId === "number" && Number.isFinite(chainId))
-        )
-      ) {
+      if (!(
+        (typeof chainId === "string" && chainId.length > 0) ||
+        (typeof chainId === "number" && Number.isFinite(chainId))
+      )) {
         issue(issues, ["operator", index, "chainId"], "Invalid chain");
       }
       const address = String(operator.address ?? "");

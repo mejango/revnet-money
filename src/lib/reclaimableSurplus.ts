@@ -1,4 +1,5 @@
 import type { Project } from "@/lib/bendystraw/types";
+import { ratioOfScaledIntegers } from "@/lib/fixedPoint";
 import {
   getProjectTerminalStore,
   JB_TOKEN_DECIMALS,
@@ -6,7 +7,6 @@ import {
   jbTerminalStoreAbi,
   NATIVE_TOKEN_DECIMALS,
 } from "@bananapus/nana-sdk-core";
-import { FixedInt } from "fpnum";
 import { getContract, parseUnits } from "viem";
 import { toBaseCurrencyId } from "./currency";
 import { applyNanaFee, applyRevFee } from "./feeHelpers";
@@ -80,8 +80,10 @@ export function getUnitValue(
 ) {
   if (!surplus || supply.value === "0") return 0;
 
-  const _surplus = new FixedInt(parseUnits(surplus.value, surplus.decimals), surplus.decimals);
-  const _supply = new FixedInt(parseUnits(supply.value, supply.decimals), supply.decimals);
-
-  return _surplus.toFloat() / _supply.toFloat();
+  const scaledSurplus = parseUnits(surplus.value, surplus.decimals);
+  const scaledSupply = parseUnits(supply.value, supply.decimals);
+  return ratioOfScaledIntegers(
+    scaledSurplus * 10n ** BigInt(supply.decimals),
+    scaledSupply * 10n ** BigInt(surplus.decimals),
+  );
 }

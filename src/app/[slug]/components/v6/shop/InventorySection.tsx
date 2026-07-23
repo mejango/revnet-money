@@ -2,10 +2,10 @@
 
 import EtherscanLink from "@/components/EtherscanLink";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import { cn } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { effectiveTierPrice, isRevnetOperator } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import clsx from "clsx";
 import { useMemo, useState } from "react";
 import { PublicClient } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
@@ -18,8 +18,8 @@ import {
   formatShopAmount,
   ShopInventory,
   ShopTier,
-  TierMedia,
   tierDisplayName,
+  TierMedia,
   useTierCart,
 } from "./shopLib";
 import { TierDetailModal } from "./TierDetailModal";
@@ -69,8 +69,7 @@ export function InventorySection({
         operator: address!,
       }),
   });
-  const canAddItems =
-    hasPermission("ADJUST_721_TIERS") || hasPermission("ROOT") || !!isOperator;
+  const canAddItems = hasPermission("ADJUST_721_TIERS") || hasPermission("ROOT") || !!isOperator;
 
   const categories = useMemo(() => {
     const ids = [...new Set(shop.tiers.map((tier) => tier.category))].sort((a, b) => a - b);
@@ -89,7 +88,7 @@ export function InventorySection({
   );
 
   const detailTier =
-    detailTierId == null ? null : shop.tiers.find((tier) => tier.id === detailTierId) ?? null;
+    detailTierId == null ? null : (shop.tiers.find((tier) => tier.id === detailTierId) ?? null);
 
   return (
     <div className="border border-zinc-200 bg-white p-4">
@@ -135,7 +134,7 @@ export function InventorySection({
                   type="button"
                   onClick={() => setSelectedCategory(category.id)}
                   aria-pressed={selectedCategory === category.id}
-                  className={clsx(
+                  className={cn(
                     "border px-3 py-1.5 text-xs font-medium transition-colors",
                     selectedCategory === category.id
                       ? "border-teal-500 bg-teal-50 text-teal-700"
@@ -193,7 +192,6 @@ export function InventorySection({
         <EtherscanLink value={shop.hook} truncateTo={6} className="font-mono text-zinc-600" />
       </div>
 
-
       {detailTier ? (
         <TierDetailModal
           shop={shop}
@@ -242,7 +240,7 @@ function TierCard({
   return (
     <div
       data-tier-id={tier.id}
-      className={clsx(
+      className={cn(
         "overflow-hidden border bg-white transition",
         quantity > 0 ? "border-teal-500" : "border-zinc-200",
         soldOut && "opacity-60",

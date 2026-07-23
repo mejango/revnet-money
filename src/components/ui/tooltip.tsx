@@ -108,8 +108,8 @@ function Tooltip({
   const open = controlledOpen ?? internalOpen;
   const controlled = controlledOpen !== undefined;
   const triggerRef = React.useRef<HTMLElement>(null);
-  const openTimer = React.useRef<ReturnType<typeof setTimeout>>();
-  const closeTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  const openTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const closeTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const id = React.useId().replace(/:/g, "");
 
   const setOpen = React.useCallback(

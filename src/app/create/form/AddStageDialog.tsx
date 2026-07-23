@@ -7,12 +7,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Trash2 as TrashIcon } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
 import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
-import { Trash2 as TrashIcon } from "lucide-react";
 import { useState } from "react";
 import { defaultStageData } from "../constants";
 import { getResolvedIssuance } from "../helpers/calculatePickupIssuance";
@@ -82,8 +82,8 @@ export function AddStageDialog({
   const [enableCut, setEnableCut] = useState(
     Boolean(
       initialValues &&
-        (Number(initialValues.priceCeilingIncreasePercentage) !== 0 ||
-          Number(initialValues.priceCeilingIncreaseFrequency) !== 0),
+      (Number(initialValues.priceCeilingIncreasePercentage) !== 0 ||
+        Number(initialValues.priceCeilingIncreaseFrequency) !== 0),
     ),
   );
   const [uiCutPercentage, setUiCutPercentage] = useState(

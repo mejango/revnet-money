@@ -35,12 +35,10 @@ export function ProjectProviders(
         Number.isSafeInteger(project.projectId) &&
         project.projectId >= 0,
     )
-    .map(
-      (project): SuckerPair => ({
-        peerChainId: project.chainId,
-        projectId: BigInt(project.projectId),
-      }),
-    );
+    .map((project): SuckerPair => ({
+      peerChainId: project.chainId,
+      projectId: BigInt(project.projectId),
+    }));
 
   return (
     <ProjectProvider

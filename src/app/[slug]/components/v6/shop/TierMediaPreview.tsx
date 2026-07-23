@@ -11,7 +11,8 @@ function mediaKind(media: TierMedia | undefined, url: string): MediaKind {
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";
   const path = (url.split(/[?#]/, 1)[0] ?? "").toLowerCase();
-  if (/\.(png|jpe?g|gif|webp|avif|svg)$/.test(path) || url.startsWith("data:image/")) return "image";
+  if (/\.(png|jpe?g|gif|webp|avif|svg)$/.test(path) || url.startsWith("data:image/"))
+    return "image";
   if (/\.(mp4|webm|mov|m4v|ogv)$/.test(path)) return "video";
   if (/\.(mp3|wav|ogg|m4a|aac|flac)$/.test(path)) return "audio";
   // An extension-less URL from the `image` field is an image — IPFS gateway

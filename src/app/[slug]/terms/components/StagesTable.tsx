@@ -12,21 +12,20 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAutoIssuances } from "@/hooks/useAutoIssuances";
 import { useTokenA } from "@/hooks/useTokenA";
+import { differenceInWholeDays, formatShortDate } from "@/lib/date";
+import { quotePayerTokensForOneUnit } from "@/lib/fixedPoint";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
   CashOutTaxRate,
-  getTokenAToBQuote,
   jbControllerAbi,
   JBCoreContracts,
   jbSplitsAbi,
   ReservedPercent,
   RulesetWeight,
 } from "@bananapus/nana-sdk-core";
-import { differenceInDays, formatDate } from "date-fns";
-import { FixedInt } from "fpnum";
-import { formatUnits, parseUnits } from "viem";
+import { formatUnits } from "viem";
 import { useReadContracts } from "wagmi";
 import type { Ruleset } from "../getRulesets";
 
@@ -80,14 +79,12 @@ export function StagesTable({ rulesets }: Props) {
     const startDate = new Date(ruleset.start * 1000);
     const endDate = next ? new Date(next.start * 1000) : null;
 
-    const quote = getTokenAToBQuote(
-      new FixedInt(parseUnits("1", tokenA?.decimals || 18), tokenA?.decimals || 18),
-      {
-        weight: new RulesetWeight(BigInt(ruleset.weight)),
-        reservedPercent: new ReservedPercent(0),
-      },
-    );
-    const amount = Number(formatUnits(quote.payerTokens, 18));
+    const payerTokens = quotePayerTokensForOneUnit({
+      decimals: tokenA?.decimals || 18,
+      weight: new RulesetWeight(BigInt(ruleset.weight)),
+      reservedPercent: new ReservedPercent(0),
+    });
+    const amount = Number(formatUnits(payerTokens, 18));
     const issuanceRate = `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(amount)} ${formatTokenSymbol(token)} / ${tokenA.symbol}`;
 
     const meta = metadataResults.data?.[idx];
@@ -116,7 +113,7 @@ export function StagesTable({ rulesets }: Props) {
       stageNumber: idx + 1,
       startDate,
       endDate,
-      durationDays: endDate ? differenceInDays(endDate, startDate) : null,
+      durationDays: endDate ? differenceInWholeDays(endDate, startDate) : null,
       issuanceRate,
       cutPercent: (ruleset.weightCutPercent * 100).toFixed(2),
       cutFrequencyDays: ruleset.duration / 86400,
@@ -198,10 +195,8 @@ export function StagesTable({ rulesets }: Props) {
               <TableCell className="text-zinc-600 whitespace-nowrap px-2 py-3">
                 <div className="flex flex-col">
                   <span>
-                    {formatDate(stage.startDate, "MMM d, yyyy")}
-                    {stage.endDate
-                      ? ` – ${formatDate(stage.endDate, "MMM d, yyyy")}`
-                      : " – forever"}
+                    {formatShortDate(stage.startDate)}
+                    {stage.endDate ? ` – ${formatShortDate(stage.endDate)}` : " – forever"}
                   </span>
                   {stage.durationDays !== null && stage.durationDays > 0 && (
                     <span className="text-xs text-zinc-500">{stage.durationDays} days</span>

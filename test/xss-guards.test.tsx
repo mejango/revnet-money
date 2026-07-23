@@ -17,8 +17,8 @@ describe("untrusted project content", () => {
 
     expect(screen.getByText("Project description")).toBeInTheDocument();
     expect(container.querySelector("script")).toBeNull();
-    expect(container.querySelector("img")).not.toHaveAttribute("onerror");
-    expect(screen.getByText("unsafe").closest("a")).not.toHaveAttribute("href");
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByText("unsafe").closest("a")).toBeNull();
   });
 
   it("sanitizes rich previews while preserving ordinary formatting", () => {
@@ -31,7 +31,33 @@ describe("untrusted project content", () => {
 
     expect(screen.getByText("Terms").tagName).toBe("STRONG");
     expect(container.querySelector("iframe")).toBeNull();
-    expect(screen.getByText("bad link").closest("a")).not.toHaveAttribute("href");
+    expect(screen.getByText("bad link").closest("a")).toBeNull();
+  });
+
+  it("hardens absolute external links and rejects relative project links", () => {
+    const { container } = render(
+      createElement(Html, {
+        source: '<a href="https://example.com/docs">external</a><a href="/account">relative</a>',
+      }),
+    );
+
+    expect(screen.getByRole("link", { name: "external" })).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: "external" })).toHaveAttribute(
+      "rel",
+      "noopener noreferrer",
+    );
+    expect(screen.getByText("relative").closest("a")).toBeNull();
+    expect(container.querySelectorAll("a")).toHaveLength(1);
+  });
+
+  it("caps project-controlled input before parsing", () => {
+    const { container } = render(
+      createElement(Html, {
+        source: `<p>${"a".repeat(60_000)}</p>`,
+      }),
+    );
+
+    expect(container.textContent?.length).toBeLessThan(51_000);
   });
 
   it("returns no links for absent metadata and normalizes user handles to HTTPS", () => {

@@ -4,22 +4,10 @@ import { HTMLAttributes } from "react";
 export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   const ariaHidden = props["aria-hidden"] ?? (props.role ? undefined : true);
 
-  return (
-    <div
-      {...props}
-      aria-hidden={ariaHidden}
-      className={cn("skeleton-shimmer", className)}
-    />
-  );
+  return <div {...props} aria-hidden={ariaHidden} className={cn("skeleton-shimmer", className)} />;
 }
 
-export function SkeletonLines({
-  lines = 3,
-  className,
-}: {
-  lines?: number;
-  className?: string;
-}) {
+export function SkeletonLines({ lines = 3, className }: { lines?: number; className?: string }) {
   const widths = ["w-full", "w-5/6", "w-2/3", "w-3/4"];
 
   return (
@@ -49,10 +37,7 @@ export function SkeletonTable({
           style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
         >
           {Array.from({ length: columns }, (_, column) => (
-            <Skeleton
-              key={column}
-              className={cn("h-3", column === 0 ? "w-3/4" : "w-2/3")}
-            />
+            <Skeleton key={column} className={cn("h-3", column === 0 ? "w-3/4" : "w-2/3")} />
           ))}
         </div>
       ))}

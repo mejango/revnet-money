@@ -2,6 +2,7 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
+import { FastForward as ForwardIcon } from "@/components/ui/icons";
 import { ParticipantsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { Project } from "@/lib/bendystraw/types";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
@@ -12,7 +13,6 @@ import { Profile } from "@/lib/profile";
 import { getProjectLinks } from "@/lib/projectLinks";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
-import { FastForward as ForwardIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense, use, useMemo } from "react";

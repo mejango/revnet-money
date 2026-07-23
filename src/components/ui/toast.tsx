@@ -1,7 +1,6 @@
 "use client";
 
-import { cva, type VariantProps } from "class-variance-authority";
-import { X } from "lucide-react";
+import { X } from "@/components/ui/icons";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -61,22 +60,19 @@ const ToastViewport = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
 );
 ToastViewport.displayName = "ToastViewport";
 
-const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 border border-zinc-200 p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full dark:border-zinc-800",
-  {
-    variants: {
-      variant: {
-        default: "border bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50",
-        destructive:
-          "destructive group border-red-500 bg-red-500 text-zinc-50 dark:border-red-900 dark:bg-red-900 dark:text-zinc-50",
-        warning: "border-yellow-400 bg-yellow-400 text-yellow-950",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  },
-);
+const toastBase =
+  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 border border-zinc-200 p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full dark:border-zinc-800";
+const toastVariantClasses = {
+  default: "border bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50",
+  destructive:
+    "destructive group border-red-500 bg-red-500 text-zinc-50 dark:border-red-900 dark:bg-red-900 dark:text-zinc-50",
+  warning: "border-yellow-400 bg-yellow-400 text-yellow-950",
+} as const;
+type ToastVariant = keyof typeof toastVariantClasses;
+
+function toastVariants({ variant }: { variant?: ToastVariant | null } = {}) {
+  return cn(toastBase, toastVariantClasses[variant ?? "default"]);
+}
 
 type ToastContextValue = {
   close: () => void;
@@ -89,15 +85,14 @@ function useToastRoot(component: string) {
   return context;
 }
 
-interface ToastRootProps
-  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange">,
-    VariantProps<typeof toastVariants> {
+interface ToastRootProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange"> {
   defaultOpen?: boolean;
   duration?: number;
   forceMount?: boolean;
   onOpenChange?: (open: boolean) => void;
   open?: boolean;
   type?: "foreground" | "background";
+  variant?: ToastVariant | null;
 }
 
 const Toast = React.forwardRef<HTMLDivElement, ToastRootProps>(
@@ -130,9 +125,9 @@ const Toast = React.forwardRef<HTMLDivElement, ToastRootProps>(
     const [present, setPresent] = React.useState(open);
     const [swipe, setSwipe] = React.useState<"cancel" | "end" | "move" | undefined>();
     const [swipeDelta, setSwipeDelta] = React.useState(0);
-    const closeTimer = React.useRef<ReturnType<typeof setTimeout>>();
-    const hideTimer = React.useRef<ReturnType<typeof setTimeout>>();
-    const pointerStart = React.useRef<{ id: number; x: number; y: number }>();
+    const closeTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const hideTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const pointerStart = React.useRef<{ id: number; x: number; y: number } | undefined>(undefined);
 
     const clearCloseTimer = React.useCallback(() => {
       if (closeTimer.current) clearTimeout(closeTimer.current);

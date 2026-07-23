@@ -1,9 +1,9 @@
 "use client";
 
+import { AppLoadingSkeleton } from "@/components/loading/LoadingSkeletons";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import React from "react";
-import { AppLoadingSkeleton } from "@/components/loading/LoadingSkeletons";
 
 function DynamicProviderFallback() {
   const pathname = usePathname();

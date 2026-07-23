@@ -16,6 +16,7 @@ import { WalletConnectButton } from "@/components/WalletButton";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { formatShortDateTime } from "@/lib/date";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
@@ -33,7 +34,6 @@ import {
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
@@ -154,8 +154,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     const map = new Map<number, TokenConfig>();
     balances?.forEach((b, i) => {
       const contexts = contextsData?.[i]?.result as
-        | readonly { token: `0x${string}`; decimals: number; currency: number }[]
-        | undefined;
+        readonly { token: `0x${string}`; decimals: number; currency: number }[] | undefined;
       if (!contexts?.length) return;
       // Projects can hold several contexts; prefer the one for the indexed
       // accounting token, else the first.
@@ -335,7 +334,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
       {locked && cashOutDelay != null && (
         <p className="text-sm text-zinc-500 mt-2">
-          Cash outs and loans unlock {format(Number(cashOutDelay) * 1000, "MMM dd, yyyy p")}. Locked
+          Cash outs and loans unlock {formatShortDateTime(Number(cashOutDelay) * 1000)}. Locked
           values estimate what you could redeem or borrow then.
         </p>
       )}

@@ -155,7 +155,8 @@ export function StepChartBase({
                 )}
                 style={{ top: `${(y / VH) * 100}%` }}
               >
-                {formatPrice(value)}{i === 0 ? ` ${baseSymbol}` : ""}
+                {formatPrice(value)}
+                {i === 0 ? ` ${baseSymbol}` : ""}
               </span>
             );
           })}
@@ -169,90 +170,90 @@ export function StepChartBase({
             onPointerMove={onPointerMove}
             onPointerLeave={() => setHoverT(null)}
           >
-          {/* Horizontal gridlines only, like TokenPriceChart's CartesianGrid. */}
-          {[0, 1, 2, 3, 4].map((i) => {
-            const y = PT + ((VH - PT - PB) * i) / 4;
-            return (
+            {/* Horizontal gridlines only, like TokenPriceChart's CartesianGrid. */}
+            {[0, 1, 2, 3, 4].map((i) => {
+              const y = PT + ((VH - PT - PB) * i) / 4;
+              return (
+                <line
+                  key={i}
+                  x1={PL}
+                  y1={y}
+                  x2={VW - PR}
+                  y2={y}
+                  stroke="#CCCCCC"
+                  strokeWidth="1"
+                  strokeDasharray="3 3"
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+            {/* Stage boundaries */}
+            {resolved.map((s, i) =>
+              i > 0 && s.start > t0 && s.start < t1 ? (
+                <line
+                  key={s.start}
+                  x1={X(s.start)}
+                  y1={PT}
+                  x2={X(s.start)}
+                  y2={VH - PB}
+                  stroke="#A5E0BD"
+                  strokeWidth="2"
+                  strokeDasharray="3 3"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null,
+            )}
+            {renderSeries?.(geom)}
+            {/* Now marker */}
+            {showNowMarker ? (
               <line
-                key={i}
-                x1={PL}
-                y1={y}
-                x2={VW - PR}
-                y2={y}
-                stroke="#CCCCCC"
-                strokeWidth="1"
-                strokeDasharray="3 3"
-                vectorEffect="non-scaling-stroke"
-              />
-            );
-          })}
-          {/* Stage boundaries */}
-          {resolved.map((s, i) =>
-            i > 0 && s.start > t0 && s.start < t1 ? (
-              <line
-                key={s.start}
-                x1={X(s.start)}
+                x1={nowX}
                 y1={PT}
-                x2={X(s.start)}
+                x2={nowX}
                 y2={VH - PB}
-                stroke="#A5E0BD"
+                stroke={NOW_COLOR}
                 strokeWidth="2"
-                strokeDasharray="3 3"
+                strokeDasharray="4 3"
                 vectorEffect="non-scaling-stroke"
               />
-            ) : null,
-          )}
-          {renderSeries?.(geom)}
-          {/* Now marker */}
-          {showNowMarker ? (
-            <line
-              x1={nowX}
-              y1={PT}
-              x2={nowX}
-              y2={VH - PB}
-              stroke={NOW_COLOR}
+            ) : null}
+            {/* The price ladder */}
+            <polyline
+              points={path}
+              fill="none"
+              stroke={ISSUANCE_COLOR}
               strokeWidth="2"
-              strokeDasharray="4 3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"
             />
-          ) : null}
-          {/* The price ladder */}
-          <polyline
-            points={path}
-            fill="none"
-            stroke={ISSUANCE_COLOR}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-          {/* Crosshair guides + inspected point while hovering */}
-          {hoverT !== null && price !== null ? (
-            <>
-              <line
-                x1={X(t)}
-                y1={VH - PB}
-                x2={X(t)}
-                y2={Y(price)}
-                stroke={ISSUANCE_COLOR}
-                strokeWidth="1"
-                strokeDasharray="2 2"
-                vectorEffect="non-scaling-stroke"
-              />
-              <line
-                x1={PL}
-                y1={Y(price)}
-                x2={X(t)}
-                y2={Y(price)}
-                stroke={ISSUANCE_COLOR}
-                strokeWidth="1"
-                strokeDasharray="2 2"
-                vectorEffect="non-scaling-stroke"
-              />
-              <circle cx={X(t)} cy={Y(price)} r="2.5" fill={ISSUANCE_COLOR} />
-            </>
-          ) : null}
-          {renderOverlay?.(geom)}
+            {/* Crosshair guides + inspected point while hovering */}
+            {hoverT !== null && price !== null ? (
+              <>
+                <line
+                  x1={X(t)}
+                  y1={VH - PB}
+                  x2={X(t)}
+                  y2={Y(price)}
+                  stroke={ISSUANCE_COLOR}
+                  strokeWidth="1"
+                  strokeDasharray="2 2"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <line
+                  x1={PL}
+                  y1={Y(price)}
+                  x2={X(t)}
+                  y2={Y(price)}
+                  stroke={ISSUANCE_COLOR}
+                  strokeWidth="1"
+                  strokeDasharray="2 2"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <circle cx={X(t)} cy={Y(price)} r="2.5" fill={ISSUANCE_COLOR} />
+              </>
+            ) : null}
+            {renderOverlay?.(geom)}
           </svg>
           {/* Constant-size labels overlay the plot as HTML so they don't scale
               with the svg. */}

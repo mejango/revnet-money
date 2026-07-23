@@ -38,11 +38,7 @@ export function AcrossChainsCard({
       <p className="text-sm text-zinc-500 mt-1">
         A project can settle funds on many chains, and holders can move funds between them.
       </p>
-      <div
-        className={
-          !isLoading && !isError && data ? "-mx-4 mt-3 overflow-x-auto" : "mt-3"
-        }
-      >
+      <div className={!isLoading && !isError && data ? "-mx-4 mt-3 overflow-x-auto" : "mt-3"}>
         {isLoading ? (
           <TableSkeleton rows={Math.max(chains.length, 2)} columns={4} />
         ) : isError || !data ? (
@@ -57,9 +53,7 @@ export function AcrossChainsCard({
 
 function AcrossChainsTable({ rows, tokenSymbol }: { rows: AcrossChainRow[]; tokenSymbol: string }) {
   const supplyComplete = rows.every((r) => r.supply != null);
-  const totalSupply = supplyComplete
-    ? rows.reduce((sum, r) => sum + (r.supply ?? 0n), 0n)
-    : null;
+  const totalSupply = supplyComplete ? rows.reduce((sum, r) => sum + (r.supply ?? 0n), 0n) : null;
 
   // Per-bucket balance totals across chains, driving each chain's share-%.
   const balancesComplete = rows.every((r) => r.balances != null);
@@ -107,27 +101,27 @@ function AcrossChainsTable({ rows, tokenSymbol }: { rows: AcrossChainRow[]; toke
                 <>
                   {fmtUnits(r.supply, 18)}
                   {totalSupply != null && (
-                    <span className="block text-xs text-zinc-400">{pctOf(r.supply, totalSupply)}</span>
+                    <span className="block text-xs text-zinc-400">
+                      {pctOf(r.supply, totalSupply)}
+                    </span>
                   )}
                 </>
               )}
             </td>
             <td className={cell}>
-              {r.balances == null || r.balances.length === 0 ? (
-                "—"
-              ) : (
-                r.balances.map((b) => {
-                  const key = `${b.symbol.toLowerCase()}@${b.decimals}`;
-                  const total = totals.get(key)?.sum ?? null;
-                  const share = b.balance > 0n ? pctOf(b.balance, total) : null;
-                  return (
-                    <span key={key} className="block">
-                      {fmtUnits(b.balance, b.decimals)} {b.symbol}
-                      {share && <span className="block text-xs text-zinc-400">{share}</span>}
-                    </span>
-                  );
-                })
-              )}
+              {r.balances == null || r.balances.length === 0
+                ? "—"
+                : r.balances.map((b) => {
+                    const key = `${b.symbol.toLowerCase()}@${b.decimals}`;
+                    const total = totals.get(key)?.sum ?? null;
+                    const share = b.balance > 0n ? pctOf(b.balance, total) : null;
+                    return (
+                      <span key={key} className="block">
+                        {fmtUnits(b.balance, b.decimals)} {b.symbol}
+                        {share && <span className="block text-xs text-zinc-400">{share}</span>}
+                      </span>
+                    );
+                  })}
             </td>
             <td className={cell}>
               {r.unitValue == null

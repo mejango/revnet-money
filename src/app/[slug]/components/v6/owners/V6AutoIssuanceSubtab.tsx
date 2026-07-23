@@ -6,6 +6,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import EtherscanLink from "@/components/EtherscanLink";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { CheckIcon } from "@/components/ui/icons";
 import {
   Table,
   TableBody,
@@ -25,14 +26,13 @@ import {
   V6AutoIssueEventsOperation,
   V6StoredAutoIssuancesOperation,
 } from "@/lib/bendystraw";
+import { formatShortDateTime } from "@/lib/date";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
 import { formatUnits, JB_CHAINS, JBCoreContracts, jbRulesetsAbi } from "@bananapus/nana-sdk-core";
 import { buildAutoIssueTx } from "@bananapus/nana-sdk-core/v6";
-import { format } from "date-fns";
-import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useReadContracts } from "wagmi";
 import { ProjectItem } from "../shared";
@@ -168,7 +168,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
                     {commaNumber(formatUnits(BigInt(row.count), 18))} {tokenSymbol}
                   </TableCell>
                   <TableCell>
-                    {row.startsAt ? format(row.startsAt * 1000, "MMM dd, yyyy p") : "—"}
+                    {row.startsAt ? formatShortDateTime(row.startsAt * 1000) : "—"}
                   </TableCell>
                   <TableCell>
                     {row.distributedTxn ? (

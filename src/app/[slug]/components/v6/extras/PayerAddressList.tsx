@@ -1,8 +1,8 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
-import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import {
   Table,
   TableBody,
@@ -11,15 +11,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatRelativeToNow } from "@/lib/date";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { formatDistanceToNow } from "date-fns";
 import { Address, isAddress, zeroAddress } from "viem";
 import { formatUsd, PayerRow, usdFromScaled } from "./projectPayers";
 
 function timeAgo(ts?: number | null): string | null {
   if (!ts) return null;
   try {
-    return formatDistanceToNow(new Date(Number(ts) * 1000), { addSuffix: true });
+    return formatRelativeToNow(new Date(Number(ts) * 1000));
   } catch {
     return null;
   }

@@ -1,7 +1,7 @@
 "use client";
 import { Button } from "@/components/ui/button";
+import { formatClockWithSeconds } from "@/lib/date";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
-import { format } from "date-fns";
 import { PayAndDeploy } from "../buttons/PayAndDeploy";
 import { useCreateForm } from "./useCreateForm";
 
@@ -17,7 +17,7 @@ export function QuoteResponse(props: Props) {
   return (
     <div className="flex flex-col items-start md:col-span-2 md:col-start-2">
       <div className="mt-2 text-xs italic">
-        Quote valid until {format(relayrResponse.payment_info[0].payment_deadline, "h:mm:ss aaa")}.
+        Quote valid until {formatClockWithSeconds(relayrResponse.payment_info[0].payment_deadline)}.
         <Button
           variant="link"
           size="sm"

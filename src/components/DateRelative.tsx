@@ -1,7 +1,7 @@
 "use client";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { format } from "date-fns";
+import { formatShortDateTime } from "@/lib/date";
 
 function formatTimeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -24,7 +24,7 @@ interface Props {
 export function DateRelative({ timestamp, className }: Props) {
   const date = new Date(timestamp * 1000);
   const relative = formatTimeAgo(date);
-  const full = format(date, "MMM d, yyyy 'at' h:mm a");
+  const full = formatShortDateTime(date);
 
   return (
     <Tooltip>

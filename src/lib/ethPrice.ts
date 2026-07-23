@@ -12,6 +12,5 @@ export const fetchEthPrice = unstable_cache(
     }
   },
   ["eth-price"],
-  { revalidate: 1200 } // 20 minutes
+  { revalidate: 1200 }, // 20 minutes
 );
-

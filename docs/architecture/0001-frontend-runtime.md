@@ -57,8 +57,8 @@ without a product requirement that the current stack cannot meet.
 
 ## Decision
 
-Retain React and Next's single-process runtime. Use Next 16.2.11, Node 22.23.1,
-npm 10.9.8, and the repository's single `package-lock.json`. Ship
+Retain React and Next's single-process runtime. Use Next 16.2.11, Node 26.5.0,
+npm 12.0.1, and the repository's single `package-lock.json`. Ship
 `output: "standalone"` in a digest-pinned, multi-stage, non-root OCI image. CI,
 release, and Docker builds use `npm ci --ignore-scripts`; no second lockfile is
 accepted.

@@ -14,13 +14,27 @@ const browserProject = JSON.parse(await readFile("test/fixtures/browser-project.
 const ipfsProxy = await readFile("src/app/api/ipfs/[...path]/route.ts", "utf8");
 const gitignore = await readFile(".gitignore", "utf8");
 const dockerignore = await readFile(".dockerignore", "utf8");
+const npmConfig = await readFile(".npmrc", "utf8");
 const packageManifest = JSON.parse(await readFile("package.json", "utf8"));
 
 if (existsSync("yarn.lock")) {
   throw new Error("Only package-lock.json is allowed; remove the stale Yarn Classic lockfile");
 }
-if (!existsSync("package-lock.json") || packageManifest.packageManager !== "npm@10.9.8") {
-  throw new Error("The deployment must use the npm 10.9.8 package lock");
+if (!existsSync("package-lock.json") || packageManifest.packageManager !== "npm@12.0.1") {
+  throw new Error("The deployment must use the npm 12.0.1 package lock");
+}
+if (
+  !dockerfile.startsWith(
+    "FROM node:26.5.0-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS base",
+  ) ||
+  !dockerfile.includes("npm install --global npm@12.0.1 --no-audit --no-fund") ||
+  !dockerfile.includes("NODE_OPTIONS=--no-experimental-webstorage") ||
+  !npmConfig.includes("node-options=--no-experimental-webstorage") ||
+  !npmConfig.includes("ignore-scripts=true")
+) {
+  throw new Error(
+    "The app must use Node 26.5.0/npm 12.0.1 with Web Storage and dependency scripts disabled",
+  );
 }
 if (
   !dockerfile.includes("COPY package.json package-lock.json ./") ||

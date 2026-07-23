@@ -4,11 +4,7 @@ import { useSyncExternalStore } from "react";
 import type { Address, Hex } from "viem";
 
 export type TransactionActivityStatus =
-  | "submitted"
-  | "pending"
-  | "safe-proposed"
-  | "success"
-  | "failed";
+  "submitted" | "pending" | "safe-proposed" | "success" | "failed";
 
 export type TransactionActivity = {
   id: string;

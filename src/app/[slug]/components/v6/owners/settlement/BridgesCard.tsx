@@ -1,10 +1,10 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { ArrowRightLeft as ArrowsRightLeftIcon } from "@/components/ui/icons";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRightLeft as ArrowsRightLeftIcon } from "lucide-react";
 import { chainName, ChainProject, chainProjectsKey, fetchBridges, SuckerInfra } from "./lib";
 
 function InfraTag({ infra }: { infra: SuckerInfra }) {

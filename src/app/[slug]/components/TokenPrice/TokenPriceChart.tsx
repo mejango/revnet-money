@@ -3,11 +3,11 @@
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
 import { CartesianChart, type ChartReferenceLine, type ChartSeries } from "@/components/ui/chart";
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
+import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
 import { formatDecimals } from "@/lib/number";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ChartToggleButton } from "./ChartToggleButton";
@@ -219,10 +219,10 @@ export function TokenPriceChart({
 const formatXAxis = (timestamp: number, range: TimeRange) => {
   const date = new Date(timestamp * 1000);
   if (range === "1d" || range === "7d") {
-    return format(date, "HH:mm");
+    return formatClock(date);
   }
   if (range === "30d" || range === "3m") {
-    return format(date, "MMM d");
+    return formatMonthDay(date);
   }
-  return format(date, "MMM yyyy");
+  return formatMonthYear(date);
 };

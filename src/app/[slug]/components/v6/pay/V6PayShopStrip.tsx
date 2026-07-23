@@ -3,9 +3,9 @@
 import { formatPayAmount } from "@/lib/v6/pay";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { effectiveTierPrice } from "@bananapus/nana-sdk-core/v6";
-import { useShopCart } from "../ShopCartContext";
 import { useTierMedia } from "../shop/shopLib";
 import { TierMediaPreview } from "../shop/TierMediaPreview";
+import { useShopCart } from "../ShopCartContext";
 import { V6PayShop, V6PayShopTier } from "./usePayShop";
 
 /**
@@ -32,9 +32,7 @@ export function V6PayShopStrip({
     cart.items.find((i) => Number(i.tierId) === tierId && i.chainId === chainId)?.quantity ?? 0;
 
   const setTierQuantity = (tier: V6PayShopTier, quantity: number) => {
-    const existing = cart.items.find(
-      (i) => Number(i.tierId) === tier.id && i.chainId === chainId,
-    );
+    const existing = cart.items.find((i) => Number(i.tierId) === tier.id && i.chainId === chainId);
     if (!existing && quantity > 0) {
       const media = mediaById?.[tier.id];
       cart.add({

@@ -1,8 +1,8 @@
 import type { ChartTooltipSeries } from "@/components/ui/chart";
+import { formatClock, formatShortDate } from "@/lib/date";
 import { formatDecimals } from "@/lib/number";
 import { TimeRange } from "@/lib/timeRange";
 import { JB_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
-import { format } from "date-fns";
 import { formatUnits } from "viem";
 
 type PriceTooltipDatum = {
@@ -30,13 +30,14 @@ export function PriceChartTooltip({
   const hasFloorPrice = series.some((entry) => entry.key === "floorPrice");
   const showFloorDebug = hasFloorPrice && datum.totalSupply && datum.totalBalance;
 
-  const dateFormat = range === "1d" ? "MMM d, yyyy HH:mm" : "MMM d, yyyy";
+  const formattedDate =
+    range === "1d"
+      ? `${formatShortDate(datum.timestamp * 1000)} ${formatClock(datum.timestamp * 1000)}`
+      : formatShortDate(datum.timestamp * 1000);
 
   return (
     <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-3 text-sm">
-      <div className="font-medium mb-2 text-zinc-300">
-        {format(new Date(datum.timestamp * 1000), dateFormat)}
-      </div>
+      <div className="font-medium mb-2 text-zinc-300">{formattedDate}</div>
       {series.map((entry) => (
         <div key={entry.key} className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />

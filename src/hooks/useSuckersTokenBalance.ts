@@ -83,7 +83,6 @@ export function useSuckersTokenBalance(tokens?: Record<number, `0x${string}`>) {
     isLoading: balanceQuery.isLoading || isLoading,
     isError: balanceQuery.isError || isError,
     data: balanceQuery.data as
-      | { balance: bigint; chainId: number; projectId: bigint }[]
-      | undefined,
+      { balance: bigint; chainId: number; projectId: bigint }[] | undefined,
   };
 }

@@ -11,12 +11,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Trash2 as TrashIcon } from "@/components/ui/icons";
 import { toast } from "@/components/ui/use-toast";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
-import { Trash2 as TrashIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { changeSplitsSchema } from "./changeSplitsSchema";
 import { useChainSplits } from "./hooks/useChainSplits";
@@ -61,18 +61,16 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   }, [open, refetch]);
 
   const initialValues = useMemo((): FormData => {
-    const chains = chainSplits.map(
-      (chainData): ChainFormData => ({
-        chainId: chainData.chainId,
-        projectId: BigInt(chainData.projectId),
-        rulesetId: BigInt(chainData.rulesetId),
-        selected: chainData.chainId === initialChainId,
-        splits: chainData.splits.map((split) => ({
-          percentage: ((Number(split.percent) / SPLITS_TOTAL_PERCENT) * 100).toFixed(2),
-          beneficiary: split.beneficiary,
-        })),
-      }),
-    );
+    const chains = chainSplits.map((chainData): ChainFormData => ({
+      chainId: chainData.chainId,
+      projectId: BigInt(chainData.projectId),
+      rulesetId: BigInt(chainData.rulesetId),
+      selected: chainData.chainId === initialChainId,
+      splits: chainData.splits.map((split) => ({
+        percentage: ((Number(split.percent) / SPLITS_TOTAL_PERCENT) * 100).toFixed(2),
+        beneficiary: split.beneficiary,
+      })),
+    }));
 
     return { chains };
   }, [chainSplits, initialChainId]);

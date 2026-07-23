@@ -92,8 +92,7 @@ export function TierDetailModal({
               };
             }
             const client = getPublicClient(config, { chainId: targetChainId }) as
-              | PublicClient
-              | undefined;
+              PublicClient | undefined;
             if (!client) return { chainId: targetChainId, state: "unavailable" as const };
             const targetShop = await getProject721Shop(client, {
               chainId: targetChainId,

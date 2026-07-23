@@ -6,37 +6,59 @@ import {
   JB_CHAINS,
   ReservedPercent,
 } from "@bananapus/nana-sdk-core";
-import { clsx, type ClassValue } from "clsx";
-import { Duration, formatDuration, intervalToDuration } from "date-fns";
 import { twMerge } from "tailwind-merge";
 import { Address, Chain, formatEther } from "viem";
 import { mainnet } from "viem/chains";
 
+export type ClassValue =
+  string | number | boolean | null | undefined | ClassValue[] | { [className: string]: unknown };
+
+function joinClassValues(value: ClassValue): string {
+  if (!value) return "";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(joinClassValues).filter(Boolean).join(" ");
+  return Object.entries(value)
+    .filter(([, enabled]) => Boolean(enabled))
+    .map(([className]) => className)
+    .join(" ");
+}
+
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+  return twMerge(inputs.map(joinClassValues).filter(Boolean).join(" "));
 }
 
 export function formatSeconds(seconds: number, precision = 2, compact = false) {
-  const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const units = [
+    ["year", 31_536_000],
+    ["month", 2_592_000],
+    ["day", 86_400],
+    ["hour", 3_600],
+    ["minute", 60],
+    ["second", 1],
+  ] as const;
+  const firstUnit =
+    safeSeconds > 31_536_000
+      ? 0
+      : safeSeconds > 2_592_000
+        ? 1
+        : safeSeconds > 86_400
+          ? 2
+          : safeSeconds > 3_600
+            ? 3
+            : 4;
 
-  const fullFormat = (
-    seconds > 31536000
-      ? ["years", "months", "days"]
-      : seconds > 2592000
-        ? ["months", "days", "hours"]
-        : seconds > 86400
-          ? ["days", "hours", "minutes"]
-          : seconds > 3600
-            ? ["hours", "minutes", "seconds"]
-            : ["minutes", "seconds"]
-  ) as (keyof Duration)[];
-
-  const format = fullFormat.slice(0, precision);
-
-  return formatDuration(duration, {
-    format,
-    delimiter: compact ? "" : ", ",
+  let remainder = safeSeconds;
+  const values = units.map(([name, unitSeconds]) => {
+    const value = Math.floor(remainder / unitSeconds);
+    remainder %= unitSeconds;
+    return { name, value };
   });
+  const parts = values
+    .slice(firstUnit, firstUnit + Math.max(1, precision))
+    .map(({ name, value }) => `${value} ${name}${value === 1 ? "" : "s"}`);
+
+  return parts.join(compact ? "" : ", ");
 }
 
 export function etherscanLink(

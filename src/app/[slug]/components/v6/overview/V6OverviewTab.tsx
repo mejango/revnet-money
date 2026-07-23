@@ -16,8 +16,7 @@ export function V6OverviewTab({ projects }: { projects: ProjectItem[] }) {
       <div>
         <h3 className="mb-2 text-base font-semibold text-zinc-700">About</h3>
         <DescriptionSection projects={projects} />
-        <div className="max-w-screen-sm">
-        </div>
+        <div className="max-w-screen-sm"></div>
       </div>
 
       <OtherInfoPanel projects={projects} />

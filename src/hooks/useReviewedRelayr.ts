@@ -96,8 +96,7 @@ function bundleSummary(bundle: RelayrGetBundleResponse): string {
   return bundle.transactions
     .map((transaction) => {
       const data = transaction.status?.data as
-        | { hash?: Hex; transaction?: { hash?: Hex } }
-        | undefined;
+        { hash?: Hex; transaction?: { hash?: Hex } } | undefined;
       const hash = data?.hash ?? data?.transaction?.hash;
       return `Chain ${transaction.request.chain}: ${transaction.status?.state ?? "Pending"}${hash ? ` (${hash})` : ""}`;
     })
@@ -107,8 +106,7 @@ function bundleSummary(bundle: RelayrGetBundleResponse): string {
 function bundleChainStates(bundle: RelayrGetBundleResponse) {
   return bundle.transactions.map((transaction) => {
     const data = transaction.status?.data as
-      | { hash?: Hex; transaction?: { hash?: Hex } }
-      | undefined;
+      { hash?: Hex; transaction?: { hash?: Hex } } | undefined;
     return {
       chainId: Number(transaction.request.chain),
       status: transaction.status?.state ?? "Pending",

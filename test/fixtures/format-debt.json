@@ -1,20 +1,4 @@
 {
   "description": "Reviewed Prettier debt. A content change must format the file or explicitly review a new baseline.",
-  "baselines": {
-    "src/app/[slug]/components/v6/ShopCartContext.tsx": "2902bfaf1c24045ff2f340bc9038b658ad087ada7aaa40c511bbad7da712ad07",
-    "src/app/[slug]/components/v6/extras/PayerAddressList.tsx": "be3b4a34c2781cbdf6eb636d4a136286e976370e04f578b1a8a2b5f86be525e0",
-    "src/app/[slug]/components/v6/overview/V6OverviewTab.tsx": "e8e67bc494a28b2c3f5e1a58a5c01377b883289adabe8404ccc33523b1feed9f",
-    "src/app/[slug]/components/v6/owners/market/AmmCard.tsx": "2fe0ee5bbfd6decd22a94f140e94b2d5f2dc5b8c1002d7444904e21628146175",
-    "src/app/[slug]/components/v6/owners/market/V6MarketSubtab.tsx": "6db0a14efbf32c0234e0ac98c12324767761515d12d44e51a145898cbd444490",
-    "src/app/[slug]/components/v6/owners/settlement/AcrossChainsCard.tsx": "e1177d28f62f016190469e50e82a4275d884495fcb0db1ff78cf0fc6ac2415f8",
-    "src/app/[slug]/components/v6/pay/V6PayShopStrip.tsx": "90dbe64deeefe11ea66808febdab34d9936957dde9d07f06f522970d66a78efd",
-    "src/app/[slug]/components/v6/pay/usePayShop.ts": "caade9a317d1a2473e9a86ef40b386708102dcda45edcd685d7b325977bfd69c",
-    "src/app/[slug]/components/v6/pay/usePaySurface.ts": "744e06e405fdae80b8563e4cd9db35b1b8d4e6188eaf829de9313cb6a0ec42c6",
-    "src/app/[slug]/components/v6/shop/InventorySection.tsx": "4050718732911af34917f7e175c2fc4362bd417c56f76f8e2352ed9570fc6fd4",
-    "src/app/[slug]/components/v6/shop/TierMediaPreview.tsx": "826868ac1aab0cae83473b69bfbd2fba44862174ef552cc8c0b9b3045d13b1e7",
-    "src/app/[slug]/components/v6/terms/StepChartBase.tsx": "75ebefde69adffbd8864cb5178813e382fca7a0ad1cbc82c014f0bc4949f0cd5",
-    "src/app/providers.tsx": "cbbc6e6e892360d56872b017d6881342aa5ff78d91133577fd60e1b48d775fdc",
-    "src/components/ui/skeleton.tsx": "863aa5ab395c06528ec7bd2d793e623964f1832c63f75c9c8fe82602c7172092",
-    "src/lib/ethPrice.ts": "328eab3980943c06f53d42087f1b68b8c768cb51c4315c0cb2334d421467c2e9"
-  }
+  "baselines": {}
 }

@@ -37,7 +37,9 @@ function AmmChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol
         <div className="mt-2 text-sm text-zinc-700 space-y-1">
           <div>
             <span className="text-zinc-400">Price</span>{" "}
-            {pool.price == null ? "—" : `${formatPrice(pool.price)} ${pool.pair.symbol}/${tokenSymbol}`}
+            {pool.price == null
+              ? "—"
+              : `${formatPrice(pool.price)} ${pool.pair.symbol}/${tokenSymbol}`}
           </div>
           <div>
             <span className="text-zinc-400">Composition</span>{" "}

@@ -1,6 +1,6 @@
 "use client";
 
-import clsx from "clsx";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useSelectedLayoutSegment } from "next/navigation";
 import { PropsWithChildren } from "react";
@@ -72,7 +72,7 @@ function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect:
       <button
         type="button"
         onClick={onSelect}
-        className={clsx(
+        className={cn(
           "-mb-px flex min-h-11 items-center whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all",
           active
             ? "border-teal-500 text-black"
@@ -106,7 +106,7 @@ function MenuOption({
       <Link
         href={`/${decodeURIComponent(params.slug)}/${href}`}
         onClick={onSelect}
-        className={clsx(
+        className={cn(
           // -mb-px drops the active border onto the row's persistent baseline.
           "-mb-px flex min-h-11 items-center whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all sm:text-lg",
           {

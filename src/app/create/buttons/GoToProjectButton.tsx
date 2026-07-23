@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
+import { FastForwardIcon } from "@/components/ui/icons";
 import type { JBChainId } from "@/lib/nana/types";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
-import { FastForwardIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useTransactionReceipt } from "wagmi";
