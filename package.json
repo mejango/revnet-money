@@ -85,6 +85,7 @@
     "glob@>=10 <11": "10.5.0",
     "minimatch@>=9 <10": "9.0.9",
     "picomatch@<3": "2.3.2",
+    "postcss": "$postcss",
     "sharp@<0.35": "0.35.3"
   },
   "packageManager": "npm@10.9.8"
