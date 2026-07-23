@@ -4,11 +4,10 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { DateRelative } from "@/components/DateRelative";
 import EtherscanLink from "@/components/EtherscanLink";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { useJBTokenContext } from "@/lib/nana/project";
+import type { JBChainId } from "@/lib/nana/types";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
-import { JBChainId, useJBTokenContext } from "@bananapus/nana-sdk-react";
-import { sdk } from "@farcaster/miniapp-sdk";
-import { useEffect, useState } from "react";
 import { Address } from "viem";
 
 export type ActivityEventType =
@@ -69,11 +68,6 @@ function eventDescription(event: ActivityEvent, projectTokenSymbol: string): str
 export function ActivityItem({ event }: { event: ActivityEvent }) {
   const { token } = useJBTokenContext();
   const chain = JB_CHAINS[event.chainId].chain;
-  const [isMiniApp, setIsMiniApp] = useState(false);
-
-  useEffect(() => {
-    sdk.isInMiniApp().then(setIsMiniApp);
-  }, []);
 
   if (!token?.data) return null;
 
@@ -83,7 +77,7 @@ export function ActivityItem({ event }: { event: ActivityEvent }) {
   const isOutflow = event.type === "out";
   const description = eventDescription(event, projectTokenSymbol);
 
-  const handleShare = () => {
+  const handleShare = async () => {
     const embedUrl = typeof window !== "undefined" ? window.location.href : "";
     const handle = `${event.beneficiary.slice(0, 6)}…`;
     const shareText = isPayEvent
@@ -91,7 +85,19 @@ export function ActivityItem({ event }: { event: ActivityEvent }) {
       : event.type === "out"
         ? `⏩ ${handle} cashed out ${event.tokenCount} ${projectTokenSymbol} for ${event.baseAmount} ${event.baseTokenSymbol}`
         : `⏩ ${handle} ${description}`;
-    sdk.actions.composeCast({ text: shareText, embeds: [embedUrl] });
+    if (navigator.share) {
+      try {
+        await navigator.share({ text: shareText, url: embedUrl });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+
+    const composer = new URL("https://farcaster.xyz/~/compose");
+    composer.searchParams.set("text", shareText);
+    composer.searchParams.append("embeds[]", embedUrl);
+    window.open(composer, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -133,13 +139,15 @@ export function ActivityItem({ event }: { event: ActivityEvent }) {
         </div>
         {event.memo && (
           <p className="text-sm text-zinc-700 break-all mt-1">
-            {isMiniApp ? (
-              <button onClick={handleShare} className="text-left hover:underline">
-                {event.memo}
-              </button>
-            ) : (
-              event.memo
-            )}
+            <button
+              type="button"
+              onClick={() => void handleShare()}
+              className="text-left hover:underline"
+              title="Share this activity"
+              aria-label={`Share activity: ${event.memo}`}
+            >
+              {event.memo}
+            </button>
           </p>
         )}
       </div>

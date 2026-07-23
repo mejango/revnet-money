@@ -9,12 +9,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
+import { ProjectPayersOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useMemo } from "react";
 import { ProjectItem } from "../shared";
 import { PayerAddressList } from "./PayerAddressList";
 import { PayerDeployForm } from "./PayerDeployForm";
-import { ProjectPayersDocument, chainProjectRows, payersWhere } from "./projectPayers";
+import { chainProjectRows, payersWhere } from "./projectPayers";
 
 /**
  * website/-parity Extras tab (renderExtrasSection): the "Payer address"
@@ -26,7 +26,7 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
   const rows = useMemo(() => chainProjectRows(projects), [projects]);
 
   const payersQuery = useBendystrawQuery(
-    ProjectPayersDocument,
+    ProjectPayersOperation,
     { where: payersWhere(rows) },
     { enabled: rows.length > 0 },
   );

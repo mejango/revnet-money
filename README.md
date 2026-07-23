@@ -3,7 +3,9 @@
 Revnet Money is the v6-only Revnet application. Project routes use
 `<chain>:<projectId>` (for example, `/eth:3`).
 
-This is a [wagmi](https://wagmi.sh) + [ConnectKit](https://docs.family.co/connectkit) + [Next.js](https://nextjs.org) + Tailwind + [Juicebox](https://juicebox.money) project.
+This is a [wagmi](https://wagmi.sh) + [Next.js](https://nextjs.org) + Tailwind +
+[Juicebox](https://juicebox.money) project. Installed browser wallets are
+discovered through EIP-6963 with a generic injected-provider fallback.
 
 # Getting Started
 

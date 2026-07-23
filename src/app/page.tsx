@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
-import { MiniAppHello } from "./MiniAppHello";
 import { TopProjectsTable } from "./TopProjectsTable";
 
 function RevLink({ network, id, text }: { network: string; id: number; text: string }) {
@@ -24,7 +23,6 @@ function Pipe() {
 export default function Page() {
   return (
     <div className="container mt-40 pr-[1.5rem] pl-[1.5rem] sm:pr-[2rem] sm:pl-[2rem] sm:px-8">
-      <MiniAppHello />
       <div className="flex flex-col justify-center items-center">
         <Image src="/assets/img/revnet-full-bw.svg" width={630} height={180} alt="Revnet logo" />
         <span className="sr-only">Revnet</span>

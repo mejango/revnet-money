@@ -1,12 +1,12 @@
 "use client";
 
 import { EthereumAddress } from "@/components/EthereumAddress";
-import { Participant } from "@/generated/graphql";
+import type { Participant } from "@/lib/bendystraw/types";
+import type { ProjectTokenData } from "@/lib/nana/types";
 import { formatPortion } from "@/lib/utils";
 import { JBChainId, JBProjectToken } from "@bananapus/nana-sdk-core";
 import { useMemo, useState } from "react";
 import { Address } from "viem";
-import { UseTokenReturnType } from "wagmi";
 
 const OWNER_COLOR = "#EE6F3A"; // peel-400
 const OWNER_HOVER_COLOR = "#BD4513"; // peel-600
@@ -35,7 +35,7 @@ export function ParticipantsPieChart({
   participants,
   showOwnerCount = false,
 }: {
-  token: UseTokenReturnType["data"] | null;
+  token: ProjectTokenData | null | undefined;
   totalSupply: bigint;
   participants: (Participant & { chains: JBChainId[] })[];
   showOwnerCount?: boolean;

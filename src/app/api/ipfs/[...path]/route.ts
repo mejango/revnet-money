@@ -66,7 +66,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pat
     return Response.json({ error: "IPFS media exceeds the size limit" }, { status: 502 });
   }
 
-  return new Response(body, {
+  const responseBody = new Uint8Array(body.byteLength);
+  responseBody.set(body);
+
+  return new Response(responseBody.buffer, {
     status: 200,
     headers: {
       "content-type": contentType ?? "application/octet-stream",

@@ -1,27 +1,23 @@
 "use client";
 
 import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
+import type {
+  ChainPayment,
+  JBChainId,
+  RelayrGetBundleResponse,
+  RelayrPostBundleResponse,
+} from "@/lib/nana/types";
 import {
   recordTransactionActivity,
   transactionActivitySnapshot,
   updateTransactionActivity,
 } from "@/lib/transaction-activity";
 import { requireTransactionReview } from "@/lib/transaction-review";
-import {
-  erc2771ForwarderAbi,
-  jbContractAddress,
-  type JBChainId,
-  type JBVersion,
-} from "@bananapus/nana-sdk-core";
-import type {
-  ChainPayment,
-  RelayrGetBundleResponse,
-  RelayrPostBundleResponse,
-} from "@bananapus/nana-sdk-react";
-import { getAccount, getPublicClient, waitForTransactionReceipt } from "@wagmi/core";
+import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData, isAddress, type Abi, type Address, type Hex } from "viem";
 import { useAccount, useConfig, useSendTransaction, useSignTypedData, useSwitchChain } from "wagmi";
+import { getAccount, getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
 
 const RELAYR_API = "https://api.relayr.ba5ed.com";
 const FORWARD_REQUEST_TYPES = {

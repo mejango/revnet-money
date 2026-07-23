@@ -1,4 +1,4 @@
-const defaultTheme = require("tailwindcss/defaultTheme");
+import type { Config } from "tailwindcss";
 
 const melon = {
   25: "#F6FEF9",
@@ -50,18 +50,60 @@ const melonNeutral = {
   950: "#000000",
 };
 
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  darkMode: ["class"],
-  content: ["./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+// Tailwind 4 refreshed its built-in color scales. Pin the legacy shades that
+// are already used by the product so the framework migration does not
+// silently recolor warnings, errors, and transaction states.
+const legacyColors = {
+  red: {
+    50: "#fef2f2",
+    100: "#fee2e2",
+    200: "#fecaca",
+    300: "#fca5a5",
+    400: "#f87171",
+    500: "#ef4444",
+    600: "#dc2626",
+    700: "#b91c1c",
+    900: "#7f1d1d",
+    950: "#450a0a",
+  },
+  orange: {
+    50: "#fff7ed",
+    100: "#ffedd5",
+    200: "#fed7aa",
+    400: "#fb923c",
+    500: "#f97316",
+    900: "#7c2d12",
+    950: "#431407",
+  },
+  amber: {
+    50: "#fffbeb",
+    200: "#fde68a",
+    300: "#fcd34d",
+    400: "#fbbf24",
+    600: "#d97706",
+    700: "#b45309",
+    800: "#92400e",
+  },
+  yellow: {
+    400: "#facc15",
+    950: "#422006",
+  },
+  blue: {
+    400: "#60a5fa",
+  },
+  cyan: {
+    400: "#22d3ee",
+  },
+  emerald: {
+    50: "#ecfdf5",
+    500: "#10b981",
+  },
+};
+
+export default {
+  darkMode: "class",
+  content: ["./src/**/*.{ts,tsx}"],
   theme: {
-    container: {
-      center: true,
-      padding: "2rem",
-      screens: {
-        "2xl": "1225px",
-      },
-    },
     extend: {
       colors: {
         melon,
@@ -71,6 +113,7 @@ module.exports = {
         neutral: melonNeutral,
         slate: melonNeutral,
         teal: melon,
+        ...legacyColors,
         black: {
           DEFAULT: "#000000",
           500: "#000000",
@@ -91,24 +134,30 @@ module.exports = {
         inner: "inset 0 2px 4px 0 rgb(21 40 29 / 0.05)",
       },
       fontFamily: {
-        sans: ["var(--font-simplon-mono)", ...defaultTheme.fontFamily.mono],
-        mono: ["var(--font-simplon-mono)", ...defaultTheme.fontFamily.mono],
-      },
-      keyframes: {
-        "accordion-down": {
-          from: { height: 0 },
-          to: { height: "var(--radix-accordion-content-height)" },
-        },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: 0 },
-        },
-      },
-      animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
+        sans: [
+          "var(--font-simplon-mono)",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Monaco",
+          "Consolas",
+          '"Liberation Mono"',
+          '"Courier New"',
+          "monospace",
+        ],
+        mono: [
+          "var(--font-simplon-mono)",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Monaco",
+          "Consolas",
+          '"Liberation Mono"',
+          '"Courier New"',
+          "monospace",
+        ],
       },
     },
   },
-  plugins: [require("tailwindcss-animate"), require("@tailwindcss/forms")],
-};
+  plugins: [],
+} satisfies Config;

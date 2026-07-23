@@ -1,15 +1,16 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ bendystrawFetch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ queryBendystraw: vi.fn() }));
 
-vi.mock("@/graphql/bendystrawClient", () => ({
-  bendystrawFetch: mocks.bendystrawFetch,
+vi.mock("@/lib/bendystraw/query.server", () => ({
+  queryBendystraw: mocks.queryBendystraw,
 }));
 
-import { POST as proxyBendystraw } from "@/app/api/bendystraw/[net]/[key]/graphql/route";
+import { POST as proxyBendystraw } from "@/app/api/bendystraw/[net]/query/route";
 import { GET as proxyIpfs } from "@/app/api/ipfs/[...path]/route";
 import { POST as pinJson } from "@/app/api/ipfs/pinJson/route";
+import { ProjectOperation } from "@/lib/bendystraw/operations";
 
 const SITE = "https://app.revnet.example";
 const INGRESS_TOKEN = "ingress-token-with-at-least-32-characters";
@@ -31,7 +32,7 @@ beforeEach(() => {
   process.env.INFURA_IPFS_PROJECT_ID = "project";
   process.env.INFURA_IPFS_API_SECRET = "secret";
   process.env.IPFS_PINNING_INGRESS_TOKEN = INGRESS_TOKEN;
-  mocks.bendystrawFetch.mockReset();
+  mocks.queryBendystraw.mockReset();
 });
 
 afterEach(() => {
@@ -92,6 +93,42 @@ describe("IPFS pinning boundary", () => {
         )
       ).status,
     ).toBe(413);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("cancels an undeclared oversized pinning request before buffering the remaining stream", async () => {
+    process.env.ENABLE_PUBLIC_IPFS_PINNING = "true";
+    const chunk = new TextEncoder().encode("x".repeat(64 * 1024));
+    const totalChunks = 10;
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+      pull(controller) {
+        if (pulls >= totalChunks) {
+          controller.close();
+          return;
+        }
+        pulls += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    const request = new NextRequest(`${SITE}/api/ipfs/pinJson`, {
+      method: "POST",
+      body,
+      duplex: "half",
+      headers: {
+        "content-type": "application/json",
+        origin: SITE,
+        "x-revnet-pinning-ingress-token": INGRESS_TOKEN,
+      },
+    } as never);
+
+    expect((await pinJson(request)).status).toBe(413);
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThan(totalChunks);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -230,51 +267,71 @@ describe("IPFS media proxy boundary", () => {
 });
 
 describe("Bendystraw proxy boundary", () => {
-  it("rejects unknown networks, unsafe key paths, and malformed GraphQL bodies", async () => {
+  it("rejects unknown networks, arbitrary queries, and malformed operation bodies", async () => {
     expect(
       (
-        await proxyBendystraw(jsonRequest(`${SITE}/api/bendystraw/dev/public/graphql`, "{}"), {
-          params: Promise.resolve({ net: "dev", key: "public" }),
+        await proxyBendystraw(jsonRequest(`${SITE}/api/bendystraw/dev/query`, "{}"), {
+          params: Promise.resolve({ net: "dev" }),
         })
       ).status,
     ).toBe(404);
     expect(
       (
-        await proxyBendystraw(jsonRequest(`${SITE}/api/bendystraw/mainnet/key/graphql`, "{}"), {
-          params: Promise.resolve({ net: "mainnet", key: "../secret" }),
-        })
+        await proxyBendystraw(
+          jsonRequest(
+            `${SITE}/api/bendystraw/mainnet/query`,
+            JSON.stringify({ query: "query Project { project { id } }" }),
+          ),
+          {
+            params: Promise.resolve({ net: "mainnet" }),
+          },
+        )
       ).status,
     ).toBe(400);
     expect(
       (
-        await proxyBendystraw(jsonRequest(`${SITE}/api/bendystraw/mainnet/key/graphql`, "{}"), {
-          params: Promise.resolve({ net: "mainnet", key: "key" }),
+        await proxyBendystraw(jsonRequest(`${SITE}/api/bendystraw/mainnet/query`, "{}"), {
+          params: Promise.resolve({ net: "mainnet" }),
         })
       ).status,
     ).toBe(400);
-    expect(mocks.bendystrawFetch).not.toHaveBeenCalled();
+    expect(mocks.queryBendystraw).not.toHaveBeenCalled();
   });
 
-  it("uses only the configured origin and returns bounded JSON without caching", async () => {
-    mocks.bendystrawFetch.mockResolvedValue(
-      Response.json(
-        { data: { project: { id: "1" } } },
-        { headers: { "content-type": "application/json" } },
-      ),
-    );
-    const body = JSON.stringify({ query: "query Project { project { id } }" });
+  it("rejects invalid variables before any upstream request", async () => {
+    const body = JSON.stringify({
+      operation: ProjectOperation.id,
+      variables: { chainId: "1", projectId: 1, version: 6 },
+    });
+    expect(
+      (
+        await proxyBendystraw(jsonRequest(`${SITE}/api/bendystraw/mainnet/query`, body), {
+          params: Promise.resolve({ net: "mainnet" }),
+        })
+      ).status,
+    ).toBe(400);
+    expect(mocks.queryBendystraw).not.toHaveBeenCalled();
+  });
+
+  it("executes only the registered operation and returns uncached JSON", async () => {
+    const data = { project: null };
+    mocks.queryBendystraw.mockResolvedValue(data);
+    const variables = { chainId: 1, projectId: 1, version: 6 };
+    const body = JSON.stringify({ operation: ProjectOperation.id, variables });
 
     const response = await proxyBendystraw(
-      jsonRequest(`${SITE}/api/bendystraw/mainnet/scoped-key/graphql`, body),
-      { params: Promise.resolve({ net: "mainnet", key: "scoped-key" }) },
+      jsonRequest(`${SITE}/api/bendystraw/mainnet/query`, body),
+      { params: Promise.resolve({ net: "mainnet" }) },
     );
 
     expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ data });
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(mocks.bendystrawFetch).toHaveBeenCalledWith(
-      "https://bendystraw.example/scoped-key/graphql",
-      expect.objectContaining({ method: "POST", body, cache: "no-store" }),
+    expect(mocks.queryBendystraw).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ id: ProjectOperation.id }),
+      variables,
     );
   });
 });

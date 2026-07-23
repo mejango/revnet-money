@@ -26,26 +26,23 @@ import {
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import {
+  useJBContractContext,
+  useJBProjectMetadataContext,
+  useJBTokenContext,
+} from "@/lib/nana/project";
+import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { formatEthAddress, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import {
   JB_CHAINS,
-  JBChainId,
   jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
   jbProjectsAbi,
 } from "@bananapus/nana-sdk-core";
 import { getTokenAddress, hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
-import {
-  ChainPayment,
-  RelayrPostBundleResponse,
-  useJBContractContext,
-  useJBProjectMetadataContext,
-  useJBTokenContext,
-} from "@bananapus/nana-sdk-react";
 import { useQuery } from "@tanstack/react-query";
-import { getPublicClient } from "@wagmi/core";
 import { useMemo, useState } from "react";
 import {
   Address,
@@ -57,6 +54,7 @@ import {
   zeroAddress,
 } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
+import { getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
 
 type TokenChainState = {

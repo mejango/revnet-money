@@ -25,7 +25,6 @@ const buildNames = [
 const baseEnvironment = {
   ...process.env,
   ...Object.fromEntries(buildNames.map((name) => [name, "https://service.example"])),
-  NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "test-project",
   NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: "ipfs.example",
 };
 

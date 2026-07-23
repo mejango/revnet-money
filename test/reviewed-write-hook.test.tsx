@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   config: { id: "test-config" },
+  queryClient: { id: "test-query-client" },
   account: {
     address: "0x000000000000000000000000000000000000dEaD" as Address | undefined,
     chainId: 11155111 as number | undefined,
@@ -16,10 +17,14 @@ const mocks = vi.hoisted(() => ({
   wagmiReceipt: vi.fn(),
 }));
 
-vi.mock("@wagmi/core", () => ({
+vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
   simulateContract: mocks.simulateContract,
   waitForTransactionReceipt: mocks.waitForTransactionReceipt,
+}));
+
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => mocks.queryClient,
 }));
 
 vi.mock("wagmi", () => ({
@@ -129,6 +134,26 @@ describe("reviewed write hook", () => {
         account: ACCOUNT,
       }),
     );
+  });
+
+  it("preserves Wagmi 3 per-call mutation callback context", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const onSuccess = vi.fn();
+    const onSettled = vi.fn();
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    act(() => {
+      result.current.writeContract(CALL as never, { onSuccess, onSettled });
+    });
+
+    await waitFor(() => expect(onSettled).toHaveBeenCalledOnce());
+    const expectedContext = expect.objectContaining({
+      client: mocks.queryClient,
+      mutationKey: ["writeContract"],
+    });
+    expect(onSuccess).toHaveBeenCalledWith(HASH, CALL, undefined, expectedContext);
+    expect(onSettled).toHaveBeenCalledWith(HASH, null, CALL, undefined, expectedContext);
   });
 
   it("stops before simulation when the connected account changes during review", async () => {

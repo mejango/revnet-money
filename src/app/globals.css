@@ -1,6 +1,346 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@config "../../tailwind.config.ts";
+@import "tailwindcss";
+
+/* Tailwind 4 defaults `dark:` to the user's media preference. REVNET has
+   always opted into dark rules explicitly with a `.dark` ancestor. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind 4 intentionally reduced `.container` to max-width behavior. Keep
+   the existing centered, padded, 1225px-wide REVNET geometry. */
+@utility container {
+  width: 100%;
+  margin-inline: auto;
+  padding-inline: 2rem;
+
+  @media (width >= 40rem) {
+    max-width: none;
+  }
+
+  @media (width >= 1225px) {
+    max-width: 1225px;
+  }
+}
+
+/*
+ * The handful of transition utilities REVNET uses from tailwindcss-animate.
+ * Keeping them local avoids shipping a framework plugin for four Radix
+ * surfaces, while preserving the exact enter/exit behavior and duration.
+ */
+@utility animate-in {
+  animation-name: enter;
+  animation-duration: 150ms;
+  --tw-enter-opacity: initial;
+  --tw-enter-scale: initial;
+  --tw-enter-rotate: initial;
+  --tw-enter-translate-x: initial;
+  --tw-enter-translate-y: initial;
+}
+
+@utility animate-out {
+  animation-name: exit;
+  animation-duration: 150ms;
+  --tw-exit-opacity: initial;
+  --tw-exit-scale: initial;
+  --tw-exit-rotate: initial;
+  --tw-exit-translate-x: initial;
+  --tw-exit-translate-y: initial;
+}
+
+@utility fade-in-0 {
+  --tw-enter-opacity: 0;
+}
+
+@utility fade-in-50 {
+  --tw-enter-opacity: 0.5;
+}
+
+@utility fade-out-80 {
+  --tw-exit-opacity: 0.8;
+}
+
+@utility zoom-in-95 {
+  --tw-enter-scale: 0.95;
+}
+
+@utility slide-in-from-top-2 {
+  --tw-enter-translate-y: -0.5rem;
+}
+
+@utility slide-in-from-bottom-2 {
+  --tw-enter-translate-y: 0.5rem;
+}
+
+@utility slide-out-to-right-full {
+  --tw-exit-translate-x: 100%;
+}
+
+@utility slide-in-from-top-full {
+  --tw-enter-translate-y: -100%;
+}
+
+@utility slide-in-from-bottom-full {
+  --tw-enter-translate-y: 100%;
+}
+
+@keyframes enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0)
+      scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), var(--tw-enter-scale, 1))
+      rotate(var(--tw-enter-rotate, 0));
+  }
+}
+
+@keyframes exit {
+  to {
+    opacity: var(--tw-exit-opacity, 1);
+    transform: translate3d(var(--tw-exit-translate-x, 0), var(--tw-exit-translate-y, 0), 0)
+      scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), var(--tw-exit-scale, 1))
+      rotate(var(--tw-exit-rotate, 0));
+  }
+}
+
+/* tailwindcss-animate accepted fraction and arbitrary-value translate
+   candidates. Static CSS keeps the two exact dialog candidates intact. */
+[data-state="open"][class~="data-[state=open]:slide-in-from-left-1/2"] {
+  --tw-enter-translate-x: -50%;
+}
+
+[data-state="open"][class~="data-[state=open]:slide-in-from-top-[48%]"] {
+  --tw-enter-translate-y: -48%;
+}
+
+[data-state="open"][class~="data-[state=open]:animate-in"][class~="duration-200"] {
+  animation-duration: 200ms;
+}
+
+/*
+ * @tailwindcss/forms' base strategy, kept explicitly so upgrading Tailwind
+ * cannot change the appearance, dimensions, or accessibility of native form
+ * controls. Product-specific Melon overrides remain below this layer.
+ */
+@layer base {
+  /* Tailwind 3's preflight inherited the configured gray-200 as the default
+     border color. Tailwind 4 switched this to currentColor. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: #e1f7ea;
+  }
+
+  input:where([type="text"]),
+  input:where(:not([type])),
+  input:where([type="email"]),
+  input:where([type="url"]),
+  input:where([type="password"]),
+  input:where([type="number"]),
+  input:where([type="date"]),
+  input:where([type="datetime-local"]),
+  input:where([type="month"]),
+  input:where([type="search"]),
+  input:where([type="tel"]),
+  input:where([type="time"]),
+  input:where([type="week"]),
+  select:where([multiple]),
+  textarea,
+  select {
+    appearance: none;
+    background-color: #fff;
+    border-color: #3d7955;
+    border-width: 1px;
+    border-radius: 0;
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
+    --tw-shadow: 0 0 #0000;
+  }
+
+  input:where([type="text"]):focus,
+  input:where(:not([type])):focus,
+  input:where([type="email"]):focus,
+  input:where([type="url"]):focus,
+  input:where([type="password"]):focus,
+  input:where([type="number"]):focus,
+  input:where([type="date"]):focus,
+  input:where([type="datetime-local"]):focus,
+  input:where([type="month"]):focus,
+  input:where([type="search"]):focus,
+  input:where([type="tel"]):focus,
+  input:where([type="time"]):focus,
+  input:where([type="week"]):focus,
+  select:where([multiple]):focus,
+  textarea:focus,
+  select:focus {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    --tw-ring-inset: ;
+    --tw-ring-offset-width: 0px;
+    --tw-ring-offset-color: #fff;
+    --tw-ring-color: #2563eb;
+    --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
+      var(--tw-ring-offset-color);
+    --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(1px + var(--tw-ring-offset-width))
+      var(--tw-ring-color);
+    box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+    border-color: #2563eb;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #3d7955;
+    opacity: 1;
+  }
+
+  ::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+  }
+
+  ::-webkit-date-and-time-value {
+    min-height: 1.5em;
+    text-align: inherit;
+  }
+
+  ::-webkit-datetime-edit {
+    display: inline-flex;
+  }
+
+  ::-webkit-datetime-edit,
+  ::-webkit-datetime-edit-year-field,
+  ::-webkit-datetime-edit-month-field,
+  ::-webkit-datetime-edit-day-field,
+  ::-webkit-datetime-edit-hour-field,
+  ::-webkit-datetime-edit-minute-field,
+  ::-webkit-datetime-edit-second-field,
+  ::-webkit-datetime-edit-millisecond-field,
+  ::-webkit-datetime-edit-meridiem-field {
+    padding-block: 0;
+  }
+
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%233d7955' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+    print-color-adjust: exact;
+  }
+
+  select:where([multiple]),
+  select:where([size]:not([size="1"])) {
+    background-image: initial;
+    background-position: initial;
+    background-repeat: unset;
+    background-size: initial;
+    padding-right: 0.75rem;
+    print-color-adjust: unset;
+  }
+
+  input:where([type="checkbox"]),
+  input:where([type="radio"]) {
+    appearance: none;
+    padding: 0;
+    print-color-adjust: exact;
+    display: inline-block;
+    vertical-align: middle;
+    background-origin: border-box;
+    user-select: none;
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    color: #2563eb;
+    background-color: #fff;
+    border-color: #3d7955;
+    border-width: 1px;
+    --tw-shadow: 0 0 #0000;
+  }
+
+  input:where([type="checkbox"]) {
+    border-radius: 0;
+  }
+
+  input:where([type="radio"]) {
+    border-radius: 100%;
+  }
+
+  input:where([type="checkbox"]):focus,
+  input:where([type="radio"]):focus {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    --tw-ring-inset: ;
+    --tw-ring-offset-width: 2px;
+    --tw-ring-offset-color: #fff;
+    --tw-ring-color: #2563eb;
+    --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
+      var(--tw-ring-offset-color);
+    --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
+      var(--tw-ring-color);
+    box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
+
+  input:where([type="checkbox"]):checked,
+  input:where([type="radio"]):checked {
+    border-color: transparent;
+    background-color: currentColor;
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  input:where([type="checkbox"]):checked {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3E%3C/svg%3E");
+  }
+
+  input:where([type="radio"]):checked {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='8' cy='8' r='3'/%3E%3C/svg%3E");
+  }
+
+  input:where([type="checkbox"]):checked:hover,
+  input:where([type="checkbox"]):checked:focus,
+  input:where([type="radio"]):checked:hover,
+  input:where([type="radio"]):checked:focus {
+    border-color: transparent;
+    background-color: currentColor;
+  }
+
+  input:where([type="checkbox"]):indeterminate {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 16 16'%3E%3Cpath stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 8h8'/%3E%3C/svg%3E");
+    border-color: transparent;
+    background-color: currentColor;
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  input:where([type="checkbox"]):indeterminate:hover,
+  input:where([type="checkbox"]):indeterminate:focus {
+    border-color: transparent;
+    background-color: currentColor;
+  }
+
+  input:where([type="file"]) {
+    background: unset;
+    border-color: inherit;
+    border-width: 0;
+    border-radius: 0;
+    padding: 0;
+    font-size: unset;
+    line-height: inherit;
+  }
+
+  input:where([type="file"]):focus {
+    outline: 1px auto -webkit-focus-ring-color;
+  }
+
+  @media (forced-colors: active) {
+    input:where([type="checkbox"]):checked,
+    input:where([type="radio"]):checked,
+    input:where([type="checkbox"]):indeterminate {
+      appearance: auto;
+    }
+  }
+}
 
 /* hide scroll wheel for numbers */
 @layer base {
@@ -36,12 +376,7 @@ body {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgb(246 254 249 / 0.72),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, rgb(246 254 249 / 0.72), transparent);
   animation: skeleton-sweep 1.5s ease-in-out infinite;
 }
 

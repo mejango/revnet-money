@@ -1,13 +1,14 @@
+import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
+import { useSuckers } from "@/lib/nana/suckers";
 import {
   getPrimaryNativeTerminal,
   getProjectTerminalStore,
   jbTerminalStoreAbi,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
-import { useJBChainId, useJBContractContext, useSuckers } from "@bananapus/nana-sdk-react";
+import { useQuery } from "@tanstack/react-query";
 import { getContract } from "viem";
 import { useConfig } from "wagmi";
-import { useQuery } from "wagmi/query";
 
 /**
  * Return the current surplus of JB Native token across each sucker on all chains for the current project.
@@ -21,10 +22,9 @@ export function useSuckersTokenBalance(tokens?: Record<number, `0x${string}`>) {
   const { data: pairs = [], isLoading, isError } = useSuckers();
 
   // Default tokens map using NATIVE_TOKEN for all chains if not provided
-  const defaultTokens = Object.keys(pairs || {}).reduce(
-    (acc, chainIdStr) => {
-      const chainId = Number(chainIdStr);
-      acc[chainId] = NATIVE_TOKEN as `0x${string}`;
+  const defaultTokens = pairs.reduce(
+    (acc, pair) => {
+      acc[pair.peerChainId] = NATIVE_TOKEN as `0x${string}`;
       return acc;
     },
     {} as Record<number, `0x${string}`>,
@@ -37,8 +37,13 @@ export function useSuckersTokenBalance(tokens?: Record<number, `0x${string}`>) {
       "suckersNativeTokenBalance",
       projectId.toString(),
       chainId?.toString(),
-      pairs?.map((pair: any) => pair.peerChainId).join(","),
+      pairs.map((pair) => pair.peerChainId).join(","),
+      Object.entries(finalTokens)
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([id, token]) => `${id}:${token}`)
+        .join(","),
     ],
+    enabled: !!chainId && !isLoading,
     queryFn: async () => {
       if (!chainId) return null;
 
@@ -50,7 +55,7 @@ export function useSuckersTokenBalance(tokens?: Record<number, `0x${string}`>) {
        * For each peer, get its terminal, then get the current surplus.
        */
       const balances = await Promise.all(
-        pairs.map(async (pair: any) => {
+        pairs.map(async (pair) => {
           const { peerChainId, projectId } = pair;
           const token = finalTokens[peerChainId];
           const [terminal, store] = await Promise.all([

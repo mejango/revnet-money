@@ -32,7 +32,6 @@ const deterministicEnvironment = {
   NEXT_PUBLIC_RPC_OPTIMISM_URLS: `${fixtureOrigin}/rpc`,
   NEXT_PUBLIC_SEPOLIA_SUBGRAPH_URL: `${fixtureOrigin}/graphql`,
   NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: fixtureOrigin,
-  NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "ci",
   PORT: String(appPort),
 };
 

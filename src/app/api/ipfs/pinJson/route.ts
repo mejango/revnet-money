@@ -1,4 +1,5 @@
 import { isIpfsCid } from "@/lib/ipfs-cid";
+import { readBoundedBody } from "@/lib/server/readBoundedBody";
 import { NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 
@@ -77,10 +78,11 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "metadata is too large" }, { status: 413 });
     }
 
-    const body = await req.text();
-    if (Buffer.byteLength(body, "utf8") > MAX_METADATA_BYTES) {
+    const bodyBytes = await readBoundedBody(req.body, MAX_METADATA_BYTES);
+    if (!bodyBytes) {
       return Response.json({ error: "metadata is too large" }, { status: 413 });
     }
+    const body = new TextDecoder().decode(bodyBytes);
     let data: unknown;
     try {
       data = JSON.parse(body) as unknown;

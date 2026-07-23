@@ -1,5 +1,5 @@
+import { useChain } from "@/lib/nana/project";
 import { etherscanLink, formatEthAddress } from "@/lib/utils";
-import { useChain } from "@bananapus/nana-sdk-react";
 import { twMerge } from "tailwind-merge";
 import { Chain } from "viem";
 import { ExternalLink } from "./ExternalLink";

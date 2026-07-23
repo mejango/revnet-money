@@ -1,17 +1,17 @@
 "use client";
 
-import { ParticipantsDocument, ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useTotalOutstandingTokens } from "@/hooks/useTotalOutstandingTokens";
+import {
+  ParticipantsOperation,
+  ProjectOperation,
+  SuckerGroupOperation,
+  useBendystrawQuery,
+} from "@/lib/bendystraw";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { prettyNumber } from "@/lib/number";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import { formatUnits } from "@bananapus/nana-sdk-core";
-import {
-  useBendystrawQuery,
-  useJBChainId,
-  useJBContractContext,
-  useJBTokenContext,
-} from "@bananapus/nana-sdk-react";
 import { ParticipantsPieChart } from "../../../../owners/components/ParticipantsPieChart";
 import { ParticipantsTable } from "../../../../owners/components/ParticipantsTable";
 
@@ -25,7 +25,7 @@ export function V6AllCard() {
   const { token } = useJBTokenContext();
   const totalOutstandingTokens = useTotalOutstandingTokens();
 
-  const project = useBendystrawQuery(ProjectDocument, {
+  const project = useBendystrawQuery(ProjectOperation, {
     projectId: Number(projectId),
     chainId: Number(chainId),
     version: 6,
@@ -33,9 +33,9 @@ export function V6AllCard() {
   const suckerGroupId = project.data?.project?.suckerGroupId;
 
   const { data: suckerGroupData } = useBendystrawQuery(
-    SuckerGroupDocument,
+    SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
-    { enabled: !!suckerGroupId, pollInterval: 10000 },
+    { enabled: !!suckerGroupId, pollInterval: 10000, chainId: Number(chainId) },
   );
 
   const chainTokenConfig = getTokenConfigForChain(suckerGroupData, Number(chainId));
@@ -43,7 +43,7 @@ export function V6AllCard() {
   const baseTokenDecimals = chainTokenConfig.decimals;
 
   const participantsQuery = useBendystrawQuery(
-    ParticipantsDocument,
+    ParticipantsOperation,
     {
       orderBy: "balance",
       orderDirection: "desc",
@@ -52,7 +52,7 @@ export function V6AllCard() {
         balance_gt: 0,
       },
     },
-    { enabled: !!suckerGroupId },
+    { enabled: !!suckerGroupId, chainId: Number(chainId) },
   );
 
   // Aggregate each account's balance/volume across the chains it holds on.

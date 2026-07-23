@@ -1,41 +1,56 @@
 "use client";
 
 import { OPEN_IPFS_GATEWAY_HOSTNAME } from "@/lib/ipfs";
-import { JBChainId, JBProjectProvider } from "@bananapus/nana-sdk-react";
+import { ProjectProvider } from "@/lib/nana/project";
+import type { InitialProjectData, SuckerPair } from "@/lib/nana/types";
+import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { PropsWithChildren } from "react";
 
-const TESTNET_CHAIN_IDS = new Set([11155111, 11155420, 84532, 421614]);
+const SUPPORTED_CHAIN_IDS = new Set([1, 10, 42161, 8453, 11155111, 11155420, 84532, 421614]);
 
 export function ProjectProviders(
   props: PropsWithChildren<{
     projectId: bigint;
     chainId: JBChainId;
+    project: {
+      name: string | null;
+      logoUri: string | null;
+    };
+    projects: readonly {
+      chainId: number;
+      projectId: number;
+    }[];
   }>,
 ) {
-  const bendystrawUrl = `${process.env.NEXT_PUBLIC_BENDYSTRAW_URL}`.split("/");
-
-  // Extract API key: if URL ends with domain only, return empty string
-  // If URL has a path after domain, use that as the API key
-  const apiKey =
-    bendystrawUrl.length > 3 && bendystrawUrl[bendystrawUrl.length - 1]
-      ? bendystrawUrl[bendystrawUrl.length - 1]
-      : "";
-
-  // The public bendystraw endpoints CORS-block browsers from non-allowlisted
-  // origins, so client-side queries go through our same-origin proxy (which
-  // forwards server-side, like juicebox-money-v6 does). The SDK builds
-  // `<url>/<apiKey>` + `/graphql`, so "public" stands in for a missing key.
-  const net = TESTNET_CHAIN_IDS.has(Number(props.chainId)) ? "testnet" : "mainnet";
-  // graphql-request rejects relative URLs, so anchor the proxy to the page origin
-  // (queries only run client-side; the SSR value is never fetched).
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const initialProject: InitialProjectData = {
+    metadata: {
+      name: props.project.name ?? "",
+      ...(props.project.logoUri ? { logoUri: props.project.logoUri } : {}),
+    },
+  };
+  const initialSuckers = props.projects
+    .filter(
+      (project): project is { chainId: JBChainId; projectId: number } =>
+        SUPPORTED_CHAIN_IDS.has(project.chainId) &&
+        Number.isSafeInteger(project.projectId) &&
+        project.projectId >= 0,
+    )
+    .map(
+      (project): SuckerPair => ({
+        peerChainId: project.chainId,
+        projectId: BigInt(project.projectId),
+      }),
+    );
 
   return (
-    <JBProjectProvider
-      {...props}
-      version={6}
-      ctxProps={{ metadata: { ipfsGatewayHostname: OPEN_IPFS_GATEWAY_HOSTNAME } }}
-      bendystraw={{ apiKey: apiKey || "public", url: `${origin}/api/bendystraw/${net}` }}
-    />
+    <ProjectProvider
+      projectId={props.projectId}
+      chainId={props.chainId}
+      initialProject={initialProject}
+      initialSuckers={initialSuckers}
+      ipfsGatewayHostname={OPEN_IPFS_GATEWAY_HOSTNAME}
+    >
+      {props.children}
+    </ProjectProvider>
   );
 }

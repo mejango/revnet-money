@@ -5,7 +5,11 @@ vi.mock("react", async (importOriginal) => ({
   cache: <T>(callback: T) => callback,
 }));
 
-import { bendystrawFetch } from "@/graphql/bendystrawClient";
+import {
+  bendystrawFetch,
+  MAX_BENDYSTRAW_RESPONSE_BYTES,
+  readBendystrawResponse,
+} from "@/lib/bendystraw/transport";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -63,5 +67,33 @@ describe("Bendystraw transport resilience", () => {
     vi.stubGlobal("fetch", timedOutFetch);
     await expect(bendystrawFetch("https://bendystraw.invalid/graphql")).rejects.toBe(timeout);
     expect(timedOutFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels an undeclared oversized response before buffering the remaining stream", async () => {
+    const chunk = new Uint8Array(1024 * 1024);
+    const totalChunks = MAX_BENDYSTRAW_RESPONSE_BYTES / chunk.byteLength + 5;
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+      pull(controller) {
+        if (pulls >= totalChunks) {
+          controller.close();
+          return;
+        }
+        pulls += 1;
+        controller.enqueue(chunk);
+      },
+    });
+
+    await expect(
+      readBendystrawResponse(
+        new Response(body, { headers: { "content-type": "application/json" } }),
+      ),
+    ).rejects.toThrow("exceeds the size limit");
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThan(totalChunks);
   });
 });

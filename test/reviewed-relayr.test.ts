@@ -1,4 +1,4 @@
-import type { RelayrGetBundleResponse } from "@bananapus/nana-sdk-react";
+import type { RelayrGetBundleResponse } from "@/lib/nana/types";
 import type { Hex } from "viem";
 import { sepolia } from "viem/chains";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

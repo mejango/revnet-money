@@ -3,16 +3,11 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { PermissionHoldersOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 import { Address, isAddress } from "viem";
-import {
-  ChainProjectRow,
-  PermissionHolderRow,
-  PermissionHoldersDocument,
-  permissionHoldersWhere,
-} from "./operatorLib";
+import { ChainProjectRow, PermissionHolderRow, permissionHoldersWhere } from "./operatorLib";
 import { permissionInfo } from "./permissionMeta";
 
 type Grant = {
@@ -75,7 +70,7 @@ function aggregateGrants(items: PermissionHolderRow[], rows: ChainProjectRow[]):
  */
 export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
   const query = useBendystrawQuery(
-    PermissionHoldersDocument,
+    PermissionHoldersOperation,
     { where: permissionHoldersWhere(rows) },
     { enabled: rows.length > 0 },
   );

@@ -1,6 +1,5 @@
-import { HasPermissionDocument } from "@/generated/graphql";
+import { HasPermissionOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { getRevnetLoanContract, JBChainId } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 
 export function useHasBorrowPermission({
   address,
@@ -20,14 +19,17 @@ export function useHasBorrowPermission({
   const querySkip =
     skip || !address || !projectId || !chainId || !resolvedPermissionsAddress || !operator;
 
-  const { data } = useBendystrawQuery(HasPermissionDocument, {
-    skip: querySkip,
-    account: address as string,
-    chainId: chainId as number,
-    projectId: Number(projectId),
-    operator: operator as string,
-    version: 6,
-  });
+  const { data } = useBendystrawQuery(
+    HasPermissionOperation,
+    {
+      account: address ?? "",
+      chainId: Number(chainId ?? 0),
+      projectId: Number(projectId),
+      operator: operator ?? "",
+      version: 6,
+    },
+    { enabled: !querySkip, chainId: Number(chainId ?? 0) },
+  );
 
   return data?.permissionHolder?.permissions?.includes(1) ?? undefined;
 }

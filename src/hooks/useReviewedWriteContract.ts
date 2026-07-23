@@ -8,7 +8,7 @@ import {
   useTransactionActivities,
 } from "@/lib/transaction-activity";
 import { requireContractTransactionReview } from "@/lib/transaction-review";
-import { getAccount, simulateContract, waitForTransactionReceipt } from "@wagmi/core";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import {
   encodeFunctionData,
@@ -22,6 +22,7 @@ import {
   useWaitForTransactionReceipt as useWagmiWaitForTransactionReceipt,
   useWriteContract as useWagmiWriteContract,
 } from "wagmi";
+import { getAccount, simulateContract, waitForTransactionReceipt } from "wagmi/actions";
 
 const SAFE_PREFIX: Partial<Record<number, string>> = {
   1: "eth",
@@ -156,6 +157,7 @@ export function useWriteContract(
   options?: Parameters<typeof useWagmiWriteContract>[0],
 ): ReturnType<typeof useWagmiWriteContract> {
   const config = useConfig();
+  const queryClient = useQueryClient();
   const mutation = useWagmiWriteContract(options);
 
   const writeContractAsync = useCallback(
@@ -233,12 +235,23 @@ export function useWriteContract(
       variables: Parameters<typeof mutation.writeContract>[0],
       callbacks?: Parameters<typeof mutation.writeContract>[1],
     ) => {
+      const context = {
+        client: queryClient,
+        meta: options?.mutation?.meta,
+        mutationKey: ["writeContract"] as const,
+      };
       void writeContractAsync(variables as Parameters<typeof mutation.writeContractAsync>[0]).then(
-        (hash) => callbacks?.onSuccess?.(hash, variables, undefined),
-        (error) => callbacks?.onError?.(error, variables, undefined),
+        (hash) => {
+          callbacks?.onSuccess?.(hash, variables, undefined, context);
+          callbacks?.onSettled?.(hash, null, variables, undefined, context);
+        },
+        (error) => {
+          callbacks?.onError?.(error, variables, undefined, context);
+          callbacks?.onSettled?.(undefined, error, variables, undefined, context);
+        },
       );
     },
-    [mutation, writeContractAsync],
+    [mutation, options?.mutation?.meta, queryClient, writeContractAsync],
   );
 
   return { ...mutation, writeContractAsync, writeContract } as ReturnType<

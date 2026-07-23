@@ -1,11 +1,11 @@
 import { chainSortOrder } from "@/app/constants";
+import type { JBChainId, JBTokenContextData } from "@/lib/nana/types";
 import {
   CashOutTaxRate,
   JBRulesetData,
   JB_CHAINS,
   ReservedPercent,
 } from "@bananapus/nana-sdk-core";
-import { JBChainId, JBTokenContextData } from "@bananapus/nana-sdk-react";
 import { clsx, type ClassValue } from "clsx";
 import { Duration, formatDuration, intervalToDuration } from "date-fns";
 import { twMerge } from "tailwind-merge";

@@ -1,12 +1,4 @@
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { CartesianChart, type ChartSeries } from "@/components/ui/chart";
 
 export function LoanFeeChart({
   prepaidPercent,
@@ -37,14 +29,26 @@ export function LoanFeeChart({
       (item) =>
         item &&
         typeof item.year === "number" &&
+        Number.isFinite(item.year) &&
         typeof item.totalCost === "number" &&
+        Number.isFinite(item.totalCost) &&
         item.totalCost >= 0 &&
         item.totalCost < Number.MAX_SAFE_INTEGER,
     ) || [];
 
-  // Calculate max cost from original feeData to ensure proper domain
-  const maxCost = feeData?.length > 0 ? Math.max(...feeData.map((d) => d.totalCost || 0)) : 0;
+  // Calculate the domain from the values that are safe to render.
+  const maxCost =
+    validFeeData.length > 0 ? Math.max(...validFeeData.map((datum) => datum.totalCost)) : 0;
   const minCost = grossBorrowedNative + grossBorrowedNative * 0.035; // borrowed amount + fixed fee
+  const maxDomainCost = Math.max(maxCost * 1.1, minCost * 1.05, 1);
+  const series: ChartSeries<(typeof validFeeData)[number]>[] = [
+    {
+      key: "totalCost",
+      label: "Total paid to unlock",
+      color: "#D98909",
+      value: (datum) => datum.totalCost,
+    },
+  ];
 
   return (
     <div className="mt-2">
@@ -59,6 +63,7 @@ export function LoanFeeChart({
           step="2.5"
           value={prepaidPercent}
           onChange={(e) => setPrepaidPercent(e.target.value)}
+          aria-label="Prepaid fee percentage"
           className="w-full"
         />
         <div className="flex justify-between text-xs text-gray-500">
@@ -67,69 +72,62 @@ export function LoanFeeChart({
         </div>
       </div>
       <div className="h-64 min-h-[250px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={validFeeData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis
-              dataKey="year"
-              label={{
-                value: "Time (years)",
-                position: "insideBottom",
-                offset: -5,
-                fontSize: 14,
-              }}
-              type="number"
-              domain={[0, 10]}
-              ticks={[...Array(11).keys()]}
-              tick={{ fontSize: 14 }}
-              tickFormatter={(year) => `${year}`}
-            />
-            <YAxis
-              label={{
-                value: "Additional cost to unlock",
-                angle: -90,
-                position: "insideLeft",
-                offset: 0,
-                style: { textAnchor: "middle", fontSize: 14 },
-              }}
-              domain={[minCost, maxCost * 1.1]}
-              tick={false}
-            />
-            <Tooltip
-              formatter={(value: number, _name: string, props) => {
-                if (props?.payload?.year >= 9.99) {
-                  return ["—", "No collateral can be reclaimed at this time"];
-                }
+        {validFeeData.length ? (
+          <CartesianChart
+            data={validFeeData}
+            xValue={(datum) => datum.year}
+            series={series}
+            ariaLabel="Loan unlock cost over time"
+            description={`The additional ${tokenSymbol} cost to unlock ${collateralAmount} ${
+              collateralTokenSymbol || tokenSymbol
+            } over ten years.`}
+            className="h-full w-full"
+            margin={{ top: 18, right: 18, bottom: 48, left: 48 }}
+            xDomain={[0, 10]}
+            yDomain={[minCost, maxDomainCost]}
+            xTicks={[...Array(11).keys()]}
+            showYTickLabels={false}
+            formatXTick={(year) => `${year}`}
+            xAxisLabel="Time (years)"
+            yAxisLabel="Additional cost to unlock"
+            grid="both"
+            tooltip={({ datum }) => {
+              if (datum.year >= 9.99) {
+                return (
+                  <div className="rounded-md border border-zinc-200 bg-white p-3 text-sm shadow-xl">
+                    <div className="font-medium">Final period – no collateral will be returned</div>
+                    <div className="mt-1 text-zinc-600">No collateral can be reclaimed.</div>
+                  </div>
+                );
+              }
 
-                // value is the totalCost (fees) at this point in time
-                // This represents how much native token you need to pay to unlock your collateral
-                const costToUnlock = value;
-                // Use collateralTokenSymbol for collateral amount, tokenSymbol for fees
-                const collateralSymbol = collateralTokenSymbol || tokenSymbol;
-                return [
-                  `${collateralAmount} ${collateralSymbol}`,
-                  `Total paid to unlock: ${costToUnlock.toFixed(8)} ${tokenSymbol}`,
-                ];
-              }}
-              labelFormatter={(label: number) => {
-                if (label >= 9.99) {
-                  return "Final period – no collateral will be returned";
-                }
-                const months = Math.round(label * 12);
-                const years = Math.floor(months / 12);
-                const remMonths = months % 12;
-                return `${months} months (${years}y ${remMonths}m)`;
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="totalCost"
-              stroke="#D98909"
-              strokeWidth={2}
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+              const months = Math.round(datum.year * 12);
+              const years = Math.floor(months / 12);
+              const remMonths = months % 12;
+              const collateralSymbol = collateralTokenSymbol || tokenSymbol;
+              return (
+                <div className="rounded-md border border-zinc-200 bg-white p-3 text-sm shadow-xl whitespace-nowrap">
+                  <div className="font-medium">
+                    {months} months ({years}y {remMonths}m)
+                  </div>
+                  <div className="mt-1 text-zinc-700">
+                    Total paid to unlock: {datum.totalCost.toFixed(8)} {tokenSymbol}
+                  </div>
+                  <div className="text-zinc-600">
+                    Collateral returned: {collateralAmount} {collateralSymbol}
+                  </div>
+                </div>
+              );
+            }}
+          />
+        ) : (
+          <div
+            className="flex h-full items-center justify-center text-sm text-zinc-500"
+            role="status"
+          >
+            No loan fee data available
+          </div>
+        )}
       </div>
       <p className="text-sm text-gray-600 mt-3 text-center">
         Fees increase after{" "}

@@ -1,8 +1,8 @@
 import { ipfsGatewayUrl } from "@/lib/ipfs";
 import { isIpfsCid } from "@/lib/ipfs-cid";
+import { useMutation } from "@tanstack/react-query";
 import Image from "next/image";
 import { twMerge } from "tailwind-merge";
-import { useMutation } from "wagmi/query";
 
 export type InfuraPinResponse = {
   Hash: string;

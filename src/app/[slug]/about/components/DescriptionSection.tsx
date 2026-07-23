@@ -1,9 +1,9 @@
 "use client";
 
-import { Project } from "@/generated/graphql";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import type { Project } from "@/lib/bendystraw/types";
+import { useJBProjectMetadataContext } from "@/lib/nana/project";
 import { getProjectLinks } from "@/lib/projectLinks";
-import { useJBProjectMetadataContext } from "@bananapus/nana-sdk-react";
 import { EditMetadataDialog } from "./EditMetadataDialog";
 import { ProjectLinks } from "./ProjectLinks";
 import { RichPreview } from "./RichPreview";

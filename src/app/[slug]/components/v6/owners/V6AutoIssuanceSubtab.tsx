@@ -20,79 +20,22 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import { commaNumber } from "@/lib/number";
-import { formatTokenSymbol } from "@/lib/utils";
-import {
-  formatUnits,
-  JB_CHAINS,
-  JBChainId,
-  JBCoreContracts,
-  jbRulesetsAbi,
-} from "@bananapus/nana-sdk-core";
-import { buildAutoIssueTx } from "@bananapus/nana-sdk-core/v6";
 import {
   useBendystrawQuery,
-  useJBContractContext,
-  useJBTokenContext,
-} from "@bananapus/nana-sdk-react";
-import { TypedDocumentNode } from "@graphql-typed-document-node/core";
+  V6AutoIssueEventsOperation,
+  V6StoredAutoIssuancesOperation,
+} from "@/lib/bendystraw";
+import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
+import type { JBChainId } from "@/lib/nana/types";
+import { commaNumber } from "@/lib/number";
+import { formatTokenSymbol } from "@/lib/utils";
+import { formatUnits, JB_CHAINS, JBCoreContracts, jbRulesetsAbi } from "@bananapus/nana-sdk-core";
+import { buildAutoIssueTx } from "@bananapus/nana-sdk-core/v6";
 import { format } from "date-fns";
-import gql from "graphql-tag";
 import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useReadContracts } from "wagmi";
 import { ProjectItem } from "../shared";
-
-type StoredRow = {
-  id: string;
-  chainId: number;
-  projectId: number;
-  stageId: string;
-  beneficiary: string;
-  count: string;
-};
-
-type IssuedRow = {
-  id: string;
-  chainId: number;
-  stageId: string;
-  beneficiary: string;
-  count: string;
-};
-
-type StoredQuery = { storeAutoIssuanceAmountEvents: { items: StoredRow[] } };
-type IssuedQuery = { autoIssueEvents: { items: IssuedRow[] } };
-type Vars = { where: Record<string, unknown> };
-
-/** Every chain's stored auto-issuances (website/ parity: one table for the group). */
-const StoredDocument = gql`
-  query V6StoredAutoIssuances($where: storeAutoIssuanceAmountEventFilter) {
-    storeAutoIssuanceAmountEvents(where: $where, limit: 200) {
-      items {
-        id
-        chainId
-        projectId
-        stageId
-        beneficiary
-        count
-      }
-    }
-  }
-` as TypedDocumentNode<StoredQuery, Vars>;
-
-const IssuedDocument = gql`
-  query V6AutoIssueEvents($where: autoIssueEventFilter) {
-    autoIssueEvents(where: $where, limit: 200) {
-      items {
-        id
-        chainId
-        stageId
-        beneficiary
-        count
-      }
-    }
-  }
-` as TypedDocumentNode<IssuedQuery, Vars>;
 
 /**
  * Auto issuance across every chain in the group: Chain | Stage | Account |
@@ -115,8 +58,16 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
     version: 6,
     OR: chains.map((c) => ({ chainId: Number(c.chainId), projectId: c.projectId })),
   };
-  const stored = useBendystrawQuery(StoredDocument, { where }, { enabled: chains.length > 0 });
-  const issued = useBendystrawQuery(IssuedDocument, { where }, { enabled: chains.length > 0 });
+  const stored = useBendystrawQuery(
+    V6StoredAutoIssuancesOperation,
+    { where },
+    { enabled: chains.length > 0, chainId: Number(chains[0]?.chainId ?? 1) },
+  );
+  const issued = useBendystrawQuery(
+    V6AutoIssueEventsOperation,
+    { where },
+    { enabled: chains.length > 0, chainId: Number(chains[0]?.chainId ?? 1) },
+  );
 
   // Each chain's ruleset list, chronological, for stage numbers + unlock dates.
   const rulesetReads = useReadContracts({

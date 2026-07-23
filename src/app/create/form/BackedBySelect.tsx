@@ -1,11 +1,11 @@
 // removed from initial deploy for simplicity
 // https://discord.com/channels/1139291093310132376/1139291094069301385/1319669598148231263
 import { BACKED_BY_TOKENS } from "@/app/constants";
-import { Field as FormikField, useFormikContext } from "formik";
+import { FormField, useFormContext } from "@/lib/forms";
 import { RevnetFormData } from "../types";
 
 export function BackedBySelect({ disabled = false }: { disabled?: boolean }) {
-  const { values } = useFormikContext<RevnetFormData>();
+  const { values } = useFormContext<RevnetFormData>();
   const revnetTokenSymbolCapitalized =
     values.tokenSymbol?.length > 0 ? values.tokenSymbol.replace(/^\$+/, "") : "Tokens";
 
@@ -28,7 +28,7 @@ export function BackedBySelect({ disabled = false }: { disabled?: boolean }) {
       <div className="flex flex-row gap-8">
         {BACKED_BY_TOKENS.map((token) => (
           <div key={token} className="flex items-center gap-2">
-            <FormikField
+            <FormField
               type="checkbox"
               name="backedBy"
               value={token}

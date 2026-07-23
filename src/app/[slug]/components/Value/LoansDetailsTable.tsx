@@ -9,17 +9,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  LoansByAccountDocument,
-  Project,
-  ProjectDocument,
-  SuckerGroupDocument,
-} from "@/generated/graphql";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
+import {
+  LoansByAccountOperation,
+  ProjectOperation,
+  SuckerGroupOperation,
+  useBendystrawQuery,
+} from "@/lib/bendystraw";
+import type { Project } from "@/lib/bendystraw/types";
+import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatSeconds } from "@/lib/utils";
 import { getRevnetLoanContract, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery, useJBChainId, useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { formatUnits } from "viem";
 
 // Constants for loan calculations and display
@@ -169,7 +170,7 @@ export function LoanDetailsTable({
 
   // Get project data to find sucker group ID
   const { data: projectData } = useBendystrawQuery(
-    ProjectDocument,
+    ProjectOperation,
     {
       chainId: Number(currentChainId),
       projectId: Number(revnetId),
@@ -185,25 +186,27 @@ export function LoanDetailsTable({
 
   // Get sucker group data for token mapping
   const { data: suckerGroupData } = useBendystrawQuery(
-    SuckerGroupDocument,
+    SuckerGroupOperation,
     {
       id: suckerGroupId ?? "",
     },
     {
       enabled: !!suckerGroupId,
       pollInterval: 10000,
+      chainId: Number(currentChainId),
     },
   );
 
   // Get all loans for the user
   const { data } = useBendystrawQuery(
-    LoansByAccountDocument,
+    LoansByAccountOperation,
     {
       owner: address,
       version: 6,
     },
     {
       pollInterval: LOAN_CONSTANTS.POLL_INTERVAL, // Refresh every 3 seconds
+      chainId: Number(currentChainId),
     },
   );
 

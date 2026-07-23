@@ -4,17 +4,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
-import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import {
   isSafeProposalPendingError,
   requireOnchainExecution,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
+import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
-import { getRevnetLoanContract, JBChainId, revLoansAbi } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery, useJBChainId, useJBTokenContext } from "@bananapus/nana-sdk-react";
+import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
 import {
@@ -70,7 +71,7 @@ export function RepayDialog({
 
   // Get project data to find sucker group ID using the project ID
   const { data: projectData } = useBendystrawQuery(
-    ProjectDocument,
+    ProjectOperation,
     { chainId: Number(currentChainId), projectId: Number(projectId), version: 6 },
     { enabled: !!currentChainId && !!projectId, pollInterval: 10000 },
   );
@@ -79,9 +80,9 @@ export function RepayDialog({
 
   // Get sucker group data for token mapping
   const { data: suckerGroupData } = useBendystrawQuery(
-    SuckerGroupDocument,
+    SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
-    { enabled: !!suckerGroupId, pollInterval: 10000 },
+    { enabled: !!suckerGroupId, pollInterval: 10000, chainId: Number(currentChainId) },
   );
 
   // Get token configuration for this loan's chain

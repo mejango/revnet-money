@@ -1,4 +1,3 @@
-import { farcasterFrame as miniAppConnector } from "@farcaster/miniapp-wagmi-connector";
 import { cache } from "react";
 import { createPublicClient, PublicClient } from "viem";
 import {
@@ -12,7 +11,7 @@ import {
   sepolia,
 } from "viem/chains";
 import { createConfig, fallback, http, type Transport } from "wagmi";
-import { coinbaseWallet, safe, walletConnect } from "wagmi/connectors";
+import { injected } from "wagmi/connectors/injected";
 
 function rpcFallback(urls: string | undefined): Transport {
   const configured = urls
@@ -25,12 +24,6 @@ function rpcFallback(urls: string | undefined): Transport {
   // The default transport only keeps isolated unit imports usable without env.
   return fallback(configured?.length ? configured : [http()]);
 }
-
-const safeConnector = safe({
-  allowedDomains: [/^app\.safe\.global$/],
-  debug: process.env.NODE_ENV !== "production",
-  shimDisconnect: true,
-});
 
 const chains = [
   mainnet,
@@ -56,33 +49,11 @@ const transports = {
 
 export const wagmiConfig = createConfig({
   chains,
-  connectors: [
-    miniAppConnector(),
-    safeConnector,
-    coinbaseWallet({
-      appName: "REVNET",
-      appLogoUrl: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.revnet.eth.sucks"}/assets/img/small-bw.svg`,
-      // Wallet support must not opt every visitor into Coinbase analytics.
-      preference: { options: "all", telemetry: false },
-    }),
-    // Only initialize WalletConnect in the browser
-    ...(typeof window !== "undefined"
-      ? [
-          walletConnect({
-            projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
-            showQrModal: false,
-            metadata: {
-              name: "REVNET",
-              description: "Tokenize revenues and fundraises. 100% autonomous.",
-              url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.revnet.eth.sucks",
-              icons: [
-                `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.revnet.eth.sucks"}/assets/img/small-bw.svg`,
-              ],
-            },
-          }),
-        ]
-      : []),
-  ],
+  // EIP-6963 discovers installed browser wallets without loading vendor SDKs.
+  // The generic injected connector remains as a fallback for older providers.
+  connectors: [injected({ shimDisconnect: true })],
+  multiInjectedProviderDiscovery: true,
+  ssr: true,
   transports,
 });
 

@@ -14,10 +14,9 @@ Non-loopback service URLs must use HTTPS.
 Build-time values are compiled into JavaScript and are public:
 
 - `NEXT_PUBLIC_SITE_URL`: canonical HTTPS origin used for links, metadata,
-  wallet metadata, and origin validation.
+  and origin validation.
 - `NEXT_PUBLIC_BENDYSTRAW_URL` and
   `NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL`: indexed contract-derived views.
-- `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`: a domain-restricted public project ID.
 - `NEXT_PUBLIC_INFURA_IPFS_HOSTNAME`: hostname only; no scheme or path.
 - eight `NEXT_PUBLIC_*_SUBGRAPH_URL` values used by discovery.
 - eight `NEXT_PUBLIC_RPC_*_URLS` values. Each accepts comma-separated endpoints;
@@ -90,7 +89,6 @@ docker build \
   --build-arg NEXT_PUBLIC_SITE_URL \
   --build-arg NEXT_PUBLIC_BENDYSTRAW_URL \
   --build-arg NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL \
-  --build-arg NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID \
   --build-arg NEXT_PUBLIC_INFURA_IPFS_HOSTNAME \
   --build-arg NEXT_PUBLIC_MAINNET_SUBGRAPH_URL \
   --build-arg NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL \
@@ -169,8 +167,8 @@ Publishing does not deploy or mutate a runtime environment.
   safe to discard; a shared/persistent cache only improves image response cost.
 - Set `HOSTNAME=0.0.0.0` and `PORT=3000` (the image defaults to both).
 - Terminate TLS at a trusted ingress and add HSTS there after the production
-  domain is final. Preserve the application security headers and do not add a
-  frame-deny policy that breaks Farcaster embedding.
+  domain is final. Preserve the application's CSP `frame-ancestors 'none'` and
+  `X-Frame-Options: DENY` anti-framing headers.
 - Route liveness/readiness to `/api/healthz`; use a 20-second startup grace and
   avoid restarts based on third-party dependency health.
 - Start one canary by digest, check health, image optimization, logs, the create

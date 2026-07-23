@@ -1,7 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { Address, isAddress, PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { usePublicClient } from "wagmi";
-import { useQuery } from "wagmi/query";
 
 /**
  * Resolve an address through ENS on the configured mainnet transport. Keeping

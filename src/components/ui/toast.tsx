@@ -1,26 +1,65 @@
-import * as ToastPrimitives from "@radix-ui/react-toast";
+"use client";
+
 import { cva, type VariantProps } from "class-variance-authority";
 import { X } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const ToastProvider = ToastPrimitives.Provider;
+type ToastProviderValue = {
+  duration: number;
+  label: string;
+  swipeDirection: "up" | "right" | "down" | "left";
+  swipeThreshold: number;
+};
 
-const ToastViewport = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitives.Viewport>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Viewport>
->(({ className, ...props }, ref) => (
-  <ToastPrimitives.Viewport
-    ref={ref}
-    className={cn(
-      "fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
-      className,
-    )}
-    {...props}
-  />
-));
-ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
+const ToastProviderContext = React.createContext<ToastProviderValue>({
+  duration: 5_000,
+  label: "Notifications",
+  swipeDirection: "right",
+  swipeThreshold: 50,
+});
+
+interface ToastProviderProps {
+  children?: React.ReactNode;
+  duration?: number;
+  label?: string;
+  swipeDirection?: ToastProviderValue["swipeDirection"];
+  swipeThreshold?: number;
+}
+
+function ToastProvider({
+  children,
+  duration = 5_000,
+  label = "Notifications",
+  swipeDirection = "right",
+  swipeThreshold = 50,
+}: ToastProviderProps) {
+  const value = React.useMemo(
+    () => ({ duration, label, swipeDirection, swipeThreshold }),
+    [duration, label, swipeDirection, swipeThreshold],
+  );
+  return <ToastProviderContext.Provider value={value}>{children}</ToastProviderContext.Provider>;
+}
+
+const ToastViewport = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => {
+    const provider = React.useContext(ToastProviderContext);
+    return (
+      <div
+        ref={ref}
+        role="region"
+        aria-label={props["aria-label"] ?? provider.label}
+        className={cn(
+          "fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
+);
+ToastViewport.displayName = "ToastViewport";
 
 const toastVariants = cva(
   "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 border border-zinc-200 p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full dark:border-zinc-800",
@@ -39,76 +78,256 @@ const toastVariants = cva(
   },
 );
 
-const Toast = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitives.Root>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Root> & VariantProps<typeof toastVariants>
->(({ className, variant, ...props }, ref) => {
-  return (
-    <ToastPrimitives.Root
-      ref={ref}
-      className={cn(toastVariants({ variant }), className)}
-      {...props}
-    />
-  );
-});
-Toast.displayName = ToastPrimitives.Root.displayName;
+type ToastContextValue = {
+  close: () => void;
+};
+const ToastContext = React.createContext<ToastContextValue | null>(null);
 
-const ToastAction = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitives.Action>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Action>
->(({ className, ...props }, ref) => (
-  <ToastPrimitives.Action
-    ref={ref}
-    className={cn(
-      "inline-flex h-8 shrink-0 items-center justify-center border border-zinc-200 bg-transparent px-3 text-sm font-medium ring-offset-white transition-colors hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-950 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-zinc-200/40 group-[.destructive]:hover:border-red-500/30 group-[.destructive]:hover:bg-red-500 group-[.destructive]:hover:text-zinc-50 group-[.destructive]:focus:ring-red-500 dark:border-zinc-800 dark:ring-offset-zinc-950 dark:hover:bg-zinc-800 dark:focus:ring-zinc-300 dark:group-[.destructive]:border-zinc-800/40 dark:group-[.destructive]:hover:border-red-900/30 dark:group-[.destructive]:hzz:bg-red-900 dark:group-[.destructive]:hover:text-zinc-50 dark:group-[.destructive]:focus:ring-red-900",
+function useToastRoot(component: string) {
+  const context = React.useContext(ToastContext);
+  if (!context) throw new Error(`${component} must be used inside Toast`);
+  return context;
+}
+
+interface ToastRootProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange">,
+    VariantProps<typeof toastVariants> {
+  defaultOpen?: boolean;
+  duration?: number;
+  forceMount?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
+  type?: "foreground" | "background";
+}
+
+const Toast = React.forwardRef<HTMLDivElement, ToastRootProps>(
+  (
+    {
       className,
-    )}
-    {...props}
-  />
-));
-ToastAction.displayName = ToastPrimitives.Action.displayName;
+      defaultOpen = true,
+      duration,
+      forceMount = false,
+      onBlur,
+      onFocus,
+      onMouseEnter,
+      onMouseLeave,
+      onOpenChange,
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      open: controlledOpen,
+      style,
+      type: _type,
+      variant,
+      ...props
+    },
+    ref,
+  ) => {
+    const provider = React.useContext(ToastProviderContext);
+    const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
+    const open = controlledOpen ?? internalOpen;
+    const controlled = controlledOpen !== undefined;
+    const [present, setPresent] = React.useState(open);
+    const [swipe, setSwipe] = React.useState<"cancel" | "end" | "move" | undefined>();
+    const [swipeDelta, setSwipeDelta] = React.useState(0);
+    const closeTimer = React.useRef<ReturnType<typeof setTimeout>>();
+    const hideTimer = React.useRef<ReturnType<typeof setTimeout>>();
+    const pointerStart = React.useRef<{ id: number; x: number; y: number }>();
+
+    const clearCloseTimer = React.useCallback(() => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    }, []);
+    const setOpen = React.useCallback(
+      (nextOpen: boolean) => {
+        if (!controlled) setInternalOpen(nextOpen);
+        if (nextOpen !== open) onOpenChange?.(nextOpen);
+      },
+      [controlled, onOpenChange, open],
+    );
+    const scheduleClose = React.useCallback(() => {
+      clearCloseTimer();
+      const resolvedDuration = duration ?? provider.duration;
+      if (resolvedDuration === Infinity || resolvedDuration <= 0) return;
+      closeTimer.current = setTimeout(() => setOpen(false), resolvedDuration);
+    }, [clearCloseTimer, duration, provider.duration, setOpen]);
+
+    React.useEffect(() => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      if (open) {
+        setPresent(true);
+        scheduleClose();
+      } else {
+        clearCloseTimer();
+        hideTimer.current = setTimeout(() => setPresent(false), 200);
+      }
+      return () => {
+        clearCloseTimer();
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+      };
+    }, [clearCloseTimer, open, scheduleClose]);
+
+    const close = React.useCallback(() => {
+      clearCloseTimer();
+      setOpen(false);
+    }, [clearCloseTimer, setOpen]);
+
+    const getDirectionalDelta = (event: React.PointerEvent<HTMLDivElement>) => {
+      const start = pointerStart.current;
+      if (!start) return 0;
+      return provider.swipeDirection === "left" || provider.swipeDirection === "right"
+        ? event.clientX - start.x
+        : event.clientY - start.y;
+    };
+    const direction =
+      provider.swipeDirection === "left" || provider.swipeDirection === "up" ? -1 : 1;
+
+    if (!present && !forceMount) return null;
+
+    return (
+      <ToastContext.Provider value={{ close }}>
+        <div
+          ref={ref}
+          role={variant === "destructive" ? "alert" : "status"}
+          aria-atomic="true"
+          aria-hidden={!open || undefined}
+          data-state={open ? "open" : "closed"}
+          data-swipe={swipe}
+          className={cn(toastVariants({ variant }), className)}
+          style={
+            {
+              "--radix-toast-swipe-end-x": `${swipeDelta}px`,
+              "--radix-toast-swipe-move-x": `${swipeDelta}px`,
+              ...style,
+            } as React.CSSProperties
+          }
+          onFocus={(event) => {
+            onFocus?.(event);
+            clearCloseTimer();
+          }}
+          onBlur={(event) => {
+            onBlur?.(event);
+            if (!event.currentTarget.contains(event.relatedTarget)) scheduleClose();
+          }}
+          onMouseEnter={(event) => {
+            onMouseEnter?.(event);
+            clearCloseTimer();
+          }}
+          onMouseLeave={(event) => {
+            onMouseLeave?.(event);
+            if (!event.defaultPrevented) scheduleClose();
+          }}
+          onPointerDown={(event) => {
+            onPointerDown?.(event);
+            if (event.defaultPrevented || event.button !== 0) return;
+            pointerStart.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            clearCloseTimer();
+          }}
+          onPointerMove={(event) => {
+            onPointerMove?.(event);
+            if (event.defaultPrevented || pointerStart.current?.id !== event.pointerId) return;
+            const delta = getDirectionalDelta(event);
+            if (delta * direction < 0) return;
+            setSwipe("move");
+            setSwipeDelta(delta);
+          }}
+          onPointerUp={(event) => {
+            onPointerUp?.(event);
+            if (event.defaultPrevented || pointerStart.current?.id !== event.pointerId) return;
+            const delta = getDirectionalDelta(event);
+            pointerStart.current = undefined;
+            if (delta * direction >= provider.swipeThreshold) {
+              setSwipe("end");
+              setSwipeDelta(delta);
+              close();
+            } else {
+              setSwipe("cancel");
+              setSwipeDelta(0);
+              window.setTimeout(() => setSwipe(undefined), 150);
+              scheduleClose();
+            }
+          }}
+          {...props}
+        />
+      </ToastContext.Provider>
+    );
+  },
+);
+Toast.displayName = "Toast";
+
+interface ToastActionProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  altText?: string;
+}
+
+const ToastAction = React.forwardRef<HTMLButtonElement, ToastActionProps>(
+  ({ altText: _altText, className, onClick, type, ...props }, ref) => {
+    const context = useToastRoot("ToastAction");
+    return (
+      <button
+        ref={ref}
+        type={type ?? "button"}
+        className={cn(
+          "inline-flex h-8 shrink-0 items-center justify-center border border-zinc-200 bg-transparent px-3 text-sm font-medium ring-offset-white transition-colors hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-950 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-zinc-200/40 group-[.destructive]:hover:border-red-500/30 group-[.destructive]:hover:bg-red-500 group-[.destructive]:hover:text-zinc-50 group-[.destructive]:focus:ring-red-500 dark:border-zinc-800 dark:ring-offset-zinc-950 dark:hover:bg-zinc-800 dark:focus:ring-zinc-300 dark:group-[.destructive]:border-zinc-800/40 dark:group-[.destructive]:hover:border-red-900/30 dark:group-[.destructive]:hover:bg-red-900 dark:group-[.destructive]:hover:text-zinc-50 dark:group-[.destructive]:focus:ring-red-900",
+          className,
+        )}
+        onClick={(event) => {
+          onClick?.(event);
+          if (!event.defaultPrevented) context.close();
+        }}
+        {...props}
+      />
+    );
+  },
+);
+ToastAction.displayName = "ToastAction";
 
 const ToastClose = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitives.Close>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Close>
->(({ className, ...props }, ref) => (
-  <ToastPrimitives.Close
-    ref={ref}
-    className={cn(
-      "absolute right-2 top-2 p-1 text-zinc-950/50 opacity-0 transition-opacity hover:text-zinc-950 focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600 dark:text-zinc-50/50 dark:hover:text-zinc-50",
-      className,
-    )}
-    toast-close=""
-    {...props}
-  >
-    <X className="h-4 w-4" />
-  </ToastPrimitives.Close>
-));
-ToastClose.displayName = ToastPrimitives.Close.displayName;
+  HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement>
+>(({ className, onClick, type, ...props }, ref) => {
+  const context = useToastRoot("ToastClose");
+  return (
+    <button
+      ref={ref}
+      type={type ?? "button"}
+      aria-label={props["aria-label"] ?? "Close notification"}
+      className={cn(
+        "absolute right-2 top-2 p-1 text-zinc-950/50 opacity-0 transition-opacity hover:text-zinc-950 focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600 dark:text-zinc-50/50 dark:hover:text-zinc-50",
+        className,
+      )}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!event.defaultPrevented) context.close();
+      }}
+      {...props}
+    >
+      <X aria-hidden="true" className="h-4 w-4" />
+    </button>
+  );
+});
+ToastClose.displayName = "ToastClose";
 
-const ToastTitle = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitives.Title>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Title>
->(({ className, ...props }, ref) => (
-  <ToastPrimitives.Title ref={ref} className={cn("text-sm font-semibold", className)} {...props} />
-));
-ToastTitle.displayName = ToastPrimitives.Title.displayName;
+const ToastTitle = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn("text-sm font-semibold", className)} {...props} />
+  ),
+);
+ToastTitle.displayName = "ToastTitle";
 
-const ToastDescription = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitives.Description>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Description>
->(({ className, ...props }, ref) => (
-  <ToastPrimitives.Description
-    ref={ref}
-    className={cn("text-sm opacity-90 break-words whitespace-pre-wrap", className)}
-    {...props}
-  />
-));
-ToastDescription.displayName = ToastPrimitives.Description.displayName;
+const ToastDescription = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn("text-sm opacity-90 break-words whitespace-pre-wrap", className)}
+      {...props}
+    />
+  ),
+);
+ToastDescription.displayName = "ToastDescription";
 
 type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>;
 
-type ToastActionElement = React.ReactElement<typeof ToastAction>;
+type ToastActionElement = React.ReactElement<React.ComponentPropsWithoutRef<typeof ToastAction>>;
 
 export {
   Toast,

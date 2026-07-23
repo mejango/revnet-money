@@ -119,7 +119,7 @@ if (
 }
 
 if (/debug:\s*true/u.test(wagmi))
-  throw new Error("Safe connector debug logging must not be forced on");
+  throw new Error("Wallet connector debug logging must not be forced on");
 if (/alchemy\.com\/v2\/[A-Za-z\d_-]{8,}/u.test(wagmi)) {
   throw new Error("Provider credentials must not be committed in RPC URLs");
 }

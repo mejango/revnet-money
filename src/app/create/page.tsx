@@ -3,14 +3,14 @@
 import { Nav } from "@/components/layout/Nav";
 import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxQuote } from "@/hooks/useReviewedRelayr";
-import { withZodSchema } from "@/lib/formikZod";
+import { withSchema } from "@/lib/formValidation";
+import { FormProvider } from "@/lib/forms";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, MappableAsset, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
-import { getPublicClient } from "@wagmi/core";
-import { Formik } from "formik";
 import { encodeFunctionData, PublicClient } from "viem";
 import { useAccount } from "wagmi";
+import { getPublicClient } from "wagmi/actions";
 import { DEFAULT_FORM_DATA } from "./constants";
 import { DeployRevnetForm } from "./form/DeployRevnetForm";
 import { createSchema } from "./helpers/createSchema";
@@ -128,10 +128,10 @@ export default function Page() {
   return (
     <>
       <Nav />
-      <Formik
+      <FormProvider
         initialValues={DEFAULT_FORM_DATA}
         isInitialValid={false}
-        validate={withZodSchema(createSchema) as any}
+        validate={withSchema(createSchema)}
         onSubmit={async (formData: RevnetFormData, { setSubmitting }) => {
           try {
             setSubmitting(true);
@@ -152,7 +152,7 @@ export default function Page() {
         }}
       >
         <DeployRevnetForm relayrResponse={data} resetRelayrResponse={reset} />
-      </Formik>
+      </FormProvider>
     </>
   );
 }

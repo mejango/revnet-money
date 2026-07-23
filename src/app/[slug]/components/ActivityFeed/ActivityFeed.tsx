@@ -2,10 +2,11 @@
 
 import { ProfilesProvider } from "@/components/ProfilesContext";
 import { ActivityFeedSkeleton } from "@/components/loading/LoadingSkeletons";
-import { ActivityEventsDocument, SuckerGroupQuery } from "@/generated/graphql";
+import { ActivityEventsOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
+import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
-import { JBChainId, useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import { useState } from "react";
 import { Address, formatUnits } from "viem";
 import { ActivityEvent, ActivityItem } from "./ActivityItem";
@@ -29,13 +30,13 @@ function truncateAddress(address: string): string {
 export function ActivityFeed({ suckerGroupId, projects }: Props) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
   const { data, isLoading } = useBendystrawQuery(
-    ActivityEventsDocument,
+    ActivityEventsOperation,
     {
       orderBy: "timestamp",
       orderDirection: "desc",
       where: { suckerGroupId },
     },
-    { pollInterval: 15_000 },
+    { pollInterval: 15_000, chainId: Number(projects[0]?.chainId ?? 1) },
   );
 
   const items = data?.activityEvents.items ?? [];

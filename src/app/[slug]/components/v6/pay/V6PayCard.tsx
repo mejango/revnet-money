@@ -12,6 +12,8 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
+import { useJBTokenContext } from "@/lib/nana/project";
+import { useSuckers } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
 import { minReturnedTokens } from "@/lib/quote";
 import { Token } from "@/lib/token";
@@ -38,7 +40,6 @@ import {
   previewPay,
   resolvePaymentTerminal,
 } from "@bananapus/nana-sdk-core/v6";
-import { useJBTokenContext, useSuckers } from "@bananapus/nana-sdk-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {

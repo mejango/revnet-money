@@ -1,7 +1,8 @@
 "use client";
 
-import { JBChainId, JBCoreContracts, jbPricesAbi } from "@bananapus/nana-sdk-core";
-import { useJBContractContext } from "@bananapus/nana-sdk-react";
+import { useJBContractContext } from "@/lib/nana/project";
+import type { JBChainId } from "@/lib/nana/types";
+import { JBCoreContracts, jbPricesAbi } from "@bananapus/nana-sdk-core";
 import { useReadContract } from "wagmi";
 
 export function useCurrencyPrice(

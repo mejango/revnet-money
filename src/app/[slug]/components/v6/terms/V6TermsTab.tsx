@@ -1,10 +1,10 @@
 "use client";
 
 import { useTokenA } from "@/hooks/useTokenA";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBCoreContracts, jbMultiTerminalAbi } from "@bananapus/nana-sdk-core";
-import { useJBChainId, useJBContractContext, useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 import { useReadContract } from "wagmi";
 import { CurrentIssuanceSection } from "../../../terms/components/CurrentIssuanceSection";

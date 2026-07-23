@@ -1,11 +1,11 @@
-import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
-import { useBendystrawQuery, useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 
 export function useTotalOutstandingTokens() {
   const { projectId } = useJBContractContext();
   const chainId = useJBChainId();
 
-  const { data } = useBendystrawQuery(ProjectDocument, {
+  const { data } = useBendystrawQuery(ProjectOperation, {
     projectId: Number(projectId),
     chainId: Number(chainId),
     version: 6,
@@ -13,9 +13,9 @@ export function useTotalOutstandingTokens() {
 
   const suckerGroupId = data?.project?.suckerGroupId;
   const { data: suckerGroup } = useBendystrawQuery(
-    SuckerGroupDocument,
+    SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
-    { enabled: !!suckerGroupId },
+    { enabled: !!suckerGroupId, chainId: Number(chainId) },
   );
 
   return BigInt(suckerGroup?.suckerGroup?.tokenSupply ?? 0);

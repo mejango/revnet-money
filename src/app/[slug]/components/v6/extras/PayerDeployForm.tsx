@@ -21,10 +21,10 @@ import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { buildDeployProjectPayerTx, projectPayerFromDeployLogs } from "@bananapus/nana-sdk-core/v6";
-import { getAccount, getPublicClient } from "@wagmi/core";
 import { useMemo, useState } from "react";
 import { Address, isAddress, PublicClient, zeroAddress } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
+import { getAccount, getPublicClient } from "wagmi/actions";
 import { ChainProjectRow, PayerRow } from "./projectPayers";
 
 type DeployedPayer = { chainId: JBChainId; payer: Address | null; txHash: `0x${string}` };

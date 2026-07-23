@@ -1,7 +1,7 @@
 "use client";
 
 import { ShopInventorySkeleton } from "@/components/loading/LoadingSkeletons";
-import { useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import clsx from "clsx";
 import { useState } from "react";
 import { ProjectItem } from "../shared";

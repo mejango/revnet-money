@@ -1,8 +1,0 @@
-query ProjectCreateEvent($where: projectCreateEventFilter) {
-  projectCreateEvents(where: $where, limit: 1) {
-    items {
-      txHash
-      timestamp
-    }
-  }
-}

@@ -12,6 +12,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAutoIssuances } from "@/hooks/useAutoIssuances";
 import { useTokenA } from "@/hooks/useTokenA";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
@@ -23,7 +24,6 @@ import {
   ReservedPercent,
   RulesetWeight,
 } from "@bananapus/nana-sdk-core";
-import { useJBChainId, useJBContractContext, useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { differenceInDays, formatDate } from "date-fns";
 import { FixedInt } from "fpnum";
 import { formatUnits, parseUnits } from "viem";

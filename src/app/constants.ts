@@ -1,4 +1,4 @@
-import { JBChainId } from "@bananapus/nana-sdk-react";
+import type { JBChainId } from "@/lib/nana/types";
 import {
   arbitrum,
   arbitrumSepolia,

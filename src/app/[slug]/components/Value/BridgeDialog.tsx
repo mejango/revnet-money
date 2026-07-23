@@ -20,7 +20,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
-import { Project } from "@/generated/graphql";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
   isSafeProposalPendingError,
@@ -28,17 +27,19 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useSuckerPairs } from "@/hooks/useSuckerPairs";
+import type { Project } from "@/lib/bendystraw/types";
 import {
   buildProtectedBridgePrepareTx,
   quoteBridgePrepare,
   slippagePercentToBps,
 } from "@/lib/bridgePrepare";
 import { revalidateCacheTag } from "@/lib/cache";
+import { useJBTokenContext } from "@/lib/nana/project";
+import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { getTokenAddress } from "@/lib/token";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useJBTokenContext, useSuckersUserTokenBalance } from "@bananapus/nana-sdk-react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useMemo, useState } from "react";

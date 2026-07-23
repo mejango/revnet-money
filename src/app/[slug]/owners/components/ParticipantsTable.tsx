@@ -10,13 +10,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Participant } from "@/generated/graphql";
+import type { Participant } from "@/lib/bendystraw/types";
+import type { JBChainId, ProjectTokenData } from "@/lib/nana/types";
 import { prettyNumber } from "@/lib/number";
 import { formatPortion, formatTokenSymbol } from "@/lib/utils";
 import { formatUnits } from "@bananapus/nana-sdk-core";
-import { JBChainId } from "@bananapus/nana-sdk-react";
 import { Address } from "viem";
-import { UseTokenReturnType } from "wagmi";
 
 export function ParticipantsTable({
   participants,
@@ -28,7 +27,7 @@ export function ParticipantsTable({
   maxRows,
 }: {
   participants: (Participant & { chains: JBChainId[] })[];
-  token: UseTokenReturnType["data"] | null;
+  token: ProjectTokenData | null | undefined;
   totalSupply: bigint;
   baseTokenSymbol?: string;
   baseTokenDecimals?: number;
@@ -88,7 +87,7 @@ export function ParticipantsTable({
             ) : token ? (
               <TableCell className="whitespace-nowrap pr-14">
                 {prettyNumber(
-                  formatUnits(participant.balance, token.decimals, {
+                  formatUnits(BigInt(participant.balance), token.decimals, {
                     fractionDigits: 3,
                   }),
                 )}{" "}
@@ -109,7 +108,7 @@ export function ParticipantsTable({
               </div>
             </TableCell>
             <TableCell className="whitespace-nowrap">
-              {formatUnits(participant.volume, baseTokenDecimals, {
+              {formatUnits(BigInt(participant.volume), baseTokenDecimals, {
                 fractionDigits: 3,
               })}{" "}
               {baseTokenSymbol}

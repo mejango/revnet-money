@@ -12,13 +12,13 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { useJBContractContext } from "@/lib/nana/project";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
-import { useJBContractContext } from "@bananapus/nana-sdk-react";
-import { getPublicClient } from "@wagmi/core";
 import { useCallback, useEffect, useState } from "react";
 import { Address, encodeFunctionData } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
+import { getPublicClient } from "wagmi/actions";
 import { ChainFormData } from "../ChangeSplitRecipientsDialog";
 
 export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }) {

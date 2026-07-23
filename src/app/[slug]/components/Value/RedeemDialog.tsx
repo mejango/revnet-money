@@ -19,10 +19,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
 import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
+import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
 import { Surplus } from "@/lib/reclaimableSurplus";
 import { getTokenConfigForChain } from "@/lib/tokenUtils";
@@ -36,15 +39,6 @@ import {
   JBProjectToken,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
-import {
-  JBChainId,
-  useBendystrawQuery,
-  useJBChainId,
-  useJBContractContext,
-  useJBTokenContext,
-  useSuckers,
-  useSuckersUserTokenBalance,
-} from "@bananapus/nana-sdk-react";
 import { PropsWithChildren, useState } from "react";
 import { parseUnits } from "viem";
 import { useAccount } from "wagmi";
@@ -84,7 +78,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
   // Get the suckerGroupId from the current project
   const { data: projectData } = useBendystrawQuery(
-    ProjectDocument,
+    ProjectOperation,
     { chainId: Number(chainId), projectId: Number(projectId), version: 6 },
     { enabled: !!chainId && !!projectId },
   );
@@ -92,9 +86,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
   // Get all projects in the sucker group with their token data
   const { data: suckerGroupData } = useBendystrawQuery(
-    SuckerGroupDocument,
+    SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
-    { enabled: !!suckerGroupId },
+    { enabled: !!suckerGroupId, chainId: Number(chainId) },
   );
 
   // Use project token decimals, not base token decimals

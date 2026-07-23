@@ -6,7 +6,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
-import { Field as FormikField } from "formik";
+import { FormField } from "@/lib/forms";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
 import {
@@ -128,7 +128,7 @@ export function ChainSelect({
                   .filter(({ chain }) => MAINNETS.includes(chain.id as JBChainId))
                   .map(({ chain, name }) => (
                     <label key={chain.id} className="flex items-center gap-2">
-                      <FormikField
+                      <FormField
                         type="checkbox"
                         name="chainIds"
                         value={chain.id}
@@ -149,7 +149,7 @@ export function ChainSelect({
                   .filter(({ chain }) => TESTNETS.includes(chain.id as JBChainId))
                   .map(({ chain, name }) => (
                     <label key={chain.id} className="flex items-center gap-2">
-                      <FormikField
+                      <FormField
                         type="checkbox"
                         name="chainIds"
                         value={chain.id}

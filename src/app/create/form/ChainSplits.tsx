@@ -1,7 +1,7 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
+import { FieldArray, useFormContext } from "@/lib/forms";
 import { sortChains } from "@/lib/utils";
-import { FieldArray, useFormikContext } from "formik";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { twJoin } from "tailwind-merge";
@@ -13,23 +13,10 @@ interface ChainSplitsProps {
 }
 
 export function ChainSplits({ disabled = false }: ChainSplitsProps) {
-  const { values, setFieldValue } = useFormikContext<RevnetFormData>();
+  const { values, setFieldValue } = useFormContext<RevnetFormData>();
   const [selectedStageIdx, setSelectedStageIdx] = useState<number>(0);
 
   const currentStage = values.stages[selectedStageIdx];
-
-  const initializeBeneficiary = (splitIndex: number, chainId: JBChainId): void => {
-    const currentBeneficiaries = currentStage.splits[splitIndex].beneficiary ?? [];
-    if (!currentBeneficiaries.find((b) => b.chainId === chainId)) {
-      setFieldValue(`stages.${selectedStageIdx}.splits.${splitIndex}.beneficiary`, [
-        ...currentBeneficiaries,
-        {
-          chainId,
-          address: currentStage.splits[splitIndex].defaultBeneficiary || "",
-        },
-      ]);
-    }
-  };
 
   const handleStageChange = (idx: number): void => {
     setSelectedStageIdx(idx);
@@ -41,7 +28,11 @@ export function ChainSplits({ disabled = false }: ChainSplitsProps) {
     const beneficiaryIndex = split.beneficiary?.findIndex((b) => b.chainId === chainId) ?? -1;
 
     if (beneficiaryIndex === -1) {
-      initializeBeneficiary(splitIndex, chainId);
+      setFieldValue(`stages.${selectedStageIdx}.splits.${splitIndex}.beneficiary`, [
+        ...(split.beneficiary ?? []),
+        { chainId, address: value },
+      ]);
+      return;
     }
 
     setFieldValue(

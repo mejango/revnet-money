@@ -1,7 +1,7 @@
 "use client";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Project } from "@/generated/graphql";
+import type { Project } from "@/lib/bendystraw/types";
 import { isUsd } from "@/lib/currency";
 import { formatTokenAmount, getTokenFractionDigits, isNativeToken } from "@/lib/token";
 import { DEFAULT_NATIVE_TOKEN_SYMBOL, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
@@ -73,7 +73,10 @@ export function TvlDatum(props: Props) {
             <div key={project.chainId} className="flex justify-between gap-2">
               {JB_CHAINS[project.chainId as JBChainId].name}
               <span className="font-medium">
-                {formatTokenAmount(project.balance, { symbol, decimals: project.decimals || 18 })}{" "}
+                {formatTokenAmount(BigInt(project.balance), {
+                  symbol,
+                  decimals: project.decimals || 18,
+                })}{" "}
                 {symbol}
               </span>
             </div>

@@ -15,7 +15,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { Project } from "@/generated/graphql";
 import {
   useGetRelayrTxQuote,
   useSendRelayrTx,
@@ -27,37 +26,55 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useTokenA } from "@/hooks/useTokenA";
-import { withZodSchema } from "@/lib/formikZod";
+import type { Project } from "@/lib/bendystraw/types";
+import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
+import { FormProvider } from "@/lib/forms";
 import { ipfsUri } from "@/lib/ipfs";
+import { useJBContractContext, useJBProjectMetadataContext } from "@/lib/nana/project";
+import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
-import {
-  ChainPayment,
-  RelayrPostBundleResponse,
-  useJBContractContext,
-  useJBProjectMetadataContext,
-} from "@bananapus/nana-sdk-react";
-import { getPublicClient } from "@wagmi/core";
-import { Formik } from "formik";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
-import { z } from "zod";
+import { getPublicClient } from "wagmi/actions";
+type MetadataFormData = {
+  description: string;
+  discord?: string;
+  farcaster?: string;
+  infoUri?: string;
+  logoUri?: string;
+  name: string;
+  telegram?: string;
+  twitter?: string;
+};
 
-const metadataSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(50, "Name is too long"),
-  description: z.string().trim().min(1, "Description is required"),
-  logoUri: z.string().optional(),
-  twitter: z.string().trim().optional(),
-  telegram: z.string().trim().optional(),
-  discord: z.string().trim().optional(),
-  infoUri: z.string().trim().optional(),
-  farcaster: z.string().trim().optional(),
+const metadataSchema = schema<MetadataFormData>((input) => {
+  const issues: ValidationIssue[] = [];
+  if (!isRecord(input)) {
+    issue(issues, [], "Invalid metadata");
+    return issues;
+  }
+
+  if (typeof input.name !== "string" || input.name.trim().length === 0) {
+    issue(issues, ["name"], "Name is required");
+  } else if (input.name.trim().length > 50) {
+    issue(issues, ["name"], "Name is too long");
+  }
+  if (typeof input.description !== "string" || input.description.trim().length === 0) {
+    issue(issues, ["description"], "Description is required");
+  }
+
+  for (const field of ["logoUri", "twitter", "telegram", "discord", "infoUri", "farcaster"]) {
+    if (input[field] !== undefined && typeof input[field] !== "string") {
+      issue(issues, [field], "Invalid value");
+    }
+  }
+
+  return issues;
 });
-
-type MetadataFormData = z.infer<typeof metadataSchema>;
 
 interface Props {
   projects: Array<Pick<Project, "projectId" | "token" | "chainId">>;
@@ -254,7 +271,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
         </Button>
       </DialogTrigger>
       <DialogContent>
-        <Formik
+        <FormProvider
           initialValues={{
             name: metadata?.data?.name || "",
             description: metadata?.data?.description || "",
@@ -265,7 +282,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             infoUri: (metadata?.data as any)?.infoUri || "",
             farcaster: (metadata?.data as any)?.farcaster || "",
           }}
-          validate={withZodSchema(metadataSchema) as any}
+          validate={withSchema(metadataSchema)}
           onSubmit={handleSubmit}
           enableReinitialize
         >
@@ -388,7 +405,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
               </form>
             );
           }}
-        </Formik>
+        </FormProvider>
       </DialogContent>
     </Dialog>
   );

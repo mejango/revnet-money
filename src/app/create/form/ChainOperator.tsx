@@ -1,14 +1,13 @@
 import { ChainLogo } from "@/components/ChainLogo";
+import { FieldArray, useFormContext } from "@/lib/forms";
 import { sortChains } from "@/lib/utils";
-import { FieldArray, useFormikContext } from "formik";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { useEffect } from "react";
 import { RevnetFormData } from "../types";
 import { Field } from "./Fields";
 
 export function ChainOperator({ disabled = false }: { disabled?: boolean }) {
-  const { values } = useFormikContext<RevnetFormData>();
-  const { setFieldValue } = useFormikContext();
+  const { values, setFieldValue } = useFormContext<RevnetFormData>();
 
   useEffect(() => {
     values.chainIds.forEach((chain, index) => {

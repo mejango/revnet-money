@@ -1,4 +1,4 @@
-import { type Project } from "@/generated/graphql";
+import type { Project } from "@/lib/bendystraw/types";
 import {
   getProjectTerminalStore,
   JB_TOKEN_DECIMALS,
@@ -49,7 +49,7 @@ export async function getProjectsReclaimableSurplus(
   return await Promise.all(
     projects.map(async (project) => {
       const { chainId, projectId, tokenSupply, currency, decimals } = project;
-      const currencyId = toBaseCurrencyId(currency);
+      const currencyId = toBaseCurrencyId(currency ?? 2);
       const tokenDecimals = JB_TOKEN_DECIMALS;
 
       const value = await getReclaimableSurplus(

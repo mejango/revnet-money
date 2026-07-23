@@ -1,5 +1,4 @@
 import { useToast } from "@/components/ui/use-toast";
-import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useHasBorrowPermission } from "@/hooks/useHasBorrowPermission";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
@@ -9,6 +8,7 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { toBaseCurrencyId } from "@/lib/currency";
 import { generateFeeData } from "@/lib/feeHelpers";
 import {
@@ -17,25 +17,20 @@ import {
   minimumBorrowAmount,
   readFreshBorrowableAmount,
 } from "@/lib/loanTransactions";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
+import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
   getRevnetLoanContract,
   JB_TOKEN_DECIMALS,
-  JBChainId,
   jbPermissionsAbi,
   NATIVE_TOKEN_DECIMALS,
   revDeployerAbi,
   revLoansAbi,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
-import {
-  useBendystrawQuery,
-  useJBChainId,
-  useJBContractContext,
-  useJBTokenContext,
-  useSuckersUserTokenBalance,
-} from "@bananapus/nana-sdk-react";
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWalletClient } from "wagmi";
@@ -114,16 +109,16 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
   // Get sucker group data for token mapping
   const { data: projectData } = useBendystrawQuery(
-    ProjectDocument,
+    ProjectOperation,
     { chainId: Number(chainId), projectId: Number(projectId), version: 6 },
     { enabled: !!chainId && !!projectId, pollInterval: 30000 },
   );
   const suckerGroupId = projectData?.project?.suckerGroupId;
 
   const { data: suckerGroupData } = useBendystrawQuery(
-    SuckerGroupDocument,
+    SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
-    { enabled: !!suckerGroupId, pollInterval: 30000 },
+    { enabled: !!suckerGroupId, pollInterval: 30000, chainId: Number(chainId) },
   );
 
   // ===== PHASE 1: TOKEN RESOLUTION FUNCTION =====

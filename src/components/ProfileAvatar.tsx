@@ -3,8 +3,6 @@
 
 import EtherscanLink from "@/components/EtherscanLink";
 import { useProfile } from "@/components/ProfilesContext";
-import { sdk } from "@farcaster/miniapp-sdk";
-import { useEffect } from "react";
 import { twMerge } from "tailwind-merge";
 import { Address, Chain } from "viem";
 import { ensAvatarUrlForAddress } from "./EthereumAddress";
@@ -34,15 +32,14 @@ export function ProfileAvatar({
 
   const avatarSize = avatarProps?.size ?? "md";
   const avatarDimensions = avatarSize === "md" ? 36 : 24;
-
-  useEffect(() => {
-    const init = async () => {
-      if (sdk?.actions) {
-        await sdk.actions.ready();
-      }
-    };
-    init();
-  }, []);
+  const farcasterHandle =
+    profile?.links?.farcaster?.handle ??
+    (profile?.platform === "farcaster" ? profile.identity : null);
+  const farcasterProfileUrl = farcasterHandle
+    ? `https://farcaster.xyz/${encodeURIComponent(farcasterHandle.replace(/^@/, ""))}`
+    : profile?.platform === "farcaster" && profile.social?.uid
+      ? `https://farcaster.xyz/~/profiles/${profile.social.uid}`
+      : null;
 
   const src = profile?.avatar?.startsWith("http")
     ? profile.avatar
@@ -68,13 +65,16 @@ export function ProfileAvatar({
 
   return (
     <div className={twMerge("inline-flex items-center", className)}>
-      {withAvatar && profile?.platform === "farcaster" && profile.social?.uid ? (
-        <button
-          onClick={() => sdk.actions.viewProfile({ fid: Number(profile.social!.uid!) })} // Updated onClick
+      {withAvatar && farcasterProfileUrl ? (
+        <a
+          href={farcasterProfileUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`View ${renderValue} on Farcaster`}
           className="mr-2"
         >
           {avatarElement}
-        </button>
+        </a>
       ) : withAvatar ? (
         avatarElement
       ) : null}

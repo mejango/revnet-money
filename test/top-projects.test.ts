@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({
   unstable_cache: (callback: (...args: never[]) => unknown) => callback,
 }));
-vi.mock("@/graphql/bendystrawClient", () => ({
-  getBendystrawClient: () => ({ request: mocks.request }),
+vi.mock("@/lib/bendystraw/query.server", () => ({
+  queryBendystraw: mocks.request,
 }));
 vi.mock("@/lib/ethPrice", () => ({
   fetchEthPrice: mocks.fetchEthPrice,

@@ -1,12 +1,12 @@
-import { ConnectKitButton } from "connectkit";
+import { useJBChainId } from "@/lib/nana/project";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useJBChainId } from "@bananapus/nana-sdk-react";
 import React from "react";
 import { useAccount, useChainId, useSwitchChain } from "wagmi";
+import { WalletConnectButton } from "./WalletButton";
 import { Button, ButtonProps } from "./ui/button";
 
 const ButtonWithWallet = React.forwardRef<
-  HTMLInputElement,
+  HTMLButtonElement,
   {
     connectWalletText?: string;
     targetChainId?: JBChainId;
@@ -20,6 +20,16 @@ const ButtonWithWallet = React.forwardRef<
   const { switchChainAsync, isPending } = useSwitchChain();
 
   const _targetChainId = targetChainId || jbChainId;
+
+  if (!isConnected) {
+    return (
+      <WalletConnectButton
+        {...props}
+        onClick={undefined}
+        label={connectWalletText ?? "Connect Wallet"}
+      />
+    );
+  }
 
   if (typeof _targetChainId !== "undefined" && userChainId !== _targetChainId) {
     return (
@@ -37,21 +47,11 @@ const ButtonWithWallet = React.forwardRef<
     );
   }
 
-  if (!isConnected) {
-    return (
-      <ConnectKitButton.Custom>
-        {({ isConnecting, show }) => {
-          return (
-            <Button {...props} onClick={show} loading={isConnecting}>
-              {connectWalletText ?? "Connect Wallet"}
-            </Button>
-          );
-        }}
-      </ConnectKitButton.Custom>
-    );
-  }
-
-  return <Button {...props}>{children}</Button>;
+  return (
+    <Button ref={ref} {...props}>
+      {children}
+    </Button>
+  );
 });
 
 ButtonWithWallet.displayName = "ButtonWithWallet";

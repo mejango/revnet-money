@@ -49,9 +49,8 @@ export function expectBoundaryToStayLocal(boundary: BrowserBoundary): void {
 export function expectSecurityHeaders(response: Response | null): void {
   expect(response?.status()).toBe(200);
   const headers = response?.headers() ?? {};
-  // Revnet is a Farcaster Mini App and must remain cross-origin embeddable.
-  // X-Frame-Options cannot express that trust model and DENY would break it.
-  expect(headers["x-frame-options"]).toBeUndefined();
+  expect(headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(headers["x-frame-options"]).toBe("DENY");
   expect(headers["x-content-type-options"]).toBe("nosniff");
   expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
   expect(headers["x-permitted-cross-domain-policies"]).toBe("none");

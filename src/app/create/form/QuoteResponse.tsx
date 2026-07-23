@@ -1,7 +1,7 @@
 "use client";
 import { Button } from "@/components/ui/button";
+import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { format } from "date-fns";
-import { RelayrPostBundleResponse } from "@bananapus/nana-sdk-react";
 import { PayAndDeploy } from "../buttons/PayAndDeploy";
 import { useCreateForm } from "./useCreateForm";
 

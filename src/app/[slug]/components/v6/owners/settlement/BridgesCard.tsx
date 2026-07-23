@@ -4,8 +4,8 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
-import { ChainProject, chainName, chainProjectsKey, fetchBridges, SuckerInfra } from "./lib";
+import { ArrowRightLeft as ArrowsRightLeftIcon } from "lucide-react";
+import { chainName, ChainProject, chainProjectsKey, fetchBridges, SuckerInfra } from "./lib";
 
 function InfraTag({ infra }: { infra: SuckerInfra }) {
   const styles =
@@ -26,7 +26,13 @@ function InfraTag({ infra }: { infra: SuckerInfra }) {
  * The project's sucker bridge edges, one row per chain pair with its bridge
  * infra tags (a pair can carry both a native and a CCIP sucker for redundancy).
  */
-export function BridgesCard({ chains, tokenSymbol }: { chains: ChainProject[]; tokenSymbol: string }) {
+export function BridgesCard({
+  chains,
+  tokenSymbol,
+}: {
+  chains: ChainProject[];
+  tokenSymbol: string;
+}) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["v6Bridges", chainProjectsKey(chains)],
     enabled: chains.length > 0,

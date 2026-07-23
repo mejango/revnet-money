@@ -1,6 +1,6 @@
-import { ProjectWithPermissionsDocument } from "@/generated/graphql";
+import { ProjectWithPermissionsOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
-import { useBendystrawQuery, useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 import { useAccount } from "wagmi";
 
@@ -12,7 +12,7 @@ export function useUserPermissions() {
   const { address } = useAccount();
 
   const { data, isLoading } = useBendystrawQuery(
-    ProjectWithPermissionsDocument,
+    ProjectWithPermissionsOperation,
     {
       chainId: Number(chainId),
       projectId: Number(projectId),

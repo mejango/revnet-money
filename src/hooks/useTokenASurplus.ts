@@ -1,5 +1,5 @@
+import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { jbMultiTerminalAbi, NATIVE_TOKEN, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
-import { useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useReadContract } from "wagmi";
 
 export function useNativeTokenSurplus() {

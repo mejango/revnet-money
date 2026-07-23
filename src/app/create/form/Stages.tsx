@@ -1,16 +1,16 @@
 import { MAX_RULESET_COUNT } from "@/app/constants";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { FieldArray } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
-  ExclamationCircleIcon,
-  LockClosedIcon,
-  PencilSquareIcon,
-  TrashIcon,
-} from "@heroicons/react/24/outline";
-import { PlusIcon } from "@heroicons/react/24/solid";
-import { FieldArray } from "formik";
+  CircleAlert as ExclamationCircleIcon,
+  Lock as LockClosedIcon,
+  SquarePen as PencilSquareIcon,
+  Plus as PlusIcon,
+  Trash2 as TrashIcon,
+} from "lucide-react";
 import { getCurrentStageDuration, getResolvedIssuance } from "../helpers/calculatePickupIssuance";
 import { AddStageDialog } from "./AddStageDialog";
 import { useCreateForm } from "./useCreateForm";

@@ -1,8 +1,8 @@
-import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
+import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { isNativeToken, Token } from "@/lib/token";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery, useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useMemo } from "react";
 
 type ReturnData = Token & {
@@ -39,15 +39,15 @@ export function useProjectBaseToken(): ReturnData | undefined {
   const chainId = useJBChainId();
 
   const { data } = useBendystrawQuery(
-    ProjectDocument,
+    ProjectOperation,
     { chainId: Number(chainId), projectId: Number(projectId), version: 6 },
     { enabled: !!chainId && !!projectId, pollInterval: 30000 },
   );
 
   const { data: suckerGroupData } = useBendystrawQuery(
-    SuckerGroupDocument,
+    SuckerGroupOperation,
     { id: data?.project?.suckerGroupId ?? "" },
-    { enabled: !!data?.project?.suckerGroupId, pollInterval: 30000 },
+    { enabled: !!data?.project?.suckerGroupId, pollInterval: 30000, chainId: Number(chainId) },
   );
 
   // Memoized so consumers can use the result in effect deps without looping.

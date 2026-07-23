@@ -46,21 +46,6 @@ export async function generateMetadata(): Promise<Metadata> {
 
   // gone but not forgotten anachronistic1-1.png
   const imgUrl = `${origin}/assets/img/rev-og-191-1.png`;
-  const frame = {
-    version: "next",
-    imageUrl: imgUrl,
-    button: {
-      title: "Discover revenue tokens",
-      action: {
-        type: "launch_frame",
-        name: "Revnet",
-        url: url.href,
-        splashImageUrl: `${origin}/assets/img/small-bw-200x200.png`,
-        splashBackgroundColor: "#F6FEF9",
-      },
-    },
-  };
-
   return {
     title: "Revnet",
     openGraph: {
@@ -82,9 +67,6 @@ export async function generateMetadata(): Promise<Metadata> {
       title: "Revnet",
       description: "Explore onchain revenue networks",
       images: [imgUrl],
-    },
-    other: {
-      "fc:frame": JSON.stringify(frame),
     },
   };
 }

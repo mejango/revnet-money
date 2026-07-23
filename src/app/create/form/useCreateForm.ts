@@ -1,10 +1,10 @@
 "use client";
 
-import { useFormikContext } from "formik";
+import { useFormContext } from "@/lib/forms";
 import { RevnetFormData } from "../types";
 
 export function useCreateForm() {
-  const context = useFormikContext<RevnetFormData>();
+  const context = useFormContext<RevnetFormData>();
 
   const revnetTokenSymbol =
     context.values.tokenSymbol?.length > 0

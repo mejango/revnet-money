@@ -1,8 +1,9 @@
 import {
-  AutoIssueEventsDocument,
-  StoreAutoIssuanceAmountEventsDocument,
-} from "@/generated/graphql";
-import { useBendystrawQuery, useJBChainId, useJBContractContext } from "@bananapus/nana-sdk-react";
+  AutoIssueEventsOperation,
+  StoreAutoIssuanceAmountEventsOperation,
+  useBendystrawQuery,
+} from "@/lib/bendystraw";
+import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { useMemo } from "react";
 import { useRulesets } from "./useRulesets";
 
@@ -11,11 +12,11 @@ export function useAutoIssuances() {
 
   const chainId = useJBChainId();
 
-  const { data: autoIssuancesData } = useBendystrawQuery(StoreAutoIssuanceAmountEventsDocument, {
+  const { data: autoIssuancesData } = useBendystrawQuery(StoreAutoIssuanceAmountEventsOperation, {
     where: { projectId: Number(projectId), chainId, version: 6 },
   });
 
-  const { data: autoIssueEventsQuery } = useBendystrawQuery(AutoIssueEventsDocument, {
+  const { data: autoIssueEventsQuery } = useBendystrawQuery(AutoIssueEventsOperation, {
     where: { projectId: Number(projectId), chainId, version: 6 },
   });
 

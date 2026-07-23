@@ -13,10 +13,10 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/use-toast";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
-import { withZodSchema } from "@/lib/formikZod";
+import { withSchema } from "@/lib/formValidation";
+import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
-import { TrashIcon } from "@heroicons/react/24/outline";
-import { FieldArray, Form, Formik } from "formik";
+import { Trash2 as TrashIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { changeSplitsSchema } from "./changeSplitsSchema";
 import { useChainSplits } from "./hooks/useChainSplits";
@@ -101,9 +101,9 @@ export function ChangeSplitRecipientsDialog(props: Props) {
           <p className="text-sm text-zinc-500 mt-2">Stage {stageId + 1}</p>
         </DialogHeader>
 
-        <Formik
+        <FormProvider
           initialValues={initialValues}
-          validate={withZodSchema(changeSplitsSchema) as any}
+          validate={withSchema(changeSplitsSchema)}
           onSubmit={handleSubmit}
           enableReinitialize={!isSubmitting && !isPending && !isTxLoading}
         >
@@ -254,7 +254,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
               </DialogFooter>
             </Form>
           )}
-        </Formik>
+        </FormProvider>
       </DialogContent>
     </Dialog>
   );

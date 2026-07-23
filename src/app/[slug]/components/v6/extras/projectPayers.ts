@@ -1,8 +1,6 @@
 import { chainSortOrder } from "@/app/constants";
-import { ProjectPayer, ProjectPayerFilter } from "@/generated/graphql";
+import type { ProjectPayer, ProjectPayerFilter } from "@/lib/bendystraw/types";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { TypedDocumentNode } from "@graphql-typed-document-node/core";
-import gql from "graphql-tag";
 import { ProjectItem } from "../shared";
 
 /** A sucker-group project on a chain this UI understands. */
@@ -30,40 +28,6 @@ export type PayerRow = Pick<
   | "lastUsedAt"
   | "createdAt"
 >;
-
-export type ProjectPayersQuery = { projectPayers: { items: PayerRow[] } | null };
-export type ProjectPayersQueryVariables = { where: ProjectPayerFilter };
-
-/**
- * Bendystraw's indexed payer addresses across the sucker group, ordered by
- * facilitated USD volume (the only honest common denomination — raw totals can
- * mix payment-token decimals). No generated document exists for projectPayers,
- * so this is a hand-typed one executed through useBendystrawQuery.
- */
-export const ProjectPayersDocument = gql`
-  query V6ProjectPayers($where: ProjectPayerFilter) {
-    projectPayers(
-      where: $where
-      orderBy: "totalFacilitatedUsd"
-      orderDirection: "desc"
-      limit: 250
-    ) {
-      items {
-        chainId
-        address
-        defaultAddToBalance
-        defaultBeneficiary
-        owner
-        paymentsCount
-        addToBalanceCount
-        totalFacilitated
-        totalFacilitatedUsd
-        lastUsedAt
-        createdAt
-      }
-    }
-  }
-` as unknown as TypedDocumentNode<ProjectPayersQuery, ProjectPayersQueryVariables>;
 
 /** Per-project (chainId, projectId) filter for v6 projects. */
 export function payersWhere(rows: ChainProjectRow[]): ProjectPayerFilter {

@@ -12,9 +12,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ProjectDocument, SuckerGroupDocument } from "@/generated/graphql";
+import { WalletConnectButton } from "@/components/WalletButton";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
+import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
+import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import type { JBChainId } from "@/lib/nana/types";
 import { getProjectsReclaimableSurplus } from "@/lib/reclaimableSurplus";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, TokenConfig } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
@@ -28,16 +32,7 @@ import {
   RevnetCoreContracts,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
-import {
-  JBChainId,
-  useBendystrawQuery,
-  useJBChainId,
-  useJBContractContext,
-  useJBTokenContext,
-  useSuckersUserTokenBalance,
-} from "@bananapus/nana-sdk-react";
 import { useQuery } from "@tanstack/react-query";
-import { ConnectKitButton } from "connectkit";
 import { format } from "date-fns";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -82,15 +77,15 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
   // Full per-chain project rows (currency/decimals/token) for quotes.
   const { data: projectData } = useBendystrawQuery(
-    ProjectDocument,
+    ProjectOperation,
     { projectId: Number(projectId), chainId: Number(chainId), version: 6 },
     { enabled: !!chainId && !!projectId },
   );
   const suckerGroupId = projectData?.project?.suckerGroupId;
   const { data: suckerGroupData } = useBendystrawQuery(
-    SuckerGroupDocument,
+    SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
-    { enabled: !!suckerGroupId },
+    { enabled: !!suckerGroupId, chainId: Number(chainId) },
   );
   const groupProjects = useMemo(
     () => suckerGroupData?.suckerGroup?.projects?.items ?? [],
@@ -223,13 +218,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
           Connect a wallet to see your {tokenSymbol} across chains, their cash out value, and your
           max loan.
         </p>
-        <ConnectKitButton.Custom>
-          {({ isConnecting, show }) => (
-            <Button variant="outline" onClick={show} loading={isConnecting}>
-              Connect wallet
-            </Button>
-          )}
-        </ConnectKitButton.Custom>
+        <WalletConnectButton />
       </div>
     );
   }

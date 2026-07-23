@@ -4,6 +4,7 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { useBoostRecipient } from "@/hooks/useBoostRecipient";
 import { useCountdownToDate } from "@/hooks/useCountdownToDate";
 import { useFormattedTokenIssuance } from "@/hooks/useFormattedTokenIssuance";
+import { useJBChainId, useJBContractContext, useJBRulesetContext } from "@/lib/nana/project";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatSeconds } from "@/lib/utils";
 import {
@@ -13,7 +14,6 @@ import {
   ReservedPercent,
   RulesetWeight,
 } from "@bananapus/nana-sdk-core";
-import { useJBChainId, useJBContractContext, useJBRulesetContext } from "@bananapus/nana-sdk-react";
 import { useReadContract } from "wagmi";
 
 export function CurrentIssuanceSection() {

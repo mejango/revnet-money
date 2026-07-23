@@ -1,5 +1,6 @@
-import { TopSuckerGroupsDocument, TopSuckerGroupsQuery } from "@/generated/graphql";
-import { getBendystrawClient } from "@/graphql/bendystrawClient";
+import { TopSuckerGroupsOperation } from "@/lib/bendystraw/operations";
+import { queryBendystraw } from "@/lib/bendystraw/query.server";
+import type { TopSuckerGroupsQuery } from "@/lib/bendystraw/types";
 import { fetchEthPrice } from "@/lib/ethPrice";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
@@ -67,10 +68,7 @@ export async function getTopProjects() {
 }
 
 const fetchTopProjects = unstable_cache(
-  async () => {
-    const client = getBendystrawClient(mainnet.id);
-    return client.request<TopSuckerGroupsQuery>(TopSuckerGroupsDocument);
-  },
+  async () => queryBendystraw(mainnet.id, TopSuckerGroupsOperation, {}),
   ["top-projects-v2"],
   { revalidate: 600 }, // 10 minutes
 );

@@ -1,10 +1,10 @@
-import { useFormikContext } from "formik";
+import { useFormContext } from "@/lib/forms";
 import { useEffect } from "react";
 import { SHORTER_TEST_FORM_DATA, TEST_FORM_DATA } from "../constants";
 import { RevnetFormData } from "../types";
 
 export function useTestData() {
-  const { setValues } = useFormikContext<RevnetFormData>();
+  const { setValues } = useFormContext<RevnetFormData>();
   useEffect(() => {
     const fillTestData = (data: RevnetFormData) => {
       setValues(data);

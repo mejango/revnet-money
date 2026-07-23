@@ -16,9 +16,7 @@ import {
   jbTokensAbi,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
-import { Kind, parse, print, stripIgnoredCharacters } from "graphql";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import {
   decodeFunctionData,
@@ -215,152 +213,33 @@ function requireFixture(condition, message) {
   if (!condition) throw unknown("fixture input", message);
 }
 
-const allowedGraphqlDocuments = new Map();
-
-function graphqlDocumentHash(document) {
-  return createHash("sha256")
-    .update(stripIgnoredCharacters(print(document)))
-    .digest("hex");
-}
-
-function allowGraphqlSource(source, variants = {}) {
-  const parsed = parse(source);
-  const fragments = parsed.definitions.filter(
-    (definition) => definition.kind === Kind.FRAGMENT_DEFINITION,
-  );
-  for (const definition of parsed.definitions) {
-    if (definition.kind !== Kind.OPERATION_DEFINITION) continue;
-    requireFixture(definition.operation === "query", "GraphQL fixture only permits queries");
-    requireFixture(definition.name?.value, "GraphQL fixture requires named operations");
-    const operation = definition.name.value;
-    const document = { kind: Kind.DOCUMENT, definitions: [definition, ...fragments] };
-    const hash = graphqlDocumentHash(document);
-    allowedGraphqlDocuments.set(hash, {
-      hash,
-      operation,
-      variant: variants[operation] ?? "generated",
-    });
-  }
-}
-
-for (const filename of [
-  "activityEvents.graphql",
-  "cashOutTaxSnapshots.graphql",
-  "participants.graphql",
-  "project.graphql",
-  "projectCreateEvent.graphql",
-  "projectOperator.graphql",
-  "projectWithPermissions.graphql",
-  "suckerGroup.graphql",
-  "suckerGroupMoments.graphql",
-  "storeAutoIssueAmountEvents.graphql",
-  "storeAutoIssueDistributeEvents.graphql",
-  "topSuckerGroups.graphql",
-]) {
-  allowGraphqlSource(readFileSync(new URL(`../src/graphql/${filename}`, import.meta.url), "utf8"));
-}
-
-// The currently published nana-sdk-react release owns a separate Project
-// document for its sucker-pair hook. Keep that external boundary explicit so
-// a dependency update cannot silently change the shape consumed by Revnet.
-allowGraphqlSource(
-  `query Project($projectId: Float!, $chainId: Float!, $version: Float!) {
-    project(projectId: $projectId, chainId: $chainId, version: $version) {
-      projectId
-      metadataUri
-      handle
-      createdAt
-      logoUri
-      name
-      version
-      suckerGroupId
-      suckerGroup {
-        projects {
-          items {
-            chainId
-            balance
-            tokenSupply
-            projectId
-          }
-        }
-      }
-    }
-  }`,
-  { Project: "sdk-suckers" },
-);
-
-allowGraphqlSource(
-  `query IndexedBuybackPools($projectId: Int!, $chainId: Int!, $version: Int!) {
-    buybackPoolEvents(
-      where: { projectId: $projectId, chainId: $chainId, version: $version }
-      orderBy: "timestamp"
-      orderDirection: "desc"
-      limit: 100
-    ) {
-      items {
-        timestamp
-        terminalToken
-        poolId
-        initialSqrtPriceX96
-        projectTokenIsCurrency0
-      }
-    }
-  }`,
-  { IndexedBuybackPools: "price-history" },
-);
-
-allowGraphqlSource(
-  `query Projects {
-    projects(first: 50, orderBy: projectId, orderDirection: desc) {
-      projectId
-      handle
-      metadataUri
-    }
-  }`,
-  { Projects: "discover" },
-);
-
-allowGraphqlSource(
-  `query V6ProjectPayers($where: ProjectPayerFilter) {
-    projectPayers(
-      where: $where
-      orderBy: "totalFacilitatedUsd"
-      orderDirection: "desc"
-      limit: 250
-    ) {
-      items {
-        chainId
-        address
-        defaultAddToBalance
-        defaultBeneficiary
-        owner
-        paymentsCount
-        addToBalanceCount
-        totalFacilitated
-        totalFacilitatedUsd
-        lastUsedAt
-        createdAt
-      }
-    }
-  }`,
-  { V6ProjectPayers: "extras" },
-);
-
-allowGraphqlSource(
-  `query V6PermissionHolders($where: PermissionHolderFilter) {
-    permissionHolders(where: $where, limit: 500) {
-      items {
-        chainId
-        projectId
-        account
-        operator
-        permissions
-        isRevnetOperator
-      }
-    }
-  }`,
-  { V6PermissionHolders: "operator" },
-);
+const allowedGraphqlOperations = new Set([
+  "ActivityEvents",
+  "AutoIssueEvents",
+  "CashOutTaxSnapshots",
+  "HasPermission",
+  "IndexedBuybackPools",
+  "IndexedPoolSwaps",
+  "LoansByAccount",
+  "MintNftEvents",
+  "OwnedNfts",
+  "Participants",
+  "Project",
+  "ProjectAccountingContext",
+  "ProjectCreateEvent",
+  "ProjectOperator",
+  "ProjectWithPermissions",
+  "Projects",
+  "SuckerGroup",
+  "SuckerGroupMoments",
+  "StoreAutoIssuanceAmountEvents",
+  "TopSuckerGroups",
+  "V6AllLoans",
+  "V6AutoIssueEvents",
+  "V6PermissionHolders",
+  "V6ProjectPayers",
+  "V6StoredAutoIssuances",
+]);
 
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -381,14 +260,8 @@ function requireExactVariables(operation, actual, expected) {
 }
 
 const graphqlHandlers = {
-  Project(variables, descriptor) {
-    requireExactVariables(
-      "Project",
-      variables,
-      descriptor.variant === "sdk-suckers"
-        ? { chainId, enabled: true, projectId, staleTime: null, version: 6 }
-        : { chainId, projectId, version: 6 },
-    );
+  Project(variables) {
+    requireExactVariables("Project", variables, { chainId, projectId, version: 6 });
     return { project: fixtureProject };
   },
   ProjectAccountingContext(variables) {
@@ -524,9 +397,20 @@ const graphqlHandlers = {
     requireExactVariables("IndexedBuybackPools", variables, { projectId, chainId, version: 6 });
     return { buybackPoolEvents: { items: [] } };
   },
+  IndexedPoolSwaps(variables) {
+    requireFixture(
+      variables.projectId === projectId &&
+        variables.chainId === chainId &&
+        variables.version === 6 &&
+        Number.isInteger(variables.limit) &&
+        Number.isInteger(variables.offset),
+      `IndexedPoolSwaps variables=${JSON.stringify(variables)}`,
+    );
+    return { swapEvents: { items: [], totalCount: 0 } };
+  },
   ProjectCreateEvent(variables) {
     requireExactVariables("ProjectCreateEvent", variables, {
-      where: { projectId, version: 6 },
+      where: { chainId, projectId, version: 6 },
     });
     return { projectCreateEvents: { items: [] } };
   },
@@ -557,8 +441,7 @@ const graphqlHandlers = {
       },
     };
   },
-  Projects(variables, descriptor) {
-    requireFixture(descriptor.variant === "discover", `Projects variant=${descriptor.variant}`);
+  Projects(variables) {
     requireExactVariables("Projects", variables, {});
     return {
       projects: [
@@ -570,21 +453,13 @@ const graphqlHandlers = {
       ],
     };
   },
-  V6ProjectPayers(variables, descriptor) {
-    requireFixture(
-      descriptor.variant === "extras",
-      `V6ProjectPayers variant=${descriptor.variant}`,
-    );
+  V6ProjectPayers(variables) {
     requireExactVariables("V6ProjectPayers", variables, {
       where: { OR: [{ chainId, projectId, version: 6 }] },
     });
     return { projectPayers: { items: [] } };
   },
-  V6PermissionHolders(variables, descriptor) {
-    requireFixture(
-      descriptor.variant === "operator",
-      `V6PermissionHolders variant=${descriptor.variant}`,
-    );
+  V6PermissionHolders(variables) {
     const expectedBase = { chainId, projectId, version: 6 };
     const expected = [
       { where: { OR: [expectedBase] } },
@@ -595,6 +470,41 @@ const graphqlHandlers = {
       `V6PermissionHolders variables=${JSON.stringify(variables)}`,
     );
     return { permissionHolders: { items: [] } };
+  },
+  V6StoredAutoIssuances(variables) {
+    requireFixture(Array.isArray(variables.where?.OR), "missing stored issuance chain filters");
+    return { storeAutoIssuanceAmountEvents: { items: [] } };
+  },
+  V6AutoIssueEvents(variables) {
+    requireFixture(Array.isArray(variables.where?.OR), "missing auto issue chain filters");
+    return { autoIssueEvents: { items: [] } };
+  },
+  V6AllLoans(variables) {
+    requireFixture(
+      variables.where?.version === 6 &&
+        Array.isArray(variables.where?.projectId_in) &&
+        Array.isArray(variables.where?.chainId_in),
+      `V6AllLoans variables=${JSON.stringify(variables)}`,
+    );
+    return { loans: { items: [], totalCount: 0 } };
+  },
+  OwnedNfts(variables) {
+    requireFixture(
+      variables.where?.version === 6 &&
+        Number.isInteger(variables.limit) &&
+        Number.isInteger(variables.offset),
+      `OwnedNfts variables=${JSON.stringify(variables)}`,
+    );
+    return { nfts: { items: [], totalCount: 0 } };
+  },
+  MintNftEvents(variables) {
+    requireFixture(
+      variables.where?.version === 6 &&
+        Number.isInteger(variables.limit) &&
+        Number.isInteger(variables.offset),
+      `MintNftEvents variables=${JSON.stringify(variables)}`,
+    );
+    return { mintNftEvents: { items: [], totalCount: 0 } };
   },
 };
 
@@ -608,28 +518,30 @@ function handleGraphql(body) {
     `GraphQL envelope keys=${Object.keys(body).join(",")}`,
   );
   requireFixture(typeof body.query === "string", "GraphQL query must be a string");
-  let parsed;
-  try {
-    parsed = parse(body.query);
-  } catch {
-    throw unknown("GraphQL document", "invalid syntax");
-  }
-  const operations = parsed.definitions.filter(
-    (definition) => definition.kind === Kind.OPERATION_DEFINITION,
+  requireFixture(body.query.length <= 64 * 1024, "GraphQL query exceeds fixture limit");
+  requireFixture(
+    typeof body.operationName === "string" && allowedGraphqlOperations.has(body.operationName),
+    `GraphQL operationName=${String(body.operationName)}`,
   );
-  requireFixture(operations.length === 1, `GraphQL operation count=${operations.length}`);
-  const operationDefinition = operations[0];
-  requireFixture(operationDefinition.operation === "query", "GraphQL mutations are forbidden");
-  const operation = operationDefinition.name?.value;
-  requireFixture(operation, "GraphQL operation must be named");
-  if (body.operationName !== undefined) {
-    requireFixture(body.operationName === operation, `GraphQL operationName=${body.operationName}`);
-  }
-  const hash = graphqlDocumentHash(parsed);
-  const descriptor = allowedGraphqlDocuments.get(hash);
-  if (!descriptor || descriptor.operation !== operation) {
-    throw unknown("GraphQL document", `${operation} sha256=${hash}`);
-  }
+  const operation = body.operationName;
+  const normalizedQuery = body.query
+    .replace(/#[^\r\n]*/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+  requireFixture(
+    !/\b(?:mutation|subscription)\b/iu.test(normalizedQuery),
+    "GraphQL fixture only permits queries",
+  );
+  const escapedOperation = operation.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  requireFixture(
+    new RegExp(`^query\\s+${escapedOperation}\\b`, "u").test(normalizedQuery),
+    `GraphQL document does not match ${operation}`,
+  );
+  requireFixture(
+    (normalizedQuery.match(/\bquery\b/gu) ?? []).length === 1,
+    "GraphQL fixture requires exactly one operation",
+  );
+  const hash = createHash("sha256").update(normalizedQuery).digest("hex");
   const variables = body.variables ?? {};
   requireFixture(
     variables && typeof variables === "object" && !Array.isArray(variables),
@@ -639,7 +551,7 @@ function handleGraphql(body) {
   if (!handler) throw unknown("GraphQL operation", String(operation ?? "anonymous"));
   increment(state.graphqlOperations, operation);
   increment(state.graphqlDocuments, hash);
-  return handler(variables, descriptor);
+  return handler(variables);
 }
 
 const registeredCalls = new Map();

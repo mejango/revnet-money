@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Type, lint, test, generate, build, and browser
+    name: Type, lint, test, build, and browser
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -24,7 +24,6 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:4173
       NEXT_PUBLIC_BENDYSTRAW_URL: http://127.0.0.1:4174
       NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: http://127.0.0.1:4174
-      NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ci
       NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: 127.0.0.1
       NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
       NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
@@ -92,9 +91,6 @@ jobs:
       - name: Verify wallet-write inventory and run invariant tests with coverage
         run: npm run test:ci
 
-      - name: Verify deterministic GraphQL artifacts
-        run: npm run generate:gql:check
-
       - name: Build production application
         run: npm run build:browser
 
@@ -138,7 +134,6 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_BENDYSTRAW_URL: http://127.0.0.1:9
       NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: http://127.0.0.1:9
-      NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ci
       NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: 127.0.0.1
       NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: http://127.0.0.1:9
       NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: http://127.0.0.1:9
@@ -170,7 +165,6 @@ jobs:
             --build-arg NEXT_PUBLIC_SITE_URL \
             --build-arg NEXT_PUBLIC_BENDYSTRAW_URL \
             --build-arg NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL \
-            --build-arg NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID \
             --build-arg NEXT_PUBLIC_INFURA_IPFS_HOSTNAME \
             --build-arg NEXT_PUBLIC_MAINNET_SUBGRAPH_URL \
             --build-arg NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL \

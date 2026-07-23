@@ -9,10 +9,10 @@ import {
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
-import { withZodSchema } from "@/lib/formikZod";
+import { withSchema } from "@/lib/formValidation";
+import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
-import { TrashIcon } from "@heroicons/react/24/outline";
-import { FieldArray, Form, Formik } from "formik";
+import { Trash2 as TrashIcon } from "lucide-react";
 import { useState } from "react";
 import { defaultStageData } from "../constants";
 import { getResolvedIssuance } from "../helpers/calculatePickupIssuance";
@@ -109,13 +109,13 @@ export function AddStageDialog({
           <DialogTitle>Add stage</DialogTitle>
         </DialogHeader>
         <div className="mt-8">
-          <Formik
+          <FormProvider
             initialValues={initialValues ?? getDefaultStageData(stageIdx, stages)}
-            validate={withZodSchema(stageSchema) as any}
+            validate={withSchema(stageSchema)}
             onSubmit={(newValues, { setSubmitting }) => {
               try {
                 setSubmitting(true);
-                // Set Formik values from UI state
+                // Apply the presentation-only cut controls to the submitted values.
                 if (enableCut) {
                   newValues.priceCeilingIncreasePercentage = String(uiCutPercentage);
                   newValues.priceCeilingIncreaseFrequency = String(uiCutFrequency);
@@ -614,7 +614,7 @@ export function AddStageDialog({
                 </Form>
               );
             }}
-          </Formik>
+          </FormProvider>
         </div>
       </DialogContent>
     </Dialog>

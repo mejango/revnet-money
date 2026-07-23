@@ -1,4 +1,4 @@
-import { RelayrPostBundleResponse } from "@bananapus/nana-sdk-react";
+import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { useTestData } from "../helpers/useTestData";
 import { ChainSelect } from "./ChainSelect";
 import { Divider } from "./Divider";

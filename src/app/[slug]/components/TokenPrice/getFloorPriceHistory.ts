@@ -1,11 +1,9 @@
 import {
-  CashOutTaxSnapshotsDocument,
-  CashOutTaxSnapshotsQuery,
-  SuckerGroupMomentsDocument,
-  SuckerGroupMomentsQuery,
-} from "@/generated/graphql";
-import { getBendystrawClient } from "@/graphql/bendystrawClient";
-import type { GraphQLClient } from "graphql-request";
+  CashOutTaxSnapshotsOperation,
+  SuckerGroupMomentsOperation,
+} from "@/lib/bendystraw/operations";
+import { queryBendystraw } from "@/lib/bendystraw/query.server";
+import type { CashOutTaxSnapshot, SuckerGroupMoment } from "@/lib/bendystraw/types";
 import { JB_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { parseUnits } from "viem";
 import type { PriceDataPoint } from "./getTokenPriceChartData";
@@ -18,51 +16,54 @@ type FloorPriceOptions = {
   projectStart: number;
 };
 
-type CashOutTaxSnapshot = CashOutTaxSnapshotsQuery["cashOutTaxSnapshots"]["items"][number];
-type SuckerGroupMoment = SuckerGroupMomentsQuery["suckerGroupMoments"]["items"][number];
+const MAX_HISTORY_PAGES = 20;
 
 async function fetchAllTaxSnapshots(
-  client: GraphQLClient,
+  chainId: number,
   suckerGroupId: string,
 ): Promise<CashOutTaxSnapshot[]> {
   const allItems: CashOutTaxSnapshot[] = [];
   let cursor: string | undefined;
+  const seenCursors = new Set<string>();
 
-  do {
-    const result = await client.request<
-      CashOutTaxSnapshotsQuery & {
-        cashOutTaxSnapshots: { pageInfo: { hasNextPage: boolean; endCursor: string | null } };
-      }
-    >(CashOutTaxSnapshotsDocument, { suckerGroupId, after: cursor });
+  for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
+    const result = await queryBendystraw(chainId, CashOutTaxSnapshotsOperation, {
+      suckerGroupId,
+      after: cursor,
+    });
 
     allItems.push(...(result.cashOutTaxSnapshots?.items ?? []));
 
     const pageInfo = result.cashOutTaxSnapshots?.pageInfo;
     cursor = pageInfo?.hasNextPage ? (pageInfo.endCursor ?? undefined) : undefined;
-  } while (cursor);
+    if (!cursor || seenCursors.has(cursor)) break;
+    seenCursors.add(cursor);
+  }
 
   return allItems;
 }
 
 async function fetchAllMoments(
-  client: GraphQLClient,
+  chainId: number,
   suckerGroupId: string,
 ): Promise<SuckerGroupMoment[]> {
   const allItems: SuckerGroupMoment[] = [];
   let cursor: string | undefined;
+  const seenCursors = new Set<string>();
 
-  do {
-    const result = await client.request<
-      SuckerGroupMomentsQuery & {
-        suckerGroupMoments: { pageInfo: { hasNextPage: boolean; endCursor: string | null } };
-      }
-    >(SuckerGroupMomentsDocument, { suckerGroupId, after: cursor });
+  for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
+    const result = await queryBendystraw(chainId, SuckerGroupMomentsOperation, {
+      suckerGroupId,
+      after: cursor,
+    });
 
     allItems.push(...(result.suckerGroupMoments?.items ?? []));
 
     const pageInfo = result.suckerGroupMoments?.pageInfo;
     cursor = pageInfo?.hasNextPage ? (pageInfo.endCursor ?? undefined) : undefined;
-  } while (cursor);
+    if (!cursor || seenCursors.has(cursor)) break;
+    seenCursors.add(cursor);
+  }
 
   return allItems;
 }
@@ -71,11 +72,9 @@ export async function getFloorPriceHistory(options: FloorPriceOptions): Promise<
   const { suckerGroupId, chainId, baseTokenDecimals, currentCashOutTax, projectStart } = options;
 
   try {
-    const client = getBendystrawClient(chainId);
-
     const [taxSnapshots, moments] = await Promise.all([
-      fetchAllTaxSnapshots(client, suckerGroupId),
-      fetchAllMoments(client, suckerGroupId),
+      fetchAllTaxSnapshots(chainId, suckerGroupId),
+      fetchAllMoments(chainId, suckerGroupId),
     ]);
 
     const dataPoints: PriceDataPoint[] = [];
@@ -104,8 +103,8 @@ export async function getFloorPriceHistory(options: FloorPriceOptions): Promise<
       dataPoints.push({
         timestamp: moment.timestamp,
         floorPrice,
-        totalSupply: moment.tokenSupply,
-        totalBalance: moment.balance,
+        totalSupply: String(moment.tokenSupply),
+        totalBalance: String(moment.balance),
         cashOutTaxRate: cashOutTax,
       });
     }

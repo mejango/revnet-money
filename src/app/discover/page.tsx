@@ -14,12 +14,9 @@ type RevnetProject = {
 import { DiscoverGridSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Button } from "@/components/ui/button";
 import { isIpfsUri } from "@/lib/ipfs-cid";
-import { sdk } from "@farcaster/miniapp-sdk";
 import { useQuery } from "@tanstack/react-query";
-import { request } from "graphql-request";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { SUBGRAPH_URLS } from "../../graphql/constants";
 import MiniHeaderCard from "./MiniHeaderCard";
 
@@ -49,7 +46,24 @@ async function fetchDiscoverProjects(): Promise<RevnetProject[]> {
     }
   `;
 
-  const data: { projects: RevnetProject[] } = await request(subgraphUrl, query);
+  const response = await fetch(subgraphUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ operationName: "Projects", query, variables: {} }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok || !response.headers.get("content-type")?.toLowerCase().includes("json")) {
+    throw new Error("Project index is unavailable");
+  }
+  const envelope = (await response.json()) as {
+    data?: { projects?: RevnetProject[] };
+    errors?: unknown[];
+  };
+  if (envelope.errors?.length || !Array.isArray(envelope.data?.projects)) {
+    throw new Error("Project index returned an invalid response");
+  }
+  const data = { projects: envelope.data.projects };
   const projectsWithMetadata = await Promise.all(
     (data.projects || []).map(async (project) => {
       if (!isIpfsUri(project.metadataUri)) return project;
@@ -91,11 +105,6 @@ async function fetchDiscoverProjects(): Promise<RevnetProject[]> {
 }
 
 export default function Page() {
-  const [user, setUser] = useState<{
-    fid: number;
-    pfp: string;
-    userName: string;
-  } | null>(null);
   const {
     data: projects = [],
     isLoading: projectsLoading,
@@ -106,38 +115,8 @@ export default function Page() {
     staleTime: 5 * 60_000,
   });
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      await sdk.actions.ready();
-      // TODO - check if context exist of not and if the user is already in the frame
-      try {
-        await sdk.actions.addFrame();
-      } catch (error) {
-        if (error) {
-          console.log("User rejected the mini app addition or domain manifest JSON is invalid");
-          // Handle the rejection here
-        }
-      }
-
-      const ctx = await sdk.context;
-      if (ctx?.user) {
-        setUser({
-          fid: ctx.user.fid,
-          pfp: ctx.user.pfpUrl || "",
-          userName: ctx.user.username || "",
-        });
-      }
-    };
-    fetchUser();
-  }, []);
-
   return (
     <div className="container mt-40 pr-[1.5rem] pl-[1.5rem] sm:pr-[2rem] sm:pl-[2rem] sm:px-8">
-      {user?.pfp && (
-        <div className="flex items-center mb-4">
-          <span className="text-lg">Hello {user.userName}!</span>
-        </div>
-      )}
       <div className="flex flex-col items-left justify-left">
         <Image src="/assets/img/revnet-full-bw.svg" width={840} height={240} alt="Revnet logo" />
         <span className="sr-only">Revnet</span>

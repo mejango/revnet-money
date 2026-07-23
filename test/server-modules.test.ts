@@ -16,8 +16,8 @@ vi.mock("@/lib/emptyProfile", () => ({
 vi.mock("@/lib/profile", () => ({
   fetchProfile: mocks.fetchProfile,
 }));
-vi.mock("@/graphql/bendystrawClient", () => ({
-  getBendystrawClient: () => ({ request: mocks.request }),
+vi.mock("@/lib/bendystraw/query.server", () => ({
+  queryBendystraw: mocks.request,
 }));
 
 import { getProjectOperator } from "@/app/[slug]/getProjectOperator";
@@ -50,7 +50,7 @@ describe("server-only profile modules", () => {
     mocks.fetchProfile.mockResolvedValue(profile);
 
     await expect(getProjectOperator(7, 8453)).resolves.toEqual(profile);
-    expect(mocks.request).toHaveBeenCalledWith(expect.anything(), {
+    expect(mocks.request).toHaveBeenCalledWith(8453, expect.anything(), {
       chainId: 8453,
       projectId: 7,
       version: 6,

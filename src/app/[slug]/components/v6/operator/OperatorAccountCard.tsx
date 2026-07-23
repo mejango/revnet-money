@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { PermissionHoldersOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Address, isAddress, zeroAddress } from "viem";
@@ -18,7 +18,6 @@ import { useAccount } from "wagmi";
 import {
   ChainProjectRow,
   ChainWrite,
-  PermissionHoldersDocument,
   chainName,
   permissionHoldersWhere,
   publicClientFor,
@@ -98,7 +97,7 @@ export function OperatorAccountCard({
   fallbackOperator?: string;
 }) {
   const holdersQuery = useBendystrawQuery(
-    PermissionHoldersDocument,
+    PermissionHoldersOperation,
     { where: permissionHoldersWhere(rows, { isRevnetOperator: true }) },
     { enabled: rows.length > 0 },
   );

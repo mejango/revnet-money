@@ -1,14 +1,14 @@
 "use client";
 
-import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
+import { Slot } from "./slot";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:ring-offset-zinc-950 dark:focus-visible:ring-zinc-300",
+  "inline-flex items-center justify-center text-sm font-medium text-zinc-950 dark:text-zinc-50 ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:ring-offset-zinc-950 dark:focus-visible:ring-zinc-300",
   {
     variants: {
       variant: {
@@ -50,18 +50,75 @@ export interface ButtonProps
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, loading, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button";
+  (
+    {
+      asChild = false,
+      children,
+      className,
+      disabled: disabledProp,
+      loading,
+      onClick,
+      size,
+      variant,
+      ...props
+    },
+    ref,
+  ) => {
+    const disabled = disabledProp || loading;
+
+    if (asChild) {
+      const child = React.Children.only(children) as React.ReactElement<{
+        children?: React.ReactNode;
+        onClick?: React.MouseEventHandler<HTMLElement>;
+      }>;
+      const childProps = disabled
+        ? {
+            onClick: (event: React.MouseEvent<HTMLElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+            },
+          }
+        : undefined;
+      const slottedChild = React.cloneElement(
+        child,
+        childProps,
+        loading
+          ? [<Loader2 key="loading" className="mr-2 h-4 w-4 animate-spin" />, child.props.children]
+          : child.props.children,
+      );
+      return (
+        <Slot
+          ref={ref as React.Ref<HTMLElement>}
+          className={cn(buttonVariants({ variant, size, className }))}
+          {...props}
+          aria-disabled={disabled || undefined}
+          data-disabled={disabled ? "" : undefined}
+          onClick={(event) => {
+            if (disabled) {
+              event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
+            onClick?.(event as React.MouseEvent<HTMLButtonElement>);
+          }}
+          tabIndex={disabled ? -1 : props.tabIndex}
+        >
+          {slottedChild}
+        </Slot>
+      );
+    }
+
     return (
-      <Comp
+      <button
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}
-        disabled={props.disabled || loading}
+        disabled={disabled}
+        onClick={onClick}
       >
         {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-        {props.children}
-      </Comp>
+        {children}
+      </button>
     );
   },
 );

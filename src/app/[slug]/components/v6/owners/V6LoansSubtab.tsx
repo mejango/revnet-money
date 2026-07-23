@@ -3,17 +3,11 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
-import { Button } from "@/components/ui/button";
+import { WalletConnectButton } from "@/components/WalletButton";
+import { AllLoansOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
-import {
-  useBendystrawQuery,
-  useJBContractContext,
-  useJBTokenContext,
-} from "@bananapus/nana-sdk-react";
-import { TypedDocumentNode } from "@graphql-typed-document-node/core";
-import { ConnectKitButton } from "connectkit";
-import gql from "graphql-tag";
 import { useState } from "react";
 import { formatUnits } from "viem";
 import { useAccount } from "wagmi";
@@ -22,45 +16,18 @@ import { ReallocateDialog } from "../../Value/ReallocateDialog";
 import { RepayDialog } from "../../Value/RepayDialog";
 import { ProjectItem } from "../shared";
 
-type AllLoansRow = {
-  id: string;
-  borrowAmount: string;
-  collateral: string;
-  beneficiary: string;
-  owner: string;
-  createdAt: number;
-  chainId: number;
-};
-
-type AllLoansQuery = { loans?: { items?: AllLoansRow[] | null; totalCount?: number } | null };
-type AllLoansVars = { where: { projectId_in: number[]; version: number; chainId_in: number[] } };
-
-/** website BENDYSTRAW_LOANS_QUERY parity: every active loan, not just yours. */
-const AllLoansDocument = gql`
-  query V6AllLoans($where: loanFilter) {
-    loans(where: $where, orderBy: "createdAt", orderDirection: "desc", limit: 50) {
-      items {
-        id
-        borrowAmount
-        collateral
-        beneficiary
-        owner
-        createdAt
-        chainId
-      }
-      totalCount
-    }
-  }
-` as TypedDocumentNode<AllLoansQuery, AllLoansVars>;
-
 function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; tokenSymbol: string }) {
-  const { data, isLoading } = useBendystrawQuery(AllLoansDocument, {
-    where: {
-      projectId_in: projects.map((p) => p.projectId),
-      version: 6,
-      chainId_in: projects.map((p) => p.chainId),
+  const { data, isLoading } = useBendystrawQuery(
+    AllLoansOperation,
+    {
+      where: {
+        projectId_in: projects.map((p) => p.projectId),
+        version: 6,
+        chainId_in: projects.map((p) => p.chainId),
+      },
     },
-  });
+    { enabled: projects.length > 0, chainId: Number(projects[0]?.chainId ?? 1) },
+  );
   const rows = data?.loans?.items ?? [];
 
   return (
@@ -138,13 +105,7 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
         <p className="text-md text-black font-light italic">
           Connect a wallet to see and manage your loans against {tokenSymbol} collateral.
         </p>
-        <ConnectKitButton.Custom>
-          {({ isConnecting, show }) => (
-            <Button variant="outline" onClick={show} loading={isConnecting}>
-              Connect wallet
-            </Button>
-          )}
-        </ConnectKitButton.Custom>
+        <WalletConnectButton />
       </div>
     );
   }

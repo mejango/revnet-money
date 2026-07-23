@@ -1,3 +1,5 @@
+import { ShieldGroupOperation, ShieldProjectOperation } from "@/lib/bendystraw/operations";
+import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import { NextResponse } from "next/server";
 
 type ChainId = 1 | 10 | 8453 | 42161;
@@ -10,18 +12,18 @@ const JB_CHAINS: Record<ChainId, { name: string }> = {
 };
 
 export async function GET(req: Request) {
-  const baseUrl = process.env.NEXT_PUBLIC_BENDYSTRAW_URL?.replace(/\/$/, "") + "/graphql";
   const { searchParams } = new URL(req.url);
   const projectId = parseInt(searchParams.get("projectId") ?? "");
 
   const chainIdParam = searchParams.get("chainId");
-  const chainIds: ChainId[] = chainIdParam
-    ? [parseInt(chainIdParam) as ChainId]
-    : (Object.keys(JB_CHAINS).map(Number) as ChainId[]);
-
-  if (!baseUrl) {
-    return NextResponse.json({ error: "Missing BendyStraw URL" }, { status: 500 });
+  const parsedChainId = chainIdParam ? Number(chainIdParam) : undefined;
+  if (parsedChainId !== undefined && !(parsedChainId in JB_CHAINS)) {
+    return NextResponse.json({ error: "Unsupported chainId" }, { status: 400 });
   }
+  const chainIds: ChainId[] =
+    parsedChainId !== undefined
+      ? [parsedChainId as ChainId]
+      : (Object.keys(JB_CHAINS).map(Number) as ChainId[]);
 
   if (isNaN(projectId)) {
     return NextResponse.json({ error: "Missing or invalid projectId" }, { status: 400 });
@@ -30,86 +32,27 @@ export async function GET(req: Request) {
   let totalBalance = 0;
   const results = [];
   let projectName = "Revnet"; // default fallback
+  const visitedGroups = new Set<string>();
 
   for (const chainId of chainIds) {
-    const suckerIdQuery = `
-      query {
-        project(chainId: ${chainId}, projectId: ${projectId}) {
-          id
-          suckerGroupId
-        }
-      }
-    `;
-
     try {
-      const suckerIdRes = await fetch(baseUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: suckerIdQuery }),
+      const project = await queryBendystraw(chainId, ShieldProjectOperation, {
+        chainId,
+        projectId,
       });
-
-      if (!suckerIdRes.ok) {
-        return NextResponse.json({ error: "Failed to fetch suckerId" }, { status: 500 });
-      }
-
-      const suckerIdText = await suckerIdRes.text();
-      const suckerIdJson = JSON.parse(suckerIdText);
-      const suckerGroupId = suckerIdJson.data?.project?.suckerGroupId;
+      const suckerGroupId = project.project?.suckerGroupId;
       if (!suckerGroupId) {
         return NextResponse.json({ error: "Project not found on BendyStraw" }, { status: 404 });
       }
+      if (visitedGroups.has(suckerGroupId)) continue;
+      visitedGroups.add(suckerGroupId);
 
-      const surplusQuery = `
-      query GetSuckerGroup($id: String!) {
-        suckerGroup(id: $id) {
-          balance
-          volume
-          volumeUsd
-          projects {
-            items {
-              balance
-              chainId
-              isRevnet
-              id
-              name
-              volumeUsd
-              volume
-              participants {
-                totalCount
-                items {
-                  address
-                  chainId
-                  projectId
-                  lastPaidTimestamp
-                  balance
-                }
-              }
-              metadata 
-            }
-          }
-        }
-      }
-    `;
+      const surplus = await queryBendystraw(chainId, ShieldGroupOperation, { id: suckerGroupId });
+      const items = surplus.suckerGroup?.projects?.items ?? [];
 
-      const surplusRes = await fetch(baseUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: surplusQuery,
-          variables: { id: suckerGroupId },
-        }),
-      });
-
-      if (!surplusRes.ok) {
-        return NextResponse.json({ error: "Failed to fetch nativeTokenSurplus" }, { status: 500 });
-      }
-
-      const surplusJson = await surplusRes.json();
-      const items = surplusJson.data.suckerGroup?.projects?.items ?? [];
-
-      projectName = surplusJson.data.suckerGroup?.projects?.items?.[0]?.name ?? projectName;
+      projectName = items[0]?.name ?? projectName;
       for (const item of items) {
-        const itemBalance = parseFloat(item.balance ?? "0") / 1e18;
+        const itemBalance = Number(item.balance ?? 0) / 1e18;
         totalBalance += itemBalance;
 
         results.push({
@@ -121,7 +64,7 @@ export async function GET(req: Request) {
           participants: item.participants?.items ?? [],
         });
       }
-    } catch (err) {
+    } catch {
       return NextResponse.json({ error: "Error fetching data" }, { status: 500 });
     }
   }

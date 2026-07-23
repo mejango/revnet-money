@@ -12,9 +12,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ProjectOperatorDocument } from "@/generated/graphql";
+import { ProjectOperatorOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useBendystrawQuery } from "@bananapus/nana-sdk-react";
 import Link from "next/link";
 import { Address, isAddress } from "viem";
 import { ProjectItem } from "../shared";
@@ -86,7 +85,7 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
 
 /** The revnet operator on one chain, ENS-resolved and explorer-linked. */
 function OperatorCell({ chainId, projectId }: { chainId: JBChainId; projectId: number }) {
-  const { data, isLoading } = useBendystrawQuery(ProjectOperatorDocument, {
+  const { data, isLoading } = useBendystrawQuery(ProjectOperatorOperation, {
     chainId,
     projectId,
     version: 6,

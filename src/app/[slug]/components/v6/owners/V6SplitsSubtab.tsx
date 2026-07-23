@@ -14,23 +14,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ProjectOperatorDocument } from "@/generated/graphql";
+import { ProjectOperatorOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
+import type { JBChainId } from "@/lib/nana/types";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
   formatUnits,
   JB_CHAINS,
-  JBChainId,
   jbControllerAbi,
   JBCoreContracts,
   jbRulesetsAbi,
   jbSplitsAbi,
 } from "@bananapus/nana-sdk-core";
-import {
-  useBendystrawQuery,
-  useJBChainId,
-  useJBContractContext,
-  useJBTokenContext,
-} from "@bananapus/nana-sdk-react";
 import { useState } from "react";
 import { twJoin } from "tailwind-merge";
 import { zeroAddress } from "viem";
@@ -68,7 +63,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
 
   // The real operator (bendystraw permissionHolders isRevnetOperator) — NOT the
   // first split's beneficiary, which is zero when the split routes to a hook.
-  const operatorQuery = useBendystrawQuery(ProjectOperatorDocument, {
+  const operatorQuery = useBendystrawQuery(ProjectOperatorOperation, {
     chainId: Number(chainId),
     projectId: Number(projectId),
     version: 6,

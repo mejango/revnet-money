@@ -1,14 +1,19 @@
 import EtherscanLink from "@/components/EtherscanLink";
-import { ProjectCreateEventDocument } from "@/generated/graphql";
-import { useBendystrawQuery, useJBContractContext } from "@bananapus/nana-sdk-react";
+import { ProjectCreateEventOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { format } from "date-fns";
 
 export function Creation() {
   const { projectId } = useJBContractContext();
+  const chainId = useJBChainId();
 
-  const { data: projectCreateEvent } = useBendystrawQuery(ProjectCreateEventDocument, {
-    where: { projectId: Number(projectId), version: 6 },
-  });
+  const { data: projectCreateEvent } = useBendystrawQuery(
+    ProjectCreateEventOperation,
+    {
+      where: { projectId: Number(projectId), chainId: Number(chainId), version: 6 },
+    },
+    { chainId: Number(chainId) },
+  );
 
   const { txHash, timestamp } = projectCreateEvent?.projectCreateEvents.items?.[0] ?? {};
 

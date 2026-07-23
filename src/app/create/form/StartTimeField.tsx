@@ -1,4 +1,4 @@
-import { useFormikContext } from "formik";
+import { useFormContext } from "@/lib/forms";
 import { useState } from "react";
 import { StageData } from "../types";
 import { NotesSection } from "./AddStageDialog";
@@ -10,7 +10,7 @@ interface StartTimeFieldProps {
 }
 
 export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
-  const { values, setFieldValue } = useFormikContext<StageData>();
+  const { values, setFieldValue } = useFormContext<StageData>();
   const [useFutureStart, setUseFutureStart] = useState(Boolean(values.futureStartTimestamp));
 
   if (stageIdx === 0) {

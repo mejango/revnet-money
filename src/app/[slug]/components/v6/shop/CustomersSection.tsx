@@ -1,10 +1,10 @@
 "use client";
 
-import { EthereumAddress } from "@/components/EthereumAddress";
-import { SkeletonLines } from "@/components/ui/skeleton";
-import EtherscanLink from "@/components/EtherscanLink";
 import { DateRelative } from "@/components/DateRelative";
-import { useOwnedShopItems, useShopPurchases } from "@bananapus/nana-sdk-react";
+import { EthereumAddress } from "@/components/EthereumAddress";
+import EtherscanLink from "@/components/EtherscanLink";
+import { SkeletonLines } from "@/components/ui/skeleton";
+import { useOwnedShopItems, useShopPurchases } from "@/lib/nana/shop";
 import { useMemo } from "react";
 import { Address } from "viem";
 import { useAccount } from "wagmi";
@@ -67,9 +67,7 @@ export function CustomersSection({
         ) : owned.isLoading ? (
           <SkeletonLines lines={2} className="mt-3" />
         ) : owned.isError ? (
-          <p className="mt-2 text-sm text-zinc-600">
-            Couldn&apos;t load your items right now.
-          </p>
+          <p className="mt-2 text-sm text-zinc-600">Couldn&apos;t load your items right now.</p>
         ) : (owned.data?.length ?? 0) > 0 ? (
           <>
             <p className="mt-2 text-sm font-medium text-zinc-900">
@@ -148,11 +146,7 @@ export function CustomersSection({
                 key={`${purchase.chainId}:${purchase.txHash}:${purchase.tokenId}`}
                 className="flex items-baseline justify-between gap-3 py-1.5 text-xs"
               >
-                <EtherscanLink
-                  value={purchase.txHash}
-                  type="tx"
-                  className="shrink-0 text-teal-600"
-                >
+                <EtherscanLink value={purchase.txHash} type="tx" className="shrink-0 text-teal-600">
                   <DateRelative timestamp={purchase.timestamp} />
                 </EtherscanLink>
                 <span className="min-w-0 truncate text-right text-zinc-600">

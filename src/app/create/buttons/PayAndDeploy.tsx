@@ -5,9 +5,9 @@ import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxBundle, useSendRelayrTx } from "@/hooks/useReviewedRelayr";
 import { submittedViaSafe } from "@/hooks/useReviewedWriteContract";
 import { useTokenA } from "@/hooks/useTokenA";
+import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { ChainPayment, RelayrPostBundleResponse } from "@bananapus/nana-sdk-react";
 import {
   CheckCircle,
   CircleDashedIcon,

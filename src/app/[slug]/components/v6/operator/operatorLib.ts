@@ -1,12 +1,10 @@
 import { chainSortOrder } from "@/app/constants";
-import { PermissionHolder, PermissionHolderFilter } from "@/generated/graphql";
 import { requireOnchainExecution } from "@/hooks/useReviewedWriteContract";
+import type { PermissionHolder, PermissionHolderFilter } from "@/lib/bendystraw/types";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, jbContractAddress } from "@bananapus/nana-sdk-core";
-import { TypedDocumentNode } from "@graphql-typed-document-node/core";
-import { getAccount, getPublicClient, switchChain } from "@wagmi/core";
-import gql from "graphql-tag";
 import { Abi, Address, PublicClient } from "viem";
+import { getAccount, getPublicClient, switchChain } from "wagmi/actions";
 import { ProjectItem } from "../shared";
 
 /** A sucker-group project on a chain this UI understands. */
@@ -47,26 +45,6 @@ export type PermissionHolderRow = Pick<
   PermissionHolder,
   "chainId" | "projectId" | "account" | "operator" | "permissions" | "isRevnetOperator"
 >;
-
-export type PermissionHoldersQuery = {
-  permissionHolders: { items: PermissionHolderRow[] } | null;
-};
-export type PermissionHoldersQueryVariables = { where: PermissionHolderFilter };
-
-export const PermissionHoldersDocument = gql`
-  query V6PermissionHolders($where: PermissionHolderFilter) {
-    permissionHolders(where: $where, limit: 500) {
-      items {
-        chainId
-        projectId
-        account
-        operator
-        permissions
-        isRevnetOperator
-      }
-    }
-  }
-` as unknown as TypedDocumentNode<PermissionHoldersQuery, PermissionHoldersQueryVariables>;
 
 /** Per-project (chainId, projectId) filter for v6 projects. */
 export function permissionHoldersWhere(

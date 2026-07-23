@@ -24,7 +24,6 @@
     "dependencies:check": "npm ls --depth=0",
     "protocol:check": "node scripts/check-protocol-deployments.mjs",
     "wallet-writes:check": "node scripts/check-wallet-write-sites.mjs",
-    "generate:gql:check": "graphql-code-generator --config codegen.ci.yml && git diff --exit-code -- src/generated",
     "bundle:check": "node scripts/check-client-bundle.mjs",
     "standalone:check": "node scripts/check-standalone.mjs",
     "standalone:stage": "node scripts/stage-standalone.mjs",
@@ -32,117 +31,61 @@
     "env:check:build": "node --env-file-if-exists=.env.local scripts/validate-env.mjs build",
     "env:check:runtime": "node --env-file-if-exists=.env.local scripts/validate-env.mjs runtime",
     "env:test": "node scripts/test-validate-env.mjs",
-    "check": "npm run dependencies:check && npm run env:test && npm run deployment:check && npm run typecheck && npm run lint && npm run format:ratchet && npm run protocol:check && npm run test:ci && npm run generate:gql:check && npm run build:browser && npm run standalone:check && npm run bundle:check && npm run test:browser",
+    "check": "npm run dependencies:check && npm run env:test && npm run deployment:check && npm run typecheck && npm run lint && npm run format:ratchet && npm run protocol:check && npm run test:ci && npm run build:browser && npm run standalone:check && npm run bundle:check && npm run test:browser",
     "ts:compile": "tsc",
-    "generate:gql": "DOTENV_CONFIG_PATH=./.env.local graphql-code-generator --config codegen.yml -r dotenv/config",
     "format:write": "prettier --write \"**/*.{js,jsx,mjs,ts,tsx,json,css,scss}\"",
     "format:check": "prettier --check \"**/*.{js,jsx,mjs,ts,tsx,json,css,scss}\""
   },
   "dependencies": {
-    "@bananapus/nana-sdk-core": "^1.4.0",
-    "@bananapus/nana-sdk-react": "^5.0.0",
-    "@farcaster/miniapp-sdk": "0.3.0",
-    "@farcaster/miniapp-wagmi-connector": "2.0.0",
-    "@heroicons/react": "^2.0.18",
-    "@radix-ui/react-dialog": "^1.1.21",
-    "@radix-ui/react-label": "^2.1.13",
-    "@radix-ui/react-select": "^2.3.5",
-    "@radix-ui/react-slot": "^1.3.1",
-    "@radix-ui/react-toast": "^1.2.21",
-    "@radix-ui/react-tooltip": "^1.2.14",
-    "@tailwindcss/forms": "^0.5.11",
-    "@tanstack/react-query": "^5.45.0",
-    "@upstash/redis": "^1.38.0",
+    "@bananapus/nana-sdk-core": "1.4.0",
+    "@tanstack/react-query": "5.101.4",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
-    "connectkit": "^1.9.2",
     "date-fns": "^3.3.0",
     "dompurify": "^3.4.12",
-    "formik": "^2.4.9",
     "fpnum": "^1.0.0",
-    "graphql": "^16.8.0",
-    "graphql-tag": "^2.12.7",
     "lucide-react": "^0.395.0",
     "next": "16.2.11",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "recharts": "^3.5.0",
     "tailwind-merge": "^2.2.0",
-    "tailwindcss-animate": "^1.0.6",
-    "viem": "^2.55.8",
-    "wagmi": "^2.14.8",
-    "zod": "^4.4.3"
+    "viem": "2.55.8",
+    "wagmi": "3.7.4"
   },
   "devDependencies": {
-    "@babel/core": "^7.22.17",
-    "@babel/preset-env": "^7.22.15",
-    "@babel/preset-typescript": "^7.22.15",
-    "@graphql-codegen/cli": "^5.0.2",
-    "@graphql-codegen/client-preset": "^4.3.0",
-    "@graphql-codegen/introspection": "^4.0.3",
-    "@graphql-codegen/typescript": "^4.0.7",
-    "@graphql-codegen/typescript-operations": "^4.2.1",
     "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.61.1",
+    "@tailwindcss/postcss": "4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "7.0.0",
     "@testing-library/react": "^16.3.0",
-    "@types/dompurify": "^3.0.2",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
-    "@types/recharts": "^1.8.24",
+    "@types/node": "22.20.1",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
     "@vitest/coverage-v8": "^4.1.9",
-    "autoprefixer": "^10.5.4",
     "dotenv": "^16.3.1",
     "eslint": "^9.39.1",
     "eslint-config-next": "16.2.11",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^29.1.1",
-    "postcss": "^8.5.22",
-    "prettier": "^3.5.3",
+    "postcss": "8.5.22",
+    "prettier": "3.6.2",
     "prettier-plugin-organize-imports": "^4.2.0",
-    "prettier-plugin-tailwindcss": "^0.6.11",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5.0.4",
+    "prettier-plugin-tailwindcss": "0.7.4",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
     "vitest": "^4.1.9"
   },
   "optionalDependencies": {
     "@rolldown/binding-linux-x64-gnu": "1.1.5"
   },
   "overrides": {
-    "@graphql-tools/executor-graphql-ws": {
-      "ws": "8.21.1"
-    },
-    "@graphql-tools/executor-legacy-ws": {
-      "ws": "8.21.1"
-    },
-    "@graphql-tools/url-loader": {
-      "ws": "8.21.1"
-    },
-    "@walletconnect/jsonrpc-ws-connection": {
-      "ws": "7.5.13"
-    },
     "brace-expansion@<2": "1.1.16",
     "brace-expansion@>=2 <3": "2.1.2",
-    "defu@>=6 <7": "6.1.7",
-    "engine.io-client": {
-      "ws": "8.21.1"
-    },
     "glob@>=10 <11": "10.5.0",
-    "h3@>=1 <2": "1.15.11",
-    "lodash": "4.18.1",
-    "lodash-es": "4.18.1",
     "minimatch@>=9 <10": "9.0.9",
     "picomatch@<3": "2.3.2",
-    "preact@>=10 <11": "10.29.7",
-    "rpc-websockets": {
-      "ws": "8.21.1"
-    },
-    "sharp@<0.35": "0.35.3",
-    "socket.io-parser@>=4 <5": "4.2.7",
-    "viem": {
-      "ws": "8.21.1"
-    }
+    "sharp@<0.35": "0.35.3"
   },
   "packageManager": "npm@10.9.8"
 }

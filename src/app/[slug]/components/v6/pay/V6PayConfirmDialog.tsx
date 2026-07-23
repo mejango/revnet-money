@@ -17,9 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useSuckers } from "@/lib/nana/suckers";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useSuckers } from "@bananapus/nana-sdk-react";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
@@ -355,7 +355,7 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
 
 function stringifyArg(arg: unknown): string {
   if (typeof arg === "bigint") return arg.toString();
-  if (typeof arg === "string") return arg === "" ? "\"\"" : arg;
+  if (typeof arg === "string") return arg === "" ? '""' : arg;
   if (typeof arg === "boolean") return String(arg);
   try {
     return JSON.stringify(arg, (_, v) => (typeof v === "bigint" ? v.toString() : v));

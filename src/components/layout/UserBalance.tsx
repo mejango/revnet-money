@@ -1,20 +1,26 @@
 "use client";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useJBTokenContext } from "@/lib/nana/project";
+import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
-import { useJBTokenContext, useSuckersUserTokenBalance } from "@bananapus/nana-sdk-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
 export function UserBalance() {
+  const { slug } = useParams<{ slug?: string }>();
+
+  // Global pages such as /create have no ProjectProvider. Keep project-only
+  // hooks in a child that is mounted only for project routes.
+  if (!slug) return null;
+
+  return <ProjectUserBalance slug={slug} />;
+}
+
+function ProjectUserBalance({ slug }: { slug: string }) {
   const { data: balances, isLoading } = useSuckersUserTokenBalance();
   const { token } = useJBTokenContext();
-  const { slug } = useParams<{ slug: string }>();
-
-  // Global pages such as /create have no project route. Rendering a project
-  // balance link there made Next prefetch /undefined/owners on every visit.
-  if (!slug) return null;
 
   const totalBalance = new JBProjectToken(
     balances?.reduce((acc, curr) => acc + curr.balance.value, 0n) ?? 0n,

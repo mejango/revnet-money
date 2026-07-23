@@ -1,31 +1,21 @@
 "use client";
 
-import { ChartConfig, ChartContainer, ChartTooltip } from "@/components/ui/chart";
+import {
+  CartesianChart,
+  findNearestIndex,
+  type ChartBand,
+  type ChartReferenceLine,
+  type ChartSeries,
+} from "@/components/ui/chart";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
+import { useJBTokenContext } from "@/lib/nana/project";
 import { formatDecimals } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
-import { useJBTokenContext } from "@bananapus/nana-sdk-react";
 import { format } from "date-fns";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ReferenceArea,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-} from "recharts";
 import type { Ruleset } from "../../getRulesets";
 import { prepareChartData, ProjectionRange } from "./prepareChartData";
-
-const chartConfig = {
-  price: {
-    label: "Issuance Price",
-    color: "var(--chart-2)",
-  },
-} satisfies ChartConfig;
 
 const VALID_RANGES: ProjectionRange[] = ["1y", "5y", "10y", "20y", "all"];
 const DEFAULT_RANGE: ProjectionRange = "1y";
@@ -52,122 +42,92 @@ export function IssuancePriceChart({ rulesets }: Props) {
   if (!chartData.length) return null;
 
   const tokenSymbol = formatTokenSymbol(token);
+  const series: ChartSeries<(typeof chartData)[number]>[] = [
+    {
+      key: "price",
+      label: "Price",
+      color: "var(--chart-2)",
+      value: (point) => point.price,
+      area: {
+        color: "var(--chart-2)",
+        opacityFrom: 0.3,
+        opacityTo: 0.02,
+      },
+    },
+  ];
+  const bands: ChartBand[] = stageAreas.map((area) => ({
+    key: area.name,
+    x1: area.x1,
+    x2: area.x2,
+    fill: area.fill,
+  }));
+  const referenceLines: ChartReferenceLine[] = stageAreas.map((area) => ({
+    key: `line-${area.name}`,
+    x: area.x1,
+    color: "#C6EDD5",
+    dash: "3 3",
+    label: area.name,
+    labelColor: "#3D7955",
+    labelSide: "right",
+  }));
+  if (todayVisualX !== null) {
+    referenceLines.push({
+      key: "today",
+      x: todayVisualX,
+      color: "var(--chart-1)",
+      dash: "4 4",
+      width: 1,
+      label: "Now",
+      labelColor: "var(--chart-1)",
+    });
+  }
+  const firstVisualX = chartData[0].visualX;
+  const lastVisualX = chartData[chartData.length - 1].visualX;
+  const initialIndex =
+    todayVisualX === null
+      ? chartData.length - 1
+      : findNearestIndex(chartData, (d) => d.visualX, todayVisualX);
 
   return (
-    <ChartContainer
+    <CartesianChart
       key={range}
-      config={chartConfig}
+      data={chartData}
+      xValue={(point) => point.visualX}
+      series={series}
+      ariaLabel={`Projected ${tokenSymbol} issuance price`}
+      description={`Projected issuance price in ${baseToken?.symbol ?? "the base token"} per ${tokenSymbol}, grouped by ruleset stage.`}
       className="aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
-    >
-      <AreaChart
-        accessibilityLayer
-        data={chartData}
-        margin={{ left: 0, right: 12, top: 24, bottom: 0 }}
-      >
-        <defs>
-          <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-price)" stopOpacity={0.3} />
-            <stop offset="100%" stopColor="var(--color-price)" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis
-          dataKey="visualX"
-          tickLine={false}
-          axisLine={false}
-          tickMargin={12}
-          tick={{ fontSize: 14 }}
-          tickFormatter={(v) => format(new Date(toReal(v) * 1000), "yyyy")}
-          minTickGap={40}
-          type="number"
-          domain={["dataMin", "dataMax"]}
-        />
-        <YAxis
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-          tick={{ fontSize: 14 }}
-          tickFormatter={(value) => formatDecimals(value, 6)}
-          width={80}
-          domain={["auto", "auto"]}
-        />
-        <ChartTooltip
-          content={({ active, payload }) => {
-            if (!active || !payload?.length) return null;
-            const data = payload[0]?.payload;
-            if (!data?.timestamp) return null;
-
-            const stage = stages.findLast((s) => data.timestamp >= s.start);
-            const value = payload[0].value as number;
-
-            return (
-              <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-3 text-sm">
-                <div className="font-medium mb-1 text-zinc-300">
-                  {format(new Date(data.timestamp * 1000), "MMM d, yyyy")}
-                </div>
-                {stage && (
-                  <div className="text-xs text-zinc-500 mb-2 uppercase tracking-wider font-semibold">
-                    {stage.name}
-                  </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[--color-price]" />
-                  <span className="text-zinc-400">Price:</span>
-                  <span className="font-mono text-white">
-                    {formatDecimals(value, 6)} {baseToken?.symbol} / {tokenSymbol}
-                  </span>
-                </div>
+      margin={{ left: 88, right: 20, top: 24, bottom: 38 }}
+      xDomain={[firstVisualX, lastVisualX]}
+      formatXTick={(value) => format(new Date(toReal(value) * 1000), "yyyy")}
+      formatYTick={(value) => formatDecimals(value, 6)}
+      bands={bands}
+      referenceLines={referenceLines}
+      initialIndex={initialIndex}
+      tooltip={({ datum, series: tooltipSeries }) => {
+        const stage = stages.findLast((stage) => datum.timestamp >= stage.start);
+        const value = tooltipSeries[0]?.value;
+        if (value === undefined) return null;
+        return (
+          <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-3 text-sm whitespace-nowrap">
+            <div className="font-medium mb-1 text-zinc-300">
+              {format(new Date(datum.timestamp * 1000), "MMM d, yyyy")}
+            </div>
+            {stage && (
+              <div className="text-xs text-zinc-500 mb-2 uppercase tracking-wider font-semibold">
+                {stage.name}
               </div>
-            );
-          }}
-        />
-
-        {stageAreas.map((area) => (
-          <ReferenceArea
-            key={area.name}
-            x1={area.x1}
-            x2={area.x2}
-            fill={area.fill}
-            fillOpacity={1}
-          />
-        ))}
-
-        <Area
-          type="monotone"
-          dataKey="price"
-          stroke="var(--color-price)"
-          strokeWidth={2}
-          fill="url(#priceFill)"
-          connectNulls
-          isAnimationActive={false}
-        />
-
-        {stageAreas.map((area) => (
-          <ReferenceLine
-            key={`line-${area.name}`}
-            x={area.x1}
-            stroke="#C6EDD5"
-            strokeDasharray="3 3"
-            label={{
-              value: area.name,
-              position: "insideTopLeft",
-              fill: "#3D7955",
-              fontSize: 14,
-              offset: 10,
-              fontWeight: 500,
-            }}
-          />
-        ))}
-
-        {todayVisualX !== null && (
-          <ReferenceLine
-            x={todayVisualX}
-            stroke="var(--chart-1)"
-            strokeDasharray="4 4"
-            strokeWidth={1}
-          />
-        )}
-      </AreaChart>
-    </ChartContainer>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[--chart-2]" />
+              <span className="text-zinc-400">Price:</span>
+              <span className="font-mono text-white">
+                {formatDecimals(value, 6)} {baseToken?.symbol} / {tokenSymbol}
+              </span>
+            </div>
+          </div>
+        );
+      }}
+    />
   );
 }

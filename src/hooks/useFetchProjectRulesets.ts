@@ -1,10 +1,10 @@
 import { MAX_RULESET_COUNT } from "@/app/constants";
+import { useJBContractContext } from "@/lib/nana/project";
 import { decodeRulesetMetadata, RulesetMetadata } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { readContract } from "@wagmi/core";
 import { JBCoreContracts, jbRulesetsAbi, SuckerPair } from "@bananapus/nana-sdk-core";
-import { useJBContractContext } from "@bananapus/nana-sdk-react";
 import { useCallback, useEffect, useState } from "react";
+import { readContract } from "wagmi/actions";
 
 type RuleSet = {
   cycleNumber: number;

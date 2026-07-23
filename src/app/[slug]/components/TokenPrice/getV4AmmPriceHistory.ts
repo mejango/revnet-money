@@ -1,4 +1,9 @@
-import { getBendystrawClient } from "@/graphql/bendystrawClient";
+import {
+  IndexedBuybackPoolsOperation,
+  IndexedPoolSwapsOperation,
+} from "@/lib/bendystraw/operations";
+import { queryBendystraw } from "@/lib/bendystraw/query.server";
+import type { IndexedBuybackPoolsQuery, IndexedPoolSwapsQuery } from "@/lib/bendystraw/types";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { uniswapV4PriceFromSqrtPriceX96 } from "@bananapus/nana-sdk-core/v6";
 import type { PriceDataPoint } from "./getTokenPriceChartData";
@@ -6,71 +11,8 @@ import type { PriceDataPoint } from "./getTokenPriceChartData";
 const PAGE_SIZE = 1000;
 const MAX_SWAPS = 3000;
 
-const BUYBACK_POOLS_QUERY = `
-  query IndexedBuybackPools($projectId: Int!, $chainId: Int!, $version: Int!) {
-    buybackPoolEvents(
-      where: { projectId: $projectId, chainId: $chainId, version: $version }
-      orderBy: "timestamp"
-      orderDirection: "desc"
-      limit: 100
-    ) {
-      items {
-        timestamp
-        terminalToken
-        poolId
-        initialSqrtPriceX96
-        projectTokenIsCurrency0
-      }
-    }
-  }
-`;
-
-const SWAPS_QUERY = `
-  query IndexedPoolSwaps(
-    $projectId: Int!
-    $chainId: Int!
-    $version: Int!
-    $limit: Int!
-    $offset: Int!
-  ) {
-    swapEvents(
-      where: { projectId: $projectId, chainId: $chainId, version: $version }
-      orderBy: "timestamp"
-      orderDirection: "asc"
-      limit: $limit
-      offset: $offset
-    ) {
-      items {
-        timestamp
-        direction
-        poolId
-        terminalTokenAmount
-        projectTokenAmount
-        sqrtPriceX96
-        projectTokenIsCurrency0
-      }
-      totalCount
-    }
-  }
-`;
-
-type RawPool = {
-  timestamp: number;
-  terminalToken: string;
-  poolId: string;
-  initialSqrtPriceX96: string | null;
-  projectTokenIsCurrency0: boolean | null;
-};
-
-type RawSwap = {
-  timestamp: number;
-  direction: string;
-  poolId: string | null;
-  terminalTokenAmount: string;
-  projectTokenAmount: string;
-  sqrtPriceX96: string | null;
-  projectTokenIsCurrency0: boolean | null;
-};
+type RawPool = IndexedBuybackPoolsQuery["buybackPoolEvents"]["items"][number];
+type RawSwap = IndexedPoolSwapsQuery["swapEvents"]["items"][number];
 
 export function v4PriceFromSqrtPriceX96(
   sqrtPriceX96: string | bigint,
@@ -99,15 +41,12 @@ export async function getV4AmmPriceHistory({
   terminalToken: string;
   terminalDecimals: number;
 }): Promise<{ data: PriceDataPoint[]; hasPool: boolean }> {
-  const client = getBendystrawClient(chainId);
   const variables = {
     projectId: Number(projectId),
     chainId: Number(chainId),
     version: 6,
   };
-  const poolResult = await client.request<{
-    buybackPoolEvents: { items: RawPool[] };
-  }>(BUYBACK_POOLS_QUERY, variables);
+  const poolResult = await queryBendystraw(chainId, IndexedBuybackPoolsOperation, variables);
   const pool = (poolResult.buybackPoolEvents?.items ?? []).find(
     (item) => item.terminalToken.toLowerCase() === terminalToken.toLowerCase(),
   );
@@ -116,9 +55,7 @@ export async function getV4AmmPriceHistory({
   const swaps: RawSwap[] = [];
   let totalCount = 0;
   while (swaps.length < MAX_SWAPS) {
-    const page = await client.request<{
-      swapEvents: { items: RawSwap[]; totalCount: number };
-    }>(SWAPS_QUERY, {
+    const page = await queryBendystraw(chainId, IndexedPoolSwapsOperation, {
       ...variables,
       limit: Math.min(PAGE_SIZE, MAX_SWAPS - swaps.length),
       offset: swaps.length,

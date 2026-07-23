@@ -1,7 +1,7 @@
 import { ChainSelector } from "@/components/ChainSelector";
 import { Button } from "@/components/ui/button";
+import { FieldArray, useFormContext } from "@/lib/forms";
 import { formatTokenSymbol, sortChains } from "@/lib/utils";
-import { FieldArray, useFormikContext } from "formik";
 import { formatEthAddress, JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
 import { twJoin } from "tailwind-merge";
@@ -12,33 +12,30 @@ interface ChainAutoIssuanceProps {
 }
 
 export function ChainAutoIssuance({ disabled = false }: ChainAutoIssuanceProps) {
-  const { values, setFieldValue } = useFormikContext<RevnetFormData>();
+  const { values, setFieldValue } = useFormContext<RevnetFormData>();
   const [selectedStageIdx, setSelectedStageIdx] = useState<number>(0);
   const initChainId = sortChains(values.chainIds)[0];
   const revnetTokenSymbol = formatTokenSymbol(values.tokenSymbol);
   const currentStage = values.stages[selectedStageIdx];
 
   useEffect(() => {
-    if (!currentStage) return;
+    if (!initChainId) return;
 
-    const autoIssuance = currentStage.autoIssuance ?? [];
-
-    const patchedAutoIssuance = autoIssuance.map((issuance) => {
-      if (issuance.chainId === undefined) {
-        return { ...issuance, chainId: initChainId };
-      }
-      return issuance;
-    });
-
-    // Only update if patched array is different
-    const isDifferent = autoIssuance.some((issuance, idx) => {
-      return issuance.chainId !== patchedAutoIssuance[idx].chainId;
-    });
-
-    if (isDifferent) {
-      setFieldValue(`stages.${selectedStageIdx}.autoIssuance`, patchedAutoIssuance);
+    const hasUnassignedIssuance = values.stages.some((stage) =>
+      stage.autoIssuance.some((issuance) => issuance.chainId === undefined),
+    );
+    if (hasUnassignedIssuance) {
+      setFieldValue(
+        "stages",
+        values.stages.map((stage) => ({
+          ...stage,
+          autoIssuance: stage.autoIssuance.map((issuance) =>
+            issuance.chainId === undefined ? { ...issuance, chainId: initChainId } : issuance,
+          ),
+        })),
+      );
     }
-  }, [currentStage, initChainId, selectedStageIdx, setFieldValue]);
+  }, [initChainId, setFieldValue, values.stages]);
 
   const initializeAutoIssuance = (chainId: JBChainId): void => {
     const currentAutoIssuances = currentStage.autoIssuance ?? [];

@@ -1,4 +1,4 @@
-import { ConnectKitButton } from "@/components/ConnectKitButton";
+import { WalletButton } from "@/components/WalletButton";
 import Image from "next/image";
 import Link from "next/link";
 import { UserBalance } from "./UserBalance";
@@ -16,7 +16,7 @@ export function Nav() {
           <div className="hidden min-[360px]:flex">
             <UserBalance />
           </div>
-          <ConnectKitButton />
+          <WalletButton />
         </div>
       </div>
     </nav>

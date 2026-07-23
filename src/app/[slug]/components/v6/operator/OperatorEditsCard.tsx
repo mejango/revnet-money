@@ -4,7 +4,8 @@ import { EditMetadataDialog } from "@/app/[slug]/about/components/EditMetadataDi
 import { ChangeSplitRecipientsDialog } from "@/app/[slug]/owners/components/ChangeSplitRecipientsDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFetchProjectRulesets } from "@/hooks/useFetchProjectRulesets";
-import { useJBChainId, useSuckers } from "@bananapus/nana-sdk-react";
+import { useJBChainId } from "@/lib/nana/project";
+import { useSuckers } from "@/lib/nana/suckers";
 import { ProjectItem } from "../shared";
 
 /**

@@ -5,7 +5,6 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import EtherscanLink from "@/components/EtherscanLink";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -13,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -23,6 +23,14 @@ import {
 } from "@/components/ui/table";
 import { useBoostRecipient } from "@/hooks/useBoostRecipient";
 import { useFetchProjectRulesets } from "@/hooks/useFetchProjectRulesets";
+import {
+  useJBChainId,
+  useJBContractContext,
+  useJBRulesetContext,
+  useJBTokenContext,
+} from "@/lib/nana/project";
+import { useSuckers } from "@/lib/nana/suckers";
+import type { JBChainId } from "@/lib/nana/types";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
   JBCoreContracts,
@@ -32,14 +40,6 @@ import {
   jbControllerAbi,
   jbSplitsAbi,
 } from "@bananapus/nana-sdk-core";
-import {
-  JBChainId,
-  useJBChainId,
-  useJBContractContext,
-  useJBRulesetContext,
-  useJBTokenContext,
-  useSuckers,
-} from "@bananapus/nana-sdk-react";
 import { useEffect, useState } from "react";
 import { twJoin } from "tailwind-merge";
 import { Address } from "viem";
@@ -188,70 +188,78 @@ export function SplitsSection() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoadingRuleSets || isLoadingSplits ? (
-                Array.from({ length: 3 }, (_, index) => (
-                  <TableRow key={index}>
-                    <TableCell><Skeleton className="h-3 w-36" /></TableCell>
-                    <TableCell><Skeleton className="h-3 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-3 w-28" /></TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                reservedTokenSplits?.map((split: { beneficiary: Address; percent: number }) => (
-                  <TableRow key={split.beneficiary}>
-                    <TableCell>
-                      <div className="flex flex-col sm:flex-row text-sm">
-                        <EthereumAddress
-                          address={split.beneficiary}
-                          chain={
-                            selectedSucker
-                              ? JB_CHAINS[selectedSucker.peerChainId as JBChainId].chain
-                              : chainId
-                                ? JB_CHAINS[chainId].chain
-                                : undefined
-                          }
-                          short
-                          withEnsAvatar
-                          withEnsName
-                          className="hidden sm:block"
-                        />
-                        <EthereumAddress
-                          address={split.beneficiary}
-                          chain={
-                            selectedSucker
-                              ? JB_CHAINS[selectedSucker.peerChainId as JBChainId].chain
-                              : chainId
-                                ? JB_CHAINS[chainId].chain
-                                : undefined
-                          }
-                          short
-                          avatarProps={{ size: "sm" }}
-                          withEnsAvatar
-                          withEnsName
-                          className="block sm:hidden"
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {formatUnits((BigInt(split.percent) * BigInt(Number(splitLimit))) / 100n, 7)}%
-                      <span className="text-zinc-500 ml-2">
-                        ({formatUnits(BigInt(split.percent), 7)}% of limit)
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {pendingReserveTokenBalance || pendingReserveTokenBalance === 0n
-                        ? `
+              {isLoadingRuleSets || isLoadingSplits
+                ? Array.from({ length: 3 }, (_, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Skeleton className="h-3 w-36" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-3 w-24" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-3 w-28" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                : reservedTokenSplits?.map((split: { beneficiary: Address; percent: number }) => (
+                    <TableRow key={split.beneficiary}>
+                      <TableCell>
+                        <div className="flex flex-col sm:flex-row text-sm">
+                          <EthereumAddress
+                            address={split.beneficiary}
+                            chain={
+                              selectedSucker
+                                ? JB_CHAINS[selectedSucker.peerChainId as JBChainId].chain
+                                : chainId
+                                  ? JB_CHAINS[chainId].chain
+                                  : undefined
+                            }
+                            short
+                            withEnsAvatar
+                            withEnsName
+                            className="hidden sm:block"
+                          />
+                          <EthereumAddress
+                            address={split.beneficiary}
+                            chain={
+                              selectedSucker
+                                ? JB_CHAINS[selectedSucker.peerChainId as JBChainId].chain
+                                : chainId
+                                  ? JB_CHAINS[chainId].chain
+                                  : undefined
+                            }
+                            short
+                            avatarProps={{ size: "sm" }}
+                            withEnsAvatar
+                            withEnsName
+                            className="block sm:hidden"
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {formatUnits(
+                          (BigInt(split.percent) * BigInt(Number(splitLimit))) / 100n,
+                          7,
+                        )}
+                        %
+                        <span className="text-zinc-500 ml-2">
+                          ({formatUnits(BigInt(split.percent), 7)}% of limit)
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {pendingReserveTokenBalance || pendingReserveTokenBalance === 0n
+                          ? `
                           ${formatUnits(
                             (pendingReserveTokenBalance * BigInt(split.percent)) / BigInt(10 ** 9),
                             18,
                           )}
                           ${formatTokenSymbol(token.data?.symbol)}
                         `
-                        : "?"}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
+                          : "?"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
             </TableBody>
           </Table>
         </div>

@@ -2,21 +2,17 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
-import { ParticipantsDocument, Project } from "@/generated/graphql";
+import { ParticipantsOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import type { Project } from "@/lib/bendystraw/types";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
+import { useJBChainId, useJBProjectMetadataContext, useJBTokenContext } from "@/lib/nana/project";
+import { useSuckers } from "@/lib/nana/suckers";
+import type { JBChainId } from "@/lib/nana/types";
 import { Profile } from "@/lib/profile";
 import { getProjectLinks } from "@/lib/projectLinks";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
-import {
-  JBChainId,
-  useBendystrawQuery,
-  useJBChainId,
-  useJBProjectMetadataContext,
-  useJBTokenContext,
-  useSuckers,
-} from "@bananapus/nana-sdk-react";
-import { ForwardIcon } from "@heroicons/react/24/solid";
+import { FastForward as ForwardIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense, use, useMemo } from "react";
@@ -40,13 +36,17 @@ export function Header(props: Props) {
   const { metadata } = useJBProjectMetadataContext();
   const { token: tokenContext } = useJBTokenContext();
 
-  const { data: participants } = useBendystrawQuery(ParticipantsDocument, {
-    where: {
-      suckerGroupId: projects[0].suckerGroupId,
-      balance_gt: 0,
+  const { data: participants } = useBendystrawQuery(
+    ParticipantsOperation,
+    {
+      where: {
+        suckerGroupId: projects[0].suckerGroupId,
+        balance_gt: 0,
+      },
+      limit: 1000, // TODO will break once more than 1000 participants exist
     },
-    limit: 1000, // TODO will break once more than 1000 participants exist
-  });
+    { chainId: Number(chainId) },
+  );
 
   const contributorsCount = useMemo(() => {
     // de-dupe participants who are on multiple chains

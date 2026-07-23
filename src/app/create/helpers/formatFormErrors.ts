@@ -1,11 +1,9 @@
-import { FormikErrors } from "formik";
-
 const MAX_ERRORS_TO_SHOW = 5;
 
 /**
- * Formats Formik validation errors into a user-friendly string
+ * Formats nested validation errors into a user-friendly string.
  */
-export function formatFormErrors(errors: FormikErrors<any>): string {
+export function formatFormErrors(errors: unknown): string {
   const messages = formatError(errors);
 
   if (messages.length === 0) {
@@ -22,7 +20,7 @@ export function formatFormErrors(errors: FormikErrors<any>): string {
   );
 }
 
-const formatError = (obj: any, path: string = ""): string[] => {
+const formatError = (obj: unknown, path: string = ""): string[] => {
   const messages: string[] = [];
 
   if (typeof obj === "string") return [obj];

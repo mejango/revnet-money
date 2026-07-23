@@ -1,6 +1,6 @@
+import type { JBChainId } from "@/lib/nana/types";
 import { sortChains } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
-import { JBChainId } from "@bananapus/nana-sdk-react";
 import { ChainLogo } from "./ChainLogo";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 

@@ -32,26 +32,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const title = "Revnet";
     const description = "Explore onchain revenue networks";
     const imageUrl = `${origin}/assets/img/rev-og-191-1.png`;
-    const frame = {
-      version: "next",
-      imageUrl,
-      button: {
-        title: "Support project",
-        action: {
-          type: "launch_frame",
-          name: "Revnet",
-          url: url.href,
-          splashImageUrl: `${origin}/assets/img/small-bw-200x200.png`,
-          splashBackgroundColor: "#F6FEF9",
-        },
-      },
-    };
     return buildMetadata({
       title,
       description,
       imageUrl,
       url: url.href,
-      frame,
     });
   }
 
@@ -59,27 +44,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const project = projectId ? await getProject(projectId, chainId) : null;
   const imageUrl = project?.logoUri || `${origin}/assets/img/rev-og-191-1.png`;
 
-  const frame = {
-    version: "next",
-    imageUrl,
-    button: {
-      title: truncate(`Support ${project?.handle || "project"}`),
-      action: {
-        type: "launch_frame",
-        name: "Revnet",
-        url: url.href,
-        splashImageUrl: `${origin}/assets/img/small-bw-200x200.png`,
-        splashBackgroundColor: "#F6FEF9",
-      },
-    },
-  };
-
   return buildMetadata({
     title: project?.name ? `${project.name} | REVNET` : "Revnet",
     description: "Explore onchain revenue networks",
     imageUrl,
     url: url.href,
-    frame,
   });
 }
 
@@ -104,7 +73,7 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
   const startDate = rulesets[0]?.start;
 
   return (
-    <ProjectProviders chainId={chainId} projectId={projectId}>
+    <ProjectProviders chainId={chainId} projectId={projectId} project={project} projects={projects}>
       <ShopCartProvider>
         <Nav />
 
@@ -131,22 +100,16 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
   );
 }
 
-function truncate(str: string, max = 32): string {
-  return str.length > max ? str.slice(0, max - 1) + "…" : str;
-}
-
 function buildMetadata({
   title,
   description,
   imageUrl,
   url,
-  frame,
 }: {
   title: string;
   description: string;
   imageUrl: string;
   url: string;
-  frame?: object;
 }): Metadata {
   return {
     title,
@@ -170,6 +133,5 @@ function buildMetadata({
       description,
       images: [imageUrl],
     },
-    other: frame ? { "fc:frame": JSON.stringify(frame) } : {},
   };
 }

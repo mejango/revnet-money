@@ -1,4 +1,4 @@
-import { FieldAttributes, Field as FormikField, useField, useFormikContext } from "formik";
+import { FieldAttributes, FormField, useField, useFormContext } from "@/lib/forms";
 import { ReactNode } from "react";
 import { twMerge } from "tailwind-merge";
 
@@ -6,9 +6,9 @@ export function Field({
   address,
   width,
   ...props
-}: FieldAttributes<any> & { address?: boolean; width?: string }) {
+}: Omit<FieldAttributes<any>, "width"> & { address?: boolean; width?: string }) {
   const [, meta] = useField(props);
-  const { submitCount } = useFormikContext();
+  const { submitCount } = useFormContext();
 
   const isInvalid = meta.error && (meta.touched || submitCount > 0);
 
@@ -20,7 +20,7 @@ export function Field({
             <span className="text-zinc-500 sm:text-md">{props.prefix}</span>
           </div>
         ) : null}
-        <FormikField
+        <FormField
           {...props}
           pattern={address ? "^0x[a-fA-F0-9]{40}$" : undefined}
           onWheel={(e: any) => e.target.blur()} // Prevents scrolling on number input
@@ -44,7 +44,7 @@ export function Field({
     );
   }
   return (
-    <FormikField
+    <FormField
       {...props}
       pattern={address ? "^0x[a-fA-F0-9]{40}$" : undefined}
       className={twMerge(
@@ -58,15 +58,16 @@ export function Field({
 }
 
 export function FieldGroup(
-  props: FieldAttributes<any> & {
+  props: Omit<FieldAttributes<any>, "width"> & {
     label: string;
     description?: string | ReactNode;
     className?: string;
     address?: boolean;
+    width?: string;
   },
 ) {
   const [, meta] = useField(props);
-  const { submitCount } = useFormikContext();
+  const { submitCount } = useFormContext();
 
   const showError = meta.error && (meta.touched || submitCount > 0);
 

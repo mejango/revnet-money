@@ -1,7 +1,7 @@
 "use client";
 
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
-import { ChartConfig, ChartContainer, ChartTooltip } from "@/components/ui/chart";
+import { CartesianChart, type ChartReferenceLine, type ChartSeries } from "@/components/ui/chart";
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatDecimals } from "@/lib/number";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
@@ -10,7 +10,6 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts";
 import { ChartToggleButton } from "./ChartToggleButton";
 import { getTokenPriceChartData } from "./getTokenPriceChartData";
 import { PriceChartTooltip } from "./PriceChartTooltip";
@@ -25,12 +24,6 @@ const TIME_RANGES: RangeOption<TimeRange>[] = [
 ];
 
 const NOW_COLOR = "#EE6F3A"; // peel-400
-
-const chartConfig = {
-  issuancePrice: { label: "Issuance Price", color: "var(--chart-2)" },
-  ammPrice: { label: "Pool Price", color: "var(--chart-4)" },
-  floorPrice: { label: "Floor Price", color: "var(--chart-3)" },
-} satisfies ChartConfig;
 
 interface Props {
   projectId: string;
@@ -100,6 +93,63 @@ export function TokenPriceChart({
     totalBalance: showFloor ? point.totalBalance : undefined,
     cashOutTaxRate: showFloor ? point.cashOutTaxRate : undefined,
   }));
+  const visibleSeries: ChartSeries<(typeof filteredData)[number]>[] = [];
+  if (showIssuance) {
+    visibleSeries.push({
+      key: "issuancePrice",
+      label: "Issuance",
+      color: "var(--chart-2)",
+      value: (point) => point.issuancePrice,
+    });
+  }
+  if (showAmm && hasAmmData) {
+    visibleSeries.push({
+      key: "ammPrice",
+      label: "Pool",
+      color: "var(--chart-4)",
+      value: (point) => point.ammPrice,
+    });
+  }
+  if (showFloor && hasFloorData) {
+    visibleSeries.push({
+      key: "floorPrice",
+      label: "Floor",
+      color: "var(--chart-3)",
+      value: (point) => point.floorPrice,
+    });
+  }
+  const referenceLines: ChartReferenceLine[] = visibleStages.map((stage) => ({
+    key: `${stage.name}-${stage.timestamp}`,
+    x: stage.timestamp,
+    color: "#C6EDD5",
+    dash: "3 3",
+    width: 2,
+    label: stage.name,
+    labelColor: "#3D7955",
+    labelSide: "right",
+  }));
+  if (showToday && todayTimestamp !== undefined) {
+    referenceLines.push({
+      key: "now",
+      x: todayTimestamp,
+      color: NOW_COLOR,
+      dash: "4 4",
+      width: 2,
+      label: "Now",
+      labelColor: NOW_COLOR,
+    });
+  }
+  const maxVisiblePrice = filteredData.reduce(
+    (max, point) =>
+      Math.max(
+        max,
+        ...visibleSeries.map((series) => {
+          const value = series.value(point);
+          return value !== undefined && Number.isFinite(value) ? value : 0;
+        }),
+      ),
+    0,
+  );
 
   return (
     <div className="w-full">
@@ -132,116 +182,29 @@ export function TokenPriceChart({
       </div>
 
       {hasData ? (
-        <ChartContainer
-          config={chartConfig}
+        <CartesianChart
+          data={filteredData}
+          xValue={(point) => point.timestamp}
+          series={visibleSeries}
+          ariaLabel={`${tokenSymbol} price history`}
+          description={`Issuance, pool, and cash out prices for ${tokenSymbol} over the selected ${range} range.`}
           className="mt-6 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
-        >
-          <LineChart
-            data={filteredData}
-            accessibilityLayer
-            margin={{ left: 12, right: 16, top: 16, bottom: 0 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="timestamp"
-              type="number"
-              domain={["dataMin", "dataMax"]}
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              tick={{ fontSize: 14 }}
-              tickFormatter={(timestamp) => formatXAxis(timestamp, range)}
-              minTickGap={32}
+          margin={{ left: 84, right: 20, top: 24, bottom: 36 }}
+          xDomain={[firstTimestamp ?? 0, lastTimestamp ?? 1]}
+          yDomain={[0, maxVisiblePrice > 0 ? maxVisiblePrice * 1.1 : 1]}
+          formatXTick={(timestamp) => formatXAxis(timestamp, range)}
+          formatYTick={(value) => formatDecimals(value, 6)}
+          referenceLines={referenceLines}
+          tooltip={({ datum, series }) => (
+            <PriceChartTooltip
+              datum={datum}
+              series={series}
+              baseTokenSymbol={tokenSymbol}
+              baseTokenDecimals={tokenDecimals}
+              range={range}
             />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              tick={{ fontSize: 14 }}
-              tickFormatter={(value) => formatDecimals(value, 6)}
-              width={72}
-              domain={[0, "auto"]}
-            />
-            <ChartTooltip
-              content={({ active, payload }) => (
-                <PriceChartTooltip
-                  active={active}
-                  payload={payload}
-                  baseTokenSymbol={tokenSymbol}
-                  baseTokenDecimals={tokenDecimals}
-                  range={range}
-                />
-              )}
-            />
-            {visibleStages.map((stage) => (
-              <ReferenceLine
-                key={`${stage.name}-${stage.timestamp}`}
-                x={stage.timestamp}
-                stroke="#C6EDD5"
-                strokeDasharray="3 3"
-                strokeWidth={2}
-                label={{
-                  value: stage.name,
-                  position: "insideTopRight",
-                  fill: "#3D7955",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  offset: 8,
-                }}
-              />
-            ))}
-            {showIssuance && (
-              <Line
-                type="monotone"
-                dataKey="issuancePrice"
-                stroke="var(--color-issuancePrice)"
-                strokeWidth={2}
-                dot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-            )}
-            {showAmm && hasAmmData && (
-              <Line
-                type="monotone"
-                dataKey="ammPrice"
-                stroke="var(--color-ammPrice)"
-                strokeWidth={2}
-                dot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-            )}
-            {showFloor && hasFloorData && (
-              <Line
-                type="monotone"
-                dataKey="floorPrice"
-                stroke="var(--color-floorPrice)"
-                strokeWidth={2}
-                dot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-            )}
-            {showToday ? (
-              <ReferenceLine
-                x={todayTimestamp}
-                stroke={NOW_COLOR}
-                strokeDasharray="4 4"
-                strokeWidth={2}
-                ifOverflow="visible"
-                label={{
-                  value: "Now",
-                  position: "insideTopRight",
-                  fill: NOW_COLOR,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  offset: 8,
-                }}
-              />
-            ) : null}
-          </LineChart>
-        </ChartContainer>
+          )}
+        />
       ) : isLoading ? (
         <ChartSkeleton className="mt-6 aspect-[4/3] w-full sm:aspect-[2/1] lg:aspect-[5/2]" />
       ) : (

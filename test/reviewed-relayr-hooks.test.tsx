@@ -1,4 +1,4 @@
-import type { ChainPayment, RelayrPostBundleResponse } from "@bananapus/nana-sdk-react";
+import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   estimateGas: vi.fn(),
 }));
 
-vi.mock("@wagmi/core", () => ({
+vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
   getPublicClient: mocks.getPublicClient,
   waitForTransactionReceipt: mocks.waitForTransactionReceipt,
