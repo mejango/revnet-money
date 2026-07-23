@@ -27,6 +27,8 @@ updates:
         versions: [">=4.3.0 <5"]
       - dependency-name: prettier-plugin-tailwindcss
         versions: [">=0.8.0 <1"]
+      - dependency-name: typescript
+        versions: [">=5.9.0 <6"]
       - dependency-name: "@tanstack/react-query"
         versions: [">=5.101.4 <6"]
       - dependency-name: recharts
