@@ -32,7 +32,7 @@ updates:
       - dependency-name: recharts
         versions: [">=3.9.0 <4"]
       - dependency-name: wagmi
-        versions: [">=2.19.0 <3"]
+        versions: [">=2.18.0 <3"]
       - dependency-name: "@rolldown/binding-linux-x64-gnu"
         versions: [">=1.2.0 <2"]
     labels: [dependencies]
