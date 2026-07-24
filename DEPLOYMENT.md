@@ -17,11 +17,13 @@ Build-time values are compiled into JavaScript and are public:
   and origin validation.
 - `NEXT_PUBLIC_BENDYSTRAW_URL` and
   `NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL`: indexed contract-derived views.
-- `NEXT_PUBLIC_INFURA_IPFS_HOSTNAME`: hostname only; no scheme or path.
-- eight `NEXT_PUBLIC_*_SUBGRAPH_URL` values used by discovery.
-- eight `NEXT_PUBLIC_RPC_*_URLS` values. Each accepts comma-separated endpoints;
-  configure at least two independently operated providers per chain. Provider
-  tokens in public RPC URLs must be domain, origin, method, and quota restricted.
+- `NEXT_PUBLIC_PARA_API_KEY`: public Para application key.
+- `NEXT_PUBLIC_PARA_ENV`: one of `DEV`, `SANDBOX`, `BETA`, or `PROD`; use
+  `PROD` for the production application.
+- `NEXT_PUBLIC_DWELLIR_API_KEY`: a dedicated browser-visible Dwellir key used
+  to derive the Ethereum, Optimism, Base, Arbitrum, and Sepolia RPC endpoints.
+  Apply strict daily/monthly quotas; IP allowlisting is incompatible with
+  browser-originated requests.
 
 Runtime-only values must never be Docker build arguments:
 
@@ -89,23 +91,9 @@ docker build \
   --build-arg NEXT_PUBLIC_SITE_URL \
   --build-arg NEXT_PUBLIC_BENDYSTRAW_URL \
   --build-arg NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL \
-  --build-arg NEXT_PUBLIC_INFURA_IPFS_HOSTNAME \
-  --build-arg NEXT_PUBLIC_MAINNET_SUBGRAPH_URL \
-  --build-arg NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL \
-  --build-arg NEXT_PUBLIC_BASE_SUBGRAPH_URL \
-  --build-arg NEXT_PUBLIC_ARBITRUM_SUBGRAPH_URL \
-  --build-arg NEXT_PUBLIC_SEPOLIA_SUBGRAPH_URL \
-  --build-arg NEXT_PUBLIC_OPTIMISM_SEPOLIA_SUBGRAPH_URL \
-  --build-arg NEXT_PUBLIC_BASE_SEPOLIA_SUBGRAPH_URL \
-  --build-arg NEXT_PUBLIC_ARBITRUM_SEPOLIA_SUBGRAPH_URL \
-  --build-arg NEXT_PUBLIC_RPC_ETHEREUM_URLS \
-  --build-arg NEXT_PUBLIC_RPC_OPTIMISM_URLS \
-  --build-arg NEXT_PUBLIC_RPC_BASE_URLS \
-  --build-arg NEXT_PUBLIC_RPC_ARBITRUM_URLS \
-  --build-arg NEXT_PUBLIC_RPC_ETHEREUM_SEPOLIA_URLS \
-  --build-arg NEXT_PUBLIC_RPC_OPTIMISM_SEPOLIA_URLS \
-  --build-arg NEXT_PUBLIC_RPC_BASE_SEPOLIA_URLS \
-  --build-arg NEXT_PUBLIC_RPC_ARBITRUM_SEPOLIA_URLS \
+  --build-arg NEXT_PUBLIC_PARA_API_KEY \
+  --build-arg NEXT_PUBLIC_PARA_ENV \
+  --build-arg NEXT_PUBLIC_DWELLIR_API_KEY \
   --tag revnet-money:local .
 ```
 

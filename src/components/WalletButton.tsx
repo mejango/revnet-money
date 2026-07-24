@@ -1,6 +1,13 @@
 "use client";
 
+import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
 import { cn, formatEthAddress } from "@/lib/utils";
+import {
+  logoutParaSession,
+  ParaLocalDisconnectError,
+  ParaSessionLogoutError,
+} from "@/providers/para-logout";
+import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
   type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -105,21 +112,23 @@ function useDismissableMenu(open: boolean, setOpen: Dispatch<SetStateAction<bool
 function useAvailableWallets() {
   const connectors = useConnectors();
   return useMemo(() => {
-    const discovered = connectors.filter((connector) => connector.id !== "injected");
+    const external = connectors.filter((connector) => connector.id !== "para");
+    const discovered = external.filter((connector) => connector.id !== "injected");
     // Prefer individually named EIP-6963 wallets. Keep the generic injected
     // connector only as a compatibility fallback for older providers.
-    return discovered.length ? discovered : connectors;
+    return discovered.length ? discovered : external;
   }, [connectors]);
 }
 
 export function WalletConnectButton({
-  label = "Connect wallet",
+  label = "Sign in",
   menuAlign = "left",
   className,
-  variant = "outline",
+  variant = "default",
   ...props
 }: WalletConnectButtonProps) {
   const connectors = useAvailableWallets();
+  const { enabled: paraEnabled, requestSignIn } = useParaAuth();
   const { connectAsync, error, isPending, reset } = useConnect();
   const [open, setOpen] = useState(false);
   const menuId = useId();
@@ -177,10 +186,31 @@ export function WalletConnectButton({
           aria-label="Available wallets"
           onKeyDown={menu.onMenuKeyDown}
           className={cn(
-            "absolute top-full z-50 mt-2 min-w-56 border border-zinc-200 bg-white p-1 shadow-lg",
+            "absolute top-full z-50 mt-2 min-w-56 border border-zinc-200 bg-white p-1 text-zinc-950 shadow-lg",
             menuAlign === "right" ? "right-0" : "left-0",
           )}
         >
+          {paraEnabled ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={isPending}
+                onClick={() => {
+                  reset();
+                  setOpen(false);
+                  requestSignIn();
+                }}
+                className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 disabled:opacity-50"
+              >
+                <span className="block">Email or social</span>
+                <span className="block text-xs text-zinc-600">
+                  No wallet needed — we make one for you
+                </span>
+              </button>
+              <div className="mx-3 my-1 border-t border-zinc-100" aria-hidden />
+            </>
+          ) : null}
           {connectors.length ? (
             connectors.map((connector) => (
               <button
@@ -214,11 +244,13 @@ export function WalletConnectButton({
 }
 
 export function WalletButton() {
-  const { address, chain, isConnected } = useAccount();
+  const { address, chain, connector: activeConnector, isConnected } = useAccount();
   const { data: balance } = useBalance({ address });
-  const { disconnect, isPending } = useDisconnect();
+  const { disconnectAsync, isPending } = useDisconnect();
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
+  const [disconnectError, setDisconnectError] = useState<string>();
+  const [paraLogoutPending, setParaLogoutPending] = useState(false);
   const menuId = useId();
   const menu = useDismissableMenu(open, setOpen);
 
@@ -295,18 +327,42 @@ export function WalletButton() {
           <button
             type="button"
             role="menuitem"
-            disabled={isPending}
+            disabled={isPending || paraLogoutPending}
             onClick={() => {
-              disconnect();
-              setOpen(false);
+              setDisconnectError(undefined);
+              const isPara = !IS_DETERMINISTIC_BROWSER && activeConnector?.id === "para";
+              if (isPara) setParaLogoutPending(true);
+
+              void (isPara ? logoutParaSession({ disconnect: disconnectAsync }) : disconnectAsync())
+                .then(() => setOpen(false))
+                .catch((error: unknown) => {
+                  setDisconnectError(
+                    error instanceof ParaSessionLogoutError
+                      ? "The embedded wallet could not sign out. Your session is still connected; try again."
+                      : error instanceof ParaLocalDisconnectError
+                        ? "You signed out, but the local wallet state did not reset. Try again or reload."
+                        : "The wallet could not disconnect. Try again.",
+                  );
+                })
+                .finally(() => {
+                  if (isPara) setParaLogoutPending(false);
+                });
             }}
             className={cn(
               "block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 disabled:opacity-50",
             )}
           >
-            Disconnect
+            {paraLogoutPending ? "Signing out…" : "Disconnect"}
           </button>
+          {disconnectError ? (
+            <p
+              role="alert"
+              className="max-w-72 border-t border-zinc-100 px-3 py-2 text-xs text-red-700"
+            >
+              {disconnectError}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

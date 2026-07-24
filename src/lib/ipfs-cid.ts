@@ -60,6 +60,36 @@ function decodeBase32(value: string): Uint8Array {
   return Uint8Array.from(bytes);
 }
 
+function encodeBase32(bytes: Uint8Array): string {
+  let buffer = 0;
+  let bits = 0;
+  let output = "";
+  for (const byte of bytes) {
+    buffer = (buffer << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      output += BASE32_ALPHABET[(buffer >> bits) & 31];
+      buffer &= (1 << bits) - 1;
+    }
+  }
+  if (bits > 0) output += BASE32_ALPHABET[(buffer << (5 - bits)) & 31];
+  return output;
+}
+
+/** Convert a DAG-PB CIDv0 into the equivalent DNS-safe CIDv1/base32 form. */
+export function cidV0ToCidV1(value: unknown): string | undefined {
+  if (typeof value !== "string" || !CID_V0.test(value)) return undefined;
+  try {
+    const multihash = decodeBase58(value);
+    if (!isCidV0Bytes(multihash)) return undefined;
+    // CIDv1, dag-pb codec (0x70), followed by the unchanged multihash.
+    return `b${encodeBase32(Uint8Array.from([0x01, 0x70, ...multihash]))}`;
+  } catch {
+    return undefined;
+  }
+}
+
 function readVarint(bytes: Uint8Array, start: number): { value: number; next: number } | null {
   let value = 0;
   let multiplier = 1;

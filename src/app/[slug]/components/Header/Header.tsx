@@ -2,10 +2,10 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
+import { IpfsImage } from "@/components/IpfsImage";
 import { FastForward as ForwardIcon } from "@/components/ui/icons";
 import { ParticipantsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { Project } from "@/lib/bendystraw/types";
-import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
 import { useJBChainId, useJBProjectMetadataContext, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
@@ -13,9 +13,8 @@ import { Profile } from "@/lib/profile";
 import { getProjectLinks } from "@/lib/projectLinks";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
-import Image from "next/image";
 import Link from "next/link";
-import { Suspense, use, useMemo } from "react";
+import { Suspense, use, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TvlDatum } from "./TvlDatum";
 
 interface Props {
@@ -60,7 +59,12 @@ export function Header(props: Props) {
 
   const { data: suckers } = useSuckers();
   const { name: projectName, logoUri } = metadata?.data ?? {};
-  const logoUrl = logoUri ? ipfsUriToGatewayUrl(logoUri) : undefined;
+  const tokenSymbol = tokenContext?.data ? formatTokenSymbol(tokenContext) : undefined;
+  const showProjectName =
+    Boolean(projectName) &&
+    (!tokenSymbol ||
+      projectName?.normalize("NFKC").trim().toLocaleLowerCase() !==
+        tokenSymbol.normalize("NFKC").trim().toLocaleLowerCase());
 
   // const totalSupply = useTotalOutstandingTokens();
   // const totalSupplyFormatted =
@@ -70,40 +74,67 @@ export function Header(props: Props) {
 
   const links = getProjectLinks(metadata?.data);
   const website = links.find((link) => link.type === "infoUri");
+  const metadataRef = useRef<HTMLDivElement>(null);
+  const operatorRef = useRef<HTMLSpanElement>(null);
+  const websiteRef = useRef<HTMLSpanElement>(null);
+  const chainsRef = useRef<HTMLSpanElement>(null);
+  const [joinedMetadata, setJoinedMetadata] = useState({ website: false, chains: false });
+  const hasOperator = operator != null;
+  const hasWebsite = website != null;
+  const hasSuckers = Boolean(suckers?.length);
+
+  useLayoutEffect(() => {
+    const updateSeparators = () => {
+      const operatorElement = operatorRef.current;
+      const websiteElement = websiteRef.current;
+      const chainsElement = chainsRef.current;
+      const previousChainsElement = websiteElement ?? operatorElement;
+      const nextJoinedMetadata = {
+        website:
+          operatorElement != null &&
+          websiteElement != null &&
+          operatorElement.offsetTop === websiteElement.offsetTop,
+        chains:
+          previousChainsElement != null &&
+          chainsElement != null &&
+          previousChainsElement.offsetTop === chainsElement.offsetTop,
+      };
+
+      setJoinedMetadata((current) =>
+        current.website === nextJoinedMetadata.website &&
+        current.chains === nextJoinedMetadata.chains
+          ? current
+          : nextJoinedMetadata,
+      );
+    };
+
+    updateSeparators();
+    const metadataElement = metadataRef.current;
+    if (!metadataElement) return;
+    const observer = new ResizeObserver(updateSeparators);
+    observer.observe(metadataElement);
+    return () => observer.disconnect();
+  }, [hasOperator, hasWebsite, hasSuckers]);
 
   return (
     <header>
       <div className="flex flex-col sm:flex-row sm:items-center items-start gap-4 sm:mb-6 mb-4">
-        {logoUrl ? (
-          <>
-            <div className="sm:hidden">
-              <Image
-                src={logoUrl}
-                className="overflow-hidden block border border-zinc-200"
-                alt={`${projectName} logo`}
-                width={120}
-                height={120}
-              />
+        <IpfsImage
+          src={logoUri}
+          className="block size-[120px] overflow-hidden border border-zinc-200 object-cover sm:size-36"
+          alt={`${projectName || "Project"} logo`}
+          width={144}
+          height={144}
+          fallback={
+            <div className="flex h-[120px] w-[120px] items-center justify-center rounded bg-zinc-100 sm:size-36">
+              <ForwardIcon className="h-5 w-5 text-black" />
             </div>
-            <div className="sm:block hidden">
-              <Image
-                src={logoUrl}
-                className="overflow-hidden block border border-zinc-200"
-                alt={`${projectName} logo`}
-                width={144}
-                height={144}
-              />
-            </div>
-          </>
-        ) : (
-          <div className="flex h-[120px] w-[120px] items-center justify-center rounded bg-zinc-100 sm:size-36">
-            <ForwardIcon className="h-5 w-5 text-black" />
-          </div>
-        )}
+          }
+        />
 
         <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-col items-baseline sm:flex-row sm:gap-2">
-            <span className="font-mono text-3xl font-bold">
+          <h1 className="mb-2 flex flex-row flex-wrap items-baseline gap-x-[1ch] gap-y-1 font-mono text-3xl">
+            <span className="font-bold">
               {tokenContext?.data ? (
                 <EtherscanLink
                   value={tokenContext.data.address}
@@ -111,12 +142,12 @@ export function Header(props: Props) {
                   chain={chainId ? JB_CHAINS[chainId].chain : undefined}
                   className="inline-flex min-h-11 items-center sm:min-h-0"
                 >
-                  {formatTokenSymbol(tokenContext)}
+                  {tokenSymbol}
                 </EtherscanLink>
               ) : null}
             </span>
-            <h1 className="text-3xl font-medium">{projectName}</h1>
-          </div>
+            {showProjectName ? <span className="font-medium">{projectName}</span> : null}
+          </h1>
           {!isRevnet ? (
             <p className="text-base leading-relaxed text-zinc-700">
               This project isn&apos;t a revnet. Try looking for it on{" "}
@@ -128,7 +159,7 @@ export function Header(props: Props) {
           ) : null}
           {isRevnet ? (
             <>
-              <div className="flex sm:flex-row flex-col sm:items-center items-leading sm:gap-4 items-start">
+              <div className="flex flex-row flex-wrap items-center gap-x-4 gap-y-1">
                 <TvlDatum projects={projects} />
                 <div className="sm:text-xl text-lg">
                   <span className="font-medium text-black-500">{contributorsCount ?? 0}</span>{" "}
@@ -153,9 +184,12 @@ export function Header(props: Props) {
               </div>
               <Suspense>
                 {(operator || website || suckers?.length) && (
-                  <div className="mt-1.5 flex flex-wrap items-center text-[15px] text-zinc-700">
+                  <div
+                    ref={metadataRef}
+                    className="mt-1.5 flex flex-wrap items-center gap-x-5 text-[15px] text-zinc-700"
+                  >
                     {operator && (
-                      <span>
+                      <span ref={operatorRef} className="inline-flex items-center">
                         <span className="text-zinc-500">Operator:</span>{" "}
                         <EtherscanLink
                           value={operator.address}
@@ -165,13 +199,14 @@ export function Header(props: Props) {
                         </EtherscanLink>
                       </span>
                     )}
-                    {operator && website ? (
-                      <span aria-hidden className="mx-2 text-zinc-300">
-                        |
-                      </span>
-                    ) : null}
                     {website && (
-                      <span>
+                      <span ref={websiteRef} className="relative inline-flex items-center">
+                        {joinedMetadata.website ? (
+                          <span
+                            aria-hidden
+                            className="absolute -left-2.5 top-1/2 h-4 w-px -translate-y-1/2 bg-zinc-300"
+                          />
+                        ) : null}
                         <span className="text-zinc-500">Site:</span>{" "}
                         <a
                           href={website.url}
@@ -183,30 +218,33 @@ export function Header(props: Props) {
                         </a>
                       </span>
                     )}
-                    {(operator || website) && suckers?.length ? (
-                      <span aria-hidden className="mx-2 text-zinc-300">
-                        |
-                      </span>
-                    ) : null}
                     {suckers?.length ? (
-                      <span className="inline-flex items-center gap-1.5">
+                      <span ref={chainsRef} className="relative inline-flex items-center">
+                        {joinedMetadata.chains ? (
+                          <span
+                            aria-hidden
+                            className="absolute -left-2.5 top-1/2 h-4 w-px -translate-y-1/2 bg-zinc-300"
+                          />
+                        ) : null}
                         <span className="text-zinc-500">On:</span>
-                        {suckers.map((pair) => {
-                          const networkSlug = JB_CHAINS[pair.peerChainId].slug;
-                          return (
-                            <Link
-                              key={networkSlug}
-                              href={`/${networkSlug}:${pair.projectId}`}
-                              className="inline-flex min-h-11 min-w-11 items-center justify-center transition-opacity hover:opacity-70 sm:min-h-0 sm:min-w-0"
-                            >
-                              <ChainLogo
-                                chainId={pair.peerChainId as JBChainId}
-                                width={18}
-                                height={18}
-                              />
-                            </Link>
-                          );
-                        })}
+                        <span className="ml-0.5 inline-flex items-center">
+                          {suckers.map((pair) => {
+                            const networkSlug = JB_CHAINS[pair.peerChainId].slug;
+                            return (
+                              <Link
+                                key={networkSlug}
+                                href={`/${networkSlug}:${pair.projectId}`}
+                                className="inline-flex min-h-11 items-center justify-center px-1 transition-opacity hover:opacity-70 sm:min-h-0"
+                              >
+                                <ChainLogo
+                                  chainId={pair.peerChainId as JBChainId}
+                                  width={18}
+                                  height={18}
+                                />
+                              </Link>
+                            );
+                          })}
+                        </span>
                       </span>
                     ) : null}
                   </div>

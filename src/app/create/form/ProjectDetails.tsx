@@ -1,5 +1,6 @@
 import { IpfsImageUploader } from "@/components/IpfsFileUploader";
 import { ipfsUri } from "@/lib/ipfs";
+import Image from "next/image";
 import { FieldGroup } from "./Fields";
 import { useCreateForm } from "./useCreateForm";
 
@@ -8,24 +9,37 @@ export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
 
   return (
     <>
-      <h1 className="mb-16 text-2xl md:col-span-3 font-semibold">
-        Design and deploy a revnet for your project
-      </h1>
+      <Image
+        src="/assets/img/create.webp"
+        width={1120}
+        height={778}
+        sizes="(min-width: 640px) 560px, calc(100vw - 2rem)"
+        className="mx-auto mb-10 h-auto w-full max-w-[560px] md:col-span-3"
+        alt="A figure shaping lightning above the clouds"
+      />
+      <h1 className="mb-16 text-2xl md:col-span-3 font-semibold">Design and deploy a revnet</h1>
       <div className="md:col-span-1">
-        <h2 className="font-bold text-lg mb-2">1. Look</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">1. Look</h2>
       </div>
       <div className="md:col-span-2">
-        <div className="grid grid-cols-1 sm:gap-6 md:grid-cols-[minmax(0,2fr)_minmax(8rem,1fr)_minmax(18rem,2fr)]">
-          <FieldGroup id="name" name="name" label="Name" disabled={disabled} />
+        <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-12">
+          <FieldGroup
+            id="name"
+            name="name"
+            label="Name"
+            groupClassName="min-w-0 md:col-span-6"
+            disabled={disabled}
+          />
           <FieldGroup
             id="tokenSymbol"
             name="tokenSymbol"
             label="Ticker"
+            groupClassName="min-w-0 md:col-span-6"
             maxLength={10}
             prefix="$"
             disabled={disabled}
           />
-          <div>
+          <div className="min-w-0 md:col-span-12">
             <label
               className="block mb-1 text-md font-semibold text-gray-900 dark:text-white"
               htmlFor="file_input"
@@ -33,6 +47,7 @@ export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
               Logo
             </label>
             <IpfsImageUploader
+              className="mb-0"
               onUploadSuccess={(cid) => {
                 setFieldValue("logoUri", ipfsUri(cid));
               }}
@@ -44,13 +59,14 @@ export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
           id="description"
           name="description"
           label="About"
+          groupClassName="mt-6"
           component="textarea"
           rows={3}
           placeholder="What is the gist?"
           disabled={disabled}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <div className="mt-6 grid grid-cols-1 gap-x-4 gap-y-5 md:grid-cols-2">
           <FieldGroup
             id="twitter"
             name="twitter"

@@ -39,7 +39,7 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
   return (
     <>
       <div className="md:col-span-1">
-        <h2 className="font-bold text-lg mb-2">3. Terms</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">3. Terms</h2>
         <p className="text-zinc-600 text-lg">
           <span className="capitalize">{revnetTokenSymbol}</span> issuance and cash out terms evolve
           over time automatically in stages.
@@ -49,7 +49,7 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
       <FieldArray
         name="stages"
         render={(arrayHelpers) => (
-          <div className="mb-4 col-span-2">
+          <div className="col-span-2 mt-6 mb-4 md:mt-0">
             {values.stages.length > 0 ? (
               <div className="divide-y mb-2">
                 {values.stages.map((stage, index) => {

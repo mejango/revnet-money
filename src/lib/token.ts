@@ -10,7 +10,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { formatUnits, getContract } from "viem";
 import { isUsd } from "./currency";
-import { getViemPublicClient } from "./wagmiConfig";
+import { getViemPublicClient } from "./wagmiTransports";
 
 export interface Token {
   symbol: string;

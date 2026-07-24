@@ -218,11 +218,7 @@ describe("IPFS media proxy boundary", () => {
 
   it("maps gateway failures to bounded responses", async () => {
     const timeout = Object.assign(new Error("upstream timed out"), { name: "TimeoutError" });
-    const fetchMock = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("gateway offline"))
-      .mockRejectedValueOnce(timeout)
-      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    const fetchMock = vi.fn().mockRejectedValue(new Error("gateway offline"));
     vi.stubGlobal("fetch", fetchMock);
 
     const context = { params: Promise.resolve({ path: [CID, "asset.png"] }) };
@@ -230,14 +226,65 @@ describe("IPFS media proxy boundary", () => {
       new NextRequest(`${SITE}/api/ipfs/${CID}/asset.png`),
       context,
     );
+    fetchMock.mockRejectedValue(timeout);
     const timedOut = await proxyIpfs(new NextRequest(`${SITE}/api/ipfs/${CID}/asset.png`), context);
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
     const missing = await proxyIpfs(new NextRequest(`${SITE}/api/ipfs/${CID}/asset.png`), context);
 
     expect(unavailable.status).toBe(502);
-    await expect(unavailable.json()).resolves.toEqual({ error: "IPFS gateway unavailable" });
+    await expect(unavailable.json()).resolves.toEqual({ error: "IPFS gateways unavailable" });
     expect(timedOut.status).toBe(504);
-    await expect(timedOut.json()).resolves.toEqual({ error: "IPFS gateway timed out" });
+    await expect(timedOut.json()).resolves.toEqual({ error: "IPFS gateways timed out" });
     expect(missing.status).toBe(404);
+  });
+
+  it("prefers eth.sucks and falls back to the fixed Pinata gateway", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("media cache offline"))
+      .mockResolvedValueOnce(
+        new Response(bytes, {
+          headers: { "content-type": "image/png", "content-length": String(bytes.byteLength) },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await proxyIpfs(new NextRequest(`${SITE}/api/ipfs/${CID}/asset.png`), {
+      params: Promise.resolve({ path: [CID, "asset.png"] }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/^https:\/\/[^/]+\.eth\.sucks\//u);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`https://gateway.pinata.cloud/ipfs/${CID}/asset.png`);
+  });
+
+  it("serves inert tier metadata JSON through the same-origin boundary", async () => {
+    const metadata = JSON.stringify({ name: "Tier", image: `ipfs://${CID}/asset.png` });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(metadata, {
+          headers: {
+            "content-type": "application/json",
+            "content-length": String(Buffer.byteLength(metadata)),
+          },
+        }),
+      ),
+    );
+
+    const response = await proxyIpfs(new NextRequest(`${SITE}/api/ipfs/${CID}`), {
+      params: Promise.resolve({ path: [CID] }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(response.headers.get("content-security-policy")).toContain("sandbox");
+    await expect(response.json()).resolves.toEqual({
+      name: "Tier",
+      image: `ipfs://${CID}/asset.png`,
+    });
   });
 
   it("returns immutable media with a sandbox and anti-sniffing headers", async () => {
@@ -260,7 +307,7 @@ describe("IPFS media proxy boundary", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/^https:\/\/[^/]+\/ipfs\//u),
+      expect.stringMatching(/^https:\/\/(?:[^/]+\.eth\.sucks\/|[^/]+\/ipfs\/)/u),
       expect.objectContaining({ cache: "no-store" }),
     );
   });

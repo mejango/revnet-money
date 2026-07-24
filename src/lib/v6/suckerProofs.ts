@@ -1,4 +1,4 @@
-import { getViemPublicClient } from "@/lib/wagmiConfig";
+import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   JBChainId,
   jbSuckerRegistryAbi,

@@ -2,26 +2,13 @@ const BUILD_VALUES = {
   NEXT_PUBLIC_SITE_URL: "url",
   NEXT_PUBLIC_BENDYSTRAW_URL: "url",
   NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: "url",
-  NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: "hostname",
-  NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: "url",
-  NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: "url",
-  NEXT_PUBLIC_BASE_SUBGRAPH_URL: "url",
-  NEXT_PUBLIC_ARBITRUM_SUBGRAPH_URL: "url",
-  NEXT_PUBLIC_SEPOLIA_SUBGRAPH_URL: "url",
-  NEXT_PUBLIC_OPTIMISM_SEPOLIA_SUBGRAPH_URL: "url",
-  NEXT_PUBLIC_BASE_SEPOLIA_SUBGRAPH_URL: "url",
-  NEXT_PUBLIC_ARBITRUM_SEPOLIA_SUBGRAPH_URL: "url",
-  NEXT_PUBLIC_RPC_ETHEREUM_URLS: "url-list",
-  NEXT_PUBLIC_RPC_OPTIMISM_URLS: "url-list",
-  NEXT_PUBLIC_RPC_BASE_URLS: "url-list",
-  NEXT_PUBLIC_RPC_ARBITRUM_URLS: "url-list",
-  NEXT_PUBLIC_RPC_ETHEREUM_SEPOLIA_URLS: "url-list",
-  NEXT_PUBLIC_RPC_OPTIMISM_SEPOLIA_URLS: "url-list",
-  NEXT_PUBLIC_RPC_BASE_SEPOLIA_URLS: "url-list",
-  NEXT_PUBLIC_RPC_ARBITRUM_SEPOLIA_URLS: "url-list",
+  NEXT_PUBLIC_PARA_API_KEY: "para-key",
+  NEXT_PUBLIC_PARA_ENV: "para-env",
+  NEXT_PUBLIC_DWELLIR_API_KEY: "public-key",
 };
 
 const RUNTIME_VALUES = { ENABLE_PUBLIC_IPFS_PINNING: "boolean" };
+const PRODUCTION_SITE_ORIGIN = "https://revnet.money";
 
 function validUrl(value) {
   try {
@@ -41,20 +28,17 @@ function validate(name, kind) {
   if (kind === "url" && !validUrl(value)) {
     return `${name} must use HTTPS (HTTP is allowed only for loopback development)`;
   }
-  if (kind === "url-list") {
-    const urls = value.split(",").map((entry) => entry.trim());
-    if (urls.some((url) => !url || !validUrl(url))) {
-      return `${name} must be a comma-separated list of HTTPS URLs (HTTP is loopback-only)`;
-    }
-  }
-  if (
-    kind === "hostname" &&
-    !/^(?:[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?\.)*[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?$/i.test(value)
-  ) {
-    return `${name} must be a hostname without a scheme or path`;
-  }
   if (kind === "boolean" && value !== "true" && value !== "false") {
     return `${name} must be either true or false`;
+  }
+  if (kind === "para-key" && value.length < 8) {
+    return `${name} must be at least 8 characters`;
+  }
+  if (kind === "public-key" && !/^[A-Za-z\d_-]{8,128}$/u.test(value)) {
+    return `${name} must be an 8-128 character URL-safe API key`;
+  }
+  if (kind === "para-env" && !["DEV", "SANDBOX", "BETA", "PROD"].includes(value)) {
+    return `${name} must be DEV, SANDBOX, BETA, or PROD`;
   }
   if (kind === "secret" && value.length < 32) {
     return `${name} must be at least 32 characters`;
@@ -78,6 +62,19 @@ if (phase === "runtime" && process.env.ENABLE_PUBLIC_IPFS_PINNING === "true") {
   );
 }
 const errors = entries.map(([name, kind]) => validate(name, kind)).filter(Boolean);
+if (phase === "build" && process.env.NEXT_PUBLIC_DETERMINISTIC_BROWSER === "true") {
+  errors.push("NEXT_PUBLIC_DETERMINISTIC_BROWSER cannot be enabled in a deployment build");
+}
+if (phase === "build") {
+  try {
+    const siteOrigin = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "").origin;
+    if (siteOrigin === PRODUCTION_SITE_ORIGIN && process.env.NEXT_PUBLIC_PARA_ENV !== "PROD") {
+      errors.push("NEXT_PUBLIC_PARA_ENV must be PROD for the production Revnet origin");
+    }
+  } catch {
+    // The ordinary URL validator above reports the malformed or absent value.
+  }
+}
 
 if (errors.length) {
   console.error(`Invalid ${phase}-time environment:\n- ${errors.join("\n- ")}`);

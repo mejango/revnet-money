@@ -1,11 +1,13 @@
-[![revnet badge](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapp.revnet.eth.sucks%2Fapi%2Fdata%2Fshields%3FprojectId%3D3%26chainId%3D1&query=%24.message&label=Revnet%20Network&cacheSeconds=3600)](https://app.revnet.eth.sucks/base:3)
+[![revnet badge](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Frevnet.money%2Fapi%2Fdata%2Fshields%3FprojectId%3D3%26chainId%3D1&query=%24.message&label=Revnet%20Network&cacheSeconds=3600)](https://revnet.money/base:3)
 
 Revnet Money is the v6-only Revnet application. Project routes use
 `<chain>:<projectId>` (for example, `/eth:3`).
 
 This is a [wagmi](https://wagmi.sh) + [Next.js](https://nextjs.org) + Tailwind +
 [Juicebox](https://juicebox.money) project. Installed browser wallets are
-discovered through EIP-6963 with a generic injected-provider fallback.
+discovered through EIP-6963 with a generic injected-provider fallback. Para v3
+provides an optional embedded email/social wallet without loading its runtime
+for anonymous visitors.
 
 # Getting Started
 
@@ -17,6 +19,9 @@ discovered through EIP-6963 with a generic injected-provider fallback.
 
    Every public RPC variable accepts a comma-separated provider list. Use at
    least two independently operated endpoints per production chain.
+   `NEXT_PUBLIC_PARA_API_KEY` and `NEXT_PUBLIC_PARA_ENV` enable embedded
+   email/social wallets. If they are omitted during local development, the
+   existing EIP-6963/injected wallet picker continues to work unchanged.
 
 1. Install dependencies:
 
@@ -29,6 +34,8 @@ discovered through EIP-6963 with a generic injected-provider fallback.
    ```
    npm run dev
    ```
+
+   Revnet runs at <http://localhost:3002> by default.
 
 See [TESTING.md](./TESTING.md) for the invariant suite, transaction coverage inventory, and CI gates.
 

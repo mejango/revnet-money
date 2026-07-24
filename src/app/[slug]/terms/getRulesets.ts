@@ -1,5 +1,5 @@
 import { MAX_RULESET_COUNT } from "@/app/constants";
-import { getViemPublicClient } from "@/lib/wagmiConfig";
+import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   getJBContractAddress,
   JBChainId,

@@ -126,6 +126,43 @@ describe("dependency-free UI primitives", () => {
     await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
   });
 
+  it("toggles tooltip content on repeated mobile taps", async () => {
+    const matchMedia = vi.fn(() => ({
+      matches: true,
+      media: "(max-width: 767px)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    vi.stubGlobal("matchMedia", matchMedia);
+
+    render(
+      <Tooltip>
+        <TooltipTrigger>Balance details</TooltipTrigger>
+        <TooltipContent>All chain balances</TooltipContent>
+      </Tooltip>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Balance details" });
+    await waitFor(() => expect(matchMedia).toHaveBeenCalled());
+
+    fireEvent.focus(trigger);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("All chain balances");
+
+    fireEvent.pointerLeave(trigger, { pointerType: "touch" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(screen.getByRole("tooltip")).toBeVisible();
+
+    fireEvent.click(trigger);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+  });
+
   it("announces and dismisses toasts through an accessible live role", async () => {
     const onOpenChange = vi.fn();
     render(

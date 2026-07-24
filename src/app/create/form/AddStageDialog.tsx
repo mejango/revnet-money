@@ -104,9 +104,14 @@ export function AddStageDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Add stage</DialogTitle>
+      <DialogContent
+        overlayClassName="data-[state=open]:animate-none"
+        overlayStyle={{ animation: "none" }}
+        style={{ animation: "none" }}
+        className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl p-4 duration-0 data-[state=open]:animate-none sm:p-6"
+      >
+        <DialogHeader className="text-left">
+          <DialogTitle className="text-xl">Add stage</DialogTitle>
         </DialogHeader>
         <div className="mt-8">
           <FormProvider
@@ -288,8 +293,8 @@ export function AddStageDialog({
                                     type="number"
                                     min="0"
                                     max="100"
-                                    className="h-9"
-                                    width="w-28"
+                                    className="h-9 pr-10"
+                                    width="w-32"
                                     suffix="%"
                                     required
                                     placeholder="100"
@@ -429,7 +434,7 @@ export function AddStageDialog({
                             {values.autoIssuance?.map((autoissuance, index) => (
                               <div
                                 key={`autoissuance-${index}`}
-                                className="flex gap-2 items-center text-md text-zinc-600 mt-4"
+                                className="mt-4 grid grid-cols-[auto_12rem_auto_minmax(0,1fr)_auto] items-center gap-2 text-md text-zinc-600 sm:flex"
                               >
                                 <label
                                   className="whitespace-nowrap"
@@ -437,14 +442,14 @@ export function AddStageDialog({
                                 >
                                   {index === 0 ? "Issue" : "... and"}
                                 </label>
-                                <div className="relative">
+                                <div className="relative w-48 sm:w-40">
                                   <Field
                                     id={`autoIssuance.${index}.amount`}
                                     name={`autoIssuance.${index}.amount`}
                                     type="number"
                                     min="0"
                                     step="any"
-                                    className="h-9 w-40 pr-16 pl-2"
+                                    className="h-9 w-full pr-16 pl-2"
                                     required
                                   />
                                   <span className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">
@@ -455,7 +460,7 @@ export function AddStageDialog({
                                 <Field
                                   id={`autoIssuance.${index}.beneficiary`}
                                   name={`autoIssuance.${index}.beneficiary`}
-                                  className="h-9 w-full"
+                                  className="col-span-3 col-start-2 row-start-2 h-9 w-full min-w-0 sm:col-auto sm:row-auto sm:flex-1"
                                   placeholder="0x"
                                   required
                                 />
@@ -463,7 +468,7 @@ export function AddStageDialog({
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => arrayHelpers.remove(index)}
-                                  className="h-9 px-0 sm:px-3"
+                                  className="col-start-5 row-span-2 row-start-1 h-9 justify-self-end self-center pr-0 pl-2 sm:col-auto sm:row-auto sm:px-3"
                                 >
                                   <TrashIcon className="h-4 w-4" />
                                 </Button>

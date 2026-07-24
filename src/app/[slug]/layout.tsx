@@ -1,4 +1,5 @@
 import { Nav } from "@/components/layout/Nav";
+import { ipfsMediaGatewayUrls, ipfsUriToAppUrl } from "@/lib/ipfs";
 import { parseSlug } from "@/lib/slug";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -22,7 +23,7 @@ interface Props {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
   const { slug: encodedSlug } = await params;
   const slug = decodeURIComponent(encodedSlug ?? "");
 
@@ -42,7 +43,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const { projectId, chainId } = parseSlug(slug);
   const project = projectId ? await getProject(projectId, chainId) : null;
-  const imageUrl = project?.logoUri || `${origin}/assets/img/rev-og-191-1.png`;
+  const projectImagePath = ipfsUriToAppUrl(project?.logoUri);
+  const imageUrl =
+    ipfsMediaGatewayUrls(project?.logoUri)[0] ??
+    (projectImagePath
+      ? new URL(projectImagePath, origin).href
+      : `${origin}/assets/img/rev-og-191-1.png`);
 
   return buildMetadata({
     title: project?.name ? `${project.name} | REVNET` : "Revnet",
@@ -75,7 +81,9 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
   return (
     <ProjectProviders chainId={chainId} projectId={projectId} project={project} projects={projects}>
       <ShopCartProvider>
-        <Nav />
+        <div id="project-top">
+          <Nav />
+        </div>
 
         <div className="w-full px-4 sm:container pt-6">
           <Header isRevnet={isRevnet} operatorPromise={operatorPromise} projects={projects} />

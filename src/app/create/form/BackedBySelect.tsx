@@ -12,7 +12,7 @@ export function BackedBySelect({ disabled = false }: { disabled?: boolean }) {
   return (
     <>
       <div className="md:col-span-1">
-        <h2 className="font-bold text-lg mb-2">3. Backed by</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">3. Backed by</h2>
         <p className="text-zinc-600 text-lg">
           {revnetTokenSymbolCapitalized} are backed by the tokens you choose to allow in your
           revnet.

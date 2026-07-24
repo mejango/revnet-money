@@ -7,7 +7,7 @@
     "npm": "12.0.x"
   },
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev --webpack -p 3002",
     "build": "npm run env:check:build && next build --webpack",
     "build:browser": "node scripts/build-browser.mjs",
     "start": "npm run env:check:runtime && next start",
@@ -39,7 +39,11 @@
   },
   "dependencies": {
     "@bananapus/nana-sdk-core": "1.4.1",
+    "@getpara/react-sdk-lite": "3.8.0",
+    "@getpara/wagmi-v2-connector": "3.8.0",
+    "@getpara/web-sdk": "3.8.0",
     "@tanstack/react-query": "5.101.4",
+    "@wagmi/core": "3.6.4",
     "dompurify": "^3.4.12",
     "next": "16.2.11",
     "react": "19.2.8",

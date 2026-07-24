@@ -13,6 +13,7 @@ const simplonMono = localFont({
     { path: "../../public/fonts/SimplonMono-Regular.otf", weight: "500" },
     { path: "../../public/fonts/SimplonMono-Bold.otf", weight: "700" },
   ],
+  preload: false,
   variable: "--font-simplon-mono",
 });
 
@@ -38,7 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
 
   // For the root layout, our fullPath is '/'
   const fullPath = "/";
@@ -47,6 +48,7 @@ export async function generateMetadata(): Promise<Metadata> {
   // gone but not forgotten anachronistic1-1.png
   const imgUrl = `${origin}/assets/img/rev-og-191-1.png`;
   return {
+    metadataBase: new URL(origin),
     title: "Revnet",
     openGraph: {
       title: "Revnet",

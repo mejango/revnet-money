@@ -3,30 +3,16 @@ import { rmSync } from "node:fs";
 import browserProject from "../test/fixtures/browser-project.json" with { type: "json" };
 
 const fixtureOrigin = `http://127.0.0.1:${browserProject.fixturePort}`;
-const fixtureGraphql = `${fixtureOrigin}/graphql`;
 const fixtureRpc = `${fixtureOrigin}/rpc`;
 const environment = {
   ...process.env,
   NEXT_PUBLIC_SITE_URL: `http://127.0.0.1:${browserProject.appPort}`,
   NEXT_PUBLIC_BENDYSTRAW_URL: fixtureOrigin,
   NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: fixtureOrigin,
-  NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: "127.0.0.1",
-  NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: fixtureGraphql,
-  NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: fixtureGraphql,
-  NEXT_PUBLIC_BASE_SUBGRAPH_URL: fixtureGraphql,
-  NEXT_PUBLIC_ARBITRUM_SUBGRAPH_URL: fixtureGraphql,
-  NEXT_PUBLIC_SEPOLIA_SUBGRAPH_URL: fixtureGraphql,
-  NEXT_PUBLIC_OPTIMISM_SEPOLIA_SUBGRAPH_URL: fixtureGraphql,
-  NEXT_PUBLIC_BASE_SEPOLIA_SUBGRAPH_URL: fixtureGraphql,
-  NEXT_PUBLIC_ARBITRUM_SEPOLIA_SUBGRAPH_URL: fixtureGraphql,
-  NEXT_PUBLIC_RPC_ETHEREUM_URLS: fixtureRpc,
-  NEXT_PUBLIC_RPC_OPTIMISM_URLS: fixtureRpc,
-  NEXT_PUBLIC_RPC_BASE_URLS: fixtureRpc,
-  NEXT_PUBLIC_RPC_ARBITRUM_URLS: fixtureRpc,
-  NEXT_PUBLIC_RPC_ETHEREUM_SEPOLIA_URLS: fixtureRpc,
-  NEXT_PUBLIC_RPC_OPTIMISM_SEPOLIA_URLS: fixtureRpc,
-  NEXT_PUBLIC_RPC_BASE_SEPOLIA_URLS: fixtureRpc,
-  NEXT_PUBLIC_RPC_ARBITRUM_SEPOLIA_URLS: fixtureRpc,
+  NEXT_PUBLIC_PARA_API_KEY: "deterministic-browser-key",
+  NEXT_PUBLIC_PARA_ENV: "BETA",
+  NEXT_PUBLIC_DWELLIR_API_KEY: "deterministic-dwellir-key",
+  NEXT_PUBLIC_RPC_FIXTURE_URL: fixtureRpc,
 };
 
 function run(command, args) {
@@ -38,6 +24,9 @@ function run(command, args) {
 }
 
 run(process.execPath, ["scripts/validate-env.mjs", "build"]);
+// The release validator rejects this test-only mode. Enable it only after the
+// production-shaped public environment above has passed validation.
+environment.NEXT_PUBLIC_DETERMINISTIC_BROWSER = "true";
 // A prior Next data cache could otherwise hide whether this build actually
 // exercised the deterministic contract-derived fixture.
 rmSync(new URL("../.next/cache", import.meta.url), { recursive: true, force: true });

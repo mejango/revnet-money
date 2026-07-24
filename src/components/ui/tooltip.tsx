@@ -202,7 +202,7 @@ const TooltipTrigger = React.forwardRef<HTMLElement, TooltipTriggerProps>(
       tabIndex: asChild ? (tabIndex ?? 0) : tabIndex,
       onBlur: (event: React.FocusEvent<HTMLElement>) => {
         onBlur?.(event as React.FocusEvent<HTMLButtonElement>);
-        if (!event.defaultPrevented) context.scheduleClose();
+        if (!isMobile && !event.defaultPrevented) context.scheduleClose();
       },
       onClick: (event: React.MouseEvent<HTMLElement>) => {
         onClick?.(event as React.MouseEvent<HTMLButtonElement>);
@@ -213,7 +213,9 @@ const TooltipTrigger = React.forwardRef<HTMLElement, TooltipTriggerProps>(
       },
       onFocus: (event: React.FocusEvent<HTMLElement>) => {
         onFocus?.(event as React.FocusEvent<HTMLButtonElement>);
-        if (!event.defaultPrevented) context.scheduleOpen(true);
+        // A touch tap focuses before it clicks. Opening here would make the
+        // following click immediately toggle the tooltip closed.
+        if (!isMobile && !event.defaultPrevented) context.scheduleOpen(true);
       },
       onPointerEnter: (event: React.PointerEvent<HTMLElement>) => {
         onPointerEnter?.(event as React.PointerEvent<HTMLButtonElement>);
@@ -223,7 +225,11 @@ const TooltipTrigger = React.forwardRef<HTMLElement, TooltipTriggerProps>(
       },
       onPointerLeave: (event: React.PointerEvent<HTMLElement>) => {
         onPointerLeave?.(event as React.PointerEvent<HTMLButtonElement>);
-        if (!event.defaultPrevented) context.scheduleClose();
+        // Touch pointers emit leave events after a tap. Keep the tooltip open
+        // until the trigger is tapped again or the user taps elsewhere.
+        if (!isMobile && !event.defaultPrevented && event.pointerType !== "touch") {
+          context.scheduleClose();
+        }
       },
       ...props,
     };

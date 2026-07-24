@@ -1,7 +1,7 @@
-import { ipfsGatewayUrl } from "@/lib/ipfs";
+import { IpfsImage } from "@/components/IpfsImage";
+import { ipfsUri } from "@/lib/ipfs";
 import { isIpfsCid } from "@/lib/ipfs-cid";
 import { useMutation } from "@tanstack/react-query";
-import Image from "next/image";
 import { twMerge } from "tailwind-merge";
 
 export type InfuraPinResponse = {
@@ -31,9 +31,11 @@ export const pinFile = async (file: File | Blob | string, options?: { signal?: A
 export function IpfsImageUploader({
   onUploadSuccess,
   disabled = false,
+  className,
 }: {
   onUploadSuccess: (cid: string) => void;
   disabled?: boolean;
+  className?: string;
 }) {
   const uploadFile = useMutation({
     mutationFn: async (file: File) => {
@@ -51,7 +53,7 @@ export function IpfsImageUploader({
   };
 
   return (
-    <div className="mb-5">
+    <div className={twMerge("mb-5", className)}>
       <input
         className={twMerge(
           "block w-full border-2 border-solid border-melon-300 bg-melon-25 bg-clip-padding px-2 py-[0.32rem] text-sm font-normal text-zinc-700 transition duration-300 ease-in-out file:-mx-2 file:-my-[0.32rem] file:overflow-hidden file:border-0 file:border-solid file:border-inherit file:bg-melon-50 file:px-2 file:py-[0.32rem] file:text-sm file:text-zinc-700 file:transition file:duration-150 file:ease-in-out file:[border-inline-end-width:2px] file:[margin-inline-end:0.5rem] hover:border-melon-400 hover:file:bg-melon-100 focus:border-melon-600 focus:text-zinc-700 focus:outline-none",
@@ -70,11 +72,12 @@ export function IpfsImageUploader({
       )}
       {uploadFile.data && (
         <div className="mt-3 overflow-hidden">
-          <Image
-            src={ipfsGatewayUrl(uploadFile.data.Hash)}
+          <IpfsImage
+            src={ipfsUri(uploadFile.data.Hash)}
             alt="Uploaded file"
             width={80}
             height={200}
+            fallback={<div className="text-sm text-zinc-500">Preview unavailable.</div>}
           />
         </div>
       )}

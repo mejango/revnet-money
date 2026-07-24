@@ -4,28 +4,14 @@ const buildNames = [
   "NEXT_PUBLIC_SITE_URL",
   "NEXT_PUBLIC_BENDYSTRAW_URL",
   "NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL",
-  "NEXT_PUBLIC_MAINNET_SUBGRAPH_URL",
-  "NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL",
-  "NEXT_PUBLIC_BASE_SUBGRAPH_URL",
-  "NEXT_PUBLIC_ARBITRUM_SUBGRAPH_URL",
-  "NEXT_PUBLIC_SEPOLIA_SUBGRAPH_URL",
-  "NEXT_PUBLIC_OPTIMISM_SEPOLIA_SUBGRAPH_URL",
-  "NEXT_PUBLIC_BASE_SEPOLIA_SUBGRAPH_URL",
-  "NEXT_PUBLIC_ARBITRUM_SEPOLIA_SUBGRAPH_URL",
-  "NEXT_PUBLIC_RPC_ETHEREUM_URLS",
-  "NEXT_PUBLIC_RPC_OPTIMISM_URLS",
-  "NEXT_PUBLIC_RPC_BASE_URLS",
-  "NEXT_PUBLIC_RPC_ARBITRUM_URLS",
-  "NEXT_PUBLIC_RPC_ETHEREUM_SEPOLIA_URLS",
-  "NEXT_PUBLIC_RPC_OPTIMISM_SEPOLIA_URLS",
-  "NEXT_PUBLIC_RPC_BASE_SEPOLIA_URLS",
-  "NEXT_PUBLIC_RPC_ARBITRUM_SEPOLIA_URLS",
 ];
 
 const baseEnvironment = {
   ...process.env,
   ...Object.fromEntries(buildNames.map((name) => [name, "https://service.example"])),
-  NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: "ipfs.example",
+  NEXT_PUBLIC_DWELLIR_API_KEY: "dwellir-browser-key",
+  NEXT_PUBLIC_PARA_API_KEY: "public-para-key",
+  NEXT_PUBLIC_PARA_ENV: "PROD",
 };
 
 function run(phase, overrides = {}) {
@@ -48,8 +34,7 @@ expectStatus("valid HTTPS build values", run("build"), 0);
 expectStatus(
   "loopback HTTP development values",
   run("build", {
-    NEXT_PUBLIC_SITE_URL: "http://localhost:3000",
-    NEXT_PUBLIC_RPC_ETHEREUM_URLS: "http://127.0.0.1:8545,http://[::1]:8546",
+    NEXT_PUBLIC_SITE_URL: "http://localhost:3002",
   }),
   0,
 );
@@ -58,9 +43,35 @@ expectStatus(
   run("build", { NEXT_PUBLIC_BENDYSTRAW_URL: "http://bendystraw.example" }),
   1,
 );
+expectStatus("malformed Dwellir key", run("build", { NEXT_PUBLIC_DWELLIR_API_KEY: "bad/key" }), 1);
+expectStatus("invalid Para environment", run("build", { NEXT_PUBLIC_PARA_ENV: "STAGING" }), 1);
 expectStatus(
-  "malformed fallback URL list",
-  run("build", { NEXT_PUBLIC_RPC_BASE_URLS: "https://rpc.example,not-a-url" }),
+  "production origin with production Para",
+  run("build", {
+    NEXT_PUBLIC_SITE_URL: "https://revnet.money",
+    NEXT_PUBLIC_PARA_ENV: "PROD",
+  }),
+  0,
+);
+expectStatus(
+  "production origin with non-production Para",
+  run("build", {
+    NEXT_PUBLIC_SITE_URL: "https://revnet.money",
+    NEXT_PUBLIC_PARA_ENV: "BETA",
+  }),
+  1,
+);
+expectStatus(
+  "loopback development with beta Para",
+  run("build", {
+    NEXT_PUBLIC_SITE_URL: "http://localhost:3002",
+    NEXT_PUBLIC_PARA_ENV: "BETA",
+  }),
+  0,
+);
+expectStatus(
+  "deployment with deterministic wallet mode",
+  run("build", { NEXT_PUBLIC_DETERMINISTIC_BROWSER: "true" }),
   1,
 );
 expectStatus(
@@ -105,5 +116,5 @@ expectStatus(
 expectStatus("invalid pinning switch", run("runtime", { ENABLE_PUBLIC_IPFS_PINNING: "yes" }), 1);
 
 console.log(
-  "Environment validation fixtures passed (HTTPS, loopback, lists, and runtime secrets). ",
+  "Environment validation fixtures passed (HTTPS, Dwellir, Para, and runtime secrets). ",
 );

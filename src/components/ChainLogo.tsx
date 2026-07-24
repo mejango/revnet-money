@@ -12,18 +12,24 @@ type Props = {
 export const ChainLogo = (props: Props) => {
   const { chainId, width, height, style, ...rest } = props;
   const chainName = JB_CHAINS[chainId].name;
+  const src = chainIdToLogo[chainId];
+  const displayWidth = width ?? 20;
+  const displayHeight = height ?? 20;
+  const isArbitrum = src.endsWith("/arbitrum.svg");
 
   return (
     <Image
       {...rest}
-      src={chainIdToLogo[chainId]}
+      src={src}
       alt={`${chainName} Logo`}
       title={chainName}
-      width={width ?? 20}
-      height={height ?? 20}
+      width={isArbitrum ? 374 : 1}
+      height={isArbitrum ? 422 : 1}
       style={{
-        minWidth: width ?? 20,
-        minHeight: height ?? 20,
+        width: displayWidth,
+        height: "auto",
+        minWidth: displayWidth,
+        minHeight: displayHeight,
         flexShrink: 0,
         ...style,
       }}

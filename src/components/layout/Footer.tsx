@@ -6,11 +6,11 @@ export function Footer() {
           <div className="text-md text-zinc-700 text-center">
             <p>
               Revnets are open source, and enforced by the Revnet, Juicebox, and Uniswap protocols
-              on the Ethereum global computer.
+              on the Ethereum network.
             </p>
-            <p>
-              Gratitude to the ETH, JBX, REV, and UNI communities for crafting the infrastructure
-              and economy that make revnets possible.
+            <p className="mt-4 sm:mt-0">
+              Thanks to the ETH, JBX, REV, and UNI communities for crafting the infrastructure that
+              makes revnets possible.
             </p>
           </div>
         </div>

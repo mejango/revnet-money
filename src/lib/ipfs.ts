@@ -1,14 +1,16 @@
-import { isIpfsCid, isIpfsUri } from "./ipfs-cid";
+import { cidV0ToCidV1, isIpfsCid, isIpfsUri } from "./ipfs-cid";
 
 export { isIpfsCid, isIpfsUri } from "./ipfs-cid";
 
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]{1,128}$/u;
 
-// This is an open gateway. It exposes any ipfs content, not just the content we pin.
-// Use when fetching public content (like images).
-export const OPEN_IPFS_GATEWAY_HOSTNAME = process.env.NEXT_PUBLIC_INFURA_IPFS_HOSTNAME ?? "ipfs.io";
+// This is an open gateway. It exposes any IPFS content, not just content we
+// pin. It is the last fallback after the media cache and Pinata.
+export const OPEN_IPFS_GATEWAY_HOSTNAME = "ipfs.io";
 
-const PUBLIC_IPFS_GATEWAY_HOSTNAME = "ipfs.io";
+// Independent fallback for cold/unpinned content on the configured gateway.
+const PUBLIC_IPFS_GATEWAY_HOSTNAME = "gateway.pinata.cloud";
+const IPFS_MEDIA_CACHE_HOSTNAME = "eth.sucks";
 
 /**
  * Return a URL to our open IPFS gateway for the given cid USING INFURA.
@@ -63,6 +65,41 @@ export function ipfsUriToGatewayUrl(ipfsUri: string): string | undefined {
   const suffix = ipfsUri.slice("ipfs://".length);
   if (!isSafeIpfsPath(suffix)) return undefined;
   return suffix ? ipfsGatewayUrl(suffix) : undefined;
+}
+
+/**
+ * Returns a same-origin URL for an untrusted, content-addressed IPFS URI.
+ *
+ * The route validates the CID/path, media type, and response size before
+ * serving bytes. Keeping this separate from Next's image optimizer prevents a
+ * slow public gateway from tying up `/_next/image` requests.
+ */
+export function ipfsUriToAppUrl(ipfsUri: unknown): string | undefined {
+  if (typeof ipfsUri !== "string" || !ipfsUri.startsWith("ipfs://")) return undefined;
+  const suffix = ipfsUri.slice("ipfs://".length);
+  if (!isSafeIpfsPath(suffix)) return undefined;
+  return `/api/ipfs/${suffix}`;
+}
+
+/**
+ * Trusted read candidates for immutable media. The CID subdomain cache is
+ * preferred; path gateways are sequential fallbacks. CIDv0 is converted to
+ * the equivalent DAG-PB CIDv1 so it is safe to place in DNS.
+ */
+export function ipfsMediaGatewayUrls(ipfsUri: unknown): string[] {
+  if (typeof ipfsUri !== "string" || !ipfsUri.startsWith("ipfs://")) return [];
+  const suffix = ipfsUri.slice("ipfs://".length);
+  if (!isSafeIpfsPath(suffix)) return [];
+
+  const [cid, ...pathSegments] = suffix.split("/");
+  const dnsCid = cidV0ToCidV1(cid) ?? (cid.startsWith("b") ? cid : undefined);
+  const path = pathSegments.length ? `/${pathSegments.join("/")}` : "/";
+  const urls = [
+    dnsCid ? `https://${dnsCid}.${IPFS_MEDIA_CACHE_HOSTNAME}${path}` : undefined,
+    `https://${PUBLIC_IPFS_GATEWAY_HOSTNAME}/ipfs/${suffix}`,
+    `https://${OPEN_IPFS_GATEWAY_HOSTNAME}/ipfs/${suffix}`,
+  ];
+  return [...new Set(urls.filter((url): url is string => Boolean(url)))];
 }
 
 function isSafeIpfsPath(value: string): boolean {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ipfsGatewayUrl, ipfsPublicGatewayUrl } from "@/lib/ipfs";
+import { cidFromIpfsUri, ipfsUriToAppUrl } from "@/lib/ipfs";
 import {
   formatPayAmount,
   parseTierMetadataJson,
@@ -23,7 +23,7 @@ import {
   getAccountingContexts,
   getProject721Shop,
 } from "@bananapus/nana-sdk-core/v6";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Address, erc20Abi, PublicClient } from "viem";
 import { usePublicClient } from "wagmi";
 import { ShopCartItem, useShopCart } from "../ShopCartContext";
@@ -36,12 +36,31 @@ const ZERO_BYTES32 = `0x${"0".repeat(64)}`;
 export function decodeEncodedIpfsUri(hex: string): string {
   const candidates = decodeEncodedIpfsUriCandidates(hex);
   if (!candidates) throw new Error("The tier does not contain a valid IPFS digest.");
-  return candidates[0];
+  const cid = cidFromIpfsUri(candidates[0]);
+  if (!cid) throw new Error("The tier does not contain a valid IPFS digest.");
+  return cid;
 }
 
 /** DAG-PB CIDv0/CIDv1 → bytes32 for onchain `encodedIpfsUri`. */
 export function encodeIpfsCid(cid: string): `0x${string}` {
   return encodeIpfsUri(cid);
+}
+
+/** One metadata sample per category, plus every resolver-only legacy tier. */
+export function resolvedUriTierIds(
+  tiers: ReadonlyArray<{ id: number; category: number; encodedIpfsUri: string }>,
+): number[] {
+  const representativeByCategory = new Map<number, number>();
+  for (const tier of tiers) {
+    if (!representativeByCategory.has(tier.category)) {
+      representativeByCategory.set(tier.category, tier.id);
+    }
+  }
+  return tiers.flatMap((tier) =>
+    tier.encodedIpfsUri === ZERO_BYTES32 || representativeByCategory.get(tier.category) === tier.id
+      ? [tier.id]
+      : [],
+  );
 }
 
 /** Stored-tier flags (`tiersOf`'s 5-bool shape — not the 7-bool config shape). */
@@ -99,56 +118,88 @@ export function useShopInventory(chainId: JBChainId | undefined, projectId: bigi
     enabled: !!publicClient && !!chainId,
     staleTime: 60_000,
     retry: 1,
-    queryFn: async (): Promise<ShopInventory | null> => {
-      const client = publicClient as PublicClient;
-      // Everything in revnet-app is a revnet — hook resolution goes through REVOwner.
-      const resolved = await getProject721Shop(client, {
-        chainId: chainId!,
-        projectId,
-        isRevnet: true,
-        tierLimit: 200,
-      });
-      if (!resolved) return null;
+    queryFn: () => loadShopInventory(publicClient as PublicClient, chainId!, projectId),
+  });
+}
 
-      const [rawTiers, symbol] = await Promise.all([
-        client
+/**
+ * Resolve the collection and read stored tiers without eagerly expanding every
+ * token URI. Large, established collections can make `tiersOf(..., true, ...)`
+ * revert while resolving dozens of URIs in one RPC call. Tier display metadata
+ * is already hydrated independently from each tier's immutable IPFS digest.
+ */
+export async function loadShopInventory(
+  client: PublicClient,
+  chainId: JBChainId,
+  projectId: bigint,
+): Promise<ShopInventory | null> {
+  // Everything in revnet-app is a revnet — hook resolution goes through REVOwner.
+  // A zero tier limit asks the SDK only for authoritative hook/store/pricing
+  // resolution; the bounded non-resolving tier read below owns inventory.
+  const resolved = await getProject721Shop(client, {
+    chainId,
+    projectId,
+    isRevnet: true,
+    tierLimit: 0,
+  });
+  if (!resolved) return null;
+
+  const [rawTiers, symbol] = await Promise.all([
+    client.readContract({
+      address: resolved.store,
+      abi: jb721TiersHookStoreAbi,
+      functionName: "tiersOf",
+      args: [resolved.hook, [], false, 0n, 200n],
+    }),
+    resolveShopPricingSymbol(client, chainId, projectId, resolved.pricing.currency),
+  ]);
+  const activeTiers = rawTiers.filter((tier) => tier.initialSupply > 0);
+
+  // Resolve one representative tier per category so its metadata can provide
+  // the human-readable category name. Also resolve every legacy resolver-only
+  // tier (including Banny's original four), which has no immutable digest in
+  // the store. Keeping this bounded by category avoids asking the RPC to expand
+  // every token URI in a large collection.
+  const tierIdsToResolve = new Set(resolvedUriTierIds(activeTiers));
+  const resolvedUriEntries = await Promise.all(
+    activeTiers
+      .filter((tier) => tierIdsToResolve.has(tier.id))
+      .map(async (tier) => {
+        const resolvedTier = await client
           .readContract({
             address: resolved.store,
             abi: jb721TiersHookStoreAbi,
             functionName: "tiersOf",
-            args: [resolved.hook, [], false, 0n, 200n],
+            args: [resolved.hook, [], true, BigInt(tier.id), 1n],
           })
-          .catch(() => []),
-        resolveShopPricingSymbol(client, chainId!, projectId, resolved.pricing.currency),
-      ]);
-      const rawById = new Map(rawTiers.map((raw) => [raw.id, raw] as const));
+          .then((tiers) => tiers[0])
+          .catch(() => undefined);
+        return [tier.id, resolvedTier?.resolvedUri ?? ""] as const;
+      }),
+  );
+  const resolvedUriById = new Map(resolvedUriEntries);
 
-      return {
-        hook: resolved.hook,
-        store: resolved.store,
-        idTarget: resolved.metadataIdTarget,
-        pricing: { ...resolved.pricing, symbol },
-        tiers: resolved.tiers.map((tier) => {
-          const raw = rawById.get(tier.id);
-          return {
-            id: tier.id,
-            price: tier.price,
-            remaining: tier.remainingSupply,
-            initial: tier.initialSupply,
-            unlimited: tier.initialSupply >= TIER_UNLIMITED_SUPPLY,
-            category: tier.category,
-            discountPercent: tier.discountPercent,
-            reserveFrequency: tier.reserveFrequency,
-            votingUnits: tier.votingUnits,
-            splitPercent: raw ? Number(raw.splitPercent) : 0,
-            encodedIpfsUri: tier.encodedIpfsUri,
-            resolvedUri: tier.resolvedUri ?? "",
-            flags: raw ? { ...raw.flags } : null,
-          };
-        }),
-      };
-    },
-  });
+  return {
+    hook: resolved.hook,
+    store: resolved.store,
+    idTarget: resolved.metadataIdTarget,
+    pricing: { ...resolved.pricing, symbol },
+    tiers: activeTiers.map((tier) => ({
+      id: tier.id,
+      price: tier.price,
+      remaining: tier.remainingSupply,
+      initial: tier.initialSupply,
+      unlimited: tier.initialSupply >= TIER_UNLIMITED_SUPPLY,
+      category: tier.category,
+      discountPercent: tier.discountPercent,
+      reserveFrequency: tier.reserveFrequency,
+      votingUnits: tier.votingUnits,
+      splitPercent: Number(tier.splitPercent),
+      encodedIpfsUri: tier.encodedIpfsUri,
+      resolvedUri: resolvedUriById.get(tier.id) ?? "",
+      flags: { ...tier.flags },
+    })),
+  };
 }
 
 async function resolveShopPricingSymbol(
@@ -196,30 +247,41 @@ export function useTierMedia(
   chainId: JBChainId | undefined,
   shop: { hook: Address; tiers: TierMediaSource[] } | null | undefined,
 ) {
-  return useQuery({
-    queryKey: ["v6Shop721Media", chainId, shop?.hook],
-    enabled: !!shop && shop.tiers.length > 0,
-    staleTime: Infinity,
-    queryFn: async () => {
-      const entries = await Promise.all(
-        shop!.tiers.map(async (tier) => [tier.id, await resolveTierMedia(tier)] as const),
-      );
-      return Object.fromEntries(entries) as Record<number, TierMedia>;
-    },
+  const tiers = shop?.tiers ?? [];
+  return useQueries({
+    queries: tiers.map((tier) => ({
+      queryKey: ["v6Shop721TierMedia", chainId, shop?.hook, tier.id],
+      enabled: !!shop,
+      staleTime: Infinity,
+      queryFn: () => resolveTierMedia(tier),
+    })),
+    combine: (results) => ({
+      data: Object.fromEntries(
+        results.flatMap((result, index) =>
+          result.data ? [[tiers[index].id, result.data] as const] : [],
+        ),
+      ) as Record<number, TierMedia>,
+      isLoading: results.some((result) => result.isLoading),
+      isError: results.some((result) => result.isError),
+      error: results.find((result) => result.error)?.error ?? null,
+    }),
   });
 }
 
 /** Best-effort tier metadata resolution — {} on any failure. */
-async function resolveTierMedia(tier: TierMediaSource): Promise<TierMedia> {
+export async function resolveTierMedia(tier: TierMediaSource): Promise<TierMedia> {
   const resolved = tier.resolvedUri ? parseTierMetadataJson(tier.resolvedUri) : null;
   if (resolved && Object.keys(resolved).length > 0) return tierDisplayMetadata(resolved);
 
   if (!tier.encodedIpfsUri || tier.encodedIpfsUri === ZERO_BYTES32) return {};
   const candidates = decodeEncodedIpfsUriCandidates(tier.encodedIpfsUri);
   if (!candidates) return {};
-  // Try both equivalent CID forms, pinned gateway first then public. Some
-  // historical tier content was pinned as a raw CIDv1 block.
-  for (const url of candidates.flatMap((cid) => [ipfsGatewayUrl(cid), ipfsPublicGatewayUrl(cid)])) {
+  // Metadata JSON must cross the same-origin boundary: public gateways and the
+  // CID cache do not consistently send browser CORS headers. The bounded app
+  // route owns the cache/path-gateway fallbacks for each immutable candidate.
+  for (const url of candidates
+    .map(ipfsUriToAppUrl)
+    .filter((candidate): candidate is string => Boolean(candidate))) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8_000);
@@ -227,10 +289,26 @@ async function resolveTierMedia(tier: TierMediaSource): Promise<TierMedia> {
         clearTimeout(timer),
       );
       if (!res.ok) continue;
-      const json = (await res.json()) as unknown;
-      return json && typeof json === "object"
-        ? tierDisplayMetadata(json as Record<string, unknown>)
-        : {};
+      const contentType = res.headers?.get("content-type")?.toLowerCase() ?? "";
+      if (/^(?:image|audio|video)\//u.test(contentType)) {
+        return tierDisplayMetadata({
+          image: url,
+          mediaType: contentType.split(";", 1)[0],
+        });
+      }
+      try {
+        const json = (await res.json()) as unknown;
+        return json && typeof json === "object"
+          ? tierDisplayMetadata(json as Record<string, unknown>)
+          : {};
+      } catch {
+        // Some gateways serve extension-less media as an octet stream. Once
+        // JSON parsing rules it out, let the preview treat the immutable URL
+        // as the tier's direct artwork.
+        if (contentType === "application/octet-stream") {
+          return tierDisplayMetadata({ image: url });
+        }
+      }
     } catch {
       // Try the next gateway.
     }

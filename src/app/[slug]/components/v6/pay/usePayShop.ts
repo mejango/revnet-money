@@ -1,23 +1,19 @@
 "use client";
 
-import { payTokenKey, TIER_UNLIMITED_SUPPLY, V6PayTokenOption } from "@/lib/v6/pay";
+import { payTokenKey, V6PayTokenOption } from "@/lib/v6/pay";
 import {
   jb721TiersHookAbi,
-  jb721TiersHookStoreAbi,
   JBChainId,
   jbContractAddress,
   JBCoreContracts,
   jbPricesAbi,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
-import {
-  BASE_CURRENCY_ETH,
-  BASE_CURRENCY_USD,
-  getProject721Shop,
-} from "@bananapus/nana-sdk-core/v6";
+import { BASE_CURRENCY_ETH, BASE_CURRENCY_USD } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { Address, PublicClient } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
+import { loadShopInventory } from "../shop/shopLib";
 
 export interface V6PayShopTier {
   id: number;
@@ -65,37 +61,25 @@ export function usePayShop(chainId: JBChainId, projectId: bigint) {
     retry: 1,
     queryFn: async (): Promise<V6PayShop | null> => {
       const client = publicClient as PublicClient;
-      // Everything in revnet-app is a revnet — hook resolution goes through REVOwner.
-      const resolved = await getProject721Shop(client, {
-        chainId,
-        projectId,
-        isRevnet: true,
-        tierLimit: 200,
-      });
+      // Share the Shop tab's bounded, non-resolving inventory read. Asking the
+      // store to resolve every token URI in one RPC call can revert for larger
+      // collections and used to make the pay-card strip disappear entirely.
+      const resolved = await loadShopInventory(client, chainId, projectId);
       if (!resolved) return null;
-      const rawTiers = await client
-        .readContract({
-          address: resolved.store,
-          abi: jb721TiersHookStoreAbi,
-          functionName: "tiersOf",
-          args: [resolved.hook, [], true, 0n, 200n],
-        })
-        .catch(() => []);
-      const flagsById = new Map(rawTiers.map((rawTier) => [rawTier.id, rawTier.flags] as const));
       return {
         hook: resolved.hook,
-        idTarget: resolved.metadataIdTarget,
+        idTarget: resolved.idTarget,
         pricingCurrency: resolved.pricing.currency,
         pricingDecimals: resolved.pricing.decimals,
         tiers: resolved.tiers.map((t) => ({
           id: t.id,
           price: t.price,
           discountPercent: t.discountPercent,
-          remaining: t.remainingSupply,
-          unlimited: t.initialSupply >= TIER_UNLIMITED_SUPPLY,
+          remaining: t.remaining,
+          unlimited: t.unlimited,
           // Fail closed if the store doesn't return flags: charging fresh
           // funds is safer than underfunding a credit-restricted mint.
-          cantBuyWithCredits: flagsById.get(t.id)?.cantBuyWithCredits ?? true,
+          cantBuyWithCredits: t.flags?.cantBuyWithCredits ?? true,
           // Display metadata resolves through the shared useTierMedia chain.
           resolvedUri: t.resolvedUri ?? "",
           encodedIpfsUri: t.encodedIpfsUri,

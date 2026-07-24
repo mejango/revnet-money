@@ -19,14 +19,5 @@ const DynamicAppSpecificProviders = dynamic(
 );
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-
-  // Don't load providers for splash
-  const isSplashPage = pathname === "/";
-  if (isSplashPage) {
-    return <>{children}</>;
-  }
-
-  // For all other pages, render the dynamically imported AppSpecificProviders
   return <DynamicAppSpecificProviders>{children}</DynamicAppSpecificProviders>;
 }

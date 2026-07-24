@@ -20,6 +20,8 @@ import { useAccount, useConfig, useSendTransaction, useSignTypedData, useSwitchC
 import { getAccount, getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
 
 const RELAYR_API = "https://api.relayr.ba5ed.com";
+const SAFE_NONCE_GUIDANCE =
+  "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
 const FORWARD_REQUEST_TYPES = {
   ForwardRequest: [
     { name: "from", type: "address" },
@@ -388,7 +390,8 @@ export function useSendRelayrTx() {
         kind: "transaction",
         title: "Review Relayr payment",
         description:
-          "This payment funds the already-reviewed Relayr bundle. Submitting it does not mean the destination transactions have confirmed.",
+          "This payment funds the already-reviewed Relayr bundle. Submitting it does not mean the destination transactions have confirmed." +
+          (safeConnection(config) ? ` ${SAFE_NONCE_GUIDANCE}` : ""),
         confirmLabel: safeConnection(config)
           ? "Agree & propose payment to Safe"
           : "Agree & pay Relayr",

@@ -31,6 +31,8 @@ const SAFE_PREFIX: Partial<Record<number, string>> = {
   42161: "arb1",
   11155111: "sep",
 };
+export const SAFE_NONCE_GUIDANCE =
+  "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
 const safeInflight = new Map<string, Promise<void>>();
 
 async function watchSafeProposal(id: string, hash: Hex, chainId: number): Promise<void> {
@@ -204,6 +206,7 @@ export function useWriteContract(
           title: `Review ${functionName}`,
           label: functionName,
           confirmLabel: isSafeConnection(config) ? "Agree & propose to Safe" : "Agree & continue",
+          description: isSafeConnection(config) ? SAFE_NONCE_GUIDANCE : undefined,
         },
       );
 

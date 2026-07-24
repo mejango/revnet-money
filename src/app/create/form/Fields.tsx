@@ -62,6 +62,7 @@ export function FieldGroup(
     label: string;
     description?: string | ReactNode;
     className?: string;
+    groupClassName?: string;
     address?: boolean;
     width?: string;
   },
@@ -72,7 +73,7 @@ export function FieldGroup(
   const showError = meta.error && (meta.touched || submitCount > 0);
 
   return (
-    <div className={props.className}>
+    <div className={props.groupClassName}>
       <label htmlFor={props.name} className="block text-md font-semibold leading-6 mb-1">
         {props.label}
       </label>

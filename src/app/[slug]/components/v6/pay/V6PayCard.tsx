@@ -1,5 +1,6 @@
 "use client";
 
+import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
@@ -58,6 +59,7 @@ import { useShopCart } from "../ShopCartContext";
 import { TextSelect } from "./TextSelect";
 import { PreparedV6Pay, V6PayConfirmDialog, V6PayPhase } from "./V6PayConfirmDialog";
 import { V6PayShopStrip } from "./V6PayShopStrip";
+import { payPanelLayoutClasses } from "./payCardLayout";
 import {
   BASE_CURRENCY_ETH,
   BASE_CURRENCY_USD,
@@ -164,7 +166,7 @@ export function V6PayCard() {
   }, [debouncedAmount, decimals]);
 
   // ---- 721 shop ----
-  const { data: shop } = usePayShop(chainId, projectId);
+  const { data: shop, isLoading: shopLoading } = usePayShop(chainId, projectId);
   const { data: shopCredits = 0n, isLoading: shopCreditsLoading } = usePayShopCredits(
     chainId,
     shop?.hook,
@@ -730,6 +732,11 @@ export function V6PayCard() {
     (mode === "pay" && !previewReady);
 
   const hasShopStrip = Boolean(shop && shop.tiers.length > 0 && mode === "pay");
+  const payPanelLayout = payPanelLayoutClasses({
+    mode,
+    shopLoading,
+    shopTierCount: shop?.tiers.length,
+  });
   const showPayReceipt =
     mode === "pay" &&
     (cartCount > 0 ||
@@ -739,7 +746,8 @@ export function V6PayCard() {
 
   return (
     <div>
-      <div className="w-full border border-b-0 border-melon-600">
+      <div className="w-full border border-melon-600">
+        <div className="relative w-full">
         {/* 721 shop strip — same gray as the pay block, flush inside the outline. */}
         {hasShopStrip ? (
           <div className="w-full bg-zinc-100 px-4 pt-3">
@@ -772,7 +780,7 @@ export function V6PayCard() {
         <div className="flex justify-center items-center flex-col">
           {/* Pay block: mode dropdown in the label spot, big amount input, token selector at right */}
           <div
-            className={`grid h-30 w-full grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] content-center bg-zinc-100 px-4 py-4 ${
+            className={`grid w-full grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] content-center bg-zinc-100 px-4 ${payPanelLayout} ${
               showPayReceipt ? "border-b border-melon-200" : ""
             }`}
           >
@@ -884,16 +892,12 @@ export function V6PayCard() {
                       return (
                         <div key={item.tierId.toString()} className="flex items-center gap-3">
                           <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border border-zinc-200 bg-zinc-100 text-xs text-zinc-500">
-                            {item.imageUri ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={item.imageUri}
-                                alt=""
-                                className="h-full w-full object-contain"
-                              />
-                            ) : (
-                              <span>#{item.tierId.toString()}</span>
-                            )}
+                            <ImageWithFallback
+                              src={item.imageUri}
+                              alt=""
+                              className="h-full w-full object-contain"
+                              fallback={<span>#{item.tierId.toString()}</span>}
+                            />
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="truncate font-medium text-zinc-900">{itemName}</p>
@@ -1007,43 +1011,28 @@ export function V6PayCard() {
         </div>
       </div>
 
-      {/* Memo + Pay — compact by default; the button keeps its height if the memo is resized. */}
-      <div className="relative flex w-full flex-row items-start">
-        <div className="relative min-w-0 flex-1 self-stretch">
-          <textarea
-            rows={1}
-            value={memo}
-            onChange={(e) => setMemo(e.target.value.slice(0, 256))}
-            disabled={busy}
-            placeholder="Add a note"
-            className="z-10 flex min-h-14 w-full border-0 border-r border-r-zinc-200 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute -top-px bottom-0 left-0 z-20 border-l border-melon-600"
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 border-b border-melon-600"
-          />
-        </div>
-        <div className="relative flex min-h-14 w-[150px] shrink-0 self-stretch items-start">
-          <Button
-            disabled={payDisabled}
-            loading={busy}
-            onClick={openConfirm}
-            className="h-14 w-full bg-teal-500 text-melon-950 hover:bg-teal-600"
-          >
-            {notStarted ? "Soon" : mode === "pay" ? "Pay" : "Add"}
-          </Button>
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute -top-px left-0 right-0 z-20 h-[57px] border-b border-r border-melon-600"
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute bottom-0 left-0 top-[55px] z-20 border-l border-melon-600"
-          />
+        {/* Memo + Pay — compact by default; the button keeps its height if the memo is resized. */}
+        <div className="relative flex w-full flex-row items-start border-t border-melon-600">
+          <div className="relative min-w-0 flex-1 self-stretch">
+            <textarea
+              rows={1}
+              value={memo}
+              onChange={(e) => setMemo(e.target.value.slice(0, 256))}
+              disabled={busy}
+              placeholder="Add a note"
+              className="flex min-h-14 w-full border-0 border-r border-r-melon-600 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus:border-r-melon-600 focus:ring-0 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+          <div className="relative flex min-h-14 w-[150px] shrink-0 self-stretch items-start">
+            <Button
+              disabled={payDisabled}
+              loading={busy}
+              onClick={openConfirm}
+              className="h-14 w-full bg-teal-500 text-melon-950 hover:bg-teal-600"
+            >
+              {notStarted ? "Soon" : mode === "pay" ? "Pay" : "Add"}
+            </Button>
+          </div>
         </div>
       </div>
 

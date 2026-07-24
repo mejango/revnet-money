@@ -8,7 +8,7 @@ import { ETH_CURRENCY_ID, NATIVE_TOKEN, USD_CURRENCY_ID } from "@bananapus/nana-
 import type { Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/wagmiConfig", () => ({ getViemPublicClient: vi.fn() }));
+vi.mock("@/lib/wagmiTransports", () => ({ getViemPublicClient: vi.fn() }));
 
 describe("contract-derived monetary display math", () => {
   it("applies the Revnet and Juicebox cash-out fees in integer arithmetic", () => {

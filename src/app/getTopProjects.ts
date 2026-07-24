@@ -2,7 +2,7 @@ import { TopSuckerGroupsOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { TopSuckerGroupsQuery } from "@/lib/bendystraw/types";
 import { fetchEthPrice } from "@/lib/ethPrice";
-import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
+import { ipfsUriToAppUrl } from "@/lib/ipfs";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
@@ -61,7 +61,7 @@ export async function getTopProjects() {
         chainSlug: JB_CHAINS[chainId]?.slug ?? "eth",
         name: project.name ?? `Project #${project.projectId}`,
         tagline: project.projectTagline,
-        logoUrl: project.logoUri ? (ipfsUriToGatewayUrl(project.logoUri) ?? null) : null,
+        logoUri: ipfsUriToAppUrl(project.logoUri) ? project.logoUri : null,
         balanceUsd,
       };
     });

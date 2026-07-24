@@ -1,5 +1,6 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { WalletButton, WalletConnectButton } from "@/components/WalletButton";
+import { ParaAuthContext } from "@/providers/ParaAuthContext";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,8 +10,9 @@ const wallet = vi.hoisted(() => ({
   chainId: vi.fn(),
   connectAsync: vi.fn(),
   connectors: vi.fn(),
-  disconnect: vi.fn(),
+  disconnectAsync: vi.fn(),
   jbChainId: vi.fn(),
+  logoutParaSession: vi.fn(),
   reset: vi.fn(),
   switchChainAsync: vi.fn(),
 }));
@@ -26,7 +28,7 @@ vi.mock("wagmi", () => ({
     reset: wallet.reset,
   }),
   useConnectors: wallet.connectors,
-  useDisconnect: () => ({ disconnect: wallet.disconnect, isPending: false }),
+  useDisconnect: () => ({ disconnectAsync: wallet.disconnectAsync, isPending: false }),
   useSwitchChain: () => ({
     isPending: false,
     switchChainAsync: wallet.switchChainAsync,
@@ -34,6 +36,10 @@ vi.mock("wagmi", () => ({
 }));
 
 vi.mock("@/lib/nana/project", () => ({ useJBChainId: wallet.jbChainId }));
+vi.mock("@/providers/para-logout", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/providers/para-logout")>();
+  return { ...original, logoutParaSession: wallet.logoutParaSession };
+});
 
 describe("local wallet controls", () => {
   beforeEach(() => {
@@ -50,13 +56,15 @@ describe("local wallet controls", () => {
       { id: "injected", name: "Browser Wallet", uid: "browser-wallet" },
     ]);
     wallet.connectAsync.mockResolvedValue(undefined);
+    wallet.disconnectAsync.mockResolvedValue(undefined);
+    wallet.logoutParaSession.mockResolvedValue(undefined);
     wallet.switchChainAsync.mockResolvedValue(undefined);
   });
 
   it("lets a disconnected user explicitly choose a discovered wallet", async () => {
     render(<WalletConnectButton />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Connect wallet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Browser Wallet" }));
 
     await waitFor(() => {
@@ -64,6 +72,23 @@ describe("local wallet controls", () => {
         connector: expect.objectContaining({ uid: "browser-wallet" }),
       });
     });
+  });
+
+  it("offers embedded email or social authentication without replacing browser wallets", () => {
+    const requestSignIn = vi.fn();
+    render(
+      <ParaAuthContext.Provider
+        value={{ enabled: true, modalOpen: false, requestSignIn, sessionVersion: 0 }}
+      >
+        <WalletConnectButton />
+      </ParaAuthContext.Provider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Email or social/i }));
+
+    expect(requestSignIn).toHaveBeenCalledOnce();
+    expect(wallet.connectAsync).not.toHaveBeenCalled();
   });
 
   it("prefers named EIP-6963 wallets and supports complete menu keyboard navigation", () => {
@@ -74,7 +99,7 @@ describe("local wallet controls", () => {
     ]);
     render(<WalletConnectButton />);
 
-    const trigger = screen.getByRole("button", { name: "Connect wallet" });
+    const trigger = screen.getByRole("button", { name: "Sign in" });
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
 
     const first = screen.getByRole("menuitem", { name: "MetaMask" });
@@ -99,7 +124,7 @@ describe("local wallet controls", () => {
   it("dismisses the wallet picker with Escape", () => {
     render(<WalletConnectButton />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Connect wallet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(screen.getByRole("menu", { name: "Available wallets" })).toBeVisible();
 
     fireEvent.keyDown(document, { key: "Escape" });
@@ -124,7 +149,29 @@ describe("local wallet controls", () => {
 
     expect(screen.getByText("Ethereum")).toBeVisible();
     fireEvent.click(screen.getByRole("menuitem", { name: "Disconnect" }));
-    expect(wallet.disconnect).toHaveBeenCalledOnce();
+    await waitFor(() => expect(wallet.disconnectAsync).toHaveBeenCalledOnce());
+  });
+
+  it("keeps a failed Para logout connected and offers a sanitized retry", async () => {
+    const { ParaSessionLogoutError } = await import("@/providers/para-logout");
+    wallet.account.mockReturnValue({
+      address: "0x1234567890abcdef1234567890abcdef12345678",
+      chain: { name: "Ethereum" },
+      connector: { id: "para" },
+      isConnected: true,
+    });
+    wallet.logoutParaSession.mockRejectedValueOnce(new ParaSessionLogoutError());
+
+    render(<WalletButton />);
+    fireEvent.click(await screen.findByRole("button", { name: /0x1234.*5678/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Disconnect" }));
+
+    expect(
+      await screen.findByText(
+        "The embedded wallet could not sign out. Your session is still connected; try again.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Disconnect" })).toBeVisible();
   });
 
   it("offers connection before chain switching when the user is disconnected", () => {

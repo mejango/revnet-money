@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { IpfsImage } from "@/components/IpfsImage";
 import Link from "next/link";
 import { getTopProjects } from "./getTopProjects";
 
@@ -40,17 +40,14 @@ export async function TopProjectsTable() {
                   href={`/${project.chainSlug}:${project.projectId}`}
                   className="group flex min-h-11 min-w-0 items-center gap-2 sm:gap-3"
                 >
-                  {project.logoUrl ? (
-                    <Image
-                      src={project.logoUrl}
-                      alt={project.name}
-                      width={32}
-                      height={32}
-                      className="rounded-full object-cover shrink-0 group-hover:opacity-70 transition-opacity"
-                    />
-                  ) : (
-                    <div className="size-8 rounded-full bg-zinc-100 shrink-0" />
-                  )}
+                  <IpfsImage
+                    src={project.logoUri}
+                    alt={project.name}
+                    width={32}
+                    height={32}
+                    className="size-8 shrink-0 rounded-full object-cover transition-opacity group-hover:opacity-70"
+                    fallback={<div className="size-8 shrink-0 rounded-full bg-zinc-100" />}
+                  />
                   <div className="min-w-0">
                     <div className="max-sm:text-sm font-medium truncate group-hover:text-teal-600 transition-colors">
                       {project.name}

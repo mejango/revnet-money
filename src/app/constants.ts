@@ -49,5 +49,5 @@ export const USDC_DECIMALS = 6;
 
 export const isProduction = process.env.NODE_ENV === "production";
 export const externalBaseUrl = isProduction
-  ? "https://app.revnet.eth.sucks"
+  ? "https://revnet.money"
   : "https://147585e1f72a.ngrok.app";

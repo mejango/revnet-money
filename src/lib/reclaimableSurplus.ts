@@ -10,7 +10,7 @@ import {
 import { getContract, parseUnits } from "viem";
 import { toBaseCurrencyId } from "./currency";
 import { applyNanaFee, applyRevFee } from "./feeHelpers";
-import { getViemPublicClient } from "./wagmiConfig";
+import { getViemPublicClient } from "./wagmiTransports";
 
 export async function getReclaimableSurplus(
   chainId: JBChainId,

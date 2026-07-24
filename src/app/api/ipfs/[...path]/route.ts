@@ -1,15 +1,22 @@
-import { OPEN_IPFS_GATEWAY_HOSTNAME } from "@/lib/ipfs";
+import { ipfsMediaGatewayUrls } from "@/lib/ipfs";
 import { isIpfsCid } from "@/lib/ipfs-cid";
 import { readBoundedBody } from "@/lib/server/readBoundedBody";
 import { NextRequest } from "next/server";
 
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
-const UPSTREAM_TIMEOUT_MS = 15_000;
+const PRIMARY_GATEWAY_TIMEOUT_MS = 6_000;
+const FALLBACK_GATEWAY_TIMEOUT_MS = 12_000;
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]{1,128}$/u;
 
 function supportedMediaType(value: string | null) {
   const type = value?.split(";", 1)[0].trim().toLowerCase() ?? "";
-  return /^(?:image|audio|video)\//u.test(type) || type === "application/octet-stream";
+  return (
+    /^(?:image|audio|video)\//u.test(type) ||
+    type === "application/octet-stream" ||
+    type === "application/json" ||
+    type.endsWith("+json") ||
+    type === "text/plain"
+  );
 }
 
 /**
@@ -31,22 +38,38 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pat
     return Response.json({ error: "invalid IPFS path" }, { status: 400 });
   }
   const path = segments.map(encodeURIComponent).join("/");
-  let upstream: Response;
-  try {
-    upstream = await fetch(`https://${OPEN_IPFS_GATEWAY_HOSTNAME}/ipfs/${path}`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    });
-  } catch (error) {
-    const timeout = (error as { name?: string }).name === "TimeoutError";
-    return Response.json(
-      { error: timeout ? "IPFS gateway timed out" : "IPFS gateway unavailable" },
-      { status: timeout ? 504 : 502 },
-    );
+  const gatewayUrls = ipfsMediaGatewayUrls(`ipfs://${path}`);
+  let upstream: Response | undefined;
+  let lastStatus: number | undefined;
+  let timedOut = false;
+
+  for (const url of gatewayUrls) {
+    try {
+      const candidate = await fetch(url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(
+          new URL(url).hostname === "gateway.pinata.cloud"
+            ? FALLBACK_GATEWAY_TIMEOUT_MS
+            : PRIMARY_GATEWAY_TIMEOUT_MS,
+        ),
+      });
+      if (candidate.ok) {
+        upstream = candidate;
+        break;
+      }
+      lastStatus = candidate.status;
+      await candidate.body?.cancel();
+    } catch (error) {
+      timedOut ||= (error as { name?: string }).name === "TimeoutError";
+    }
   }
 
-  if (!upstream.ok) {
-    return new Response(null, { status: upstream.status });
+  if (!upstream) {
+    if (lastStatus) return new Response(null, { status: lastStatus });
+    return Response.json(
+      { error: timedOut ? "IPFS gateways timed out" : "IPFS gateways unavailable" },
+      { status: timedOut ? 504 : 502 },
+    );
   }
 
   const contentType = upstream.headers.get("content-type");

@@ -425,6 +425,8 @@ interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement> {
   onCloseAutoFocus?: (event: Event) => void;
   onEscapeKeyDown?: (event: KeyboardEvent) => void;
   onOpenAutoFocus?: (event: Event) => void;
+  overlayClassName?: string;
+  overlayStyle?: React.CSSProperties;
 }
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
@@ -436,6 +438,8 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
       onCloseAutoFocus,
       onEscapeKeyDown,
       onOpenAutoFocus,
+      overlayClassName,
+      overlayStyle,
       ...props
     },
     forwardedRef,
@@ -460,7 +464,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
 
     return createPortal(
       <>
-        <DialogOverlay />
+        <DialogOverlay className={overlayClassName} style={overlayStyle} />
         <div
           ref={ref}
           id={context.contentId}
