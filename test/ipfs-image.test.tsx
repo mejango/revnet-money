@@ -44,6 +44,36 @@ describe("IPFS image failure handling", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
+  it("renders a bounded inert inline SVG from project metadata", () => {
+    const svg =
+      "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2010%2010%22%3E%3Crect%20width%3D%2210%22%20height%3D%2210%22%2F%3E%3C%2Fsvg%3E";
+    render(
+      <IpfsImage
+        src={svg}
+        alt="Inline project logo"
+        fallback={<span>Safe fallback</span>}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Inline project logo" })).toHaveAttribute(
+      "src",
+      svg,
+    );
+  });
+
+  it("rejects active inline SVG metadata", () => {
+    render(
+      <IpfsImage
+        src="data:image/svg+xml,%3Csvg%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E%3C%2Fsvg%3E"
+        alt="Unsafe project logo"
+        fallback={<span>Safe fallback</span>}
+      />,
+    );
+
+    expect(screen.getByText("Safe fallback")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Unsafe project logo" })).not.toBeInTheDocument();
+  });
+
   it("keeps shop cards usable when tier media fails in the browser", () => {
     render(
       <TierMediaPreview

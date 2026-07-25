@@ -89,6 +89,8 @@ export function TokenPriceChart({
     issuancePrice: showIssuance ? point.issuancePrice : undefined,
     ammPrice: showAmm ? point.ammPrice : undefined,
     floorPrice: showFloor ? point.floorPrice : undefined,
+    minimumCashOutPrice: showFloor ? point.minimumCashOutPrice : undefined,
+    cashOutChangeReason: showFloor ? point.cashOutChangeReason : undefined,
     totalSupply: showFloor ? point.totalSupply : undefined,
     totalBalance: showFloor ? point.totalBalance : undefined,
     cashOutTaxRate: showFloor ? point.cashOutTaxRate : undefined,
@@ -113,9 +115,19 @@ export function TokenPriceChart({
   if (showFloor && hasFloorData) {
     visibleSeries.push({
       key: "floorPrice",
-      label: "Floor",
+      label: "Cash out",
       color: "var(--chart-3)",
       value: (point) => point.floorPrice,
+    });
+    visibleSeries.push({
+      key: "minimumCashOutPrice",
+      label: "Cash out minimum",
+      color: "var(--chart-3)",
+      value: (point) => point.minimumCashOutPrice,
+      curve: "linear",
+      dash: "5 4",
+      width: 1.3,
+      opacity: 0.55,
     });
   }
   const referenceLines: ChartReferenceLine[] = visibleStages.map((stage) => ({
@@ -187,7 +199,7 @@ export function TokenPriceChart({
           xValue={(point) => point.timestamp}
           series={visibleSeries}
           ariaLabel={`${tokenSymbol} price history`}
-          description={`Issuance, pool, and cash out prices for ${tokenSymbol} over the selected ${range} range.`}
+          description={`Issuance, pool, cash out, and dotted minimum cash out prices for ${tokenSymbol} over the selected ${range} range.`}
           className="mt-6 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
           margin={{ left: 84, right: 20, top: 24, bottom: 36 }}
           xDomain={[firstTimestamp ?? 0, lastTimestamp ?? 1]}

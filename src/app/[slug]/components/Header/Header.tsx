@@ -2,11 +2,16 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
-import { IpfsImage } from "@/components/IpfsImage";
+import { ImageWithFallback } from "@/components/IpfsImage";
 import { FastForward as ForwardIcon } from "@/components/ui/icons";
 import { ParticipantsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { Project } from "@/lib/bendystraw/types";
-import { useJBChainId, useJBProjectMetadataContext, useJBTokenContext } from "@/lib/nana/project";
+import {
+  useJBChainId,
+  useJBProject,
+  useJBProjectMetadataContext,
+  useJBTokenContext,
+} from "@/lib/nana/project";
 import { useSuckers } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
 import { Profile } from "@/lib/profile";
@@ -32,6 +37,7 @@ export function Header(props: Props) {
   const { isRevnet, operatorPromise, projects } = props;
   const operator = use(operatorPromise);
   const chainId = useJBChainId();
+  const project = useJBProject();
   const { metadata } = useJBProjectMetadataContext();
   const { token: tokenContext } = useJBTokenContext();
 
@@ -119,8 +125,12 @@ export function Header(props: Props) {
   return (
     <header>
       <div className="flex flex-col sm:flex-row sm:items-center items-start gap-4 sm:mb-6 mb-4">
-        <IpfsImage
-          src={logoUri}
+        <ImageWithFallback
+          src={
+            chainId && project
+              ? `/api/project-image/${chainId}/${project.projectId}`
+              : logoUri
+          }
           className="block size-[120px] overflow-hidden border border-zinc-200 object-cover sm:size-36"
           alt={`${projectName || "Project"} logo`}
           width={144}

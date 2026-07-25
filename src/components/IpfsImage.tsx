@@ -1,6 +1,7 @@
 "use client";
 
 import { ipfsMediaGatewayUrls, ipfsUriToAppUrl } from "@/lib/ipfs";
+import { safeDataImageUrl } from "@/lib/safe-data-image";
 import type { ImgHTMLAttributes, ReactNode } from "react";
 import { useState } from "react";
 
@@ -34,9 +35,12 @@ export function ImageWithFallback({ alt, fallback, src, ...props }: Props) {
  * a broken-image icon.
  */
 export function IpfsImage({ alt, fallback, src, ...props }: Props) {
+  const inlineSrc = safeDataImageUrl(src);
   const appSrc = ipfsUriToAppUrl(src);
   const mediaCacheSrc = ipfsMediaGatewayUrls(src)[0];
-  const candidates = [...new Set([mediaCacheSrc, appSrc].filter((url): url is string => !!url))];
+  const candidates = [
+    ...new Set([inlineSrc, mediaCacheSrc, appSrc].filter((url): url is string => !!url)),
+  ];
   const [failedSources, setFailedSources] = useState<string[]>([]);
   const safeSrc = candidates.find((candidate) => !failedSources.includes(candidate));
 

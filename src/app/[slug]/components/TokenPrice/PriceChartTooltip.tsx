@@ -10,6 +10,7 @@ type PriceTooltipDatum = {
   totalSupply?: string;
   totalBalance?: string;
   cashOutTaxRate?: number;
+  cashOutChangeReason?: string;
 };
 
 interface Props {
@@ -68,6 +69,11 @@ export function PriceChartTooltip({
           </div>
         </div>
       )}
+      {hasFloorPrice && datum.cashOutChangeReason ? (
+        <p className="mt-2 max-w-72 border-t border-zinc-700 pt-2 text-xs leading-relaxed text-zinc-300">
+          {datum.cashOutChangeReason}
+        </p>
+      ) : null}
     </div>
   );
 }

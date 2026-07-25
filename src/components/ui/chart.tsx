@@ -30,6 +30,9 @@ export type ChartSeries<T extends ChartDatum> = {
   color: string;
   value: (datum: T) => number | undefined;
   curve?: "linear" | "monotone";
+  dash?: string;
+  width?: number;
+  opacity?: number;
   area?: {
     color?: string;
     opacityFrom?: number;
@@ -448,7 +451,9 @@ export function CartesianChart<T extends ChartDatum>({
                   d={path}
                   fill="none"
                   stroke={item.color}
-                  strokeWidth="2"
+                  strokeWidth={item.width ?? 2}
+                  strokeDasharray={item.dash}
+                  opacity={item.opacity}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"

@@ -1,5 +1,4 @@
 import { Nav } from "@/components/layout/Nav";
-import { ipfsMediaGatewayUrls, ipfsUriToAppUrl } from "@/lib/ipfs";
 import { parseSlug } from "@/lib/slug";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -43,12 +42,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const { projectId, chainId } = parseSlug(slug);
   const project = projectId ? await getProject(projectId, chainId) : null;
-  const projectImagePath = ipfsUriToAppUrl(project?.logoUri);
   const imageUrl =
-    ipfsMediaGatewayUrls(project?.logoUri)[0] ??
-    (projectImagePath
-      ? new URL(projectImagePath, origin).href
-      : `${origin}/assets/img/rev-og-191-1.png`);
+    project && projectId
+      ? new URL(`/api/project-og/${chainId}/${projectId}`, origin).href
+      : `${origin}/assets/img/revnet-social.png`;
 
   return buildMetadata({
     title: project?.name ? `${project.name} | REVNET` : "Revnet",
@@ -129,7 +126,7 @@ function buildMetadata({
         {
           url: imageUrl,
           width: 1200,
-          height: 800,
+          height: 630,
           alt: `${title} preview image`,
         },
       ],

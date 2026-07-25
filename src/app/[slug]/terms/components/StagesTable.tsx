@@ -26,6 +26,7 @@ import {
   RulesetWeight,
 } from "@bananapus/nana-sdk-core";
 import { formatUnits } from "viem";
+import { formatAdaptivePercent } from "@/lib/formatPercent";
 import { useReadContracts } from "wagmi";
 import type { Ruleset } from "../getRulesets";
 
@@ -115,7 +116,7 @@ export function StagesTable({ rulesets }: Props) {
       endDate,
       durationDays: endDate ? differenceInWholeDays(endDate, startDate) : null,
       issuanceRate,
-      cutPercent: (ruleset.weightCutPercent * 100).toFixed(2),
+      cutPercent: formatAdaptivePercent(ruleset.weightCutPercent * 100),
       cutFrequencyDays: ruleset.duration / 86400,
       splitLimit: hasSplits && reservedPercent ? `${reservedPercent.formatPercentage()}%` : null,
       autoIssuance: commaNumber(
