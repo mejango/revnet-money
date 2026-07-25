@@ -46,7 +46,7 @@ export default function Page() {
       <div className="container mt-16 pr-[1.5rem] pl-[1.5rem] sm:mt-24 sm:pr-[2rem] sm:pl-[2rem] sm:px-8">
         <div className="flex flex-col justify-center items-center">
           <Image
-            src="/assets/img/hovercar.png"
+            src="/assets/img/hovercar-cutout.webp"
             width={1619}
             height={971}
             className="aspect-[3.2/1] w-full max-w-[600px] object-cover"
@@ -84,25 +84,25 @@ export default function Page() {
 
         <div className="border border-zinc-100 mt-20"></div>
 
-      <section
-        aria-labelledby="how-revnets-work"
-        className="mx-auto mt-12 max-w-[72ch] text-left text-lg"
-      >
-        <Image
-          src="/assets/img/drapery.webp"
-          width={1200}
-          height={800}
-          sizes="(max-width: 768px) calc(100vw - 3rem), 720px"
-          className="mx-auto mb-10 h-auto w-full max-w-[720px]"
-          loading="lazy"
-          alt="A classical draped figure"
-        />
-        <h2 id="how-revnets-work" className="text-2xl font-semibold md:text-3xl">
-          How a revnet works
-        </h2>
-        <p className="mt-4">
-          Revnets trade flexibility for guarantees that stand the test of time.
-        </p>
+        <section
+          aria-labelledby="how-revnets-work"
+          className="mx-auto mt-12 max-w-[72ch] text-left text-lg"
+        >
+          <Image
+            src="/assets/img/drapery-cutout.webp"
+            width={1200}
+            height={800}
+            sizes="(max-width: 768px) calc(100vw - 3rem), 720px"
+            className="mx-auto mb-10 h-auto w-full max-w-[720px]"
+            loading="lazy"
+            alt="A classical draped figure"
+          />
+          <h2 id="how-revnets-work" className="text-2xl font-semibold md:text-3xl">
+            How a revnet works
+          </h2>
+          <p className="mt-4">
+            Revnets trade flexibility for guarantees that stand the test of time.
+          </p>
           <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 sm:ml-10">
             <li>Money enters through fundraises and revenues.</li>
             <li>
@@ -119,22 +119,22 @@ export default function Page() {
           </ol>
         </section>
 
-      <section
-        aria-labelledby="why-revnets"
-        className="mx-auto mt-16 max-w-[72ch] text-left text-lg"
-      >
-        <Image
-          src="/assets/img/fig-tree.webp"
-          width={1200}
-          height={800}
-          sizes="(max-width: 768px) calc(100vw - 3rem), 900px"
-          className="mx-auto mb-10 h-auto w-full max-w-[900px]"
-          loading="lazy"
-          alt="A broad fig tree bearing fruit"
-        />
-        <h2 id="why-revnets" className="text-2xl font-semibold md:text-3xl">
-          Why revnets?
-        </h2>
+        <section
+          aria-labelledby="why-revnets"
+          className="mx-auto mt-16 max-w-[72ch] text-left text-lg"
+        >
+          <Image
+            src="/assets/img/fig-tree-cutout.webp"
+            width={1200}
+            height={800}
+            sizes="(max-width: 768px) calc(100vw - 3rem), 900px"
+            className="mx-auto mb-10 h-auto w-full max-w-[900px]"
+            loading="lazy"
+            alt="A broad fig tree bearing fruit"
+          />
+          <h2 id="why-revnets" className="text-2xl font-semibold md:text-3xl">
+            Why revnets?
+          </h2>
           <p className="mt-4">
             Simple enough for startups. Powerful enough for global organizations.
           </p>
@@ -150,7 +150,7 @@ export default function Page() {
 
         <section aria-labelledby="join-us" className="mx-auto mt-16 max-w-[72ch] text-left text-lg">
           <Image
-            src="/assets/img/butterfly.webp"
+            src="/assets/img/butterfly-cutout.webp"
             width={720}
             height={720}
             sizes="(max-width: 380px) calc(100vw - 3rem), 320px"
