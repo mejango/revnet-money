@@ -30,13 +30,24 @@ describe("Bendystraw URL configuration", () => {
   });
 
   it("preserves explicit deployment overrides", async () => {
-    process.env.NEXT_PUBLIC_BENDYSTRAW_URL = "https://mainnet-indexer.example/graphql";
-    process.env.NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL = "https://testnet-indexer.example/graphql";
+    process.env.NEXT_PUBLIC_BENDYSTRAW_URL = "https://mainnet-indexer.example";
+    process.env.NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL =
+      "https://testnet-indexer.example/";
     vi.resetModules();
 
     const { getBendystrawUrl } = await import("@/graphql/constants");
 
     expect(getBendystrawUrl(8453)).toBe("https://mainnet-indexer.example/graphql");
     expect(getBendystrawUrl(84532)).toBe("https://testnet-indexer.example/graphql");
+  });
+
+  it("normalizes GraphQL paths and removes query strings", async () => {
+    process.env.NEXT_PUBLIC_BENDYSTRAW_URL =
+      "https://mainnet-indexer.example/graphql/?key=ignored";
+    vi.resetModules();
+
+    const { getBendystrawUrl } = await import("@/graphql/constants");
+
+    expect(getBendystrawUrl(1)).toBe("https://mainnet-indexer.example/graphql");
   });
 });

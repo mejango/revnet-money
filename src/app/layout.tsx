@@ -45,8 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const fullPath = "/";
   const url = new URL(fullPath, origin);
 
-  // gone but not forgotten anachronistic1-1.png
-  const imgUrl = `${origin}/assets/img/rev-og-191-1.png`;
+  const imgUrl = `${origin}/assets/img/revnet-social.png`;
   return {
     metadataBase: new URL(origin),
     title: "Revnet",
@@ -57,9 +56,10 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [
         {
           url: imgUrl,
-          width: 1200,
-          height: 800,
-          alt: "Revnet preview image",
+          width: 1428,
+          height: 804,
+          alt: "Revnet — an autonomous business model for the open web",
+          type: "image/png",
         },
       ],
       type: "website",
