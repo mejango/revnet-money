@@ -13,9 +13,7 @@ async function openCreatePage(page: Page): Promise<BrowserBoundary> {
 
   const response = await page.goto("/create", { waitUntil: "domcontentloaded" });
   expectSecurityHeaders(response);
-  await expect(
-    page.getByRole("heading", { name: "Design and deploy a revnet for your project" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create a revnet" })).toBeVisible();
   return boundary;
 }
 
