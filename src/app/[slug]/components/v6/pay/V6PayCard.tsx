@@ -28,6 +28,7 @@ import {
 } from "@/lib/v6/pay";
 import {
   JB_CHAINS,
+  JBChainId,
   jbContractAddress,
   JBCoreContracts,
   jbMultiTerminalAbi,
@@ -69,6 +70,15 @@ import {
 } from "./usePayShop";
 import { usePaySurface } from "./usePaySurface";
 
+function payChainName(chainId: JBChainId): string {
+  const compactNames: Partial<Record<JBChainId, string>> = {
+    11155420: "OP Sep",
+    84532: "Base Sep",
+    421614: "Arb Sep",
+  };
+  return compactNames[chainId] ?? JB_CHAINS[chainId]?.name ?? String(chainId);
+}
+
 /**
  * The full-featured v6 pay card (website/ pay-card parity): mode + chain
  * header, on-chain accepted-token list (direct + live-probed via-router),
@@ -97,7 +107,7 @@ export function V6PayCard() {
   const projectTokenLabel = projectToken?.symbol
     ? formatTokenSymbol(projectToken.symbol)
     : "tokens";
-  const nativeSymbol = JB_CHAINS[chainId]?.nativeTokenSymbol ?? "ETH";
+  const nativeSymbol = "ETH";
 
   // ---- Form state ----
   const [mode, setMode] = useState<V6PayMode>("pay");
@@ -808,12 +818,12 @@ export function V6PayCard() {
                   labelClassName="text-md text-black-700"
                   options={chainOptions.map((option) => ({
                     value: String(option.peerChainId),
-                    label: JB_CHAINS[option.peerChainId]?.name ?? String(option.peerChainId),
+                    label: payChainName(option.peerChainId),
                   }))}
                 />
               ) : (
                 <span className="shrink-0 whitespace-nowrap text-md text-black-700">
-                  {JB_CHAINS[chainId]?.name}
+                  {payChainName(chainId)}
                 </span>
               )}
             </div>

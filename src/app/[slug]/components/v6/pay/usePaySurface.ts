@@ -2,7 +2,6 @@
 
 import { payTokenCurrencyId, routerPayRouteWorks, V6PayTokenOption } from "@/lib/v6/pay";
 import {
-  JB_CHAINS,
   JBChainId,
   jbContractAddress,
   JBCoreContracts,
@@ -47,7 +46,7 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
     retry: 1,
     queryFn: async (): Promise<V6PaySurface> => {
       const client = publicClient as PublicClient;
-      const nativeSymbol = JB_CHAINS[chainId]?.nativeTokenSymbol ?? "ETH";
+      const nativeSymbol = "ETH";
       const directory = jbContractAddress[6][JBCoreContracts.JBDirectory][chainId];
       const routerRegistry = jbContractAddress[6][
         JBRouterTerminalContracts.JBRouterTerminalRegistry
