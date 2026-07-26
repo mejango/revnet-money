@@ -16,6 +16,7 @@ import {
 } from "@/lib/transaction-review";
 import { JB_CHAINS, jbContractAddress, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from "react";
+import { createPortal } from "react-dom";
 import { formatEther, toFunctionSelector, type AbiFunction, type Address } from "viem";
 import { useAccount } from "wagmi";
 
@@ -169,7 +170,7 @@ function ReviewModal({
     };
   }, [finish]);
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-melon-950/60 p-3 sm:p-8"
       onMouseDown={(event) => event.target === event.currentTarget && finish(false)}
@@ -204,24 +205,6 @@ function ReviewModal({
                 ? "This signature authorizes the exact typed data and resulting calls below; it does not itself prove those calls have executed."
                 : "These are the exact app-controlled fields your wallet will be asked to send. Wallet-selected nonce and network fees are not shown.")}
           </p>
-          <div className="mt-4 space-y-4">
-            {pending.request.calls.map((call, index) => (
-              <PrettyCall
-                key={`${call.chainId}:${call.to}:${index}`}
-                call={call}
-                index={index}
-                total={pending.request.calls.length}
-              />
-            ))}
-          </div>
-          <details className="mt-4 border border-melon-300 bg-melon-50">
-            <summary className="cursor-pointer px-4 py-3 text-sm font-bold">
-              Raw transaction payload
-            </summary>
-            <pre className="max-h-96 overflow-auto border-t border-melon-300 bg-melon-950 p-4 text-[11px] leading-relaxed text-melon-25">
-              {transactionReviewJson(pending.request)}
-            </pre>
-          </details>
           <button
             type="button"
             className="mt-4 border border-melon-600 bg-melon-100 px-4 py-2 text-xs font-bold hover:bg-melon-200"
@@ -241,6 +224,24 @@ function ReviewModal({
                 ? "Could not copy prompt"
                 : "[copy tx audit prompt]"}
           </button>
+          <div className="mt-4 space-y-4">
+            {pending.request.calls.map((call, index) => (
+              <PrettyCall
+                key={`${call.chainId}:${call.to}:${index}`}
+                call={call}
+                index={index}
+                total={pending.request.calls.length}
+              />
+            ))}
+          </div>
+          <details className="mt-4 border border-melon-300 bg-melon-50">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-bold">
+              Raw transaction payload
+            </summary>
+            <pre className="max-h-96 overflow-auto border-t border-melon-300 bg-melon-950 p-4 text-[11px] leading-relaxed text-melon-25">
+              {transactionReviewJson(pending.request)}
+            </pre>
+          </details>
         </div>
         <footer className="border-t border-melon-300 bg-melon-50 p-4 sm:p-6">
           <label className="flex items-start gap-3 border border-melon-300 bg-melon-25 p-3 text-sm">
@@ -275,7 +276,8 @@ function ReviewModal({
           </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

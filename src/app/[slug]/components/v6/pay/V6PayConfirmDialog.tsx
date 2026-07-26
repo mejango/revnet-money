@@ -1,7 +1,6 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,14 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useSuckers } from "@/lib/nana/suckers";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { Abi, Address, Hex } from "viem";
@@ -70,8 +61,8 @@ const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "safe-proposed" | "succ
 
 /**
  * The confirm-before-send dialog: a human summary of exactly what will be
- * sent, chain selection (old PayDialog style), and the wallet-aware action
- * button — connect and switch-chain prompts live HERE, not on the card.
+ * sent and the wallet-aware action button. The payment card owns route and
+ * chain selection; this dialog only confirms the resolved transaction.
  */
 export function V6PayConfirmDialog({
   open,
@@ -83,7 +74,6 @@ export function V6PayConfirmDialog({
   projectTokenSymbol,
   txHash,
   onConfirm,
-  onSwitchChain,
   onDone,
 }: {
   open: boolean;
@@ -95,7 +85,8 @@ export function V6PayConfirmDialog({
   projectTokenSymbol: string;
   txHash: `0x${string}` | undefined;
   onConfirm: () => void;
-  onSwitchChain: (chainId: string) => void;
+  /** Retained for caller compatibility; chain selection belongs to the payment card. */
+  onSwitchChain?: (chainId: string) => void;
   onDone: () => void;
 }) {
   const busy =
@@ -200,11 +191,6 @@ export function V6PayConfirmDialog({
                           Adds to the project balance — nothing else.
                         </SummaryRow>
                       )}
-                      {prepared.reservedTokens != null && prepared.reservedTokens > 0n ? (
-                        <SummaryRow label="Splits get">
-                          {formatPayAmount(prepared.reservedTokens, 18)} {projectTokenSymbol}
-                        </SummaryRow>
-                      ) : null}
                       {prepared.cartRows.length > 0 ? (
                         <SummaryRow label="Items">
                           {prepared.cartRows
@@ -213,12 +199,6 @@ export function V6PayConfirmDialog({
                         </SummaryRow>
                       ) : null}
                       {prepared.memo ? <SummaryRow label="Note">{prepared.memo}</SummaryRow> : null}
-                      {prepared.viaRouterRoute ? (
-                        <p className="text-xs text-zinc-500">
-                          Your {prepared.token.symbol} is swapped into the project&apos;s accounting
-                          token via the router.
-                        </p>
-                      ) : null}
                       {prepared.needsApproval ? (
                         <p className="text-xs text-zinc-500">
                           Two wallet steps: approve {prepared.token.symbol} for the terminal, then
@@ -256,13 +236,7 @@ export function V6PayConfirmDialog({
                     <p className="py-4 text-sm text-red-600">{error}</p>
                   ) : null}
 
-                  <div className="flex flex-row justify-between items-end gap-3">
-                    <ChainSelector
-                      tokenSymbol={projectTokenSymbol}
-                      chainId={chainId}
-                      disabled={busy}
-                      onSwitchChain={onSwitchChain}
-                    />
+                  <div className="flex justify-end">
                     <ButtonWithWallet
                       targetChainId={chainId}
                       loading={busy || (phase === "preparing" && !!address)}
@@ -284,63 +258,6 @@ export function V6PayConfirmDialog({
         </DialogHeader>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/** Old PayDialog's chain presentation: "<SYM> is available on: [chain select]". */
-function ChainSelector({
-  tokenSymbol,
-  chainId,
-  disabled,
-  onSwitchChain,
-}: {
-  tokenSymbol: string;
-  chainId: JBChainId;
-  disabled?: boolean;
-  onSwitchChain: (chainId: string) => void;
-}) {
-  const { data: suckers } = useSuckers();
-  const { selectedSucker } = useSelectedSucker();
-
-  if (suckers && suckers.length > 1) {
-    return (
-      <div className="flex flex-col mt-4">
-        <div className="text-sm text-zinc-500">{tokenSymbol} is available on:</div>
-        <Select
-          disabled={disabled}
-          onValueChange={onSwitchChain}
-          value={selectedSucker ? selectedSucker.peerChainId.toString() : undefined}
-        >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Select chain" />
-          </SelectTrigger>
-          <SelectContent>
-            {suckers.map((s) => (
-              <SelectItem
-                key={s.peerChainId}
-                value={s.peerChainId.toString()}
-                className="flex items-center gap-2"
-              >
-                <div className="flex items-center gap-2">
-                  <ChainLogo chainId={s.peerChainId} />
-                  <span>{JB_CHAINS[s.peerChainId].name}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col mt-4">
-      <div className="text-xs text-slate-500">{tokenSymbol} is only on:</div>
-      <div className="flex flex-row items-center gap-2 pl-3 min-w-fit pr-5 py-2 border ring-offset-white">
-        <ChainLogo chainId={chainId} />
-        {JB_CHAINS[chainId].name}
-      </div>
-    </div>
   );
 }
 

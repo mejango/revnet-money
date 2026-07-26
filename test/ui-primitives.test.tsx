@@ -47,6 +47,11 @@ describe("dependency-free UI primitives", () => {
     fireEvent.click(trigger);
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     expect(dialog).toHaveAccessibleDescription("Change project settings.");
+    expect(dialog.className).not.toMatch(/animate-in|fade-in|zoom-in|slide-in/);
+    const openOverlay = document.querySelector<HTMLElement>(
+      "[data-ui-dialog-portal] > [aria-hidden=true]",
+    );
+    expect(openOverlay?.className).not.toMatch(/animate-in|fade-in/);
     await waitFor(() => expect(screen.getByLabelText("Project name")).toHaveFocus());
 
     const close = screen.getByRole("button", { name: "Close" });
@@ -91,7 +96,9 @@ describe("dependency-free UI primitives", () => {
     const trigger = screen.getByRole("combobox", { name: "Network" });
     expect(trigger).toHaveTextContent("Choose a network");
     fireEvent.click(trigger);
-    expect(await screen.findByRole("listbox")).toBeVisible();
+    const listbox = await screen.findByRole("listbox");
+    expect(listbox).toBeVisible();
+    expect(listbox.className).not.toMatch(/animate-in|fade-in|zoom-in|slide-in/);
     expect(screen.getByRole("option", { name: "Disabled" })).toHaveAttribute(
       "aria-disabled",
       "true",

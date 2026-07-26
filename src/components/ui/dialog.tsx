@@ -232,10 +232,7 @@ const DialogOverlay = React.forwardRef<HTMLDivElement, DialogOverlayProps>(
         ref={ref}
         aria-hidden="true"
         data-state="open"
-        className={cn(
-          "fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-          className,
-        )}
+        className={cn("fixed inset-0 z-50 bg-black/80", className)}
         onPointerDown={(event) => {
           onPointerDown?.(event);
           if (event.target === event.currentTarget && !event.defaultPrevented) {
@@ -475,7 +472,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
           tabIndex={-1}
           data-state="open"
           className={cn(
-            "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-zinc-200 bg-white p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] dark:border-zinc-800 dark:bg-zinc-950 max-h-[90%] overflow-y-auto overscroll-none",
+            "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-zinc-200 bg-white p-6 shadow-lg dark:border-zinc-800 dark:bg-zinc-950 max-h-[90%] overflow-y-auto overscroll-none",
             className,
           )}
           {...props}
