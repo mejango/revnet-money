@@ -1,4 +1,7 @@
-import { payPanelLayoutClasses } from "@/app/[slug]/components/v6/pay/payCardLayout";
+import {
+  payPanelLayoutClasses,
+  paySettlementLabel,
+} from "@/app/[slug]/components/v6/pay/payCardLayout";
 import { describe, expect, it } from "vitest";
 
 describe("v6 pay card shop-strip spacing", () => {
@@ -37,5 +40,15 @@ describe("v6 pay card shop-strip spacing", () => {
         shopTierCount: 3,
       }),
     ).toBe("py-0");
+  });
+});
+
+describe("v6 pay card settlement label", () => {
+  it("calls every router/AMM settlement a swap", () => {
+    expect(paySettlementLabel("swap")).toBe("Swap");
+  });
+
+  it("calls direct terminal settlement issuance", () => {
+    expect(paySettlementLabel("multi")).toBe("Issuance");
   });
 });

@@ -60,7 +60,7 @@ import { useShopCart } from "../ShopCartContext";
 import { TextSelect } from "./TextSelect";
 import { PreparedV6Pay, V6PayConfirmDialog, V6PayPhase } from "./V6PayConfirmDialog";
 import { V6PayShopStrip } from "./V6PayShopStrip";
-import { payPanelLayoutClasses } from "./payCardLayout";
+import { payPanelLayoutClasses, paySettlementLabel } from "./payCardLayout";
 import {
   BASE_CURRENCY_ETH,
   BASE_CURRENCY_USD,
@@ -756,286 +756,300 @@ export function V6PayCard() {
 
   return (
     <div>
-      <div className="w-full border border-melon-600">
-        <div className="relative w-full">
-        {/* 721 shop strip — same gray as the pay block, flush inside the outline. */}
-        {hasShopStrip ? (
-          <div className="w-full bg-zinc-100 px-4 pt-3">
-            <V6PayShopStrip
-              shop={shop!}
-              chainId={chainId}
-              pricingSymbol={shopPricingSymbol}
-              busy={busy}
-            />
-            {cartCount > 0 && shopRoutesLoading ? (
-              <div
-                className="mb-2 flex items-center gap-2"
-                role="status"
-                aria-label="Loading checkout currencies"
-              >
-                <Skeleton className="h-3 w-36" />
-              </div>
-            ) : cartCount > 0 && supportedShopTokenIndexes.length === 0 ? (
-              <p className="mb-2 text-xs text-red-600">
-                No directly accepted payment token has a verified price feed for these items.
-              </p>
-            ) : cartCount > 0 && !shopMatchesToken ? (
-              <p className="mb-2 text-xs text-zinc-500">
-                Switching to a supported checkout currency…
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div className="flex justify-center items-center flex-col">
-          {/* Pay block: mode dropdown in the label spot, big amount input, token selector at right */}
-          <div
-            className={`grid w-full grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] content-center bg-zinc-100 px-4 ${payPanelLayout} ${
-              showPayReceipt ? "border-b border-melon-200" : ""
-            }`}
-          >
-            <div className="col-start-1 row-start-1 flex items-center gap-1.5 self-start whitespace-nowrap">
-              <TextSelect
-                value={mode}
-                onChange={(v) => setMode(v as V6PayMode)}
-                disabled={busy}
-                ariaLabel="Payment mode"
-                className="relative inline-flex items-center gap-1"
-                labelClassName="text-md text-black-700"
-                options={[
-                  { value: "pay", label: "Pay" },
-                  { value: "addbalance", label: "Add to balance" },
-                ]}
+      <div className="w-full">
+        <div className="relative w-full border border-b-0 border-melon-600">
+          {/* 721 shop strip — same gray as the pay block, flush inside the outline. */}
+          {hasShopStrip ? (
+            <div className="w-full bg-zinc-100 px-4 pt-3">
+              <V6PayShopStrip
+                shop={shop!}
+                chainId={chainId}
+                pricingSymbol={shopPricingSymbol}
+                busy={busy}
               />
-              <span className="text-md text-zinc-500">on</span>
-              {chainOptions.length > 1 ? (
+              {cartCount > 0 && shopRoutesLoading ? (
+                <div
+                  className="mb-2 flex items-center gap-2"
+                  role="status"
+                  aria-label="Loading checkout currencies"
+                >
+                  <Skeleton className="h-3 w-36" />
+                </div>
+              ) : cartCount > 0 && supportedShopTokenIndexes.length === 0 ? (
+                <p className="mb-2 text-xs text-red-600">
+                  No directly accepted payment token has a verified price feed for these items.
+                </p>
+              ) : cartCount > 0 && !shopMatchesToken ? (
+                <p className="mb-2 text-xs text-zinc-500">
+                  Switching to a supported checkout currency…
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="flex justify-center items-center flex-col">
+            {/* Pay block: mode dropdown in the label spot, big amount input, token selector at right */}
+            <div
+              className={`grid w-full grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] content-center bg-zinc-100 px-4 ${payPanelLayout} ${
+                showPayReceipt ? "border-b border-melon-200" : ""
+              }`}
+            >
+              <div className="col-start-1 row-start-1 flex items-center gap-1.5 self-start whitespace-nowrap">
                 <TextSelect
-                  value={String(chainId)}
-                  onChange={switchChain}
+                  value={mode}
+                  onChange={(v) => setMode(v as V6PayMode)}
                   disabled={busy}
-                  ariaLabel="Chain"
-                  className="relative inline-flex shrink-0 items-center gap-1"
+                  ariaLabel="Payment mode"
+                  className="relative inline-flex items-center gap-1"
                   labelClassName="text-md text-black-700"
-                  options={chainOptions.map((option) => ({
-                    value: String(option.peerChainId),
-                    label: payChainName(option.peerChainId),
+                  options={[
+                    { value: "pay", label: "Pay" },
+                    { value: "addbalance", label: "Add to balance" },
+                  ]}
+                />
+                <span className="text-md text-zinc-500">on</span>
+                {chainOptions.length > 1 ? (
+                  <TextSelect
+                    value={String(chainId)}
+                    onChange={switchChain}
+                    disabled={busy}
+                    ariaLabel="Chain"
+                    className="relative inline-flex shrink-0 items-center gap-1"
+                    labelClassName="text-md text-black-700"
+                    options={chainOptions.map((option) => ({
+                      value: String(option.peerChainId),
+                      label: payChainName(option.peerChainId),
+                    }))}
+                  />
+                ) : (
+                  <span className="shrink-0 whitespace-nowrap text-md text-black-700">
+                    {payChainName(chainId)}
+                  </span>
+                )}
+              </div>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                disabled={busy}
+                placeholder="0.00"
+                aria-label="Amount"
+                className="col-start-1 row-start-2 min-h-11 border-0 bg-transparent pl-0 pr-3 pt-1 pb-0 text-zinc-900 text-2xl w-full placeholder:text-zinc-400 focus:ring-0 focus:outline-none sm:leading-6 disabled:opacity-60"
+              />
+              {tokens.length > 1 ? (
+                // Valued by INDEX, not address — a token can appear direct and
+                // via-router, so the option stays in lock-step with the selection.
+                <TextSelect
+                  value={String(Math.min(tokenIndex, tokens.length - 1))}
+                  onChange={(value) => {
+                    const i = Number(value);
+                    setTokenIndex(i);
+                    const picked = tokens[i];
+                    if (picked) selectedKeyRef.current = payTokenKey(picked);
+                    setTokenTouched(true);
+                  }}
+                  disabled={busy}
+                  ariaLabel="Payment token"
+                  className="relative col-start-2 row-start-2 inline-flex shrink-0 self-center items-center gap-1"
+                  labelClassName="text-right select-none text-lg text-zinc-900"
+                  options={tokens.map((t, i) => ({
+                    value: String(i),
+                    label: t.symbol,
+                    disabled: cartCount > 0 && !shopRoutes?.[payTokenKey(t)]?.supported,
                   }))}
                 />
               ) : (
-                <span className="shrink-0 whitespace-nowrap text-md text-black-700">
-                  {payChainName(chainId)}
+                <span className="col-start-2 row-start-2 self-center text-right select-none text-lg">
+                  {selected?.symbol ?? nativeSymbol}
                 </span>
               )}
             </div>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              disabled={busy}
-              placeholder="0.00"
-              aria-label="Amount"
-              className="col-start-1 row-start-2 min-h-11 border-0 bg-transparent pl-0 pr-3 pt-1 pb-0 text-zinc-900 text-2xl w-full placeholder:text-zinc-400 focus:ring-0 focus:outline-none sm:leading-6 disabled:opacity-60"
-            />
-            {tokens.length > 1 ? (
-              // Valued by INDEX, not address — a token can appear direct and
-              // via-router, so the option stays in lock-step with the selection.
-              <TextSelect
-                value={String(Math.min(tokenIndex, tokens.length - 1))}
-                onChange={(value) => {
-                  const i = Number(value);
-                  setTokenIndex(i);
-                  const picked = tokens[i];
-                  if (picked) selectedKeyRef.current = payTokenKey(picked);
-                  setTokenTouched(true);
-                }}
-                disabled={busy}
-                ariaLabel="Payment token"
-                className="relative col-start-2 row-start-2 inline-flex shrink-0 self-center items-center gap-1"
-                labelClassName="text-right select-none text-lg text-zinc-900"
-                options={tokens.map((t, i) => ({
-                  value: String(i),
-                  label: t.symbol,
-                  disabled: cartCount > 0 && !shopRoutes?.[payTokenKey(t)]?.supported,
-                }))}
-              />
-            ) : (
-              <span className="col-start-2 row-start-2 self-center text-right select-none text-lg">
-                {selected?.symbol ?? nativeSymbol}
-              </span>
-            )}
-          </div>
 
-          {/* Receipt — hidden while idle; item checkouts expand into a detailed cart. */}
-          {showPayReceipt ? (
-            <div className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2.5">
-              <p className="text-sm text-zinc-500">
-                {routeIsRouter ? "You get at least" : "You get"}
-              </p>
-              {preview && preview.beneficiaryTokenCount > 0n ? (
-                <p
-                  aria-live="polite"
-                  aria-busy={previewLoading}
-                  className={`text-xl font-semibold transition-colors ${
-                    previewLoading || previewIsPrevious ? "text-zinc-400" : "text-zinc-900"
-                  }`}
-                >
-                  {formatPayAmount(preview.beneficiaryTokenCount, 18)} {projectTokenLabel}
-                </p>
-              ) : amountRaw > 0n && previewLoading ? (
-                <Skeleton
-                  className="mt-1 h-5 w-24"
-                  role="status"
-                  aria-label="Calculating token return"
-                />
-              ) : null}
-
-              {cartCount > 0 && shop ? (
-                <div className="mt-3 rounded-md border border-zinc-200 bg-white p-3 text-sm">
-                  <div className="space-y-3">
-                    {chainCartItems.map((item) => {
-                      const tier = shop.tiers.find(
-                        (candidate) => candidate.id === Number(item.tierId),
-                      );
-                      const canIncrement =
-                        !tier || tier.unlimited || item.quantity < tier.remaining;
-                      const itemName = item.name ?? `Item #${item.tierId}`;
-
-                      return (
-                        <div key={item.tierId.toString()} className="flex items-center gap-3">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border border-zinc-200 bg-zinc-100 text-xs text-zinc-500">
-                            <ImageWithFallback
-                              src={item.imageUri}
-                              alt=""
-                              className="h-full w-full object-contain"
-                              fallback={<span>#{item.tierId.toString()}</span>}
-                            />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium text-zinc-900">{itemName}</p>
-                            <p className="text-xs tabular-nums text-zinc-500">
-                              {formatPayAmount(item.price, shop.pricingDecimals)}{" "}
-                              {shopPricingSymbol}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                cart.setQuantity(item.tierId, item.chainId, item.quantity - 1)
-                              }
-                              disabled={busy}
-                              aria-label={`Remove one ${itemName}`}
-                              className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
-                            >
-                              −
-                            </button>
-                            <span className="min-w-4 text-center tabular-nums">
-                              {item.quantity}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                cart.setQuantity(item.tierId, item.chainId, item.quantity + 1)
-                              }
-                              disabled={busy || !canIncrement}
-                              aria-label={`Add one ${itemName}`}
-                              className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="mt-3 space-y-1.5 border-t border-zinc-200 pt-3">
-                    <div className="flex justify-between gap-3">
-                      <span className="text-zinc-600">
-                        {cartCount} item{cartCount === 1 ? "" : "s"}
-                      </span>
-                      <span className="tabular-nums text-zinc-900">
-                        {formatPayAmount(cartTotal, shop.pricingDecimals)} {shopPricingSymbol}
-                      </span>
-                    </div>
-                    {address && shopCreditsLoading ? (
-                      <div className="flex justify-between gap-3 text-zinc-500">
-                        <span>Shop credit</span>
-                        <Skeleton
-                          className="h-4 w-16"
-                          role="status"
-                          aria-label="Loading shop credit"
-                        />
-                      </div>
-                    ) : shopCreditApplied > 0n ? (
-                      <div className="flex justify-between gap-3 text-teal-700">
-                        <span>Shop credit applied</span>
-                        <span className="tabular-nums">
-                          −{formatPayAmount(shopCreditApplied, shop.pricingDecimals)}{" "}
-                          {shopPricingSymbol}
-                        </span>
-                      </div>
-                    ) : null}
-                    {restrictedCartTotal > 0n && shopCreditApplied > 0n ? (
-                      <div className="flex justify-between gap-3 text-zinc-500">
-                        <span>Fresh payment required</span>
-                        <span className="tabular-nums">
-                          {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
-                          {shopPricingSymbol}
-                        </span>
-                      </div>
-                    ) : null}
-                    <div className="flex justify-between gap-3 pt-0.5 font-semibold text-zinc-900">
-                      <span>Amount due</span>
-                      <span className="tabular-nums">
-                        {formatPayAmount(cartAmountDue, shop.pricingDecimals)} {shopPricingSymbol}
-                      </span>
-                    </div>
-                  </div>
+            {/* Receipt — hidden while idle; item checkouts expand into a detailed cart. */}
+            {showPayReceipt ? (
+              <div className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-zinc-500">
+                    {routeIsRouter ? "You get at least" : "You get"}
+                  </p>
+                  {preview && !previewLoading && !previewIsPrevious ? (
+                    <span
+                      title={
+                        routeIsRouter
+                          ? "This payment is routed through the swap terminal."
+                          : "This payment issues tokens from the project."
+                      }
+                      className="shrink-0 border border-melon-500 bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-700"
+                    >
+                      {paySettlementLabel(preview.routeType)}
+                    </span>
+                  ) : null}
                 </div>
-              ) : null}
+                {preview && preview.beneficiaryTokenCount > 0n ? (
+                  <p
+                    aria-live="polite"
+                    aria-busy={previewLoading}
+                    className={`text-xl font-semibold transition-colors ${
+                      previewLoading || previewIsPrevious ? "text-zinc-400" : "text-zinc-900"
+                    }`}
+                  >
+                    {formatPayAmount(preview.beneficiaryTokenCount, 18)} {projectTokenLabel}
+                  </p>
+                ) : amountRaw > 0n && previewLoading ? (
+                  <Skeleton
+                    className="mt-1 h-5 w-24"
+                    role="status"
+                    aria-label="Calculating token return"
+                  />
+                ) : null}
 
-              {preview && preview.reservedTokenCount > 0n ? (
-                <p className="mt-1.5 text-xs font-medium text-zinc-500">
-                  Splits get {formatPayAmount(preview.reservedTokenCount, 18)} {projectTokenLabel}
-                </p>
-              ) : null}
-            </div>
-          ) : mode === "addbalance" ? (
-            <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
-              Adds to the project balance — no tokens are minted.
-            </p>
-          ) : null}
+                {cartCount > 0 && shop ? (
+                  <div className="mt-3 rounded-md border border-zinc-200 bg-white p-3 text-sm">
+                    <div className="space-y-3">
+                      {chainCartItems.map((item) => {
+                        const tier = shop.tiers.find(
+                          (candidate) => candidate.id === Number(item.tierId),
+                        );
+                        const canIncrement =
+                          !tier || tier.unlimited || item.quantity < tier.remaining;
+                        const itemName = item.name ?? `Item #${item.tierId}`;
 
-          {mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
-            <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
-              Couldn&apos;t verify what this payment returns — paying is disabled until the preview
-              works.
-            </p>
-          ) : null}
+                        return (
+                          <div key={item.tierId.toString()} className="flex items-center gap-3">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border border-zinc-200 bg-zinc-100 text-xs text-zinc-500">
+                              <ImageWithFallback
+                                src={item.imageUri}
+                                alt=""
+                                className="h-full w-full object-contain"
+                                fallback={<span>#{item.tierId.toString()}</span>}
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium text-zinc-900">{itemName}</p>
+                              <p className="text-xs tabular-nums text-zinc-500">
+                                {formatPayAmount(item.price, shop.pricingDecimals)}{" "}
+                                {shopPricingSymbol}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  cart.setQuantity(item.tierId, item.chainId, item.quantity - 1)
+                                }
+                                disabled={busy}
+                                aria-label={`Remove one ${itemName}`}
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
+                              >
+                                −
+                              </button>
+                              <span className="min-w-4 text-center tabular-nums">
+                                {item.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  cart.setQuantity(item.tierId, item.chainId, item.quantity + 1)
+                                }
+                                disabled={busy || !canIncrement}
+                                aria-label={`Add one ${itemName}`}
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition-colors hover:border-teal-500 hover:text-teal-700 disabled:opacity-40"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
 
-          {notStarted ? (
-            <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-500">
-              Starts in {formatStartCountdown(startsAt - now)}.
-            </p>
-          ) : null}
+                    <div className="mt-3 space-y-1.5 border-t border-zinc-200 pt-3">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-zinc-600">
+                          {cartCount} item{cartCount === 1 ? "" : "s"}
+                        </span>
+                        <span className="tabular-nums text-zinc-900">
+                          {formatPayAmount(cartTotal, shop.pricingDecimals)} {shopPricingSymbol}
+                        </span>
+                      </div>
+                      {address && shopCreditsLoading ? (
+                        <div className="flex justify-between gap-3 text-zinc-500">
+                          <span>Shop credit</span>
+                          <Skeleton
+                            className="h-4 w-16"
+                            role="status"
+                            aria-label="Loading shop credit"
+                          />
+                        </div>
+                      ) : shopCreditApplied > 0n ? (
+                        <div className="flex justify-between gap-3 text-teal-700">
+                          <span>Shop credit applied</span>
+                          <span className="tabular-nums">
+                            −{formatPayAmount(shopCreditApplied, shop.pricingDecimals)}{" "}
+                            {shopPricingSymbol}
+                          </span>
+                        </div>
+                      ) : null}
+                      {restrictedCartTotal > 0n && shopCreditApplied > 0n ? (
+                        <div className="flex justify-between gap-3 text-zinc-500">
+                          <span>Fresh payment required</span>
+                          <span className="tabular-nums">
+                            {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
+                            {shopPricingSymbol}
+                          </span>
+                        </div>
+                      ) : null}
+                      <div className="flex justify-between gap-3 pt-0.5 font-semibold text-zinc-900">
+                        <span>Amount due</span>
+                        <span className="tabular-nums">
+                          {formatPayAmount(cartAmountDue, shop.pricingDecimals)} {shopPricingSymbol}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {preview && preview.reservedTokenCount > 0n ? (
+                  <p className="mt-1.5 text-xs font-medium text-zinc-500">
+                    Splits get {formatPayAmount(preview.reservedTokenCount, 18)} {projectTokenLabel}
+                  </p>
+                ) : null}
+              </div>
+            ) : mode === "addbalance" ? (
+              <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
+                Adds to the project balance — no tokens are minted.
+              </p>
+            ) : null}
+
+            {mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
+              <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
+                Couldn&apos;t verify what this payment returns — paying is disabled until the
+                preview works.
+              </p>
+            ) : null}
+
+            {notStarted ? (
+              <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-500">
+                Starts in {formatStartCountdown(startsAt - now)}.
+              </p>
+            ) : null}
+          </div>
         </div>
-      </div>
 
         {/* Memo + Pay — compact by default; the button keeps its height if the memo is resized. */}
-        <div className="relative flex w-full flex-row items-start border-t border-melon-600">
-          <div className="relative min-w-0 flex-1 self-stretch">
+        <div className="relative flex w-full flex-row items-start">
+          <div className="relative min-w-0 flex-1">
             <textarea
               rows={1}
               value={memo}
               onChange={(e) => setMemo(e.target.value.slice(0, 256))}
               disabled={busy}
               placeholder="Add a note"
-              className="flex min-h-14 w-full border-0 border-r border-r-melon-600 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus:border-r-melon-600 focus:ring-0 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-14 w-full border border-melon-600 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus:border-melon-600 focus:ring-0 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
-          <div className="relative flex min-h-14 w-[150px] shrink-0 self-stretch items-start">
+          <div className="relative flex h-14 w-[150px] shrink-0 items-start border-y border-r border-melon-600">
             <Button
               disabled={payDisabled}
               loading={busy}
