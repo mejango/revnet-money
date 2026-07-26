@@ -4,6 +4,7 @@ import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
 import { CartesianChart, type ChartReferenceLine, type ChartSeries } from "@/components/ui/chart";
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
+import { shouldShowCashOutAsymptote } from "@/lib/minimumCashOutPrice";
 import { formatDecimals } from "@/lib/number";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
 import { JBChainId } from "@bananapus/nana-sdk-core";
@@ -68,6 +69,13 @@ export function TokenPriceChart({
   const hasPool = data?.hasPool ?? false;
   const hasAmmData = chartData.some((d) => d.ammPrice !== undefined);
   const hasFloorData = chartData.some((d) => d.floorPrice !== undefined);
+  const currentPricePoint = [...chartData]
+    .reverse()
+    .find((point) => point.floorPrice !== undefined && point.minimumCashOutPrice !== undefined);
+  const showCashOutAsymptote = shouldShowCashOutAsymptote(
+    currentPricePoint?.floorPrice,
+    currentPricePoint?.minimumCashOutPrice,
+  );
   const firstTimestamp = chartData[0]?.timestamp;
   const lastTimestamp = chartData[chartData.length - 1]?.timestamp;
   const visibleStages =
@@ -89,7 +97,7 @@ export function TokenPriceChart({
     issuancePrice: showIssuance ? point.issuancePrice : undefined,
     ammPrice: showAmm ? point.ammPrice : undefined,
     floorPrice: showFloor ? point.floorPrice : undefined,
-    minimumCashOutPrice: showFloor ? point.minimumCashOutPrice : undefined,
+    minimumCashOutPrice: showFloor && showCashOutAsymptote ? point.minimumCashOutPrice : undefined,
     cashOutChangeReason: showFloor ? point.cashOutChangeReason : undefined,
     totalSupply: showFloor ? point.totalSupply : undefined,
     totalBalance: showFloor ? point.totalBalance : undefined,
@@ -119,16 +127,18 @@ export function TokenPriceChart({
       color: "var(--chart-3)",
       value: (point) => point.floorPrice,
     });
-    visibleSeries.push({
-      key: "minimumCashOutPrice",
-      label: "Cash out asymptote",
-      color: "var(--chart-3)",
-      value: (point) => point.minimumCashOutPrice,
-      curve: "linear",
-      dash: "5 4",
-      width: 1.3,
-      opacity: 0.55,
-    });
+    if (showCashOutAsymptote) {
+      visibleSeries.push({
+        key: "minimumCashOutPrice",
+        label: "Cash out asymptote",
+        color: "var(--chart-3)",
+        value: (point) => point.minimumCashOutPrice,
+        curve: "linear",
+        dash: "5 4",
+        width: 1.3,
+        opacity: 0.55,
+      });
+    }
   }
   const referenceLines: ChartReferenceLine[] = visibleStages.map((stage) => ({
     key: `${stage.name}-${stage.timestamp}`,
@@ -199,7 +209,7 @@ export function TokenPriceChart({
           xValue={(point) => point.timestamp}
           series={visibleSeries}
           ariaLabel={`${tokenSymbol} price history`}
-          description={`Issuance, pool, cash out, and dotted cash-out-asymptote prices for ${tokenSymbol} over the selected ${range} range.`}
+          description={`Issuance, pool, and cash out prices for ${tokenSymbol} over the selected ${range} range.${showCashOutAsymptote ? " The dotted line is the cash-out asymptote." : ""}`}
           className="mt-6 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
           margin={{ left: 84, right: 20, top: 24, bottom: 36 }}
           xDomain={[firstTimestamp ?? 0, lastTimestamp ?? 1]}

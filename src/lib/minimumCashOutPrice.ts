@@ -7,3 +7,19 @@ export function minimumCashOutPriceAtIssuancePrice(
   const tax = Math.max(0, Math.min(10_000, cashOutTaxRate));
   return issuancePrice * (1 - tax / 10_000);
 }
+
+/** Show the payment asymptote only when paid issuance can pull the live quote down toward it. */
+export function shouldShowCashOutAsymptote(
+  cashOutPrice: number | undefined,
+  asymptote: number | undefined,
+): boolean {
+  return (
+    cashOutPrice !== undefined &&
+    asymptote !== undefined &&
+    Number.isFinite(cashOutPrice) &&
+    Number.isFinite(asymptote) &&
+    cashOutPrice > 0 &&
+    asymptote > 0 &&
+    cashOutPrice > asymptote
+  );
+}
