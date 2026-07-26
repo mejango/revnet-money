@@ -54,10 +54,11 @@ describe("TransactionReviewProvider", () => {
       ],
     });
 
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", { name: "Review approve" });
     expect(screen.getByRole("heading", { name: "Review approve" })).toBeInTheDocument();
     expect(shell.contains(dialog)).toBe(false);
     expect(dialog.closest("[inert]")).toBeNull();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Close review" })).toHaveFocus());
 
     fireEvent.click(screen.getByRole("button", { name: "[copy tx audit prompt]" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));

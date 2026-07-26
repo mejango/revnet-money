@@ -43,6 +43,14 @@ const SAFE_PREFIX: Partial<Record<number, string>> = {
   42161: "arb1",
   11155111: "sep",
 };
+const REVIEW_FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 
 function json(value: unknown): string {
   return JSON.stringify(value, (_, item) => (typeof item === "bigint" ? item.toString() : item), 2);
@@ -159,14 +167,49 @@ function ReviewModal({
 
   useEffect(() => {
     const overflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     document.body.style.overflow = "hidden";
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") finish(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        finish(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        ref.current?.querySelectorAll<HTMLElement>(REVIEW_FOCUSABLE_SELECTOR) ?? [],
+      ).filter((element) => !element.hidden && getComputedStyle(element).visibility !== "hidden");
+      if (!focusable.length) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        ref.current?.focus();
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        first.focus();
+      } else {
+        event.stopImmediatePropagation();
+      }
     };
-    document.addEventListener("keydown", keydown);
+    document.addEventListener("keydown", keydown, true);
+    queueMicrotask(() => {
+      ref.current?.querySelector<HTMLElement>(REVIEW_FOCUSABLE_SELECTOR)?.focus();
+    });
     return () => {
-      document.removeEventListener("keydown", keydown);
+      document.removeEventListener("keydown", keydown, true);
       document.body.style.overflow = overflow;
+      previouslyFocused?.focus({ preventScroll: true });
     };
   }, [finish]);
 
@@ -179,12 +222,14 @@ function ReviewModal({
         ref={ref}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={`transaction-review-title-${pending.id}`}
+        tabIndex={-1}
         className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col border border-melon-700 bg-melon-25 shadow-2xl sm:max-h-[calc(100vh-4rem)]"
       >
         <header className="flex items-start justify-between border-b border-melon-300 bg-melon-50 p-4 sm:p-6">
           <div>
             <p className="text-xs font-bold uppercase text-peel-600">Transaction safety check</p>
-            <h2 className="mt-1 text-xl font-bold">
+            <h2 id={`transaction-review-title-${pending.id}`} className="mt-1 text-xl font-bold">
               {pending.request.title ??
                 (authorization ? "Review authorization" : "Review transaction")}
             </h2>
