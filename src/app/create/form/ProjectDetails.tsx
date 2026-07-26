@@ -12,10 +12,10 @@ export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
       <Image
         src="/assets/img/create-cutout.webp"
         width={1120}
-        height={778}
+        height={747}
         sizes="(min-width: 640px) 560px, calc(100vw - 2rem)"
         className="mx-auto mb-10 h-auto w-full max-w-[560px] md:col-span-3"
-        alt="A figure shaping lightning above the clouds"
+        alt="A figure holding a lightning bolt above the clouds"
       />
       <h1 className="mb-16 text-2xl md:col-span-3 font-semibold">Create a revnet</h1>
       <div className="md:col-span-1">
