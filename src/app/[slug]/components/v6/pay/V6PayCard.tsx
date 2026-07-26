@@ -784,7 +784,7 @@ export function V6PayCard() {
               showPayReceipt ? "border-b border-melon-200" : ""
             }`}
           >
-            <div className="col-start-1 row-start-1 flex items-center gap-1.5 self-start">
+            <div className="col-start-1 row-start-1 flex items-center gap-1.5 self-start whitespace-nowrap">
               <TextSelect
                 value={mode}
                 onChange={(v) => setMode(v as V6PayMode)}
@@ -804,7 +804,7 @@ export function V6PayCard() {
                   onChange={switchChain}
                   disabled={busy}
                   ariaLabel="Chain"
-                  className="relative inline-flex items-center gap-1"
+                  className="relative inline-flex shrink-0 items-center gap-1"
                   labelClassName="text-md text-black-700"
                   options={chainOptions.map((option) => ({
                     value: String(option.peerChainId),
@@ -812,7 +812,9 @@ export function V6PayCard() {
                   }))}
                 />
               ) : (
-                <span className="text-md text-black-700">{JB_CHAINS[chainId]?.name}</span>
+                <span className="shrink-0 whitespace-nowrap text-md text-black-700">
+                  {JB_CHAINS[chainId]?.name}
+                </span>
               )}
             </div>
             <input
