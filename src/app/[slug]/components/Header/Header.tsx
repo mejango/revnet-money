@@ -2,7 +2,7 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
-import { ImageWithFallback } from "@/components/IpfsImage";
+import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
 import { FastForward as ForwardIcon } from "@/components/ui/icons";
 import { ParticipantsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { Project } from "@/lib/bendystraw/types";
@@ -125,20 +125,29 @@ export function Header(props: Props) {
   return (
     <header>
       <div className="flex flex-col sm:flex-row sm:items-center items-start gap-4 sm:mb-6 mb-4">
-        <ImageWithFallback
-          src={
-            chainId && project
-              ? `/api/project-image/${chainId}/${project.projectId}`
-              : logoUri
-          }
+        <IpfsImage
+          src={logoUri}
           className="block size-[120px] overflow-hidden border border-zinc-200 object-cover sm:size-36"
           alt={`${projectName || "Project"} logo`}
           width={144}
           height={144}
           fallback={
-            <div className="flex h-[120px] w-[120px] items-center justify-center rounded bg-zinc-100 sm:size-36">
-              <ForwardIcon className="h-5 w-5 text-black" />
-            </div>
+            <ImageWithFallback
+              src={
+                chainId && project
+                  ? `/api/project-image/${chainId}/${project.projectId}`
+                  : null
+              }
+              className="block size-[120px] overflow-hidden border border-zinc-200 object-cover sm:size-36"
+              alt={`${projectName || "Project"} logo`}
+              width={144}
+              height={144}
+              fallback={
+                <div className="flex h-[120px] w-[120px] items-center justify-center rounded bg-zinc-100 sm:size-36">
+                  <ForwardIcon className="h-5 w-5 text-black" />
+                </div>
+              }
+            />
           }
         />
 
