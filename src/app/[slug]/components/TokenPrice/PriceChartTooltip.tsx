@@ -37,33 +37,33 @@ export function PriceChartTooltip({
       : formatShortDate(datum.timestamp * 1000);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-3 text-sm">
+    <div className="w-max bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-3 text-sm">
       <div className="font-medium mb-2 text-zinc-300">{formattedDate}</div>
       {series.map((entry) => (
-        <div key={entry.key} className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
-          <span className="text-zinc-400">{entry.label}:</span>
-          <span className="font-mono text-white">
+        <div key={entry.key} className="flex items-center gap-2 whitespace-nowrap">
+          <span className="w-2 h-2 shrink-0 rounded-full" style={{ backgroundColor: entry.color }} />
+          <span className="shrink-0 text-zinc-400">{entry.label}:</span>
+          <span className="shrink-0 font-mono text-white">
             {formatDecimals(entry.value, 6)} {baseTokenSymbol}
           </span>
         </div>
       ))}
       {showFloorDebug && (
         <div className="mt-2 pt-2 border-t border-zinc-700 text-xs text-zinc-500 space-y-1">
-          <div className="flex justify-between gap-4">
+          <div className="flex justify-between gap-4 whitespace-nowrap">
             <span>Total Supply:</span>
             <span className="font-mono">
               {formatCompact(formatUnits(BigInt(datum.totalSupply!), JB_TOKEN_DECIMALS))}
             </span>
           </div>
-          <div className="flex justify-between gap-4">
+          <div className="flex justify-between gap-4 whitespace-nowrap">
             <span>Total Balance:</span>
             <span className="font-mono">
               {formatCompact(formatUnits(BigInt(datum.totalBalance!), baseTokenDecimals))}{" "}
               {baseTokenSymbol}
             </span>
           </div>
-          <div className="flex justify-between gap-4">
+          <div className="flex justify-between gap-4 whitespace-nowrap">
             <span>Cash Out Tax:</span>
             <span className="font-mono">{((datum.cashOutTaxRate ?? 0) / 100).toFixed(2)}%</span>
           </div>

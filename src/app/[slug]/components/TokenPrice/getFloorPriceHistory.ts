@@ -5,7 +5,7 @@ import {
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { CashOutTaxSnapshot, SuckerGroupMoment } from "@/lib/bendystraw/types";
 import { JB_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
-import { formatUnits, parseUnits } from "viem";
+import { parseUnits } from "viem";
 import type { PriceDataPoint } from "./getTokenPriceChartData";
 import { explainCashOutChange } from "./explainCashOutChange";
 
@@ -84,7 +84,15 @@ export async function getFloorPriceHistory(options: FloorPriceOptions): Promise<
     const firstMomentTimestamp =
       orderedMoments.length > 0 ? orderedMoments[0].timestamp : undefined;
     if (projectStart && (!firstMomentTimestamp || firstMomentTimestamp > projectStart)) {
-      dataPoints.push({ timestamp: projectStart, floorPrice: 0 });
+      dataPoints.push({
+        timestamp: projectStart,
+        floorPrice: 0,
+        cashOutTaxRate: findApplicableTaxRate(
+          projectStart,
+          taxSnapshots,
+          currentCashOutTax,
+        ),
+      });
     }
 
     if (orderedMoments.length === 0) {
@@ -112,12 +120,6 @@ export async function getFloorPriceHistory(options: FloorPriceOptions): Promise<
         cashOutTax,
         baseTokenDecimals,
       );
-      const minimumCashOutPrice = calculateMinimumCashOutPrice(
-        balance,
-        tokenSupply,
-        cashOutTax,
-        baseTokenDecimals,
-      );
       const current = {
         balance,
         tokenSupply,
@@ -128,7 +130,6 @@ export async function getFloorPriceHistory(options: FloorPriceOptions): Promise<
       dataPoints.push({
         timestamp: moment.timestamp,
         floorPrice,
-        minimumCashOutPrice,
         cashOutChangeReason: explainCashOutChange(previous, current),
         totalSupply: String(moment.tokenSupply),
         totalBalance: String(moment.balance),
@@ -170,32 +171,6 @@ function calculateFloorPrice(
   const y = ((o * x) / s) * (1 - r + (r * x) / s);
 
   return y / 10 ** baseTokenDecimals;
-}
-
-/**
- * The asymptotic minimum per-token cash-out price:
- * (1 - tax) × balance ÷ supply.
- *
- * A one-token cash-out quote sits slightly above this line because its
- * quadratic term includes that token's share of supply. As supply grows, the
- * live quote approaches this minimum. Payments can raise it; payouts can
- * lower it.
- */
-export function calculateMinimumCashOutPrice(
-  balance: bigint,
-  tokenSupply: bigint,
-  cashOutTax: number,
-  baseTokenDecimals: number,
-): number {
-  if (tokenSupply === 0n || balance === 0n) return 0;
-
-  const tax = BigInt(Math.max(0, Math.min(10_000, cashOutTax)));
-  const oneToken = parseUnits("1", JB_TOKEN_DECIMALS);
-  const rawPrice =
-    (balance * oneToken * (10_000n - tax)) /
-    (tokenSupply * 10_000n);
-
-  return Number(formatUnits(rawPrice, baseTokenDecimals));
 }
 
 function findApplicableTaxRate(

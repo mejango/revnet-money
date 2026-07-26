@@ -17,7 +17,7 @@ describe("cash-out price change explanations", () => {
         tokenSupply: 110n,
         price: 0.87,
       }),
-    ).toContain("payment added backing and issued tokens");
+    ).toContain("payment increased backing faster than token supply");
     expect(
       explainCashOutChange(observation, {
         ...observation,
@@ -25,7 +25,18 @@ describe("cash-out price change explanations", () => {
         tokenSupply: 95n,
         price: 0.76,
       }),
-    ).toContain("cash out removed backing and burned tokens");
+    ).toContain("cash out removed backing faster than it burned supply");
+  });
+
+  it("explains dilution when a payment grows supply faster than backing", () => {
+    expect(
+      explainCashOutChange(observation, {
+        ...observation,
+        balance: 150n,
+        tokenSupply: 200n,
+        price: 0.6,
+      }),
+    ).toContain("increased token supply faster than backing");
   });
 
   it("identifies payouts and tax changes", () => {

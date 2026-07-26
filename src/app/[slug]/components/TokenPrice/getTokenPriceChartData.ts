@@ -2,6 +2,7 @@
 
 import { getRulesets } from "@/app/[slug]/terms/getRulesets";
 import { getCurrentCashOutTax } from "@/lib/cashOutTax";
+import { minimumCashOutPriceAtIssuancePrice } from "@/lib/minimumCashOutPrice";
 import { getStartTimeForRange, getTimeRangeConfig, TimeRange } from "@/lib/timeRange";
 import { getTokenAddress } from "@/lib/token";
 import { JBChainId, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
@@ -129,13 +130,19 @@ function mergeDataPoints(
   const sorted = Array.from(merged.values()).sort((a, b) => a.timestamp - b.timestamp);
 
   let lastAmmPrice: number | undefined;
+  let lastIssuancePrice: number | undefined;
   let lastFloorPrice: number | undefined;
-  let lastMinimumCashOutPrice: number | undefined;
   let lastTotalSupply: string | undefined;
   let lastTotalBalance: string | undefined;
   let lastCashOutTaxRate: number | undefined;
 
   for (const point of sorted) {
+    if (point.issuancePrice !== undefined) {
+      lastIssuancePrice = point.issuancePrice;
+    } else if (lastIssuancePrice !== undefined) {
+      point.issuancePrice = lastIssuancePrice;
+    }
+
     if (point.ammPrice !== undefined) {
       lastAmmPrice = point.ammPrice;
     } else if (lastAmmPrice !== undefined) {
@@ -144,16 +151,24 @@ function mergeDataPoints(
 
     if (point.floorPrice !== undefined) {
       lastFloorPrice = point.floorPrice;
-      lastMinimumCashOutPrice = point.minimumCashOutPrice;
       lastTotalSupply = point.totalSupply;
       lastTotalBalance = point.totalBalance;
       lastCashOutTaxRate = point.cashOutTaxRate;
     } else if (lastFloorPrice !== undefined) {
       point.floorPrice = lastFloorPrice;
-      point.minimumCashOutPrice = lastMinimumCashOutPrice;
       point.totalSupply = lastTotalSupply;
       point.totalBalance = lastTotalBalance;
       point.cashOutTaxRate = lastCashOutTaxRate;
+    }
+
+    if (
+      point.issuancePrice !== undefined &&
+      point.cashOutTaxRate !== undefined
+    ) {
+      point.minimumCashOutPrice = minimumCashOutPriceAtIssuancePrice(
+        point.issuancePrice,
+        point.cashOutTaxRate,
+      );
     }
   }
 

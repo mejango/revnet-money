@@ -121,7 +121,7 @@ export function TokenPriceChart({
     });
     visibleSeries.push({
       key: "minimumCashOutPrice",
-      label: "Cash out minimum",
+      label: "Cash out asymptote",
       color: "var(--chart-3)",
       value: (point) => point.minimumCashOutPrice,
       curve: "linear",
@@ -199,7 +199,7 @@ export function TokenPriceChart({
           xValue={(point) => point.timestamp}
           series={visibleSeries}
           ariaLabel={`${tokenSymbol} price history`}
-          description={`Issuance, pool, cash out, and dotted minimum cash out prices for ${tokenSymbol} over the selected ${range} range.`}
+          description={`Issuance, pool, cash out, and dotted cash-out-asymptote prices for ${tokenSymbol} over the selected ${range} range.`}
           className="mt-6 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
           margin={{ left: 84, right: 20, top: 24, bottom: 36 }}
           xDomain={[firstTimestamp ?? 0, lastTimestamp ?? 1]}
