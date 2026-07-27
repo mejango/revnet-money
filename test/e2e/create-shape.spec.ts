@@ -81,7 +81,7 @@ test("production create surface stays visible and contained", async ({ page }) =
     .locator('[id^="splits."][id$=".percentage"]')
     .evaluateAll((fields) => fields.map((field) => field.getBoundingClientRect().width));
   expect(splitPercentageBoxes).toHaveLength(2);
-  expect(splitPercentageBoxes.every((width) => width >= 96)).toBe(true);
+  expect(splitPercentageBoxes.every((width) => width >= 80)).toBe(true);
   await page.keyboard.press("Escape");
 
   await page.getByRole("checkbox", { name: "Custom token" }).check();
