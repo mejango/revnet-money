@@ -209,7 +209,7 @@ export function AddStageDialog({
                             ) : (
                               <select
                                 aria-label="Issuance currency"
-                                className="border-0 bg-transparent p-0 text-md text-zinc-500 focus:ring-0"
+                                className="ml-1 w-[4.25rem] border-0 bg-transparent py-0 pr-6 pl-0 text-md text-zinc-500 focus:ring-0"
                                 value={issuanceBaseCurrency}
                                 onChange={(event) =>
                                   setCreateFieldValue(
