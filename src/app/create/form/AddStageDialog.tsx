@@ -325,7 +325,7 @@ export function AddStageDialog({
                                     min="0"
                                     max="100"
                                     className="h-9 pr-10"
-                                    width="w-32 shrink-0"
+                                    width="w-24 shrink-0"
                                     suffix="%"
                                     required
                                     placeholder="100"
