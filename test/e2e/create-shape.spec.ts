@@ -46,7 +46,7 @@ test("production create surface stays visible and contained", async ({ page }) =
   await page.getByRole("button", { name: "Add stage" }).click();
   const issuanceAmount = page.locator("#initialIssuance");
   const issuanceCurrency = page.getByRole("combobox", { name: "Issuance currency" });
-  await issuanceAmount.fill("10000");
+  await issuanceAmount.fill("1000000");
   await expect(issuanceCurrency).toHaveValue("ETH");
   const amountBox = await issuanceAmount.boundingBox();
   const suffixBox = await issuanceCurrency.locator("xpath=../..").boundingBox();
