@@ -180,7 +180,11 @@ export function AddStageDialog({
                       />
 
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-md text-zinc-600 md:flex-nowrap">
-                        <div className="grid h-9 w-full min-w-0 grid-cols-[minmax(6rem,1fr)_max-content] items-center border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus-within:border-melon-600 sm:w-[260px]">
+                        <div
+                          className={`grid h-9 w-full min-w-0 grid-cols-[minmax(6rem,1fr)_max-content] items-center border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus-within:border-melon-600 ${
+                            enableCut ? "sm:w-[220px]" : "sm:w-[260px]"
+                          }`}
+                        >
                           <Field
                             id="initialIssuance"
                             name="initialIssuance"
@@ -229,7 +233,11 @@ export function AddStageDialog({
                             )}
                           </span>
                         </div>
-                        <div className="flex w-full items-center gap-2 md:w-auto">
+                        <div
+                          className={`flex w-full items-center md:w-auto ${
+                            enableCut ? "gap-1" : "gap-2"
+                          }`}
+                        >
                           {!enableCut ? (
                             <>
                               <label
@@ -264,7 +272,7 @@ export function AddStageDialog({
                                   min="0.01"
                                   max="100"
                                   step="any"
-                                  className="h-9 w-16 border-2 border-melon-300 bg-melon-25 pr-6 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
+                                  className="h-9 w-14 border-2 border-melon-300 bg-melon-25 pr-6 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
                                   value={String(uiCutPercentage)}
                                   onChange={(e) => {
                                     setUiCutPercentage(Number(e.target.value));
@@ -284,7 +292,7 @@ export function AddStageDialog({
                                   inputMode="decimal"
                                   min="0.042"
                                   step="any"
-                                  className="h-9 w-24 border-2 border-melon-300 bg-melon-25 pr-10 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
+                                  className="h-9 w-20 border-2 border-melon-300 bg-melon-25 pr-10 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
                                   value={String(uiCutFrequency)}
                                   onChange={(e) => {
                                     setUiCutFrequency(Number(e.target.value));

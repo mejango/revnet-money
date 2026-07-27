@@ -55,6 +55,14 @@ test("production create surface stays visible and contained", async ({ page }) =
   expect(amountBox!.x + amountBox!.width).toBeLessThanOrEqual(suffixBox!.x + 0.5);
   await issuanceCurrency.selectOption("USD");
   await expect(issuanceCurrency).toHaveValue("USD");
+  await page.getByRole("checkbox", { name: "add automatic cuts?" }).check();
+  const dialogBox = await page.getByRole("dialog").boundingBox();
+  const cutFrequencyBox = await page.locator("#uiCutFrequency").boundingBox();
+  expect(dialogBox).not.toBeNull();
+  expect(cutFrequencyBox).not.toBeNull();
+  expect(cutFrequencyBox!.x + cutFrequencyBox!.width).toBeLessThanOrEqual(
+    dialogBox!.x + dialogBox!.width - 8,
+  );
   await page.keyboard.press("Escape");
 
   await page.getByRole("checkbox", { name: "Custom token" }).check();
