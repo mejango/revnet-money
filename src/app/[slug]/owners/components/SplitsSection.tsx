@@ -114,8 +114,8 @@ export function SplitsSection() {
     <>
       <div className="flex space-y-4 pb-0 sm:pb-2">
         <p className="text-md text-black font-light italic">
-          Splits can be adjusted by the Operator at any time, within the permanent split limit of a
-          stage.
+          Splits can be adjusted by the project operator at any time, within the permanent split
+          limit of a stage.
         </p>
       </div>
       {suckers && suckers.length > 1 && (
@@ -144,7 +144,7 @@ export function SplitsSection() {
             </SelectContent>
           </Select>
           <div className="text-sm font-medium text-zinc-500 mt-4 border-l border-zinc-300 pl-2 py-1 px-1">
-            Operator is currently{" "}
+            Project operator is currently{" "}
             <EtherscanLink
               value={boostRecipient}
               type="address"

@@ -43,7 +43,7 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
             <thead>
               <tr className="text-left text-zinc-500 border-b border-zinc-200">
                 <th className="py-2 pr-4 font-medium">Chain</th>
-                <th className="py-2 pr-4 font-medium">Owner</th>
+                <th className="py-2 pr-4 font-medium">Borrower</th>
                 <th className="py-2 pr-4 font-medium">Borrowed</th>
                 <th className="py-2 pr-4 font-medium">Collateral</th>
                 <th className="py-2 font-medium">Opened</th>

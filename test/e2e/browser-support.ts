@@ -15,16 +15,16 @@ export async function installBrowserBoundary(page: Page): Promise<BrowserBoundar
   page.on("pageerror", (error) => boundary.pageErrors.push(error.message));
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === `/ipfs/${FIXTURE_CID}`) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "cache-control": "public, max-age=31536000, immutable" },
+        body: JSON.stringify(browserProject.metadata),
+      });
+      return;
+    }
     if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
-      if (url.protocol === "https:" && url.pathname === `/ipfs/${FIXTURE_CID}`) {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          headers: { "cache-control": "public, max-age=31536000, immutable" },
-          body: JSON.stringify(browserProject.metadata),
-        });
-        return;
-      }
       await route.continue();
       return;
     }

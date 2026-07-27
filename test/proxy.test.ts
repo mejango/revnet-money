@@ -4,14 +4,10 @@ import { describe, expect, it } from "vitest";
 
 describe("legacy project proxy", () => {
   it("permanently redirects legacy v6 routes and preserves suffixes and queries", () => {
-    const response = proxy(
-      new NextRequest("https://revnet.money/v6:base:3/shop?category=1"),
-    );
+    const response = proxy(new NextRequest("https://revnet.money/v6:base:3/shop?category=1"));
 
     expect(response.status).toBe(308);
-    expect(response.headers.get("location")).toBe(
-      "https://revnet.money/base:3/shop?category=1",
-    );
+    expect(response.headers.get("location")).toBe("https://revnet.money/base:3/shop?category=1");
   });
 
   it("does not redirect canonical or malformed paths", () => {

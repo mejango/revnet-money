@@ -35,11 +35,14 @@ export interface PreparedV6Pay {
   terminal: Address;
   /** True when the resolved route goes through the router registry (swap). */
   viaRouterRoute: boolean;
+  /** True when payment bypasses the terminal for a better direct pool swap. */
+  directSwapRoute: boolean;
   /** Fresh previewed token return (null for add-to-balance). */
   expectedTokens: bigint | null;
   reservedTokens: bigint | null;
   minReturned: bigint;
   needsApproval: boolean;
+  needsPermit2Approval: boolean;
   cartRows: { tierId: number; quantity: number; name: string }[];
   request: {
     address: Address;
@@ -199,10 +202,13 @@ export function V6PayConfirmDialog({
                         </SummaryRow>
                       ) : null}
                       {prepared.memo ? <SummaryRow label="Note">{prepared.memo}</SummaryRow> : null}
-                      {prepared.needsApproval ? (
+                      {prepared.needsApproval || prepared.needsPermit2Approval ? (
                         <p className="text-xs text-zinc-500">
-                          Two wallet steps: approve {prepared.token.symbol} for the terminal, then
-                          the {prepared.mode === "pay" ? "payment" : "top-up"} itself.
+                          {prepared.directSwapRoute
+                            ? "Your wallet may ask for token and swap-router approvals before the swap."
+                            : `Two wallet steps: approve ${prepared.token.symbol} for the terminal, then the ${
+                                prepared.mode === "pay" ? "payment" : "top-up"
+                              } itself.`}
                         </p>
                       ) : null}
 
@@ -244,7 +250,7 @@ export function V6PayConfirmDialog({
                       connectWalletText="Connect Wallet"
                       className="bg-teal-500 text-melon-950 hover:bg-teal-600"
                     >
-                      {prepared?.needsApproval
+                      {prepared?.needsApproval || prepared?.needsPermit2Approval
                         ? "Approve and send"
                         : mode === "pay"
                           ? "Pay"

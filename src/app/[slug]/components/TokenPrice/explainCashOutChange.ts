@@ -57,10 +57,7 @@ export function explainCashOutChange(
     : `Cash-out price ${direction}; the indexed backing, supply, and tax inputs did not change.`;
 }
 
-function compareBackingPerToken(
-  previous: CashOutObservation,
-  current: CashOutObservation,
-): number {
+function compareBackingPerToken(previous: CashOutObservation, current: CashOutObservation): number {
   if (previous.tokenSupply === 0n || current.tokenSupply === 0n) return 0;
   const left = current.balance * previous.tokenSupply;
   const right = previous.balance * current.tokenSupply;

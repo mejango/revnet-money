@@ -1,9 +1,4 @@
-import {
-  arbitrum,
-  base,
-  mainnet,
-  optimism,
-} from "viem/chains";
+import { arbitrum, base, mainnet, optimism } from "viem/chains";
 
 function graphqlEndpoint(value: string | undefined, fallback: string): string {
   const url = new URL(value?.trim() || fallback);

@@ -37,6 +37,7 @@ export async function GET() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        operationName: "DiscoverRevnets",
         query: `query DiscoverRevnets {
           projects(
             where: { version: 6, isRevnet: true }
@@ -55,10 +56,7 @@ export async function GET() {
     const data = (await readBendystrawResponse(response)) as {
       projects?: { items?: IndexedProject[] };
     };
-    const groups = new Map<
-      string,
-      { representative: IndexedProject; members: IndexedProject[] }
-    >();
+    const groups = new Map<string, { representative: IndexedProject; members: IndexedProject[] }>();
 
     for (const project of data.projects?.items ?? []) {
       const key = project.suckerGroupId ?? `${project.chainId}:${project.projectId}`;

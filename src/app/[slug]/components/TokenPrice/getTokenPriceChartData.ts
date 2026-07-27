@@ -161,10 +161,7 @@ function mergeDataPoints(
       point.cashOutTaxRate = lastCashOutTaxRate;
     }
 
-    if (
-      point.issuancePrice !== undefined &&
-      point.cashOutTaxRate !== undefined
-    ) {
+    if (point.issuancePrice !== undefined && point.cashOutTaxRate !== undefined) {
       point.minimumCashOutPrice = minimumCashOutPriceAtIssuancePrice(
         point.issuancePrice,
         point.cashOutTaxRate,

@@ -133,11 +133,7 @@ export function Header(props: Props) {
           height={144}
           fallback={
             <ImageWithFallback
-              src={
-                chainId && project
-                  ? `/api/project-image/${chainId}/${project.projectId}`
-                  : null
-              }
+              src={chainId && project ? `/api/project-image/${chainId}/${project.projectId}` : null}
               className="block size-[120px] overflow-hidden border border-zinc-200 object-cover sm:size-36"
               alt={`${projectName || "Project"} logo`}
               width={144}
@@ -209,7 +205,7 @@ export function Header(props: Props) {
                   >
                     {operator && (
                       <span ref={operatorRef} className="inline-flex items-center">
-                        <span className="text-zinc-500">Operator:</span>{" "}
+                        <span className="text-zinc-500">Project operator:</span>{" "}
                         <EtherscanLink
                           value={operator.address}
                           className="inline-flex min-h-11 items-center font-medium text-zinc-900 sm:min-h-0"

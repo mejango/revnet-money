@@ -145,8 +145,8 @@ function TermsContentSkeleton() {
 
 function OwnersContentSkeleton() {
   return (
-    <div role="status" aria-label="Loading owner tools" className="space-y-6">
-      <span className="sr-only">Loading owner tools</span>
+    <div role="status" aria-label="Loading token owner tools" className="space-y-6">
+      <span className="sr-only">Loading token owner tools</span>
       <CardSkeleton rows={4} />
       <div className="flex gap-5 overflow-hidden border-b border-zinc-200 pb-2">
         {Array.from({ length: 6 }, (_, index) => (
@@ -175,8 +175,8 @@ function ExtrasContentSkeleton() {
 
 function OperatorContentSkeleton() {
   return (
-    <div role="status" aria-label="Loading operator tools" className="space-y-8">
-      <span className="sr-only">Loading operator tools</span>
+    <div role="status" aria-label="Loading project operator tools" className="space-y-8">
+      <span className="sr-only">Loading project operator tools</span>
       {Array.from({ length: 4 }, (_, index) => (
         <CardSkeleton key={index} rows={index === 2 ? 5 : 3} />
       ))}

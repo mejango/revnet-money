@@ -3,13 +3,14 @@
 import { Nav } from "@/components/layout/Nav";
 import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxQuote } from "@/hooks/useReviewedRelayr";
+import { useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { withSchema } from "@/lib/formValidation";
 import { FormProvider } from "@/lib/forms";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, MappableAsset, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { encodeFunctionData, PublicClient } from "viem";
-import { useAccount } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { DEFAULT_FORM_DATA } from "./constants";
 import { DeployRevnetForm } from "./form/DeployRevnetForm";
@@ -21,7 +22,9 @@ import { RevnetFormData } from "./types";
 
 export default function Page() {
   const { toast } = useToast();
-  const { address, isConnected } = useAccount();
+  const { address, chainId: connectedChainId, isConnected } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
+  const { writeContractAsync } = useWriteContract();
 
   const { getRelayrTxQuote, data, reset } = useGetRelayrTxQuote();
 
@@ -48,6 +51,7 @@ export default function Page() {
     const timestamp = Math.floor(Date.now() / 1000);
 
     const relayrTransactions = [];
+    let directRequest: ReturnType<typeof parseDeployData> | null = null;
 
     for (const chainId of formData.chainIds) {
       const suckerDeployerConfig = parseSuckerDeployerConfig(
@@ -76,6 +80,7 @@ export default function Page() {
         salt,
         creationFee,
       });
+      if (formData.chainIds.length === 1) directRequest = request;
 
       console.log({ deployData: request.args });
 
@@ -120,6 +125,25 @@ export default function Page() {
           contractName: "REVDeployer",
         },
       });
+    }
+
+    if (directRequest) {
+      const chainId = formData.chainIds[0];
+      if (connectedChainId !== chainId) await switchChainAsync({ chainId });
+      await writeContractAsync({
+        chainId,
+        address: directRequest.address,
+        abi: directRequest.abi,
+        functionName: directRequest.functionName,
+        args: directRequest.args,
+        value: directRequest.value,
+      } as unknown as Parameters<typeof writeContractAsync>[0]);
+      toast({
+        title: "Revnet deployment submitted",
+        description:
+          "The single-chain deployment was sent directly. Track its onchain confirmation above.",
+      });
+      return;
     }
 
     await getRelayrTxQuote(relayrTransactions);

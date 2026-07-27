@@ -70,7 +70,9 @@ export function buildStepPoints(
   t1: number,
 ): [number, number][] {
   if (resolved.length === 0) return [];
-  const MAX_BREAKS = 720;
+  // Keep a full two-year daily schedule discrete (730/731 boundaries).
+  // Falling back to uniform sampling here made small real cuts look flat.
+  const MAX_BREAKS = 2_000;
   const breaks: number[] = [];
   let dense = false;
   for (let i = 0; i < resolved.length; i++) {
@@ -111,7 +113,13 @@ export function buildStepPoints(
 export function formatRate(n: number): string {
   if (!isFinite(n)) return "—";
   if (n === 0) return "0";
-  if (n >= 1000) return Math.round(n).toLocaleString("en-US");
+  if (n >= 1000) {
+    const decimals = Math.abs(n - Math.round(n)) < 1e-9 ? 0 : 2;
+    return n.toLocaleString("en-US", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
   if (n >= 1) return n.toFixed(2).replace(/\.?0+$/, "");
   return n.toPrecision(3);
 }

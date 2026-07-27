@@ -7,9 +7,7 @@ export function formatAdaptivePercent(percent: number): string {
 
   const magnitude = Math.abs(percent);
   const decimals =
-    magnitude >= 0.01
-      ? 2
-      : Math.min(8, Math.max(2, Math.ceil(-Math.log10(magnitude)) + 3));
+    magnitude >= 0.01 ? 2 : Math.min(8, Math.max(2, Math.ceil(-Math.log10(magnitude)) + 3));
 
   return percent.toFixed(decimals).replace(/\.?0+$/, "");
 }

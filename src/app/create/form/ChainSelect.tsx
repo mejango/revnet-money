@@ -90,8 +90,8 @@ export function ChainSelect({
           their {revnetTokenSymbol} between chains at any time.
         </p>
         <p className="mt-2 text-lg text-zinc-600">
-          The Operator you set in your revnet's terms will also be able to add new chains to the
-          revnet later.
+          The project operator you set in your revnet&apos;s terms will also be able to add new
+          chains to the revnet later.
         </p>
       </div>
       <div className="mt-6 md:col-span-2 md:mt-0">

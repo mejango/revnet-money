@@ -41,7 +41,10 @@ export function PriceChartTooltip({
       <div className="font-medium mb-2 text-zinc-300">{formattedDate}</div>
       {series.map((entry) => (
         <div key={entry.key} className="flex items-center gap-2 whitespace-nowrap">
-          <span className="w-2 h-2 shrink-0 rounded-full" style={{ backgroundColor: entry.color }} />
+          <span
+            className="w-2 h-2 shrink-0 rounded-full"
+            style={{ backgroundColor: entry.color }}
+          />
           <span className="shrink-0 text-zinc-400">{entry.label}:</span>
           <span className="shrink-0 font-mono text-white">
             {formatDecimals(entry.value, 6)} {baseTokenSymbol}

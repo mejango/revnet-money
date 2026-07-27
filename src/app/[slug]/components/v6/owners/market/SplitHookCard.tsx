@@ -165,9 +165,9 @@ function SplitHookChainBlock({
             />
             {state.deployGated && (
               <span className="text-xs text-zinc-400 max-w-md">
-                Deploying currently requires the operator (SET_BUYBACK_POOL permission). It becomes
-                permissionless once the issuance rate decays to 10% of what it was when tokens
-                started accumulating.
+                Deploying currently requires the project operator (SET_BUYBACK_POOL permission). It
+                becomes permissionless once the issuance rate decays to 10% of what it was when
+                tokens started accumulating.
               </span>
             )}
           </>

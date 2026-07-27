@@ -14,6 +14,7 @@ import { useAutoIssuances } from "@/hooks/useAutoIssuances";
 import { useTokenA } from "@/hooks/useTokenA";
 import { differenceInWholeDays, formatShortDate } from "@/lib/date";
 import { quotePayerTokensForOneUnit } from "@/lib/fixedPoint";
+import { formatAdaptivePercent } from "@/lib/formatPercent";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
@@ -26,7 +27,6 @@ import {
   RulesetWeight,
 } from "@bananapus/nana-sdk-core";
 import { formatUnits } from "viem";
-import { formatAdaptivePercent } from "@/lib/formatPercent";
 import { useReadContracts } from "wagmi";
 import type { Ruleset } from "../getRulesets";
 

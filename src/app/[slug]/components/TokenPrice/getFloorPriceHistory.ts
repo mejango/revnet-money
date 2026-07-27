@@ -6,8 +6,8 @@ import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { CashOutTaxSnapshot, SuckerGroupMoment } from "@/lib/bendystraw/types";
 import { JB_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { parseUnits } from "viem";
-import type { PriceDataPoint } from "./getTokenPriceChartData";
 import { explainCashOutChange } from "./explainCashOutChange";
+import type { PriceDataPoint } from "./getTokenPriceChartData";
 
 type FloorPriceOptions = {
   suckerGroupId: string;
@@ -87,11 +87,7 @@ export async function getFloorPriceHistory(options: FloorPriceOptions): Promise<
       dataPoints.push({
         timestamp: projectStart,
         floorPrice: 0,
-        cashOutTaxRate: findApplicableTaxRate(
-          projectStart,
-          taxSnapshots,
-          currentCashOutTax,
-        ),
+        cashOutTaxRate: findApplicableTaxRate(projectStart, taxSnapshots, currentCashOutTax),
       });
     }
 
@@ -114,12 +110,7 @@ export async function getFloorPriceHistory(options: FloorPriceOptions): Promise<
 
       const balance = BigInt(moment.balance);
       const tokenSupply = BigInt(moment.tokenSupply);
-      const floorPrice = calculateFloorPrice(
-        balance,
-        tokenSupply,
-        cashOutTax,
-        baseTokenDecimals,
-      );
+      const floorPrice = calculateFloorPrice(balance, tokenSupply, cashOutTax, baseTokenDecimals);
       const current = {
         balance,
         tokenSupply,

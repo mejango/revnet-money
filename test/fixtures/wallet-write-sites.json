@@ -108,7 +108,9 @@
           "getRelayrTxQuote",
           1
         ],
-        ["reviewed-relayr-quote-hook", "src/app/create/page.tsx", "Page", "useGetRelayrTxQuote", 1]
+        ["reviewed-write", "src/app/create/page.tsx", "deployProject", "writeContractAsync", 1],
+        ["reviewed-relayr-quote-hook", "src/app/create/page.tsx", "Page", "useGetRelayrTxQuote", 1],
+        ["reviewed-write-hook", "src/app/create/page.tsx", "Page", "useWriteContract", 1]
       ]
     },
     {
@@ -120,7 +122,7 @@
           "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
           "confirm",
           "writeContractAsync",
-          1
+          2
         ],
         [
           "reviewed-write-hook",

@@ -1,6 +1,5 @@
 const MAX_DATA_IMAGE_URL_LENGTH = 1_000_000;
-const SAFE_RASTER_DATA_IMAGE =
-  /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/u;
+const SAFE_RASTER_DATA_IMAGE = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/u;
 const SVG_DATA_IMAGE_PREFIX = "data:image/svg+xml,";
 const UNSAFE_SVG =
   /<(?:script|foreignObject|iframe|object|embed|image|use|style)\b|(?:on[a-z]+|href|src)\s*=|url\s*\(|@import|<!doctype|<\?xml-stylesheet/iu;
@@ -11,11 +10,7 @@ const UNSAFE_SVG =
  * and text markup before they can enter an <img>.
  */
 export function safeDataImageUrl(value: unknown): string | undefined {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > MAX_DATA_IMAGE_URL_LENGTH
-  ) {
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_DATA_IMAGE_URL_LENGTH) {
     return undefined;
   }
   if (SAFE_RASTER_DATA_IMAGE.test(value)) return value;

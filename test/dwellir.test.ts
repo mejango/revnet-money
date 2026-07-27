@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
 import { getDwellirRpcUrl } from "@/lib/dwellir";
+import { afterEach, describe, expect, it } from "vitest";
 
 const originalKey = process.env.NEXT_PUBLIC_DWELLIR_API_KEY;
 const originalDeterministic = process.env.NEXT_PUBLIC_DETERMINISTIC_BROWSER;

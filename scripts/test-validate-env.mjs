@@ -115,6 +115,4 @@ expectStatus(
 );
 expectStatus("invalid pinning switch", run("runtime", { ENABLE_PUBLIC_IPFS_PINNING: "yes" }), 1);
 
-console.log(
-  "Environment validation fixtures passed (HTTPS, Dwellir, Para, and runtime secrets). ",
-);
+console.log("Environment validation fixtures passed (HTTPS, Dwellir, Para, and runtime secrets). ");

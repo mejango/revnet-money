@@ -151,7 +151,7 @@ const fixtureProject = {
   suckerGroupId,
   logoUri: null,
   name: "Fixture Revnet",
-  projectTagline: "A deterministic protocol-backed browser fixture.",
+  projectTagline: browserProject.metadata.projectTagline,
   version: 6,
   token: usdc,
   decimals: 6,
@@ -217,6 +217,7 @@ const allowedGraphqlOperations = new Set([
   "ActivityEvents",
   "AutoIssueEvents",
   "CashOutTaxSnapshots",
+  "DiscoverRevnets",
   "HasPermission",
   "IndexedBuybackPools",
   "IndexedPoolSwaps",
@@ -260,6 +261,10 @@ function requireExactVariables(operation, actual, expected) {
 }
 
 const graphqlHandlers = {
+  DiscoverRevnets(variables) {
+    requireExactVariables("DiscoverRevnets", variables, {});
+    return { projects: { items: [fixtureProject] } };
+  },
   Project(variables) {
     requireExactVariables("Project", variables, { chainId, projectId, version: 6 });
     return { project: fixtureProject };

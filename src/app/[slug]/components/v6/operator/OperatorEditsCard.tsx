@@ -37,7 +37,7 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
         <div className="bg-melon-50 p-4">
           <p className="text-sm font-medium">Set project metadata</p>
           <p className="text-xs text-zinc-500 mt-1 mb-3">
-            Update the project&apos;s name, logo, description, links, and tags. Requires the
+            Update the project&apos;s name, logo, description, links, and tags. Requires the project
             operator&apos;s SET_PROJECT_URI permission.
           </p>
           <EditMetadataDialog projects={projects} triggerVariant="default" />
@@ -45,7 +45,7 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
         <div className="bg-melon-50 p-4">
           <p className="text-sm font-medium">Set splits</p>
           <p className="text-xs text-zinc-500 mt-1 mb-3">
-            Edit the split recipients for the current stage. Requires the operator&apos;s
+            Edit the split recipients for the current stage. Requires the project operator&apos;s
             SET_SPLIT_GROUPS permission.
           </p>
           {chainId ? (

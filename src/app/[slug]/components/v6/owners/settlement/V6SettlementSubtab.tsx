@@ -41,8 +41,8 @@ export function V6SettlementSubtab({ projects }: { projects: ProjectItem[] }) {
         // instead of silently hiding the sections.
         <div className="text-zinc-500">
           This project settles on one chain, so there are no bridges, cross-chain accounting
-          records, or queued token movements. If the operator deploys the project to more chains,
-          they&apos;ll show up here.
+          records, or queued token movements. If the project operator deploys the project to more
+          chains, they&apos;ll show up here.
         </div>
       )}
     </div>

@@ -31,8 +31,7 @@ describe("Bendystraw URL configuration", () => {
 
   it("preserves explicit deployment overrides", async () => {
     process.env.NEXT_PUBLIC_BENDYSTRAW_URL = "https://mainnet-indexer.example";
-    process.env.NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL =
-      "https://testnet-indexer.example/";
+    process.env.NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL = "https://testnet-indexer.example/";
     vi.resetModules();
 
     const { getBendystrawUrl } = await import("@/graphql/constants");
@@ -42,8 +41,7 @@ describe("Bendystraw URL configuration", () => {
   });
 
   it("normalizes GraphQL paths and removes query strings", async () => {
-    process.env.NEXT_PUBLIC_BENDYSTRAW_URL =
-      "https://mainnet-indexer.example/graphql/?key=ignored";
+    process.env.NEXT_PUBLIC_BENDYSTRAW_URL = "https://mainnet-indexer.example/graphql/?key=ignored";
     vi.resetModules();
 
     const { getBendystrawUrl } = await import("@/graphql/constants");

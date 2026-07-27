@@ -99,7 +99,7 @@ export function InventorySection({
             type="button"
             onClick={() => setAddItemsOpen(true)}
             className="text-sm text-teal-600 hover:text-teal-700"
-            title="Add items for sale (operator only)"
+            title="Add items for sale (project operator only)"
           >
             + Add items
           </button>

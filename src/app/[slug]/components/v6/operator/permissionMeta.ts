@@ -9,7 +9,7 @@ const DESCRIPTIONS: Record<keyof typeof JBPermissionIdsV6, string> = {
   QUEUE_RULESETS: "Queue new rulesets — future rules, splits, and limits.",
   LAUNCH_RULESETS: "Launch a project's first rulesets.",
   CASH_OUT_TOKENS: "Cash out the holder's tokens for a share of surplus.",
-  SEND_PAYOUTS: "Send payouts when the ruleset restricts that to the owner.",
+  SEND_PAYOUTS: "Send payouts when the ruleset restricts that to the project owner.",
   MIGRATE_TERMINAL: "Migrate the project's funds between terminals.",
   SET_PROJECT_URI: "Update the project's metadata (name, logo, description).",
   DEPLOY_ERC20: "Deploy the project's ERC-20 token.",

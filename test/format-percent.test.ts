@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { formatAdaptivePercent } from "@/lib/formatPercent";
+import { describe, expect, it } from "vitest";
 
 describe("formatAdaptivePercent", () => {
   it("keeps ordinary percentages compact", () => {

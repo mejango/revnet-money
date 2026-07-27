@@ -46,7 +46,7 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
             <TableRow className="bg-zinc-50 hover:bg-zinc-50">
               <TableHead className="whitespace-nowrap font-medium px-3">Chain</TableHead>
               <TableHead className="whitespace-nowrap font-medium px-3">Project ID</TableHead>
-              <TableHead className="whitespace-nowrap font-medium px-3">Operator</TableHead>
+              <TableHead className="whitespace-nowrap font-medium px-3">Project operator</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

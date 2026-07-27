@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
 import { getBendystrawUrl } from "@/graphql/constants";
 import {
   BENDYSTRAW_TIMEOUT_MS,
   bendystrawFetch,
   readBendystrawResponse,
 } from "@/lib/bendystraw/transport";
+import { NextRequest, NextResponse } from "next/server";
 
 type IndexedProject = {
   projectId: number;
@@ -26,13 +26,14 @@ const PROJECT_FIELDS = `
 `;
 
 async function queryBendystraw<T>(
+  operationName: string,
   query: string,
   variables: Record<string, unknown>,
 ): Promise<T> {
   const response = await bendystrawFetch(getBendystrawUrl(1), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query, variables }),
+    body: JSON.stringify({ operationName, query, variables }),
     cache: "no-store",
     signal: AbortSignal.timeout(BENDYSTRAW_TIMEOUT_MS),
   });
@@ -40,10 +41,7 @@ async function queryBendystraw<T>(
 }
 
 export async function GET(request: NextRequest) {
-  const text = (request.nextUrl.searchParams.get("q")?.trim() ?? "").replace(
-    /^\$/u,
-    "",
-  );
+  const text = (request.nextUrl.searchParams.get("q")?.trim() ?? "").replace(/^\$/u, "");
   if (text.length < 1 || text.length > 64) {
     return NextResponse.json({ projects: [] });
   }
@@ -53,16 +51,14 @@ export async function GET(request: NextRequest) {
     numericId !== null && Number.isSafeInteger(numericId) && numericId > 0
       ? `{ projectId: ${numericId} }`
       : null;
-  const filters = [
-    "{ name_contains_nocase: $text }",
-    ...(idFilter ? [idFilter] : []),
-  ].join("\n");
+  const filters = ["{ name_contains_nocase: $text }", ...(idFilter ? [idFilter] : [])].join("\n");
 
   try {
     const [data, tickerData] = await Promise.all([
       queryBendystraw<{
         projects?: { items?: IndexedProject[] };
       }>(
+        "SearchRevnets",
         `query SearchRevnets($text: String!) {
           projects(
             where: {
@@ -90,6 +86,7 @@ export async function GET(request: NextRequest) {
           }>;
         };
       }>(
+        "SearchRevnetTickers",
         `query SearchRevnetTickers($text: String!) {
           deployErc20Events(
             where: { symbol_contains_nocase: $text }
@@ -104,10 +101,7 @@ export async function GET(request: NextRequest) {
 
     const tickerByDeployment = new Map<string, string>();
     for (const event of tickerData.deployErc20Events?.items ?? []) {
-      tickerByDeployment.set(
-        `${event.chainId}:${event.projectId}`,
-        event.symbol,
-      );
+      tickerByDeployment.set(`${event.chainId}:${event.projectId}`, event.symbol);
     }
     const tickerPairs = Array.from(tickerByDeployment.keys()).map((pair) => {
       const [chainId, projectId] = pair.split(":").map(Number);
@@ -115,10 +109,11 @@ export async function GET(request: NextRequest) {
     });
     const tickerProjects =
       tickerPairs.length > 0
-        ? (
+        ? ((
             await queryBendystraw<{
               projects?: { items?: IndexedProject[] };
             }>(
+              "SearchRevnetTickerProjects",
               `query SearchRevnetTickerProjects {
                 projects(
                   where: {
@@ -135,35 +130,19 @@ export async function GET(request: NextRequest) {
               }`,
               {},
             )
-          ).projects?.items ?? []
+          ).projects?.items ?? [])
         : [];
     const matchedDeployments = new Map<string, IndexedProject>();
-    for (const project of [
-      ...(data.projects?.items ?? []),
-      ...tickerProjects,
-    ]) {
-      matchedDeployments.set(
-        `${project.chainId}:${project.projectId}`,
-        project,
-      );
+    for (const project of [...(data.projects?.items ?? []), ...tickerProjects]) {
+      matchedDeployments.set(`${project.chainId}:${project.projectId}`, project);
     }
-    const matches: SearchProject[] = Array.from(
-      matchedDeployments.values(),
-    ).map((project) => ({
+    const matches: SearchProject[] = Array.from(matchedDeployments.values()).map((project) => ({
       ...project,
-      ticker:
-        tickerByDeployment.get(
-          `${project.chainId}:${project.projectId}`,
-        ) ?? null,
+      ticker: tickerByDeployment.get(`${project.chainId}:${project.projectId}`) ?? null,
     }));
-    const groups = new Map<
-      string,
-      { representative: SearchProject; members: SearchProject[] }
-    >();
+    const groups = new Map<string, { representative: SearchProject; members: SearchProject[] }>();
     for (const project of matches) {
-      const key =
-        project.suckerGroupId ??
-        `${project.chainId}:${project.projectId}`;
+      const key = project.suckerGroupId ?? `${project.chainId}:${project.projectId}`;
       const group = groups.get(key);
       if (!group) {
         groups.set(key, {
@@ -172,10 +151,7 @@ export async function GET(request: NextRequest) {
         });
       } else {
         group.members.push(project);
-        if (
-          BigInt(project.volume || "0") >
-          BigInt(group.representative.volume || "0")
-        ) {
+        if (BigInt(project.volume || "0") > BigInt(group.representative.volume || "0")) {
           group.representative = project;
         }
       }
@@ -189,6 +165,7 @@ export async function GET(request: NextRequest) {
           const groupData = await queryBendystraw<{
             suckerGroup?: { projects?: { items?: IndexedProject[] } };
           }>(
+            "SearchRevnetGroup",
             `query SearchRevnetGroup($id: String!) {
               suckerGroup(id: $id) {
                 projects(limit: 10) { items { ${PROJECT_FIELDS} } }
@@ -213,13 +190,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       projects: completeGroups.map(({ representative, members }) => ({
         ...representative,
-        ticker:
-          representative.ticker ??
-          members.find((member) => member.ticker)?.ticker ??
-          null,
-        chainIds: Array.from(
-          new Set(members.map((member) => member.chainId)),
-        ),
+        ticker: representative.ticker ?? members.find((member) => member.ticker)?.ticker ?? null,
+        chainIds: Array.from(new Set(members.map((member) => member.chainId))),
       })),
     });
   } catch {

@@ -176,7 +176,7 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   for (const heading of ["Account", "Edits", "Buyback & swap router", "Permissions"]) {
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
-  await expect(page.getByText("No operator permissions found.")).toBeVisible();
+  await expect(page.getByText("No project operator permissions found.")).toBeVisible();
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 
@@ -194,7 +194,7 @@ test("home and discover shells stay contained and deterministic", async ({ page,
 
   const homeResponse = await page.goto("/", { waitUntil: "domcontentloaded" });
   expectSecurityHeaders(homeResponse);
-  await expect(page.getByText("A business model for the open web. 100% autonomous.")).toBeVisible();
+  await expect(page.getByText("An autonomous business model for the open web.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Create yours" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Fixture Revnet/ })).toBeVisible();
   await expect(page.getByText("$1,250", { exact: true })).toBeVisible();
@@ -211,7 +211,7 @@ test("home and discover shells stay contained and deterministic", async ({ page,
   await expectNoBlockingAccessibilityFindings(page);
 
   await expect
-    .poll(async () => (await fixtureStatus(request)).graphqlOperations.Projects ?? 0)
+    .poll(async () => (await fixtureStatus(request)).graphqlOperations.DiscoverRevnets ?? 0)
     .toBeGreaterThan(0);
   const status = await fixtureStatus(request);
   expect(status.unknownRequests).toEqual([]);

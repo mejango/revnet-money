@@ -13,6 +13,14 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
+import {
+  buildDirectPaySwapTx,
+  needsPermit2Approval,
+  PERMIT2_ADDRESS,
+  permit2Abi,
+  quoteDirectPaySwap,
+  UNIVERSAL_ROUTER_BY_CHAIN,
+} from "@/lib/directPaySwap";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
@@ -56,11 +64,10 @@ import {
 } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
+import { readPoolSnapshot } from "../owners/market/lib";
 import { useShopCart } from "../ShopCartContext";
-import { TextSelect } from "./TextSelect";
-import { PreparedV6Pay, V6PayConfirmDialog, V6PayPhase } from "./V6PayConfirmDialog";
-import { V6PayShopStrip } from "./V6PayShopStrip";
 import { payPanelLayoutClasses, paySettlementLabel } from "./payCardLayout";
+import { TextSelect } from "./TextSelect";
 import {
   BASE_CURRENCY_ETH,
   BASE_CURRENCY_USD,
@@ -69,6 +76,8 @@ import {
   usePayShopRoutes,
 } from "./usePayShop";
 import { usePaySurface } from "./usePaySurface";
+import { PreparedV6Pay, V6PayConfirmDialog, V6PayPhase } from "./V6PayConfirmDialog";
+import { V6PayShopStrip } from "./V6PayShopStrip";
 
 function payChainName(chainId: JBChainId): string {
   const compactNames: Partial<Record<JBChainId, string>> = {
@@ -368,6 +377,30 @@ export function V6PayCard() {
         beneficiary,
       });
       if (!route) throw new Error("No pay route with a live quote");
+      const directSwap = await readPoolSnapshot(chainId, projectId)
+        .then(({ pool }) =>
+          pool
+            ? quoteDirectPaySwap({
+                client,
+                chainId,
+                poolKey: pool.key,
+                pairIsCurrency0: pool.pairIsC0,
+                paymentToken: selected!.token,
+                amount: amountRaw,
+                payPreview: route.preview,
+              })
+            : null,
+        )
+        .catch(() => null);
+      if (directSwap) {
+        return {
+          beneficiaryTokenCount: directSwap.beneficiaryTokenCount,
+          reservedTokenCount: directSwap.reservedTokenCount,
+          terminal: UNIVERSAL_ROUTER_BY_CHAIN[chainId]!,
+          routeType: "swap",
+          directSwap,
+        } as const;
+      }
       return {
         beneficiaryTokenCount: route.preview.beneficiaryTokenCount,
         reservedTokenCount: route.preview.reservedTokenCount,
@@ -466,6 +499,7 @@ export function V6PayCard() {
         let terminal: Address;
         let routeType: "multi" | "swap";
         let freshPreview: PayPreview;
+        let directSwap: Awaited<ReturnType<typeof quoteDirectPaySwap>> | null = null;
         if (metadata) {
           if (selected.viaRouter) {
             throw new Error("Item checkout requires a directly accepted token.");
@@ -503,23 +537,63 @@ export function V6PayCard() {
           terminal = route.address;
           routeType = route.type;
           freshPreview = route.preview;
+          const pool = await readPoolSnapshot(chainId, projectId)
+            .then((result) => result.pool)
+            .catch(() => null);
+          directSwap = pool
+            ? await quoteDirectPaySwap({
+                client,
+                chainId,
+                poolKey: pool.key,
+                pairIsCurrency0: pool.pairIsC0,
+                paymentToken: selected.token,
+                amount: amountRaw,
+                payPreview: route.preview,
+              }).catch(() => null)
+            : null;
         }
 
-        // 99% of the fresh preview (website payMinTokens parity); a verified
-        // zero stays zero.
-        const minReturned = minReturnedTokens(freshPreview.beneficiaryTokenCount, 100n);
-        const request = buildPayTx({
-          chainId,
-          terminal,
-          projectId,
-          token: selected.token,
-          amount: amountRaw,
-          beneficiary: address,
-          minReturnedTokens: minReturned,
-          memo: memo.trim() || undefined,
-          metadata,
-        });
-        const abi = routeType === "swap" ? jbRouterTerminalRegistryAbi : jbMultiTerminalAbi;
+        // The direct swap quote already carries its 1% slippage floor. Terminal
+        // payments derive the same floor from their fresh preview.
+        const minReturned = directSwap
+          ? directSwap.beneficiaryTokenCount
+          : minReturnedTokens(freshPreview.beneficiaryTokenCount, 100n);
+        const request = directSwap
+          ? buildDirectPaySwapTx({
+              chainId,
+              quote: directSwap,
+              amount: amountRaw,
+              recipient: address,
+              deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
+            })
+          : buildPayTx({
+              chainId,
+              terminal,
+              projectId,
+              token: selected.token,
+              amount: amountRaw,
+              beneficiary: address,
+              minReturnedTokens: minReturned,
+              memo: memo.trim() || undefined,
+              metadata,
+            });
+        terminal = request.address;
+        routeType = directSwap ? "swap" : routeType;
+        const abi = directSwap
+          ? request.abi
+          : routeType === "swap"
+            ? jbRouterTerminalRegistryAbi
+            : jbMultiTerminalAbi;
+        const approvalSpender = directSwap ? PERMIT2_ADDRESS : terminal;
+        const permit2Approval = directSwap
+          ? await needsPermit2Approval({
+              client,
+              chainId,
+              owner: address,
+              token: selected.token,
+              amount: amountRaw,
+            })
+          : false;
         next = {
           mode,
           chainId,
@@ -528,10 +602,20 @@ export function V6PayCard() {
           memo: memo.trim(),
           terminal,
           viaRouterRoute: routeType === "swap",
-          expectedTokens: freshPreview.beneficiaryTokenCount,
-          reservedTokens: freshPreview.reservedTokenCount,
+          directSwapRoute: !!directSwap,
+          expectedTokens: directSwap
+            ? directSwap.beneficiaryTokenCount
+            : freshPreview.beneficiaryTokenCount,
+          reservedTokens: directSwap ? 0n : freshPreview.reservedTokenCount,
           minReturned,
-          needsApproval: await needsApproval(client, selected.token, address, terminal, amountRaw),
+          needsApproval: await needsApproval(
+            client,
+            selected.token,
+            address,
+            approvalSpender,
+            amountRaw,
+          ),
+          needsPermit2Approval: permit2Approval,
           cartRows,
           request: {
             address: request.address,
@@ -541,8 +625,8 @@ export function V6PayCard() {
             value: request.value,
           },
           calldata: encodeFunctionData({
-            abi: jbMultiTerminalAbi,
-            functionName: "pay",
+            abi,
+            functionName: request.functionName,
             args: request.args,
           }),
         };
@@ -561,10 +645,12 @@ export function V6PayCard() {
           memo: memo.trim(),
           terminal,
           viaRouterRoute: false,
+          directSwapRoute: false,
           expectedTokens: null,
           reservedTokens: null,
           minReturned: 0n,
           needsApproval: await needsApproval(client, selected.token, address, terminal, amountRaw),
+          needsPermit2Approval: false,
           cartRows: [],
           request: {
             address: terminal,
@@ -605,9 +691,38 @@ export function V6PayCard() {
     setTxError(null);
     try {
       if (prepared.needsApproval) {
-        // Approve the RESOLVED terminal (may be the router registry).
+        // Direct ERC-20 swaps approve canonical Permit2; terminal routes approve
+        // the resolved terminal.
         setPhase("approving");
-        await ensureAllowance(prepared.token.token, prepared.request.address, prepared.amount);
+        await ensureAllowance(
+          prepared.token.token,
+          prepared.directSwapRoute ? PERMIT2_ADDRESS : prepared.request.address,
+          prepared.amount,
+        );
+      }
+      if (
+        prepared.directSwapRoute &&
+        prepared.needsPermit2Approval &&
+        !isNativePayToken(prepared.token.token)
+      ) {
+        const router = UNIVERSAL_ROUTER_BY_CHAIN[prepared.chainId];
+        if (!router) throw new Error("The swap router is unavailable on this chain.");
+        setPhase("approving");
+        const expiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+        const approvalHash = await writeContractAsync({
+          chainId: prepared.chainId,
+          address: PERMIT2_ADDRESS,
+          abi: permit2Abi,
+          functionName: "approve",
+          args: [prepared.token.token, router, prepared.amount, expiration],
+        });
+        requireOnchainExecution(approvalHash, "Swap authorization");
+        const approvalReceipt = await publicClient.waitForTransactionReceipt({
+          hash: approvalHash,
+        });
+        if (approvalReceipt.status !== "success") {
+          throw new Error(`Swap authorization ${approvalHash} reverted onchain.`);
+        }
       }
       setPhase("simulating");
       await publicClient.simulateContract({

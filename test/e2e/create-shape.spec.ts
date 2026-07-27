@@ -32,13 +32,13 @@ test("production create surface stays visible and contained", async ({ page }) =
   const boundary = await openCreatePage(page);
 
   await expect(page.getByRole("navigation")).toBeVisible();
-  await expect(page.getByRole("button", { name: /connect wallet/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "1. Look" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "2. Assets" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "3. Terms" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "4. Deploy" })).toBeVisible();
-  await expect(page.getByLabel("Name")).toBeVisible();
-  await expect(page.getByLabel("Ticker")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Ticker", exact: true })).toBeVisible();
   await expect(page.locator('a[href*="/undefined/"]')).toHaveCount(0);
 
   await expectContained(page, ["nav", "main", "footer", "h1", "#name", "#tokenSymbol"]);
@@ -50,8 +50,8 @@ test("create form remains keyboard-usable and free of severe accessibility regre
   page,
 }) => {
   const boundary = await openCreatePage(page);
-  const name = page.getByLabel("Name");
-  const ticker = page.getByLabel("Ticker");
+  const name = page.getByRole("textbox", { name: "Name", exact: true });
+  const ticker = page.getByRole("textbox", { name: "Ticker", exact: true });
 
   await name.focus();
   await page.keyboard.type("Keyboard Revnet");
