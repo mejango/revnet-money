@@ -7,7 +7,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Trash2 as TrashIcon } from "@/components/ui/icons";
+import { ChevronDown, Trash2 as TrashIcon } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
 import { withSchema } from "@/lib/formValidation";
@@ -180,15 +180,14 @@ export function AddStageDialog({
                       />
 
                       <div className="flex flex-wrap md:flex-nowrap gap-2 sm:gap-2 items-center text-md text-zinc-600 mt-2">
-                        {/* Styled number input with suffix for initialIssuance */}
-                        <div className="relative w-full sm:w-[210px] lg:w-[210px] xl:w-[210px]">
+                        <div className="grid h-9 w-full min-w-0 grid-cols-[minmax(6rem,1fr)_max-content] items-center border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus-within:border-melon-600 sm:w-[340px]">
                           <Field
                             id="initialIssuance"
                             name="initialIssuance"
                             min="0"
                             step="any"
                             type="number"
-                            className={`h-9 w-full pr-32 px-3 text-md ${
+                            className={`h-full min-w-0 border-0 bg-transparent px-3 py-0 text-md focus-visible:border-0 ${
                               values.pickUpFromPrevious
                                 ? "bg-gray-50 text-gray-600 cursor-not-allowed"
                                 : ""
@@ -200,27 +199,33 @@ export function AddStageDialog({
                                 : values.initialIssuance
                             }
                           />
-                          <span className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center text-md text-zinc-500">
-                            <span className="pointer-events-none">{revnetTokenSymbol} / </span>
+                          <span className="flex shrink-0 items-center pr-2 text-md text-zinc-500">
+                            <span className="pointer-events-none whitespace-nowrap">
+                              {revnetTokenSymbol} /
+                            </span>
                             {reserveAssetKind === "CUSTOM" ? (
-                              <span className="pointer-events-none">
+                              <span className="pointer-events-none ml-1 whitespace-nowrap">
                                 {issuanceBaseCurrencySymbol}
                               </span>
                             ) : (
-                              <select
-                                aria-label="Issuance currency"
-                                className="ml-1 w-[4.25rem] border-0 bg-transparent py-0 pr-6 pl-0 text-md text-zinc-500 focus:ring-0"
-                                value={issuanceBaseCurrency}
-                                onChange={(event) =>
-                                  setCreateFieldValue(
-                                    "issuanceBaseCurrency",
-                                    event.target.value as "ETH" | "USD",
-                                  )
-                                }
-                              >
-                                <option value="ETH">ETH</option>
-                                <option value="USD">USD</option>
-                              </select>
+                              <span className="relative ml-1 inline-flex items-center">
+                                <select
+                                  aria-label="Issuance currency"
+                                  className="w-[3.25rem] appearance-none border-0 bg-transparent bg-none py-0 pr-4 pl-0 text-md text-zinc-500 focus:ring-0"
+                                  style={{ backgroundImage: "none" }}
+                                  value={issuanceBaseCurrency}
+                                  onChange={(event) =>
+                                    setCreateFieldValue(
+                                      "issuanceBaseCurrency",
+                                      event.target.value as "ETH" | "USD",
+                                    )
+                                  }
+                                >
+                                  <option value="ETH">ETH</option>
+                                  <option value="USD">USD</option>
+                                </select>
+                                <ChevronDown className="pointer-events-none absolute right-0 h-3.5 w-3.5" />
+                              </span>
                             )}
                           </span>
                         </div>

@@ -42,6 +42,21 @@ test("production create surface stays visible and contained", async ({ page }) =
   await page.getByRole("checkbox", { name: "USDC" }).check();
   await expect(page.getByRole("checkbox", { name: "ETH", exact: true })).toBeChecked();
   await expect(page.getByText("backed by both ETH and USDC", { exact: false })).toBeVisible();
+
+  await page.getByRole("button", { name: "Add stage" }).click();
+  const issuanceAmount = page.locator("#initialIssuance");
+  const issuanceCurrency = page.getByRole("combobox", { name: "Issuance currency" });
+  await issuanceAmount.fill("10000");
+  await expect(issuanceCurrency).toHaveValue("ETH");
+  const amountBox = await issuanceAmount.boundingBox();
+  const suffixBox = await issuanceCurrency.locator("xpath=../..").boundingBox();
+  expect(amountBox).not.toBeNull();
+  expect(suffixBox).not.toBeNull();
+  expect(amountBox!.x + amountBox!.width).toBeLessThanOrEqual(suffixBox!.x + 0.5);
+  await issuanceCurrency.selectOption("USD");
+  await expect(issuanceCurrency).toHaveValue("USD");
+  await page.keyboard.press("Escape");
+
   await page.getByRole("checkbox", { name: "Custom token" }).check();
   await expect(page.getByRole("textbox", { name: "ERC-20 token address" })).toBeVisible();
   await expect(page.getByText("A custom reserve is exclusive.", { exact: false })).toBeVisible();
