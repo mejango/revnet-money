@@ -1,6 +1,7 @@
 import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
-import { jbMultiTerminalAbi, NATIVE_TOKEN, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
+import { jbMultiTerminalAbi } from "@bananapus/nana-sdk-core";
 import { useReadContract } from "wagmi";
+import { useProjectBaseToken } from "./useProjectBaseToken";
 
 export function useNativeTokenSurplus() {
   const {
@@ -9,12 +10,16 @@ export function useNativeTokenSurplus() {
   } = useJBContractContext();
 
   const chainId = useJBChainId();
+  const baseToken = useProjectBaseToken();
 
   return useReadContract({
     abi: jbMultiTerminalAbi,
     functionName: "currentSurplusOf",
     chainId,
     address: primaryNativeTerminal.data ?? undefined,
-    args: [projectId, [NATIVE_TOKEN], BigInt(NATIVE_TOKEN_DECIMALS), BigInt(1)],
+    args: baseToken
+      ? [projectId, [baseToken.address], BigInt(baseToken.decimals), BigInt(baseToken.currency)]
+      : undefined,
+    query: { enabled: !!primaryNativeTerminal.data && !!baseToken },
   });
 }

@@ -4,22 +4,14 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { useBoostRecipient } from "@/hooks/useBoostRecipient";
 import { useCountdownToDate } from "@/hooks/useCountdownToDate";
 import { useFormattedTokenIssuance } from "@/hooks/useFormattedTokenIssuance";
-import { useJBChainId, useJBContractContext, useJBRulesetContext } from "@/lib/nana/project";
-import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
+import { useJBRulesetContext } from "@/lib/nana/project";
 import { formatSeconds } from "@/lib/utils";
-import {
-  getNextRulesetWeight,
-  JBCoreContracts,
-  jbMultiTerminalAbi,
-  ReservedPercent,
-  RulesetWeight,
-} from "@bananapus/nana-sdk-core";
-import { useReadContract } from "wagmi";
+import { getNextRulesetWeight, ReservedPercent, RulesetWeight } from "@bananapus/nana-sdk-core";
 
 export function CurrentIssuanceSection() {
   const { ruleset, rulesetMetadata } = useJBRulesetContext();
-  const { projectId, contractAddress } = useJBContractContext();
-  const chainId = useJBChainId();
+  const baseToken = useProjectBaseToken();
   const boostRecipient = useBoostRecipient();
 
   // useFormattedTokenIssuance resolves the unit after the slash from the
@@ -27,21 +19,10 @@ export function CurrentIssuanceSection() {
   // "undefined". For v6 the terminal's on-chain accounting context is
   // authoritative (e.g. Artizen's USDC context, currency uint32(token)), so
   // fill the unit from it.
-  const { data: accountingContexts } = useReadContract({
-    abi: jbMultiTerminalAbi,
-    functionName: "accountingContextsOf",
-    chainId,
-    address: chainId ? contractAddress(JBCoreContracts.JBMultiTerminal, chainId) : undefined,
-    args: [projectId],
-    query: { enabled: !!chainId },
-  });
-  const accountingSymbol = accountingContexts?.[0]
-    ? getTokenSymbolFromAddress(accountingContexts[0].token)
-    : undefined;
   const withUnit = (issuance: string | undefined) => {
     if (!issuance?.endsWith(" / undefined")) return issuance;
-    return accountingSymbol
-      ? issuance.replace(/undefined$/, accountingSymbol)
+    return baseToken?.symbol
+      ? issuance.replace(/undefined$/, baseToken.symbol)
       : issuance.slice(0, -" / undefined".length);
   };
 

@@ -64,5 +64,6 @@ describe("custom reserve verification", () => {
     expect(bridgeableReserveAssets("CUSTOM")).toEqual([]);
     expect(bridgeableReserveAssets("ETH")).toEqual([MappableAsset.NATIVE]);
     expect(bridgeableReserveAssets("USDC")).toEqual([MappableAsset.USDC]);
+    expect(bridgeableReserveAssets("ETH_USDC")).toEqual([MappableAsset.NATIVE, MappableAsset.USDC]);
   });
 });

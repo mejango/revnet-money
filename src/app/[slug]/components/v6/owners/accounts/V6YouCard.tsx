@@ -158,13 +158,15 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
       if (!contexts?.length) return;
       // Projects can hold several contexts; prefer the one for the indexed
       // accounting token, else the first.
-      const indexedToken = getTokenConfigForChain(suckerGroupData, b.chainId).token;
+      const indexed = getTokenConfigForChain(suckerGroupData, b.chainId);
+      const indexedToken = indexed.token;
       const context =
         contexts.find((c) => c.token.toLowerCase() === indexedToken.toLowerCase()) ?? contexts[0];
       map.set(b.chainId, {
         token: context.token,
         currency: Number(context.currency),
         decimals: Number(context.decimals),
+        symbol: indexed.symbol,
       });
     });
     return map;
@@ -233,9 +235,12 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     heldConfigs.every(
       (c) =>
         c.decimals === heldConfigs[0].decimals &&
-        getTokenSymbolFromAddress(c.token) === getTokenSymbolFromAddress(heldConfigs[0].token),
+        (c.symbol ?? getTokenSymbolFromAddress(c.token)) ===
+          (heldConfigs[0].symbol ?? getTokenSymbolFromAddress(heldConfigs[0].token)),
     );
-  const baseSymbol = heldConfigs[0] ? getTokenSymbolFromAddress(heldConfigs[0].token) : "ETH";
+  const baseSymbol = heldConfigs[0]
+    ? (heldConfigs[0].symbol ?? getTokenSymbolFromAddress(heldConfigs[0].token))
+    : "ETH";
   const baseDecimals = heldConfigs[0]?.decimals ?? 18;
   const cashComplete = homogeneous && held.every((b) => quotes[b.chainId]?.cashout !== undefined);
   const loanComplete = homogeneous && held.every((b) => quotes[b.chainId]?.maxLoan !== undefined);
@@ -431,7 +436,7 @@ function YouChainRow({
   onQuote: (chainId: number, quote: ChainQuote) => void;
 }) {
   const config = accountingContext ?? getTokenConfigForChain(suckerGroupData, chainId);
-  const baseSymbol = getTokenSymbolFromAddress(config.token);
+  const baseSymbol = config.symbol ?? getTokenSymbolFromAddress(config.token);
 
   // v6 currentReclaimableSurplusOf takes empty (terminals, tokens) arrays,
   // meaning "across all of them"; the hook applies the protocol fees. Both

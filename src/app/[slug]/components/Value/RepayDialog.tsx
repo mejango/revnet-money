@@ -87,7 +87,8 @@ export function RepayDialog({
 
   // Get token configuration for this loan's chain
   const chainTokenConfig = getTokenConfigForChain(suckerGroupData, chainId);
-  const baseTokenSymbol = getTokenSymbolFromAddress(chainTokenConfig.token);
+  const baseTokenSymbol =
+    chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token);
   const baseTokenDecimals = chainTokenConfig.decimals;
 
   // Repay loan hook

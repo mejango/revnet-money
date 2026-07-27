@@ -23,7 +23,7 @@ import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
 import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
-import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
+import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
@@ -33,8 +33,10 @@ import { formatWalletError } from "@/lib/utils";
 import {
   DEFAULT_METADATA,
   formatUnits,
+  getJBContractAddress,
   JB_CHAINS,
   JB_TOKEN_DECIMALS,
+  JBCoreContracts,
   jbMultiTerminalAbi,
   JBProjectToken,
   NATIVE_TOKEN,
@@ -54,10 +56,6 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, disabled, children, surpluses } = props;
   const [redeemAmount, setRedeemAmount] = useState<string>();
 
-  const {
-    contracts: { primaryNativeTerminal },
-  } = useJBContractContext();
-
   const { address } = useAccount();
   const { data: balances } = useSuckersUserTokenBalance();
   const [cashOutChainId, setCashOutChainId] = useState<string>();
@@ -72,6 +70,13 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const selectedSucker = cashOutChainId
     ? suckers?.find((s) => s.peerChainId === Number(cashOutChainId))
     : suckers?.find((s) => s.peerChainId === chainId);
+  const cashOutTerminal = selectedSucker
+    ? getJBContractAddress(
+        JBCoreContracts.JBMultiTerminal,
+        6,
+        selectedSucker.peerChainId as JBChainId,
+      )
+    : undefined;
 
   // Get the correct project ID for the selected chain
   const effectiveProjectId = selectedSucker?.projectId || projectId;
@@ -266,12 +271,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 loading={loading || isApproving}
                 onClick={async () => {
                   try {
-                    if (
-                      !primaryNativeTerminal?.data ||
-                      !address ||
-                      !redeemAmountBN ||
-                      !writeContractAsync
-                    ) {
+                    if (!cashOutTerminal || !address || !redeemAmountBN || !writeContractAsync) {
                       console.error("Missing required data for cashout");
                       throw new Error("Please try again");
                     }
@@ -280,11 +280,11 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       abi: jbMultiTerminalAbi,
                       functionName: "cashOutTokensOf",
                       chainId: selectedSucker?.peerChainId,
-                      address: primaryNativeTerminal.data,
+                      address: cashOutTerminal,
                       args: [
                         address, // holder
                         effectiveProjectId, // project id
-                        redeemAmount ? parseUnits(redeemAmount, JB_TOKEN_DECIMALS) : 0n, // cash out count
+                        redeemAmount ? parseUnits(redeemAmount, projectTokenDecimals) : 0n, // cash out count
                         tokenToReceive, // token to reclaim
                         reclaimableAmount ?? 0n, // min tokens reclaimed (fees already applied)
                         address, // beneficiary

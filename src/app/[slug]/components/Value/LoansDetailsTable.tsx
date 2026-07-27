@@ -58,7 +58,8 @@ function LoanRow({
 
   const chainTokenConfig = getTokenConfigForChain(suckerGroupData, loan.chainId);
 
-  const baseTokenSymbol = getTokenSymbolFromAddress(chainTokenConfig.token);
+  const baseTokenSymbol =
+    chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token);
   const baseTokenDecimals = chainTokenConfig.decimals;
 
   const borrowAmount = Number(formatUnits(BigInt(loan.borrowAmount), baseTokenDecimals)).toFixed(4);

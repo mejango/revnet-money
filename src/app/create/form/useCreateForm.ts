@@ -13,9 +13,13 @@ export function useCreateForm() {
   const reserveAssetSymbol =
     context.values.reserveAsset === "CUSTOM"
       ? context.values.customReserveAsset.symbol || "custom token"
-      : context.values.reserveAsset;
+      : context.values.reserveAsset === "ETH_USDC"
+        ? "ETH and USDC"
+        : context.values.reserveAsset;
   const issuanceBaseCurrencySymbol =
-    context.values.reserveAsset === "USDC" ? "USD" : reserveAssetSymbol;
+    context.values.reserveAsset === "USDC" || context.values.reserveAsset === "ETH_USDC"
+      ? "USD"
+      : reserveAssetSymbol;
 
   return {
     ...context,

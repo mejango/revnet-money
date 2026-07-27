@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
 import { useAllowance } from "@/hooks/useAllowance";
+import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalPendingError,
   useWaitForTransactionReceipt,
@@ -58,6 +59,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const [amount, setAmount] = useState<string>();
   const [slippagePercent, setSlippagePercent] = useState("1");
   const { token } = useJBTokenContext();
+  const baseToken = useProjectBaseToken();
   const tokenSymbol = formatTokenSymbol(token);
   const { ensureAllowance, isApproving } = useAllowance(sourceChainId);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -104,7 +106,10 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       return undefined;
     }
   }, [project.token]);
-  const backingTokenSymbol = terminalToken ? getTokenSymbolFromAddress(terminalToken) : "tokens";
+  const backingTokenSymbol =
+    baseToken?.tokenMap[sourceChainId]?.symbol ??
+    baseToken?.symbol ??
+    (terminalToken ? getTokenSymbolFromAddress(terminalToken) : "tokens");
 
   const prepareQuote = useQuery({
     queryKey: [

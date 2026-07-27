@@ -29,6 +29,7 @@ export interface TokenConfig {
   token: `0x${string}`;
   currency: number;
   decimals: number;
+  symbol?: string;
 }
 
 /**
@@ -43,6 +44,7 @@ export function getTokenConfigForChain(suckerGroupData: any, targetChainId: numb
       token: NATIVE_TOKEN.toLowerCase() as `0x${string}`,
       currency: 1,
       decimals: 18,
+      symbol: "ETH",
     };
   }
 
@@ -55,6 +57,9 @@ export function getTokenConfigForChain(suckerGroupData: any, targetChainId: numb
       token: projectForChain.token as `0x${string}`,
       currency: Number(projectForChain.currency),
       decimals: projectForChain.decimals || 18,
+      symbol:
+        projectForChain.tokenSymbol ||
+        getTokenSymbolFromAddress(projectForChain.token as `0x${string}`),
     };
   }
 
@@ -62,5 +67,6 @@ export function getTokenConfigForChain(suckerGroupData: any, targetChainId: numb
     token: NATIVE_TOKEN.toLowerCase() as `0x${string}`,
     currency: 1,
     decimals: 18,
+    symbol: "ETH",
   };
 }

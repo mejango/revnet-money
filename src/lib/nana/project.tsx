@@ -7,13 +7,12 @@ import {
   jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
+  jbMultiTerminalAbi,
   jbOmnichainDeployerAbi,
   JBOmnichainDeployerContracts,
   jbTokensAbi,
-  NATIVE_TOKEN,
   ReservedPercent,
   RulesetWeight,
-  USDC_ADDRESSES,
   WeightCutPercent,
   type Contract,
   type JBChainId,
@@ -32,7 +31,7 @@ import {
   type PublicClient,
 } from "viem";
 import { useChainId, useChains, usePublicClient, useReadContract } from "wagmi";
-import { resolveV6DataHookAddress, selectPrimaryNativeTerminal } from "./state";
+import { resolveV6DataHookAddress } from "./state";
 import type {
   AsyncData,
   InitialProjectData,
@@ -197,22 +196,25 @@ function ContractProvider({ projectId, children }: PropsWithChildren<{ projectId
   const directory = chainId
     ? getJBContractAddress(JBCoreContracts.JBDirectory, VERSION, chainId)
     : undefined;
-
-  const primaryNativeTerminalEth = useReadContract({
-    address: directory,
-    abi: jbDirectoryAbi,
-    functionName: "primaryTerminalOf",
+  const multiTerminal = chainId
+    ? getJBContractAddress(JBCoreContracts.JBMultiTerminal, VERSION, chainId)
+    : undefined;
+  const accountingContexts = useReadContract({
+    address: multiTerminal,
+    abi: jbMultiTerminalAbi,
+    functionName: "accountingContextsOf",
     chainId,
-    args: [projectId, NATIVE_TOKEN],
-    query: { enabled: !!directory },
+    args: [projectId],
+    query: { enabled: !!multiTerminal },
   });
-  const primaryNativeTerminalUsdc = useReadContract({
+  const primaryAccountingToken = accountingContexts.data?.[0]?.token;
+  const primaryNativeTerminal = useReadContract({
     address: directory,
     abi: jbDirectoryAbi,
     functionName: "primaryTerminalOf",
     chainId,
-    args: [projectId, chainId ? USDC_ADDRESSES[chainId] : zeroAddress],
-    query: { enabled: !!directory },
+    args: primaryAccountingToken ? [projectId, primaryAccountingToken] : undefined,
+    query: { enabled: !!directory && !!primaryAccountingToken },
   });
   const controller = useReadContract({
     address: directory,
@@ -253,15 +255,6 @@ function ContractProvider({ projectId, children }: PropsWithChildren<{ projectId
     chainId,
     query: { enabled: !!controllerAddress, staleTime: Infinity },
   });
-
-  const selectedPrimaryNativeTerminal = selectPrimaryNativeTerminal(
-    primaryNativeTerminalEth.data,
-    primaryNativeTerminalUsdc.data,
-  );
-  const primaryNativeTerminal =
-    selectedPrimaryNativeTerminal === primaryNativeTerminalEth.data
-      ? primaryNativeTerminalEth
-      : primaryNativeTerminalUsdc;
 
   const contractAddress = useCallback(
     (contract: Contract, requestedChainId?: JBChainId) =>

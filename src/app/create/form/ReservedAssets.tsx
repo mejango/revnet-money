@@ -13,6 +13,8 @@ type LookupState =
   | { kind: "success"; message: string }
   | { kind: "error"; message: string };
 
+type CanonicalReserveAsset = "ETH" | "USDC";
+
 export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
   const { values, setFieldValue, revnetTokenSymbol } = useCreateForm();
   const { reserveAsset, customReserveAsset, chainIds } = values;
@@ -22,6 +24,12 @@ export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
     message: "",
   });
   const chainKey = chainIds.map(Number).join(",");
+  const canonicalSelected: readonly CanonicalReserveAsset[] =
+    reserveAsset === "ETH_USDC"
+      ? (["ETH", "USDC"] as const)
+      : reserveAsset === "ETH" || reserveAsset === "USDC"
+        ? ([reserveAsset] as const)
+        : [];
 
   useEffect(() => {
     if (!customSelected) {
@@ -80,9 +88,9 @@ export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customSelected, customReserveAsset.address, chainKey]);
 
-  const selectReserve = (next: "ETH" | "USDC" | "CUSTOM") => {
-    setFieldValue("reserveAsset", next);
-    if (next === "CUSTOM" && customReserveAsset.address) {
+  const selectCustom = () => {
+    setFieldValue("reserveAsset", "CUSTOM");
+    if (customReserveAsset.address) {
       setFieldValue("customReserveAsset", {
         ...customReserveAsset,
         symbol: "",
@@ -90,6 +98,16 @@ export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
         verifiedChainIds: [],
       });
     }
+  };
+  const toggleCanonical = (asset: CanonicalReserveAsset) => {
+    const next = customSelected
+      ? [asset]
+      : canonicalSelected.includes(asset)
+        ? canonicalSelected.filter((selected) => selected !== asset)
+        : [...canonicalSelected, asset];
+    // At least one reserve must remain selected.
+    if (next.length === 0) return;
+    setFieldValue("reserveAsset", next.length === 2 ? "ETH_USDC" : next[0]);
   };
 
   const verified =
@@ -106,20 +124,47 @@ export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
       <div className="col-span-2 mt-6 mb-4 md:mt-0">
         <span className="mr-4 text-md font-semibold">Choose your reserve asset</span>
         <div className="mt-2 flex flex-wrap gap-x-8 gap-y-3">
-          {(["ETH", "USDC", "CUSTOM"] as const).map((asset) => (
+          {(["ETH", "USDC"] as const).map((asset) => (
             <label className="flex items-center gap-2" key={asset}>
               <input
-                type="radio"
+                type="checkbox"
                 name="reserveAsset"
                 value={asset}
-                checked={reserveAsset === asset}
-                onChange={() => selectReserve(asset)}
+                checked={canonicalSelected.includes(asset)}
+                onChange={() => toggleCanonical(asset)}
                 disabled={disabled}
               />
-              {asset === "CUSTOM" ? "Custom token" : asset}
+              {asset}
             </label>
           ))}
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              name="reserveAsset"
+              value="CUSTOM"
+              checked={customSelected}
+              onChange={selectCustom}
+              disabled={disabled}
+            />
+            Custom token
+          </label>
         </div>
+
+        {!customSelected ? (
+          <>
+            <p className="mt-3 max-w-xl text-sm text-zinc-600">
+              Accounting contexts cannot be added or removed later.
+            </p>
+            {reserveAsset === "ETH_USDC" ? (
+              <div className="mt-3 max-w-xl border border-pink-200 bg-pink-50 p-3 text-sm text-zinc-700">
+                {revnetTokenSymbol} will be backed by both ETH and USDC paid in by users. Holders
+                can cash out for either reserve, and the backing mix is set by the proportion
+                received—you cannot rebalance between them later. Issuance and shop prices use USD
+                so the protocol&apos;s ETH/USD and USDC/USD feeds can price both reserves.
+              </div>
+            ) : null}
+          </>
+        ) : null}
 
         {customSelected ? (
           <div className="mt-5 max-w-xl border-l border-zinc-300 pl-4">

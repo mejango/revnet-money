@@ -39,7 +39,8 @@ export function V6AllCard() {
   );
 
   const chainTokenConfig = getTokenConfigForChain(suckerGroupData, Number(chainId));
-  const baseTokenSymbol = getTokenSymbolFromAddress(chainTokenConfig.token);
+  const baseTokenSymbol =
+    chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token);
   const baseTokenDecimals = chainTokenConfig.decimals;
 
   const participantsQuery = useBendystrawQuery(

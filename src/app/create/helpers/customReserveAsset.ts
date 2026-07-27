@@ -94,5 +94,6 @@ export function bridgeableReserveAssets(
   reserveAsset: RevnetFormData["reserveAsset"],
 ): MappableAsset[] {
   if (reserveAsset === "CUSTOM") return [];
+  if (reserveAsset === "ETH_USDC") return [MappableAsset.NATIVE, MappableAsset.USDC];
   return [reserveAsset === "USDC" ? MappableAsset.USDC : MappableAsset.NATIVE];
 }

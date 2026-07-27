@@ -79,7 +79,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
   const getTokenSymbolForChain = useCallback(
     (targetChainId: number) => {
       const chainTokenConfig = tokenConfigForChain(targetChainId);
-      return getTokenSymbolFromAddress(chainTokenConfig?.token);
+      return chainTokenConfig?.symbol ?? getTokenSymbolFromAddress(chainTokenConfig?.token);
     },
     [tokenConfigForChain],
   );

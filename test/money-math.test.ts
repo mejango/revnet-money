@@ -1,4 +1,5 @@
 import type { Ruleset } from "@/app/[slug]/terms/getRulesets";
+import { resolveProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { isUsd, toBaseCurrencyId } from "@/lib/currency";
 import { applyNanaFee, applyRevFee, generateFeeData } from "@/lib/feeHelpers";
 import { calculatePriceAtTimestamp } from "@/lib/issuancePrice";
@@ -45,6 +46,7 @@ describe("contract-derived monetary display math", () => {
     expect(toBaseCurrencyId(1)).toBe(ETH_CURRENCY_ID);
     expect(toBaseCurrencyId(61166)).toBe(ETH_CURRENCY_ID);
     expect(toBaseCurrencyId(2)).toBe(USD_CURRENCY_ID(6));
+    expect(toBaseCurrencyId(123456)).toBe(123456);
     expect(isUsd("usdc")).toBe(true);
     expect(isUsd("ETH")).toBe(false);
   });
@@ -62,9 +64,27 @@ describe("contract-derived monetary display math", () => {
       8453,
     );
 
-    expect(config).toEqual({ token, currency: 123456, decimals: 8 });
+    expect(config).toEqual({ token, currency: 123456, decimals: 8, symbol: "TOKEN" });
     expect(getTokenSymbolFromAddress(token)).toBe("TOKEN");
     expect(getTokenSymbolFromAddress(NATIVE_TOKEN)).toBe("ETH");
+  });
+
+  it("renders a custom accounting context in its own symbol and denomination", () => {
+    const token = "0x000000000000000000000000000000000000cafe" as Address;
+    expect(
+      resolveProjectBaseToken({
+        token,
+        tokenSymbol: "DAI",
+        decimals: 18,
+        currency: "12648430",
+      }),
+    ).toEqual({
+      address: token,
+      symbol: "DAI",
+      decimals: 18,
+      currency: 12648430,
+      isNative: false,
+    });
   });
 
   it("computes per-token unit value without changing either denomination", () => {

@@ -934,7 +934,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     selectedChainTokenConfig,
     tokenConfigForChain,
     selectedChainTokenSymbol: selectedChainTokenConfig
-      ? getTokenSymbolFromAddress(selectedChainTokenConfig.token)
+      ? (selectedChainTokenConfig.symbol ??
+        getTokenSymbolFromAddress(selectedChainTokenConfig.token))
       : "ETH",
   };
 }

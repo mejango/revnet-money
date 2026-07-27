@@ -17,7 +17,7 @@ export async function getReclaimableSurplus(
   projectId: number,
   tokenAmountWei: bigint,
   decimals: number,
-  currencyId: 1 | 2 | 3,
+  currencyId: number,
 ) {
   try {
     const contract = getContract({

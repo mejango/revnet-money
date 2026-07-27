@@ -55,6 +55,6 @@ export type RevnetFormData = {
     chainId: string;
     address: string;
   }[];
-  reserveAsset: "ETH" | "USDC" | "CUSTOM";
+  reserveAsset: "ETH" | "USDC" | "ETH_USDC" | "CUSTOM";
   customReserveAsset: CustomReserveAsset;
 };

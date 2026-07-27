@@ -25,7 +25,7 @@ import {
 const CREATION_FEE = 123_456n;
 const CUSTOM_TOKEN = "0x000000000000000000000000000000000000d00d";
 
-function buildRequest(reserveAsset: "ETH" | "USDC" | "CUSTOM" = "ETH") {
+function buildRequest(reserveAsset: "ETH" | "USDC" | "ETH_USDC" | "CUSTOM" = "ETH") {
   const form = validRevnetForm();
   form.reserveAsset = reserveAsset;
   if (reserveAsset === "CUSTOM") {
@@ -147,6 +147,24 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
       { token: usdc, decimals: 6, currency: tokenCurrencyId(usdc) },
     ]);
     expect(suckerConfig).toEqual(EMPTY_SUCKER_CONFIG);
+  });
+
+  it("accepts ETH and USDC together while pricing issuance in USD", () => {
+    const request = buildRequest("ETH_USDC");
+    const [, config, accountingContexts] = request.args;
+    const usdc = USDC_ADDRESSES[sepolia.id];
+
+    expect(config.baseCurrency).toBe(USD_CURRENCY_ID(6));
+    expect(accountingContexts).toEqual([
+      {
+        token: NATIVE_TOKEN,
+        decimals: NATIVE_TOKEN_DECIMALS,
+        currency: tokenCurrencyId(NATIVE_TOKEN),
+      },
+      { token: usdc, decimals: 6, currency: tokenCurrencyId(usdc) },
+    ]);
+    expect(request.args).toHaveLength(4);
+    expect(() => encodeFunctionData(request)).not.toThrow();
   });
 
   it("uses one token-keyed custom reserve for issuance, accounting, and shop prices", () => {

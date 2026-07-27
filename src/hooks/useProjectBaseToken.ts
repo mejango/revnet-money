@@ -11,7 +11,7 @@ type ReturnData = Token & {
   currency: number;
 };
 
-function resolveBaseToken(project: {
+export function resolveProjectBaseToken(project: {
   token?: string | null;
   tokenSymbol?: string | null;
   decimals?: number | null;
@@ -58,7 +58,7 @@ export function useProjectBaseToken(): ReturnData | undefined {
       suckerGroupData?.suckerGroup?.projects?.items?.reduce(
         (acc, project) => {
           if (project.token) {
-            const { currency: _currency, ...token } = resolveBaseToken(project);
+            const { currency: _currency, ...token } = resolveProjectBaseToken(project);
             acc[Number(project.chainId) as JBChainId] = token;
           }
           return acc;
@@ -66,6 +66,6 @@ export function useProjectBaseToken(): ReturnData | undefined {
         {} as Record<JBChainId, Token>,
       ) || ({} as Record<JBChainId, Token>);
 
-    return { ...resolveBaseToken(data.project), tokenMap };
+    return { ...resolveProjectBaseToken(data.project), tokenMap };
   }, [data?.project, suckerGroupData?.suckerGroup?.projects?.items]);
 }

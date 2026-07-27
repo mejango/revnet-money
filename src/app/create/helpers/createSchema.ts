@@ -49,6 +49,7 @@ export const createSchema = schema<RevnetFormData>((input) => {
   if (
     input.reserveAsset !== "ETH" &&
     input.reserveAsset !== "USDC" &&
+    input.reserveAsset !== "ETH_USDC" &&
     input.reserveAsset !== "CUSTOM"
   ) {
     issue(issues, ["reserveAsset"], "Invalid reserve asset");

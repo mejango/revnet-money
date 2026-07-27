@@ -72,14 +72,17 @@ export function parseDeployData(
   let tokenAddress: Address;
   let tokenDecimals: number;
 
-  if (formData.reserveAsset === "USDC") {
-    tokenAddress = USDC_ADDRESSES[extra.chainId];
-    tokenDecimals = USDC_DECIMALS;
-    baseCurrency = USD_CURRENCY_ID(6);
-  } else if (formData.reserveAsset === "CUSTOM") {
+  if (formData.reserveAsset === "CUSTOM") {
     tokenAddress = formData.customReserveAsset.address as Address;
     tokenDecimals = Number(formData.customReserveAsset.decimals);
     baseCurrency = tokenCurrencyId(tokenAddress);
+  } else if (formData.reserveAsset === "USDC" || formData.reserveAsset === "ETH_USDC") {
+    tokenAddress = USDC_ADDRESSES[extra.chainId];
+    tokenDecimals = USDC_DECIMALS;
+    // USD is the shared issuance/shop denomination when USDC is accepted.
+    // The built-in ETH/USD and USDC/USD feeds can price both contexts; there
+    // is no canonical USDC/ETH feed for an ETH-denominated ruleset.
+    baseCurrency = USD_CURRENCY_ID(6);
   } else {
     tokenAddress = NATIVE_TOKEN;
     tokenDecimals = NATIVE_TOKEN_DECIMALS;
@@ -88,7 +91,13 @@ export function parseDeployData(
 
   // The accounting context's token-keyed currency (uint32(uint160(token))) is computed by
   // the builder.
-  const accountingContextsToAccept = [buildAccountingContext(tokenAddress, tokenDecimals)];
+  const accountingContextsToAccept =
+    formData.reserveAsset === "ETH_USDC"
+      ? [
+          buildAccountingContext(NATIVE_TOKEN, NATIVE_TOKEN_DECIMALS),
+          buildAccountingContext(USDC_ADDRESSES[extra.chainId], USDC_DECIMALS),
+        ]
+      : [buildAccountingContext(tokenAddress, tokenDecimals)];
 
   const stageConfigurations = formData.stages.map((stage, idx) => {
     console.log(`~~~~~~~~~~~~~~~~~~~~~~~~~~ Stage ${idx + 1} ~~~~~~~~~~~~~~~~~~~~~~~~~~`);
