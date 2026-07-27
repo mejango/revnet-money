@@ -229,7 +229,7 @@ export function AddStageDialog({
                             )}
                           </span>
                         </div>
-                        <div className="flex w-full items-center gap-2">
+                        <div className="flex w-full flex-wrap items-center gap-2">
                           {!enableCut ? (
                             <>
                               <label
@@ -276,25 +276,27 @@ export function AddStageDialog({
                                   %
                                 </span>
                               </div>
-                              <label htmlFor="uiCutFrequency">every</label>
-                              <div className="relative">
-                                <input
-                                  id="uiCutFrequency"
-                                  type="number"
-                                  inputMode="decimal"
-                                  min="0.042"
-                                  step="any"
-                                  className="h-9 w-20 border-2 border-melon-300 bg-melon-25 pr-10 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
-                                  value={String(uiCutFrequency)}
-                                  onChange={(e) => {
-                                    setUiCutFrequency(Number(e.target.value));
-                                    setHasUserSetCut(true);
-                                  }}
-                                  required
-                                />
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">
-                                  days
-                                </span>
+                              <div className="flex items-center gap-2">
+                                <label htmlFor="uiCutFrequency">every</label>
+                                <div className="relative">
+                                  <input
+                                    id="uiCutFrequency"
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0.042"
+                                    step="any"
+                                    className="h-9 w-24 border-2 border-melon-300 bg-melon-25 pr-10 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
+                                    value={String(uiCutFrequency)}
+                                    onChange={(e) => {
+                                      setUiCutFrequency(Number(e.target.value));
+                                      setHasUserSetCut(true);
+                                    }}
+                                    required
+                                  />
+                                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">
+                                    days
+                                  </span>
+                                </div>
                               </div>
                             </>
                           )}
