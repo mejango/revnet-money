@@ -179,12 +179,8 @@ export function AddStageDialog({
                         setFieldValue={setFieldValue}
                       />
 
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-md text-zinc-600 md:flex-nowrap">
-                        <div
-                          className={`grid h-9 w-full min-w-0 grid-cols-[minmax(6rem,1fr)_max-content] items-center border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus-within:border-melon-600 ${
-                            enableCut ? "sm:w-[220px]" : "sm:w-[260px]"
-                          }`}
-                        >
+                      <div className="mt-2 flex flex-col items-start gap-2 text-md text-zinc-600">
+                        <div className="grid h-9 w-full min-w-0 grid-cols-[minmax(6rem,1fr)_max-content] items-center border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus-within:border-melon-600 sm:w-[260px]">
                           <Field
                             id="initialIssuance"
                             name="initialIssuance"
@@ -233,11 +229,7 @@ export function AddStageDialog({
                             )}
                           </span>
                         </div>
-                        <div
-                          className={`flex w-full items-center md:w-auto ${
-                            enableCut ? "gap-1" : "gap-2"
-                          }`}
-                        >
+                        <div className="flex w-full items-center gap-2">
                           {!enableCut ? (
                             <>
                               <label

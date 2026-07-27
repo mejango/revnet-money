@@ -57,9 +57,19 @@ test("production create surface stays visible and contained", async ({ page }) =
   await expect(issuanceCurrency).toHaveValue("USD");
   await page.getByRole("checkbox", { name: "add automatic cuts?" }).check();
   const dialogBox = await page.getByRole("dialog").boundingBox();
+  const enabledSuffixBox = await issuanceCurrency.boundingBox();
+  const cutLabelBox = await page.locator('label[for="uiCutPercentage"]').boundingBox();
+  const cutToggleBox = await page.locator("#enableCut").boundingBox();
+  const cutPercentageBox = await page.locator("#uiCutPercentage").boundingBox();
   const cutFrequencyBox = await page.locator("#uiCutFrequency").boundingBox();
   expect(dialogBox).not.toBeNull();
+  expect(enabledSuffixBox).not.toBeNull();
+  expect(cutLabelBox).not.toBeNull();
+  expect(cutToggleBox).not.toBeNull();
+  expect(cutPercentageBox).not.toBeNull();
   expect(cutFrequencyBox).not.toBeNull();
+  expect(cutLabelBox!.y).toBeGreaterThanOrEqual(enabledSuffixBox!.y + enabledSuffixBox!.height);
+  expect(cutPercentageBox!.x - (cutToggleBox!.x + cutToggleBox!.width)).toBeGreaterThanOrEqual(7);
   expect(cutFrequencyBox!.x + cutFrequencyBox!.width).toBeLessThanOrEqual(
     dialogBox!.x + dialogBox!.width - 8,
   );
