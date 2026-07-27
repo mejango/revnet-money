@@ -28,6 +28,7 @@ jobs:
       NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: 127.0.0.1
       NEXT_PUBLIC_PARA_API_KEY: deterministic-browser-key
       NEXT_PUBLIC_PARA_ENV: BETA
+      NEXT_PUBLIC_DWELLIR_API_KEY: deterministic-dwellir-key
       NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
       NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
       NEXT_PUBLIC_BASE_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
@@ -143,6 +144,7 @@ jobs:
       NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: 127.0.0.1
       NEXT_PUBLIC_PARA_API_KEY: deterministic-browser-key
       NEXT_PUBLIC_PARA_ENV: BETA
+      NEXT_PUBLIC_DWELLIR_API_KEY: deterministic-dwellir-key
       NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: http://127.0.0.1:9
       NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: http://127.0.0.1:9
       NEXT_PUBLIC_BASE_SUBGRAPH_URL: http://127.0.0.1:9
@@ -176,6 +178,7 @@ jobs:
             --build-arg NEXT_PUBLIC_INFURA_IPFS_HOSTNAME \
             --build-arg NEXT_PUBLIC_PARA_API_KEY \
             --build-arg NEXT_PUBLIC_PARA_ENV \
+            --build-arg NEXT_PUBLIC_DWELLIR_API_KEY \
             --build-arg NEXT_PUBLIC_MAINNET_SUBGRAPH_URL \
             --build-arg NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL \
             --build-arg NEXT_PUBLIC_BASE_SUBGRAPH_URL \
