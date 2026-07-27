@@ -285,7 +285,7 @@ export function AddStageDialog({
                                     inputMode="decimal"
                                     min="0.042"
                                     step="any"
-                                    className="h-9 w-24 border-2 border-melon-300 bg-melon-25 pr-10 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
+                                    className="h-9 w-28 border-2 border-melon-300 bg-melon-25 pr-10 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
                                     value={String(uiCutFrequency)}
                                     onChange={(e) => {
                                       setUiCutFrequency(Number(e.target.value));
