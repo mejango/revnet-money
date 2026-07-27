@@ -26,6 +26,7 @@ export function validRevnetForm(): RevnetFormData {
     infoUri: "https://example.com",
     tokenSymbol: "SAFE",
     reserveAsset: "ETH",
+    issuanceBaseCurrency: "ETH",
     customReserveAsset: {
       address: "",
       symbol: "",

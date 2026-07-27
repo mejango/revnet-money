@@ -56,5 +56,6 @@ export type RevnetFormData = {
     address: string;
   }[];
   reserveAsset: "ETH" | "USDC" | "ETH_USDC" | "CUSTOM";
+  issuanceBaseCurrency: "ETH" | "USD";
   customReserveAsset: CustomReserveAsset;
 };

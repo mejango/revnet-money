@@ -54,6 +54,9 @@ export const createSchema = schema<RevnetFormData>((input) => {
   ) {
     issue(issues, ["reserveAsset"], "Invalid reserve asset");
   }
+  if (input.issuanceBaseCurrency !== "ETH" && input.issuanceBaseCurrency !== "USD") {
+    issue(issues, ["issuanceBaseCurrency"], "Invalid issuance base currency");
+  }
 
   if (!Array.isArray(input.stages) || input.stages.length === 0) {
     issue(issues, ["stages"], "At least one stage is required");

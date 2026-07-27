@@ -25,9 +25,13 @@ import {
 const CREATION_FEE = 123_456n;
 const CUSTOM_TOKEN = "0x000000000000000000000000000000000000d00d";
 
-function buildRequest(reserveAsset: "ETH" | "USDC" | "ETH_USDC" | "CUSTOM" = "ETH") {
+function buildRequest(
+  reserveAsset: "ETH" | "USDC" | "ETH_USDC" | "CUSTOM" = "ETH",
+  issuanceBaseCurrency: "ETH" | "USD" = "ETH",
+) {
   const form = validRevnetForm();
   form.reserveAsset = reserveAsset;
+  form.issuanceBaseCurrency = issuanceBaseCurrency;
   if (reserveAsset === "CUSTOM") {
     form.customReserveAsset = {
       address: CUSTOM_TOKEN,
@@ -122,7 +126,7 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     ]);
   });
 
-  it("uses a token-keyed accounting currency while keeping ETH as the base currency", () => {
+  it("uses the canonical ETH accounting currency with ETH as the base currency", () => {
     const request = buildRequest("ETH");
     const [, config, accountingContexts] = request.args;
 
@@ -131,40 +135,44 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
       {
         token: NATIVE_TOKEN,
         decimals: NATIVE_TOKEN_DECIMALS,
-        currency: tokenCurrencyId(NATIVE_TOKEN),
+        currency: ETH_CURRENCY_ID,
       },
     ]);
-    expect(accountingContexts[0].currency).not.toBe(config.baseCurrency);
+    expect(accountingContexts[0].currency).toBe(config.baseCurrency);
   });
 
   it("encodes USDC with six decimals and USD as the issuance base currency", () => {
-    const request = buildRequest("USDC");
+    const request = buildRequest("USDC", "USD");
     const [, config, accountingContexts, suckerConfig] = request.args;
     const usdc = USDC_ADDRESSES[sepolia.id];
 
     expect(config.baseCurrency).toBe(USD_CURRENCY_ID(6));
     expect(accountingContexts).toEqual([
-      { token: usdc, decimals: 6, currency: tokenCurrencyId(usdc) },
+      { token: usdc, decimals: 6, currency: USD_CURRENCY_ID(6) },
     ]);
     expect(suckerConfig).toEqual(EMPTY_SUCKER_CONFIG);
   });
 
-  it("accepts ETH and USDC together while pricing issuance in USD", () => {
-    const request = buildRequest("ETH_USDC");
+  it("accepts ETH and USDC together while pricing issuance in either currency", () => {
+    const request = buildRequest("ETH_USDC", "ETH");
     const [, config, accountingContexts] = request.args;
     const usdc = USDC_ADDRESSES[sepolia.id];
 
-    expect(config.baseCurrency).toBe(USD_CURRENCY_ID(6));
+    expect(config.baseCurrency).toBe(ETH_CURRENCY_ID);
     expect(accountingContexts).toEqual([
       {
         token: NATIVE_TOKEN,
         decimals: NATIVE_TOKEN_DECIMALS,
-        currency: tokenCurrencyId(NATIVE_TOKEN),
+        currency: ETH_CURRENCY_ID,
       },
-      { token: usdc, decimals: 6, currency: tokenCurrencyId(usdc) },
+      { token: usdc, decimals: 6, currency: USD_CURRENCY_ID(6) },
     ]);
     expect(request.args).toHaveLength(4);
     expect(() => encodeFunctionData(request)).not.toThrow();
+
+    const usdRequest = buildRequest("ETH_USDC", "USD");
+    expect(usdRequest.args[1].baseCurrency).toBe(USD_CURRENCY_ID(6));
+    expect(() => encodeFunctionData(usdRequest)).not.toThrow();
   });
 
   it("uses one token-keyed custom reserve for issuance, accounting, and shop prices", () => {

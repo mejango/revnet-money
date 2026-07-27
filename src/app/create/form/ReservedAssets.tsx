@@ -157,10 +157,11 @@ export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
             </p>
             {reserveAsset === "ETH_USDC" ? (
               <div className="mt-3 max-w-xl border border-pink-200 bg-pink-50 p-3 text-sm text-zinc-700">
-                {revnetTokenSymbol} will be backed by both ETH and USDC paid in by users. Holders
-                can cash out for either reserve, and the backing mix is set by the proportion
-                received—you cannot rebalance between them later. Issuance and shop prices use USD
-                so the protocol&apos;s ETH/USD and USDC/USD feeds can price both reserves.
+                {revnetTokenSymbol}&nbsp;will be backed by both ETH and USDC paid in by users.
+                Holders can cash out for either reserve, and the backing mix is set by the
+                proportion received—you cannot rebalance between them later. Issuance and shop
+                prices can use ETH or USD; the canonical ETH and USDC accounting contexts use the
+                protocol&apos;s default ETH/USD feed to convert between them.
               </div>
             ) : null}
           </>

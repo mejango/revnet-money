@@ -72,7 +72,8 @@ export function AddStageDialog({
   onSave: (newStage: StageData) => void;
 }) {
   const {
-    values: { stages },
+    values: { stages, reserveAsset: reserveAssetKind, issuanceBaseCurrency },
+    setFieldValue: setCreateFieldValue,
     revnetTokenSymbol,
     reserveAssetSymbol,
     issuanceBaseCurrencySymbol,
@@ -187,7 +188,7 @@ export function AddStageDialog({
                             min="0"
                             step="any"
                             type="number"
-                            className={`h-9 w-full pr-24 px-3 text-md ${
+                            className={`h-9 w-full pr-32 px-3 text-md ${
                               values.pickUpFromPrevious
                                 ? "bg-gray-50 text-gray-600 cursor-not-allowed"
                                 : ""
@@ -199,8 +200,28 @@ export function AddStageDialog({
                                 : values.initialIssuance
                             }
                           />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 text-md pointer-events-none">
-                            {revnetTokenSymbol} / {issuanceBaseCurrencySymbol}
+                          <span className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center text-md text-zinc-500">
+                            <span className="pointer-events-none">{revnetTokenSymbol} / </span>
+                            {reserveAssetKind === "CUSTOM" ? (
+                              <span className="pointer-events-none">
+                                {issuanceBaseCurrencySymbol}
+                              </span>
+                            ) : (
+                              <select
+                                aria-label="Issuance currency"
+                                className="border-0 bg-transparent p-0 text-md text-zinc-500 focus:ring-0"
+                                value={issuanceBaseCurrency}
+                                onChange={(event) =>
+                                  setCreateFieldValue(
+                                    "issuanceBaseCurrency",
+                                    event.target.value as "ETH" | "USD",
+                                  )
+                                }
+                              >
+                                <option value="ETH">ETH</option>
+                                <option value="USD">USD</option>
+                              </select>
+                            )}
                           </span>
                         </div>
                         <div className="flex items-center gap-2 w-full md:w-auto">

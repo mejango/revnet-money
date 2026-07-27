@@ -24,6 +24,7 @@ export const DEFAULT_FORM_DATA: RevnetFormData = {
   discord: "",
   infoUri: "",
   reserveAsset: "ETH",
+  issuanceBaseCurrency: "ETH",
   customReserveAsset: {
     address: "",
     symbol: "",
@@ -50,6 +51,7 @@ export const TEST_FORM_DATA: RevnetFormData = {
 
   tokenSymbol: "TEST",
   reserveAsset: "ETH",
+  issuanceBaseCurrency: "ETH",
   customReserveAsset: {
     address: "",
     symbol: "",
@@ -264,6 +266,7 @@ export const SHORTER_TEST_FORM_DATA: RevnetFormData = {
   infoUri: "https://donuts.example",
   tokenSymbol: "DONUTS",
   reserveAsset: "ETH",
+  issuanceBaseCurrency: "ETH",
   customReserveAsset: {
     address: "",
     symbol: "",
