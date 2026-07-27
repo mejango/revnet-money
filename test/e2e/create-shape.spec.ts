@@ -73,6 +73,15 @@ test("production create surface stays visible and contained", async ({ page }) =
   expect(cutFrequencyBox!.x + cutFrequencyBox!.width).toBeLessThanOrEqual(
     dialogBox!.x + dialogBox!.width - 8,
   );
+  await page.getByRole("button", { name: "add split +" }).click();
+  await page.locator("#splits\\.0\\.percentage").fill("10");
+  await page.getByRole("button", { name: "add split +" }).click();
+  await page.locator("#splits\\.1\\.percentage").fill("10");
+  const splitPercentageBoxes = await page
+    .locator('[id^="splits."][id$=".percentage"]')
+    .evaluateAll((fields) => fields.map((field) => field.getBoundingClientRect().width));
+  expect(splitPercentageBoxes).toHaveLength(2);
+  expect(splitPercentageBoxes.every((width) => width >= 128)).toBe(true);
   await page.keyboard.press("Escape");
 
   await page.getByRole("checkbox", { name: "Custom token" }).check();

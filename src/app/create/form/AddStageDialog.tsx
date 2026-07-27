@@ -310,13 +310,13 @@ export function AddStageDialog({
                               {values.splits.map((split, index) => (
                                 <div
                                   key={`split-${index}`}
-                                  className="flex gap-2 items-center text-md text-zinc-600 mt-4"
+                                  className="mt-4 flex flex-wrap items-center gap-2 text-md text-zinc-600"
                                 >
                                   <label
                                     className="whitespace-nowrap"
                                     htmlFor={`splits.${index}.amount`}
                                   >
-                                    {index === 0 ? "Split" : "... and"}
+                                    {index === 0 ? "split" : "... and"}
                                   </label>
                                   <Field
                                     id={`splits.${index}.percentage`}
@@ -325,7 +325,7 @@ export function AddStageDialog({
                                     min="0"
                                     max="100"
                                     className="h-9 pr-10"
-                                    width="w-32"
+                                    width="w-32 shrink-0"
                                     suffix="%"
                                     required
                                     placeholder="100"
@@ -335,6 +335,7 @@ export function AddStageDialog({
                                     id={`splits.${index}.defaultBeneficiary`}
                                     name={`splits.${index}.defaultBeneficiary`}
                                     className="h-9"
+                                    width="min-w-40 flex-1"
                                     placeholder="0x"
                                     required
                                     defaultValue={stages[0]?.initialOperator || ""}
