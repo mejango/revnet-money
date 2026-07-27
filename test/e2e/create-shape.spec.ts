@@ -39,6 +39,11 @@ test("production create surface stays visible and contained", async ({ page }) =
   await expect(page.getByRole("heading", { name: "4. Deploy" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Ticker", exact: true })).toBeVisible();
+  await page.getByRole("radio", { name: "Custom token" }).check();
+  await expect(page.getByRole("textbox", { name: "ERC-20 token address" })).toBeVisible();
+  await expect(page.getByText("A custom reserve is exclusive.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "ETH" })).not.toBeChecked();
+  await expect(page.getByRole("radio", { name: "USDC" })).not.toBeChecked();
   await expect(page.locator('a[href*="/undefined/"]')).toHaveCount(0);
 
   await expectContained(page, ["nav", "main", "footer", "h1", "#name", "#tokenSymbol"]);

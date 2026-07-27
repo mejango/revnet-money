@@ -23,10 +23,19 @@ import {
 } from "./fixtures/revnet";
 
 const CREATION_FEE = 123_456n;
+const CUSTOM_TOKEN = "0x000000000000000000000000000000000000d00d";
 
-function buildRequest(reserveAsset: "ETH" | "USDC" = "ETH") {
+function buildRequest(reserveAsset: "ETH" | "USDC" | "CUSTOM" = "ETH") {
   const form = validRevnetForm();
   form.reserveAsset = reserveAsset;
+  if (reserveAsset === "CUSTOM") {
+    form.customReserveAsset = {
+      address: CUSTOM_TOKEN,
+      symbol: "DAI",
+      decimals: 6,
+      verifiedChainIds: [sepolia.id],
+    };
+  }
   return parseDeployData(form, {
     metadataCid: "bafy-metadata",
     chainId: sepolia.id,
@@ -138,6 +147,26 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
       { token: usdc, decimals: 6, currency: tokenCurrencyId(usdc) },
     ]);
     expect(suckerConfig).toEqual(EMPTY_SUCKER_CONFIG);
+  });
+
+  it("uses one token-keyed custom reserve for issuance, accounting, and shop prices", () => {
+    const request = buildRequest("CUSTOM");
+    const [, config, accountingContexts, suckerConfig, shopConfig, allowedPosts] = request.args;
+    const currency = tokenCurrencyId(CUSTOM_TOKEN);
+
+    expect(request.args).toHaveLength(6);
+    expect(config.baseCurrency).toBe(currency);
+    expect(accountingContexts).toEqual([{ token: CUSTOM_TOKEN, decimals: 6, currency }]);
+    expect(suckerConfig).toEqual(EMPTY_SUCKER_CONFIG);
+    expect(shopConfig).toBeDefined();
+    if (!shopConfig) throw new Error("Expected the explicit custom-reserve shop config");
+    expect(shopConfig.baseline721HookConfiguration.tiersConfig).toMatchObject({
+      tiers: [],
+      currency,
+      decimals: 6,
+    });
+    expect(allowedPosts).toEqual([]);
+    expect(() => encodeFunctionData(request)).not.toThrow();
   });
 
   it("keeps every split-bucket weight exact after percentage rounding", () => {

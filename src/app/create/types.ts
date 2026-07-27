@@ -28,6 +28,13 @@ export type StageData = {
   futureStartTimestamp?: number;
 };
 
+export type CustomReserveAsset = {
+  address: string;
+  symbol: string;
+  decimals: number | null;
+  verifiedChainIds: JBChainId[];
+};
+
 export type RevnetFormData = {
   name: string;
   // tagline: string;
@@ -48,5 +55,6 @@ export type RevnetFormData = {
     chainId: string;
     address: string;
   }[];
-  reserveAsset: "ETH" | "USDC"; // Added field for reserve asset choice
+  reserveAsset: "ETH" | "USDC" | "CUSTOM";
+  customReserveAsset: CustomReserveAsset;
 };

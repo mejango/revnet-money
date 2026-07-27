@@ -7,7 +7,7 @@ import { useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { withSchema } from "@/lib/formValidation";
 import { FormProvider } from "@/lib/forms";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { createSalt, MappableAsset, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
+import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { encodeFunctionData, PublicClient } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
@@ -15,6 +15,7 @@ import { getPublicClient } from "wagmi/actions";
 import { DEFAULT_FORM_DATA } from "./constants";
 import { DeployRevnetForm } from "./form/DeployRevnetForm";
 import { createSchema } from "./helpers/createSchema";
+import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
 import { parseDeployData } from "./helpers/parseDeployData";
 import { pinProjectMetadata } from "./helpers/pinProjectMetaData";
 import { calculateFinalStageStarts } from "./helpers/recalculateStageStarts";
@@ -33,18 +34,29 @@ export default function Page() {
       throw new Error("Please connect your wallet to deploy");
     }
 
-    const reserveAsset =
-      formData.reserveAsset === "USDC" ? MappableAsset.USDC : MappableAsset.NATIVE;
+    let deploymentFormData = formData;
+    if (formData.reserveAsset === "CUSTOM") {
+      const verified = await verifyCustomReserveAsset(
+        formData.customReserveAsset.address,
+        formData.chainIds,
+        (chainId) => getPublicClient(wagmiConfig, { chainId }),
+      );
+      deploymentFormData = { ...formData, customReserveAsset: verified };
+    }
+
+    // Arbitrary ERC-20s have no canonical bridge mapping. Empty mappings still
+    // link the revnet/project token while keeping each chain's reserves local.
+    const reserveAssets = bridgeableReserveAssets(deploymentFormData.reserveAsset);
 
     // Upload metadata
     const metadataCid = await pinProjectMetadata({
-      name: formData.name,
-      description: formData.description,
-      logoUri: formData.logoUri,
-      twitter: formData.twitter,
-      telegram: formData.telegram,
-      discord: formData.discord,
-      infoUri: formData.infoUri,
+      name: deploymentFormData.name,
+      description: deploymentFormData.description,
+      logoUri: deploymentFormData.logoUri,
+      twitter: deploymentFormData.twitter,
+      telegram: deploymentFormData.telegram,
+      discord: deploymentFormData.discord,
+      infoUri: deploymentFormData.infoUri,
     });
 
     const salt = createSalt();
@@ -53,11 +65,11 @@ export default function Page() {
     const relayrTransactions = [];
     let directRequest: ReturnType<typeof parseDeployData> | null = null;
 
-    for (const chainId of formData.chainIds) {
+    for (const chainId of deploymentFormData.chainIds) {
       const suckerDeployerConfig = parseSuckerDeployerConfig(
         chainId,
-        formData.chainIds,
-        [reserveAsset],
+        deploymentFormData.chainIds,
+        reserveAssets,
         { version: 6 },
       ) as Parameters<typeof parseDeployData>[1]["suckerDeployerConfig"];
 
@@ -72,7 +84,7 @@ export default function Page() {
       // Deploying a new revnet requires paying the exact project creation fee.
       const creationFee = await getProjectCreationFee(publicClient as PublicClient, chainId);
 
-      const request = parseDeployData(formData, {
+      const request = parseDeployData(deploymentFormData, {
         metadataCid,
         chainId,
         suckerDeployerConfig,
@@ -80,7 +92,7 @@ export default function Page() {
         salt,
         creationFee,
       });
-      if (formData.chainIds.length === 1) directRequest = request;
+      if (deploymentFormData.chainIds.length === 1) directRequest = request;
 
       console.log({ deployData: request.args });
 
@@ -121,14 +133,14 @@ export default function Page() {
           abi: request.abi,
           functionName: request.functionName,
           args: request.args,
-          label: `Deploy ${formData.name} on ${chainId}`,
+          label: `Deploy ${deploymentFormData.name} on ${chainId}`,
           contractName: "REVDeployer",
         },
       });
     }
 
     if (directRequest) {
-      const chainId = formData.chainIds[0];
+      const chainId = deploymentFormData.chainIds[0];
       if (connectedChainId !== chainId) await switchChainAsync({ chainId });
       await writeContractAsync({
         chainId,

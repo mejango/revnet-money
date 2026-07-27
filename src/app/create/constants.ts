@@ -24,6 +24,12 @@ export const DEFAULT_FORM_DATA: RevnetFormData = {
   discord: "",
   infoUri: "",
   reserveAsset: "ETH",
+  customReserveAsset: {
+    address: "",
+    symbol: "",
+    decimals: null,
+    verifiedChainIds: [],
+  },
 
   tokenSymbol: "TOKEN",
 
@@ -44,6 +50,12 @@ export const TEST_FORM_DATA: RevnetFormData = {
 
   tokenSymbol: "TEST",
   reserveAsset: "ETH",
+  customReserveAsset: {
+    address: "",
+    symbol: "",
+    decimals: null,
+    verifiedChainIds: [],
+  },
 
   stages: [
     {
@@ -252,6 +264,12 @@ export const SHORTER_TEST_FORM_DATA: RevnetFormData = {
   infoUri: "https://donuts.example",
   tokenSymbol: "DONUTS",
   reserveAsset: "ETH",
+  customReserveAsset: {
+    address: "",
+    symbol: "",
+    decimals: null,
+    verifiedChainIds: [],
+  },
   stages: [
     {
       initialOperator: "0xDf087B724174A3E4eD2338C0798193932E851F1b",

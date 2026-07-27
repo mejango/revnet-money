@@ -16,13 +16,12 @@ import { AddStageDialog } from "./AddStageDialog";
 import { useCreateForm } from "./useCreateForm";
 
 export function Stages({ disabled = false }: { disabled?: boolean }) {
-  const { values, revnetTokenSymbol } = useCreateForm();
+  const { values, revnetTokenSymbol, issuanceBaseCurrencySymbol } = useCreateForm();
 
   const hasStages = values.stages.length > 0;
 
   const maxStageReached = values.stages.length >= MAX_RULESET_COUNT;
   const canAddStage = !hasStages || !maxStageReached;
-  const reserveAsset = values.reserveAsset == "USDC" ? "USD" : "ETH";
 
   const getDynamicDuration = (currentStageIndex: number): number => {
     if (currentStageIndex >= values.stages.length - 1) {
@@ -102,7 +101,8 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
                         <dt className="font-medium">Paid Issuance</dt>
                         <dd>
                           {getResolvedIssuance(stage, index, values.stages)}{" "}
-                          {formatTokenSymbol(values.tokenSymbol) ?? "tokens"} / {reserveAsset}
+                          {formatTokenSymbol(values.tokenSymbol) ?? "tokens"} /{" "}
+                          {issuanceBaseCurrencySymbol}
                           {stage.pickUpFromPrevious && index > 0 && (
                             <span className="text-xs text-gray-500 italic"> (pickup)</span>
                           )}

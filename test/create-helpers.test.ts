@@ -54,6 +54,21 @@ describe("create form schema baseline", () => {
     }
   });
 
+  it("requires a custom reserve to be verified on every deployment chain", () => {
+    const form = validRevnetForm();
+    form.reserveAsset = "CUSTOM";
+    form.customReserveAsset = {
+      address: "0x000000000000000000000000000000000000d00d",
+      symbol: "DAI",
+      decimals: 18,
+      verifiedChainIds: [],
+    };
+
+    expect(createSchema.safeParse(form).success).toBe(false);
+    form.customReserveAsset.verifiedChainIds = [...form.chainIds];
+    expect(createSchema.safeParse(form).success).toBe(true);
+  });
+
   it("requires all stage fields which feed contract encoding", () => {
     const result = stageSchema.safeParse({
       ...stage(),

@@ -10,9 +10,17 @@ export function useCreateForm() {
     context.values.tokenSymbol?.length > 0
       ? context.values.tokenSymbol.replace(/^\$+/, "")
       : "token";
+  const reserveAssetSymbol =
+    context.values.reserveAsset === "CUSTOM"
+      ? context.values.customReserveAsset.symbol || "custom token"
+      : context.values.reserveAsset;
+  const issuanceBaseCurrencySymbol =
+    context.values.reserveAsset === "USDC" ? "USD" : reserveAssetSymbol;
 
   return {
     ...context,
     revnetTokenSymbol,
+    reserveAssetSymbol,
+    issuanceBaseCurrencySymbol,
   };
 }

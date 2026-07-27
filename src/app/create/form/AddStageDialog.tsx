@@ -72,9 +72,12 @@ export function AddStageDialog({
   onSave: (newStage: StageData) => void;
 }) {
   const {
-    values: { reserveAsset, stages },
+    values: { stages },
     revnetTokenSymbol,
+    reserveAssetSymbol,
+    issuanceBaseCurrencySymbol,
   } = useCreateForm();
+  const reserveAsset = reserveAssetSymbol;
 
   const [open, setOpen] = useState(false);
 
@@ -197,7 +200,7 @@ export function AddStageDialog({
                             }
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 text-md pointer-events-none">
-                            {revnetTokenSymbol} / {reserveAsset == "USDC" ? "USD" : reserveAsset}
+                            {revnetTokenSymbol} / {issuanceBaseCurrencySymbol}
                           </span>
                         </div>
                         <div className="flex items-center gap-2 w-full md:w-auto">

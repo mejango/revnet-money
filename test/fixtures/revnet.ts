@@ -26,6 +26,12 @@ export function validRevnetForm(): RevnetFormData {
     infoUri: "https://example.com",
     tokenSymbol: "SAFE",
     reserveAsset: "ETH",
+    customReserveAsset: {
+      address: "",
+      symbol: "",
+      decimals: null,
+      verifiedChainIds: [],
+    },
     chainIds: [sepolia.id],
     operator: [{ chainId: String(sepolia.id), address: TEST_ACCOUNT }],
     stages: [

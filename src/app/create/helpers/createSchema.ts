@@ -1,6 +1,7 @@
 import { isRecord, issue, schema, ValidationIssue } from "@/lib/formValidation";
 import { isAddress } from "viem";
 import type { RevnetFormData } from "../types";
+import { customReserveCoversChains } from "./customReserveAsset";
 import { validateStage } from "./stageSchema";
 
 function requiredTrimmedString(
@@ -45,7 +46,11 @@ export const createSchema = schema<RevnetFormData>((input) => {
   optionalString(input.discord, "discord", issues);
   optionalString(input.infoUri, "infoUri", issues);
 
-  if (input.reserveAsset !== "ETH" && input.reserveAsset !== "USDC") {
+  if (
+    input.reserveAsset !== "ETH" &&
+    input.reserveAsset !== "USDC" &&
+    input.reserveAsset !== "CUSTOM"
+  ) {
     issue(issues, ["reserveAsset"], "Invalid reserve asset");
   }
 
@@ -98,6 +103,22 @@ export const createSchema = schema<RevnetFormData>((input) => {
   }
 
   if (selectedChainIds.length > 0) {
+    if (input.reserveAsset === "CUSTOM") {
+      if (
+        !isRecord(input.customReserveAsset) ||
+        !customReserveCoversChains(
+          input.customReserveAsset as RevnetFormData["customReserveAsset"],
+          selectedChainIds.map(Number) as RevnetFormData["chainIds"],
+        )
+      ) {
+        issue(
+          issues,
+          ["customReserveAsset"],
+          "Verify the custom reserve token on every selected chain",
+        );
+      }
+    }
+
     const operators = Array.isArray(input.operator) ? input.operator : [];
     const firstStage =
       Array.isArray(input.stages) && isRecord(input.stages[0]) ? input.stages[0] : {};

@@ -17,25 +17,19 @@ import {
   buildRevnetStageConfig,
   fillSplitPercents,
   RULESET_WEIGHT_INHERIT,
+  tokenCurrencyId,
 } from "@bananapus/nana-sdk-core/v6";
 import { Address, ContractFunctionArgs, parseUnits, zeroAddress } from "viem";
 import { RevnetFormData } from "../types";
 
-// The 4-arg `deployFor` overload (the 6-arg one adds a 721 tiers config + croptop posts,
-// which the app doesn't use). The args are typed against the ABI so viem's inference
-// accepts them at call sites (encodeFunctionData, estimateContractGas).
+// Standard reserves use the 4-arg `deployFor` overload. Custom reserves use the
+// 6-arg overload so the empty 721 store can inherit the ERC-20's own decimals.
+// Keep both argument shapes typed against the deployer ABI.
 type RevDeployerAbi = ReturnType<typeof buildDeployRevnetTx>["abi"];
-export type DeployForArgs = Extract<
-  ContractFunctionArgs<RevDeployerAbi, "payable", "deployFor">,
-  readonly [unknown, unknown, unknown, unknown]
->;
-export type DeployRevnetRequest = Omit<
-  Extract<
-    ReturnType<typeof buildDeployRevnetTx>,
-    { args: readonly [unknown, unknown, unknown, unknown] }
-  >,
-  "args"
-> & { args: DeployForArgs };
+export type DeployForArgs = ContractFunctionArgs<RevDeployerAbi, "payable", "deployFor">;
+export type DeployRevnetRequest = Omit<ReturnType<typeof buildDeployRevnetTx>, "args"> & {
+  args: DeployForArgs;
+};
 
 export function parseDeployData(
   _formData: RevnetFormData,
@@ -72,13 +66,20 @@ export function parseDeployData(
   console.log({ operator, extra });
   console.log(`[ Operator ] ${operator}`);
 
-  // Determine asset settings based on reserveAsset
-  let baseCurrency, tokenAddress, tokenDecimals;
+  // Keep the accounting token and every no-feed denomination aligned. A custom
+  // ERC-20's token-keyed currency is understood natively by the terminal.
+  let baseCurrency: number;
+  let tokenAddress: Address;
+  let tokenDecimals: number;
 
   if (formData.reserveAsset === "USDC") {
     tokenAddress = USDC_ADDRESSES[extra.chainId];
     tokenDecimals = USDC_DECIMALS;
     baseCurrency = USD_CURRENCY_ID(6);
+  } else if (formData.reserveAsset === "CUSTOM") {
+    tokenAddress = formData.customReserveAsset.address as Address;
+    tokenDecimals = Number(formData.customReserveAsset.decimals);
+    baseCurrency = tokenCurrencyId(tokenAddress);
   } else {
     tokenAddress = NATIVE_TOKEN;
     tokenDecimals = NATIVE_TOKEN_DECIMALS;
@@ -174,10 +175,39 @@ export function parseDeployData(
     });
   });
 
-  // The v6 REVDeployer bakes in the terminals, buyback hook, and loans contract; a default
-  // 721 hook is deployed internally by the 4-arg `deployFor`. `buildDeployRevnetTx` sends
-  // the creation fee as the transaction's value (revnetId defaults to 0n: a new revnet).
-  return buildDeployRevnetTx({
+  // The v6 REVDeployer bakes in the terminals, buyback hook, and loans contract.
+  // `buildDeployRevnetTx` sends the creation fee as the transaction's value
+  // (revnetId defaults to 0n: a new revnet).
+  const customTiered721Config =
+    formData.reserveAsset === "CUSTOM"
+      ? {
+          baseline721HookConfiguration: {
+            name: `${formData.name} Store`,
+            symbol: `${formData.tokenSymbol}STORE`,
+            baseUri: "ipfs://",
+            tokenUriResolver: zeroAddress,
+            contractUri: extra.metadataCid,
+            tiersConfig: {
+              tiers: [],
+              currency: baseCurrency,
+              decimals: tokenDecimals,
+            },
+            flags: {
+              noNewTiersWithReserves: false,
+              noNewTiersWithVotes: false,
+              noNewTiersWithOwnerMinting: false,
+              preventOverspending: false,
+            },
+          },
+          salt: extra.salt,
+          preventOperatorAdjustingTiers: false,
+          preventOperatorUpdatingMetadata: false,
+          preventOperatorMinting: false,
+          preventOperatorIncreasingDiscountPercent: false,
+        }
+      : undefined;
+
+  const request = buildDeployRevnetTx({
     chainId: extra.chainId,
     config: {
       description: {
@@ -197,5 +227,23 @@ export function parseDeployData(
       salt: extra.salt,
     },
     creationFee: extra.creationFee,
-  }) as DeployRevnetRequest;
+    // The convenience 4-arg overload hardcodes 18 shop-price decimals.
+    // Use the explicit hook config for arbitrary ERC-20 decimals so later
+    // store tiers are denominated in the verified reserve token correctly.
+    tiered721Config: customTiered721Config,
+    allowedPosts: customTiered721Config ? [] : undefined,
+  });
+
+  // Viem cannot reliably disambiguate overloaded tuple-heavy functions when
+  // one overload contains empty arrays. Keep only the selected deployFor
+  // overload so encoding, simulation, review, and wallet submission all use
+  // the same selector.
+  const argCount = request.args.length;
+  return {
+    ...request,
+    abi: request.abi.filter(
+      (item) =>
+        item.type !== "function" || item.name !== "deployFor" || item.inputs.length === argCount,
+    ) as unknown as RevDeployerAbi,
+  } as DeployRevnetRequest;
 }
