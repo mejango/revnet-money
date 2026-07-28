@@ -156,6 +156,41 @@ describe("reviewed write hook", () => {
     expect(onSettled).toHaveBeenCalledWith(HASH, null, CALL, undefined, expectedContext);
   });
 
+  it("carries action-specific decoded review labels into the single safety review", async () => {
+    const { review, hooks } = await freshHarness();
+    const reviewer = vi.fn().mockResolvedValue(true);
+    review.registerTransactionReviewHandler(reviewer);
+    const { result } = renderHook(() =>
+      hooks.useWriteContract({
+        transactionReview: {
+          title: "Review shop items",
+          label: "Add shop items",
+          contractName: "JB721TiersHook",
+          confirmLabel: "Confirm & send",
+        },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    expect(reviewer).toHaveBeenCalledOnce();
+    expect(reviewer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Review shop items",
+        confirmLabel: "Confirm & send",
+        calls: [
+          expect.objectContaining({
+            label: "Add shop items",
+            contractName: "JB721TiersHook",
+            functionName: "transfer",
+          }),
+        ],
+      }),
+    );
+  });
+
   it("stops before simulation when the connected account changes during review", async () => {
     const { review, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => {

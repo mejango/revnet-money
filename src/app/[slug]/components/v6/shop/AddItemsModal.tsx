@@ -186,7 +186,16 @@ export function AddItemsModal({
   const queryClient = useQueryClient();
   const publicClient = usePublicClient({ chainId });
   const { address } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useWriteContract({
+    transactionReview: {
+      title: "Review shop items",
+      description:
+        "Review the live shop hook, decoded tier settings, and exact calldata before sending.",
+      label: "Add shop items",
+      contractName: "JB721TiersHook",
+      confirmLabel: "Confirm & send",
+    },
+  });
 
   const [items, setItems] = useState<DraftItem[]>([newDraftItem()]);
   const [phase, setPhase] = useState<

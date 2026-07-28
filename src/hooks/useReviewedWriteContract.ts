@@ -7,7 +7,10 @@ import {
   updateTransactionActivity,
   useTransactionActivities,
 } from "@/lib/transaction-activity";
-import { requireContractTransactionReview } from "@/lib/transaction-review";
+import {
+  requireContractTransactionReview,
+  type TransactionReviewOptions,
+} from "@/lib/transaction-review";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import {
@@ -155,12 +158,17 @@ function followSubmission(
     });
 }
 
+type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] & {
+  transactionReview?: TransactionReviewOptions;
+};
+
 export function useWriteContract(
-  options?: Parameters<typeof useWagmiWriteContract>[0],
+  options?: ReviewedWriteContractOptions,
 ): ReturnType<typeof useWagmiWriteContract> {
   const config = useConfig();
   const queryClient = useQueryClient();
-  const mutation = useWagmiWriteContract(options);
+  const { transactionReview, ...wagmiOptions } = options ?? {};
+  const mutation = useWagmiWriteContract(wagmiOptions);
 
   const writeContractAsync = useCallback(
     async (variables: Parameters<typeof mutation.writeContractAsync>[0]) => {
@@ -192,6 +200,7 @@ export function useWriteContract(
         );
       }
 
+      const safe = isSafeConnection(config);
       await requireContractTransactionReview(
         {
           chainId,
@@ -205,8 +214,13 @@ export function useWriteContract(
         {
           title: `Review ${functionName}`,
           label: functionName,
-          confirmLabel: isSafeConnection(config) ? "Agree & propose to Safe" : "Agree & continue",
-          description: isSafeConnection(config) ? SAFE_NONCE_GUIDANCE : undefined,
+          ...transactionReview,
+          confirmLabel: safe
+            ? "Agree & propose to Safe"
+            : (transactionReview?.confirmLabel ?? "Agree & continue"),
+          description: [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
+            .filter(Boolean)
+            .join("\n\n"),
         },
       );
 
@@ -230,7 +244,7 @@ export function useWriteContract(
       followSubmission(config, hash, chainId, functionName, reviewedAccount, callKey);
       return hash;
     },
-    [config, mutation],
+    [config, mutation, transactionReview],
   );
 
   const writeContract = useCallback(
@@ -240,7 +254,7 @@ export function useWriteContract(
     ) => {
       const context = {
         client: queryClient,
-        meta: options?.mutation?.meta,
+        meta: wagmiOptions.mutation?.meta,
         mutationKey: ["writeContract"] as const,
       };
       void writeContractAsync(variables as Parameters<typeof mutation.writeContractAsync>[0]).then(
@@ -254,7 +268,7 @@ export function useWriteContract(
         },
       );
     },
-    [mutation, options?.mutation?.meta, queryClient, writeContractAsync],
+    [mutation, queryClient, wagmiOptions.mutation?.meta, writeContractAsync],
   );
 
   return { ...mutation, writeContractAsync, writeContract } as ReturnType<

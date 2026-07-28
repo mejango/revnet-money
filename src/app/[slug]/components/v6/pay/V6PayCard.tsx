@@ -1106,14 +1106,27 @@ export function V6PayCard() {
                           </span>
                         </div>
                       ) : null}
-                      {restrictedCartTotal > 0n && shopCreditApplied > 0n ? (
-                        <div className="flex justify-between gap-3 text-zinc-500">
-                          <span>Fresh payment required</span>
-                          <span className="tabular-nums">
-                            {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
-                            {shopPricingSymbol}
-                          </span>
-                        </div>
+                      {restrictedCartTotal > 0n ? (
+                        <>
+                          <div className="flex justify-between gap-3 text-zinc-500">
+                            <span>
+                              {restrictedCartTotal === cartTotal
+                                ? "Shop credit not accepted"
+                                : "Shop credit not accepted by some items"}
+                            </span>
+                            <span className="tabular-nums">
+                              {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
+                              {shopPricingSymbol}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3 text-zinc-500">
+                            <span>Fresh payment required</span>
+                            <span className="tabular-nums">
+                              {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
+                              {shopPricingSymbol}
+                            </span>
+                          </div>
+                        </>
                       ) : null}
                       <div className="flex justify-between gap-3 pt-0.5 font-semibold text-zinc-900">
                         <span>Amount due</span>

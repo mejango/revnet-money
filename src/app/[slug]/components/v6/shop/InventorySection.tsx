@@ -22,6 +22,7 @@ import {
   TierMedia,
   useTierCart,
 } from "./shopLib";
+import { canAdjust721Tiers } from "./shopPermissions";
 import { TierDetailModal } from "./TierDetailModal";
 import { TierMediaPreview } from "./TierMediaPreview";
 
@@ -54,9 +55,9 @@ export function InventorySection({
   const [detailTierId, setDetailTierId] = useState<number | null>(null);
   const [addItemsOpen, setAddItemsOpen] = useState(false);
 
-  // Operator affordance: the ADJUST_721_TIERS permission (indexed) or the
-  // revnet's live operator (covers indexer lag). The tx itself is gated again
-  // by simulation + the hook's own permission check.
+  // Use both the indexed affordance and the hook's live permission semantics.
+  // The latter covers indexer lag and delegates authorized specifically to
+  // adjust this shop.
   const { data: isOperator } = useQuery({
     queryKey: ["v6RevnetOperator", chainId, projectId.toString(), address],
     enabled: !!address && !!publicClient,
@@ -69,7 +70,21 @@ export function InventorySection({
         operator: address!,
       }),
   });
-  const canAddItems = hasPermission("ADJUST_721_TIERS") || hasPermission("ROOT") || !!isOperator;
+  const { data: canManageLive } = useQuery({
+    queryKey: ["v6ShopAdjustPermission", chainId, projectId.toString(), shop.hook, address],
+    enabled: !!address && !!publicClient,
+    staleTime: 15_000,
+    retry: 1,
+    queryFn: () =>
+      canAdjust721Tiers(publicClient as PublicClient, {
+        chainId,
+        projectId,
+        hook: shop.hook,
+        operator: address!,
+      }),
+  });
+  const canAddItems =
+    hasPermission("ADJUST_721_TIERS") || hasPermission("ROOT") || !!isOperator || !!canManageLive;
 
   const categories = useMemo(() => {
     const ids = [...new Set(shop.tiers.map((tier) => tier.category))].sort((a, b) => a - b);
