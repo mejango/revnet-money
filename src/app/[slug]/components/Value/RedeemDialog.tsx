@@ -19,19 +19,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import { useCashOutRoute } from "@/hooks/useCashOutRoute";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
-import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
 import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
-import { Surplus } from "@/lib/reclaimableSurplus";
 import { getTokenConfigForChain } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
-  DEFAULT_METADATA,
   formatUnits,
   getJBContractAddress,
   JB_CHAINS,
@@ -42,19 +40,20 @@ import {
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
 import { PropsWithChildren, useState } from "react";
-import { parseUnits } from "viem";
 import { useAccount } from "wagmi";
 
 interface Props {
   projectId: bigint;
   tokenSymbol: string;
   disabled?: boolean;
-  surpluses: Surplus[];
 }
 
 export function RedeemDialog(props: PropsWithChildren<Props>) {
-  const { projectId, tokenSymbol, disabled, children, surpluses } = props;
+  const { projectId, tokenSymbol, disabled, children } = props;
   const [redeemAmount, setRedeemAmount] = useState<string>();
+  // Max slippage tolerance in basis points; protects both routes (terminal
+  // minimum on the treasury path, metadata minimum on the AMM path).
+  const [slippageBps, setSlippageBps] = useState(100);
 
   const { address } = useAccount();
   const { data: balances } = useSuckersUserTokenBalance();
@@ -133,19 +132,29 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // For USDC projects: receive USDC (the project's base token)
   const tokenToReceive = isNative ? NATIVE_TOKEN : selectedChainToken;
 
-  const selectedSurplus = surpluses.find((s) => s.chainId === Number(cashOutChainId));
   const baseDecimals = baseToken?.decimals ?? 18;
 
-  const { data: reclaimableAmount } = useReclaimableSurplus({
+  // Hook-aware quote: previewCashOutFrom runs the real cash-out path (data
+  // hook + buyback routing) and returns the exact minimum/metadata to submit.
+  const {
+    data: cashOutRoute,
+    isFetching: isQuoteFetching,
+    isError: isQuoteError,
+  } = useCashOutRoute({
     chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
     projectId: redeemAmountBN ? effectiveProjectId : undefined,
-    tokenAmount: redeemAmountBN || undefined,
-    decimals: baseDecimals,
-    currencyId: selectedSurplus?.currencyId ?? 1,
+    holder: address,
+    cashOutCount: redeemAmountBN || undefined,
+    tokenToReclaim: tokenToReceive as `0x${string}`,
+    terminal: cashOutTerminal,
+    slippageBps: BigInt(slippageBps),
   });
 
-  const expectedReclaim = reclaimableAmount
-    ? Number(formatUnits(reclaimableAmount, baseDecimals))
+  const expectedReclaim = cashOutRoute
+    ? Number(formatUnits(cashOutRoute.expectedReturn, baseDecimals))
+    : 0;
+  const minimumReclaim = cashOutRoute
+    ? Number(formatUnits(cashOutRoute.minimumReturn, baseDecimals))
     : 0;
 
   return (
@@ -250,12 +259,42 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     </div>
                   ) : null}
 
-                  {redeemAmount && valid ? (
+                  {redeemAmount && valid && isQuoteError ? (
+                    <div className="text-red-500 mt-4">
+                      Couldn't quote this cash out. Cash outs unlock after the revnet's initial
+                      delay — if it's still locked, try again later.
+                    </div>
+                  ) : null}
+
+                  <div className="flex items-center gap-2 mt-4">
+                    <span className="text-sm text-zinc-700">Max slippage</span>
+                    <div className="flex gap-1">
+                      {[50, 100, 300].map((bps) => (
+                        <button
+                          key={bps}
+                          type="button"
+                          onClick={() => setSlippageBps(bps)}
+                          className={
+                            slippageBps === bps
+                              ? "h-7 px-2 text-sm rounded-md border border-teal-500 bg-teal-500 text-melon-950"
+                              : "h-7 px-2 text-sm rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100"
+                          }
+                        >
+                          {bps / 100}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {redeemAmount && valid && cashOutRoute ? (
                     <div className="text-base mt-4">
                       You'll get ~{" "}
                       <span className="font-medium">
                         {formatDecimals(expectedReclaim, 5)} {baseToken?.symbol}
                       </span>
+                      <div className="text-sm text-zinc-500 mt-1">
+                        Reverts below {formatDecimals(minimumReclaim, 5)} {baseToken?.symbol}
+                      </div>
                     </div>
                   ) : null}
 
@@ -268,10 +307,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
             {!isSuccess ? (
               <ButtonWithWallet
                 targetChainId={selectedSucker?.peerChainId}
-                loading={loading || isApproving}
+                loading={loading || isApproving || (valid && isQuoteFetching)}
+                disabled={valid && !cashOutRoute}
                 onClick={async () => {
                   try {
-                    if (!cashOutTerminal || !address || !redeemAmountBN || !writeContractAsync) {
+                    if (
+                      !cashOutTerminal ||
+                      !address ||
+                      !redeemAmountBN ||
+                      !cashOutRoute ||
+                      !writeContractAsync
+                    ) {
                       console.error("Missing required data for cashout");
                       throw new Error("Please try again");
                     }
@@ -284,11 +330,13 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       args: [
                         address, // holder
                         effectiveProjectId, // project id
-                        redeemAmount ? parseUnits(redeemAmount, projectTokenDecimals) : 0n, // cash out count
+                        redeemAmountBN, // cash out count
                         tokenToReceive, // token to reclaim
-                        reclaimableAmount ?? 0n, // min tokens reclaimed (fees already applied)
+                        // On the treasury route the slippage floor lives here; on
+                        // the AMM route it lives in the metadata and this is 0.
+                        cashOutRoute.terminalMinimum, // min tokens reclaimed
                         address, // beneficiary
-                        DEFAULT_METADATA, // metadata
+                        cashOutRoute.metadata, // metadata
                       ],
                     });
                   } catch (err) {

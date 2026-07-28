@@ -36,6 +36,7 @@ vi.mock("wagmi", () => ({
 }));
 
 vi.mock("@/lib/nana/project", () => ({ useJBChainId: wallet.jbChainId }));
+vi.mock("@/hooks/ens/useEnsName", () => ({ useEnsName: () => ({ data: null }) }));
 vi.mock("@/providers/para-logout", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/providers/para-logout")>();
   return { ...original, logoutParaSession: wallet.logoutParaSession };
