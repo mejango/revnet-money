@@ -322,7 +322,7 @@ export function WalletButton() {
               setOpen(false);
               menu.triggerRef.current?.focus();
             }}
-            className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
           >
             Account
           </Link>
@@ -334,7 +334,7 @@ export function WalletButton() {
               setOpen(false);
               menu.triggerRef.current?.focus();
             }}
-            className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
           >
             Copy address
           </button>
