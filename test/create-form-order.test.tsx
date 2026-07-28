@@ -11,7 +11,9 @@ import { TEST_ACCOUNT, TEST_BENEFICIARY, validRevnetForm } from "./fixtures/revn
 
 function renderCreateForm(initialValues: RevnetFormData) {
   return render(
-    <QueryClientProvider client={new QueryClient()}>{createForm(initialValues)}</QueryClientProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      {createForm(initialValues)}
+    </QueryClientProvider>,
   );
 }
 

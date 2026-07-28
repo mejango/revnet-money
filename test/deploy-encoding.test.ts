@@ -268,8 +268,8 @@ describe("wallet-action:create-revnet — per-chain inline values", () => {
   it("routes each chain's split beneficiary override and falls back to the default", () => {
     const form = perChainForm();
     const sepoliaSplits = requestFor(form, sepolia.id).args[1].stageConfigurations[0].splits;
-    const baseSepoliaSplits =
-      requestFor(form, baseSepolia.id).args[1].stageConfigurations[0].splits;
+    const baseSepoliaSplits = requestFor(form, baseSepolia.id).args[1].stageConfigurations[0]
+      .splits;
 
     expect(sepoliaSplits.map((split) => split.beneficiary)).toEqual([
       TEST_BENEFICIARY,

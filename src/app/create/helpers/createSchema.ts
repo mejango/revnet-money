@@ -182,7 +182,15 @@ export const createSchema = schema<RevnetFormData>((input) => {
               if (isRecord(entry) && !chainIsSelected(entry.chainId)) {
                 issue(
                   issues,
-                  ["stages", stageIndex, "splits", splitIndex, "beneficiary", entryIndex, "chainId"],
+                  [
+                    "stages",
+                    stageIndex,
+                    "splits",
+                    splitIndex,
+                    "beneficiary",
+                    entryIndex,
+                    "chainId",
+                  ],
                   "Split beneficiary chain must be selected for deployment",
                 );
               }
