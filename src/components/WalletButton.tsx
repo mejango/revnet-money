@@ -9,6 +9,7 @@ import {
   ParaSessionLogoutError,
 } from "@/providers/para-logout";
 import { useParaAuth } from "@/providers/ParaAuthContext";
+import Link from "next/link";
 import {
   type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -314,6 +315,17 @@ export function WalletButton() {
             </div>
             <div>{chain?.name ?? "Unsupported network"}</div>
           </div>
+          <Link
+            href={`/account/${address}`}
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              menu.triggerRef.current?.focus();
+            }}
+            className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+          >
+            Account
+          </Link>
           <button
             type="button"
             role="menuitem"

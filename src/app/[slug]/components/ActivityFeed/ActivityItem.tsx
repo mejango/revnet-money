@@ -65,13 +65,29 @@ function eventDescription(event: ActivityEvent, projectTokenSymbol: string): str
   }
 }
 
+/** Project-page wrapper: reads the project token context for the symbol. */
 export function ActivityItem({ event }: { event: ActivityEvent }) {
   const { token } = useJBTokenContext();
-  const chain = JB_CHAINS[event.chainId].chain;
 
   if (!token?.data) return null;
 
-  const projectTokenSymbol = formatTokenSymbol(token.data.symbol);
+  return <ActivityItemRow event={event} projectTokenSymbol={formatTokenSymbol(token.data.symbol)} />;
+}
+
+/**
+ * Context-free row renderer, usable outside a ProjectProvider (e.g. the
+ * account view). When the symbol is unknown, amounts render without one.
+ */
+export function ActivityItemRow({
+  event,
+  projectTokenSymbol: symbol,
+}: {
+  event: ActivityEvent;
+  projectTokenSymbol?: string;
+}) {
+  const chain = JB_CHAINS[event.chainId].chain;
+
+  const projectTokenSymbol = symbol ?? "tokens";
   const isPayEvent = event.type === "in";
   const isInflow = isPayEvent || event.type === "addToBalance";
   const isOutflow = event.type === "out";
@@ -117,7 +133,9 @@ export function ActivityItem({ event }: { event: ActivityEvent }) {
           <div className="flex items-center gap-1">
             {event.baseAmount && (
               <span>
-                {event.baseAmount} {event.baseTokenSymbol}
+                {event.baseTokenSymbol
+                  ? `${event.baseAmount} ${event.baseTokenSymbol}`
+                  : event.baseAmount}
               </span>
             )}
             {isInflow && (

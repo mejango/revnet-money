@@ -1,4 +1,8 @@
 import type {
+  AccountActivityEventsQuery,
+  AccountActivityEventsQueryVariables,
+  AccountPermissionHoldersQuery,
+  AccountPermissionHoldersQueryVariables,
   ActivityEventsQuery,
   ActivityEventsQueryVariables,
   AllLoansQuery,
@@ -33,6 +37,8 @@ import type {
   ProjectPayersQueryVariables,
   ProjectQuery,
   ProjectQueryVariables,
+  ProjectsByOwnerQuery,
+  ProjectsByOwnerQueryVariables,
   ProjectWithPermissionsQuery,
   ProjectWithPermissionsQueryVariables,
   ShieldGroupQuery,
@@ -178,6 +184,26 @@ export const ActivityEventsOperation = operation<ActivityEventsQuery, ActivityEv
   variablesWith({}, { where: filter, orderBy: isString, orderDirection: isString }),
   hasRoot("activityEvents", "items"),
 );
+export const AccountActivityEventsOperation = operation<
+  AccountActivityEventsQuery,
+  AccountActivityEventsQueryVariables
+>(
+  "account-activity-events.v1",
+  variablesWith({ address: isString }, { limit: positiveLimit, after: isOptionalString }),
+  hasRoot("activityEvents", "items"),
+);
+export const ProjectsByOwnerOperation = operation<
+  ProjectsByOwnerQuery,
+  ProjectsByOwnerQueryVariables
+>("projects-by-owner.v1", variablesWith({ where: filter }), hasRoot("projects", "items"));
+export const AccountPermissionHoldersOperation = operation<
+  AccountPermissionHoldersQuery,
+  AccountPermissionHoldersQueryVariables
+>(
+  "account-permission-holders.v1",
+  variablesWith({ where: filter }),
+  hasRoot("permissionHolders", "nullable-items"),
+);
 export const HasPermissionOperation = operation<HasPermissionQuery, HasPermissionQueryVariables>(
   "has-permission.v1",
   variablesWith({
@@ -321,6 +347,9 @@ export const BENDYSTRAW_OPERATIONS = [
   SuckerGroupOperation,
   ParticipantsOperation,
   ActivityEventsOperation,
+  AccountActivityEventsOperation,
+  ProjectsByOwnerOperation,
+  AccountPermissionHoldersOperation,
   HasPermissionOperation,
   ProjectCreateEventOperation,
   ProjectOperatorOperation,
@@ -364,6 +393,9 @@ export const BROWSER_BENDYSTRAW_OPERATIONS = [
   SuckerGroupOperation,
   ParticipantsOperation,
   ActivityEventsOperation,
+  AccountActivityEventsOperation,
+  ProjectsByOwnerOperation,
+  AccountPermissionHoldersOperation,
   HasPermissionOperation,
   ProjectCreateEventOperation,
   ProjectOperatorOperation,
