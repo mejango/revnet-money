@@ -221,6 +221,55 @@ export type ActivityEventsQuery = {
   };
 };
 
+export type AccountActivityEventItem =
+  ActivityEventsQuery["activityEvents"]["items"][number] & {
+    from: string;
+    project:
+      | (Pick<Project, "projectId" | "handle" | "version" | "chainId"> & {
+          name: string | null;
+          tokenSymbol: string | null;
+          decimals: number | null;
+        })
+      | null;
+  };
+export type AccountActivityEventsQueryVariables = {
+  address: string;
+  limit?: number;
+  after?: string;
+};
+export type AccountActivityEventsQuery = {
+  activityEvents: {
+    items: AccountActivityEventItem[];
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  };
+};
+
+export type OwnedProjectRow = Pick<
+  Project,
+  | "chainId"
+  | "projectId"
+  | "version"
+  | "name"
+  | "handle"
+  | "logoUri"
+  | "owner"
+  | "isRevnet"
+  | "suckerGroupId"
+  | "tokenSymbol"
+  | "createdAt"
+>;
+export type ProjectsByOwnerQueryVariables = { where: BendystrawFilter };
+export type ProjectsByOwnerQuery = { projects: { items: OwnedProjectRow[] } };
+
+export type AccountPermissionHolderRow = Pick<
+  PermissionHolder,
+  "chainId" | "projectId" | "account" | "operator" | "permissions" | "isRevnetOperator" | "version"
+> & { project: { name: string | null; handle: string | null } | null };
+export type AccountPermissionHoldersQueryVariables = { where: BendystrawFilter };
+export type AccountPermissionHoldersQuery = {
+  permissionHolders: { items: AccountPermissionHolderRow[] } | null;
+};
+
 export type HasPermissionQueryVariables = {
   account: string;
   chainId: number;

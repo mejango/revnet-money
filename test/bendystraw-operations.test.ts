@@ -1,8 +1,11 @@
 import {
+  AccountActivityEventsOperation,
+  AccountPermissionHoldersOperation,
   BENDYSTRAW_OPERATIONS,
   BROWSER_BENDYSTRAW_OPERATIONS,
   IndexedPoolSwapsOperation,
   ProjectOperation,
+  ProjectsByOwnerOperation,
   ShieldGroupOperation,
   getBrowserOperationById,
 } from "@/lib/bendystraw/operations";
@@ -50,6 +53,43 @@ describe("reviewed Bendystraw operations", () => {
         offset: 0,
       }),
     ).toBe(false);
+  });
+
+  it("exposes the account-view operations through the browser proxy with bounded variables", () => {
+    for (const operation of [
+      AccountActivityEventsOperation,
+      ProjectsByOwnerOperation,
+      AccountPermissionHoldersOperation,
+    ]) {
+      expect(BENDYSTRAW_OPERATIONS).toContain(operation);
+      expect(getBrowserOperationById(operation.id)).toBe(operation);
+    }
+
+    expect(
+      AccountActivityEventsOperation.validateVariables({ address: "0xabc", limit: 25 }),
+    ).toBe(true);
+    expect(
+      AccountActivityEventsOperation.validateVariables({ address: "0xabc", limit: 1001 }),
+    ).toBe(false);
+    expect(AccountActivityEventsOperation.validateVariables({ limit: 25 })).toBe(false);
+    expect(
+      AccountActivityEventsOperation.validateData({
+        activityEvents: { items: [], pageInfo: { hasNextPage: false, endCursor: null } },
+      }),
+    ).toBe(true);
+
+    expect(
+      ProjectsByOwnerOperation.validateVariables({ where: { owner: "0xabc", version: 6 } }),
+    ).toBe(true);
+    expect(ProjectsByOwnerOperation.validateVariables({ owner: "0xabc" })).toBe(false);
+    expect(ProjectsByOwnerOperation.validateData({ projects: { items: [] } })).toBe(true);
+
+    expect(
+      AccountPermissionHoldersOperation.validateVariables({
+        where: { operator: "0xabc", version: 6 },
+      }),
+    ).toBe(true);
+    expect(AccountPermissionHoldersOperation.validateData({ permissionHolders: null })).toBe(true);
   });
 
   it("requires the reviewed response root before data reaches consumers", () => {

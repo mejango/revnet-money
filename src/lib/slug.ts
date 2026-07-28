@@ -21,3 +21,9 @@ export function parseSlug(slug: string) {
     projectId,
   };
 }
+
+/** The route slug (e.g. "eth:3") for a project, or undefined for unknown chains. */
+export function slugFor(chainId: number, projectId: number | bigint): string | undefined {
+  const entry = Object.entries(JB_CHAIN_SLUGS).find(([, value]) => value.chain.id === chainId);
+  return entry ? `${entry[0]}:${projectId}` : undefined;
+}

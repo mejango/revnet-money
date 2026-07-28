@@ -1,6 +1,8 @@
 import "server-only";
 
 import {
+  AccountActivityEventsOperation,
+  AccountPermissionHoldersOperation,
   ActivityEventsOperation,
   AllLoansOperation,
   AutoIssueEventsOperation,
@@ -18,6 +20,7 @@ import {
   ProjectOperation,
   ProjectOperatorOperation,
   ProjectPayersOperation,
+  ProjectsByOwnerOperation,
   ProjectWithPermissionsOperation,
   ShieldGroupOperation,
   ShieldProjectOperation,
@@ -33,6 +36,52 @@ type RegisteredQuery = {
   readonly operationName: string;
   readonly query: string;
 };
+
+const ACTIVITY_EVENT_FIELDS = `
+  payEvent {
+    id
+    amount
+    beneficiary
+    memo
+    timestamp
+    feeFromProject
+    newlyIssuedTokenCount
+    from
+    txHash
+    amountUsd
+    caller
+    distributionFromProjectId
+    projectId
+    project { id projectId handle version }
+  }
+  cashOutTokensEvent {
+    id
+    timestamp
+    txHash
+    from
+    beneficiary
+    reclaimAmount
+    cashOutCount
+    metadata
+    project { id projectId handle version }
+  }
+  addToBalanceEvent { txHash timestamp from amount memo }
+  mintTokensEvent {
+    txHash timestamp from caller beneficiary beneficiaryTokenCount memo
+  }
+  manualMintTokensEvent {
+    txHash timestamp from beneficiary beneficiaryTokenCount memo
+  }
+  autoIssueEvent { txHash timestamp from beneficiary count }
+  deployErc20Event { txHash timestamp from symbol }
+  projectCreateEvent { txHash timestamp from }
+  projectTransferEvent { txHash timestamp from previousOwner owner }
+  operatorPermissionsSetEvent {
+    txHash timestamp from caller operator isRevnetOperator
+  }
+  rulesetQueuedEvent { txHash timestamp from caller cycleNumber }
+  buybackPoolEvent { txHash timestamp from caller }
+`;
 
 const PROJECT_FIELDS = `
   projectId
@@ -141,49 +190,72 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           chainId
           timestamp
           txHash
-          payEvent {
-            id
-            amount
-            beneficiary
-            memo
-            timestamp
-            feeFromProject
-            newlyIssuedTokenCount
-            from
-            txHash
-            amountUsd
-            caller
-            distributionFromProjectId
-            projectId
-            project { id projectId handle version }
-          }
-          cashOutTokensEvent {
-            id
-            timestamp
-            txHash
-            from
-            beneficiary
-            reclaimAmount
-            cashOutCount
-            metadata
-            project { id projectId handle version }
-          }
-          addToBalanceEvent { txHash timestamp from amount memo }
-          mintTokensEvent {
-            txHash timestamp from caller beneficiary beneficiaryTokenCount memo
-          }
-          manualMintTokensEvent {
-            txHash timestamp from beneficiary beneficiaryTokenCount memo
-          }
-          autoIssueEvent { txHash timestamp from beneficiary count }
-          deployErc20Event { txHash timestamp from symbol }
-          projectCreateEvent { txHash timestamp from }
-          projectTransferEvent { txHash timestamp from previousOwner owner }
-          operatorPermissionsSetEvent {
-            txHash timestamp from caller operator isRevnetOperator
-          }
-          rulesetQueuedEvent { txHash timestamp from caller cycleNumber }
-          buybackPoolEvent { txHash timestamp from caller }
+          ${ACTIVITY_EVENT_FIELDS}
+        }
+      }
+    }`,
+  },
+  [AccountActivityEventsOperation.id]: {
+    operationName: "AccountActivityEvents",
+    query: `query AccountActivityEvents($address: String!, $limit: Int, $after: String) {
+      activityEvents(
+        where: { from: $address, version: 6 }
+        orderBy: "timestamp"
+        orderDirection: "desc"
+        limit: $limit
+        after: $after
+      ) {
+        items {
+          id
+          chainId
+          timestamp
+          txHash
+          from
+          project { projectId handle version chainId name tokenSymbol decimals }
+          ${ACTIVITY_EVENT_FIELDS}
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`,
+  },
+  [ProjectsByOwnerOperation.id]: {
+    operationName: "ProjectsByOwner",
+    query: `query ProjectsByOwner($where: projectFilter) {
+      projects(
+        where: $where
+        orderBy: "createdAt"
+        orderDirection: "desc"
+        limit: 200
+      ) {
+        items {
+          chainId
+          projectId
+          version
+          name
+          handle
+          logoUri
+          owner
+          isRevnet
+          suckerGroupId
+          tokenSymbol
+          createdAt
+        }
+      }
+    }`,
+  },
+  [AccountPermissionHoldersOperation.id]: {
+    operationName: "AccountPermissionHolders",
+    query: `query AccountPermissionHolders($where: permissionHolderFilter) {
+      permissionHolders(where: $where, limit: 500) {
+        items {
+          chainId
+          projectId
+          account
+          operator
+          permissions
+          isRevnetOperator
+          version
+          project { name handle }
         }
       }
     }`,
