@@ -18,6 +18,7 @@ import {
   PermissionHoldersOperation,
   ProjectAccountingContextOperation,
   ProjectCreateEventOperation,
+  ProjectErc20TickersOperation,
   ProjectOperation,
   ProjectOperatorOperation,
   ProjectPayersOperation,
@@ -324,21 +325,40 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [AccountTokenBalancesOperation.id]: {
     operationName: "AccountTokenBalances",
-    // Rows duplicate per indexed protocol version for the same (chainId,
-    // projectId) — consumers dedupe to the highest version client-side
-    // (dedupeToHighestVersion).
+    // This app is V6-only, so the version pin keeps other protocol versions'
+    // rows (which reuse projectIds for unrelated projects) out entirely.
+    // totalCount lets the client surface the fetch cap; the credit/ERC-20
+    // split distinguishes claimed tokens from unclaimed credits.
     query: `query AccountTokenBalances($account: String!, $limit: Int) {
       participants(
-        where: { address: $account, balance_gt: "0" }
+        where: { address: $account, balance_gt: "0", version: 6 }
         orderBy: "balance"
         orderDirection: "desc"
         limit: $limit
       ) {
+        totalCount
         items {
           chainId
           projectId
           version
           balance
+          creditBalance
+          erc20Balance
+        }
+      }
+    }`,
+  },
+  [ProjectErc20TickersOperation.id]: {
+    operationName: "ProjectErc20Tickers",
+    // The project ERC-20 ticker (what balances are denominated in). The
+    // project row's tokenSymbol is the ACCOUNTING context's symbol — never
+    // use it to label project-token amounts.
+    query: `query ProjectErc20Tickers($where: deployErc20EventFilter) {
+      deployErc20Events(where: $where, limit: 200) {
+        items {
+          chainId
+          projectId
+          symbol
         }
       }
     }`,
@@ -711,7 +731,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   [ShieldProjectOperation.id]: {
     operationName: "ShieldProject",
     query: `query ShieldProject($chainId: Int!, $projectId: Int!) {
-      project(chainId: $chainId, projectId: $projectId) {
+      project(chainId: $chainId, projectId: $projectId, version: 6) {
         id
         suckerGroupId
       }

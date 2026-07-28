@@ -44,7 +44,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { getTokenAddress, hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Address,
   encodeAbiParameters,
@@ -287,11 +287,24 @@ function TokenEditDialog({
     resetRelayr();
   };
 
+  // The delayed catch-up refetch must not fire after unmount.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    },
+    [],
+  );
+
   const finish = (description: string) => {
     toast({ title: deployed ? "Token updated" : "Token deployment submitted", description });
     setOpen(false);
     resetQuote();
-    setTimeout(onSuccess, deployed ? 2_000 : 10_000);
+    // Refresh immediately, then once more after the (possibly relayed)
+    // transactions have had time to land on every chain.
+    onSuccess();
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(onSuccess, deployed ? 2_000 : 10_000);
   };
 
   const callFor = (state: TokenChainState, nextName: string, nextSymbol: string) => {

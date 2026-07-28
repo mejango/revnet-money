@@ -11,6 +11,7 @@ import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { formatUnits } from "viem";
+import type { SelectedLoan } from "../../Value/hooks/useBorrowDialog";
 import { LoanDetailsTable } from "../../Value/LoansDetailsTable";
 import { ReallocateDialog } from "../../Value/ReallocateDialog";
 import { RepayDialog } from "../../Value/RepayDialog";
@@ -95,7 +96,7 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
   const [selectedChainId, setSelectedChainId] = useState<JBChainId | null>(null);
   const [showRepayDialog, setShowRepayDialog] = useState(false);
-  const [reallocateLoan, setReallocateLoan] = useState<any>(null);
+  const [reallocateLoan, setReallocateLoan] = useState<SelectedLoan | null>(null);
   const [showReallocateDialog, setShowReallocateDialog] = useState(false);
 
   if (!address) {

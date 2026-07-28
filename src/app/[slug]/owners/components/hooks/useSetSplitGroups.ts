@@ -179,7 +179,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   };
 }
 
-function prepareArgs(chain: ChainFormData) {
+export function prepareArgs(chain: ChainFormData) {
   return [
     chain.projectId,
     chain.rulesetId,

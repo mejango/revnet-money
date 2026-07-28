@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { ChevronDown, Trash2 as TrashIcon } from "@/components/ui/icons";
+import { Trash2 as TrashIcon } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
 import { withSchema } from "@/lib/formValidation";
@@ -76,13 +76,7 @@ export function AddStageDialog({
   onSave: (newStage: StageData) => void;
 }) {
   const {
-    values: {
-      stages,
-      reserveAsset: reserveAssetKind,
-      issuanceBaseCurrency,
-      chainIds,
-      operator: perChainOperators,
-    },
+    values: { stages, chainIds, operator: perChainOperators },
     setFieldValue: setCreateFieldValue,
     revnetTokenSymbol,
     reserveAssetSymbol,
@@ -96,6 +90,11 @@ export function AddStageDialog({
     "h-9 flex-1 border-2 border-melon-300 bg-melon-25 px-3 py-1.5 text-md placeholder:text-zinc-500 hover:border-melon-400 focus-visible:border-melon-600 focus-visible:outline-none focus-visible:ring-0";
 
   const [open, setOpen] = useState(false);
+
+  // Per-chain operators are a parent-form field, but edits are buffered here
+  // and committed only on "Save stage" — closing the dialog without saving
+  // must leave the parent form untouched.
+  const [draftOperators, setDraftOperators] = useState(perChainOperators);
 
   // Move enableCut state to top level
   const [enableCut, setEnableCut] = useState(
@@ -121,7 +120,14 @@ export function AddStageDialog({
   const steps = ["no tax", "light", "medium", "heavy", "extreme"];
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        // (Re)start the buffer from the parent's current state on every open.
+        if (nextOpen) setDraftOperators(perChainOperators);
+        setOpen(nextOpen);
+      }}
+    >
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
         overlayClassName="data-[state=open]:animate-none"
@@ -148,6 +154,8 @@ export function AddStageDialog({
                   newValues.priceCeilingIncreaseFrequency = "0";
                 }
 
+                // Commit the buffered per-chain operators along with the stage.
+                if (stageIdx === 0) setCreateFieldValue("operator", draftOperators);
                 onSave(newValues);
                 setOpen(false);
               } catch (e: any) {
@@ -244,34 +252,15 @@ export function AddStageDialog({
                                 : values.initialIssuance
                             }
                           />
+                          {/* The base currency is one global choice made in the
+                              assets section — the dialog only reflects it. */}
                           <span className="flex shrink-0 items-center pr-2 text-md text-zinc-500">
                             <span className="pointer-events-none whitespace-nowrap">
                               {revnetTokenSymbol} /
                             </span>
-                            {reserveAssetKind === "CUSTOM" ? (
-                              <span className="pointer-events-none ml-1 whitespace-nowrap">
-                                {issuanceBaseCurrencySymbol}
-                              </span>
-                            ) : (
-                              <span className="relative ml-1 inline-flex items-center">
-                                <select
-                                  aria-label="Issuance currency"
-                                  className="w-[3.25rem] appearance-none border-0 bg-transparent bg-none py-0 pr-4 pl-0 text-md text-zinc-500 focus:ring-0"
-                                  style={{ backgroundImage: "none" }}
-                                  value={issuanceBaseCurrency}
-                                  onChange={(event) =>
-                                    setCreateFieldValue(
-                                      "issuanceBaseCurrency",
-                                      event.target.value as "ETH" | "USD",
-                                    )
-                                  }
-                                >
-                                  <option value="ETH">ETH</option>
-                                  <option value="USD">USD</option>
-                                </select>
-                                <ChevronDown className="pointer-events-none absolute right-0 h-3.5 w-3.5" />
-                              </span>
-                            )}
+                            <span className="pointer-events-none ml-1 whitespace-nowrap">
+                              {issuanceBaseCurrencySymbol}
+                            </span>
                           </span>
                         </div>
                         <div className="flex w-full flex-wrap items-center gap-2">
@@ -522,10 +511,9 @@ export function AddStageDialog({
                                   <input
                                     type="checkbox"
                                     id="perChainOperator"
-                                    checked={perChainOperators.length > 0}
+                                    checked={draftOperators.length > 0}
                                     onChange={(e) =>
-                                      setCreateFieldValue(
-                                        "operator",
+                                      setDraftOperators(
                                         e.target.checked
                                           ? sortedChainIds.map((chainId) => ({
                                               chainId: String(chainId),
@@ -536,9 +524,9 @@ export function AddStageDialog({
                                     }
                                   />
                                 </label>
-                                {perChainOperators.length > 0 && (
+                                {draftOperators.length > 0 && (
                                   <div className="mt-2 space-y-2">
-                                    {perChainOperators.map((operator, operatorIndex) => {
+                                    {draftOperators.map((operator, operatorIndex) => {
                                       const chainId = Number(operator.chainId) as JBChainId;
                                       return (
                                         <div
@@ -557,9 +545,12 @@ export function AddStageDialog({
                                             placeholder="0x"
                                             value={operator.address}
                                             onChange={(e) =>
-                                              setCreateFieldValue(
-                                                `operator.${operatorIndex}.address`,
-                                                e.target.value,
+                                              setDraftOperators((previous) =>
+                                                previous.map((entry, index) =>
+                                                  index === operatorIndex
+                                                    ? { ...entry, address: e.target.value }
+                                                    : entry,
+                                                ),
                                               )
                                             }
                                           />

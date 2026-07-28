@@ -33,6 +33,8 @@ import type {
   ProjectAccountingContextQueryVariables,
   ProjectCreateEventQuery,
   ProjectCreateEventQueryVariables,
+  ProjectErc20TickersQuery,
+  ProjectErc20TickersQueryVariables,
   ProjectOperatorQuery,
   ProjectOperatorQueryVariables,
   ProjectPayersQuery,
@@ -206,6 +208,14 @@ export const ProjectsByOwnerOperation = operation<
   ProjectsByOwnerQuery,
   ProjectsByOwnerQueryVariables
 >("projects-by-owner.v1", variablesWith({ where: filter }), hasRoot("projects", "items"));
+export const ProjectErc20TickersOperation = operation<
+  ProjectErc20TickersQuery,
+  ProjectErc20TickersQueryVariables
+>(
+  "project-erc20-tickers.v1",
+  variablesWith({ where: filter }),
+  hasRoot("deployErc20Events", "items"),
+);
 export const AccountPermissionHoldersOperation = operation<
   AccountPermissionHoldersQuery,
   AccountPermissionHoldersQueryVariables
@@ -360,6 +370,7 @@ export const BENDYSTRAW_OPERATIONS = [
   AccountActivityEventsOperation,
   AccountTokenBalancesOperation,
   ProjectsByOwnerOperation,
+  ProjectErc20TickersOperation,
   AccountPermissionHoldersOperation,
   HasPermissionOperation,
   ProjectCreateEventOperation,
@@ -407,6 +418,7 @@ export const BROWSER_BENDYSTRAW_OPERATIONS = [
   AccountActivityEventsOperation,
   AccountTokenBalancesOperation,
   ProjectsByOwnerOperation,
+  ProjectErc20TickersOperation,
   AccountPermissionHoldersOperation,
   HasPermissionOperation,
   ProjectCreateEventOperation,

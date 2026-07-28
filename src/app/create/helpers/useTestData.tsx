@@ -6,6 +6,10 @@ import { RevnetFormData } from "../types";
 export function useTestData() {
   const { setValues } = useFormContext<RevnetFormData>();
   useEffect(() => {
+    // Development convenience only — never expose form-overwriting console
+    // hooks in production builds.
+    if (process.env.NODE_ENV !== "development") return;
+
     const fillTestData = (data: RevnetFormData) => {
       setValues(data);
       console.log("Test data loaded successfully! 🚀");
@@ -31,6 +35,7 @@ export function useTestData() {
 
     return () => {
       delete (window as any).testdata;
+      delete (window as any).testdata2;
     };
   }, [setValues]);
 }

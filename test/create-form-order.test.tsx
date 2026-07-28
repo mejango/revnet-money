@@ -29,7 +29,11 @@ function createForm(initialValues: RevnetFormData) {
         <>
           <DeployRevnetForm resetRelayrResponse={() => undefined} />
           <output data-testid="form-state">
-            {JSON.stringify({ operator: values.operator, stages: values.stages })}
+            {JSON.stringify({
+              operator: values.operator,
+              stages: values.stages,
+              issuanceBaseCurrency: values.issuanceBaseCurrency,
+            })}
           </output>
         </>
       )}
@@ -41,6 +45,7 @@ function formState() {
   return JSON.parse(screen.getByTestId("form-state").textContent ?? "{}") as {
     operator: RevnetFormData["operator"];
     stages: RevnetFormData["stages"];
+    issuanceBaseCurrency: RevnetFormData["issuanceBaseCurrency"];
   };
 }
 
@@ -92,21 +97,57 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
       target: { value: TEST_ACCOUNT },
     });
 
-    // Operator expands the same way, seeded with the stage operator.
+    // Operator expands the same way, seeded with the stage operator. The
+    // dialog buffers the edit: nothing reaches the parent form until Save.
     fireEvent.click(screen.getByLabelText(/per chain/i, { selector: "#perChainOperator" }));
     fireEvent.change(screen.getByLabelText("Base Sepolia operator"), {
       target: { value: TEST_BENEFICIARY },
     });
+    expect(formState().operator).toEqual([]);
+
+    fireEvent.click(screen.getByText("Save stage"));
     expect(formState().operator).toEqual([
       { chainId: String(sepolia.id), address: TEST_ACCOUNT },
       { chainId: String(baseSepolia.id), address: TEST_BENEFICIARY },
     ]);
-
-    fireEvent.click(screen.getByText("Save stage"));
     expect(formState().stages[0].splits[0].beneficiary).toEqual([
       { chainId: sepolia.id, address: TEST_BENEFICIARY },
       { chainId: baseSepolia.id, address: TEST_ACCOUNT },
     ]);
+  });
+
+  it("discards buffered per-chain operator edits when the dialog closes without saving", () => {
+    renderCreateForm(multiChainForm());
+
+    fireEvent.click(screen.getByLabelText("Edit stage 1"));
+    fireEvent.click(screen.getByLabelText(/per chain/i, { selector: "#perChainOperator" }));
+    fireEvent.change(screen.getByLabelText("Base Sepolia operator"), {
+      target: { value: TEST_BENEFICIARY },
+    });
+
+    // Cancel means cancel: close without saving.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(formState().operator).toEqual([]);
+
+    // Reopening starts from the parent's (unchanged) state.
+    fireEvent.click(screen.getByLabelText("Edit stage 1"));
+    expect(
+      (screen.getByLabelText(/per chain/i, { selector: "#perChainOperator" }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+  });
+
+  it("asks for the issuance base currency once, in the assets section, not per stage", () => {
+    renderCreateForm(multiChainForm());
+
+    // One global control in the form body.
+    const select = screen.getByLabelText("Issuance currency");
+    fireEvent.change(select, { target: { value: "USD" } });
+    expect(formState().issuanceBaseCurrency).toBe("USD");
+
+    // The stage dialog shows the chosen denomination without asking again.
+    fireEvent.click(screen.getByLabelText("Edit stage 1"));
+    expect(screen.queryAllByLabelText("Issuance currency")).toHaveLength(1);
   });
 
   it("assigns each auto-issuance row a selected chain at input time and saves it", () => {

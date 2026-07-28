@@ -425,6 +425,13 @@
           1
         ],
         [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/operator/SuckerExtensionCard.tsx",
+          "SuckerExtensionCard",
+          "useWriteContract",
+          1
+        ],
+        [
           "reviewed-write",
           "src/app/[slug]/components/v6/operator/operatorLib.ts",
           "runSequentialWrites",
@@ -432,13 +439,6 @@
           1
         ],
         [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
-          "SyncButton",
-          "useWriteContract",
-          1
-        ],
-        [
           "reviewed-write",
           "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
           "SyncButton",
@@ -447,8 +447,8 @@
         ],
         [
           "reviewed-write-hook",
-          "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
-          "ClaimButton",
+          "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
+          "SyncButton",
           "useWriteContract",
           1
         ],
@@ -462,7 +462,7 @@
         [
           "reviewed-write-hook",
           "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
-          "ExecuteButton",
+          "ClaimButton",
           "useWriteContract",
           1
         ],
@@ -471,6 +471,13 @@
           "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
           "ExecuteButton",
           "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
+          "ExecuteButton",
+          "useWriteContract",
           1
         ],
         [
@@ -599,6 +606,7 @@
       "files": [
         "src/app/[slug]/components/v6/operator/BuybackRouterCard.tsx",
         "src/app/[slug]/components/v6/operator/OperatorAccountCard.tsx",
+        "src/app/[slug]/components/v6/operator/SuckerExtensionCard.tsx",
         "src/app/[slug]/components/v6/operator/operatorLib.ts"
       ],
       "tests": ["test/wallet-project-controls.test.ts"]

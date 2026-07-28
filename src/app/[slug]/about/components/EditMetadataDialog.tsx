@@ -36,17 +36,26 @@ import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { encodeFunctionData } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
+import {
+  customPropertyCollisions,
+  formatCustomProperties,
+  mergeProjectMetadata,
+  parseCustomProperties,
+} from "./metadataMerge";
+
 type MetadataFormData = {
+  customProperties?: string;
   description: string;
   discord?: string;
   farcaster?: string;
   infoUri?: string;
   logoUri?: string;
   name: string;
+  payDisclosure?: string;
   telegram?: string;
   twitter?: string;
 };
@@ -67,9 +76,26 @@ const metadataSchema = schema<MetadataFormData>((input) => {
     issue(issues, ["description"], "Description is required");
   }
 
-  for (const field of ["logoUri", "twitter", "telegram", "discord", "infoUri", "farcaster"]) {
+  for (const field of [
+    "logoUri",
+    "twitter",
+    "telegram",
+    "discord",
+    "infoUri",
+    "farcaster",
+    "payDisclosure",
+  ]) {
     if (input[field] !== undefined && typeof input[field] !== "string") {
       issue(issues, [field], "Invalid value");
+    }
+  }
+
+  if (input.customProperties !== undefined) {
+    if (typeof input.customProperties !== "string") {
+      issue(issues, ["customProperties"], "Invalid value");
+    } else {
+      const parsed = parseCustomProperties(input.customProperties);
+      if (!parsed.ok) issue(issues, ["customProperties"], parsed.error);
     }
   }
 
@@ -98,6 +124,51 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
   const [selectedPayment, selectPayment] = useState<ChainPayment | null>(null);
 
   const { writeContractAsync, isPending, data: txHash } = useWriteContract();
+
+  // The metadata JSON this edit is merged on top of. The context value can be a
+  // server-provided subset (name/logo/description only), so it is re-fetched
+  // when the dialog opens and again right before pinning. Until that authoritative
+  // copy is in hand the advanced editor stays in a loading state and saving is
+  // blocked, otherwise an empty custom-properties box would delete custom fields.
+  const [currentMetadata, setCurrentMetadata] = useState<Record<string, unknown> | null>(null);
+  const [metadataLoadFailed, setMetadataLoadFailed] = useState(false);
+  const metadataReady = currentMetadata !== null;
+
+  // Prefer the authoritative copy for the form fields too, falling back to the
+  // context value while it loads.
+  const initialMetadata = currentMetadata ?? metadata?.data;
+
+  const metadataRef = useRef(metadata);
+  metadataRef.current = metadata;
+
+  const resolveCurrentMetadata = useCallback(async (): Promise<Record<string, unknown>> => {
+    const source = metadataRef.current as
+      { data?: unknown; refetch?: () => Promise<{ data?: unknown } | undefined> } | undefined;
+    const refetched = await source?.refetch?.();
+    const data = isRecord(refetched?.data) ? refetched.data : source?.data;
+    return isRecord(data) ? data : {};
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+    setCurrentMetadata(null);
+    setMetadataLoadFailed(false);
+
+    resolveCurrentMetadata().then(
+      (data) => {
+        if (!cancelled) setCurrentMetadata(data);
+      },
+      () => {
+        if (!cancelled) setMetadataLoadFailed(true);
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, resolveCurrentMetadata]);
 
   const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
@@ -130,20 +201,22 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
   const handleSubmit = async (values: MetadataFormData, { setSubmitting }: any) => {
     try {
       if (!address) throw new Error("Please connect your wallet");
+      // Fail closed: never merge onto a metadata JSON we could not read.
+      if (!metadataReady) throw new Error("Still loading the current metadata. Try again.");
+
+      const customProperties = parseCustomProperties(values.customProperties ?? "");
+      if (!customProperties.ok) throw new Error(customProperties.error);
 
       setSubmitting(true);
 
-      const metadataCid = await pinProjectMetadata({
-        ...metadata?.data,
-        name: values.name,
-        description: values.description,
-        logoUri: values.logoUri || metadata?.data?.logoUri,
-        twitter: values.twitter,
-        telegram: values.telegram,
-        discord: values.discord,
-        infoUri: values.infoUri,
-        // farcaster: values.farcaster,
-      });
+      // Re-fetch the CURRENT metadata JSON before pinning. The context value can
+      // be a server-provided subset (name/logo/description only), and merging on
+      // top of a subset would destroy custom fields and tags.
+      const authoritative = await resolveCurrentMetadata();
+
+      const metadataCid = await pinProjectMetadata(
+        mergeProjectMetadata(authoritative, values, customProperties.value),
+      );
 
       const metadataUri = ipfsUri(metadataCid);
       setCallbackCalled(false);
@@ -273,21 +346,25 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       <DialogContent>
         <FormProvider
           initialValues={{
-            name: metadata?.data?.name || "",
-            description: metadata?.data?.description || "",
-            logoUri: metadata?.data?.logoUri || "",
-            twitter: (metadata?.data as any)?.twitter || "",
-            telegram: (metadata?.data as any)?.telegram || "",
-            discord: (metadata?.data as any)?.discord || "",
-            infoUri: (metadata?.data as any)?.infoUri || "",
-            farcaster: (metadata?.data as any)?.farcaster || "",
+            name: (initialMetadata as any)?.name || "",
+            description: (initialMetadata as any)?.description || "",
+            logoUri: (initialMetadata as any)?.logoUri || "",
+            twitter: (initialMetadata as any)?.twitter || "",
+            telegram: (initialMetadata as any)?.telegram || "",
+            discord: (initialMetadata as any)?.discord || "",
+            infoUri: (initialMetadata as any)?.infoUri || "",
+            farcaster: (initialMetadata as any)?.farcaster || "",
+            payDisclosure: (initialMetadata as any)?.payDisclosure || "",
+            customProperties: formatCustomProperties(currentMetadata),
           }}
           validate={withSchema(metadataSchema)}
           onSubmit={handleSubmit}
           enableReinitialize
         >
-          {({ handleSubmit, setFieldValue, isSubmitting }) => {
+          {({ handleSubmit, setFieldValue, isSubmitting, values }) => {
             const isLoading = isSubmitting || isPending || isTxLoading;
+            const parsedCustom = parseCustomProperties(values.customProperties ?? "");
+            const collisions = parsedCustom.ok ? customPropertyCollisions(parsedCustom.value) : [];
             return (
               <form onSubmit={handleSubmit}>
                 <DialogHeader>
@@ -364,6 +441,50 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                       autoComplete="off"
                     /> */}
                   </div>
+
+                  <FieldGroup
+                    id="payDisclosure"
+                    name="payDisclosure"
+                    label="Payment notice"
+                    component="textarea"
+                    rows={2}
+                    placeholder="Shown to supporters before they pay. Leave empty for none."
+                  />
+
+                  <details className="border-2 border-melon-300 bg-melon-25 px-3 py-2">
+                    <summary className="cursor-pointer select-none text-md font-semibold leading-6">
+                      Advanced
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {metadataReady ? (
+                        <>
+                          <FieldGroup
+                            id="customProperties"
+                            name="customProperties"
+                            label="Custom properties"
+                            description="Any other fields stored with this project, as JSON. This is the full set: remove a key to delete it, leave it empty for none."
+                            component="textarea"
+                            rows={6}
+                            spellCheck={false}
+                            placeholder="{}"
+                            className="font-mono text-sm"
+                          />
+                          {collisions.length > 0 && (
+                            <p className="text-sm text-zinc-500">
+                              Set by the fields above, so ignored on save: {collisions.join(", ")}
+                            </p>
+                          )}
+                        </>
+                      ) : metadataLoadFailed ? (
+                        <p className="text-sm text-red-500">
+                          Could not load the current metadata. Close and reopen this dialog to
+                          retry. Saving is blocked so custom fields are not overwritten.
+                        </p>
+                      ) : (
+                        <p className="text-sm text-zinc-500">Loading current metadata...</p>
+                      )}
+                    </div>
+                  </details>
                 </div>
 
                 {relayrQuote && tokenSymbol && (
@@ -397,7 +518,11 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                       Pay and submit
                     </Button>
                   ) : (
-                    <Button type="submit" loading={isLoading} disabled={isLoading}>
+                    <Button
+                      type="submit"
+                      loading={isLoading}
+                      disabled={isLoading || !metadataReady}
+                    >
                       {projects.length > 1 ? "Get quote" : "Save changes"}
                     </Button>
                   )}

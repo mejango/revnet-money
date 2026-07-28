@@ -105,6 +105,16 @@ const actionExpectations: Array<{
         contains: ['functionName: "setOperatorOf"'],
       },
       {
+        // Sucker extension must verify the target chain's config hash before
+        // building the deploySuckersFor writes — pairing depends on it.
+        file: "src/app/[slug]/components/v6/operator/SuckerExtensionCard.tsx",
+        contains: [
+          '"hashedEncodedConfigurationOf"',
+          "buildSuckerExtensionWrites",
+          "runSequentialWrites",
+        ],
+      },
+      {
         file: "src/app/[slug]/components/v6/operator/operatorLib.ts",
         contains: ["simulateContract", "writeContractAsync"],
       },

@@ -10,12 +10,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Participant } from "@/lib/bendystraw/types";
 import type { JBChainId, ProjectTokenData } from "@/lib/nana/types";
 import { prettyNumber } from "@/lib/number";
 import { formatPortion, formatTokenSymbol } from "@/lib/utils";
 import { formatUnits } from "@bananapus/nana-sdk-core";
 import { Address } from "viem";
+
+/** The fields the holder-distribution surfaces actually consume. */
+export type ParticipantRow = {
+  address: string;
+  balance: string | number | bigint;
+  volume: string | number | bigint;
+  chains: number[];
+};
 
 export function ParticipantsTable({
   participants,
@@ -26,7 +33,7 @@ export function ParticipantsTable({
   condensed = false,
   maxRows,
 }: {
-  participants: (Participant & { chains: JBChainId[] })[];
+  participants: ParticipantRow[];
   token: ProjectTokenData | null | undefined;
   totalSupply: bigint;
   baseTokenSymbol?: string;
@@ -103,7 +110,7 @@ export function ParticipantsTable({
             <TableCell className="whitespace-nowrap pr-20">
               <div className="flex items-center gap-1">
                 {participant.chains.map((chain) => (
-                  <ChainLogo chainId={chain} key={chain} width={14} height={14} />
+                  <ChainLogo chainId={chain as JBChainId} key={chain} width={14} height={14} />
                 ))}
               </div>
             </TableCell>

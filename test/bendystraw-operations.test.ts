@@ -113,12 +113,23 @@ describe("reviewed Bendystraw operations", () => {
     expect(AccountTokenBalancesOperation.validateData({ participants: { items: [] } })).toBe(true);
     expect(AccountTokenBalancesOperation.validateData({ participants: null })).toBe(false);
 
-    // The registered document pins the positive-balance filter and selects the
-    // version disambiguator that the client-side dedupe relies on.
+    // The registered document pins the positive-balance filter and version 6 —
+    // this app is V6-only, so other protocol versions never reach consumers —
+    // and selects the credit/ERC-20 split plus the totalCount used to surface
+    // the fetch cap.
     const registered = BENDYSTRAW_QUERY_REGISTRY[AccountTokenBalancesOperation.id];
     expect(registered.query).toMatch(/balance_gt:\s*"0"/u);
-    expect(registered.query).toMatch(/version/u);
+    expect(registered.query).toMatch(/version:\s*6/u);
+    expect(registered.query).toMatch(/totalCount/u);
+    expect(registered.query).toMatch(/creditBalance/u);
+    expect(registered.query).toMatch(/erc20Balance/u);
     expect(BENDYSTRAW_QUERY_REGISTRY[OwnedNftsOperation.id].query).toMatch(/version/u);
+
+    // Bendystraw stores per-version project rows: an unpinned project(chainId,
+    // projectId) lookup can resolve a V4/V5 alias. The shield endpoint is
+    // V6-only, so its registered document pins version 6.
+    const shieldProject = BENDYSTRAW_QUERY_REGISTRY["shield-project.v1"];
+    expect(shieldProject.query).toMatch(/version:\s*6/u);
   });
 
   it("requires the reviewed response root before data reaches consumers", () => {

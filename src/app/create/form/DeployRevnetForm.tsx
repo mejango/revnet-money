@@ -1,5 +1,6 @@
-import type { RelayrPostBundleResponse } from "@/lib/nana/types";
+import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import Image from "next/image";
+import { GoToProjectButton } from "../buttons/GoToProjectButton";
 import { useTestData } from "../helpers/useTestData";
 import { ChainSelect } from "./ChainSelect";
 import { DeploySection } from "./DeploySection";
@@ -9,15 +10,19 @@ import { QuoteResponse } from "./QuoteResponse";
 import { AssetsSection } from "./ReservedAssets";
 import { Stages } from "./Stages";
 
+export type DirectDeployment = { chainId: JBChainId; hash: string };
+
 export function DeployRevnetForm({
   relayrResponse,
   resetRelayrResponse,
+  directDeployment,
 }: {
   relayrResponse?: RelayrPostBundleResponse;
   resetRelayrResponse: () => void;
+  /** The submitted transaction when a single-chain deploy went straight to the wallet. */
+  directDeployment?: DirectDeployment | null;
 }) {
-  // type `testdata` into console to fill form with TEST_FORM_DATA
-  // can remove on mainnet deploy
+  // Type `testdata` into the console to fill the form (development builds only).
   useTestData();
 
   const validBundle = !!relayrResponse?.bundle_uuid;
@@ -54,6 +59,17 @@ export function DeployRevnetForm({
       <DeploySection validBundle={validBundle} disabled={disabled} />
       {relayrResponse && (
         <QuoteResponse relayrResponse={relayrResponse} reset={resetRelayrResponse} />
+      )}
+      {directDeployment && (
+        <div className="flex flex-col items-start md:col-span-2 md:col-start-2">
+          <p className="mt-4 text-sm text-zinc-600">
+            Deployment submitted. The button unlocks once the transaction is confirmed onchain.
+          </p>
+          <GoToProjectButton
+            txHash={directDeployment.hash}
+            chainId={directDeployment.chainId}
+          />
+        </div>
       )}
     </div>
   );

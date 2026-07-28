@@ -1,35 +1,55 @@
 "use client";
 
-import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
+import { FALLBACK_RULESET_ID, RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { useFetchProjectRulesets } from "@/hooks/useFetchProjectRulesets";
 import { useJBContractContext } from "@/lib/nana/project";
 import { useSuckers } from "@/lib/nana/suckers";
 import { JBCoreContracts, jbSplitsAbi } from "@bananapus/nana-sdk-core";
 import { useMemo } from "react";
 import { useReadContracts } from "wagmi";
+import { chainsAtStage } from "../splitsLib";
 
-export function useChainSplits(stageId: number) {
+/**
+ * The reserved splits for one stage on every chain the project is on.
+ *
+ * `stageIdx` is the stage's INDEX in the chronological ruleset list — the same
+ * stage carries a different ruleset id on each chain, so an id can't address it.
+ *
+ * Each chain also reports the size of its fallback (ruleset 0) group, because
+ * `JBSplits.splitsOf` serves that group whenever the stage's own group is empty.
+ */
+export function useChainSplits(stageIdx: number) {
   const { contractAddress } = useJBContractContext();
   const { data: suckers, refetch } = useSuckers();
   const { suckerPairsWithRulesets } = useFetchProjectRulesets(suckers);
 
-  const contracts = useMemo(() => {
-    if (!suckerPairsWithRulesets) return [];
+  const stageChains = useMemo(
+    () => chainsAtStage(suckerPairsWithRulesets, stageIdx),
+    [suckerPairsWithRulesets, stageIdx],
+  );
 
-    return suckerPairsWithRulesets
-      .filter((sucker) => sucker.rulesets?.[stageId]?.id)
-      .map((sucker) => ({
-        chainId: sucker.peerChainId,
-        abi: jbSplitsAbi,
-        address: contractAddress(JBCoreContracts.JBSplits, sucker.peerChainId),
-        functionName: "splitsOf" as const,
-        args: [
-          BigInt(sucker.projectId),
-          BigInt(sucker.rulesets[stageId].id),
-          RESERVED_TOKEN_SPLIT_GROUP_ID,
-        ] as const,
-      }));
-  }, [suckerPairsWithRulesets, contractAddress, stageId]);
+  const contracts = useMemo(
+    () =>
+      stageChains.flatMap((chain) => {
+        const splitsOf = {
+          chainId: chain.chainId,
+          abi: jbSplitsAbi,
+          address: contractAddress(JBCoreContracts.JBSplits, chain.chainId),
+          functionName: "splitsOf" as const,
+        };
+        return [
+          {
+            ...splitsOf,
+            args: [chain.projectId, chain.rulesetId, RESERVED_TOKEN_SPLIT_GROUP_ID] as const,
+          },
+          {
+            ...splitsOf,
+            args: [chain.projectId, FALLBACK_RULESET_ID, RESERVED_TOKEN_SPLIT_GROUP_ID] as const,
+          },
+        ];
+      }),
+    [stageChains, contractAddress],
+  );
 
   const { data, isLoading } = useReadContracts({
     contracts,
@@ -42,17 +62,22 @@ export function useChainSplits(stageId: number) {
   });
 
   const chainSplits = useMemo(() => {
-    if (!data || !suckerPairsWithRulesets) return [];
+    if (!data) return [];
 
-    return suckerPairsWithRulesets
-      .filter((sucker) => sucker.rulesets?.[stageId]?.id)
-      .map((sucker, idx) => ({
-        chainId: sucker.peerChainId,
-        projectId: sucker.projectId,
-        rulesetId: sucker.rulesets[stageId].id,
-        splits: data[idx]?.result || [],
-      }));
-  }, [data, suckerPairsWithRulesets, stageId]);
+    return stageChains.map((chain, idx) => {
+      const stageResult = data[idx * 2];
+      const fallbackResult = data[idx * 2 + 1];
+      return {
+        chainId: chain.chainId,
+        projectId: chain.projectId,
+        rulesetId: chain.rulesetId,
+        splits: stageResult?.status === "success" ? stageResult.result : [],
+        // null when the read failed — the empty-save guard fails closed on it.
+        fallbackSplitCount:
+          fallbackResult?.status === "success" ? fallbackResult.result.length : null,
+      };
+    });
+  }, [data, stageChains]);
 
   const allRulesets = useMemo(() => {
     if (!suckerPairsWithRulesets || suckerPairsWithRulesets.length === 0) return [];

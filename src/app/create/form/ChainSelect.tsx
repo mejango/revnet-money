@@ -18,7 +18,10 @@ import {
   optimismSepolia,
   sepolia,
 } from "viem/chains";
-import { pruneDeselectedChain } from "../helpers/pruneDeselectedChain";
+import {
+  pruneDeselectedChain,
+  pruneHiddenEnvironmentChains,
+} from "../helpers/pruneDeselectedChain";
 import { useCreateForm } from "./useCreateForm";
 
 const TESTNETS: JBChainId[] = [sepolia.id, arbitrumSepolia.id, optimismSepolia.id, baseSepolia.id];
@@ -87,6 +90,16 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
             <Select
               onValueChange={(v) => {
                 setEnvironment(v);
+                // The other environment's chains are no longer visible; drop
+                // their selections and per-chain rows so nothing hidden stays
+                // part of the deployment.
+                const pruned = pruneHiddenEnvironmentChains(
+                  values,
+                  v === "production" ? MAINNETS : TESTNETS,
+                );
+                setFieldValue("chainIds", pruned.chainIds);
+                setFieldValue("operator", pruned.operator);
+                setFieldValue("stages", pruned.stages);
               }}
               defaultValue="production"
               disabled={disabled}

@@ -8,8 +8,9 @@ import {
   jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
+  jbMultiTerminalAbi,
   jbProjectsAbi,
-  jbTokensAbi,
+  NATIVE_TOKEN,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
 import { cache } from "react";
@@ -85,10 +86,11 @@ export const getOnchainProjectFallback = cache(
       throw err;
     }
 
-    const [controller, token] = await Promise.all([
+    const directory = getJBContractAddress(JBCoreContracts.JBDirectory, 6, chainId);
+    const [controller, terminals] = await Promise.all([
       client
         .readContract({
-          address: getJBContractAddress(JBCoreContracts.JBDirectory, 6, chainId),
+          address: directory,
           abi: jbDirectoryAbi,
           functionName: "controllerOf",
           args: [id],
@@ -96,13 +98,29 @@ export const getOnchainProjectFallback = cache(
         .catch(() => zeroAddress),
       client
         .readContract({
-          address: getJBContractAddress(JBCoreContracts.JBTokens, 6, chainId),
-          abi: jbTokensAbi,
-          functionName: "tokenOf",
+          address: directory,
+          abi: jbDirectoryAbi,
+          functionName: "terminalsOf",
           args: [id],
         })
-        .catch(() => zeroAddress),
+        .catch(() => [] as readonly Address[]),
     ]);
+
+    // The row's token/decimals/currency fields are the ACCOUNTING CONTEXT —
+    // what the project is paid in — sourced from the primary terminal. The
+    // project's own ERC-20 is a different token and must not fill them.
+    const primaryTerminal = terminals[0];
+    const context = primaryTerminal
+      ? await client
+          .readContract({
+            address: primaryTerminal,
+            abi: jbMultiTerminalAbi,
+            functionName: "accountingContextsOf",
+            args: [id],
+          })
+          .then((contexts) => contexts[0] ?? null)
+          .catch(() => null)
+      : null;
 
     const metadataUri =
       controller === zeroAddress
@@ -116,18 +134,15 @@ export const getOnchainProjectFallback = cache(
             })
             .catch(() => null);
 
-    const [metadata, tokenSymbol, decimals] = await Promise.all([
+    const [metadata, tokenSymbol] = await Promise.all([
       fetchIpfsMetadata(metadataUri || null),
-      token === zeroAddress
+      !context
         ? null
-        : client
-            .readContract({ address: token, abi: erc20Abi, functionName: "symbol" })
-            .catch(() => null),
-      token === zeroAddress
-        ? null
-        : client
-            .readContract({ address: token, abi: erc20Abi, functionName: "decimals" })
-            .catch(() => null),
+        : context.token.toLowerCase() === NATIVE_TOKEN.toLowerCase()
+          ? "ETH"
+          : client
+              .readContract({ address: context.token, abi: erc20Abi, functionName: "symbol" })
+              .catch(() => null),
     ]);
 
     let revDeployer: string | null = null;
@@ -146,9 +161,9 @@ export const getOnchainProjectFallback = cache(
       logoUri: typeof metadata?.logoUri === "string" ? metadata.logoUri : null,
       name: typeof metadata?.name === "string" ? metadata.name : null,
       version: 6,
-      token: token === zeroAddress ? null : token,
-      decimals: typeof decimals === "number" ? decimals : null,
-      currency: null,
+      token: context?.token ?? null,
+      decimals: context?.decimals ?? null,
+      currency: context ? Number(context.currency) : null,
       tokenSymbol: typeof tokenSymbol === "string" ? tokenSymbol : null,
       isRevnet: revDeployer ? owner.toLowerCase() === revDeployer.toLowerCase() : null,
     };

@@ -3,17 +3,18 @@
 import { Nav } from "@/components/layout/Nav";
 import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxQuote } from "@/hooks/useReviewedRelayr";
-import { useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { withSchema } from "@/lib/formValidation";
 import { FormProvider } from "@/lib/forms";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
+import { useState } from "react";
 import { encodeFunctionData, PublicClient } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { DEFAULT_FORM_DATA } from "./constants";
-import { DeployRevnetForm } from "./form/DeployRevnetForm";
+import { DeployRevnetForm, type DirectDeployment } from "./form/DeployRevnetForm";
 import { createSchema } from "./helpers/createSchema";
 import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
 import { parseDeployData } from "./helpers/parseDeployData";
@@ -28,11 +29,13 @@ export default function Page() {
   const { writeContractAsync } = useWriteContract();
 
   const { getRelayrTxQuote, data, reset } = useGetRelayrTxQuote();
+  const [directDeployment, setDirectDeployment] = useState<DirectDeployment | null>(null);
 
   async function deployProject(formData: RevnetFormData) {
     if (!isConnected || !address) {
       throw new Error("Please connect your wallet to deploy");
     }
+    setDirectDeployment(null);
 
     let deploymentFormData = formData;
     if (formData.reserveAsset === "CUSTOM") {
@@ -138,7 +141,7 @@ export default function Page() {
     if (directRequest) {
       const chainId = deploymentFormData.chainIds[0];
       if (connectedChainId !== chainId) await switchChainAsync({ chainId });
-      await writeContractAsync({
+      const hash = await writeContractAsync({
         chainId,
         address: directRequest.address,
         abi: directRequest.abi,
@@ -146,10 +149,19 @@ export default function Page() {
         args: directRequest.args,
         value: directRequest.value,
       } as unknown as Parameters<typeof writeContractAsync>[0]);
+      if (submittedViaSafe(hash)) {
+        toast({
+          title: "Safe proposal submitted",
+          description:
+            "The deployment was proposed to your Safe. Approve and execute it there — your revnet exists once that transaction confirms.",
+        });
+        return;
+      }
+      setDirectDeployment({ chainId, hash });
       toast({
         title: "Revnet deployment submitted",
         description:
-          "The single-chain deployment was sent directly. Track its onchain confirmation above.",
+          "Once the transaction confirms, use the button at the bottom of this page to open your revnet.",
       });
       return;
     }
@@ -183,7 +195,11 @@ export default function Page() {
           }
         }}
       >
-        <DeployRevnetForm relayrResponse={data} resetRelayrResponse={reset} />
+        <DeployRevnetForm
+          relayrResponse={data}
+          resetRelayrResponse={reset}
+          directDeployment={directDeployment}
+        />
       </FormProvider>
     </>
   );

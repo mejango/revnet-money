@@ -27,7 +27,7 @@ import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
-import { getTokenConfigForChain } from "@/lib/tokenUtils";
+import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
   formatUnits,
@@ -116,21 +116,20 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
   const valid = redeemAmountBN > 0n && redeemAmountBN <= balance.value;
 
-  // Get the correct token address for the selected chain
-  const getTokenForChain = (targetChainId: number) => {
-    return getTokenConfigForChain(suckerGroupData, targetChainId).token;
-  };
+  // The selected chain's accounting-token config. Null while a chain is
+  // selected means LOADING — never assume the native token: gate the quote
+  // and submission until it resolves.
+  const selectedChainTokenConfig = cashOutChainId
+    ? getTokenConfigForChain(suckerGroupData, Number(cashOutChainId))
+    : null;
 
-  const selectedChainToken = cashOutChainId
-    ? getTokenForChain(Number(cashOutChainId))
-    : NATIVE_TOKEN;
-
-  const isNative = selectedChainToken === NATIVE_TOKEN.toLowerCase();
-
-  // Determine what token to receive from cashout
-  // For ETH projects: receive ETH (NATIVE_TOKEN)
-  // For USDC projects: receive USDC (the project's base token)
-  const tokenToReceive = isNative ? NATIVE_TOKEN : selectedChainToken;
+  // Determine what token to receive from cashout: the native sentinel for
+  // native-base projects, else the chain's own accounting token (e.g. USDC).
+  const tokenToReceive = selectedChainTokenConfig
+    ? isNativeToken(selectedChainTokenConfig.token)
+      ? NATIVE_TOKEN
+      : selectedChainTokenConfig.token
+    : undefined;
 
   const baseDecimals = baseToken?.decimals ?? 18;
 
@@ -145,7 +144,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     projectId: redeemAmountBN ? effectiveProjectId : undefined,
     holder: address,
     cashOutCount: redeemAmountBN || undefined,
-    tokenToReclaim: tokenToReceive as `0x${string}`,
+    tokenToReclaim: tokenToReceive as `0x${string}` | undefined,
     terminal: cashOutTerminal,
     slippageBps: BigInt(slippageBps),
   });
@@ -171,7 +170,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 <>
                   <div className="mb-5 w-[65%]">
                     <span className="text-sm text-black font-medium"> Your {tokenSymbol}</span>
-                    <div className="mt-1 border border-zinc-200 p-3 bg-zinc-50">
+                    <div className="mt-1 border border-melon-300 p-3 bg-melon-25">
                       {balances?.map((balance) => (
                         <div key={balance.chainId} className="flex justify-between gap-2">
                           {JB_CHAINS[balance.chainId as JBChainId].name}
@@ -254,7 +253,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
                   {redeemAmount && cashOutChainId && !valid ? (
                     <div className="text-red-500 mt-4">
-                      Insuffient {tokenSymbol} on{" "}
+                      Insufficient {tokenSymbol} on{" "}
                       {JB_CHAINS[Number(cashOutChainId) as JBChainId].name}
                     </div>
                   ) : null}
@@ -316,6 +315,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       !address ||
                       !redeemAmountBN ||
                       !cashOutRoute ||
+                      !tokenToReceive ||
                       !writeContractAsync
                     ) {
                       console.error("Missing required data for cashout");

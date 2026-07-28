@@ -144,16 +144,18 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
         readonly { token: `0x${string}`; decimals: number; currency: number }[] | undefined;
       if (!contexts?.length) return;
       // Projects can hold several contexts; prefer the one for the indexed
-      // accounting token, else the first.
+      // accounting token, else the first. The indexed config can be null while
+      // the sucker-group data loads — the on-chain contexts stay authoritative.
       const indexed = getTokenConfigForChain(suckerGroupData, b.chainId);
-      const indexedToken = indexed.token;
       const context =
-        contexts.find((c) => c.token.toLowerCase() === indexedToken.toLowerCase()) ?? contexts[0];
+        (indexed
+          ? contexts.find((c) => c.token.toLowerCase() === indexed.token.toLowerCase())
+          : undefined) ?? contexts[0];
       map.set(b.chainId, {
         token: context.token,
         currency: Number(context.currency),
         decimals: Number(context.decimals),
-        symbol: indexed.symbol,
+        symbol: indexed?.symbol,
       });
     });
     return map;
@@ -212,23 +214,26 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   }
 
   // Cross-chain monetary totals are only honest when every held chain produced
-  // a value in the same accounting token.
+  // a value in the same accounting token. A null config (sucker-group data
+  // still loading) counts as unresolved — never assumed to be ETH.
   const heldConfigs = held.map(
     (b) =>
       accountingContextByChain.get(b.chainId) ?? getTokenConfigForChain(suckerGroupData, b.chainId),
   );
+  const firstConfig = heldConfigs[0] ?? null;
   const homogeneous =
-    heldConfigs.length > 0 &&
+    !!firstConfig &&
     heldConfigs.every(
       (c) =>
-        c.decimals === heldConfigs[0].decimals &&
+        !!c &&
+        c.decimals === firstConfig.decimals &&
         (c.symbol ?? getTokenSymbolFromAddress(c.token)) ===
-          (heldConfigs[0].symbol ?? getTokenSymbolFromAddress(heldConfigs[0].token)),
+          (firstConfig.symbol ?? getTokenSymbolFromAddress(firstConfig.token)),
     );
-  const baseSymbol = heldConfigs[0]
-    ? (heldConfigs[0].symbol ?? getTokenSymbolFromAddress(heldConfigs[0].token))
-    : "ETH";
-  const baseDecimals = heldConfigs[0]?.decimals ?? 18;
+  const baseSymbol = firstConfig
+    ? (firstConfig.symbol ?? getTokenSymbolFromAddress(firstConfig.token))
+    : "";
+  const baseDecimals = firstConfig?.decimals ?? 18;
   const cashComplete = homogeneous && held.every((b) => quotes[b.chainId]?.cashout !== undefined);
   const loanComplete = homogeneous && held.every((b) => quotes[b.chainId]?.maxLoan !== undefined);
   const totalCashout = held.reduce((acc, b) => acc + (quotes[b.chainId]?.cashout ?? 0n), 0n);
@@ -422,8 +427,10 @@ function YouChainRow({
   suckerGroupData: any;
   onQuote: (chainId: number, quote: ChainQuote) => void;
 }) {
+  // Null while the accounting context is unresolved — the quotes stay gated
+  // (rows show "—") instead of being asked in ETH/18 by default.
   const config = accountingContext ?? getTokenConfigForChain(suckerGroupData, chainId);
-  const baseSymbol = config.symbol ?? getTokenSymbolFromAddress(config.token);
+  const baseSymbol = config ? (config.symbol ?? getTokenSymbolFromAddress(config.token)) : "";
 
   // v6 currentReclaimableSurplusOf takes empty (terminals, tokens) arrays,
   // meaning "across all of them"; the hook applies the protocol fees. Both
@@ -432,10 +439,10 @@ function YouChainRow({
   const { data: cashout } = useReclaimableSurplus({
     chainId,
     projectId: chainProjectId,
-    tokenAmount: balanceValue,
-    decimals: config.decimals,
-    currencyId: config.currency,
-    token: config.token,
+    tokenAmount: config ? balanceValue : undefined,
+    decimals: config?.decimals ?? 18,
+    currencyId: config?.currency ?? 0,
+    token: config?.token,
   });
 
   // v6 borrowableAmountFrom returns a (borrowableNow, capacity) tuple; the hook
@@ -443,7 +450,9 @@ function YouChainRow({
   const { data: maxLoan } = useBorrowableAmountFrom({
     address: getRevnetLoanContract(6, chainId),
     chainId,
-    args: [chainProjectId, balanceValue, BigInt(config.decimals), BigInt(config.currency)],
+    args: config
+      ? [chainProjectId, balanceValue, BigInt(config.decimals), BigInt(config.currency)]
+      : undefined,
   });
 
   useEffect(() => {
@@ -451,7 +460,7 @@ function YouChainRow({
   }, [chainId, cashout, maxLoan, onQuote]);
 
   const fmtBase = (value: bigint) =>
-    `${formatUnits(value, config.decimals, { fractionDigits: 5 })} ${baseSymbol}`;
+    config ? `${formatUnits(value, config.decimals, { fractionDigits: 5 })} ${baseSymbol}` : "—";
 
   const loanCell = () => {
     if (maxLoan === undefined) return "—";

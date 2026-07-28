@@ -4,7 +4,11 @@ import { TierMediaPreview } from "@/app/[slug]/components/v6/shop/TierMediaPrevi
 import { tierDisplayName, type TierMedia } from "@/app/[slug]/components/v6/shop/shopLib";
 import { ChainLogo } from "@/components/ChainLogo";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { dedupeOwnedNfts, projectRefKey, projectRefsWhere } from "@/lib/accountHoldings";
+import {
+  ACCOUNT_BENDYSTRAW_CHAIN_ID,
+  projectRefKey,
+  projectRefsWhere,
+} from "@/lib/accountHoldings";
 import { OwnedNftsOperation, ProjectsByOwnerOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { OwnedProjectRow } from "@/lib/bendystraw/types";
 import { ipfsUriToAppUrl } from "@/lib/ipfs";
@@ -16,7 +20,6 @@ import { useQueries } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo } from "react";
 import type { Address } from "viem";
-import { mainnet } from "viem/chains";
 
 const FETCH_LIMIT = 1000;
 
@@ -32,9 +35,8 @@ type ProjectItems = {
   key: string;
   chainId: JBChainId;
   projectId: number;
-  version: number;
   name: string;
-  /** The v6 shop route when there is one — this app routes v6 in-site. */
+  /** The shop route for the project; every row is v6 so this always resolves. */
   slug: string | undefined;
   tiers: TierHolding[];
 };
@@ -70,19 +72,17 @@ async function resolveNftTokenMedia(tokenUri: string | null): Promise<TierMedia>
 }
 
 export function StoreItemHoldings({ address }: { address: Address }) {
+  // This app is V6-only: the version pin keeps other protocol versions' rows
+  // (which reuse projectIds for unrelated projects) out entirely.
   const nftsQuery = useBendystrawQuery(
     OwnedNftsOperation,
-    { where: { owner: address.toLowerCase() }, limit: FETCH_LIMIT, offset: 0 },
-    { chainId: mainnet.id },
+    { where: { owner: address.toLowerCase(), version: 6 }, limit: FETCH_LIMIT, offset: 0 },
+    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID },
   );
 
-  // NFT rows duplicate per indexed protocol version — keep the highest
-  // version per (chainId, projectId, tokenId).
   const items = useMemo(
     () =>
-      dedupeOwnedNfts(
-        (nftsQuery.data?.nfts.items ?? []).filter((item) => !!JB_CHAINS[item.chainId as JBChainId]),
-      ),
+      (nftsQuery.data?.nfts.items ?? []).filter((item) => !!JB_CHAINS[item.chainId as JBChainId]),
     [nftsQuery.data],
   );
 
@@ -90,7 +90,7 @@ export function StoreItemHoldings({ address }: { address: Address }) {
   const projectsQuery = useBendystrawQuery(
     ProjectsByOwnerOperation,
     { where: refsWhere ?? {} },
-    { chainId: mainnet.id, enabled: !!refsWhere },
+    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID, enabled: !!refsWhere },
   );
   const projectByRef = useMemo(() => {
     const map = new Map<string, OwnedProjectRow>();
@@ -109,9 +109,8 @@ export function StoreItemHoldings({ address }: { address: Address }) {
         key,
         chainId: item.chainId as JBChainId,
         projectId: item.projectId,
-        version: item.version,
         name: project?.name ?? project?.handle ?? `Project #${item.projectId}`,
-        slug: item.version === 6 ? slugFor(item.chainId, item.projectId) : undefined,
+        slug: slugFor(item.chainId, item.projectId),
         tiers: [],
       };
       const tierKey = `${item.chainId}:${item.projectId}:${item.tierId}`;
@@ -166,47 +165,50 @@ export function StoreItemHoldings({ address }: { address: Address }) {
       ) : groups.length === 0 ? (
         <p className="text-sm text-zinc-500">This account owns no store items.</p>
       ) : (
-        <div className="divide-y divide-melon-200 bg-melon-50 px-4">
-          {groups.map((group) => (
-            <div key={group.key} className="py-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <ChainLogo chainId={group.chainId} width={16} height={16} />
-                {group.slug ? (
-                  <Link
-                    href={`/${group.slug}/shop`}
-                    className="text-sm font-medium hover:underline"
-                  >
-                    {group.name}
-                  </Link>
-                ) : (
-                  <span className="text-sm font-medium">{group.name}</span>
-                )}
-                {group.slug ? null : (
-                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
-                    V{group.version}
-                  </span>
-                )}
-              </div>
-              <div className="mt-2 divide-y divide-zinc-100">
-                {group.tiers.map((tier) => {
-                  const media = mediaByKey[tier.key];
-                  const name = tierDisplayName(media, tier.tierId);
-                  return (
-                    <div key={tier.key} className="flex items-center gap-3 py-1.5 text-sm">
-                      <div className="h-10 w-10 shrink-0 overflow-hidden border border-zinc-200 bg-white">
-                        <TierMediaPreview media={media} tierId={tier.tierId} alt={name} />
+        <>
+          <div className="divide-y divide-melon-200 bg-melon-50 px-4">
+            {groups.map((group) => (
+              <div key={group.key} className="py-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <ChainLogo chainId={group.chainId} width={16} height={16} />
+                  {group.slug ? (
+                    <Link
+                      href={`/${group.slug}/shop`}
+                      className="text-sm font-medium hover:underline"
+                    >
+                      {group.name}
+                    </Link>
+                  ) : (
+                    <span className="text-sm font-medium">{group.name}</span>
+                  )}
+                </div>
+                <div className="mt-2 divide-y divide-zinc-100">
+                  {group.tiers.map((tier) => {
+                    const media = mediaByKey[tier.key];
+                    const name = tierDisplayName(media, tier.tierId);
+                    return (
+                      <div key={tier.key} className="flex items-center gap-3 py-1.5 text-sm">
+                        <div className="h-10 w-10 shrink-0 overflow-hidden border border-zinc-200 bg-white">
+                          <TierMediaPreview media={media} tierId={tier.tierId} alt={name} />
+                        </div>
+                        <span className="min-w-0 flex-1 truncate font-medium text-zinc-900">
+                          {name}
+                        </span>
+                        <span className="text-zinc-500">×{tier.count}</span>
                       </div>
-                      <span className="min-w-0 flex-1 truncate font-medium text-zinc-900">
-                        {name}
-                      </span>
-                      <span className="text-zinc-500">×{tier.count}</span>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+          {(nftsQuery.data?.nfts.totalCount ?? 0) > (nftsQuery.data?.nfts.items.length ?? 0) ? (
+            <p className="mt-2 text-xs text-zinc-500">
+              Showing the {nftsQuery.data?.nfts.items.length} most recent items of{" "}
+              {nftsQuery.data?.nfts.totalCount}.
+            </p>
+          ) : null}
+        </>
       )}
     </section>
   );

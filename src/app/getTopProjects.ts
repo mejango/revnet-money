@@ -24,13 +24,15 @@ export async function getTopProjects() {
       group.projects?.items[0]?.isRevnet &&
       group.projects.items[0].tokenSymbol?.toUpperCase() === "ETH",
   );
-  let ethPrice = 0;
+  // The ETH price only converts ETH-denominated balances for ranking. When the
+  // feed fails, drop those rows (they can't be ranked honestly) but keep the
+  // rows that never needed the price instead of blanking the whole table.
+  let ethPrice: number | null = null;
   if (needsEthPrice) {
     try {
       ethPrice = await fetchEthPrice();
     } catch (error) {
       console.error("Failed to load the ETH price for top projects:", error);
-      return [];
     }
   }
 
@@ -41,9 +43,10 @@ export async function getTopProjects() {
 
       const symbol = project.tokenSymbol?.toUpperCase();
       if (symbol !== "ETH" && symbol !== "USDC") return null;
+      if (symbol === "ETH" && ethPrice === null) return null;
 
       const balance = Number(formatUnits(BigInt(group.balance), project.decimals ?? 18));
-      const balanceUsd = symbol === "ETH" ? balance * ethPrice : balance;
+      const balanceUsd = symbol === "ETH" ? balance * (ethPrice ?? 0) : balance;
 
       return { project, balanceUsd };
     })

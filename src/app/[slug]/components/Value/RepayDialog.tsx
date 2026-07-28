@@ -1,4 +1,5 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,10 +14,10 @@ import {
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
-import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
 import {
   useAccount,
@@ -85,11 +86,19 @@ export function RepayDialog({
     { enabled: !!suckerGroupId, pollInterval: 10000, chainId: Number(currentChainId) },
   );
 
-  // Get token configuration for this loan's chain
-  const chainTokenConfig = getTokenConfigForChain(suckerGroupData, chainId);
-  const baseTokenSymbol =
-    chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token);
-  const baseTokenDecimals = chainTokenConfig.decimals;
+  // Token configuration for this loan's chain. Null means LOADING/unknown —
+  // never assume ETH: gate submission and show skeletons until it resolves.
+  const chainTokenConfig = useMemo(
+    () => getTokenConfigForChain(suckerGroupData, chainId),
+    [suckerGroupData, chainId],
+  );
+  // Native-vs-ERC-20 is decided by the accounting token ADDRESS; symbols are
+  // display-only. Undefined while the config is unresolved.
+  const isNativeBase = chainTokenConfig ? isNativeToken(chainTokenConfig.token) : undefined;
+  const baseTokenSymbol = chainTokenConfig
+    ? (chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token))
+    : undefined;
+  const baseTokenDecimals = chainTokenConfig?.decimals ?? 18;
 
   // Repay loan hook
   const { writeContractAsync: repayLoanAsync, isPending: isRepaying } = useWriteContract();
@@ -119,14 +128,16 @@ export function RepayDialog({
     }
   };
 
-  // Simulation arguments - only run if allowance is sufficient for non-ETH tokens
+  // Simulation arguments - only run once the token config resolved and, for
+  // ERC-20 base tokens, the allowance is sufficient.
   const shouldRunSimulation =
     !isLoadingLoan &&
     loanData &&
     collateralToReturn &&
     userAddress &&
+    !!chainTokenConfig &&
     allowanceChecked && // Ensure allowance check has completed
-    (baseTokenSymbol === "ETH" || hasSufficientAllowance);
+    (isNativeBase || hasSufficientAllowance);
 
   const simulationArgs = shouldRunSimulation
     ? [
@@ -171,7 +182,7 @@ export function RepayDialog({
             },
           ])
         : undefined,
-    value: baseTokenSymbol === "ETH" ? loanData?.amount : 0n, // Only send ETH value for ETH-based projects
+    value: isNativeBase ? loanData?.amount : 0n, // Only send native value for native-base projects
   });
 
   // Extract the exact amount from simulation result for display purposes only
@@ -219,7 +230,16 @@ export function RepayDialog({
   // Check allowance for non-ETH base tokens
   useEffect(() => {
     const checkAllowance = async () => {
-      if (!loanData || !userAddress || !publicClient || baseTokenSymbol === "ETH") {
+      // Unresolved token config: the allowance question can't be answered yet.
+      // Stay un-checked so submission remains gated (LOADING, not ETH).
+      if (!chainTokenConfig) {
+        setAllowanceChecked(false);
+        setHasSufficientAllowance(false);
+        setAllowanceError("");
+        return;
+      }
+
+      if (!loanData || !userAddress || !publicClient || isNativeToken(chainTokenConfig.token)) {
         setAllowanceChecked(true);
         setHasSufficientAllowance(true);
         setAllowanceError("");
@@ -255,15 +275,7 @@ export function RepayDialog({
     };
 
     checkAllowance();
-  }, [
-    loanData,
-    userAddress,
-    publicClient,
-    baseTokenSymbol,
-    chainTokenConfig,
-    chainId,
-    baseTokenDecimals,
-  ]);
+  }, [loanData, userAddress, publicClient, chainTokenConfig, chainId]);
 
   // ===== EFFECTS =====
 
@@ -288,7 +300,8 @@ export function RepayDialog({
     }
   }, [collateralToReturn, loanData, tokenSymbol, projectTokenDecimals, formatCollateralAmount]);
 
-  // Handle transaction status updates
+  // Handle transaction status updates. Terminal states persist until the user
+  // dismisses the dialog — timers must never close it or clear an error.
   useEffect(() => {
     if (isRepayTxLoading) {
       setRepayStatus("pending");
@@ -298,19 +311,8 @@ export function RepayDialog({
         title: "Success",
         description: "Loan repayment completed successfully!",
       });
-      setTimeout(() => {
-        onOpenChange(false);
-      }, 2000);
     }
-  }, [isRepayTxLoading, isRepaySuccess, toast, onOpenChange]);
-
-  // Auto-clear status after 3 seconds for terminal states
-  useEffect(() => {
-    if (repayStatus === "success" || repayStatus === "error") {
-      const timeout = setTimeout(() => setRepayStatus("idle"), 3000);
-      return () => clearTimeout(timeout);
-    }
-  }, [repayStatus]);
+  }, [isRepayTxLoading, isRepaySuccess, toast]);
 
   // Initialize form when dialog opens
   useEffect(() => {
@@ -328,9 +330,10 @@ export function RepayDialog({
 
   // ===== EVENT HANDLERS =====
   const handleApproveAllowance = async () => {
-    if (!loanData || !userAddress || !publicClient || !walletClient || baseTokenSymbol === "ETH") {
+    if (!loanData || !userAddress || !publicClient || !walletClient || !chainTokenConfig) {
       return;
     }
+    if (isNativeToken(chainTokenConfig.token)) return;
 
     try {
       setRepayStatus("approving");
@@ -375,7 +378,14 @@ export function RepayDialog({
   };
 
   const handleRepay = async () => {
-    if (!loanData || !userAddress || !repayLoanAsync || !publicClient || !walletClient) {
+    if (
+      !loanData ||
+      !userAddress ||
+      !repayLoanAsync ||
+      !publicClient ||
+      !walletClient ||
+      !chainTokenConfig
+    ) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -394,8 +404,8 @@ export function RepayDialog({
         loanData.collateral,
       );
 
-      // Check allowance for USDC-based projects
-      if (baseTokenSymbol !== "ETH") {
+      // Check allowance for ERC-20-based projects
+      if (!isNativeToken(chainTokenConfig.token)) {
         const baseTokenAddress = chainTokenConfig.token;
         const revLoansContractAddress = getRevnetLoanContract(6, chainId);
 
@@ -451,7 +461,10 @@ export function RepayDialog({
               "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
           },
         ],
-        value: baseTokenSymbol === "ETH" ? exactRepayAmount || loanData?.amount : 0n,
+        // Repay cost accrues continuously, so a quoted exact value can be
+        // stale by send time and underfund the repay. Always send the ceiling
+        // (the full loan amount); the contract refunds the excess.
+        value: isNativeToken(chainTokenConfig.token) ? loanData.amount : 0n,
       });
 
       setRepayTxHash(txHash);
@@ -525,7 +538,10 @@ export function RepayDialog({
   };
 
   // ===== LOADING STATES =====
-  if (isLoadingLoan || (!allowanceChecked && baseTokenSymbol !== "ETH")) {
+  // An unresolved token config is a LOADING state: without it the loan's base
+  // token is unknown, so amounts, allowance, and value attachment can't be
+  // rendered or submitted safely.
+  if (isLoadingLoan || !chainTokenConfig || (!allowanceChecked && isNativeBase === false)) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl">
@@ -572,7 +588,7 @@ export function RepayDialog({
             <div className="col-span-4">
               <Label
                 htmlFor="collateral-to-return"
-                className="block text-gray-700 text-sm font-bold mb-1"
+                className="block text-zinc-700 text-sm font-bold mb-1"
               >
                 How much {tokenSymbol} collateral do you want back?
               </Label>
@@ -624,11 +640,11 @@ export function RepayDialog({
           </div>
 
           <div className="mt-4">
-            <Label className="block text-gray-700 text-sm font-bold mb-1">
+            <Label className="block text-zinc-700 text-sm font-bold mb-1">
               Repayment Breakdown
             </Label>
             {loanData && (
-              <div className="bg-zinc-50 p-4 rounded-lg">
+              <div className="bg-melon-25 border border-melon-300 p-4">
                 <div className="text-sm text-zinc-600">
                   <table className="w-full">
                     <tbody className="space-y-1">
@@ -682,7 +698,7 @@ export function RepayDialog({
                   !simulationError &&
                   !exactRepayAmount &&
                   !hasSufficientAllowance &&
-                  baseTokenSymbol !== "ETH" && (
+                  isNativeBase === false && (
                     <p className="text-sm text-red-500 mt-2">
                       Please approve token allowance to see exact repayment amounts
                     </p>
@@ -690,7 +706,7 @@ export function RepayDialog({
                 {!isSimulating &&
                   !simulationError &&
                   !exactRepayAmount &&
-                  (hasSufficientAllowance || baseTokenSymbol === "ETH") && (
+                  (hasSufficientAllowance || isNativeBase) && (
                     <p className="text-sm text-zinc-500 mt-2">
                       Contract will calculate exact amounts
                     </p>
@@ -699,7 +715,7 @@ export function RepayDialog({
             )}
           </div>
           {/* Allowance Error Display */}
-          {allowanceChecked && !hasSufficientAllowance && baseTokenSymbol !== "ETH" && (
+          {allowanceChecked && !hasSufficientAllowance && isNativeBase === false && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-start gap-3">
                 <div className="flex-1">
@@ -719,23 +735,29 @@ export function RepayDialog({
             </div>
           )}
           <div className="flex flex-col items-end pt-2">
-            <ButtonWithWallet
-              targetChainId={chainId as JBChainId}
-              loading={
-                isRepaying || repayStatus === "waiting-signature" || repayStatus === "pending"
-              }
-              onClick={handleRepay}
-              disabled={
-                !finalRepayAmount ||
-                Number(finalRepayAmount) <= 0 ||
-                !collateralToReturn ||
-                Number(collateralToReturn) <= 0 ||
-                !!collateralError ||
-                (baseTokenSymbol !== "ETH" && !hasSufficientAllowance)
-              }
-            >
-              Repay loan
-            </ButtonWithWallet>
+            {repayStatus === "success" ? (
+              <Button type="button" onClick={() => onOpenChange(false)}>
+                Close
+              </Button>
+            ) : (
+              <ButtonWithWallet
+                targetChainId={chainId as JBChainId}
+                loading={
+                  isRepaying || repayStatus === "waiting-signature" || repayStatus === "pending"
+                }
+                onClick={handleRepay}
+                disabled={
+                  !finalRepayAmount ||
+                  Number(finalRepayAmount) <= 0 ||
+                  !collateralToReturn ||
+                  Number(collateralToReturn) <= 0 ||
+                  !!collateralError ||
+                  (isNativeBase === false && !hasSufficientAllowance)
+                }
+              >
+                Repay loan
+              </ButtonWithWallet>
+            )}
             {renderStatusMessage()}
           </div>
         </div>

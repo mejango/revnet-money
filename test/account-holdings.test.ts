@@ -1,65 +1,56 @@
+import { groupHoldings, type HoldingRow } from "@/app/account/[id]/components/TokenHoldings";
 import {
-  dedupeOwnedNfts,
-  dedupeToHighestVersion,
+  ACCOUNT_BENDYSTRAW_CHAIN_ID,
   projectRefKey,
   projectRefsWhere,
+  REF_LOOKUP_LIMIT,
 } from "@/lib/accountHoldings";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-describe("dedupeToHighestVersion", () => {
-  it("keeps the highest-version row per (chainId, projectId)", () => {
-    const rows = [
-      { chainId: 1, projectId: 4, version: 5, balance: "100" },
-      { chainId: 1, projectId: 4, version: 6, balance: "100" },
-      { chainId: 1, projectId: 4, version: 4, balance: "7" },
-    ];
-    expect(dedupeToHighestVersion(rows)).toEqual([
-      { chainId: 1, projectId: 4, version: 6, balance: "100" },
-    ]);
-  });
+describe("account bendystraw endpoint pin", () => {
+  it("routes account queries through the single shared chain pin", () => {
+    // The account view spans chains, so it can't derive an endpoint from its
+    // data. The pin lives in ONE place; components must not re-pin mainnet.
+    expect(ACCOUNT_BENDYSTRAW_CHAIN_ID).toBe(1);
 
-  it("does not merge across chains or projects", () => {
-    const rows = [
-      { chainId: 1, projectId: 4, version: 6 },
-      { chainId: 8453, projectId: 4, version: 5 },
-      { chainId: 1, projectId: 9, version: 5 },
-    ];
-    expect(dedupeToHighestVersion(rows)).toHaveLength(3);
+    const componentsDir = resolve(process.cwd(), "src/app/account/[id]/components");
+    for (const file of readdirSync(componentsDir)) {
+      if (!file.endsWith(".tsx")) continue;
+      const source = readFileSync(resolve(componentsDir, file), "utf8");
+      expect(source, `${file} pins its own bendystraw chain`).not.toMatch(
+        /chainId:\s*mainnet\.id/u,
+      );
+    }
   });
 });
 
-describe("dedupeOwnedNfts", () => {
-  it("collapses per-version duplicates of the same token", () => {
-    const rows = [
-      { chainId: 1, projectId: 4, version: 4, tokenId: "3000000023" },
-      { chainId: 1, projectId: 4, version: 5, tokenId: "3000000023" },
-    ];
-    expect(dedupeOwnedNfts(rows)).toEqual([
-      { chainId: 1, projectId: 4, version: 5, tokenId: "3000000023" },
-    ]);
-  });
-
-  it("keeps same-numbered tokens from different projects and chains", () => {
-    const rows = [
-      { chainId: 1, projectId: 4, version: 6, tokenId: "1000000001" },
-      { chainId: 1, projectId: 9, version: 6, tokenId: "1000000001" },
-      { chainId: 8453, projectId: 4, version: 6, tokenId: "1000000001" },
-    ];
-    expect(dedupeOwnedNfts(rows)).toHaveLength(3);
-  });
-});
+function row(overrides: Partial<HoldingRow> = {}): HoldingRow {
+  return {
+    chainId: 1,
+    projectId: 4,
+    version: 6,
+    balance: "1000",
+    creditBalance: "0",
+    erc20Balance: "1000",
+    project: undefined,
+    ticker: undefined,
+    ...overrides,
+  };
+}
 
 describe("projectRefsWhere", () => {
   it("builds explicit AND groups per unique versioned ref", () => {
     const where = projectRefsWhere([
       { chainId: 1, projectId: 8, version: 6 },
       { chainId: 1, projectId: 8, version: 6 },
-      { chainId: 8453, projectId: 119, version: 5 },
+      { chainId: 8453, projectId: 119, version: 6 },
     ]);
     expect(where).toEqual({
       OR: [
         { AND: [{ chainId: 1 }, { projectId: 8 }, { version: 6 }] },
-        { AND: [{ chainId: 8453 }, { projectId: 119 }, { version: 5 }] },
+        { AND: [{ chainId: 8453 }, { projectId: 119 }, { version: 6 }] },
       ],
     });
   });
@@ -68,10 +59,99 @@ describe("projectRefsWhere", () => {
     expect(projectRefsWhere([])).toBeNull();
   });
 
-  it("keys lookups by chain, project, and version together", () => {
-    // Same projectId names different projects across protocol versions.
+  it("caps the lookup at the documented limit", () => {
+    const refs = Array.from({ length: REF_LOOKUP_LIMIT + 50 }, (_, index) => ({
+      chainId: 1,
+      projectId: index + 1,
+      version: 6,
+    }));
+    const where = projectRefsWhere(refs) as { OR: unknown[] };
+    expect(where.OR).toHaveLength(REF_LOOKUP_LIMIT);
+  });
+
+  it("keys lookups by chain and project", () => {
     expect(projectRefKey({ chainId: 1, projectId: 8, version: 6 })).not.toBe(
-      projectRefKey({ chainId: 1, projectId: 8, version: 5 }),
+      projectRefKey({ chainId: 8453, projectId: 8, version: 6 }),
     );
+  });
+});
+
+describe("groupHoldings", () => {
+  it("labels amounts with the project ERC-20 ticker, never the accounting symbol", () => {
+    const groups = groupHoldings([
+      row({
+        ticker: "REV",
+        project: {
+          chainId: 1,
+          projectId: 4,
+          version: 6,
+          name: "Revnet",
+          handle: null,
+          logoUri: null,
+          owner: "0x1",
+          isRevnet: true,
+          suckerGroupId: "g1",
+          tokenSymbol: "ETH", // accounting-context symbol — must not label balances
+          createdAt: 0,
+        },
+      }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].symbol).toBe("REV");
+  });
+
+  it("falls back to 'tokens' when the project has no ERC-20 ticker", () => {
+    const groups = groupHoldings([
+      row({
+        project: {
+          chainId: 1,
+          projectId: 4,
+          version: 6,
+          name: "Revnet",
+          handle: null,
+          logoUri: null,
+          owner: "0x1",
+          isRevnet: true,
+          suckerGroupId: "g1",
+          tokenSymbol: "USDC",
+          createdAt: 0,
+        },
+      }),
+    ]);
+    expect(groups[0].symbol).toBe("tokens");
+  });
+
+  it("merges sucker-group peers into one group and links the v6 project route", () => {
+    const project = (chainId: number) => ({
+      chainId,
+      projectId: 4,
+      version: 6,
+      name: "Revnet",
+      handle: null,
+      logoUri: null,
+      owner: "0x1",
+      isRevnet: true,
+      suckerGroupId: "g1",
+      tokenSymbol: null,
+      createdAt: 0,
+    });
+    const groups = groupHoldings([
+      row({ chainId: 1, balance: "100", project: project(1), ticker: "REV" }),
+      row({ chainId: 8453, balance: "50", project: project(8453) }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].total).toBe(150n);
+    expect(groups[0].symbol).toBe("REV");
+    expect(groups[0].slug).toBeDefined();
+    expect(groups[0].rows).toHaveLength(2);
+  });
+
+  it("keeps unrelated projects distinct and every group linkable", () => {
+    const groups = groupHoldings([
+      row({ chainId: 1, projectId: 4 }),
+      row({ chainId: 1, projectId: 9 }),
+    ]);
+    expect(groups).toHaveLength(2);
+    for (const group of groups) expect(group.slug).toBeDefined();
   });
 });

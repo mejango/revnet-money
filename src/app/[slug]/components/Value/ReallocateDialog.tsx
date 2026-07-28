@@ -16,7 +16,7 @@ import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
 import { LoanFeeChart } from "./LoanFeeChart";
 import { SimulatedLoanCard } from "./SimulatedLoanCard";
-import { useBorrowDialog } from "./hooks/useBorrowDialog";
+import { useBorrowDialog, type SelectedLoan } from "./hooks/useBorrowDialog";
 
 export function ReallocateDialog({
   projectId,
@@ -28,7 +28,7 @@ export function ReallocateDialog({
 }: {
   projectId: bigint;
   tokenSymbol: string;
-  selectedLoan: any;
+  selectedLoan: SelectedLoan;
   children: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -290,7 +290,7 @@ export function ReallocateDialog({
           {collateralToTransfer > 0 && (
             <SimulatedLoanCard
               collateralAmount={newLoanCollateral.toFixed(8)}
-              tokenSymbol={selectedChainTokenSymbol}
+              tokenSymbol={selectedChainTokenSymbol ?? "…"}
               collateralTokenSymbol={tokenSymbol}
               amountBorrowed={
                 newLoanBorrowableAmount
@@ -337,7 +337,7 @@ export function ReallocateDialog({
                     nativeToWallet={nativeToWallet}
                     grossBorrowedNative={grossBorrowedNative}
                     collateralAmount={newLoanCollateral.toFixed(8)}
-                    tokenSymbol={selectedChainTokenSymbol}
+                    tokenSymbol={selectedChainTokenSymbol ?? "…"}
                     collateralTokenSymbol={tokenSymbol}
                     displayYears={displayYears}
                     displayMonths={displayMonths}

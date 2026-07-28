@@ -12,6 +12,8 @@ import {
 
 export const MAX_RULESET_COUNT = 3;
 export const RESERVED_TOKEN_SPLIT_GROUP_ID = 1n;
+/** JBSplits.FALLBACK_RULESET_ID — the default group `splitsOf` serves when a ruleset's group is empty. */
+export const FALLBACK_RULESET_ID = 0n;
 export const REVNET_CASHOUT_FEE_PERCENT = 0.025;
 
 export const chainSortOrder = new Map<JBChainId, number>([

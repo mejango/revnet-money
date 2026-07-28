@@ -4,6 +4,7 @@ import { publicClientFor } from "@/app/[slug]/components/v6/operator/operatorLib
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { ACCOUNT_BENDYSTRAW_CHAIN_ID } from "@/lib/accountHoldings";
 import { ProjectsByOwnerOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { OwnedProjectRow } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
@@ -87,7 +88,7 @@ export function OwnedProjects({ address }: { address: Address }) {
   const directQuery = useBendystrawQuery(
     ProjectsByOwnerOperation,
     { where: { owner: address.toLowerCase(), version: 6 } },
-    { chainId: mainnet.id },
+    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID },
   );
 
   const safesQuery = useQuery({
@@ -104,7 +105,7 @@ export function OwnedProjects({ address }: { address: Address }) {
   const safeProjectsQuery = useBendystrawQuery(
     ProjectsByOwnerOperation,
     { where: { owner_in: safeAddresses, version: 6 } },
-    { chainId: mainnet.id, enabled: safeAddresses.length > 0 },
+    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID, enabled: safeAddresses.length > 0 },
   );
 
   // Threshold badge data via the same onchain getOwners/getThreshold probe the

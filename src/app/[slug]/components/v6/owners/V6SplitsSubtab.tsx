@@ -32,6 +32,7 @@ import { zeroAddress } from "viem";
 import { useReadContracts } from "wagmi";
 import { ChangeSplitRecipientsDialog } from "../../../owners/components/ChangeSplitRecipientsDialog";
 import { DistributeReservedTokensButton } from "../../../owners/components/DistributeReservedTokensButton";
+import { effectiveSplitPercent } from "../../../owners/components/splitsLib";
 import { ProjectItem } from "../shared";
 
 const BURN_SENTINEL = "0x000000000000000000000000000000000000dead";
@@ -103,12 +104,14 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
   );
 
   // Reserved percent (the stage's split limit) comes from the ruleset metadata:
-  // bits 4-19 hold reservedPercent (out of 10_000).
-  const splitLimitPercent = (() => {
+  // bits 4-19 hold reservedPercent out of 10_000, so 2.5% is 250. It stays in
+  // those units until the last division so fractional limits survive.
+  const splitLimitBps = (() => {
     const metadata = homeRulesets[selectedStageIdx]?.metadata;
     if (metadata === undefined) return undefined;
-    return Number((metadata >> 4n) & 0xffffn) / 100;
+    return (metadata >> 4n) & 0xffffn;
   })();
+  const splitLimitLabel = splitLimitBps === undefined ? undefined : formatUnits(splitLimitBps, 2);
 
   // Per-chain splits + pending balances for the selected stage.
   const splitReads = useReadContracts({
@@ -173,9 +176,9 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
         ))}
       </div>
 
-      {splitLimitPercent !== undefined && (
+      {splitLimitLabel !== undefined && (
         <div className="text-sm font-medium text-zinc-500 mb-4">
-          The split limit for this stage is {splitLimitPercent}%
+          The split limit for this stage is {splitLimitLabel}%
         </div>
       )}
 
@@ -254,15 +257,9 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                                 </span>
                               </TableCell>
                               <TableCell>
-                                {splitLimitPercent !== undefined ? (
+                                {splitLimitBps !== undefined ? (
                                   <>
-                                    {formatUnits(
-                                      (BigInt(split.percent) *
-                                        BigInt(Math.round(splitLimitPercent))) /
-                                        100n,
-                                      7,
-                                    )}
-                                    %
+                                    {effectiveSplitPercent(BigInt(split.percent), splitLimitBps)}%
                                     <span className="text-zinc-500 ml-2">
                                       ({formatUnits(BigInt(split.percent), 7)}% of limit)
                                     </span>
@@ -302,8 +299,9 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
       {chainId && homeRulesets[selectedStageIdx] && (
         <div className="mt-4">
           <ChangeSplitRecipientsDialog
-            stageId={Number(homeRulesets[selectedStageIdx].id)}
+            stageIdx={selectedStageIdx}
             initialChainId={chainId}
+            splitLimit={splitLimitLabel === undefined ? undefined : `${splitLimitLabel}%`}
           />
         </div>
       )}

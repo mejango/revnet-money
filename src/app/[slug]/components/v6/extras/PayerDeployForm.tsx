@@ -21,7 +21,7 @@ import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { buildDeployProjectPayerTx, projectPayerFromDeployLogs } from "@bananapus/nana-sdk-core/v6";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Address, isAddress, PublicClient, zeroAddress } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { getAccount, getPublicClient } from "wagmi/actions";
@@ -88,6 +88,15 @@ export function PayerDeployForm({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deployed, setDeployed] = useState<DeployedPayer[]>([]);
+
+  // The delayed catch-up refetch must not fire after unmount.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    },
+    [],
+  );
 
   const invalidate = () => {
     setReview(null);
@@ -227,7 +236,12 @@ export function PayerDeployForm({
         title: "Payer address deployed",
         description: "Send ETH to it to pay this project.",
       });
-      setTimeout(onDeployed, 5000); // give the indexer time to catch up
+      // Refresh the indexed list immediately, then once more after the
+      // indexer has had time to catch up. The deployed addresses shown above
+      // come from the receipts, so the UI never depends on this timer.
+      onDeployed();
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      refreshTimer.current = setTimeout(onDeployed, 5000);
     } catch (e) {
       const message = formatWalletError(e) || "Could not deploy the payer address.";
       setStatus(

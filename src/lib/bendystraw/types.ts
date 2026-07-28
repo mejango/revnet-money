@@ -130,10 +130,10 @@ export type AccountTokenBalancesQueryVariables = {
 };
 export type AccountTokenBalanceRow = Pick<
   Participant,
-  "chainId" | "projectId" | "version" | "balance"
+  "chainId" | "projectId" | "version" | "balance" | "creditBalance" | "erc20Balance"
 >;
 export type AccountTokenBalancesQuery = {
-  participants: { items: AccountTokenBalanceRow[] };
+  participants: { totalCount: number; items: AccountTokenBalanceRow[] };
 };
 
 export type ParticipantsQueryVariables = {
@@ -295,6 +295,16 @@ export type OwnedProjectRow = Pick<
 >;
 export type ProjectsByOwnerQueryVariables = { where: BendystrawFilter };
 export type ProjectsByOwnerQuery = { projects: { items: OwnedProjectRow[] } };
+
+/**
+ * The project ERC-20's ticker (from its deploy event). Distinct from the
+ * project row's `tokenSymbol`, which names the ACCOUNTING context's token.
+ */
+export type ProjectErc20TickerRow = { chainId: number; projectId: number; symbol: string };
+export type ProjectErc20TickersQueryVariables = { where: BendystrawFilter };
+export type ProjectErc20TickersQuery = {
+  deployErc20Events: { items: ProjectErc20TickerRow[] };
+};
 
 export type AccountPermissionHolderRow = Pick<
   PermissionHolder,

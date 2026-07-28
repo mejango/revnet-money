@@ -88,4 +88,54 @@ describe("top-project derivative availability", () => {
       }),
     ]);
   });
+
+  it("keeps rows that need no ETH price when the price feed fails", async () => {
+    mocks.fetchEthPrice.mockRejectedValue(new Error("price feed down"));
+    mocks.request.mockResolvedValue({
+      suckerGroups: {
+        items: [
+          {
+            balance: "2000000000000000000",
+            projects: {
+              items: [
+                {
+                  chainId: 1,
+                  decimals: 18,
+                  isRevnet: true,
+                  name: "EthDenominated",
+                  projectId: 7,
+                  tokenSymbol: "ETH",
+                },
+              ],
+            },
+          },
+          {
+            balance: "5000000000",
+            projects: {
+              items: [
+                {
+                  chainId: 8453,
+                  decimals: 6,
+                  isRevnet: true,
+                  name: "UsdcDenominated",
+                  projectId: 9,
+                  tokenSymbol: "USDC",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    await expect(getTopProjects()).resolves.toEqual([
+      expect.objectContaining({
+        balanceUsd: 5_000,
+        chainId: 8453,
+        name: "UsdcDenominated",
+        projectId: 9,
+        rank: 1,
+      }),
+    ]);
+  });
 });

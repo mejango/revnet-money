@@ -50,7 +50,7 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
           </p>
           {chainId ? (
             <ChangeSplitRecipientsDialog
-              stageId={currentStageIdx}
+              stageIdx={currentStageIdx}
               initialChainId={chainId}
               triggerVariant="default"
             />

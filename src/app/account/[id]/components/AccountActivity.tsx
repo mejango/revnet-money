@@ -6,6 +6,7 @@ import { ProfilesProvider } from "@/components/ProfilesContext";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
+import { ACCOUNT_BENDYSTRAW_CHAIN_ID } from "@/lib/accountHoldings";
 import { AccountActivityEventsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { mergeAccountActivity } from "@/lib/bendystraw/accountActivity";
 import type { AccountActivityEventItem } from "@/lib/bendystraw/types";
@@ -16,7 +17,6 @@ import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Address } from "viem";
-import { mainnet } from "viem/chains";
 
 const INITIAL_ITEMS = 25;
 const LOAD_MORE_COUNT = 25;
@@ -83,7 +83,7 @@ export function AccountActivity({ address }: { address: Address }) {
   const { data, isLoading } = useBendystrawQuery(
     AccountActivityEventsOperation,
     { address: address.toLowerCase(), limit: FETCH_LIMIT },
-    { chainId: mainnet.id, pollInterval: 15_000 },
+    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID, pollInterval: 15_000 },
   );
 
   // From-branch rows merged with beneficiary-branch rows (payments to the
@@ -131,6 +131,21 @@ export function AccountActivity({ address }: { address: Address }) {
   const hasMore = events.length > visibleCount;
   const addresses = visibleEvents.map((event) => event.beneficiary);
 
+  // Each query root is windowed to the most recent FETCH_LIMIT rows; when any
+  // root fills its window, older activity exists that this feed cannot show.
+  const windowCapped = useMemo(() => {
+    if (!data) return false;
+    const roots = [
+      data.activityEvents,
+      data.beneficiaryPayEvents,
+      data.beneficiaryCashOutEvents,
+      data.beneficiaryMintTokensEvents,
+      data.beneficiaryManualMintTokensEvents,
+      data.beneficiaryAutoIssueEvents,
+    ];
+    return roots.some((root) => (root?.items.length ?? 0) >= FETCH_LIMIT);
+  }, [data]);
+
   return (
     <section>
       <h2 className="mb-2 text-base font-semibold text-zinc-700">Activity</h2>
@@ -175,6 +190,11 @@ export function AccountActivity({ address }: { address: Address }) {
           >
             Load more
           </button>
+        ) : null}
+        {windowCapped ? (
+          <p className="mt-2 text-xs text-zinc-500">
+            Showing the most recent {FETCH_LIMIT} events per category; older activity is not listed.
+          </p>
         ) : null}
       </ProfilesProvider>
     </section>

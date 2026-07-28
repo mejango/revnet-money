@@ -4,11 +4,14 @@ import {
   getResolvedIssuance,
 } from "@/app/create/helpers/calculatePickupIssuance";
 import { createSchema } from "@/app/create/helpers/createSchema";
-import { pruneDeselectedChain } from "@/app/create/helpers/pruneDeselectedChain";
+import {
+  pruneDeselectedChain,
+  pruneHiddenEnvironmentChains,
+} from "@/app/create/helpers/pruneDeselectedChain";
 import { calculateFinalStageStarts } from "@/app/create/helpers/recalculateStageStarts";
 import { addressSchema, stageSchema } from "@/app/create/helpers/stageSchema";
 import type { StageData } from "@/app/create/types";
-import { baseSepolia, sepolia } from "viem/chains";
+import { base, baseSepolia, mainnet, sepolia } from "viem/chains";
 import { describe, expect, it } from "vitest";
 import { TEST_ACCOUNT, TEST_BENEFICIARY, validRevnetForm } from "./fixtures/revnet";
 
@@ -181,6 +184,33 @@ describe("create form schema baseline", () => {
     // The input form is not mutated.
     expect(form.operator).toHaveLength(2);
     expect(form.stages[0].splits[0].beneficiary).toHaveLength(2);
+  });
+
+  // Flipping the environment select hides the other environment's checkboxes;
+  // its selections (and their per-chain rows) must not stay silently deployed.
+  it("prunes every hidden-environment chain when the environment flips", () => {
+    const form = validRevnetForm();
+    form.chainIds = [sepolia.id, baseSepolia.id];
+    form.operator = [
+      { chainId: String(sepolia.id), address: TEST_ACCOUNT },
+      { chainId: String(baseSepolia.id), address: TEST_BENEFICIARY },
+    ];
+    form.stages[0].splits[0].beneficiary = [
+      { chainId: sepolia.id, address: TEST_BENEFICIARY },
+      { chainId: baseSepolia.id, address: TEST_ACCOUNT },
+    ];
+
+    // Flipping to production hides every testnet: everything is pruned.
+    const pruned = pruneHiddenEnvironmentChains(form, [mainnet.id, base.id]);
+
+    expect(pruned.chainIds).toEqual([]);
+    expect(pruned.operator).toEqual([]);
+    expect(pruned.stages[0].splits[0].beneficiary).toBeUndefined();
+
+    // Chains in the visible environment survive with their overrides.
+    const kept = pruneHiddenEnvironmentChains(form, [sepolia.id, baseSepolia.id]);
+    expect(kept.chainIds).toEqual([sepolia.id, baseSepolia.id]);
+    expect(kept.operator).toHaveLength(2);
   });
 
   it("requires all stage fields which feed contract encoding", () => {

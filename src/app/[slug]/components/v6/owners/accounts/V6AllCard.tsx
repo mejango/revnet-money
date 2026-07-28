@@ -14,6 +14,7 @@ import { formatTokenSymbol } from "@/lib/utils";
 import { formatUnits } from "@bananapus/nana-sdk-core";
 import { ParticipantsPieChart } from "../../../../owners/components/ParticipantsPieChart";
 import { ParticipantsTable } from "../../../../owners/components/ParticipantsTable";
+import { aggregateParticipants, PARTICIPANTS_FETCH_LIMIT } from "./participantsAggregate";
 
 /**
  * "All" card (website/ parity: renderOwnersAll): the holder distribution pie +
@@ -38,16 +39,20 @@ export function V6AllCard() {
     { enabled: !!suckerGroupId, pollInterval: 10000, chainId: Number(chainId) },
   );
 
+  // Null while the sucker-group data loads — volume amounts can't be labeled
+  // yet (never default to ETH/18).
   const chainTokenConfig = getTokenConfigForChain(suckerGroupData, Number(chainId));
-  const baseTokenSymbol =
-    chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token);
-  const baseTokenDecimals = chainTokenConfig.decimals;
+  const baseTokenSymbol = chainTokenConfig
+    ? (chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token))
+    : undefined;
+  const baseTokenDecimals = chainTokenConfig?.decimals;
 
   const participantsQuery = useBendystrawQuery(
     ParticipantsOperation,
     {
       orderBy: "balance",
       orderDirection: "desc",
+      limit: PARTICIPANTS_FETCH_LIMIT,
       where: {
         suckerGroupId,
         balance_gt: 0,
@@ -57,24 +62,9 @@ export function V6AllCard() {
   );
 
   // Aggregate each account's balance/volume across the chains it holds on.
-  const participantsDataAggregate =
-    participantsQuery.data?.participants.items?.reduce(
-      (acc, participant) => {
-        if (!participant) return acc;
-        const existingParticipant = acc[participant.address];
-        return {
-          ...acc,
-          [participant.address]: {
-            address: participant.address,
-            balance: BigInt(existingParticipant?.balance ?? 0) + BigInt(participant.balance ?? 0),
-            volume: BigInt(existingParticipant?.volume ?? 0) + BigInt(participant.volume ?? 0),
-            chains: [...(acc[participant.address]?.chains ?? []), participant.chainId],
-          },
-        };
-      },
-      {} as Record<string, any>,
-    ) ?? {};
-  const participants = Object.values(participantsDataAggregate);
+  const participants = aggregateParticipants(participantsQuery.data?.participants.items);
+  const fetchedCount = participantsQuery.data?.participants.items?.length ?? 0;
+  const totalCount = participantsQuery.data?.participants.totalCount ?? fetchedCount;
   const shownCount = Math.min(10, participants.length);
   const totalLabel = token?.data
     ? `${prettyNumber(
@@ -101,21 +91,25 @@ export function V6AllCard() {
           ) : null}
         </div>
         <div className="w-full min-w-0 overflow-auto">
-          <ParticipantsTable
-            participants={participants}
-            token={token?.data}
-            totalSupply={totalOutstandingTokens}
-            baseTokenSymbol={baseTokenSymbol}
-            baseTokenDecimals={baseTokenDecimals}
-            condensed
-            maxRows={10}
-          />
+          {chainTokenConfig ? (
+            <ParticipantsTable
+              participants={participants}
+              token={token?.data}
+              totalSupply={totalOutstandingTokens}
+              baseTokenSymbol={baseTokenSymbol}
+              baseTokenDecimals={baseTokenDecimals}
+              condensed
+              maxRows={10}
+            />
+          ) : null}
         </div>
       </div>
       {participants.length > 0 ? (
         <p className="mt-4 text-sm text-melon-700">
-          {participants.length} holder{participants.length === 1 ? "" : "s"} — showing the{" "}
-          {shownCount} largest, as shares of the balances tracked here
+          {totalCount > fetchedCount
+            ? `${totalCount} holder rows — aggregated from the ${fetchedCount} largest positions`
+            : `${participants.length} holder${participants.length === 1 ? "" : "s"}`}{" "}
+          — showing the {shownCount} largest, as shares of the balances tracked here
         </p>
       ) : null}
     </div>

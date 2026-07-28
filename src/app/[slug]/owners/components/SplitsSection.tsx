@@ -270,8 +270,9 @@ export function SplitsSection() {
           projectId={selectedSucker?.projectId ?? projectId}
         />
         <ChangeSplitRecipientsDialog
-          stageId={selectedStageIdx}
+          stageIdx={selectedStageIdx}
           initialChainId={selectedSucker?.peerChainId as JBChainId}
+          splitLimit={splitLimit != null ? `${splitLimit}%` : undefined}
         />
       </div>
     </>

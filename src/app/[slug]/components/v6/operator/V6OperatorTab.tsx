@@ -6,14 +6,17 @@ import { BuybackRouterCard } from "./BuybackRouterCard";
 import { OperatorAccountCard } from "./OperatorAccountCard";
 import { OperatorEditsCard } from "./OperatorEditsCard";
 import { PermissionsCard } from "./PermissionsCard";
+import { SuckerExtensionCard } from "./SuckerExtensionCard";
 import { chainProjectRows } from "./operatorLib";
 
 /**
  * website/-parity Operator tab (renderBackOfficeSection, revnet branch): the
  * Account card (per-chain operator + account type + transfer via
  * REVOwner.setOperatorOf), the Edits card (reused metadata/splits dialogs),
- * the Buyback & swap router card (data-hook-resolved reads + the three
- * registry writes), and the read-only Permissions card.
+ * the Chains card (operator extends the sucker group to a new chain via
+ * REVDeployer.deploySuckersFor), the Buyback & swap router card
+ * (data-hook-resolved reads + the three registry writes), and the read-only
+ * Permissions card.
  */
 export function V6OperatorTab({
   projects,
@@ -32,6 +35,7 @@ export function V6OperatorTab({
     <div className="flex flex-col min-w-0 gap-8">
       <OperatorAccountCard rows={rows} fallbackOperator={operator} />
       <OperatorEditsCard projects={projects} />
+      <SuckerExtensionCard rows={rows} />
       <BuybackRouterCard rows={rows} />
       <PermissionsCard rows={rows} />
     </div>

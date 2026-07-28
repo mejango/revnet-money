@@ -26,7 +26,6 @@ import {
   getRevnetLoanContract,
   JB_TOKEN_DECIMALS,
   jbPermissionsAbi,
-  NATIVE_TOKEN_DECIMALS,
   revDeployerAbi,
   revLoansAbi,
   RevnetCoreContracts,
@@ -51,9 +50,27 @@ type BorrowState =
 
 type RepayState = "idle" | "waiting-signature" | "pending" | "success" | "error";
 
+/**
+ * A loan row as the loan tables select it (a superset of Bendystraw's LoanRow;
+ * the legacy tables pass `chain` instead of `chainId`).
+ */
+export interface SelectedLoan {
+  id: string | number | bigint;
+  chainId?: number;
+  /** Legacy alias for chainId from the older loan tables. */
+  chain?: number;
+  borrowAmount: string | number | bigint;
+  collateral: string | number | bigint;
+  createdAt?: number;
+  prepaidDuration?: number;
+  projectId?: number;
+  terminal?: string;
+  token?: string;
+}
+
 interface UseBorrowDialogProps {
   projectId: bigint;
-  selectedLoan?: any;
+  selectedLoan?: SelectedLoan | null;
   defaultTab?: "borrow" | "repay";
 }
 
@@ -77,7 +94,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   const [prepaidPercent, setPrepaidPercent] = useState("2.5");
   const [nativeToWallet, setNativeToWallet] = useState(0);
   const [grossBorrowedNative, setGrossBorrowedNative] = useState(0);
-  const [internalSelectedLoan, setInternalSelectedLoan] = useState<any | null>(
+  const [internalSelectedLoan, setInternalSelectedLoan] = useState<SelectedLoan | null>(
     selectedLoan ?? null,
   );
 
@@ -289,14 +306,17 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         ? (Number(internalSelectedLoan.chainId) as JBChainId)
         : undefined,
     ),
-    chainId: internalSelectedLoan?.chainId,
+    chainId: internalSelectedLoan?.chainId as JBChainId | undefined,
     args:
-      internalSelectedLoan && remainingCollateral !== undefined
+      // A null token config is LOADING — never quote with ETH/18 defaults.
+      internalSelectedLoan &&
+      remainingCollateral !== undefined &&
+      internalSelectedLoanChainTokenConfig
         ? [
             effectiveProjectId,
             remainingCollateral,
-            BigInt(internalSelectedLoanChainTokenConfig?.decimals ?? NATIVE_TOKEN_DECIMALS),
-            BigInt(toBaseCurrencyId(internalSelectedLoanChainTokenConfig?.currency ?? 1)),
+            BigInt(internalSelectedLoanChainTokenConfig.decimals),
+            BigInt(toBaseCurrencyId(internalSelectedLoanChainTokenConfig.currency)),
           ]
         : undefined,
   });
@@ -398,15 +418,12 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
   // ===== PHASE 4: UPDATE FEE CALCULATIONS =====
 
-  // For reallocation, use the total borrowable amount for combined collateral
+  // For reallocation, use the total borrowable amount for combined collateral.
+  // The quote only exists once the chain's token config resolved, so its
+  // decimals are authoritative — never fall back to ETH/18.
   const borrowAmountForFeeCalculation =
-    internalSelectedLoan && selectedLoanReallocAmount
-      ? Number(
-          formatUnits(
-            selectedLoanReallocAmount,
-            selectedChainTokenConfig?.decimals || NATIVE_TOKEN_DECIMALS,
-          ),
-        )
+    internalSelectedLoan && selectedLoanReallocAmount && selectedChainTokenConfig
+      ? Number(formatUnits(selectedLoanReallocAmount, selectedChainTokenConfig.decimals))
       : grossBorrowedNative;
 
   const feeData = generateFeeData({
@@ -415,17 +432,15 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   });
 
   // Fee calculation for the new loan simulation (not the combined total)
-  const newLoanFeeData = newLoanBorrowableAmount
-    ? generateFeeData({
-        grossBorrowedEth: Number(
-          formatUnits(
-            newLoanBorrowableAmount,
-            selectedChainTokenConfig?.decimals || NATIVE_TOKEN_DECIMALS,
+  const newLoanFeeData =
+    newLoanBorrowableAmount && selectedChainTokenConfig
+      ? generateFeeData({
+          grossBorrowedEth: Number(
+            formatUnits(newLoanBorrowableAmount, selectedChainTokenConfig.decimals),
           ),
-        ),
-        prepaidPercent,
-      })
-    : feeData;
+          prepaidPercent,
+        })
+      : feeData;
 
   // Calculate prepaidMonths using new prepaidDuration logic
   const monthsToPrepay = (parseFloat(prepaidPercent) / 50) * 120;
@@ -485,7 +500,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     [balances, projectTokenDecimals],
   );
 
-  const handleLoanSelection = useCallback((loanId: string, loanData: any) => {
+  const handleLoanSelection = useCallback((loanId: string, loanData: SelectedLoan) => {
     setInternalSelectedLoan(loanData);
     // Set the cashOutChainId based on the loan's chain
     if (loanData?.chainId) {
@@ -631,7 +646,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
               title: "Permission Denied",
               description: "Permission was not granted. Please approve to proceed.",
             });
-            setTimeout(() => setBorrowStatus("idle"), 5000);
             return;
           }
         } else {
@@ -675,7 +689,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             title: "Loan not submitted",
             description: formatWalletError(err),
           });
-          setTimeout(() => setBorrowStatus("idle"), 5000);
           return;
         }
       } catch (err) {
@@ -746,6 +759,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     if (isTxLoading || isReallocationTxLoading) {
       setBorrowStatus("pending");
     } else if (isSuccess || isReallocationSuccess) {
+      // Success persists until the user closes the dialog — no timed close.
       setBorrowStatus("success");
       toast({
         title: "Success",
@@ -753,9 +767,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           ? "Loan adjusted successfully!"
           : "Loan created successfully!",
       });
-      setTimeout(() => {
-        handleOpenChange(false);
-      }, 3000);
     } else {
       setBorrowStatus("error");
     }
@@ -778,9 +789,15 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       return;
     }
 
-    // Get token configuration for the selected chain
+    // Get token configuration for the selected chain. Null is LOADING — keep
+    // the estimates at 0 instead of computing with ETH/18 defaults.
     const selectedChainTokenConfig = cashOutChainId ? tokenConfigForChain(cashOutChainId) : null;
-    const tokenDecimals = selectedChainTokenConfig?.decimals || NATIVE_TOKEN_DECIMALS;
+    if (!selectedChainTokenConfig) {
+      setNativeToWallet(0);
+      setGrossBorrowedNative(0);
+      return;
+    }
+    const tokenDecimals = selectedChainTokenConfig.decimals;
 
     const percent =
       Number(
@@ -812,12 +829,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     }
   }, [isRepayTxLoading, isRepaySuccess]);
 
-  useEffect(() => {
-    if (repayStatus === "success" || repayStatus === "error") {
-      const timeout = setTimeout(() => setRepayStatus("idle"), 5000);
-      return () => clearTimeout(timeout);
-    }
-  }, [repayStatus]);
+  // Terminal repay/borrow statuses persist until the user closes the dialog
+  // (handleOpenChange resets them) — timers must never clear an error state.
 
   // Borrow status effects
   useEffect(() => {
@@ -826,15 +839,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       return () => clearTimeout(timeout);
     } else {
       setShowingWaitingMessage(false);
-    }
-  }, [borrowStatus]);
-
-  useEffect(() => {
-    if (
-      ["success", "error", "error-permission-denied", "error-loan-canceled"].includes(borrowStatus)
-    ) {
-      const timeout = setTimeout(() => setBorrowStatus("idle"), 5000);
-      return () => clearTimeout(timeout);
     }
   }, [borrowStatus]);
 
@@ -848,15 +852,16 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     if (!internalSelectedLoan || !collateralToReturn || estimatedNewBorrowableAmount === undefined)
       return;
 
-    // Get token configuration for the loan's chain
+    // Get token configuration for the loan's chain. Null is LOADING — leave
+    // the repay amount unset instead of formatting with ETH/18 defaults.
     const loanChainTokenConfig = internalSelectedLoan?.chainId
       ? tokenConfigForChain(internalSelectedLoan.chainId)
       : null;
-    const tokenDecimals = loanChainTokenConfig?.decimals || NATIVE_TOKEN_DECIMALS;
+    if (!loanChainTokenConfig) return;
 
     const correctedBorrowAmount = BigInt(internalSelectedLoan.borrowAmount);
     const repayAmountWei = correctedBorrowAmount - estimatedNewBorrowableAmount;
-    setRepayAmount(formatUnits(repayAmountWei, tokenDecimals));
+    setRepayAmount(formatUnits(repayAmountWei, loanChainTokenConfig.decimals));
   }, [collateralToReturn, estimatedNewBorrowableAmount, internalSelectedLoan, tokenConfigForChain]);
 
   // ===== RETURN VALUES =====
@@ -933,9 +938,11 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     baseToken,
     selectedChainTokenConfig,
     tokenConfigForChain,
+    // Undefined until the selected chain's token config resolves — consumers
+    // must render a loading state, never assume ETH.
     selectedChainTokenSymbol: selectedChainTokenConfig
       ? (selectedChainTokenConfig.symbol ??
         getTokenSymbolFromAddress(selectedChainTokenConfig.token))
-      : "ETH",
+      : undefined,
   };
 }

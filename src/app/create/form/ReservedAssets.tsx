@@ -155,6 +155,31 @@ export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
             <p className="mt-3 max-w-xl text-sm text-zinc-600">
               Accounting contexts cannot be added or removed later.
             </p>
+            {/* One global choice: issuance and shop prices are denominated in
+                this currency across every stage. Custom reserves are their own
+                denomination, so the control only applies to canonical assets. */}
+            <div className="mt-5">
+              <label htmlFor="issuanceBaseCurrency" className="block text-md font-semibold">
+                Issuance denomination
+              </label>
+              <p className="mt-1 max-w-xl text-sm text-zinc-600">
+                {revnetTokenSymbol} issuance and shop prices are quoted per 1 of this currency, in
+                every stage.
+              </p>
+              <select
+                id="issuanceBaseCurrency"
+                aria-label="Issuance currency"
+                className="mt-2 h-9 w-32 border-2 border-melon-300 bg-melon-25 px-2 text-md hover:border-melon-400 focus:border-melon-600 focus:ring-0"
+                value={values.issuanceBaseCurrency}
+                onChange={(event) =>
+                  setFieldValue("issuanceBaseCurrency", event.target.value as "ETH" | "USD")
+                }
+                disabled={disabled}
+              >
+                <option value="ETH">ETH</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
             {reserveAsset === "ETH_USDC" ? (
               <div className="mt-3 max-w-xl border border-pink-200 bg-pink-50 p-3 text-sm text-zinc-700">
                 {revnetTokenSymbol}&nbsp;will be backed by both ETH and USDC paid in by users.

@@ -56,24 +56,31 @@ function LoanRow({
   const { token } = useJBTokenContext();
   const projectTokenDecimals = token?.data?.decimals ?? 18;
 
+  // Null token config is LOADING: don't format or quote with ETH/18 defaults.
   const chainTokenConfig = getTokenConfigForChain(suckerGroupData, loan.chainId);
 
-  const baseTokenSymbol =
-    chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token);
-  const baseTokenDecimals = chainTokenConfig.decimals;
+  const baseTokenSymbol = chainTokenConfig
+    ? (chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token))
+    : undefined;
+  const baseTokenDecimals = chainTokenConfig?.decimals;
 
-  const borrowAmount = Number(formatUnits(BigInt(loan.borrowAmount), baseTokenDecimals)).toFixed(4);
+  const borrowAmount =
+    baseTokenDecimals !== undefined
+      ? Number(formatUnits(BigInt(loan.borrowAmount), baseTokenDecimals)).toFixed(4)
+      : undefined;
 
   // Calculate headroom: current value of collateral - borrowed amount
   const { data: currentCollateralValue } = useBorrowableAmountFrom({
     chainId: loan.chainId as JBChainId,
     address: getRevnetLoanContract(6, loan.chainId as JBChainId),
-    args: [
-      revnetId,
-      BigInt(loan.collateral),
-      BigInt(baseTokenDecimals),
-      BigInt(chainTokenConfig.currency),
-    ],
+    args: chainTokenConfig
+      ? [
+          revnetId,
+          BigInt(loan.collateral),
+          BigInt(chainTokenConfig.decimals),
+          BigInt(chainTokenConfig.currency),
+        ]
+      : undefined,
   });
 
   const headroom =
@@ -81,7 +88,10 @@ function LoanRow({
       ? currentCollateralValue - BigInt(loan.borrowAmount)
       : 0n;
 
-  const headroomAmount = Number(formatUnits(headroom, baseTokenDecimals)).toFixed(6);
+  const headroomAmount =
+    baseTokenDecimals !== undefined
+      ? Number(formatUnits(headroom, baseTokenDecimals)).toFixed(6)
+      : undefined;
 
   return (
     <TableRow className={`hover:bg-zinc-100 ${selectedLoanId === loan.id ? "bg-zinc-100" : ""}`}>
@@ -96,7 +106,7 @@ function LoanRow({
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="whitespace-nowrap">
-              {borrowAmount} {baseTokenSymbol}
+              {borrowAmount !== undefined ? `${borrowAmount} ${baseTokenSymbol}` : "…"}
             </span>
           </TooltipTrigger>
           <TooltipContent>Loan ID: {loan.id?.toString() ?? "Unavailable"}</TooltipContent>
@@ -112,7 +122,7 @@ function LoanRow({
       </TableCell>
       <TableCell className="text-left px-3 py-2">
         <span className="whitespace-nowrap">
-          {headroomAmount} {baseTokenSymbol}
+          {headroomAmount !== undefined ? `${headroomAmount} ${baseTokenSymbol}` : "…"}
         </span>
       </TableCell>
       <TableCell className="text-left px-3 py-2">

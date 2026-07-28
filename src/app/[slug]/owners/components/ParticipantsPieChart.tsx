@@ -1,12 +1,12 @@
 "use client";
 
 import { EthereumAddress } from "@/components/EthereumAddress";
-import type { Participant } from "@/lib/bendystraw/types";
 import type { ProjectTokenData } from "@/lib/nana/types";
 import { formatPortion } from "@/lib/utils";
-import { JBChainId, JBProjectToken } from "@bananapus/nana-sdk-core";
+import { JBProjectToken } from "@bananapus/nana-sdk-core";
 import { useMemo, useState } from "react";
 import { Address } from "viem";
+import type { ParticipantRow } from "./ParticipantsTable";
 
 const OWNER_COLOR = "#EE6F3A"; // peel-400
 const OWNER_HOVER_COLOR = "#BD4513"; // peel-600
@@ -37,7 +37,7 @@ export function ParticipantsPieChart({
 }: {
   token: ProjectTokenData | null | undefined;
   totalSupply: bigint;
-  participants: (Participant & { chains: JBChainId[] })[];
+  participants: ParticipantRow[];
   showOwnerCount?: boolean;
 }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);

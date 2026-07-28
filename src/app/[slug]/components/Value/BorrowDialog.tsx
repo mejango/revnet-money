@@ -78,8 +78,11 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
   // Get the correct token symbol for the selected chain
   const getTokenSymbolForChain = useCallback(
     (targetChainId: number) => {
+      // Null config is LOADING — surface no symbol rather than a wrong one.
       const chainTokenConfig = tokenConfigForChain(targetChainId);
-      return chainTokenConfig?.symbol ?? getTokenSymbolFromAddress(chainTokenConfig?.token);
+      return chainTokenConfig
+        ? (chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token))
+        : undefined;
     },
     [tokenConfigForChain],
   );
@@ -130,7 +133,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         </DialogHeader>
         <div className="mb-5 w-[65%]">
           <span className="text-sm text-black font-medium">Your {tokenSymbol}</span>
-          <div className="mt-1 border border-zinc-200 p-3 bg-zinc-50">
+          <div className="mt-1 border border-melon-300 p-3 bg-melon-25">
             {balances?.map((balance) => (
               <div key={balance.chainId} className="flex justify-between gap-2">
                 {JB_CHAINS[balance.chainId as JBChainId].name}
@@ -280,7 +283,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           return null;
         })()}
         {minimumBorrowAmountPreview !== undefined && selectedChainTokenConfig ? (
-          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm">
+          <div className="border border-melon-300 bg-melon-25 p-3 text-sm">
             <div className="flex justify-between gap-3">
               <span className="text-zinc-600">Protected minimum borrowed</span>
               <span className="font-medium">
@@ -298,7 +301,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         <button
           type="button"
           onClick={() => setShowChart(!showChart)}
-          className="flex items-center gap-2 text-left text-gray-700 text-sm font-bold"
+          className="flex items-center gap-2 text-left text-zinc-700 text-sm font-bold"
         >
           <span>Variable Fee Structure</span>
           <span
@@ -325,7 +328,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         <button
           type="button"
           onClick={() => setShowInfo(!showInfo)}
-          className="flex items-center gap-2 text-left text-gray-700 text-sm font-bold mb-2"
+          className="flex items-center gap-2 text-left text-zinc-700 text-sm font-bold mb-2"
         >
           <span>Important Info</span>
           <span className={`transform transition-transform ${showInfo ? "rotate-90" : "rotate-0"}`}>

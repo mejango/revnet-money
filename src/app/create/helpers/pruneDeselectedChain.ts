@@ -23,3 +23,21 @@ export function pruneDeselectedChain(
     })),
   };
 }
+
+// Flipping the environment select hides the other environment's chains, so
+// their selections (and dependent per-chain rows) must be dropped — otherwise
+// invisible chains stay silently included in the deployment.
+export function pruneHiddenEnvironmentChains(
+  values: RevnetFormData,
+  visibleChainIds: readonly JBChainId[],
+): Pick<RevnetFormData, "chainIds" | "operator" | "stages"> {
+  const isVisible = (chainId: JBChainId) =>
+    visibleChainIds.some((visible) => Number(visible) === Number(chainId));
+  const removed = values.chainIds.filter((chainId) => !isVisible(chainId));
+
+  let next: RevnetFormData = { ...values, chainIds: values.chainIds.filter(isVisible) };
+  for (const chainId of removed) {
+    next = { ...next, ...pruneDeselectedChain(next, chainId) };
+  }
+  return { chainIds: next.chainIds, operator: next.operator, stages: next.stages };
+}

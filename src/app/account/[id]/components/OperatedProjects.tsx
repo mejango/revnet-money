@@ -4,6 +4,7 @@ import { permissionInfo } from "@/app/[slug]/components/v6/operator/permissionMe
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { ACCOUNT_BENDYSTRAW_CHAIN_ID } from "@/lib/accountHoldings";
 import { AccountPermissionHoldersOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { AccountPermissionHolderRow } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
@@ -12,7 +13,6 @@ import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { useMemo } from "react";
 import { isAddress, type Address } from "viem";
-import { mainnet } from "viem/chains";
 
 type OperatedProject = {
   chainId: JBChainId;
@@ -63,7 +63,7 @@ export function OperatedProjects({ address }: { address: Address }) {
   const query = useBendystrawQuery(
     AccountPermissionHoldersOperation,
     { where: { operator: address.toLowerCase(), version: 6 } },
-    { chainId: mainnet.id },
+    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID },
   );
 
   const projects = useMemo(
