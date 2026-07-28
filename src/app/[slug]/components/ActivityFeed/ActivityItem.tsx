@@ -71,7 +71,9 @@ export function ActivityItem({ event }: { event: ActivityEvent }) {
 
   if (!token?.data) return null;
 
-  return <ActivityItemRow event={event} projectTokenSymbol={formatTokenSymbol(token.data.symbol)} />;
+  return (
+    <ActivityItemRow event={event} projectTokenSymbol={formatTokenSymbol(token.data.symbol)} />
+  );
 }
 
 /**

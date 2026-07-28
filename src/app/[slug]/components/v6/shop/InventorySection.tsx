@@ -2,13 +2,14 @@
 
 import EtherscanLink from "@/components/EtherscanLink";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { cn } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { effectiveTierPrice, isRevnetOperator } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { PublicClient } from "viem";
-import { useAccount, usePublicClient } from "wagmi";
+import { usePublicClient } from "wagmi";
 import { usePayShopCredits } from "../pay/usePayShop";
 import { ProjectItem } from "../shared";
 import { AddItemsModal } from "./AddItemsModal";
@@ -45,7 +46,7 @@ export function InventorySection({
   projects: ProjectItem[];
   mediaById: Record<number, TierMedia> | undefined;
 }) {
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
   const publicClient = usePublicClient({ chainId });
   const { hasPermission } = useUserPermissions();
   const { count, total } = useTierCart(shop, chainId);

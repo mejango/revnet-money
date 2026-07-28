@@ -1,5 +1,6 @@
 "use client";
 
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { payTokenKey, V6PayTokenOption } from "@/lib/v6/pay";
 import {
   jb721TiersHookAbi,
@@ -12,7 +13,7 @@ import {
 import { BASE_CURRENCY_ETH, BASE_CURRENCY_USD } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { Address, PublicClient } from "viem";
-import { useAccount, usePublicClient } from "wagmi";
+import { usePublicClient } from "wagmi";
 import { loadShopInventory } from "../shop/shopLib";
 
 export interface V6PayShopTier {
@@ -92,7 +93,7 @@ export function usePayShop(chainId: JBChainId, projectId: bigint) {
 /** The connected wallet's shop credits (`payCreditsOf`) on the hook. */
 export function usePayShopCredits(chainId: JBChainId, hook: Address | undefined) {
   const publicClient = usePublicClient({ chainId });
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
 
   return useQuery({
     queryKey: ["v6PayShopCredits", chainId, hook, address],

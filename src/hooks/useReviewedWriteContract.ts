@@ -11,6 +11,7 @@ import {
   requireContractTransactionReview,
   type TransactionReviewOptions,
 } from "@/lib/transaction-review";
+import { requireNoViewAs } from "@/lib/view-as";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import {
@@ -172,6 +173,7 @@ export function useWriteContract(
 
   const writeContractAsync = useCallback(
     async (variables: Parameters<typeof mutation.writeContractAsync>[0]) => {
+      requireNoViewAs();
       const before = getAccount(config);
       if (!before.address) throw new Error("Connect a wallet first.");
       const chainId = Number(variables.chainId ?? before.chainId);

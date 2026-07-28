@@ -26,6 +26,7 @@ import {
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import {
   useJBContractContext,
   useJBProjectMetadataContext,
@@ -101,7 +102,7 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
   const { contractAddress } = useJBContractContext();
   const { metadata } = useJBProjectMetadataContext();
   const { token: contextToken } = useJBTokenContext();
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
   const key = useMemo(() => stateKey(projects), [projects]);
 
   const tokenState = useQuery({

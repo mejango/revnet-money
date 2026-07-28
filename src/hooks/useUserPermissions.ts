@@ -1,15 +1,15 @@
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { ProjectWithPermissionsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useMemo } from "react";
-import { useAccount } from "wagmi";
 
 type JBPermissionKey = keyof typeof JBPermissionIdsV6;
 
 export function useUserPermissions() {
   const { projectId } = useJBContractContext();
   const chainId = useJBChainId();
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
 
   const { data, isLoading } = useBendystrawQuery(
     ProjectWithPermissionsOperation,

@@ -2,13 +2,10 @@
 
 import { EthereumAddress, ensAvatarUrlForAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
 import { useEnsName } from "@/hooks/ens/useEnsName";
+import { useViewAs } from "@/lib/view-as";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { isAddress, type Address } from "viem";
+import { type Address } from "viem";
 import { mainnet } from "viem/chains";
 
 export function AccountHeader({
@@ -20,25 +17,11 @@ export function AccountHeader({
   ensName?: string;
   isSelf: boolean;
 }) {
-  const router = useRouter();
   const { data: reverseName } = useEnsName(address, { enabled: !ensName });
   const displayName = ensName ?? reverseName ?? undefined;
 
-  const [viewAs, setViewAs] = useState("");
-  const trimmed = viewAs.trim();
-  const typedAddress = isAddress(trimmed) ? trimmed : undefined;
-  const looksLikeEns = !typedAddress && trimmed.includes(".");
-  const { data: resolvedAddress, isLoading: resolving } = useEnsAddress(
-    looksLikeEns ? trimmed : undefined,
-    { enabled: looksLikeEns },
-  );
-  const target = typedAddress ?? (looksLikeEns ? (resolvedAddress ?? undefined) : undefined);
-
-  const view = () => {
-    if (!target) return;
-    setViewAs("");
-    router.push(`/account/${target}`);
-  };
+  const { viewAs, setViewAs, clearViewAs } = useViewAs();
+  const viewingThisAccount = viewAs?.toLowerCase() === address.toLowerCase();
 
   return (
     <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -64,30 +47,27 @@ export function AccountHeader({
           ) : null}
         </div>
       </div>
-      <form
-        className="flex w-full max-w-sm items-center gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          view();
-        }}
-      >
-        <Input
-          value={viewAs}
-          onChange={(event) => setViewAs(event.target.value)}
-          placeholder="View as address or ENS"
-          aria-label="View another account"
-        />
+      {viewingThisAccount ? (
         <Button
-          type="submit"
+          type="button"
           variant="outline"
           size="sm"
           className="min-h-10"
-          disabled={!target}
-          loading={looksLikeEns && resolving}
+          onClick={clearViewAs}
         >
-          View
+          Exit View as
         </Button>
-      </form>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="min-h-10"
+          onClick={() => setViewAs(address)}
+        >
+          View site as this account
+        </Button>
+      )}
     </header>
   );
 }

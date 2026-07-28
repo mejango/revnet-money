@@ -1,12 +1,13 @@
 "use client";
 
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { Token } from "@/lib/token";
 import { useMemo } from "react";
 import { erc20Abi } from "viem";
-import { useAccount, useBalance, useReadContracts } from "wagmi";
+import { useBalance, useReadContracts } from "wagmi";
 
 export function useTokenBalances(tokens: Token[], chainId: number) {
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
 
   const erc20Tokens = useMemo(() => tokens.filter((t) => !t.isNative), [tokens]);
 

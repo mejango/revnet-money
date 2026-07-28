@@ -147,7 +147,9 @@ export function OwnedProjects({ address }: { address: Address }) {
   const direct = directQuery.data?.projects.items ?? [];
   const viaSafe = safeProjectsQuery.data?.projects.items ?? [];
   const isLoading =
-    directQuery.isLoading || safesQuery.isLoading || (safeAddresses.length > 0 && safeProjectsQuery.isLoading);
+    directQuery.isLoading ||
+    safesQuery.isLoading ||
+    (safeAddresses.length > 0 && safeProjectsQuery.isLoading);
 
   return (
     <section>

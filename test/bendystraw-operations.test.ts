@@ -65,9 +65,9 @@ describe("reviewed Bendystraw operations", () => {
       expect(getBrowserOperationById(operation.id)).toBe(operation);
     }
 
-    expect(
-      AccountActivityEventsOperation.validateVariables({ address: "0xabc", limit: 25 }),
-    ).toBe(true);
+    expect(AccountActivityEventsOperation.validateVariables({ address: "0xabc", limit: 25 })).toBe(
+      true,
+    );
     expect(
       AccountActivityEventsOperation.validateVariables({ address: "0xabc", limit: 1001 }),
     ).toBe(false);

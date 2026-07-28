@@ -221,17 +221,16 @@ export type ActivityEventsQuery = {
   };
 };
 
-export type AccountActivityEventItem =
-  ActivityEventsQuery["activityEvents"]["items"][number] & {
-    from: string;
-    project:
-      | (Pick<Project, "projectId" | "handle" | "version" | "chainId"> & {
-          name: string | null;
-          tokenSymbol: string | null;
-          decimals: number | null;
-        })
-      | null;
-  };
+export type AccountActivityEventItem = ActivityEventsQuery["activityEvents"]["items"][number] & {
+  from: string;
+  project:
+    | (Pick<Project, "projectId" | "handle" | "version" | "chainId"> & {
+        name: string | null;
+        tokenSymbol: string | null;
+        decimals: number | null;
+      })
+    | null;
+};
 export type AccountActivityEventsQueryVariables = {
   address: string;
   limit?: number;

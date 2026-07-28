@@ -1,18 +1,15 @@
 "use client";
 
 import { ActivityItemRow } from "@/app/[slug]/components/ActivityFeed/ActivityItem";
-import {
-  mapActivityEvents,
-  type ActivityEventItem,
-} from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
+import { mapActivityEvents } from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
 import { ProfilesProvider } from "@/components/ProfilesContext";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { AccountActivityEventsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { AccountActivityEventItem } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
-import { useTransactionActivities, type TransactionActivity } from "@/lib/transaction-activity";
 import { slugFor } from "@/lib/slug";
+import { useTransactionActivities, type TransactionActivity } from "@/lib/transaction-activity";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { useMemo, useState } from "react";
