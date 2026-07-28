@@ -4,10 +4,10 @@ import { DateRelative } from "@/components/DateRelative";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import EtherscanLink from "@/components/EtherscanLink";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { useOwnedShopItems, useShopPurchases } from "@/lib/nana/shop";
 import { useMemo } from "react";
 import { Address } from "viem";
-import { useAccount } from "wagmi";
 import { ShopInventory, TierMedia, tierDisplayName } from "./shopLib";
 
 /**
@@ -25,7 +25,7 @@ export function CustomersSection({
   shop: ShopInventory;
   mediaById: Record<number, TierMedia> | undefined;
 }) {
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
 
   const names = useMemo(
     () =>

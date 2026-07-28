@@ -1,15 +1,15 @@
 "use client";
 
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import type { Address } from "viem";
-import { useAccount } from "wagmi";
 import { AccountActivity } from "./AccountActivity";
 import { AccountHeader } from "./AccountHeader";
 import { OperatedProjects } from "./OperatedProjects";
 import { OwnedProjects } from "./OwnedProjects";
 
 export function AccountView({ address, ensName }: { address: Address; ensName?: string }) {
-  const { address: connected } = useAccount();
-  const isSelf = !!connected && connected.toLowerCase() === address.toLowerCase();
+  const { address: viewed } = useViewedAccount();
+  const isSelf = !!viewed && viewed.toLowerCase() === address.toLowerCase();
 
   return (
     <div className="flex flex-col gap-8">

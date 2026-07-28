@@ -15,6 +15,7 @@ import {
 import { WalletConnectButton } from "@/components/WalletButton";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { formatShortDateTime } from "@/lib/date";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
@@ -34,7 +35,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAccount, useReadContract, useReadContracts } from "wagmi";
+import { useReadContract, useReadContracts } from "wagmi";
 import { ProjectItem } from "../../shared";
 import { CreditRow, V6ClaimCreditsDialog } from "./V6ClaimCreditsDialog";
 
@@ -60,7 +61,7 @@ type ChainQuote = { cashout: bigint | undefined; maxLoan: bigint | undefined };
  * by the cash out value, also marked locked.
  */
 export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
   const chainId = useJBChainId();
   const {
     projectId,

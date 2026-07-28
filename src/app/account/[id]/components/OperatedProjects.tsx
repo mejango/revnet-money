@@ -30,9 +30,7 @@ type OperatedProject = {
  * PermissionsCard aggregation: union the granted ids, surface the revnet
  * operator role, and keep every granting account.
  */
-export function aggregateOperatedProjects(
-  items: AccountPermissionHolderRow[],
-): OperatedProject[] {
+export function aggregateOperatedProjects(items: AccountPermissionHolderRow[]): OperatedProject[] {
   const groups = new Map<string, OperatedProject>();
   for (const item of items) {
     const permissions = (item.permissions ?? []).map(Number).filter((id) => id > 0);

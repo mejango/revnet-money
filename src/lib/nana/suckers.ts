@@ -1,5 +1,6 @@
 "use client";
 
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import {
   JBCoreContracts,
   JBProjectToken,
@@ -10,7 +11,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { getContract } from "viem";
-import { useAccount, useConfig, useReadContract } from "wagmi";
+import { useConfig, useReadContract } from "wagmi";
 import { useJBChainId, useJBContractContext, useJBProject } from "./project";
 import type { SuckerPair } from "./types";
 
@@ -88,7 +89,7 @@ export function useSuckersUserTokenBalance() {
   const config = useConfig();
   const chainId = useJBChainId();
   const { projectId, contractAddress } = useJBContractContext();
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
   const suckers = useSuckers();
 
   const currentChain = useReadContract({

@@ -13,6 +13,7 @@ import {
   updateTransactionActivity,
 } from "@/lib/transaction-activity";
 import { requireTransactionReview } from "@/lib/transaction-review";
+import { requireNoViewAs } from "@/lib/view-as";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData, isAddress, type Abi, type Address, type Hex } from "viem";
@@ -200,6 +201,7 @@ export function useGetRelayrTxQuote() {
 
   const getRelayrTxQuote = useCallback(
     async (requests: ReviewedRelayrRequest[]) => {
+      requireNoViewAs();
       if (!address) throw new Error("Connect a wallet first.");
       if (!requests.length) throw new Error("There are no Relayr calls to quote.");
       if (safeConnection(config)) {
@@ -362,6 +364,7 @@ export function useSendRelayrTx() {
 
   const sendRelayrTx = useCallback(
     async (payment: ChainPayment): Promise<Hex> => {
+      requireNoViewAs();
       if (!address) throw new Error("Connect a wallet first.");
       if (!Number.isSafeInteger(payment.chain) || payment.chain <= 0) {
         throw new Error("Relayr returned an invalid payment chain.");

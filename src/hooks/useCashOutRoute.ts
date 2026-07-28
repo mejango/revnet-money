@@ -40,12 +40,7 @@ export function useCashOutRoute(params: {
       slippageBps?.toString(),
     ],
     enabled:
-      !!publicClient &&
-      !!chainId &&
-      !!projectId &&
-      !!holder &&
-      !!cashOutCount &&
-      !!tokenToReclaim,
+      !!publicClient && !!chainId && !!projectId && !!holder && !!cashOutCount && !!tokenToReclaim,
     queryFn: () =>
       getHookAwareCashOutQuote(publicClient as PublicClient, {
         chainId: chainId as JBChainId,

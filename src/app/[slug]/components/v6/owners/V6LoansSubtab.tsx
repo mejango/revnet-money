@@ -4,13 +4,13 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { WalletConnectButton } from "@/components/WalletButton";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { AllLoansOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { formatUnits } from "viem";
-import { useAccount } from "wagmi";
 import { LoanDetailsTable } from "../../Value/LoansDetailsTable";
 import { ReallocateDialog } from "../../Value/ReallocateDialog";
 import { RepayDialog } from "../../Value/RepayDialog";
@@ -90,7 +90,7 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
   const { projectId } = useJBContractContext();
   const { token } = useJBTokenContext();
   const tokenSymbol = formatTokenSymbol(token);
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
 
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
   const [selectedChainId, setSelectedChainId] = useState<JBChainId | null>(null);

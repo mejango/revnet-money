@@ -1,8 +1,10 @@
 "use client";
 
+import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { useEnsName } from "@/hooks/ens/useEnsName";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
 import { cn, formatEthAddress } from "@/lib/utils";
+import { useViewAs } from "@/lib/view-as";
 import {
   logoutParaSession,
   ParaLocalDisconnectError,
@@ -256,11 +258,32 @@ export function WalletButton() {
   const menuId = useId();
   const menu = useDismissableMenu(open, setOpen);
   const { data: ensName } = useEnsName(address);
+  const { viewAs } = useViewAs();
+  const [viewAsOpen, setViewAsOpen] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
+  const viewAsDialog = viewAsOpen ? (
+    <ViewAsDialog open={viewAsOpen} onOpenChange={setViewAsOpen} />
+  ) : null;
+
   if (!mounted || !isConnected || !address) {
-    return <WalletConnectButton menuAlign="right" />;
+    // Disconnected entry point: a compact trigger beside the sign-in button, so
+    // anyone can browse the site as an address without connecting a wallet.
+    return (
+      <div className="inline-flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-zinc-600 hover:text-zinc-900"
+          onClick={() => setViewAsOpen(true)}
+        >
+          View as
+        </Button>
+        <WalletConnectButton menuAlign="right" />
+        {viewAsDialog}
+      </div>
+    );
   }
 
   const formattedBalance = balance
@@ -315,8 +338,20 @@ export function WalletButton() {
             </div>
             <div>{chain?.name ?? "Unsupported network"}</div>
           </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              menu.triggerRef.current?.focus();
+              setViewAsOpen(true);
+            }}
+            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+          >
+            View as…
+          </button>
           <Link
-            href={`/account/${address}`}
+            href={`/account/${viewAs ?? address}`}
             role="menuitem"
             onClick={() => {
               setOpen(false);
@@ -379,6 +414,7 @@ export function WalletButton() {
           ) : null}
         </div>
       ) : null}
+      {viewAsDialog}
     </div>
   );
 }

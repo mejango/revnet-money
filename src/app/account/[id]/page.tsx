@@ -16,9 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /** Resolve the route param — a 0x address or an ENS name — to an address. */
-async function resolveAccount(
-  id: string,
-): Promise<{ address: Address; ensName?: string } | null> {
+async function resolveAccount(id: string): Promise<{ address: Address; ensName?: string } | null> {
   const raw = decodeURIComponent(id).trim();
   if (isAddress(raw)) return { address: getAddress(raw) };
 
