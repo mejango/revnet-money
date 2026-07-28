@@ -123,19 +123,17 @@ function LoanRow({
       <TableCell className="text-center px-3 py-2">
         <div className="flex gap-1 justify-center">
           <Button
-            variant="outline"
             size="sm"
             onClick={() => onSelectLoan?.(loan.id, Number(loan.chainId))}
-            className="text-xs px-2 py-1"
+            className="text-xs px-2 py-1 bg-teal-500 text-melon-950 hover:bg-teal-600"
           >
             Repay
           </Button>
           {onReallocateLoan && (
             <Button
-              variant="outline"
               size="sm"
               onClick={() => onReallocateLoan(loan)}
-              className="text-xs px-2 py-1"
+              className="text-xs px-2 py-1 bg-teal-500 text-melon-950 hover:bg-teal-600"
             >
               Refinance
             </Button>

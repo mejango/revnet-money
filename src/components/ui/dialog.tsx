@@ -330,7 +330,10 @@ function useModalEffects({
           !(child instanceof HTMLElement) ||
           child === portal ||
           child.dataset.uiSelectPortal !== undefined ||
-          child.dataset.uiTooltipPortal !== undefined
+          child.dataset.uiTooltipPortal !== undefined ||
+          // Overlays that must stay usable above an open dialog (e.g. the
+          // Para sign-in modal) opt out of the inert sweep with this marker.
+          child.dataset.uiModalPortal !== undefined
         ) {
           continue;
         }
@@ -346,6 +349,14 @@ function useModalEffects({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (dialogStack.at(-1) !== stackEntry) return;
+      // While an opt-out overlay (Para sign-in) has focus, leave Escape and
+      // the Tab trap to it instead of closing or refocusing this dialog.
+      if (
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.closest("[data-ui-modal-portal]")
+      ) {
+        return;
+      }
       if (event.key === "Escape") {
         onEscapeKeyDown?.(event);
         if (!event.defaultPrevented) {

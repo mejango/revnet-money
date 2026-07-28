@@ -1,5 +1,6 @@
 "use client";
 
+import { useEnsName } from "@/hooks/ens/useEnsName";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
 import { cn, formatEthAddress } from "@/lib/utils";
 import {
@@ -253,6 +254,7 @@ export function WalletButton() {
   const [paraLogoutPending, setParaLogoutPending] = useState(false);
   const menuId = useId();
   const menu = useDismissableMenu(open, setOpen);
+  const { data: ensName } = useEnsName(address);
 
   useEffect(() => setMounted(true), []);
 
@@ -289,7 +291,7 @@ export function WalletButton() {
         className="gap-2"
       >
         <span className="h-2 w-2 bg-teal-500" aria-hidden />
-        <span>{formatEthAddress(address, { truncateTo: 4 })}</span>
+        <span>{ensName ?? formatEthAddress(address, { truncateTo: 4 })}</span>
         {formattedBalance ? (
           <span className="hidden border-l border-zinc-200 pl-2 text-zinc-600 sm:inline">
             {formattedBalance}
@@ -349,7 +351,7 @@ export function WalletButton() {
                 });
             }}
             className={cn(
-              "block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100",
+              "block min-h-11 w-full px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 disabled:opacity-50",
             )}
           >

@@ -2,7 +2,8 @@
 
 import { ParaProvider, useModal } from "@getpara/react-sdk-lite";
 import "@getpara/react-sdk-lite/styles.css";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { getParaClient, PARA_APP } from "./para-config";
 
 function ModalDriver({
@@ -44,7 +45,23 @@ export default function ParaModalHost({
   onSettled: () => void;
 }) {
   const paraClient = getParaClient();
-  return (
+
+  // The Para modal renders inline, so inside the app root it would inherit
+  // the `inert` that an open ui/dialog places on pre-existing body children,
+  // freezing the sign-in UI. Render it in a body-level portal that the
+  // dialog's inert sweep explicitly skips (data-ui-modal-portal).
+  const [portalNode, setPortalNode] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const node = document.createElement("div");
+    node.dataset.uiModalPortal = "";
+    document.body.appendChild(node);
+    setPortalNode(node);
+    return () => node.remove();
+  }, []);
+
+  if (!portalNode) return null;
+
+  return createPortal(
     <ParaProvider
       paraClientConfig={paraClient}
       config={{ appName: PARA_APP.appName }}
@@ -61,6 +78,7 @@ export default function ParaModalHost({
       externalWalletConfig={{ wallets: [] }}
     >
       <ModalDriver requestId={requestId} onOpenChange={onOpenChange} onSettled={onSettled} />
-    </ParaProvider>
+    </ParaProvider>,
+    portalNode,
   );
 }

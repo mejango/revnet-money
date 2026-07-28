@@ -20,7 +20,6 @@ import { formatShortDateTime } from "@/lib/date";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
-import { getProjectsReclaimableSurplus } from "@/lib/reclaimableSurplus";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, TokenConfig } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
@@ -33,7 +32,6 @@ import {
   RevnetCoreContracts,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
-import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
@@ -87,18 +85,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     { id: suckerGroupId ?? "" },
     { enabled: !!suckerGroupId, chainId: Number(chainId) },
   );
-  const groupProjects = useMemo(
-    () => suckerGroupData?.suckerGroup?.projects?.items ?? [],
-    [suckerGroupData],
-  );
-
-  // Per-chain surpluses used by RedeemDialog to resolve each chain's currency id.
-  const { data: surpluses } = useQuery({
-    queryKey: ["v6-reclaimable-surpluses", suckerGroupId],
-    enabled: groupProjects.length > 0,
-    queryFn: () => getProjectsReclaimableSurplus(groupProjects),
-  });
-
   // Unclaimed credits per chain — drives the "Credits"/"Credits & ERC-20s"
   // balance subtext and the Claim credits flow.
   const creditContracts = useMemo(
@@ -346,7 +332,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
       <div className="flex flex-wrap gap-2 mt-4">
         {hasErc20 && primaryNativeTerminal.data ? (
-          <RedeemDialog projectId={projectId} tokenSymbol={tokenSymbol} surpluses={surpluses ?? []}>
+          <RedeemDialog projectId={projectId} tokenSymbol={tokenSymbol}>
             <Button
               variant="outline"
               disabled={totalBalance === 0n}
