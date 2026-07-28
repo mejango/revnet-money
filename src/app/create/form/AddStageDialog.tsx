@@ -201,10 +201,7 @@ export function AddStageDialog({
                   (entry) => Number(entry.chainId) === Number(chainId),
                 );
                 if (entryIndex === -1) {
-                  setFieldValue(`splits.${index}.beneficiary`, [
-                    ...entries,
-                    { chainId, address },
-                  ]);
+                  setFieldValue(`splits.${index}.beneficiary`, [...entries, { chainId, address }]);
                 } else {
                   setFieldValue(`splits.${index}.beneficiary.${entryIndex}.address`, address);
                 }
@@ -376,9 +373,7 @@ export function AddStageDialog({
                                       required
                                       placeholder="100"
                                     />
-                                    <label htmlFor={`splits.${index}.defaultBeneficiary`}>
-                                      to
-                                    </label>
+                                    <label htmlFor={`splits.${index}.defaultBeneficiary`}>to</label>
                                     <Field
                                       id={`splits.${index}.defaultBeneficiary`}
                                       name={`splits.${index}.defaultBeneficiary`}

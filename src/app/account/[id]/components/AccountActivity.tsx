@@ -4,8 +4,8 @@ import { ActivityItemRow } from "@/app/[slug]/components/ActivityFeed/ActivityIt
 import { mapActivityEvents } from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
 import { ProfilesProvider } from "@/components/ProfilesContext";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { AccountActivityEventsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { mergeAccountActivity } from "@/lib/bendystraw/accountActivity";
 import type { AccountActivityEventItem } from "@/lib/bendystraw/types";

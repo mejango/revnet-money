@@ -2,11 +2,7 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import {
-  dedupeToHighestVersion,
-  projectRefKey,
-  projectRefsWhere,
-} from "@/lib/accountHoldings";
+import { dedupeToHighestVersion, projectRefKey, projectRefsWhere } from "@/lib/accountHoldings";
 import {
   AccountTokenBalancesOperation,
   ProjectsByOwnerOperation,
@@ -45,8 +41,7 @@ type HoldingGroup = {
 function groupHoldings(rows: HoldingRow[]): HoldingGroup[] {
   const groups = new Map<string, HoldingGroup>();
   for (const row of rows) {
-    const key =
-      row.project?.suckerGroupId ?? `${row.chainId}:${row.projectId}:${row.version}`;
+    const key = row.project?.suckerGroupId ?? `${row.chainId}:${row.projectId}:${row.version}`;
     const group = groups.get(key) ?? {
       key,
       name: `Project #${row.projectId}`,
@@ -117,8 +112,7 @@ export function TokenHoldings({ address }: { address: Address }) {
     [holdings, projectByRef],
   );
 
-  const isLoading =
-    balancesQuery.isLoading || (holdings.length > 0 && projectsQuery.isLoading);
+  const isLoading = balancesQuery.isLoading || (holdings.length > 0 && projectsQuery.isLoading);
 
   return (
     <section>

@@ -1,9 +1,11 @@
 import {
   AccountActivityEventsOperation,
   AccountPermissionHoldersOperation,
+  AccountTokenBalancesOperation,
   BENDYSTRAW_OPERATIONS,
   BROWSER_BENDYSTRAW_OPERATIONS,
   IndexedPoolSwapsOperation,
+  OwnedNftsOperation,
   ProjectOperation,
   ProjectsByOwnerOperation,
   ShieldGroupOperation,
@@ -90,6 +92,33 @@ describe("reviewed Bendystraw operations", () => {
       }),
     ).toBe(true);
     expect(AccountPermissionHoldersOperation.validateData({ permissionHolders: null })).toBe(true);
+  });
+
+  it("exposes the account holdings operations through the browser proxy with bounded variables", () => {
+    for (const operation of [AccountTokenBalancesOperation, OwnedNftsOperation]) {
+      expect(BENDYSTRAW_OPERATIONS).toContain(operation);
+      expect(getBrowserOperationById(operation.id)).toBe(operation);
+    }
+
+    expect(AccountTokenBalancesOperation.validateVariables({ account: "0xabc", limit: 1000 })).toBe(
+      true,
+    );
+    expect(AccountTokenBalancesOperation.validateVariables({ account: "0xabc", limit: 1001 })).toBe(
+      false,
+    );
+    expect(AccountTokenBalancesOperation.validateVariables({ limit: 25 })).toBe(false);
+    expect(AccountTokenBalancesOperation.validateVariables({ account: "0xabc", where: {} })).toBe(
+      false,
+    );
+    expect(AccountTokenBalancesOperation.validateData({ participants: { items: [] } })).toBe(true);
+    expect(AccountTokenBalancesOperation.validateData({ participants: null })).toBe(false);
+
+    // The registered document pins the positive-balance filter and selects the
+    // version disambiguator that the client-side dedupe relies on.
+    const registered = BENDYSTRAW_QUERY_REGISTRY[AccountTokenBalancesOperation.id];
+    expect(registered.query).toMatch(/balance_gt:\s*"0"/u);
+    expect(registered.query).toMatch(/version/u);
+    expect(BENDYSTRAW_QUERY_REGISTRY[OwnedNftsOperation.id].query).toMatch(/version/u);
   });
 
   it("requires the reviewed response root before data reaches consumers", () => {
