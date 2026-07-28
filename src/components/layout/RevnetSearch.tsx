@@ -1,7 +1,10 @@
 "use client";
 
+import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
+import { formatEthAddress } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { Address, isAddress } from "viem";
 
 type SearchResult = {
   projectId: number;
@@ -30,6 +33,20 @@ function resultHref(result: SearchResult) {
   return `/${CHAIN_SLUGS[result.chainId] ?? "eth"}:${result.projectId}`;
 }
 
+type AccountResult = {
+  /** Path segment for /account/[id] — the raw address or the ENS name. */
+  id: string;
+  address: Address;
+  name?: string;
+};
+
+const ENS_LABEL = "[a-z0-9](?:[a-z0-9-_]*[a-z0-9])?";
+const ENS_NAME_PATTERN = new RegExp(`^${ENS_LABEL}(?:\\.${ENS_LABEL})+$`, "iu");
+
+function looksLikeEnsName(value: string) {
+  return value.includes(".") && ENS_NAME_PATTERN.test(value);
+}
+
 function Magnifier() {
   return (
     <svg
@@ -55,6 +72,30 @@ export function RevnetSearch() {
   const [open, setOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const trimmedQuery = query.trim();
+
+  const isAddressQuery = isAddress(trimmedQuery);
+  const ensCandidate = !isAddressQuery && looksLikeEnsName(trimmedQuery) ? trimmedQuery : undefined;
+  const [debouncedEnsName, setDebouncedEnsName] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!ensCandidate) {
+      setDebouncedEnsName(undefined);
+      return;
+    }
+    const timeout = window.setTimeout(() => setDebouncedEnsName(ensCandidate), 250);
+    return () => window.clearTimeout(timeout);
+  }, [ensCandidate]);
+
+  const ensLookup = useEnsAddress(debouncedEnsName, { enabled: Boolean(debouncedEnsName) });
+  const ensResolving =
+    Boolean(ensCandidate) && (debouncedEnsName !== ensCandidate || ensLookup.isFetching);
+
+  const accountResult: AccountResult | null = isAddressQuery
+    ? { id: trimmedQuery, address: trimmedQuery as Address }
+    : !ensResolving && ensCandidate && ensLookup.data
+      ? { id: ensCandidate, address: ensLookup.data, name: ensCandidate }
+      : null;
+  const hasAccountRow = accountResult !== null || ensResolving;
 
   useEffect(() => {
     const normalizedQuery = trimmedQuery.replace(/^\$/u, "");
@@ -102,11 +143,22 @@ export function RevnetSearch() {
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, []);
 
+  useEffect(() => {
+    if (hasAccountRow) setOpen(true);
+  }, [hasAccountRow]);
+
   const goToResult = (result: SearchResult) => {
     setOpen(false);
     setQuery("");
     setResults([]);
     router.push(resultHref(result));
+  };
+
+  const goToAccount = (account: AccountResult) => {
+    setOpen(false);
+    setQuery("");
+    setResults([]);
+    router.push(`/account/${account.id}`);
   };
 
   return (
@@ -115,11 +167,14 @@ export function RevnetSearch() {
         role="search"
         onSubmit={(event) => {
           event.preventDefault();
-          if (results[0]) goToResult(results[0]);
+          if (accountResult) goToAccount(accountResult);
+          else if (results[0]) goToResult(results[0]);
         }}
       >
         <label className="relative block">
-          <span className="sr-only">Search revnets by name, ticker, or project ID</span>
+          <span className="sr-only">
+            Search revnets by name, ticker, or project ID, or an account by address or ENS name
+          </span>
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">
             <Magnifier />
           </span>
@@ -128,7 +183,7 @@ export function RevnetSearch() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onFocus={() => {
-              if (results.length > 0 || searching) setOpen(true);
+              if (results.length > 0 || searching || hasAccountRow) setOpen(true);
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") setOpen(false);
@@ -141,10 +196,29 @@ export function RevnetSearch() {
 
       {open ? (
         <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-96 overflow-y-auto border border-zinc-200 bg-white py-1 shadow-lg">
+          {accountResult ? (
+            <button
+              type="button"
+              onClick={() => goToAccount(accountResult)}
+              className="block w-full px-4 py-3 text-left hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+            >
+              <span className="block truncate font-medium">
+                {accountResult.name ?? formatEthAddress(accountResult.address)}
+              </span>
+              <span className="block truncate text-xs text-zinc-600">
+                {accountResult.name ? `${formatEthAddress(accountResult.address)} · ` : ""}
+                View account
+              </span>
+            </button>
+          ) : ensResolving ? (
+            <p className="px-4 py-3 text-xs text-zinc-400">Resolving name…</p>
+          ) : null}
           {searching ? (
             <p className="px-4 py-3 text-sm text-zinc-600">Searching…</p>
           ) : results.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-zinc-600">No matching revnets.</p>
+            hasAccountRow ? null : (
+              <p className="px-4 py-3 text-sm text-zinc-600">No matching revnets.</p>
+            )
           ) : (
             <ul>
               {results.map((result) => (
