@@ -1,3 +1,5 @@
+import { ChainLogo } from "@/components/ChainLogo";
+import { ChainSelector } from "@/components/ChainSelector";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +15,8 @@ import { toast } from "@/components/ui/use-toast";
 import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
+import { sortChains } from "@/lib/utils";
+import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { defaultStageData } from "../constants";
 import { getResolvedIssuance } from "../helpers/calculatePickupIssuance";
@@ -72,13 +76,24 @@ export function AddStageDialog({
   onSave: (newStage: StageData) => void;
 }) {
   const {
-    values: { stages, reserveAsset: reserveAssetKind, issuanceBaseCurrency },
+    values: {
+      stages,
+      reserveAsset: reserveAssetKind,
+      issuanceBaseCurrency,
+      chainIds,
+      operator: perChainOperators,
+    },
     setFieldValue: setCreateFieldValue,
     revnetTokenSymbol,
     reserveAssetSymbol,
     issuanceBaseCurrencySymbol,
   } = useCreateForm();
   const reserveAsset = reserveAssetSymbol;
+  // Chains are picked in the form's first section, so every chain-dependent
+  // input in this dialog can specialize per selected chain inline.
+  const sortedChainIds = sortChains(chainIds);
+  const perChainInputClassName =
+    "h-9 flex-1 border-2 border-melon-300 bg-melon-25 px-3 py-1.5 text-md placeholder:text-zinc-500 hover:border-melon-400 focus-visible:border-melon-600 focus-visible:outline-none focus-visible:ring-0";
 
   const [open, setOpen] = useState(false);
 
@@ -160,6 +175,39 @@ export function AddStageDialog({
                   // else: keep last user-entered values
                 }
                 // Do not reset values on uncheck, just hide the fields
+              };
+
+              // Expand a split to per-chain beneficiaries (seeded with the
+              // single default value), or collapse it back to single-value mode.
+              const toggleSplitPerChain = (index: number, checked: boolean) => {
+                setFieldValue(
+                  `splits.${index}.beneficiary`,
+                  checked
+                    ? sortedChainIds.map((chainId) => ({
+                        chainId,
+                        address: values.splits[index].defaultBeneficiary || "",
+                      }))
+                    : undefined,
+                );
+              };
+
+              const setSplitChainBeneficiary = (
+                index: number,
+                chainId: JBChainId,
+                address: string,
+              ) => {
+                const entries = values.splits[index].beneficiary ?? [];
+                const entryIndex = entries.findIndex(
+                  (entry) => Number(entry.chainId) === Number(chainId),
+                );
+                if (entryIndex === -1) {
+                  setFieldValue(`splits.${index}.beneficiary`, [
+                    ...entries,
+                    { chainId, address },
+                  ]);
+                } else {
+                  setFieldValue(`splits.${index}.beneficiary.${entryIndex}.address`, address);
+                }
               };
 
               return (
@@ -308,46 +356,104 @@ export function AddStageDialog({
                           render={(arrayHelpers) => (
                             <div>
                               {values.splits.map((split, index) => (
-                                <div
-                                  key={`split-${index}`}
-                                  className="mt-4 flex flex-wrap items-center gap-2 text-md text-zinc-600"
-                                >
-                                  <label
-                                    className="whitespace-nowrap"
-                                    htmlFor={`splits.${index}.amount`}
-                                  >
-                                    {index === 0 ? "split" : "... and"}
-                                  </label>
-                                  <Field
-                                    id={`splits.${index}.percentage`}
-                                    name={`splits.${index}.percentage`}
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    className="h-9 pr-8 pl-2"
-                                    width="w-20 shrink-0"
-                                    suffix="%"
-                                    required
-                                    placeholder="100"
-                                  />
-                                  <label htmlFor={`splits.${index}.defaultBeneficiary`}>to</label>
-                                  <Field
-                                    id={`splits.${index}.defaultBeneficiary`}
-                                    name={`splits.${index}.defaultBeneficiary`}
-                                    className="h-9"
-                                    width="min-w-40 flex-1"
-                                    placeholder="0x"
-                                    required
-                                    defaultValue={stages[0]?.initialOperator || ""}
-                                  />
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => arrayHelpers.remove(index)}
-                                    className="h-9 px-0 sm:px-3"
-                                  >
-                                    <TrashIcon className="h-4 w-4" />
-                                  </Button>
+                                <div key={`split-${index}`}>
+                                  <div className="mt-4 flex flex-wrap items-center gap-2 text-md text-zinc-600">
+                                    <label
+                                      className="whitespace-nowrap"
+                                      htmlFor={`splits.${index}.amount`}
+                                    >
+                                      {index === 0 ? "split" : "... and"}
+                                    </label>
+                                    <Field
+                                      id={`splits.${index}.percentage`}
+                                      name={`splits.${index}.percentage`}
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      className="h-9 pr-8 pl-2"
+                                      width="w-20 shrink-0"
+                                      suffix="%"
+                                      required
+                                      placeholder="100"
+                                    />
+                                    <label htmlFor={`splits.${index}.defaultBeneficiary`}>
+                                      to
+                                    </label>
+                                    <Field
+                                      id={`splits.${index}.defaultBeneficiary`}
+                                      name={`splits.${index}.defaultBeneficiary`}
+                                      className="h-9"
+                                      width="min-w-40 flex-1"
+                                      placeholder="0x"
+                                      required
+                                      defaultValue={stages[0]?.initialOperator || ""}
+                                    />
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => arrayHelpers.remove(index)}
+                                      className="h-9 px-0 sm:px-3"
+                                    >
+                                      <TrashIcon className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                  {chainIds.length > 1 && (
+                                    <div className="mt-2">
+                                      <label
+                                        className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
+                                        htmlFor={`perChainBeneficiary-${index}`}
+                                      >
+                                        set beneficiary per chain?
+                                        <input
+                                          type="checkbox"
+                                          id={`perChainBeneficiary-${index}`}
+                                          checked={(split.beneficiary?.length ?? 0) > 0}
+                                          onChange={(e) =>
+                                            toggleSplitPerChain(index, e.target.checked)
+                                          }
+                                        />
+                                      </label>
+                                      {(split.beneficiary?.length ?? 0) > 0 && (
+                                        <div className="mt-2 space-y-2">
+                                          {sortedChainIds.map((chainId) => {
+                                            const entry = split.beneficiary?.find(
+                                              (b) => Number(b.chainId) === Number(chainId),
+                                            );
+                                            return (
+                                              <div
+                                                key={chainId}
+                                                className="flex items-center gap-2 text-md text-zinc-600"
+                                              >
+                                                <div className="flex w-40 shrink-0 items-center gap-2 text-sm">
+                                                  <ChainLogo
+                                                    chainId={chainId}
+                                                    width={20}
+                                                    height={20}
+                                                  />
+                                                  <span className="text-zinc-400">
+                                                    {JB_CHAINS[chainId].name}
+                                                  </span>
+                                                </div>
+                                                <input
+                                                  aria-label={`${JB_CHAINS[chainId].name} beneficiary`}
+                                                  className={perChainInputClassName}
+                                                  placeholder="0x"
+                                                  value={entry?.address ?? ""}
+                                                  onChange={(e) =>
+                                                    setSplitChainBeneficiary(
+                                                      index,
+                                                      chainId,
+                                                      e.target.value,
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                               <Button
@@ -387,29 +493,89 @@ export function AddStageDialog({
                           </div>
                         )}
                         {values.splits.length > 0 && (
-                          <div className="mt-4 flex gap-2 items-center text-md text-zinc-600 whitespace-nowrap">
-                            <label
-                              className="whitespace-nowrap"
-                              htmlFor="priceCeilingIncreasePercentage"
-                            >
-                              ... operated by
-                            </label>
-                            <Field
-                              id="initialOperator"
-                              name="initialOperator"
-                              className=""
-                              placeholder={stageIdx > 0 ? stages[0].initialOperator : "0x"}
-                              disabled={stageIdx > 0}
-                            />
-                            {stageIdx > 0 && (
-                              <Tooltip>
-                                <TooltipTrigger>[ ? ]</TooltipTrigger>
-                                <TooltipContent side="left">
-                                  Set the project operator in the first stage
-                                </TooltipContent>
-                              </Tooltip>
+                          <>
+                            <div className="mt-4 flex gap-2 items-center text-md text-zinc-600 whitespace-nowrap">
+                              <label
+                                className="whitespace-nowrap"
+                                htmlFor="priceCeilingIncreasePercentage"
+                              >
+                                ... operated by
+                              </label>
+                              <Field
+                                id="initialOperator"
+                                name="initialOperator"
+                                className=""
+                                placeholder={stageIdx > 0 ? stages[0].initialOperator : "0x"}
+                                disabled={stageIdx > 0}
+                              />
+                              {stageIdx > 0 && (
+                                <Tooltip>
+                                  <TooltipTrigger>[ ? ]</TooltipTrigger>
+                                  <TooltipContent side="left">
+                                    Set the project operator in the first stage
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                            </div>
+                            {stageIdx === 0 && chainIds.length > 1 && (
+                              <div className="mt-2">
+                                <label
+                                  className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
+                                  htmlFor="perChainOperator"
+                                >
+                                  set operator per chain?
+                                  <input
+                                    type="checkbox"
+                                    id="perChainOperator"
+                                    checked={perChainOperators.length > 0}
+                                    onChange={(e) =>
+                                      setCreateFieldValue(
+                                        "operator",
+                                        e.target.checked
+                                          ? sortedChainIds.map((chainId) => ({
+                                              chainId: String(chainId),
+                                              address: values.initialOperator || "",
+                                            }))
+                                          : [],
+                                      )
+                                    }
+                                  />
+                                </label>
+                                {perChainOperators.length > 0 && (
+                                  <div className="mt-2 space-y-2">
+                                    {perChainOperators.map((operator, operatorIndex) => {
+                                      const chainId = Number(operator.chainId) as JBChainId;
+                                      return (
+                                        <div
+                                          key={operator.chainId}
+                                          className="flex items-center gap-2 text-md text-zinc-600"
+                                        >
+                                          <div className="flex w-40 shrink-0 items-center gap-2 text-sm">
+                                            <ChainLogo chainId={chainId} width={20} height={20} />
+                                            <span className="text-zinc-400">
+                                              {JB_CHAINS[chainId].name}
+                                            </span>
+                                          </div>
+                                          <input
+                                            aria-label={`${JB_CHAINS[chainId].name} operator`}
+                                            className={perChainInputClassName}
+                                            placeholder="0x"
+                                            value={operator.address}
+                                            onChange={(e) =>
+                                              setCreateFieldValue(
+                                                `operator.${operatorIndex}.address`,
+                                                e.target.value,
+                                              )
+                                            }
+                                          />
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                             )}
-                          </div>
+                          </>
                         )}
                       </div>
                       <NotesSection>
@@ -496,6 +662,24 @@ export function AddStageDialog({
                                   placeholder="0x"
                                   required
                                 />
+                                {chainIds.length > 1 && (
+                                  <>
+                                    <label className="col-start-1 row-start-3 whitespace-nowrap sm:col-auto sm:row-auto">
+                                      on
+                                    </label>
+                                    <div className="col-span-3 col-start-2 row-start-3 sm:col-auto sm:row-auto">
+                                      <ChainSelector
+                                        value={
+                                          (autoissuance.chainId ?? sortedChainIds[0]) as JBChainId
+                                        }
+                                        onChange={(chainId) =>
+                                          setFieldValue(`autoIssuance.${index}.chainId`, chainId)
+                                        }
+                                        options={chainIds}
+                                      />
+                                    </div>
+                                  </>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -509,9 +693,12 @@ export function AddStageDialog({
                             <Button
                               type="button"
                               onClick={() => {
+                                // New rows are homed on the first selected chain;
+                                // the per-row picker re-homes them.
                                 arrayHelpers.push({
                                   amount: "",
                                   beneficiary: "",
+                                  chainId: sortedChainIds[0],
                                 });
                               }}
                               className="h-7 mt-3 bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900"

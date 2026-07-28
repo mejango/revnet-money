@@ -1,6 +1,5 @@
 import { IpfsImageUploader } from "@/components/IpfsFileUploader";
 import { ipfsUri } from "@/lib/ipfs";
-import Image from "next/image";
 import { FieldGroup } from "./Fields";
 import { useCreateForm } from "./useCreateForm";
 
@@ -9,17 +8,8 @@ export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
 
   return (
     <>
-      <Image
-        src="/assets/img/create-cutout.webp"
-        width={1120}
-        height={747}
-        sizes="(min-width: 640px) 560px, calc(100vw - 2rem)"
-        className="mx-auto mb-10 h-auto w-full max-w-[560px] md:col-span-3"
-        alt="A figure holding a lightning bolt above the clouds"
-      />
-      <h1 className="mb-16 text-2xl md:col-span-3 font-semibold">Create a revnet</h1>
       <div className="md:col-span-1">
-        <h2 className="mb-4 text-lg font-bold md:mb-2">1. Look</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">2. Look</h2>
       </div>
       <div className="md:col-span-2">
         <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-12">

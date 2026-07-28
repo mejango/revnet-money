@@ -3,22 +3,18 @@
 import { EthereumAddress, ensAvatarUrlForAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
 import { useEnsName } from "@/hooks/ens/useEnsName";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { useViewAs } from "@/lib/view-as";
 import Image from "next/image";
 import { type Address } from "viem";
 import { mainnet } from "viem/chains";
 
-export function AccountHeader({
-  address,
-  ensName,
-  isSelf,
-}: {
-  address: Address;
-  ensName?: string;
-  isSelf: boolean;
-}) {
+export function AccountHeader({ address, ensName }: { address: Address; ensName?: string }) {
   const { data: reverseName } = useEnsName(address, { enabled: !ensName });
   const displayName = ensName ?? reverseName ?? undefined;
+
+  const { address: viewed } = useViewedAccount();
+  const isSelf = !!viewed && viewed.toLowerCase() === address.toLowerCase();
 
   const { viewAs, setViewAs, clearViewAs } = useViewAs();
   const viewingThisAccount = viewAs?.toLowerCase() === address.toLowerCase();

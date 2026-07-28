@@ -94,8 +94,6 @@ export default function Page() {
       });
       if (deploymentFormData.chainIds.length === 1) directRequest = request;
 
-      console.log({ deployData: request.args });
-
       const encodedData = encodeFunctionData({
         abi: request.abi,
         functionName: request.functionName,
@@ -115,8 +113,6 @@ export default function Page() {
           value: request.value,
         })
         .catch(() => 8_000_000n);
-
-      console.log("create::deploy calldata", chainId, gasEstimate, encodedData, request.args);
 
       relayrTransactions.push({
         data: {

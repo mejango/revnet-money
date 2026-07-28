@@ -6,7 +6,7 @@ import { ActivityEventsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
 import { useState } from "react";
 import { ActivityItem } from "./ActivityItem";
-import { mapActivityEvents } from "./mapActivityEvents";
+import { mapActivityEvents, projectFeedTokenContext } from "./mapActivityEvents";
 
 type Project = NonNullable<
   NonNullable<SuckerGroupQuery["suckerGroup"]>["projects"]
@@ -34,11 +34,9 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
 
   const items = data?.activityEvents.items ?? [];
 
-  const events = mapActivityEvents(items, (event) => {
-    const projectForChain = projects.find((p) => p.chainId === event.chainId);
-    if (!projectForChain?.tokenSymbol) return null;
-    return { tokenSymbol: projectForChain.tokenSymbol, decimals: projectForChain.decimals };
-  });
+  // Token amounts when every chain shares one accounting-token kind; indexed
+  // USD when the sucker group's chains disagree (ecosystem convention).
+  const events = mapActivityEvents(items, projectFeedTokenContext(projects));
 
   const visibleEvents = events.slice(0, visibleCount);
   const hasMore = events.length > visibleCount;

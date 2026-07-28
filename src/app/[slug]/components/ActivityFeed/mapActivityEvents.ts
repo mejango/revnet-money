@@ -3,6 +3,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
 import { Address, formatUnits } from "viem";
+import { formatUsd, usdFromScaled } from "../v6/extras/projectPayers";
 import type { ActivityEvent } from "./ActivityItem";
 
 export type ActivityEventItem = ActivityEventsQuery["activityEvents"]["items"][number];
@@ -16,7 +17,43 @@ export type ActivityEventItem = ActivityEventsQuery["activityEvents"]["items"][n
 export type ActivityTokenContext = {
   tokenSymbol?: string | null;
   decimals?: number | null;
+  /**
+   * Denominate flow amounts in the indexer's 18-decimal USD figures instead of
+   * the chain's accounting token. The ecosystem convention: token amounts only
+   * when the project has exactly one accounting-token kind across its chains.
+   */
+  denominateInUsd?: boolean;
 } | null;
+
+/**
+ * Project-feed denomination policy over the sucker group's per-chain rows:
+ * token amounts when every chain shares one accounting-token kind, USD when
+ * the chains disagree on symbol or decimals.
+ */
+export function projectFeedTokenContext(
+  projects: ReadonlyArray<{
+    chainId: number;
+    tokenSymbol: string | null;
+    decimals: number | null;
+  }>,
+): (item: ActivityEventItem) => ActivityTokenContext {
+  const tokenKinds = new Set(
+    projects
+      .filter((project) => project.tokenSymbol)
+      .map((project) => `${project.tokenSymbol}:${project.decimals ?? 18}`),
+  );
+  const denominateInUsd = tokenKinds.size > 1;
+
+  return (event) => {
+    const projectForChain = projects.find((project) => project.chainId === event.chainId);
+    if (!projectForChain?.tokenSymbol) return null;
+    return {
+      tokenSymbol: projectForChain.tokenSymbol,
+      decimals: projectForChain.decimals,
+      denominateInUsd,
+    };
+  };
+}
 
 function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
@@ -58,10 +95,18 @@ export function mapActivityEvents(
     const baseTokenDecimals = tokenContext.decimals ?? 18;
     const txKey = `${event.chainId}:${event.txHash}`;
 
+    // In USD mode a missing/zero indexed figure falls back to the chain's
+    // token so the row still shows a meaningful amount.
+    const flowAmount = (tokenAmount: string | number, usdAmount?: string | number | null) => {
+      const usd = tokenContext.denominateInUsd ? usdFromScaled(usdAmount) : null;
+      if (usd) return { baseAmount: formatUsd(usd), baseTokenSymbol: undefined };
+      return {
+        baseAmount: formatDecimals(Number(formatUnits(BigInt(tokenAmount), baseTokenDecimals))),
+        baseTokenSymbol,
+      };
+    };
+
     if (event.payEvent) {
-      const amount = formatDecimals(
-        Number(formatUnits(BigInt(event.payEvent.amount), baseTokenDecimals)),
-      );
       const tokenCount = new JBProjectToken(BigInt(event.payEvent.newlyIssuedTokenCount)).format(6);
 
       events.push({
@@ -71,15 +116,11 @@ export function mapActivityEvents(
         timestamp: event.payEvent.timestamp,
         beneficiary: event.payEvent.beneficiary as Address,
         chainId,
-        baseAmount: amount,
-        baseTokenSymbol,
+        ...flowAmount(event.payEvent.amount, event.payEvent.amountUsd),
         tokenCount,
         memo: event.payEvent.memo || undefined,
       });
     } else if (event.cashOutTokensEvent) {
-      const amount = formatDecimals(
-        Number(formatUnits(BigInt(event.cashOutTokensEvent.reclaimAmount), baseTokenDecimals)),
-      );
       const tokenCount = new JBProjectToken(BigInt(event.cashOutTokensEvent.cashOutCount)).format(
         6,
       );
@@ -91,8 +132,10 @@ export function mapActivityEvents(
         timestamp: event.cashOutTokensEvent.timestamp,
         beneficiary: event.cashOutTokensEvent.beneficiary as Address,
         chainId,
-        baseAmount: amount,
-        baseTokenSymbol,
+        ...flowAmount(
+          event.cashOutTokensEvent.reclaimAmount,
+          event.cashOutTokensEvent.reclaimAmountUsd,
+        ),
         tokenCount,
       });
     } else if (event.addToBalanceEvent) {

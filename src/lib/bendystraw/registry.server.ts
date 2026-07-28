@@ -3,6 +3,7 @@ import "server-only";
 import {
   AccountActivityEventsOperation,
   AccountPermissionHoldersOperation,
+  AccountTokenBalancesOperation,
   ActivityEventsOperation,
   AllLoansOperation,
   AutoIssueEventsOperation,
@@ -61,18 +62,19 @@ const ACTIVITY_EVENT_FIELDS = `
     from
     beneficiary
     reclaimAmount
+    reclaimAmountUsd
     cashOutCount
     metadata
     project { id projectId handle version }
   }
   addToBalanceEvent { txHash timestamp from amount memo }
   mintTokensEvent {
-    txHash timestamp from caller beneficiary beneficiaryTokenCount memo
+    id txHash timestamp from caller beneficiary beneficiaryTokenCount memo
   }
   manualMintTokensEvent {
-    txHash timestamp from beneficiary beneficiaryTokenCount memo
+    id txHash timestamp from beneficiary beneficiaryTokenCount memo
   }
-  autoIssueEvent { txHash timestamp from beneficiary count }
+  autoIssueEvent { id txHash timestamp from beneficiary count }
   deployErc20Event { txHash timestamp from symbol }
   projectCreateEvent { txHash timestamp from }
   projectTransferEvent { txHash timestamp from previousOwner owner }
@@ -197,13 +199,18 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [AccountActivityEventsOperation.id]: {
     operationName: "AccountActivityEvents",
-    query: `query AccountActivityEvents($address: String!, $limit: Int, $after: String) {
+    // The top-level activityEventFilter has no beneficiary field, so events
+    // where the account only receives value (payments to them, mints, splits)
+    // are fetched from the beneficiary-bearing sub-event roots and merged
+    // client-side (mergeAccountActivity). Every branch pins version 6 in an
+    // explicit AND group — this Ponder version does not AND sibling fields
+    // inside OR branches.
+    query: `query AccountActivityEvents($address: String!, $limit: Int) {
       activityEvents(
-        where: { from: $address, version: 6 }
+        where: { AND: [{ from: $address }, { version: 6 }] }
         orderBy: "timestamp"
         orderDirection: "desc"
         limit: $limit
-        after: $after
       ) {
         items {
           id
@@ -214,7 +221,125 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           project { projectId handle version chainId name tokenSymbol decimals }
           ${ACTIVITY_EVENT_FIELDS}
         }
-        pageInfo { hasNextPage endCursor }
+      }
+      beneficiaryPayEvents: payEvents(
+        where: { AND: [{ beneficiary: $address }, { version: 6 }] }
+        orderBy: "timestamp"
+        orderDirection: "desc"
+        limit: $limit
+      ) {
+        items {
+          id
+          chainId
+          amount
+          beneficiary
+          memo
+          timestamp
+          feeFromProject
+          newlyIssuedTokenCount
+          from
+          txHash
+          amountUsd
+          caller
+          distributionFromProjectId
+          projectId
+          project { projectId handle version chainId name tokenSymbol decimals }
+        }
+      }
+      beneficiaryCashOutEvents: cashOutTokensEvents(
+        where: { AND: [{ beneficiary: $address }, { version: 6 }] }
+        orderBy: "timestamp"
+        orderDirection: "desc"
+        limit: $limit
+      ) {
+        items {
+          id
+          chainId
+          timestamp
+          txHash
+          from
+          beneficiary
+          reclaimAmount
+          reclaimAmountUsd
+          cashOutCount
+          metadata
+          project { projectId handle version chainId name tokenSymbol decimals }
+        }
+      }
+      beneficiaryMintTokensEvents: mintTokensEvents(
+        where: { AND: [{ beneficiary: $address }, { version: 6 }] }
+        orderBy: "timestamp"
+        orderDirection: "desc"
+        limit: $limit
+      ) {
+        items {
+          id
+          chainId
+          txHash
+          timestamp
+          from
+          caller
+          beneficiary
+          beneficiaryTokenCount
+          memo
+          project { projectId handle version chainId name tokenSymbol decimals }
+        }
+      }
+      beneficiaryManualMintTokensEvents: manualMintTokensEvents(
+        where: { AND: [{ beneficiary: $address }, { version: 6 }] }
+        orderBy: "timestamp"
+        orderDirection: "desc"
+        limit: $limit
+      ) {
+        items {
+          id
+          chainId
+          txHash
+          timestamp
+          from
+          beneficiary
+          beneficiaryTokenCount
+          memo
+          project { projectId handle version chainId name tokenSymbol decimals }
+        }
+      }
+      beneficiaryAutoIssueEvents: autoIssueEvents(
+        where: { AND: [{ beneficiary: $address }, { version: 6 }] }
+        orderBy: "timestamp"
+        orderDirection: "desc"
+        limit: $limit
+      ) {
+        items {
+          id
+          chainId
+          txHash
+          timestamp
+          from
+          beneficiary
+          count
+          project { projectId handle version chainId name tokenSymbol decimals }
+        }
+      }
+    }`,
+  },
+  [AccountTokenBalancesOperation.id]: {
+    operationName: "AccountTokenBalances",
+    // Rows duplicate per indexed protocol version for the same (chainId,
+    // projectId) — consumers dedupe to the highest version client-side
+    // (dedupeToHighestVersion).
+    query: `query AccountTokenBalances($account: String!, $limit: Int) {
+      participants(
+        where: { address: $account, balance_gt: "0" }
+        orderBy: "balance"
+        orderDirection: "desc"
+        limit: $limit
+      ) {
+        items {
+          chainId
+          projectId
+          version
+          balance
+        }
       }
     }`,
   },
@@ -554,7 +679,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         limit: $limit
         offset: $offset
       ) {
-        items { chainId projectId owner tierId tokenId tokenUri }
+        items { chainId projectId version owner tierId tokenId tokenUri }
         totalCount
       }
     }`,

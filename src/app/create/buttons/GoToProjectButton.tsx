@@ -5,6 +5,7 @@ import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { useState } from "react";
 import { useTransactionReceipt } from "wagmi";
+import { projectIdFromDeployLogs } from "../helpers/projectIdFromReceipt";
 
 export function GoToProjectButton({ txHash, chainId }: { txHash?: string; chainId: JBChainId }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -14,7 +15,7 @@ export function GoToProjectButton({ txHash, chainId }: { txHash?: string; chainI
     hash: txHash as `0x${string}`,
   });
 
-  const projectId = data?.logs[0]?.topics[1] ? Number(data.logs[0].topics[1]) : undefined;
+  const projectId = data ? projectIdFromDeployLogs(data.logs, chainId) : undefined;
   const chain = JB_CHAINS[chainId].slug;
   const projectUrl = `/${chain}:${projectId}`;
   return (

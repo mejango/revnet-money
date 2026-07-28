@@ -3,6 +3,8 @@ import type {
   AccountActivityEventsQueryVariables,
   AccountPermissionHoldersQuery,
   AccountPermissionHoldersQueryVariables,
+  AccountTokenBalancesQuery,
+  AccountTokenBalancesQueryVariables,
   ActivityEventsQuery,
   ActivityEventsQueryVariables,
   AllLoansQuery,
@@ -189,8 +191,16 @@ export const AccountActivityEventsOperation = operation<
   AccountActivityEventsQueryVariables
 >(
   "account-activity-events.v1",
-  variablesWith({ address: isString }, { limit: positiveLimit, after: isOptionalString }),
+  variablesWith({ address: isString }, { limit: positiveLimit }),
   hasRoot("activityEvents", "items"),
+);
+export const AccountTokenBalancesOperation = operation<
+  AccountTokenBalancesQuery,
+  AccountTokenBalancesQueryVariables
+>(
+  "account-token-balances.v1",
+  variablesWith({ account: isString }, { limit: positiveLimit }),
+  hasRoot("participants", "items"),
 );
 export const ProjectsByOwnerOperation = operation<
   ProjectsByOwnerQuery,
@@ -348,6 +358,7 @@ export const BENDYSTRAW_OPERATIONS = [
   ParticipantsOperation,
   ActivityEventsOperation,
   AccountActivityEventsOperation,
+  AccountTokenBalancesOperation,
   ProjectsByOwnerOperation,
   AccountPermissionHoldersOperation,
   HasPermissionOperation,
@@ -394,6 +405,7 @@ export const BROWSER_BENDYSTRAW_OPERATIONS = [
   ParticipantsOperation,
   ActivityEventsOperation,
   AccountActivityEventsOperation,
+  AccountTokenBalancesOperation,
   ProjectsByOwnerOperation,
   AccountPermissionHoldersOperation,
   HasPermissionOperation,

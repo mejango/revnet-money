@@ -124,6 +124,18 @@ export type SuckerGroupQuery = {
   } | null;
 };
 
+export type AccountTokenBalancesQueryVariables = {
+  account: string;
+  limit?: number;
+};
+export type AccountTokenBalanceRow = Pick<
+  Participant,
+  "chainId" | "projectId" | "version" | "balance"
+>;
+export type AccountTokenBalancesQuery = {
+  participants: { items: AccountTokenBalanceRow[] };
+};
+
 export type ParticipantsQueryVariables = {
   where?: BendystrawFilter;
   orderBy?: string;
@@ -172,6 +184,7 @@ type ActivityCashOut = {
   from: string;
   beneficiary: string;
   reclaimAmount: BigNumberish;
+  reclaimAmountUsd: BigNumberish;
   cashOutCount: BigNumberish;
   metadata: string;
   project: ActivityProject | null;
@@ -195,6 +208,7 @@ export type ActivityEventsQuery = {
       addToBalanceEvent: (ActivityBase & { amount: BigNumberish; memo: string | null }) | null;
       mintTokensEvent:
         | (ActivityBase & {
+            id: string;
             caller: string;
             beneficiary: string;
             beneficiaryTokenCount: BigNumberish;
@@ -203,12 +217,14 @@ export type ActivityEventsQuery = {
         | null;
       manualMintTokensEvent:
         | (ActivityBase & {
+            id: string;
             beneficiary: string;
             beneficiaryTokenCount: BigNumberish;
             memo: string | null;
           })
         | null;
-      autoIssueEvent: (ActivityBase & { beneficiary: string; count: BigNumberish }) | null;
+      autoIssueEvent:
+        (ActivityBase & { id: string; beneficiary: string; count: BigNumberish }) | null;
       deployErc20Event: (ActivityBase & { symbol: string }) | null;
       projectCreateEvent: ActivityBase | null;
       projectTransferEvent: (ActivityBase & { previousOwner: string; owner: string }) | null;
@@ -221,26 +237,46 @@ export type ActivityEventsQuery = {
   };
 };
 
+export type AccountActivityProject = Pick<
+  Project,
+  "projectId" | "handle" | "version" | "chainId"
+> & {
+  name: string | null;
+  tokenSymbol: string | null;
+  decimals: number | null;
+};
+
 export type AccountActivityEventItem = ActivityEventsQuery["activityEvents"]["items"][number] & {
   from: string;
-  project:
-    | (Pick<Project, "projectId" | "handle" | "version" | "chainId"> & {
-        name: string | null;
-        tokenSymbol: string | null;
-        decimals: number | null;
-      })
-    | null;
+  project: AccountActivityProject | null;
 };
+
+type BeneficiaryRow<TKey extends keyof AccountActivityEventItem> = Omit<
+  NonNullable<AccountActivityEventItem[TKey]>,
+  "project"
+> & {
+  chainId: number;
+  project: AccountActivityProject | null;
+};
+
 export type AccountActivityEventsQueryVariables = {
   address: string;
   limit?: number;
-  after?: string;
 };
 export type AccountActivityEventsQuery = {
   activityEvents: {
     items: AccountActivityEventItem[];
-    pageInfo: { hasNextPage: boolean; endCursor: string | null };
   };
+  /**
+   * Events where the account is only the beneficiary — the top-level
+   * activityEventFilter has no beneficiary field, so these come from the
+   * beneficiary-bearing sub-event roots and are merged client-side.
+   */
+  beneficiaryPayEvents?: { items: BeneficiaryRow<"payEvent">[] };
+  beneficiaryCashOutEvents?: { items: BeneficiaryRow<"cashOutTokensEvent">[] };
+  beneficiaryMintTokensEvents?: { items: BeneficiaryRow<"mintTokensEvent">[] };
+  beneficiaryManualMintTokensEvents?: { items: BeneficiaryRow<"manualMintTokensEvent">[] };
+  beneficiaryAutoIssueEvents?: { items: BeneficiaryRow<"autoIssueEvent">[] };
 };
 
 export type OwnedProjectRow = Pick<
@@ -533,6 +569,7 @@ export type OwnedNftsQuery = {
     items: Array<{
       chainId: number;
       projectId: number;
+      version: number;
       owner: string;
       tierId: number;
       tokenId: BigNumberish;

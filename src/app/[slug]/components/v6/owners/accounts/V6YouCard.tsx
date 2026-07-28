@@ -435,6 +435,7 @@ function YouChainRow({
     tokenAmount: balanceValue,
     decimals: config.decimals,
     currencyId: config.currency,
+    token: config.token,
   });
 
   // v6 borrowableAmountFrom returns a (borrowableNow, capacity) tuple; the hook

@@ -1,5 +1,6 @@
 import { REVNET_CASHOUT_FEE_PERCENT } from "@/app/constants";
-import { calcPrepaidFee, JBDAO_CASHOUT_FEE_PERCENT } from "@bananapus/nana-sdk-core";
+import { cashOutProtocolFee } from "@/lib/bridgePrepare";
+import { calcPrepaidFee } from "@bananapus/nana-sdk-core";
 
 export function generateFeeData({
   grossBorrowedEth,
@@ -76,6 +77,33 @@ export function applyRevFee(tokenAmount: bigint) {
   return (tokenAmount * BigInt((1 - REVNET_CASHOUT_FEE_PERCENT) * 1000)) / 1000n;
 }
 
+/**
+ * The flat 2.5% protocol fee with the contract's floor division:
+ * `amount - amount / 40`. Used where the ruleset's cash-out tax is unknown.
+ */
 export function applyNanaFee(reclaimableAmount: bigint) {
-  return (reclaimableAmount * BigInt((1 - JBDAO_CASHOUT_FEE_PERCENT) * 1000)) / 1000n;
+  return reclaimableAmount - reclaimableAmount / 40n;
+}
+
+/**
+ * Net cash-out value after the protocol fee, mirroring
+ * `JBMultiTerminal._cashOutTokensOf`: a nonzero cash-out tax makes the whole
+ * reclaim feeable; a zero tax charges the fee only up to `feeFreeSurplusOf`.
+ */
+export function netCashOutValue({
+  reclaimAmount,
+  cashOutTaxRate,
+  feeFreeSurplus,
+}: {
+  reclaimAmount: bigint;
+  cashOutTaxRate: bigint;
+  feeFreeSurplus: bigint;
+}) {
+  const fee = cashOutProtocolFee({
+    reclaimAmount,
+    cashOutTaxRate,
+    beneficiaryIsFeeless: false,
+    feeFreeSurplus,
+  });
+  return reclaimAmount - fee;
 }

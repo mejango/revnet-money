@@ -10,6 +10,7 @@ import { PayCard } from "./components/PayCard/PayCard";
 import { ResponsiveProjectLayout } from "./components/ResponsiveProjectLayout";
 import { ShopCartProvider } from "./components/v6/ShopCartContext";
 import { getProject } from "./getProject";
+import { getProjectWithFallback } from "./getProjectFallback";
 import { getProjectOperator } from "./getProjectOperator";
 import { getSuckerGroup } from "./getSuckerGroup";
 import { ProjectProviders } from "./ProjectProviders";
@@ -59,18 +60,45 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
   const { slug } = await params;
   const { chainId, projectId } = parseSlug(slug);
 
-  const project = await getProject(projectId, chainId);
-  if (!project || !project.token) notFound();
+  const resolved = await getProjectWithFallback(projectId, chainId);
+  if (!resolved) notFound();
+  const { project } = resolved;
 
   const operatorPromise = getProjectOperator(Number(projectId), chainId);
-  const suckerGroupPromise = getSuckerGroup(project.suckerGroupId, chainId);
+  const suckerGroupPromise = project.suckerGroupId
+    ? getSuckerGroup(project.suckerGroupId, chainId)
+    : Promise.resolve(null);
   const isRevnet = project.isRevnet !== false;
   const rulesetsPromise = isRevnet
     ? getRulesets(projectId.toString(), chainId)
     : Promise.resolve([]);
 
-  const [suckerGroup, rulesets] = await Promise.all([suckerGroupPromise, rulesetsPromise]);
-  if (!suckerGroup) notFound();
+  const [indexedSuckerGroup, rulesets] = await Promise.all([suckerGroupPromise, rulesetsPromise]);
+
+  // A missing sucker group means the indexer hasn't caught up (or is down),
+  // not that the project is gone: render a degraded page from what the chain
+  // provides instead of a false 404.
+  const degraded = resolved.degraded || !indexedSuckerGroup;
+  const suckerGroup = indexedSuckerGroup ?? {
+    id: project.suckerGroupId,
+    tokenSupply: "0",
+    projects: {
+      items: [
+        {
+          balance: "0",
+          chainId,
+          currency: project.currency,
+          decimals: project.decimals,
+          projectId: Number(projectId),
+          suckerGroupId: project.suckerGroupId,
+          token: project.token,
+          tokenSymbol: project.tokenSymbol,
+          tokenSupply: "0",
+          version: project.version,
+        },
+      ],
+    },
+  };
 
   const projects = suckerGroup.projects?.items ?? [];
   const startDate = rulesets[0]?.start;
@@ -82,6 +110,14 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
           <Nav />
         </div>
 
+        {degraded && (
+          <div className="w-full px-4 sm:container pt-4">
+            <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              This project was found onchain but hasn't finished indexing. Some stats may be missing
+              or out of date.
+            </p>
+          </div>
+        )}
         <div className="w-full px-4 sm:container pt-6">
           <Header isRevnet={isRevnet} operatorPromise={operatorPromise} projects={projects} />
         </div>

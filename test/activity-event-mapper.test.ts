@@ -1,5 +1,6 @@
 import {
   mapActivityEvents,
+  projectFeedTokenContext,
   type ActivityEventItem,
 } from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
 import { describe, expect, it } from "vitest";
@@ -83,6 +84,7 @@ describe("mapActivityEvents", () => {
       txHash: "0xaaa",
       ...EMPTY_EVENTS,
       mintTokensEvent: {
+        id: "mint-event-1",
         txHash: "0xaaa",
         timestamp: 1_700_000_001,
         from: "0x2222222222222222222222222222222222222222",
@@ -105,5 +107,90 @@ describe("mapActivityEvents", () => {
     }));
 
     expect(events.map((event) => event.id)).toEqual(["pay-1", "mint-2"]);
+  });
+});
+
+describe("projectFeedTokenContext", () => {
+  const payOnChain = (chainId: number, amountUsd: string) =>
+    payItem({
+      chainId,
+      payEvent: { ...payItem().payEvent!, amountUsd },
+    });
+
+  it("keeps token denomination when every chain shares one accounting token kind", () => {
+    const projects = [
+      { chainId: 1, tokenSymbol: "ETH", decimals: 18 },
+      { chainId: 8453, tokenSymbol: "ETH", decimals: 18 },
+    ];
+
+    const events = mapActivityEvents(
+      [payOnChain(1, "5250000000000000000")],
+      projectFeedTokenContext(projects),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0].baseTokenSymbol).toBe("ETH");
+    expect(events[0].baseAmount).not.toContain("$");
+  });
+
+  it("denominates flow amounts in indexed USD when chains disagree on the accounting token", () => {
+    const projects = [
+      { chainId: 1, tokenSymbol: "ETH", decimals: 18 },
+      { chainId: 8453, tokenSymbol: "USDC", decimals: 6 },
+    ];
+
+    // 18-decimal fixed-point USD: $5.25
+    const events = mapActivityEvents(
+      [payOnChain(1, "5250000000000000000")],
+      projectFeedTokenContext(projects),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0].baseAmount).toBe("$5.25");
+    expect(events[0].baseTokenSymbol).toBeUndefined();
+  });
+
+  it("falls back to the chain's token when the indexed USD amount is unavailable", () => {
+    const projects = [
+      { chainId: 1, tokenSymbol: "ETH", decimals: 18 },
+      { chainId: 8453, tokenSymbol: "USDC", decimals: 6 },
+    ];
+
+    const events = mapActivityEvents([payOnChain(1, "0")], projectFeedTokenContext(projects));
+
+    expect(events).toHaveLength(1);
+    expect(events[0].baseTokenSymbol).toBe("ETH");
+  });
+
+  it("uses reclaimAmountUsd for cash outs in USD mode", () => {
+    const projects = [
+      { chainId: 1, tokenSymbol: "ETH", decimals: 18 },
+      { chainId: 8453, tokenSymbol: "USDC", decimals: 6 },
+    ];
+    const cashOut: ActivityEventItem = {
+      id: "cashout-1",
+      chainId: 1,
+      timestamp: 1_700_000_002,
+      txHash: "0xccc",
+      ...EMPTY_EVENTS,
+      cashOutTokensEvent: {
+        id: "cashout-event-1",
+        timestamp: 1_700_000_002,
+        txHash: "0xccc",
+        from: "0x2222222222222222222222222222222222222222",
+        beneficiary: "0x1111111111111111111111111111111111111111",
+        reclaimAmount: "1000000000000000000",
+        reclaimAmountUsd: "250500000000000000000",
+        cashOutCount: "1000000000000000000",
+        metadata: "0x",
+        project: null,
+      },
+    };
+
+    const events = mapActivityEvents([cashOut], projectFeedTokenContext(projects));
+
+    expect(events).toHaveLength(1);
+    expect(events[0].baseAmount).toBe("$251");
+    expect(events[0].baseTokenSymbol).toBeUndefined();
   });
 });

@@ -5,7 +5,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "@/components/ui/use-toast";
 import { FormField } from "@/lib/forms";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
@@ -19,29 +18,17 @@ import {
   optimismSepolia,
   sepolia,
 } from "viem/chains";
-import { QuoteButton } from "../buttons/QuoteButton";
-import { formatFormErrors } from "../helpers/formatFormErrors";
-import { ChainAutoIssuance } from "./ChainAutoIssuance";
-import { ChainOperator } from "./ChainOperator";
-import { ChainSplits } from "./ChainSplits";
-import { Divider } from "./Divider";
+import { pruneDeselectedChain } from "../helpers/pruneDeselectedChain";
 import { useCreateForm } from "./useCreateForm";
 
 const TESTNETS: JBChainId[] = [sepolia.id, arbitrumSepolia.id, optimismSepolia.id, baseSepolia.id];
 
 const MAINNETS: JBChainId[] = [mainnet.id, optimism.id, base.id, arbitrum.id];
 
-export function ChainSelect({
-  disabled = false,
-  validBundle = false,
-}: {
-  disabled?: boolean;
-  validBundle?: boolean;
-}) {
+export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
   const [environment, setEnvironment] = useState("production");
 
-  const { revnetTokenSymbol, values, setFieldValue, submitForm, isSubmitting, isValid, errors } =
-    useCreateForm();
+  const { revnetTokenSymbol, values, setFieldValue } = useCreateForm();
 
   const handleChainSelect = (chainId: JBChainId, checked: boolean) => {
     setFieldValue(
@@ -49,12 +36,11 @@ export function ChainSelect({
       checked ? [...values.chainIds, chainId] : values.chainIds.filter((id) => id !== chainId),
     );
 
-    // If removed, delete also operator for that chain
+    // If removed, drop that chain's per-chain overrides so nothing is orphaned.
     if (!checked) {
-      setFieldValue(
-        "operator",
-        values.operator.filter((o) => Number(o.chainId) !== chainId),
-      );
+      const pruned = pruneDeselectedChain(values, chainId);
+      setFieldValue("operator", pruned.operator);
+      setFieldValue("stages", pruned.stages);
     }
   };
 
@@ -81,7 +67,7 @@ export function ChainSelect({
   return (
     <>
       <div className="md:col-span-1">
-        <h2 className="mb-4 text-lg font-bold md:mb-2">4. Deploy</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">1. Chains</h2>
         <p className="text-lg text-zinc-600">
           Pick which chains your revnet will accept money on and issue {revnetTokenSymbol} from.
         </p>
@@ -122,91 +108,29 @@ export function ChainSelect({
             </Select>
           </div>
           <div className="mt-4 flex flex-wrap gap-6">
-            {environment === "production" ? (
-              <>
-                {Object.values(JB_CHAINS)
-                  .filter(({ chain }) => MAINNETS.includes(chain.id as JBChainId))
-                  .map(({ chain, name }) => (
-                    <label key={chain.id} className="flex items-center gap-2">
-                      <FormField
-                        type="checkbox"
-                        name="chainIds"
-                        value={chain.id}
-                        disabled={disabled}
-                        className="disabled:opacity-50"
-                        checked={values.chainIds.includes(Number(chain.id) as JBChainId)}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          handleChainSelect(chain.id as JBChainId, e.target.checked);
-                        }}
-                      />
-                      {name}
-                    </label>
-                  ))}
-              </>
-            ) : (
-              <>
-                {Object.values(JB_CHAINS)
-                  .filter(({ chain }) => TESTNETS.includes(chain.id as JBChainId))
-                  .map(({ chain, name }) => (
-                    <label key={chain.id} className="flex items-center gap-2">
-                      <FormField
-                        type="checkbox"
-                        name="chainIds"
-                        value={chain.id}
-                        disabled={disabled}
-                        className="disabled:opacity-50"
-                        checked={values.chainIds.includes(Number(chain.id) as JBChainId)}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          handleChainSelect(chain.id as JBChainId, e.target.checked);
-                        }}
-                      />
-                      {name}
-                    </label>
-                  ))}
-              </>
-            )}
+            {Object.values(JB_CHAINS)
+              .filter(({ chain }) =>
+                (environment === "production" ? MAINNETS : TESTNETS).includes(
+                  chain.id as JBChainId,
+                ),
+              )
+              .map(({ chain, name }) => (
+                <label key={chain.id} className="flex items-center gap-2">
+                  <FormField
+                    type="checkbox"
+                    name="chainIds"
+                    value={chain.id}
+                    disabled={disabled}
+                    className="disabled:opacity-50"
+                    checked={values.chainIds.includes(Number(chain.id) as JBChainId)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      handleChainSelect(chain.id as JBChainId, e.target.checked);
+                    }}
+                  />
+                  {name}
+                </label>
+              ))}
           </div>
-        </div>
-        {/* Quote and Depoly */}
-        <div className="mt-10">
-          {((values.chainIds.length > 0 && !values.stages[0]?.initialOperator) ||
-            values.chainIds.length > 1) && (
-            <>
-              <ChainOperator disabled={validBundle} />
-              <Divider />
-            </>
-          )}
-          {values.chainIds.length > 1 && values.stages.some((stage) => stage.splits.length > 0) && (
-            <>
-              <ChainSplits disabled={validBundle} />
-              <Divider />
-            </>
-          )}
-          {values.chainIds.length > 1 &&
-            values.stages.some((stage) => stage.autoIssuance.length > 0) && (
-              <>
-                <ChainAutoIssuance disabled={validBundle} />
-                <Divider />
-              </>
-            )}
-          <QuoteButton
-            isLoading={isSubmitting}
-            validBundle={validBundle}
-            disabled={disabled}
-            onSubmit={() => {
-              submitForm();
-
-              if (!isValid) {
-                toast({
-                  variant: "destructive",
-                  title: "Please fix the errors and try again.",
-                  description: formatFormErrors(errors),
-                });
-                console.debug(errors);
-              }
-            }}
-          />
-          {/* <div className="text-sm text-red-500 mt-1.5">Coming soon!</div> */}
         </div>
       </div>
     </>

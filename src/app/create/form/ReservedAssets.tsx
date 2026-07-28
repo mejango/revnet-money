@@ -116,7 +116,7 @@ export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
   return (
     <>
       <div className="md:col-span-1">
-        <h2 className="mb-4 text-lg font-bold md:mb-2">2. Assets</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">3. Assets</h2>
         <p className="text-lg text-zinc-600">
           Pick which reserve asset will back the value of {revnetTokenSymbol}.
         </p>

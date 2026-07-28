@@ -8,8 +8,14 @@ import {
   USD_CURRENCY_ID,
 } from "@bananapus/nana-sdk-core";
 import { tokenCurrencyId } from "@bananapus/nana-sdk-core/v6";
-import { decodeFunctionData, encodeFunctionData, parseUnits } from "viem";
-import { sepolia } from "viem/chains";
+import {
+  decodeFunctionData,
+  encodeAbiParameters,
+  encodeFunctionData,
+  parseUnits,
+  type AbiParameter,
+} from "viem";
+import { baseSepolia, sepolia } from "viem/chains";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEPLOY_ALL_FIXTURE_COMMIT,
@@ -216,5 +222,143 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
 
     expect(splitWeights.reduce((sum, percent) => sum + percent, 0)).toBe(SPLITS_TOTAL_PERCENT);
     expect(() => encodeFunctionData(request)).not.toThrow();
+  });
+});
+
+// Per-chain values collected inline in the create form (split beneficiary
+// overrides and operator overrides keyed by chainId) must resolve to each
+// chain's own address in that chain's deployFor args, falling back to the
+// single default value on chains without an override.
+describe("wallet-action:create-revnet — per-chain inline values", () => {
+  const CHAIN_IDS = [sepolia.id, baseSepolia.id] as const;
+
+  function perChainForm() {
+    const form = validRevnetForm();
+    form.chainIds = [...CHAIN_IDS];
+    form.stages[0].splits = [
+      {
+        percentage: "25",
+        defaultBeneficiary: TEST_BENEFICIARY,
+        beneficiary: [
+          { chainId: sepolia.id, address: TEST_BENEFICIARY },
+          { chainId: baseSepolia.id, address: TEST_ACCOUNT },
+        ],
+      },
+      // Single-value split: no per-chain overrides.
+      { percentage: "25", defaultBeneficiary: TEST_BENEFICIARY },
+    ];
+    form.operator = [
+      { chainId: String(sepolia.id), address: TEST_ACCOUNT },
+      { chainId: String(baseSepolia.id), address: TEST_BENEFICIARY },
+    ];
+    return form;
+  }
+
+  function requestFor(form: ReturnType<typeof perChainForm>, chainId: (typeof CHAIN_IDS)[number]) {
+    return parseDeployData(form, {
+      metadataCid: "bafy-metadata",
+      chainId,
+      suckerDeployerConfig: EMPTY_SUCKER_CONFIG,
+      timestamp: TEST_TIMESTAMP,
+      salt: TEST_SALT,
+      creationFee: CREATION_FEE,
+    });
+  }
+
+  it("routes each chain's split beneficiary override and falls back to the default", () => {
+    const form = perChainForm();
+    const sepoliaSplits = requestFor(form, sepolia.id).args[1].stageConfigurations[0].splits;
+    const baseSepoliaSplits =
+      requestFor(form, baseSepolia.id).args[1].stageConfigurations[0].splits;
+
+    expect(sepoliaSplits.map((split) => split.beneficiary)).toEqual([
+      TEST_BENEFICIARY,
+      TEST_BENEFICIARY,
+    ]);
+    expect(baseSepoliaSplits.map((split) => split.beneficiary)).toEqual([
+      TEST_ACCOUNT,
+      TEST_BENEFICIARY,
+    ]);
+  });
+
+  it("routes the per-chain operator override and falls back to the stage operator", () => {
+    const form = perChainForm();
+    expect(requestFor(form, sepolia.id).args[1].operator).toBe(TEST_ACCOUNT);
+    expect(requestFor(form, baseSepolia.id).args[1].operator).toBe(TEST_BENEFICIARY);
+
+    // Without an override the chain inherits the single stage operator.
+    form.operator = form.operator.filter((entry) => Number(entry.chainId) !== baseSepolia.id);
+    expect(requestFor(form, baseSepolia.id).args[1].operator).toBe(TEST_ACCOUNT);
+  });
+
+  it("still validates the per-chain fixture against the create schema", async () => {
+    const { createSchema } = await import("@/app/create/helpers/createSchema");
+    expect(createSchema.safeParse(perChainForm()).success).toBe(true);
+  });
+});
+
+// REVDeployer folds ALL auto-issuance rows into `encodedConfiguration`, which
+// must be byte-identical on every chain for the sucker deploy to link, and it
+// mints only the rows whose chainId matches block.chainid. The client must
+// therefore send the FULL row list — user-chosen chainIds intact — to every
+// chain, never filtering rows or rewriting a row's chainId to the config chain.
+describe("wallet-action:create-revnet — multi-chain auto issuance", () => {
+  const CHAIN_IDS = [sepolia.id, baseSepolia.id] as const;
+
+  function multiChainRequest(chainId: (typeof CHAIN_IDS)[number]) {
+    const form = validRevnetForm();
+    form.chainIds = [...CHAIN_IDS];
+    form.stages[0].autoIssuance = [
+      { chainId: sepolia.id, amount: "25", beneficiary: TEST_BENEFICIARY },
+      { chainId: baseSepolia.id, amount: "40", beneficiary: TEST_ACCOUNT },
+    ];
+    return parseDeployData(form, {
+      metadataCid: "bafy-metadata",
+      chainId,
+      suckerDeployerConfig: EMPTY_SUCKER_CONFIG,
+      timestamp: TEST_TIMESTAMP,
+      salt: TEST_SALT,
+      creationFee: CREATION_FEE,
+    });
+  }
+
+  function encodeRevnetConfig(request: ReturnType<typeof multiChainRequest>) {
+    const deployFor = (
+      request.abi as readonly { type: string; name?: string; inputs?: readonly AbiParameter[] }[]
+    ).find((item) => item.type === "function" && item.name === "deployFor");
+    if (!deployFor?.inputs) throw new Error("deployFor ABI entry missing");
+    return encodeAbiParameters([deployFor.inputs[1]], [request.args[1]]);
+  }
+
+  it("carries every row with its user-chosen chainId in every chain's stage config", () => {
+    for (const chainId of CHAIN_IDS) {
+      const request = multiChainRequest(chainId);
+
+      expect(request.args[1].stageConfigurations[0].autoIssuances).toEqual([
+        {
+          chainId: String(sepolia.id),
+          count: parseUnits("25", 18),
+          beneficiary: TEST_BENEFICIARY,
+        },
+        {
+          chainId: String(baseSepolia.id),
+          count: parseUnits("40", 18),
+          beneficiary: TEST_ACCOUNT,
+        },
+      ]);
+    }
+  });
+
+  it("encodes a byte-identical REVConfig for every chain", () => {
+    const [sepoliaConfig, baseSepoliaConfig] = CHAIN_IDS.map((chainId) =>
+      encodeRevnetConfig(multiChainRequest(chainId)),
+    );
+
+    expect(sepoliaConfig).toBe(baseSepoliaConfig);
+    // Both rows' chainIds survive in the encoded bytes (uint32, hex-padded).
+    const sepoliaWord = sepolia.id.toString(16).padStart(64, "0");
+    const baseSepoliaWord = baseSepolia.id.toString(16).padStart(64, "0");
+    expect(sepoliaConfig).toContain(sepoliaWord);
+    expect(sepoliaConfig).toContain(baseSepoliaWord);
   });
 });

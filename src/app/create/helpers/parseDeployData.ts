@@ -3,7 +3,6 @@ import { USDC_ADDRESSES, USDC_DECIMALS } from "@/app/constants";
 import {
   CashOutTaxRate,
   ETH_CURRENCY_ID,
-  JB_CHAINS,
   JBChainId,
   NATIVE_TOKEN,
   NATIVE_TOKEN_DECIMALS,
@@ -56,15 +55,10 @@ export function parseDeployData(
   const formData: RevnetFormData = JSON.parse(JSON.stringify(_formData), (_, value) =>
     typeof value === "number" ? String(value) : value,
   );
-  console.log("======================================================================");
-  console.log(`\t\t\t\tChainId ${extra.chainId} (${JB_CHAINS[extra.chainId]?.name})`);
-  console.log("======================================================================");
   let prevStart = 0;
   const operator =
     formData?.operator.find((c) => Number(c.chainId) === Number(extra.chainId))?.address ||
     formData.stages[0].initialOperator;
-  console.log({ operator, extra });
-  console.log(`[ Operator ] ${operator}`);
 
   // Custom reserves use their token-keyed currency. Canonical ETH and USDC
   // contexts use the protocol's well-known ETH/USD currency IDs so either can
@@ -104,7 +98,6 @@ export function parseDeployData(
           : [nativeAccountingContext];
 
   const stageConfigurations = formData.stages.map((stage, idx) => {
-    console.log(`~~~~~~~~~~~~~~~~~~~~~~~~~~ Stage ${idx + 1} ~~~~~~~~~~~~~~~~~~~~~~~~~~`);
     const lengthSeconds = Math.floor(Number(stage.stageStart) * 86400);
     const bufferSeconds = 600;
     // Stage 0: use futureStartTimestamp if set, otherwise start in ~10 minutes
@@ -116,29 +109,16 @@ export function parseDeployData(
           : extra.timestamp + bufferSeconds
         : prevStart + lengthSeconds;
     prevStart = startsAtOrAfter;
-    console.log(
-      `[ startsAtOrAfter ] ${new Date(
-        startsAtOrAfter * 1000,
-      ).toLocaleString()} (${startsAtOrAfter})`,
-    );
-    const autoIssuances = stage.autoIssuance.map((autoIssuance, autoIssuanceIdx) => {
-      console.log(
-        `[ AUTOISSUANCE ${autoIssuanceIdx + 1} ]\n\t\t${
-          autoIssuance.beneficiary
-        } ${autoIssuance.amount} ${autoIssuance.chainId}`,
-      );
-      return {
-        chainId: autoIssuance.chainId,
-        count: autoIssuance.amount ? parseUnits(autoIssuance.amount, 18) : 0n,
-        beneficiary: autoIssuance.beneficiary as Address,
-      };
-    });
+    // Every chain receives the FULL auto-issuance row list with the user-chosen
+    // chainIds intact: REVDeployer folds all rows into `encodedConfiguration`
+    // (which must be byte-identical across chains) and mints only the rows
+    // whose chainId matches the chain it is deployed on.
+    const autoIssuances = stage.autoIssuance.map((autoIssuance) => ({
+      chainId: autoIssuance.chainId,
+      count: autoIssuance.amount ? parseUnits(autoIssuance.amount, 18) : 0n,
+      beneficiary: autoIssuance.beneficiary as Address,
+    }));
 
-    if (autoIssuances.length === 0) {
-      console.log("\t\tNo auto issuance for this stage");
-    }
-
-    console.log("----------------------------------------------------------------");
     const splitPercent =
       stage.splits.reduce((sum, split) => sum + (Number(split.percentage) || 0), 0) * 100;
     // Scale each split to its share of the split bucket, then correct per-row rounding
@@ -156,7 +136,6 @@ export function parseDeployData(
         beneficiary = split.defaultBeneficiary;
       }
       if (!beneficiary) throw new Error("Beneficiary not found");
-      console.log(`[ SPLIT ${splitIdx + 1} ]\n\t\t${beneficiary} ${split.percentage}%`);
       return {
         preferAddToBalance: false,
         lockedUntil: 0,
@@ -166,8 +145,6 @@ export function parseDeployData(
         hook: zeroAddress,
       };
     });
-    console.log({ SPLITS_TOTAL_PERCENT, splitPercent, splits });
-    console.log("----------------------------------------------------------------");
 
     return buildRevnetStageConfig({
       startsAtOrAfter,

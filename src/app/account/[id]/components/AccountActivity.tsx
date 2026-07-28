@@ -4,8 +4,10 @@ import { ActivityItemRow } from "@/app/[slug]/components/ActivityFeed/ActivityIt
 import { mapActivityEvents } from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
 import { ProfilesProvider } from "@/components/ProfilesContext";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { AccountActivityEventsOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { mergeAccountActivity } from "@/lib/bendystraw/accountActivity";
 import type { AccountActivityEventItem } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { slugFor } from "@/lib/slug";
@@ -74,7 +76,9 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
   );
 }
 
-export function AccountActivity({ address, isSelf }: { address: Address; isSelf: boolean }) {
+export function AccountActivity({ address }: { address: Address }) {
+  const { address: viewed } = useViewedAccount();
+  const isSelf = !!viewed && viewed.toLowerCase() === address.toLowerCase();
   const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
   const { data, isLoading } = useBendystrawQuery(
     AccountActivityEventsOperation,
@@ -82,9 +86,11 @@ export function AccountActivity({ address, isSelf }: { address: Address; isSelf:
     { chainId: mainnet.id, pollInterval: 15_000 },
   );
 
+  // From-branch rows merged with beneficiary-branch rows (payments to the
+  // account, mints, auto-issues), deduped and sorted newest first.
   const items = useMemo(
     () =>
-      (data?.activityEvents.items ?? []).filter(
+      (data ? mergeAccountActivity(data) : []).filter(
         (item): item is AccountActivityEventItem => !!JB_CHAINS[item.chainId as JBChainId],
       ),
     [data],

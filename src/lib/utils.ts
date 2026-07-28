@@ -158,7 +158,7 @@ export type RulesetMetadata = {
   allowAddPriceFeed: boolean; // bit 76
   ownerMustSendPayouts: boolean; // bit 77
   holdFees: boolean; // bit 78
-  useTotalSurplusForCashOuts: boolean; // bit 79
+  scopeCashOutsToLocalBalances: boolean; // bit 79 (true = cash outs use only the local chain's balance)
   useDataHookForPay: boolean; // bit 80
   useDataHookForCashOut: boolean; // bit 81
   dataHook: Address; // bits 82-241
@@ -189,7 +189,7 @@ export function decodeRulesetMetadata(packed: bigint): RulesetMetadata {
     allowAddPriceFeed: Boolean((packed >> 76n) & 1n),
     ownerMustSendPayouts: Boolean((packed >> 77n) & 1n),
     holdFees: Boolean((packed >> 78n) & 1n),
-    useTotalSurplusForCashOuts: Boolean((packed >> 79n) & 1n),
+    scopeCashOutsToLocalBalances: Boolean((packed >> 79n) & 1n),
     useDataHookForPay: Boolean((packed >> 80n) & 1n),
     useDataHookForCashOut: Boolean((packed >> 81n) & 1n),
 

@@ -107,6 +107,23 @@ export const createSchema = schema<RevnetFormData>((input) => {
   }
 
   if (selectedChainIds.length > 0) {
+    const chainIsSelected = (chainId: unknown) =>
+      selectedChainIds.some((selected) => Number(selected) === Number(chainId));
+
+    // Per-chain overrides referencing a chain the revnet is not deployed to
+    // would silently never apply, so reject them like the auto-issuance guard.
+    if (Array.isArray(input.operator)) {
+      input.operator.forEach((operator, index) => {
+        if (isRecord(operator) && !chainIsSelected(operator.chainId)) {
+          issue(
+            issues,
+            ["operator", index, "chainId"],
+            "Operator chain must be selected for deployment",
+          );
+        }
+      });
+    }
+
     if (input.reserveAsset === "CUSTOM") {
       if (
         !isRecord(input.customReserveAsset) ||
@@ -146,19 +163,32 @@ export const createSchema = schema<RevnetFormData>((input) => {
 
     if (Array.isArray(input.stages)) {
       input.stages.forEach((stage, stageIndex) => {
-        if (!isRecord(stage) || !Array.isArray(stage.autoIssuance)) return;
-        stage.autoIssuance.forEach((entry, entryIndex) => {
-          if (
-            isRecord(entry) &&
-            !selectedChainIds.some((chainId) => Number(chainId) === Number(entry.chainId))
-          ) {
-            issue(
-              issues,
-              ["stages", stageIndex, "autoIssuance", entryIndex, "chainId"],
-              "Auto issuance chain must be selected for deployment",
-            );
-          }
-        });
+        if (!isRecord(stage)) return;
+        if (Array.isArray(stage.autoIssuance)) {
+          stage.autoIssuance.forEach((entry, entryIndex) => {
+            if (isRecord(entry) && !chainIsSelected(entry.chainId)) {
+              issue(
+                issues,
+                ["stages", stageIndex, "autoIssuance", entryIndex, "chainId"],
+                "Auto issuance chain must be selected for deployment",
+              );
+            }
+          });
+        }
+        if (Array.isArray(stage.splits)) {
+          stage.splits.forEach((split, splitIndex) => {
+            if (!isRecord(split) || !Array.isArray(split.beneficiary)) return;
+            split.beneficiary.forEach((entry, entryIndex) => {
+              if (isRecord(entry) && !chainIsSelected(entry.chainId)) {
+                issue(
+                  issues,
+                  ["stages", stageIndex, "splits", splitIndex, "beneficiary", entryIndex, "chainId"],
+                  "Split beneficiary chain must be selected for deployment",
+                );
+              }
+            });
+          });
+        }
       });
     }
   }

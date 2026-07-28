@@ -38,7 +38,7 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
   return (
     <>
       <div className="md:col-span-1">
-        <h2 className="mb-4 text-lg font-bold md:mb-2">3. Terms</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">4. Terms</h2>
         <p className="text-zinc-600 text-lg">
           <span className="capitalize">{revnetTokenSymbol}</span> issuance and cash out terms evolve
           over time automatically in stages.
@@ -65,7 +65,12 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
                               arrayHelpers.replace(index, newStage);
                             }}
                           >
-                            <Button variant="ghost" size="sm" disabled={disabled}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={disabled}
+                              aria-label={`Edit stage ${index + 1}`}
+                            >
                               {disabled ? null : <PencilSquareIcon className="h-4 w-4" />}
                             </Button>
                           </AddStageDialog>

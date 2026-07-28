@@ -4,11 +4,13 @@ import {
   getResolvedIssuance,
 } from "@/app/create/helpers/calculatePickupIssuance";
 import { createSchema } from "@/app/create/helpers/createSchema";
+import { pruneDeselectedChain } from "@/app/create/helpers/pruneDeselectedChain";
 import { calculateFinalStageStarts } from "@/app/create/helpers/recalculateStageStarts";
 import { addressSchema, stageSchema } from "@/app/create/helpers/stageSchema";
 import type { StageData } from "@/app/create/types";
+import { baseSepolia, sepolia } from "viem/chains";
 import { describe, expect, it } from "vitest";
-import { validRevnetForm } from "./fixtures/revnet";
+import { TEST_ACCOUNT, TEST_BENEFICIARY, validRevnetForm } from "./fixtures/revnet";
 
 function stage(overrides: Partial<StageData> = {}): StageData {
   return {
@@ -67,6 +69,118 @@ describe("create form schema baseline", () => {
     expect(createSchema.safeParse(form).success).toBe(false);
     form.customReserveAsset.verifiedChainIds = [...form.chainIds];
     expect(createSchema.safeParse(form).success).toBe(true);
+  });
+
+  // REVDeployer only mints auto-issuance rows whose chainId matches the chain
+  // it runs on. A row pointing at a chain the revnet is not deployed to would
+  // silently never mint, so the schema must reject it before submission.
+  it("rejects auto issuance rows whose chain is not selected for deployment", () => {
+    const form = validRevnetForm();
+    form.stages[0].autoIssuance.push({
+      chainId: baseSepolia.id,
+      amount: "10",
+      beneficiary: TEST_BENEFICIARY,
+    });
+
+    const result = createSchema.safeParse(form);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.path.join("."))).toContain(
+        "stages.0.autoIssuance.1.chainId",
+      );
+    }
+
+    form.chainIds = [sepolia.id, baseSepolia.id];
+    expect(createSchema.safeParse(form).success).toBe(true);
+  });
+
+  it("requires every auto issuance row to name a chain", () => {
+    const form = validRevnetForm();
+    form.stages[0].autoIssuance[0] = {
+      amount: "25",
+      beneficiary: TEST_BENEFICIARY,
+    } as StageData["autoIssuance"][number];
+
+    const result = createSchema.safeParse(form);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.path.join("."))).toContain(
+        "stages.0.autoIssuance.0.chainId",
+      );
+    }
+  });
+
+  // parseDeployData falls back to the split's single default beneficiary for any
+  // chain without an override, so an override pointing at an unselected chain
+  // would silently never apply. Reject it, mirroring the auto-issuance guard.
+  it("rejects per-chain split beneficiaries whose chain is not selected for deployment", () => {
+    const form = validRevnetForm();
+    form.stages[0].splits[0].beneficiary = [
+      { chainId: sepolia.id, address: TEST_BENEFICIARY },
+      { chainId: baseSepolia.id, address: TEST_BENEFICIARY },
+    ];
+
+    const result = createSchema.safeParse(form);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.path.join("."))).toContain(
+        "stages.0.splits.0.beneficiary.1.chainId",
+      );
+    }
+
+    form.chainIds = [sepolia.id, baseSepolia.id];
+    expect(createSchema.safeParse(form).success).toBe(true);
+  });
+
+  it("rejects operator overrides whose chain is not selected for deployment", () => {
+    const form = validRevnetForm();
+    form.operator.push({ chainId: String(baseSepolia.id), address: TEST_ACCOUNT });
+
+    const result = createSchema.safeParse(form);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.path.join("."))).toContain(
+        "operator.1.chainId",
+      );
+    }
+
+    form.chainIds = [sepolia.id, baseSepolia.id];
+    expect(createSchema.safeParse(form).success).toBe(true);
+  });
+
+  // Deselecting a chain removes its per-chain values instead of leaving them
+  // orphaned; fields fall back to their single default value.
+  it("prunes a deselected chain's operator and split beneficiary overrides", () => {
+    const form = validRevnetForm();
+    form.chainIds = [sepolia.id, baseSepolia.id];
+    form.operator = [
+      { chainId: String(sepolia.id), address: TEST_ACCOUNT },
+      { chainId: String(baseSepolia.id), address: TEST_BENEFICIARY },
+    ];
+    form.stages[0].splits[0].beneficiary = [
+      { chainId: sepolia.id, address: TEST_BENEFICIARY },
+      { chainId: baseSepolia.id, address: TEST_ACCOUNT },
+    ];
+    form.stages[0].splits.push({
+      percentage: "10",
+      defaultBeneficiary: TEST_ACCOUNT,
+      beneficiary: [{ chainId: baseSepolia.id, address: TEST_ACCOUNT }],
+    });
+
+    const pruned = pruneDeselectedChain(form, baseSepolia.id);
+
+    expect(pruned.operator).toEqual([{ chainId: String(sepolia.id), address: TEST_ACCOUNT }]);
+    expect(pruned.stages[0].splits[0].beneficiary).toEqual([
+      { chainId: sepolia.id, address: TEST_BENEFICIARY },
+    ]);
+    // A fully pruned override list returns the split to single-value mode.
+    expect(pruned.stages[0].splits[1].beneficiary).toBeUndefined();
+    // Auto-issuance rows keep their chain assignment: the schema guard reports
+    // them so the user re-homes the row explicitly.
+    expect(pruned.stages[0].autoIssuance).toEqual(form.stages[0].autoIssuance);
+    // The input form is not mutated.
+    expect(form.operator).toHaveLength(2);
+    expect(form.stages[0].splits[0].beneficiary).toHaveLength(2);
   });
 
   it("requires all stage fields which feed contract encoding", () => {
