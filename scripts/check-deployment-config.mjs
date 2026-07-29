@@ -42,6 +42,14 @@ if (
 ) {
   throw new Error("The container must install the npm lockfile without lifecycle scripts");
 }
+if (
+  !dockerfile.includes("ARG RAILWAY_GIT_COMMIT_SHA") ||
+  !dockerfile.includes(
+    "NEXT_PUBLIC_VERSION=${NEXT_PUBLIC_VERSION:-${RAILWAY_GIT_COMMIT_SHA}}",
+  )
+) {
+  throw new Error("Railway builds must derive NEXT_PUBLIC_VERSION from the deployed commit");
+}
 if (packageManifest.scripts?.["audit:production"] !== "npm audit --omit=dev --audit-level=high") {
   throw new Error("The production dependency audit must fail on high or critical advisories");
 }

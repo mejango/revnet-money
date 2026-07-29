@@ -18,11 +18,12 @@ promotion identical across the webclients:
 Connect the staging service to `staging` and the production service to `main`,
 enable automatic deploys only after CI succeeds, and disable overlap so an
 older build cannot replace a newer commit. Set `NEXT_PUBLIC_SITE_URL` to the
-matching origin and `NEXT_PUBLIC_VERSION=${{RAILWAY_GIT_COMMIT_SHA}}` in each
-environment. All other public variables are environment-scoped build values;
-provider credentials and ingress tokens are environment-scoped runtime
-secrets. Promote by merging `staging` into `main`, never by pointing production at
-`staging`.
+matching origin. Do not configure `NEXT_PUBLIC_VERSION` in Railway: the
+Dockerfile consumes Railway's automatically injected `RAILWAY_GIT_COMMIT_SHA`
+and exposes it to the application as `NEXT_PUBLIC_VERSION`. All other public
+variables are environment-scoped build values; provider credentials and
+ingress tokens are environment-scoped runtime secrets. Promote by merging
+`staging` into `main`, never by pointing production at `staging`.
 
 ## Configuration model
 
@@ -43,7 +44,8 @@ Build-time values are compiled into JavaScript and are public:
   to derive the Ethereum, Optimism, Base, Arbitrum, and Sepolia RPC endpoints.
   Apply strict daily/monthly quotas; IP allowlisting is incompatible with
   browser-originated requests.
-- `NEXT_PUBLIC_VERSION`: immutable Git commit SHA reported by `/api/healthz`.
+- `NEXT_PUBLIC_VERSION`: optional non-Railway build override for the immutable
+  Git commit SHA reported by `/api/healthz`; Railway derives it automatically.
 
 Runtime-only values must never be Docker build arguments:
 

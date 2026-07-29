@@ -20,6 +20,7 @@ ARG NEXT_PUBLIC_PARA_API_KEY
 ARG NEXT_PUBLIC_PARA_ENV
 ARG NEXT_PUBLIC_DWELLIR_API_KEY
 ARG NEXT_PUBLIC_VERSION
+ARG RAILWAY_GIT_COMMIT_SHA
 
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NEXT_PUBLIC_BENDYSTRAW_URL=$NEXT_PUBLIC_BENDYSTRAW_URL \
@@ -27,7 +28,7 @@ ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NEXT_PUBLIC_PARA_API_KEY=$NEXT_PUBLIC_PARA_API_KEY \
     NEXT_PUBLIC_PARA_ENV=$NEXT_PUBLIC_PARA_ENV \
     NEXT_PUBLIC_DWELLIR_API_KEY=$NEXT_PUBLIC_DWELLIR_API_KEY \
-    NEXT_PUBLIC_VERSION=$NEXT_PUBLIC_VERSION
+    NEXT_PUBLIC_VERSION=${NEXT_PUBLIC_VERSION:-${RAILWAY_GIT_COMMIT_SHA}}
 
 RUN npm run build
 
@@ -37,7 +38,8 @@ ENV NODE_ENV=production \
     PORT=3000
 
 ARG NEXT_PUBLIC_VERSION
-ENV NEXT_PUBLIC_VERSION=$NEXT_PUBLIC_VERSION
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV NEXT_PUBLIC_VERSION=${NEXT_PUBLIC_VERSION:-${RAILWAY_GIT_COMMIT_SHA}}
 
 RUN groupadd --system --gid 1001 nodejs \
     && useradd --system --uid 1001 --gid nodejs --home-dir /app nextjs
@@ -53,4 +55,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/healthz').then(r=>{if(!r.ok)throw new Error(String(r.status))}).catch(()=>process.exit(1))"]
 
-CMD ["sh", "-c", "node scripts/validate-env.mjs runtime && exec node server.js"]
+CMD ["sh", "-c", "export NEXT_PUBLIC_VERSION=\"${NEXT_PUBLIC_VERSION:-$RAILWAY_GIT_COMMIT_SHA}\" && node scripts/validate-env.mjs runtime && exec node server.js"]
