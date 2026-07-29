@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, staging]
 
 permissions:
   contents: read
@@ -18,17 +18,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
-      INFURA_IPFS_API_SECRET: ci-runtime-secret
-      INFURA_IPFS_PROJECT_ID: ci-runtime-project
-      ENABLE_PUBLIC_IPFS_PINNING: "false"
+      FILEBASE_IPFS_RPC_TOKEN: ci-filebase-token
+      PINATA_JWT: ci-pinata-jwt
+      IPFS_PINNING_ENABLED: "false"
+      IPFS_PINNING_EDGE_PROTECTED: "false"
       NODE_OPTIONS: --no-experimental-webstorage
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:4173
       NEXT_PUBLIC_BENDYSTRAW_URL: http://127.0.0.1:4174
       NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: http://127.0.0.1:4174
-      NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: 127.0.0.1
       NEXT_PUBLIC_PARA_API_KEY: deterministic-browser-key
       NEXT_PUBLIC_PARA_ENV: BETA
       NEXT_PUBLIC_DWELLIR_API_KEY: deterministic-dwellir-key
+      NEXT_PUBLIC_VERSION: ${{ github.sha }}
       NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
       NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
       NEXT_PUBLIC_BASE_SUBGRAPH_URL: http://127.0.0.1:4174/graphql
@@ -141,10 +142,10 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_BENDYSTRAW_URL: http://127.0.0.1:9
       NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: http://127.0.0.1:9
-      NEXT_PUBLIC_INFURA_IPFS_HOSTNAME: 127.0.0.1
       NEXT_PUBLIC_PARA_API_KEY: deterministic-browser-key
       NEXT_PUBLIC_PARA_ENV: BETA
       NEXT_PUBLIC_DWELLIR_API_KEY: deterministic-dwellir-key
+      NEXT_PUBLIC_VERSION: ${{ github.sha }}
       NEXT_PUBLIC_MAINNET_SUBGRAPH_URL: http://127.0.0.1:9
       NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL: http://127.0.0.1:9
       NEXT_PUBLIC_BASE_SUBGRAPH_URL: http://127.0.0.1:9
@@ -175,10 +176,10 @@ jobs:
             --build-arg NEXT_PUBLIC_SITE_URL \
             --build-arg NEXT_PUBLIC_BENDYSTRAW_URL \
             --build-arg NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL \
-            --build-arg NEXT_PUBLIC_INFURA_IPFS_HOSTNAME \
             --build-arg NEXT_PUBLIC_PARA_API_KEY \
             --build-arg NEXT_PUBLIC_PARA_ENV \
             --build-arg NEXT_PUBLIC_DWELLIR_API_KEY \
+            --build-arg NEXT_PUBLIC_VERSION \
             --build-arg NEXT_PUBLIC_MAINNET_SUBGRAPH_URL \
             --build-arg NEXT_PUBLIC_OPTIMISM_SUBGRAPH_URL \
             --build-arg NEXT_PUBLIC_BASE_SUBGRAPH_URL \
@@ -204,10 +205,10 @@ jobs:
             --tmpfs /app/.next/cache:uid=1001,gid=1001 \
             --cap-drop ALL \
             --security-opt no-new-privileges \
-            --env INFURA_IPFS_PROJECT_ID=ci-runtime-project \
-            --env INFURA_IPFS_API_SECRET=ci-runtime-secret \
-            --env ENABLE_PUBLIC_IPFS_PINNING=false \
-            --env APP_REVISION=${{ github.sha }} \
+            --env FILEBASE_IPFS_RPC_TOKEN=ci-filebase-token \
+            --env PINATA_JWT=ci-pinata-jwt \
+            --env IPFS_PINNING_ENABLED=false \
+            --env IPFS_PINNING_EDGE_PROTECTED=false \
             --publish 127.0.0.1:3000:3000 \
             revnet-money:ci
 

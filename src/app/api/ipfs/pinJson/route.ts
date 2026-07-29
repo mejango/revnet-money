@@ -3,11 +3,12 @@ import { readBoundedBody } from "@/lib/server/readBoundedBody";
 import { NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 
-export type InfuraPinResponse = {
+export type IpfsPinResponse = {
   Hash: string;
 };
 
-const INFURA_IPFS_API_BASE_URL = "https://ipfs.infura.io:5001";
+const FILEBASE_IPFS_API_BASE_URL = "https://rpc.filebase.io";
+const PINATA_PIN_BY_CID_URL = "https://api.pinata.cloud/v3/files/public/pin_by_cid";
 const MAX_METADATA_BYTES = 128 * 1024;
 const PINNING_TIMEOUT_MS = 15_000;
 
@@ -28,36 +29,66 @@ function hasValidIngressToken(req: NextRequest) {
 }
 
 /**
- * https://docs.infura.io/infura/networks/ipfs/http-api-methods/pin
+ * Filebase creates and retains the canonical DAG-PB CID. Pinata then pins the
+ * exact same CID so every returned metadata URI has redundant persistence.
  */
-async function pinFile(file: string | Blob): Promise<InfuraPinResponse> {
-  const projectId = process.env.INFURA_IPFS_PROJECT_ID;
-  const apiSecret = process.env.INFURA_IPFS_API_SECRET;
-  if (!projectId || !apiSecret) throw new Error("IPFS pinning is not configured");
+async function pinFile(file: string | Blob): Promise<IpfsPinResponse> {
+  const filebaseToken = process.env.FILEBASE_IPFS_RPC_TOKEN;
+  const pinataJwt = process.env.PINATA_JWT;
+  if (!filebaseToken || !pinataJwt) throw new Error("IPFS pinning is not configured");
 
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append(
+    "file",
+    typeof file === "string" ? new Blob([file], { type: "application/json" }) : file,
+    "metadata.json",
+  );
 
-  const res = await fetch(`${INFURA_IPFS_API_BASE_URL}/api/v0/add`, {
+  const filebaseResponse = await fetch(
+    `${FILEBASE_IPFS_API_BASE_URL}/api/v0/add?pin=true&cid-version=0`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${filebaseToken}` },
+      body: formData,
+      signal: AbortSignal.timeout(PINNING_TIMEOUT_MS),
+    },
+  );
+  if (!filebaseResponse.ok) {
+    throw new Error(`Filebase IPFS provider returned ${filebaseResponse.status}`);
+  }
+
+  const filebasePayload = (await filebaseResponse.json()) as { Hash?: unknown };
+  if (typeof filebasePayload.Hash !== "string" || !isIpfsCid(filebasePayload.Hash)) {
+    throw new Error("Filebase IPFS provider response contains an invalid CID");
+  }
+
+  const cid = filebasePayload.Hash;
+  const pinataResponse = await fetch(PINATA_PIN_BY_CID_URL, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${Buffer.from(`${projectId}:${apiSecret}`).toString("base64")}`,
-      origin: configuredOrigin(),
+      Authorization: `Bearer ${pinataJwt}`,
+      "Content-Type": "application/json",
     },
-    body: formData,
+    body: JSON.stringify({ cid, name: "revnet-project-metadata.json" }),
     signal: AbortSignal.timeout(PINNING_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`IPFS provider returned ${res.status}`);
+  if (!pinataResponse.ok) {
+    throw new Error(`Pinata replication returned ${pinataResponse.status}`);
+  }
+  const pinataPayload = (await pinataResponse.json()) as { data?: { cid?: unknown } };
+  if (pinataPayload.data?.cid !== cid) {
+    throw new Error("Pinata replication returned a mismatched CID");
+  }
 
-  const payload = (await res.json()) as Partial<InfuraPinResponse>;
-  if (!isIpfsCid(payload.Hash)) throw new Error("IPFS provider response contains an invalid CID");
-
-  return { Hash: payload.Hash };
+  return { Hash: cid };
 }
 
 export async function POST(req: NextRequest) {
   try {
-    if (process.env.ENABLE_PUBLIC_IPFS_PINNING !== "true") {
+    if (
+      process.env.IPFS_PINNING_ENABLED !== "true" ||
+      process.env.IPFS_PINNING_EDGE_PROTECTED !== "true"
+    ) {
       return Response.json({ error: "IPFS pinning is disabled" }, { status: 503 });
     }
     if (!hasValidIngressToken(req)) {

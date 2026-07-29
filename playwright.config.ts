@@ -7,11 +7,12 @@ const fixturePort = browserProject.fixturePort;
 const fixtureOrigin = `http://127.0.0.1:${fixturePort}`;
 
 const deterministicEnvironment = {
-  APP_REVISION: "browser-test",
-  ENABLE_PUBLIC_IPFS_PINNING: "false",
+  NEXT_PUBLIC_VERSION: "browser-test",
+  IPFS_PINNING_ENABLED: "false",
+  IPFS_PINNING_EDGE_PROTECTED: "false",
   HOSTNAME: "127.0.0.1",
-  INFURA_IPFS_API_SECRET: "ci-runtime-secret",
-  INFURA_IPFS_PROJECT_ID: "ci-runtime-project",
+  FILEBASE_IPFS_RPC_TOKEN: "ci-filebase-token",
+  PINATA_JWT: "ci-pinata-jwt",
   NEXT_PUBLIC_SITE_URL: appOrigin,
   NEXT_PUBLIC_BENDYSTRAW_URL: fixtureOrigin,
   NEXT_PUBLIC_DETERMINISTIC_BROWSER: "true",

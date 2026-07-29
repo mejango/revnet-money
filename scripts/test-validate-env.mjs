@@ -12,6 +12,8 @@ const baseEnvironment = {
   NEXT_PUBLIC_DWELLIR_API_KEY: "dwellir-browser-key",
   NEXT_PUBLIC_PARA_API_KEY: "public-para-key",
   NEXT_PUBLIC_PARA_ENV: "PROD",
+  NEXT_PUBLIC_VERSION: "development",
+  IPFS_PINNING_EDGE_PROTECTED: "false",
 };
 
 function run(phase, overrides = {}) {
@@ -77,18 +79,19 @@ expectStatus(
 expectStatus(
   "disabled public pinning",
   run("runtime", {
-    ENABLE_PUBLIC_IPFS_PINNING: "false",
-    INFURA_IPFS_PROJECT_ID: "",
-    INFURA_IPFS_API_SECRET: "",
+    IPFS_PINNING_ENABLED: "false",
+    FILEBASE_IPFS_RPC_TOKEN: "",
+    PINATA_JWT: "",
   }),
   0,
 );
 expectStatus(
   "enabled public pinning with runtime secrets",
   run("runtime", {
-    ENABLE_PUBLIC_IPFS_PINNING: "true",
-    INFURA_IPFS_PROJECT_ID: "runtime-project",
-    INFURA_IPFS_API_SECRET: "runtime-secret",
+    IPFS_PINNING_ENABLED: "true",
+    IPFS_PINNING_EDGE_PROTECTED: "true",
+    FILEBASE_IPFS_RPC_TOKEN: "runtime-filebase-token",
+    PINATA_JWT: "runtime-pinata-jwt",
     IPFS_PINNING_INGRESS_TOKEN: "a-secure-ingress-token-at-least-32-characters",
   }),
   0,
@@ -96,9 +99,10 @@ expectStatus(
 expectStatus(
   "missing runtime secret",
   run("runtime", {
-    ENABLE_PUBLIC_IPFS_PINNING: "true",
-    INFURA_IPFS_PROJECT_ID: "runtime-project",
-    INFURA_IPFS_API_SECRET: "",
+    IPFS_PINNING_ENABLED: "true",
+    IPFS_PINNING_EDGE_PROTECTED: "true",
+    FILEBASE_IPFS_RPC_TOKEN: "runtime-filebase-token",
+    PINATA_JWT: "",
     IPFS_PINNING_INGRESS_TOKEN: "a-secure-ingress-token-at-least-32-characters",
   }),
   1,
@@ -106,13 +110,14 @@ expectStatus(
 expectStatus(
   "short ingress token",
   run("runtime", {
-    ENABLE_PUBLIC_IPFS_PINNING: "true",
-    INFURA_IPFS_PROJECT_ID: "runtime-project",
-    INFURA_IPFS_API_SECRET: "runtime-secret",
+    IPFS_PINNING_ENABLED: "true",
+    IPFS_PINNING_EDGE_PROTECTED: "true",
+    FILEBASE_IPFS_RPC_TOKEN: "runtime-filebase-token",
+    PINATA_JWT: "runtime-pinata-jwt",
     IPFS_PINNING_INGRESS_TOKEN: "too-short",
   }),
   1,
 );
-expectStatus("invalid pinning switch", run("runtime", { ENABLE_PUBLIC_IPFS_PINNING: "yes" }), 1);
+expectStatus("invalid pinning switch", run("runtime", { IPFS_PINNING_ENABLED: "yes" }), 1);
 
 console.log("Environment validation fixtures passed (HTTPS, Dwellir, Para, and runtime secrets). ");

@@ -170,11 +170,14 @@ for (const file of workflowFiles) {
 
 for (const name of [
   "NEXT_PUBLIC_SITE_URL",
+  "NEXT_PUBLIC_VERSION",
   "NEXT_PUBLIC_DWELLIR_API_KEY",
   "NEXT_PUBLIC_PARA_API_KEY",
   "NEXT_PUBLIC_PARA_ENV",
-  "ENABLE_PUBLIC_IPFS_PINNING",
-  "INFURA_IPFS_API_SECRET",
+  "IPFS_PINNING_ENABLED",
+  "IPFS_PINNING_EDGE_PROTECTED",
+  "FILEBASE_IPFS_RPC_TOKEN",
+  "PINATA_JWT",
   "IPFS_PINNING_INGRESS_TOKEN",
 ]) {
   if (!exampleEnvironment.includes(`${name}=`)) {

@@ -14,7 +14,7 @@ import { ProjectOperation } from "@/lib/bendystraw/operations";
 
 const SITE = "https://app.revnet.example";
 const INGRESS_TOKEN = "ingress-token-with-at-least-32-characters";
-const CID = "bafkreihz5xk2crdko5mllpxbfa443m2o6pmzcmbg5b3uvif6ho4x45z674";
+const CID = "QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR";
 
 function jsonRequest(url: string, body: string, headers: Record<string, string> = {}) {
   return new NextRequest(url, {
@@ -28,9 +28,10 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SITE_URL = SITE;
   process.env.NEXT_PUBLIC_BENDYSTRAW_URL = "https://bendystraw.example/base/path";
   process.env.NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL = "https://testnet.bendystraw.example";
-  process.env.ENABLE_PUBLIC_IPFS_PINNING = "false";
-  process.env.INFURA_IPFS_PROJECT_ID = "project";
-  process.env.INFURA_IPFS_API_SECRET = "secret";
+  process.env.IPFS_PINNING_ENABLED = "false";
+  process.env.IPFS_PINNING_EDGE_PROTECTED = "true";
+  process.env.FILEBASE_IPFS_RPC_TOKEN = "filebase-token";
+  process.env.PINATA_JWT = "pinata-jwt";
   process.env.IPFS_PINNING_INGRESS_TOKEN = INGRESS_TOKEN;
   mocks.queryBendystraw.mockReset();
 });
@@ -39,9 +40,10 @@ afterEach(() => {
   delete process.env.NEXT_PUBLIC_SITE_URL;
   delete process.env.NEXT_PUBLIC_BENDYSTRAW_URL;
   delete process.env.NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL;
-  delete process.env.ENABLE_PUBLIC_IPFS_PINNING;
-  delete process.env.INFURA_IPFS_PROJECT_ID;
-  delete process.env.INFURA_IPFS_API_SECRET;
+  delete process.env.IPFS_PINNING_ENABLED;
+  delete process.env.IPFS_PINNING_EDGE_PROTECTED;
+  delete process.env.FILEBASE_IPFS_RPC_TOKEN;
+  delete process.env.PINATA_JWT;
   delete process.env.IPFS_PINNING_INGRESS_TOKEN;
 });
 
@@ -50,7 +52,7 @@ describe("IPFS pinning boundary", () => {
     const disabled = await pinJson(jsonRequest(`${SITE}/api/ipfs/pinJson`, "{}"));
     expect(disabled.status).toBe(503);
 
-    process.env.ENABLE_PUBLIC_IPFS_PINNING = "true";
+    process.env.IPFS_PINNING_ENABLED = "true";
     const unauthorized = await pinJson(
       jsonRequest(`${SITE}/api/ipfs/pinJson`, "{}", { origin: SITE }),
     );
@@ -59,7 +61,7 @@ describe("IPFS pinning boundary", () => {
   });
 
   it("checks the exact origin, JSON syntax, and declared body limit before provider access", async () => {
-    process.env.ENABLE_PUBLIC_IPFS_PINNING = "true";
+    process.env.IPFS_PINNING_ENABLED = "true";
     const ingress = { "x-revnet-pinning-ingress-token": INGRESS_TOKEN };
 
     expect(
@@ -97,7 +99,7 @@ describe("IPFS pinning boundary", () => {
   });
 
   it("cancels an undeclared oversized pinning request before buffering the remaining stream", async () => {
-    process.env.ENABLE_PUBLIC_IPFS_PINNING = "true";
+    process.env.IPFS_PINNING_ENABLED = "true";
     const chunk = new TextEncoder().encode("x".repeat(64 * 1024));
     const totalChunks = 10;
     let pulls = 0;
@@ -133,12 +135,18 @@ describe("IPFS pinning boundary", () => {
   });
 
   it("pins through the fixed provider with scoped credentials and validates the CID response", async () => {
-    process.env.ENABLE_PUBLIC_IPFS_PINNING = "true";
+    process.env.IPFS_PINNING_ENABLED = "true";
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
         Response.json(
           { Hash: CID },
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          { data: { cid: CID, status: "prechecking" } },
           { status: 200, headers: { "content-type": "application/json" } },
         ),
       )
@@ -155,13 +163,22 @@ describe("IPFS pinning boundary", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ Hash: CID });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://ipfs.infura.io:5001/api/v0/add",
+      "https://rpc.filebase.io/api/v0/add?pin=true&cid-version=0",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
-          Authorization: `Basic ${Buffer.from("project:secret").toString("base64")}`,
-          origin: SITE,
+          Authorization: "Bearer filebase-token",
         }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.pinata.cloud/v3/files/public/pin_by_cid",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer pinata-jwt",
+        }),
+        body: JSON.stringify({ cid: CID, name: "revnet-project-metadata.json" }),
       }),
     );
 

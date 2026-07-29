@@ -4,7 +4,7 @@ import { isIpfsCid } from "@/lib/ipfs-cid";
 import { useMutation } from "@tanstack/react-query";
 import { twMerge } from "tailwind-merge";
 
-export type InfuraPinResponse = {
+export type IpfsPinResponse = {
   Hash: string;
 };
 
@@ -23,7 +23,7 @@ export const pinFile = async (file: File | Blob | string, options?: { signal?: A
     throw new Error(`HTTP error! status: ${res.status}`);
   }
 
-  const data = (await res.json()) as Partial<InfuraPinResponse>;
+  const data = (await res.json()) as Partial<IpfsPinResponse>;
   if (!isIpfsCid(data.Hash)) throw new Error("IPFS provider returned an invalid CID");
   return { Hash: data.Hash };
 };

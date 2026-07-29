@@ -5,9 +5,13 @@ const BUILD_VALUES = {
   NEXT_PUBLIC_PARA_API_KEY: "para-key",
   NEXT_PUBLIC_PARA_ENV: "para-env",
   NEXT_PUBLIC_DWELLIR_API_KEY: "public-key",
+  NEXT_PUBLIC_VERSION: "revision",
 };
 
-const RUNTIME_VALUES = { ENABLE_PUBLIC_IPFS_PINNING: "boolean" };
+const RUNTIME_VALUES = {
+  IPFS_PINNING_ENABLED: "boolean",
+  IPFS_PINNING_EDGE_PROTECTED: "boolean",
+};
 const PRODUCTION_SITE_ORIGIN = "https://revnet.money";
 
 function validUrl(value) {
@@ -34,8 +38,14 @@ function validate(name, kind) {
   if (kind === "para-key" && value.length < 8) {
     return `${name} must be at least 8 characters`;
   }
+  if (kind === "provider-credential" && value.length < 8) {
+    return `${name} must be at least 8 characters`;
+  }
   if (kind === "public-key" && !/^[A-Za-z\d_-]{8,128}$/u.test(value)) {
     return `${name} must be an 8-128 character URL-safe API key`;
+  }
+  if (kind === "revision" && value.length < 7) {
+    return `${name} must be at least 7 characters`;
   }
   if (kind === "para-env" && !["DEV", "SANDBOX", "BETA", "PROD"].includes(value)) {
     return `${name} must be DEV, SANDBOX, BETA, or PROD`;
@@ -54,14 +64,21 @@ if (phase !== "build" && phase !== "runtime") {
 
 const specification = phase === "build" ? BUILD_VALUES : RUNTIME_VALUES;
 const entries = Object.entries(specification);
-if (phase === "runtime" && process.env.ENABLE_PUBLIC_IPFS_PINNING === "true") {
+if (phase === "runtime" && process.env.IPFS_PINNING_ENABLED === "true") {
   entries.push(
-    ["INFURA_IPFS_PROJECT_ID", "text"],
-    ["INFURA_IPFS_API_SECRET", "text"],
+    ["FILEBASE_IPFS_RPC_TOKEN", "provider-credential"],
+    ["PINATA_JWT", "provider-credential"],
     ["IPFS_PINNING_INGRESS_TOKEN", "secret"],
   );
 }
 const errors = entries.map(([name, kind]) => validate(name, kind)).filter(Boolean);
+if (
+  phase === "runtime" &&
+  process.env.IPFS_PINNING_ENABLED === "true" &&
+  process.env.IPFS_PINNING_EDGE_PROTECTED !== "true"
+) {
+  errors.push("enabled IPFS pinning requires edge quota protection");
+}
 if (phase === "build" && process.env.NEXT_PUBLIC_DETERMINISTIC_BROWSER === "true") {
   errors.push("NEXT_PUBLIC_DETERMINISTIC_BROWSER cannot be enabled in a deployment build");
 }

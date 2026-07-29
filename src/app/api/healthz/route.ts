@@ -6,7 +6,7 @@ export function GET() {
   return NextResponse.json(
     {
       status: "ok",
-      revision: process.env.APP_REVISION ?? "unknown",
+      revision: process.env.NEXT_PUBLIC_VERSION ?? "unknown",
     },
     {
       headers: {

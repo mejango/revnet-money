@@ -5,6 +5,25 @@ immutable commit tag (`sha-<40-character commit>`) and, for version tags, the
 version tag to GHCR. There is intentionally no `latest` tag. Deploy and roll
 back by digest.
 
+## Railway branch environments
+
+Use the repository `railway.json` for both Railway services and keep branch
+promotion identical across the webclients:
+
+| Git branch | Railway environment | Public origin |
+| --- | --- | --- |
+| `staging` | staging | `https://staging.revnet.money` |
+| `main` | production | `https://revnet.money` |
+
+Connect the staging service to `staging` and the production service to `main`,
+enable automatic deploys only after CI succeeds, and disable overlap so an
+older build cannot replace a newer commit. Set `NEXT_PUBLIC_SITE_URL` to the
+matching origin and `NEXT_PUBLIC_VERSION=${{RAILWAY_GIT_COMMIT_SHA}}` in each
+environment. All other public variables are environment-scoped build values;
+provider credentials and ingress tokens are environment-scoped runtime
+secrets. Promote by merging `staging` into `main`, never by pointing production at
+`staging`.
+
 ## Configuration model
 
 Copy `.env.example` when developing locally. `npm run env:check:build` and
@@ -24,15 +43,16 @@ Build-time values are compiled into JavaScript and are public:
   to derive the Ethereum, Optimism, Base, Arbitrum, and Sepolia RPC endpoints.
   Apply strict daily/monthly quotas; IP allowlisting is incompatible with
   browser-originated requests.
+- `NEXT_PUBLIC_VERSION`: immutable Git commit SHA reported by `/api/healthz`.
 
 Runtime-only values must never be Docker build arguments:
 
-- `ENABLE_PUBLIC_IPFS_PINNING`, normally `false`;
-- `INFURA_IPFS_PROJECT_ID` and `INFURA_IPFS_API_SECRET`, required only when
+- `IPFS_PINNING_ENABLED`, normally `false`;
+- `IPFS_PINNING_EDGE_PROTECTED`, which must be `true` when pinning is enabled;
+- `FILEBASE_IPFS_RPC_TOKEN` and `PINATA_JWT`, required only when redundant
   pinning is enabled;
 - `IPFS_PINNING_INGRESS_TOKEN`, a random 32+ character secret required only
-  when pinning is enabled; and
-- optional `APP_REVISION`, reported by `/api/healthz`.
+  when pinning is enabled.
 
 The container refuses to start when its runtime contract is invalid. The health
 endpoint is dependency-free and returns `cache-control: no-store`; external RPC,
@@ -57,7 +77,7 @@ The application independently uses a constant-time token comparison, exact
 canonical-origin check, JSON/content-length validation, 128 KiB parsed-body
 limit, a 15-second upstream timeout, and response validation. Rotate the ingress
 and provider tokens together if either layer may have leaked. If those ingress
-capabilities are unavailable, keep `ENABLE_PUBLIC_IPFS_PINNING=false` and use a
+capabilities are unavailable, keep `IPFS_PINNING_ENABLED=false` and use a
 separate scoped upload service.
 
 The read-only Bendystraw and IPFS proxy routes have fixed configured upstreams,
@@ -94,6 +114,7 @@ docker build \
   --build-arg NEXT_PUBLIC_PARA_API_KEY \
   --build-arg NEXT_PUBLIC_PARA_ENV \
   --build-arg NEXT_PUBLIC_DWELLIR_API_KEY \
+  --build-arg NEXT_PUBLIC_VERSION \
   --tag revnet-money:local .
 ```
 
@@ -105,8 +126,7 @@ docker run --rm \
   --tmpfs /app/.next/cache:uid=1001,gid=1001,size=256m \
   --cap-drop ALL \
   --security-opt no-new-privileges \
-  --env ENABLE_PUBLIC_IPFS_PINNING=false \
-  --env APP_REVISION=local \
+  --env IPFS_PINNING_ENABLED=false \
   --publish 127.0.0.1:3000:3000 \
   revnet-money:local
 ```
