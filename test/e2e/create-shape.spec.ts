@@ -132,6 +132,57 @@ test("production create surface stays visible and contained", async ({ page }) =
   expectBoundaryToStayLocal(boundary);
 });
 
+test("only the first stage offers the issuance denomination; later stages quote it", async ({
+  page,
+}) => {
+  const boundary = await openCreatePage(page);
+
+  // The first stage owns the one global denomination.
+  await page.getByRole("button", { name: "Add stage" }).click();
+  const firstStage = page.getByRole("dialog");
+  await firstStage.getByRole("combobox", { name: "Issuance currency" }).selectOption("USD");
+  await firstStage.getByRole("button", { name: "Save stage" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // A second stage quotes it as text: no control, no disabled control.
+  await page.getByRole("button", { name: "Add stage" }).click();
+  const laterStage = page.getByRole("dialog");
+  await expect(laterStage).toBeVisible();
+  await expect(laterStage.getByRole("combobox", { name: "Issuance currency" })).toHaveCount(0);
+  await expect(laterStage.locator("select")).toHaveCount(0);
+  const laterSuffix = laterStage.locator("#initialIssuance + span");
+  await expect(laterSuffix).toHaveText(/\/\s*USD/);
+
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(250);
+  expectBoundaryToStayLocal(boundary);
+});
+
+test("the first stage card starts level with the Terms heading", async ({ page }) => {
+  const boundary = await openCreatePage(page);
+
+  await page.getByRole("button", { name: "Add stage" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Save stage" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  const heading = page.getByRole("heading", { name: "3. Terms" });
+  const firstCard = page.getByText("Stage 1", { exact: true });
+  const headingBox = (await heading.boundingBox())!;
+  const cardBox = (await firstCard.boundingBox())!;
+  expect(headingBox).not.toBeNull();
+  expect(cardBox).not.toBeNull();
+
+  // Two columns only above the md breakpoint; below it they stack and there is
+  // nothing to line up with.
+  if (cardBox.x > headingBox.x + headingBox.width) {
+    // Leading padding on the card would drop it a line below the heading.
+    expect(Math.abs(cardBox.y - headingBox.y)).toBeLessThanOrEqual(8);
+  }
+
+  await page.waitForTimeout(250);
+  expectBoundaryToStayLocal(boundary);
+});
+
 test("environment flip swaps the chain list and prunes hidden-environment picks", async ({
   page,
 }) => {

@@ -54,7 +54,13 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
                 {values.stages.map((stage, index) => {
                   const duration = getDynamicDuration(index);
                   return (
-                    <div className="py-4" key={`${stage.stageStart}-${duration}`}>
+                    // Leading padding on the first card would drop it below the
+                    // section heading, which every other section's first field
+                    // lines up with. Between-card spacing keeps both halves.
+                    <div
+                      className={index === 0 ? "pb-4" : "py-4"}
+                      key={`${stage.stageStart}-${duration}`}
+                    >
                       <div className="mb-1 flex justify-between items-center">
                         <div className="font-semibold">Stage {index + 1}</div>
                         <div className="flex">

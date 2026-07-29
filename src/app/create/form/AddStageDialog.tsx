@@ -15,7 +15,7 @@ import { toast } from "@/components/ui/use-toast";
 import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
-import { sortChains } from "@/lib/utils";
+import { cn, sortChains } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { defaultStageData } from "../constants";
@@ -104,10 +104,13 @@ export function AddStageDialog({
   const [draftOperators, setDraftOperators] = useState(perChainOperators);
 
   // The issuance denomination is a single global value (the ruleset's base
-  // currency for the whole revnet), edited inline in the issuance row below
-  // and buffered like the operators.
+  // currency for the whole revnet), edited inline in the first stage's issuance
+  // row and buffered like the operators. Later stages quote it, so they read
+  // the parent's current value rather than a buffer of their own.
   const [draftBaseCurrency, setDraftBaseCurrency] = useState(issuanceBaseCurrency);
-  const draftBaseCurrencySymbol = customReserve ? reserveAssetSymbol : draftBaseCurrency;
+  const editsBaseCurrency = stageIdx === 0 && !customReserve;
+  const baseCurrency = stageIdx === 0 ? draftBaseCurrency : issuanceBaseCurrency;
+  const baseCurrencySymbol = customReserve ? reserveAssetSymbol : baseCurrency;
 
   // Move enableCut state to top level
   const [enableCut, setEnableCut] = useState(
@@ -166,8 +169,10 @@ export function AddStageDialog({
                 }
 
                 // Commit the buffered parent-form fields along with the stage.
-                if (stageIdx === 0) setCreateFieldValue("operator", draftOperators);
-                setCreateFieldValue("issuanceBaseCurrency", draftBaseCurrency);
+                if (stageIdx === 0) {
+                  setCreateFieldValue("operator", draftOperators);
+                  setCreateFieldValue("issuanceBaseCurrency", draftBaseCurrency);
+                }
                 onSave(newValues);
                 setOpen(false);
               } catch (e: any) {
@@ -235,8 +240,7 @@ export function AddStageDialog({
                         1. {revnetTokenSymbol} issuance
                       </div>
                       <p className="text-md text-zinc-500 mt-3">
-                        How many {revnetTokenSymbol} to issue when receiving 1{" "}
-                        {draftBaseCurrencySymbol}.
+                        How many {revnetTokenSymbol} to issue when receiving 1 {baseCurrencySymbol}.
                       </p>
 
                       <PickupFromPreviousStage
@@ -266,14 +270,23 @@ export function AddStageDialog({
                             }
                           />
                           {/* The denomination is one global value for the whole
-                              revnet; every stage's row edits the same one. */}
+                              revnet, so only the first stage offers it. Later
+                              stages quote the same value as text. */}
                           <span className="flex shrink-0 items-center pr-2 text-md text-zinc-500">
                             <span className="pointer-events-none whitespace-nowrap">
                               {revnetTokenSymbol} /
                             </span>
-                            {customReserve ? (
-                              <span className="pointer-events-none ml-1 whitespace-nowrap">
-                                {draftBaseCurrencySymbol}
+                            {!editsBaseCurrency ? (
+                              <span
+                                className={cn(
+                                  "ml-1 whitespace-nowrap",
+                                  // A quoted denomination explains where it is
+                                  // set on hover, so it has to take pointers.
+                                  customReserve && "pointer-events-none",
+                                )}
+                                title={customReserve ? undefined : "Set in stage 1"}
+                              >
+                                {baseCurrencySymbol}
                               </span>
                             ) : (
                               <select

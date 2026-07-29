@@ -4,7 +4,7 @@ import type { RevnetFormData } from "@/app/create/types";
 import { withSchema } from "@/lib/formValidation";
 import { FormProvider } from "@/lib/forms";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { baseSepolia, sepolia } from "viem/chains";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TEST_ACCOUNT, TEST_BENEFICIARY, validRevnetForm } from "./fixtures/revnet";
@@ -116,6 +116,17 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
     return form;
   }
 
+  function twoStageForm() {
+    const form = multiChainForm();
+    form.stages = [form.stages[0], { ...form.stages[0], stageStart: "30" }];
+    return form;
+  }
+
+  function issuanceSuffixText(dialog: HTMLElement) {
+    const suffix = dialog.querySelector("#initialIssuance + span");
+    return (suffix?.textContent ?? "").replace(/\s+/g, " ").trim();
+  }
+
   it("expands a split beneficiary and the operator to per-chain values at the field", () => {
     renderCreateForm(multiChainForm());
 
@@ -180,7 +191,7 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
     expect(screen.queryByLabelText("Issuance currency")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Edit stage 1"));
-    const inline = screen.getByLabelText("Issuance currency");
+    const inline = screen.getByRole("combobox", { name: "Issuance currency" });
     expect(inline).toHaveValue("ETH");
     fireEvent.change(inline, { target: { value: "USD" } });
 
@@ -196,6 +207,52 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
         (_, element) => element?.tagName === "DD" && /\/\s*USD/.test(element.textContent ?? ""),
       ).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("offers the denomination only in the first stage, and quotes it statically after", () => {
+    renderCreateForm(twoStageForm());
+
+    // Stage 1 owns the one global denomination.
+    fireEvent.click(screen.getByLabelText("Edit stage 1"));
+    expect(
+      within(screen.getByRole("dialog")).getByRole("combobox", { name: "Issuance currency" }),
+    ).toHaveValue("ETH");
+
+    // Later stages quote it, they don't offer it: the protocol has no
+    // per-stage base currency, so a second control would advertise a choice
+    // that doesn't exist.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    fireEvent.click(screen.getByLabelText("Edit stage 2"));
+    const laterStage = screen.getByRole("dialog");
+    expect(
+      within(laterStage).queryByRole("combobox", { name: "Issuance currency" }),
+    ).not.toBeInTheDocument();
+    expect(laterStage.querySelectorAll("select")).toHaveLength(0);
+    expect(issuanceSuffixText(laterStage)).toMatch(/^SAFE \/\s*ETH$/);
+
+    // And it quotes the current value, including one just picked in stage 1.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    fireEvent.click(screen.getByLabelText("Edit stage 1"));
+    fireEvent.change(screen.getByRole("combobox", { name: "Issuance currency" }), {
+      target: { value: "USD" },
+    });
+    fireEvent.click(screen.getByText("Save stage"));
+
+    fireEvent.click(screen.getByLabelText("Edit stage 2"));
+    const reopened = screen.getByRole("dialog");
+    expect(
+      within(reopened).queryByRole("combobox", { name: "Issuance currency" }),
+    ).not.toBeInTheDocument();
+    expect(issuanceSuffixText(reopened)).toMatch(/^SAFE \/\s*USD$/);
+
+    // Both stage summaries follow the one global value.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    const issuanceSummaries = screen
+      .getAllByText((_, element) => element?.tagName === "DD")
+      .map((element) => element.textContent ?? "")
+      .filter((text) => /\/\s*(ETH|USD)/.test(text));
+    expect(issuanceSummaries).toHaveLength(2);
+    expect(issuanceSummaries.every((text) => /\/\s*USD/.test(text))).toBe(true);
   });
 
   it("assigns each auto-issuance row a selected chain at input time and saves it", () => {
