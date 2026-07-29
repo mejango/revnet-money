@@ -81,7 +81,7 @@ function AcrossChainsTable({ rows, tokenSymbol }: { rows: AcrossChainRow[]; toke
         <tr className="border-b border-zinc-100">
           <th className={cellHead}>Chain</th>
           <th className={cellHead}>Supply ({tokenSymbol})</th>
-          <th className={cellHead}>Balance</th>
+          <th className={cellHead}>Terminal balance</th>
           <th className={cellHead}>Unit value</th>
         </tr>
       </thead>

@@ -25,8 +25,8 @@ import { TierMediaPreview } from "./TierMediaPreview";
 const FLAG_DESCRIPTIONS: [keyof NonNullable<ShopTier["flags"]>, string, string][] = [
   [
     "allowOwnerMint",
-    "Project operator can mint",
-    "The project operator can mint this item for free, without a payment.",
+    "Revnet operator can mint",
+    "The revnet operator can mint this item for free, without a payment.",
   ],
   ["transfersPausable", "Transfers pausable", "Transfers of this item can be paused."],
   ["cantBeRemoved", "Cannot be removed", "This item can never be removed from the shop."],

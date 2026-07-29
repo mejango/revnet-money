@@ -179,7 +179,7 @@ export function Header(props: Props) {
                 <div className="sm:text-xl text-lg">
                   <span className="font-medium text-black-500">{contributorsCount ?? 0}</span>{" "}
                   <span className="text-zinc-500">
-                    {contributorsCount === 1 ? "owner" : "owners"}
+                    {contributorsCount === 1 ? "token holder" : "token holders"}
                   </span>
                 </div>
                 {/* <div className="sm:text-xl text-lg">
@@ -205,7 +205,7 @@ export function Header(props: Props) {
                   >
                     {operator && (
                       <span ref={operatorRef} className="inline-flex items-center">
-                        <span className="text-zinc-500">Project operator:</span>{" "}
+                        <span className="text-zinc-500">Revnet operator:</span>{" "}
                         <EtherscanLink
                           value={operator.address}
                           className="inline-flex min-h-11 items-center font-medium text-zinc-900 sm:min-h-0"

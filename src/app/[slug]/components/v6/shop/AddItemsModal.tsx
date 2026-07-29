@@ -267,7 +267,7 @@ export function AddItemsModal({
           <DialogTitle>Add items for sale</DialogTitle>
           <DialogDescription>
             Stage one or more items, then add them to the shop with a single{" "}
-            <span className="font-mono text-xs">adjustTiers</span> transaction (project operator
+            <span className="font-mono text-xs">adjustTiers</span> transaction (revnet operator
             only).
           </DialogDescription>
         </DialogHeader>

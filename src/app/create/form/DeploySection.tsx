@@ -27,7 +27,7 @@ export function DeploySection({
           {revnetTokenSymbol} right away.
         </p>
         <p className="mt-2 text-lg text-zinc-600">
-          The project operator you set in your revnet&apos;s terms will also be able to add new
+          The revnet operator you set in your revnet&apos;s terms will also be able to add new
           chains to the revnet later.
         </p>
       </div>

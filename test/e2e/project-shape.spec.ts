@@ -31,7 +31,7 @@ async function openFixtureProject(page: Page): Promise<BrowserBoundary> {
   await expect(page.getByRole("heading", { level: 1, name: "Fixture Revnet" })).toBeVisible();
   await expect(page.getByRole("link", { name: "FREV", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "$1,250.00 balance" })).toBeVisible();
-  await expect(page.getByText("2 owners", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 token holders", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Amount")).toBeEnabled();
   await expect(page.getByLabel("Payment mode")).toHaveValue("pay");
   await expect(page.getByText("USDC", { exact: true }).first()).toBeVisible();
@@ -176,7 +176,7 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   for (const heading of ["Account", "Edits", "Buyback & swap router", "Permissions"]) {
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
-  await expect(page.getByText("No project operator permissions found.")).toBeVisible();
+  await expect(page.getByText("No revnet operator permissions found.")).toBeVisible();
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 

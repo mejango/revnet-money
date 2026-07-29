@@ -172,14 +172,14 @@
           "src/app/[slug]/components/Value/RedeemDialog.tsx",
           "RedeemDialog",
           "useWriteContract",
-          1
+          2
         ],
         [
           "reviewed-write",
           "src/app/[slug]/components/Value/RedeemDialog.tsx",
           "RedeemDialog",
           "writeContractAsync",
-          1
+          4
         ],
         [
           "reviewed-write",
@@ -220,6 +220,20 @@
           "src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx",
           "ClaimRow",
           "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "LiquidityManager",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "remove",
+          "writeContractAsync",
           1
         ],
         [
@@ -544,7 +558,7 @@
       "id": "cash-out",
       "risk": "money",
       "files": ["src/app/[slug]/components/Value/RedeemDialog.tsx"],
-      "tests": ["test/cash-out-quote.test.ts"]
+      "tests": ["test/cash-out-quote.test.ts", "test/direct-sell-route.test.ts"]
     },
     {
       "id": "repay",
@@ -557,6 +571,12 @@
       "risk": "money",
       "files": ["src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx"],
       "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "remove-liquidity",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/v6/owners/market/AmmCard.tsx"],
+      "tests": ["test/liquidity-remove.test.ts"]
     },
     {
       "id": "split-hook",

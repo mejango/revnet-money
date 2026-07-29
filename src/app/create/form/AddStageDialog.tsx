@@ -536,7 +536,7 @@ export function AddStageDialog({
                                 <Tooltip>
                                   <TooltipTrigger>[ ? ]</TooltipTrigger>
                                   <TooltipContent side="left">
-                                    Set the project operator in the first stage
+                                    Set the revnet operator in the first stage
                                   </TooltipContent>
                                 </Tooltip>
                               )}
@@ -631,19 +631,19 @@ export function AddStageDialog({
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
-                              If there are splits, the project operator can change the distribution
+                              If there are splits, the revnet operator can change the distribution
                               of the split limit to new destinations at any time.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
-                              The project operator can be a multisig, a DAO, an LLC, a core team, an
+                              The revnet operator can be a multisig, a DAO, an LLC, a core team, an
                               airdrop stockpile, a staking rewards contract, or some other address.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
-                              The project operator is set once and is not bound by stages. The
-                              project operator can hand off this responsibility to another address
-                              at any time, or relinquish it altogether.
+                              The revnet operator is set once and is not bound by stages. The revnet
+                              operator can hand off this responsibility to another address at any
+                              time, or relinquish it altogether.
                             </li>
                           </ul>
                         </div>

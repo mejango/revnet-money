@@ -83,11 +83,11 @@ export const createSchema = schema<RevnetFormData>((input) => {
   }
 
   if (!Array.isArray(input.operator)) {
-    issue(issues, ["operator"], "Invalid project operators");
+    issue(issues, ["operator"], "Invalid revnet operators");
   } else {
     input.operator.forEach((operator, index) => {
       if (!isRecord(operator)) {
-        issue(issues, ["operator", index], "Invalid project operator");
+        issue(issues, ["operator", index], "Invalid revnet operator");
         return;
       }
       const chainId = operator.chainId;
@@ -156,7 +156,7 @@ export const createSchema = schema<RevnetFormData>((input) => {
         !isAddress(effectiveOperator, { strict: false })
       ) {
         if (!isRecord(perChainOperator)) {
-          issue(issues, ["operator"], `Set a valid project operator for chain ${chainId}`);
+          issue(issues, ["operator"], `Set a valid revnet operator for chain ${chainId}`);
         }
       }
     }

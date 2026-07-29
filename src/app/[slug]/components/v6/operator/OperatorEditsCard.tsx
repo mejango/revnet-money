@@ -45,7 +45,7 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
         <div className="bg-melon-50 p-4">
           <p className="text-sm font-medium">Set splits</p>
           <p className="text-xs text-zinc-500 mt-1 mb-3">
-            Edit the split recipients for the current stage. Requires the project operator&apos;s
+            Edit the split recipients for the current stage. Requires the revnet operator&apos;s
             SET_SPLIT_GROUPS permission.
           </p>
           {chainId ? (

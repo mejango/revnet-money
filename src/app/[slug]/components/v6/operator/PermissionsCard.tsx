@@ -84,8 +84,8 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
       <h3 className="mb-2 text-base font-semibold text-zinc-700">Permissions</h3>
       <div className="max-w-screen-sm">
         <p className="text-sm text-zinc-500">
-          What this revnet&apos;s project operator is allowed to do. These powers come with the
-          project operator role — the default revnet powers plus any NFT powers granted when the
+          What this revnet&apos;s revnet operator is allowed to do. These powers come with the
+          revnet operator role — the default revnet powers plus any NFT powers granted when the
           revnet was deployed.
         </p>
         {query.isLoading ? (
@@ -93,7 +93,7 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
         ) : query.isError ? (
           <p className="text-sm text-zinc-500 mt-3">Could not read permissions.</p>
         ) : grants.length === 0 ? (
-          <p className="mt-3 text-sm text-zinc-500">No project operator permissions found.</p>
+          <p className="mt-3 text-sm text-zinc-500">No revnet operator permissions found.</p>
         ) : (
           <div className="mt-3 divide-y divide-melon-200 bg-melon-50 px-4">
             {grants.map((grant) => (
@@ -107,7 +107,7 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
                   />
                   {grant.isRevnetOperator ? (
                     <span className="rounded-full bg-teal-50 text-teal-700 px-2 py-0.5 text-[11px] font-medium">
-                      Project operator
+                      Revnet operator
                     </span>
                   ) : null}
                   {grant.differs ? (

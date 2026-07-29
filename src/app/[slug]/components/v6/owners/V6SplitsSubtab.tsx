@@ -142,12 +142,12 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
   return (
     <div>
       <p className="text-md text-black font-light italic mb-2">
-        Splits can be adjusted by the project operator at any time, within the permanent split limit
+        Splits can be adjusted by the revnet operator at any time, within the permanent split limit
         of a stage.
       </p>
 
       <div className="text-sm font-medium text-zinc-500 mt-2 border-l border-zinc-300 pl-2 py-1">
-        Project operator is currently{" "}
+        Revnet operator is currently{" "}
         {operator ? (
           <EthereumAddress
             address={operator as `0x${string}`}

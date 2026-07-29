@@ -15,21 +15,37 @@ import {
 } from "@bananapus/nana-sdk-core";
 import {
   getAccountingContexts,
+  UNISWAP_V4_INITIALIZE_TOPIC,
+  UNISWAP_V4_MODIFY_LIQUIDITY_TOPIC,
   UNISWAP_V4_POOL_MANAGER_ADDRESSES,
+  UNISWAP_V4_POSITION_MANAGER_ADDRESSES,
   uniswapV4AmountsForLiquidity,
   uniswapV4PoolId,
   uniswapV4PoolStateSlot,
+  uniswapV4PositionTicks,
+  uniswapV4PositionTokenIdFromLog,
   uniswapV4PriceFromSqrtPriceX96,
   uniswapV4SqrtPriceX96AtTick,
   uniswapV4SqrtPriceX96FromSlot0,
   type UniswapV4PoolKey,
 } from "@bananapus/nana-sdk-core/v6";
-import { Address, erc20Abi, Hex, parseAbiItem, PublicClient, zeroAddress } from "viem";
+import {
+  Address,
+  encodeAbiParameters,
+  erc20Abi,
+  Hex,
+  parseAbiItem,
+  PublicClient,
+  zeroAddress,
+} from "viem";
 import { ChainProject } from "../settlement/lib";
 
 // ── Uniswap V4 singletons (from deploy-all-v6 Deploy.s.sol) ──────────────────
 
 export const POOL_MANAGER_BY_CHAIN = UNISWAP_V4_POOL_MANAGER_ADDRESSES as Readonly<
+  Partial<Record<number, Address>>
+>;
+export const POSITION_MANAGER_BY_CHAIN = UNISWAP_V4_POSITION_MANAGER_ADDRESSES as Readonly<
   Partial<Record<number, Address>>
 >;
 
@@ -65,6 +81,60 @@ const EXTSLOAD_ABI = [
     stateMutability: "view",
     inputs: [{ name: "slot", type: "bytes32" }],
     outputs: [{ type: "bytes32" }],
+  },
+] as const;
+
+export const POSITION_MANAGER_ABI = [
+  {
+    type: "function",
+    name: "positionInfo",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getPoolAndPositionInfo",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [
+      {
+        name: "poolKey",
+        type: "tuple",
+        components: [
+          { name: "currency0", type: "address" },
+          { name: "currency1", type: "address" },
+          { name: "fee", type: "uint24" },
+          { name: "tickSpacing", type: "int24" },
+          { name: "hooks", type: "address" },
+        ],
+      },
+      { name: "info", type: "uint256" },
+    ],
+  },
+  {
+    type: "function",
+    name: "getPositionLiquidity",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "uint128" }],
+  },
+  {
+    type: "function",
+    name: "ownerOf",
+    stateMutability: "view",
+    inputs: [{ name: "id", type: "uint256" }],
+    outputs: [{ name: "owner", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "modifyLiquidities",
+    stateMutability: "payable",
+    inputs: [
+      { name: "unlockData", type: "bytes" },
+      { name: "deadline", type: "uint256" },
+    ],
+    outputs: [],
   },
 ] as const;
 
@@ -382,6 +452,218 @@ export async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComp
   };
   compositionCache.set(cacheKey, { block: latest, value });
   return value;
+}
+
+// ── Wallet LP positions + full-exit removal ─────────────────────────────────
+
+type RawPoolLog = {
+  topics?: readonly (string | null)[];
+  data?: string;
+  blockNumber?: bigint | string | number;
+};
+
+export interface UserLpPosition {
+  tokenId: bigint;
+  owner: Address;
+  info: bigint;
+  liquidity: bigint;
+  tickLower: number;
+  tickUpper: number;
+  pairAmount: bigint;
+  tokenAmount: bigint;
+}
+
+export interface RemoveLiquidityPlan {
+  unlockData: Hex;
+  deadline: bigint;
+  pairMinimum: bigint;
+  tokenMinimum: bigint;
+}
+
+async function rawPoolLogs(
+  client: PublicClient,
+  pool: PoolSnapshot,
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<RawPoolLog[]> {
+  return (await client.request({
+    method: "eth_getLogs",
+    params: [
+      {
+        address: pool.poolManager,
+        topics: [[UNISWAP_V4_INITIALIZE_TOPIC, UNISWAP_V4_MODIFY_LIQUIDITY_TOPIC], pool.poolId],
+        fromBlock: `0x${fromBlock.toString(16)}`,
+        toBlock: `0x${toBlock.toString(16)}`,
+      },
+    ],
+  } as never)) as RawPoolLog[];
+}
+
+/**
+ * Enumerate every canonical PositionManager NFT in this pool. A capped or
+ * failed history is rejected: silently omitting an owned position would make
+ * the management surface incorrect.
+ */
+async function poolPositionTokenIds(
+  client: PublicClient,
+  pool: PoolSnapshot,
+  positionManager: Address,
+): Promise<bigint[]> {
+  const latest = await client.getBlockNumber();
+  const ids = new Map<string, bigint>();
+  let cursor = latest;
+  let initialized = false;
+  for (let window = 0; window < SCAN_MAX_WINDOWS && cursor >= 0n; window += 1) {
+    const fromBlock = cursor >= SCAN_WINDOW ? cursor - SCAN_WINDOW + 1n : 0n;
+    const logs = await rawPoolLogs(client, pool, fromBlock, cursor);
+    for (const log of logs) {
+      const topic = String(log.topics?.[0] ?? "").toLowerCase();
+      if (topic === UNISWAP_V4_INITIALIZE_TOPIC.toLowerCase()) initialized = true;
+      const tokenId = uniswapV4PositionTokenIdFromLog(log, positionManager);
+      if (tokenId != null) ids.set(tokenId.toString(), tokenId);
+    }
+    if (initialized) break;
+    if (fromBlock === 0n) break;
+    cursor = fromBlock - 1n;
+  }
+  if (!initialized) throw new Error("Could not verify the complete LP position history.");
+  return [...ids.values()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+async function positionFor(
+  client: PublicClient,
+  pool: PoolSnapshot,
+  positionManager: Address,
+  tokenId: bigint,
+): Promise<UserLpPosition | null> {
+  const [info, liquidity, owner] = await Promise.all([
+    client.readContract({
+      address: positionManager,
+      abi: POSITION_MANAGER_ABI,
+      functionName: "positionInfo",
+      args: [tokenId],
+    }),
+    client.readContract({
+      address: positionManager,
+      abi: POSITION_MANAGER_ABI,
+      functionName: "getPositionLiquidity",
+      args: [tokenId],
+    }),
+    client
+      .readContract({
+        address: positionManager,
+        abi: POSITION_MANAGER_ABI,
+        functionName: "ownerOf",
+        args: [tokenId],
+      })
+      .catch(() => null),
+  ]);
+  if (!owner || info === 0n || liquidity === 0n) return null;
+  const [key, verifiedInfo] = await client.readContract({
+    address: positionManager,
+    abi: POSITION_MANAGER_ABI,
+    functionName: "getPoolAndPositionInfo",
+    args: [tokenId],
+  });
+  if (verifiedInfo !== info || uniswapV4PoolId(key).toLowerCase() !== pool.poolId.toLowerCase()) {
+    throw new Error("PositionManager returned inconsistent pool data.");
+  }
+  const ticks = uniswapV4PositionTicks(info);
+  const amounts = uniswapV4AmountsForLiquidity(
+    pool.sqrtP,
+    uniswapV4SqrtPriceX96AtTick(ticks.lower),
+    uniswapV4SqrtPriceX96AtTick(ticks.upper),
+    liquidity,
+  );
+  return {
+    tokenId,
+    owner,
+    info,
+    liquidity,
+    tickLower: ticks.lower,
+    tickUpper: ticks.upper,
+    pairAmount: pool.pairIsC0 ? amounts.amount0 : amounts.amount1,
+    tokenAmount: pool.pairIsC0 ? amounts.amount1 : amounts.amount0,
+  };
+}
+
+export async function readUserLpPositions(
+  pool: PoolSnapshot,
+  account: Address,
+): Promise<UserLpPosition[]> {
+  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(pool.chainId)];
+  if (!positionManager) return [];
+  const client = getViemPublicClient(pool.chainId) as PublicClient;
+  const ids = await poolPositionTokenIds(client, pool, positionManager);
+  const positions = await Promise.all(
+    ids.map((tokenId) => positionFor(client, pool, positionManager, tokenId)),
+  );
+  return positions.filter(
+    (position): position is UserLpPosition =>
+      position != null && position.owner.toLowerCase() === account.toLowerCase(),
+  );
+}
+
+export async function refreshUserLpPosition(
+  pool: PoolSnapshot,
+  tokenId: bigint,
+  account: Address,
+): Promise<UserLpPosition> {
+  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(pool.chainId)];
+  if (!positionManager) throw new Error("LP management is unavailable on this chain.");
+  // Refresh slot0 directly while the pool identity is re-verified by
+  // getPoolAndPositionInfo below.
+  const client = getViemPublicClient(pool.chainId) as PublicClient;
+  const slot0 = await client.readContract({
+    address: pool.poolManager,
+    abi: EXTSLOAD_ABI,
+    functionName: "extsload",
+    args: [uniswapV4PoolStateSlot(pool.poolId)],
+  });
+  const refreshedPool = {
+    ...pool,
+    sqrtP: uniswapV4SqrtPriceX96FromSlot0(slot0),
+  };
+  const position = await positionFor(client, refreshedPool, positionManager, tokenId);
+  if (!position || position.owner.toLowerCase() !== account.toLowerCase()) {
+    throw new Error("The connected wallet no longer owns this LP position.");
+  }
+  return position;
+}
+
+function retainedFloor(value: bigint): bigint {
+  if (value <= 0n) return 0n;
+  const floor = (value * 9_500n) / 10_000n;
+  return floor > 0n ? floor : 1n;
+}
+
+export function prepareRemoveLiquidity(
+  pool: PoolSnapshot,
+  position: UserLpPosition,
+  recipient: Address,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): RemoveLiquidityPlan {
+  const pairMinimum = retainedFloor(position.pairAmount);
+  const tokenMinimum = retainedFloor(position.tokenAmount);
+  const amount0Minimum = pool.pairIsC0 ? pairMinimum : tokenMinimum;
+  const amount1Minimum = pool.pairIsC0 ? tokenMinimum : pairMinimum;
+  const burn = encodeAbiParameters(
+    [{ type: "uint256" }, { type: "uint128" }, { type: "uint128" }, { type: "bytes" }],
+    [position.tokenId, amount0Minimum, amount1Minimum, "0x"],
+  );
+  const takePair = encodeAbiParameters(
+    [{ type: "address" }, { type: "address" }, { type: "address" }],
+    [pool.key.currency0, pool.key.currency1, recipient],
+  );
+  return {
+    unlockData: encodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      ["0x0311", [burn, takePair]],
+    ),
+    deadline: BigInt(nowSeconds + 1_200),
+    pairMinimum,
+    tokenMinimum,
+  };
 }
 
 // ── AMM card aggregate ────────────────────────────────────────────────────────

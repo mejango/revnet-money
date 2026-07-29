@@ -43,7 +43,9 @@ export function ParticipantsTable({
 }) {
   if (participants.length === 0) {
     return (
-      <div className="text-center text-zinc-500">No owners yet. Pay in to become an owner.</div>
+      <div className="text-center text-zinc-500">
+        No token holders yet. Pay in to receive tokens.
+      </div>
     );
   }
 

@@ -6,7 +6,6 @@ import {
   jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
-  jbMultiTerminalAbi,
   JBSuckerContracts,
   jbSuckerRegistryAbi,
   jbTerminalStoreAbi,
@@ -207,7 +206,7 @@ export interface AcrossChainRow {
   chainId: JBChainId;
   /** Total token supply incl. pending reserved, or null when unreadable. */
   supply: bigint | null;
-  /** Terminal surplus per accounting context, or null when unreadable. */
+  /** Terminal-store balance per accounting context, or null when unreadable. */
   balances: AcrossChainBalance[] | null;
   /** Cash-out value of ONE project token, in the primary accounting token. */
   unitValue: { value: bigint; symbol: string; decimals: number } | null;
@@ -224,8 +223,11 @@ export async function fetchAcrossChains(chains: ChainProject[]): Promise<AcrossC
 
       let balances: AcrossChainBalance[] | null = null;
       let unitValue: AcrossChainRow["unitValue"] = null;
+      if (contexts) {
+        balances = [];
+      }
       if (contexts && contexts.length) {
-        balances = await Promise.all(
+        const readBalances = await Promise.all(
           contexts.map(async (ctx) => {
             const symbol = await tokenSymbolOf(chainId, ctx.token);
             try {
@@ -235,21 +237,26 @@ export async function fetchAcrossChains(chains: ChainProject[]): Promise<AcrossC
                 functionName: "primaryTerminalOf",
                 args: [projectId, ctx.token],
               });
-              const surplus = await client.readContract({
-                address: terminal,
-                abi: jbMultiTerminalAbi,
-                functionName: "currentSurplusOf",
-                args: [projectId, [ctx.token], BigInt(ctx.decimals), BigInt(ctx.currency)],
+              const store = jbContractAddress[6][JBCoreContracts.JBTerminalStore][
+                chainId
+              ] as Address;
+              const balance = await client.readContract({
+                address: store,
+                abi: jbTerminalStoreAbi,
+                functionName: "balanceOf",
+                args: [terminal, projectId, ctx.token],
               });
-              return { token: ctx.token, symbol, decimals: ctx.decimals, balance: surplus };
+              return { token: ctx.token, symbol, decimals: ctx.decimals, balance };
             } catch {
-              return { token: ctx.token, symbol, decimals: ctx.decimals, balance: -1n };
+              return null;
             }
           }),
         );
-        // A -1 marker means that context's surplus was unreadable — drop to null-safe form.
-        if (balances.some((b) => b.balance < 0n))
-          balances = balances.filter((b) => b.balance >= 0n);
+        // Never total or percentage a partial context set. One failed balance
+        // makes the chain explicitly unreadable instead of silently smaller.
+        balances = readBalances.some((balance) => balance === null)
+          ? null
+          : (readBalances as AcrossChainBalance[]);
 
         // Unit value: what a 1M-token cash out reclaims, scaled back down — a
         // single-token probe floors to 0 against big supplies on 6-dec tokens.

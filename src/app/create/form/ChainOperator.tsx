@@ -45,17 +45,17 @@ export function ChainOperator({ disabled = false }: { disabled?: boolean }) {
 
   return (
     <>
-      <h2 className="text-left text-black-500 mb-4 font-semibold">Project operator</h2>
+      <h2 className="text-left text-black-500 mb-4 font-semibold">Revnet operator</h2>
       <div className="mb-8">
         <div className="text-sm text-zinc-500">
-          Confirm the project operator's address for each chain.
+          Confirm the revnet operator's address for each chain.
         </div>
         <div className="text-sm text-zinc-500">
-          Project operators can re-route splits within the split limit of each stage and edit the
+          Revnet operators can re-route splits within the split limit of each stage and edit the
           name, logo, and description of the revnet.
         </div>
         <div className="text-sm text-zinc-500 mb-4">
-          If the project operator is the same address that initially deploys the revnet now, it can
+          If the revnet operator is the same address that initially deploys the revnet now, it can
           deploy the revnet to new chains later on.
         </div>
         <div className="flex mb-2 text-sm font-semibold text-zinc-500">

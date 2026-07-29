@@ -28,7 +28,7 @@ export function V6OperatorTab({
   const rows = useMemo(() => chainProjectRows(projects), [projects]);
 
   if (rows.length === 0) {
-    return <div className="text-zinc-500">Project operator tools are on the way.</div>;
+    return <div className="text-zinc-500">Revnet operator tools are on the way.</div>;
   }
 
   return (

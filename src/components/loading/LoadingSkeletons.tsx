@@ -175,8 +175,8 @@ function ExtrasContentSkeleton() {
 
 function OperatorContentSkeleton() {
   return (
-    <div role="status" aria-label="Loading project operator tools" className="space-y-8">
-      <span className="sr-only">Loading project operator tools</span>
+    <div role="status" aria-label="Loading revnet operator tools" className="space-y-8">
+      <span className="sr-only">Loading revnet operator tools</span>
       {Array.from({ length: 4 }, (_, index) => (
         <CardSkeleton key={index} rows={index === 2 ? 5 : 3} />
       ))}

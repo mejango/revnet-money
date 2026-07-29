@@ -175,7 +175,7 @@ export function OperatorAccountCard({
       <h3 className="mb-2 text-base font-semibold text-zinc-700">Account</h3>
       <div className="max-w-screen-sm">
         <p className="text-sm text-zinc-500">
-          Revnets have no owner. The project operator holds only the permissions granted at launch,
+          Revnets have no owner. The revnet operator holds only the permissions granted at launch,
           and can pass the role on.
         </p>
         {holdersQuery.isLoading || accountQuery.isLoading ? (
@@ -184,7 +184,7 @@ export function OperatorAccountCard({
           <div className="mt-3 space-y-3">
             {differs ? (
               <div className="border border-amber-300 bg-amber-50 text-amber-800 text-xs p-3 rounded">
-                The project operator differs by chain. The transfer action below is scoped to each
+                The revnet operator differs by chain. The transfer action below is scoped to each
                 matching group so a change cannot silently target the wrong account.
               </div>
             ) : null}
@@ -202,7 +202,7 @@ export function OperatorAccountCard({
                   ))}
                 </div>
                 <dl className="mt-3 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[7rem_1fr]">
-                  <dt className="text-zinc-500">Project operator</dt>
+                  <dt className="text-zinc-500">Revnet operator</dt>
                   <dd>
                     {group.operator ? (
                       <EthereumAddress
@@ -300,12 +300,12 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         writeContractAsync,
         onProgress: setStatus,
       });
-      setStatus(`Project operator transferred on ${done} chain${done === 1 ? "" : "s"}.`);
-      toast({ title: "Project operator transferred" });
+      setStatus(`Revnet operator transferred on ${done} chain${done === 1 ? "" : "s"}.`);
+      toast({ title: "Revnet operator transferred" });
       setOpen(false);
       onDone();
     } catch (e) {
-      const message = formatWalletError(e) || "Could not transfer the project operator.";
+      const message = formatWalletError(e) || "Could not transfer the revnet operator.";
       setError(message);
       toast(
         isSafeProposalPendingError(e)
@@ -329,7 +329,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
           setError(null);
         }}
       >
-        Transfer project operator
+        Transfer revnet operator
       </Button>
     );
   }
@@ -337,7 +337,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
   return (
     <div className="mt-3 bg-melon-100 p-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium">Transfer project operator</p>
+        <p className="text-sm font-medium">Transfer revnet operator</p>
         <button
           type="button"
           className="text-xs text-zinc-500 hover:text-zinc-800"
@@ -349,7 +349,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
       </div>
       {!isCurrentOperator ? (
         <p className="text-xs text-amber-700 mt-2">
-          Only the current project operator ({group.operator}) can transfer this role — connect that
+          Only the current revnet operator ({group.operator}) can transfer this role — connect that
           account to proceed. The transaction is simulated first and will not send otherwise.
         </p>
       ) : null}
@@ -361,8 +361,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
             setError(null);
           }}
           disabled={busy}
-          placeholder="0x… new project operator (zero address relinquishes)"
-          aria-label="New project operator"
+          placeholder="0x… new revnet operator (zero address relinquishes)"
+          aria-label="New revnet operator"
         />
       </div>
       <p className="text-xs text-zinc-500 mt-1">
@@ -378,8 +378,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         />
         <span className="text-xs text-red-700">
           {relinquishing
-            ? "I understand that relinquishing the project operator role is permanent."
-            : "I verified the new project operator. They receive every power attached to this role."}
+            ? "I understand that relinquishing the revnet operator role is permanent."
+            : "I verified the new revnet operator. They receive every power attached to this role."}
         </span>
       </label>
       <ButtonWithWallet
@@ -391,7 +391,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         disabled={busy || !ack || !destination.trim()}
         onClick={submit}
       >
-        Transfer project operator
+        Transfer revnet operator
       </ButtonWithWallet>
       {status ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
       {error ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}

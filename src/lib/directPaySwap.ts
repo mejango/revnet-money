@@ -61,6 +61,80 @@ export interface DirectSwapQuote {
   reservedTokenCount: 0n;
 }
 
+export interface DirectSellQuote {
+  poolKey: UniswapV4PoolKey;
+  zeroForOne: boolean;
+  quotedOutput: bigint;
+  minimumOutput: bigint;
+}
+
+/** Select a claimed-token pool sale only when its protected minimum beats
+ * the hook-aware terminal cash-out output. Internal credits stay on the
+ * terminal route because the Universal Router cannot pull them. */
+export async function quoteDirectSellSwap({
+  client,
+  chainId,
+  poolKey,
+  projectToken,
+  amount,
+  terminalOutput,
+  slippageBps,
+}: {
+  client: PublicClient;
+  chainId: JBChainId;
+  poolKey: UniswapV4PoolKey;
+  projectToken: Address;
+  amount: bigint;
+  terminalOutput: bigint;
+  slippageBps: number;
+}): Promise<DirectSellQuote | null> {
+  if (
+    !uniswapV4Deployment(chainId)?.universalRouter ||
+    amount <= 0n ||
+    slippageBps < 0 ||
+    slippageBps > 10_000
+  )
+    return null;
+  const c0 = poolKey.currency0.toLowerCase();
+  const c1 = poolKey.currency1.toLowerCase();
+  const token = projectToken.toLowerCase();
+  if (token !== c0 && token !== c1) return null;
+  const zeroForOne = token === c0;
+  const quotedOutput = await quoteUniswapV4ExactInputSingle(client, {
+    chainId,
+    poolKey,
+    zeroForOne,
+    amountIn: amount,
+  });
+  const minimumOutput = (quotedOutput * BigInt(10_000 - slippageBps)) / 10_000n;
+  if (minimumOutput <= terminalOutput) return null;
+  return { poolKey, zeroForOne, quotedOutput, minimumOutput };
+}
+
+export function buildDirectSellSwapTx({
+  chainId,
+  quote,
+  amount,
+  recipient,
+  deadline,
+}: {
+  chainId: JBChainId;
+  quote: DirectSellQuote;
+  amount: bigint;
+  recipient: Address;
+  deadline: bigint;
+}) {
+  return buildUniswapV4ExactInputSwapTx({
+    chainId,
+    poolKey: quote.poolKey,
+    zeroForOne: quote.zeroForOne,
+    amountIn: amount,
+    minimumAmountOut: quote.minimumOutput,
+    recipient,
+    deadline,
+  });
+}
+
 export async function quoteDirectPaySwap({
   client,
   chainId,

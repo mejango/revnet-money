@@ -23,6 +23,12 @@ import { useCashOutRoute } from "@/hooks/useCashOutRoute";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import {
+  buildDirectSellSwapTx,
+  PERMIT2_ADDRESS,
+  permit2Abi,
+  quoteDirectSellSwap,
+} from "@/lib/directPaySwap";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
@@ -39,8 +45,12 @@ import {
   JBProjectToken,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
-import { PropsWithChildren, useState } from "react";
-import { useAccount } from "wagmi";
+import { getTokenAddress, uniswapV4Deployment } from "@bananapus/nana-sdk-core/v6";
+import { useQuery } from "@tanstack/react-query";
+import { PropsWithChildren, useEffect, useState } from "react";
+import { erc20Abi, type Address, type PublicClient } from "viem";
+import { useAccount, usePublicClient } from "wagmi";
+import { readPoolSnapshot } from "../v6/owners/market/lib";
 
 interface Props {
   projectId: bigint;
@@ -64,6 +74,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { data: suckers } = useSuckers();
   const { token } = useJBTokenContext();
   const baseToken = useProjectBaseToken();
+  const selectedChainId = cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined;
+  const publicClient = usePublicClient({ chainId: selectedChainId }) as PublicClient | undefined;
 
   // Get the selected sucker based on cashOutChainId
   const selectedSucker = cashOutChainId
@@ -103,12 +115,19 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     : 0n;
 
   const { writeContractAsync, isPending: isWriteLoading, data: hash } = useWriteContract();
+  const {
+    writeContractAsync: writeApprovalAsync,
+    isPending: approvalSigning,
+    data: approvalHash,
+  } = useWriteContract();
 
   const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { isLoading: approvalConfirming, isSuccess: approvalConfirmed } =
+    useWaitForTransactionReceipt({ hash: approvalHash });
   // const { data: redeemQuote } = useTokenCashOutQuoteEth(redeemAmountBN, {
   //   chainId: selectedSucker?.peerChainId as JBChainId,
   // });
-  const loading = isWriteLoading || isTxLoading;
+  const loading = isWriteLoading || isTxLoading || approvalSigning || approvalConfirming;
   const { balance } = balances?.find((b) => b.chainId === Number(cashOutChainId)) || {
     balance: { value: 0n },
   };
@@ -155,6 +174,113 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const minimumReclaim = cashOutRoute
     ? Number(formatUnits(cashOutRoute.minimumReturn, baseDecimals))
     : 0;
+
+  const { data: projectTokenAddress } = useQuery({
+    queryKey: ["cashOutProjectToken", selectedChainId, effectiveProjectId.toString()],
+    enabled: !!publicClient && !!selectedChainId,
+    queryFn: () =>
+      getTokenAddress(publicClient!, {
+        chainId: selectedChainId!,
+        projectId: effectiveProjectId,
+      }),
+  });
+  const { data: claimedBalance, refetch: refetchClaimedBalance } = useQuery({
+    queryKey: ["cashOutClaimedBalance", selectedChainId, projectTokenAddress, address],
+    enabled: !!publicClient && !!projectTokenAddress && !!address,
+    queryFn: () =>
+      publicClient!.readContract({
+        address: projectTokenAddress!,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address!],
+      }),
+  });
+  const {
+    data: directSell,
+    isFetching: directSellLoading,
+    refetch: refetchDirectSell,
+  } = useQuery({
+    queryKey: [
+      "directCashOutSell",
+      selectedChainId,
+      effectiveProjectId.toString(),
+      redeemAmountBN.toString(),
+      cashOutRoute?.expectedReturn.toString(),
+      slippageBps,
+    ],
+    enabled:
+      !!publicClient &&
+      !!selectedChainId &&
+      !!projectTokenAddress &&
+      !!cashOutRoute &&
+      redeemAmountBN > 0n &&
+      (claimedBalance ?? 0n) >= redeemAmountBN,
+    retry: false,
+    queryFn: async () => {
+      const pool = await readPoolSnapshot(selectedChainId!, effectiveProjectId).then(
+        (result) => result.pool,
+      );
+      if (!pool) return null;
+      return quoteDirectSellSwap({
+        client: publicClient!,
+        chainId: selectedChainId!,
+        poolKey: pool.key,
+        projectToken: projectTokenAddress!,
+        amount: redeemAmountBN,
+        terminalOutput: cashOutRoute!.expectedReturn,
+        slippageBps,
+      });
+    },
+  });
+  const deployment =
+    directSell && selectedChainId ? uniswapV4Deployment(selectedChainId) : undefined;
+  const { data: erc20Allowance, refetch: refetchErc20Allowance } = useQuery({
+    queryKey: ["cashOutErc20Allowance", selectedChainId, projectTokenAddress, address],
+    enabled: !!publicClient && !!directSell && !!projectTokenAddress && !!address,
+    queryFn: () =>
+      publicClient!.readContract({
+        address: projectTokenAddress!,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [address!, PERMIT2_ADDRESS],
+      }),
+  });
+  const { data: routerAllowance, refetch: refetchRouterAllowance } = useQuery({
+    queryKey: [
+      "cashOutRouterAllowance",
+      selectedChainId,
+      projectTokenAddress,
+      deployment?.universalRouter,
+      address,
+    ],
+    enabled:
+      !!publicClient &&
+      !!directSell &&
+      !!projectTokenAddress &&
+      !!deployment?.universalRouter &&
+      !!address,
+    queryFn: () =>
+      publicClient!.readContract({
+        address: PERMIT2_ADDRESS,
+        abi: permit2Abi,
+        functionName: "allowance",
+        args: [address!, projectTokenAddress!, deployment!.universalRouter as Address],
+      }),
+  });
+  const needsErc20Approval = !!directSell && (erc20Allowance ?? 0n) < redeemAmountBN;
+  const needsRouterApproval =
+    !!directSell &&
+    (!routerAllowance ||
+      routerAllowance[0] < redeemAmountBN ||
+      Number(routerAllowance[1]) <= Math.floor(Date.now() / 1000) + 1_800);
+
+  useEffect(() => {
+    if (!approvalConfirmed) return;
+    setIsApproving(false);
+    void refetchErc20Allowance();
+    void refetchRouterAllowance();
+    void refetchClaimedBalance();
+  }, [approvalConfirmed, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
 
   return (
     <Dialog open={disabled === true ? false : undefined}>
@@ -289,10 +415,26 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     <div className="text-base mt-4">
                       You'll get ~{" "}
                       <span className="font-medium">
-                        {formatDecimals(expectedReclaim, 5)} {baseToken?.symbol}
+                        {formatDecimals(
+                          directSell
+                            ? Number(formatUnits(directSell.quotedOutput, baseDecimals))
+                            : expectedReclaim,
+                          5,
+                        )}{" "}
+                        {baseToken?.symbol}
                       </span>
                       <div className="text-sm text-zinc-500 mt-1">
-                        Reverts below {formatDecimals(minimumReclaim, 5)} {baseToken?.symbol}
+                        Reverts below{" "}
+                        {formatDecimals(
+                          directSell
+                            ? Number(formatUnits(directSell.minimumOutput, baseDecimals))
+                            : minimumReclaim,
+                          5,
+                        )}{" "}
+                        {baseToken?.symbol}
+                        {directSell
+                          ? ` · direct pool sale beats ${formatDecimals(expectedReclaim, 5)} ${baseToken?.symbol} from cashing out`
+                          : " · best hook-aware cash-out route"}
                       </div>
                     </div>
                   ) : null}
@@ -306,7 +448,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
             {!isSuccess ? (
               <ButtonWithWallet
                 targetChainId={selectedSucker?.peerChainId}
-                loading={loading || isApproving || (valid && isQuoteFetching)}
+                loading={
+                  loading || isApproving || (valid && (isQuoteFetching || directSellLoading))
+                }
                 disabled={valid && !cashOutRoute}
                 onClick={async () => {
                   try {
@@ -320,6 +464,51 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     ) {
                       console.error("Missing required data for cashout");
                       throw new Error("Please try again");
+                    }
+
+                    if (directSell && projectTokenAddress && selectedChainId && deployment) {
+                      setIsApproving(needsErc20Approval || needsRouterApproval);
+                      if (needsErc20Approval) {
+                        await writeApprovalAsync({
+                          abi: erc20Abi,
+                          functionName: "approve",
+                          chainId: selectedChainId,
+                          address: projectTokenAddress,
+                          args: [PERMIT2_ADDRESS, redeemAmountBN],
+                        });
+                        return;
+                      }
+                      if (needsRouterApproval) {
+                        await writeApprovalAsync({
+                          abi: permit2Abi,
+                          functionName: "approve",
+                          chainId: selectedChainId,
+                          address: PERMIT2_ADDRESS,
+                          args: [
+                            projectTokenAddress,
+                            deployment.universalRouter!,
+                            redeemAmountBN,
+                            Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+                          ],
+                        });
+                        return;
+                      }
+                      const fresh = await refetchDirectSell();
+                      if (!fresh.data) {
+                        throw new Error(
+                          "The pool no longer beats cashing out. Review the refreshed quote.",
+                        );
+                      }
+                      await writeContractAsync(
+                        buildDirectSellSwapTx({
+                          chainId: selectedChainId,
+                          quote: fresh.data,
+                          amount: redeemAmountBN,
+                          recipient: address,
+                          deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
+                        }),
+                      );
+                      return;
                     }
 
                     await writeContractAsync({
@@ -350,7 +539,15 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   }
                 }}
               >
-                {isApproving ? "Approving..." : "Cash out"}
+                {isApproving
+                  ? "Approving..."
+                  : needsErc20Approval
+                    ? "Approve tokens"
+                    : needsRouterApproval
+                      ? "Authorize swap router"
+                      : directSell
+                        ? "Sell on pool"
+                        : "Cash out"}
               </ButtonWithWallet>
             ) : null}
           </DialogFooter>
