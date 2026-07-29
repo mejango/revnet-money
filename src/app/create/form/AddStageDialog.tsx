@@ -278,7 +278,7 @@ export function AddStageDialog({
                             ) : (
                               <select
                                 aria-label="Issuance currency"
-                                className="ml-1 h-7 border-0 bg-transparent py-0 pl-1 pr-5 text-md text-zinc-600 focus:outline-none focus:ring-0"
+                                className="inline-caret ml-1 h-7 border-0 bg-transparent py-0 pl-1 text-md text-zinc-600 focus:outline-none focus:ring-0"
                                 value={draftBaseCurrency}
                                 onChange={(event) =>
                                   setDraftBaseCurrency(event.target.value as "ETH" | "USD")

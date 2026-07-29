@@ -294,6 +294,17 @@ dialog.ui-modal-host::backdrop {
     print-color-adjust: exact;
   }
 
+  /* A select that sits inline in a line of text reads as part of the phrase,
+     so its caret is scaled to the text instead of to a standalone control.
+     The caret geometry and the padding that keeps the option text clear of it
+     belong together: a padding smaller than the caret paints one over the
+     other. */
+  select.inline-caret {
+    background-position: right center;
+    background-size: 1.25em 1.25em;
+    padding-right: 1.5rem;
+  }
+
   select:where([multiple]),
   select:where([size]:not([size="1"])) {
     background-image: initial;

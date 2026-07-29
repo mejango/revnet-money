@@ -58,8 +58,33 @@ test("production create surface stays visible and contained", async ({ page }) =
   const issuanceCurrency = issuanceSuffix.getByRole("combobox", { name: "Issuance currency" });
   await expect(issuanceCurrency).toHaveCount(1);
   await expect(issuanceCurrency).toHaveValue("ETH");
+  await expect(issuanceCurrency.locator("option")).toHaveText(["ETH", "USD"]);
   await issuanceCurrency.selectOption("USD");
   await expect(issuanceCurrency).toHaveValue("USD");
+
+  // The caret is a background image the option text has to clear. Padding
+  // narrower than the caret occupies draws one on top of the other.
+  const caret = await issuanceCurrency.evaluate((element: HTMLSelectElement) => {
+    const styles = getComputedStyle(element);
+    const context = document.createElement("canvas").getContext("2d")!;
+    context.font = `${styles.fontStyle} ${styles.fontWeight} ${styles.fontSize} ${styles.fontFamily}`;
+    // `background-position` computes to `calc(100% - Npx) 50%` when the caret
+    // is inset from the right edge, and to `100% 50%` when it is flush.
+    const inset = Number.parseFloat(/-\s*([\d.]+)px/.exec(styles.backgroundPosition)?.[1] ?? "0");
+    return {
+      reserved: Number.parseFloat(styles.backgroundSize) + inset,
+      paddingRight: Number.parseFloat(styles.paddingRight),
+      textWidth: context.measureText(element.options[element.selectedIndex].text).width,
+      contentWidth:
+        element.getBoundingClientRect().width -
+        Number.parseFloat(styles.paddingLeft) -
+        Number.parseFloat(styles.paddingRight),
+    };
+  });
+  expect(caret.reserved).toBeGreaterThan(0);
+  expect(caret.paddingRight).toBeGreaterThanOrEqual(caret.reserved);
+  expect(caret.textWidth).toBeLessThanOrEqual(caret.contentWidth);
+
   await issuanceAmount.fill("1000000");
   const amountBox = await issuanceAmount.boundingBox();
   const suffixBox = await issuanceSuffix.boundingBox();
