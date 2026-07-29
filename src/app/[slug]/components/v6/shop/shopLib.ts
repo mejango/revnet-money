@@ -72,6 +72,14 @@ export interface ShopTierFlags {
   cantBuyWithCredits: boolean;
 }
 
+export interface ShopConfigFlags {
+  noNewTiersWithReserves: boolean;
+  noNewTiersWithVotes: boolean;
+  noNewTiersWithOwnerMinting: boolean;
+  preventOverspending: boolean;
+  issueTokensForSplits: boolean;
+}
+
 export interface ShopTier {
   id: number;
   /** Full (undiscounted) price in the shop's pricing units. */
@@ -102,6 +110,7 @@ export interface ShopInventory {
   idTarget: Address;
   pricing: { currency: number; decimals: number; symbol: string };
   tiers: ShopTier[];
+  configFlags: ShopConfigFlags | null;
 }
 
 /**
@@ -144,7 +153,7 @@ export async function loadShopInventory(
   });
   if (!resolved) return null;
 
-  const [rawTiers, symbol] = await Promise.all([
+  const [rawTiers, symbol, configFlags] = await Promise.all([
     client.readContract({
       address: resolved.store,
       abi: jb721TiersHookStoreAbi,
@@ -152,6 +161,15 @@ export async function loadShopInventory(
       args: [resolved.hook, [], false, 0n, 200n],
     }),
     resolveShopPricingSymbol(client, chainId, projectId, resolved.pricing.currency),
+    client
+      .readContract({
+        address: resolved.store,
+        abi: jb721TiersHookStoreAbi,
+        functionName: "flagsOf",
+        args: [resolved.hook],
+      })
+      .then((flags) => ({ ...flags }))
+      .catch(() => null),
   ]);
   const activeTiers = rawTiers.filter((tier) => tier.initialSupply > 0);
 
@@ -184,6 +202,7 @@ export async function loadShopInventory(
     store: resolved.store,
     idTarget: resolved.metadataIdTarget,
     pricing: { ...resolved.pricing, symbol },
+    configFlags,
     tiers: activeTiers.map((tier) => ({
       id: tier.id,
       price: tier.price,

@@ -108,6 +108,7 @@ describe("formatCustomProperties", () => {
       name: "P",
       description: "d",
       logoUri: "ipfs://x",
+      version: 1,
       leagueID: "l-1",
       nested: { deep: true },
     });
@@ -118,13 +119,19 @@ describe("formatCustomProperties", () => {
   });
 
   it("is blank when there are no custom properties", () => {
-    expect(formatCustomProperties({ name: "P", description: "d" })).toBe("");
+    expect(formatCustomProperties({ name: "P", description: "d", version: 1 })).toBe("");
     expect(formatCustomProperties(undefined)).toBe("");
     expect(formatCustomProperties("nope")).toBe("");
   });
 
   it("round-trips through parseCustomProperties", () => {
-    const current = { name: "P", description: "d", leagueID: "l-1", tags: ["a", "b"] };
+    const current = {
+      name: "P",
+      description: "d",
+      leagueID: "l-1",
+      tags: ["a", "b"],
+      version: 1,
+    };
     const parsed = parseCustomProperties(formatCustomProperties(current));
     expect(parsed).toEqual({ ok: true, value: { leagueID: "l-1", tags: ["a", "b"] } });
   });
@@ -161,10 +168,9 @@ describe("parseCustomProperties", () => {
 
 describe("customPropertyCollisions", () => {
   it("lists custom keys the form manages", () => {
-    expect(customPropertyCollisions({ name: "x", leagueID: "l", twitter: "t" })).toEqual([
-      "name",
-      "twitter",
-    ]);
+    expect(
+      customPropertyCollisions({ name: "x", leagueID: "l", twitter: "t", version: 99 }),
+    ).toEqual(["name", "twitter", "version"]);
   });
 
   it("is empty when nothing collides", () => {
@@ -180,6 +186,7 @@ describe("mergeProjectMetadata custom properties", () => {
     leagueID: "l-1",
     tags: ["a"],
     payButton: "Join",
+    version: 1,
   };
 
   it("keeps every unmanaged key when custom properties were not touched", () => {
@@ -187,6 +194,7 @@ describe("mergeProjectMetadata custom properties", () => {
     expect(merged.leagueID).toBe("l-1");
     expect(merged.tags).toEqual(["a"]);
     expect(merged.payButton).toBe("Join");
+    expect(merged.version).toBe(1);
   });
 
   it("replaces the unmanaged key set: edits, adds, and deletes", () => {
@@ -201,6 +209,7 @@ describe("mergeProjectMetadata custom properties", () => {
     // tags and payButton were removed from the JSON, so they are deleted.
     expect("tags" in merged).toBe(false);
     expect("payButton" in merged).toBe(false);
+    expect(merged.version).toBe(1);
     // Managed fields still come from the form.
     expect(merged.name).toBe("P");
     expect(merged.description).toBe("d");
@@ -215,6 +224,7 @@ describe("mergeProjectMetadata custom properties", () => {
     expect("leagueID" in merged).toBe(false);
     expect("tags" in merged).toBe(false);
     expect("payButton" in merged).toBe(false);
+    expect(merged.version).toBe(1);
     expect(merged.name).toBe("P");
   });
 
@@ -222,7 +232,13 @@ describe("mergeProjectMetadata custom properties", () => {
     const merged = mergeProjectMetadata(
       { name: "Old", description: "old" },
       { ...baseValues, name: "Form name", description: "Form desc", twitter: "formhandle" },
-      { name: "Custom name", twitter: "customhandle", logoUri: "ipfs://custom", leagueID: "l-9" },
+      {
+        name: "Custom name",
+        twitter: "customhandle",
+        logoUri: "ipfs://custom",
+        leagueID: "l-9",
+        version: 99,
+      },
     );
 
     expect(merged.name).toBe("Form name");
@@ -230,6 +246,7 @@ describe("mergeProjectMetadata custom properties", () => {
     expect(merged.twitter).toBe("formhandle");
     expect(merged.logoUri).toBeUndefined();
     expect(merged.leagueID).toBe("l-9");
+    expect(merged.version).toBeUndefined();
   });
 
   it("does not let a custom property resurrect a cleared optional field", () => {

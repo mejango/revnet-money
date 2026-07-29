@@ -17,6 +17,7 @@ import {
   categoryLabel,
   discountLabel,
   formatShopAmount,
+  ShopConfigFlags,
   ShopInventory,
   ShopTier,
   tierDisplayName,
@@ -26,6 +27,14 @@ import {
 import { canAdjust721Tiers } from "./shopPermissions";
 import { TierDetailModal } from "./TierDetailModal";
 import { TierMediaPreview } from "./TierMediaPreview";
+
+const SHOP_CONFIG_ROWS: [keyof ShopConfigFlags, string][] = [
+  ["preventOverspending", "Require exact payment"],
+  ["noNewTiersWithReserves", "Lock reserved items after launch"],
+  ["noNewTiersWithVotes", "Lock voting items after launch"],
+  ["noNewTiersWithOwnerMinting", "Lock owner minting after launch"],
+  ["issueTokensForSplits", "Give split recipients project tokens"],
+];
 
 /**
  * The Inventory subtab (website/ renderShopSection parity): category filter
@@ -208,6 +217,8 @@ export function InventorySection({
         <EtherscanLink value={shop.hook} truncateTo={6} className="font-mono text-zinc-600" />
       </div>
 
+      <ShopConfigDetails flags={shop.configFlags} />
+
       {detailTier ? (
         <TierDetailModal
           shop={shop}
@@ -228,6 +239,34 @@ export function InventorySection({
         />
       ) : null}
     </div>
+  );
+}
+
+function ShopConfigDetails({ flags }: { flags: ShopConfigFlags | null }) {
+  return (
+    <details className="group mt-4 border-t border-zinc-100 pt-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-zinc-700">
+        <span>Shop config</span>
+        <span
+          aria-hidden="true"
+          className="inline-block text-zinc-400 transition-transform group-open:rotate-90"
+        >
+          ▸
+        </span>
+      </summary>
+      {flags ? (
+        <dl className="mt-3 space-y-2 text-sm">
+          {SHOP_CONFIG_ROWS.map(([key, label]) => (
+            <div key={key} className="flex items-baseline justify-between gap-4">
+              <dt className="text-zinc-500">{label}</dt>
+              <dd className="font-medium text-zinc-800">{flags[key] ? "On" : "Off"}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="mt-3 text-sm text-zinc-500">Couldn&apos;t read the current shop config.</p>
+      )}
+    </details>
   );
 }
 

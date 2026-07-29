@@ -2,8 +2,8 @@ import { isRecord } from "@/lib/formValidation";
 import type { JBProjectMetadata } from "@bananapus/nana-sdk-core";
 
 /**
- * Keys the edit-metadata form manages. Everything else on the project's
- * current metadata is passed through untouched so custom fields survive edits.
+ * Keys the edit-metadata form recognizes. `version` has no editable control,
+ * but is retained outside the custom-properties section.
  */
 export const EDITOR_MANAGED_KEYS = [
   "name",
@@ -15,6 +15,7 @@ export const EDITOR_MANAGED_KEYS = [
   "infoUri",
   "farcaster",
   "payDisclosure",
+  "version",
 ] as const;
 
 const OPTIONAL_TEXT_KEYS = ["twitter", "telegram", "discord", "infoUri", "payDisclosure"] as const;
