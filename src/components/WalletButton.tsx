@@ -135,6 +135,7 @@ export function WalletConnectButton({
   const { enabled: paraEnabled, requestSignIn } = useParaAuth();
   const { connectAsync, error, isPending, reset } = useConnect();
   const [open, setOpen] = useState(false);
+  const [viewAsOpen, setViewAsOpen] = useState(false);
   const menuId = useId();
   const menu = useDismissableMenu(open, setOpen);
 
@@ -241,7 +242,22 @@ export function WalletConnectButton({
               The wallet could not connect. Check that it is unlocked and try again.
             </p>
           ) : null}
+          <div className="mx-3 my-1 border-t border-zinc-200" aria-hidden />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              setViewAsOpen(true);
+            }}
+            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+          >
+            View as…
+          </button>
         </div>
+      ) : null}
+      {viewAsOpen ? (
+        <ViewAsDialog open={viewAsOpen} onOpenChange={setViewAsOpen} />
       ) : null}
     </div>
   );
@@ -257,8 +273,8 @@ export function WalletButton() {
   const [paraLogoutPending, setParaLogoutPending] = useState(false);
   const menuId = useId();
   const menu = useDismissableMenu(open, setOpen);
-  const { data: ensName } = useEnsName(address);
-  const { viewAs } = useViewAs();
+  const { viewAs, clearViewAs } = useViewAs();
+  const { data: ensName } = useEnsName(viewAs ?? address);
   const [viewAsOpen, setViewAsOpen] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -267,23 +283,89 @@ export function WalletButton() {
     <ViewAsDialog open={viewAsOpen} onOpenChange={setViewAsOpen} />
   ) : null;
 
-  if (!mounted || !isConnected || !address) {
-    // Disconnected entry point: a compact trigger beside the sign-in button, so
-    // anyone can browse the site as an address without connecting a wallet.
+  if (mounted && viewAs) {
     return (
-      <div className="inline-flex items-center gap-2">
+      <div
+        className="relative inline-flex"
+        ref={menu.containerRef}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+        }}
+      >
         <Button
+          ref={menu.triggerRef}
           type="button"
-          variant="ghost"
-          className="text-zinc-600 hover:text-zinc-900"
-          onClick={() => setViewAsOpen(true)}
+          variant="outline"
+          aria-haspopup="menu"
+          aria-controls={menuId}
+          aria-expanded={open}
+          onKeyDown={menu.onTriggerKeyDown}
+          onClick={() => {
+            if (open) setOpen(false);
+            else menu.openMenu();
+          }}
+          className="gap-2 border-amber-400 bg-amber-100 text-amber-950 hover:bg-amber-200"
         >
-          View as
+          <span className="h-2 w-2 bg-amber-500" aria-hidden />
+          <span>Viewing as {ensName ?? formatEthAddress(viewAs, { truncateTo: 4 })}</span>
         </Button>
-        <WalletConnectButton menuAlign="right" />
+        {open ? (
+          <div
+            ref={menu.menuRef}
+            id={menuId}
+            role="menu"
+            tabIndex={-1}
+            aria-label="Viewed account"
+            onKeyDown={menu.onMenuKeyDown}
+            className="absolute right-0 top-full z-50 mt-2 min-w-64 border border-amber-300 bg-white p-1 shadow-lg"
+          >
+            <div className="border-b border-amber-100 px-3 py-2 text-xs text-amber-800">
+              Transactions are disabled while viewing as another account.
+            </div>
+            <Link
+              href={`/account/${viewAs}`}
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                menu.triggerRef.current?.focus();
+              }}
+              className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+            >
+              Account
+            </Link>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                clearViewAs();
+                setOpen(false);
+                menu.triggerRef.current?.focus();
+              }}
+              className="block min-h-11 w-full px-3 py-2 text-left text-sm font-medium text-amber-800 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600"
+            >
+              {isConnected && address ? "View as connected wallet" : "Exit View as"}
+            </button>
+            <div className="mx-3 my-1 border-t border-zinc-200" aria-hidden />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                setViewAsOpen(true);
+              }}
+              className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+            >
+              View as another account…
+            </button>
+          </div>
+        ) : null}
         {viewAsDialog}
       </div>
     );
+  }
+
+  if (!mounted || !isConnected || !address) {
+    return <WalletConnectButton menuAlign="right" />;
   }
 
   const formattedBalance = balance
@@ -338,18 +420,6 @@ export function WalletButton() {
             </div>
             <div>{chain?.name ?? "Unsupported network"}</div>
           </div>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              menu.triggerRef.current?.focus();
-              setViewAsOpen(true);
-            }}
-            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
-          >
-            View as…
-          </button>
           <Link
             href={`/account/${viewAs ?? address}`}
             role="menuitem"
@@ -412,6 +482,19 @@ export function WalletButton() {
               {disconnectError}
             </p>
           ) : null}
+          <div className="mx-3 my-1 border-t border-zinc-200" aria-hidden />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              menu.triggerRef.current?.focus();
+              setViewAsOpen(true);
+            }}
+            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+          >
+            View as…
+          </button>
         </div>
       ) : null}
       {viewAsDialog}

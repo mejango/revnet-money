@@ -1,7 +1,9 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { WalletButton, WalletConnectButton } from "@/components/WalletButton";
+import { clearViewAs, setViewAs } from "@/lib/view-as";
 import { ParaAuthContext } from "@/providers/ParaAuthContext";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { Address } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const wallet = vi.hoisted(() => ({
@@ -45,6 +47,7 @@ vi.mock("@/providers/para-logout", async (importOriginal) => {
 describe("local wallet controls", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearViewAs();
     wallet.account.mockReturnValue({
       address: undefined,
       chain: undefined,
@@ -104,7 +107,8 @@ describe("local wallet controls", () => {
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
 
     const first = screen.getByRole("menuitem", { name: "MetaMask" });
-    const last = screen.getByRole("menuitem", { name: "Example Wallet" });
+    const secondWallet = screen.getByRole("menuitem", { name: "Example Wallet" });
+    const last = screen.getByRole("menuitem", { name: "View as…" });
     expect(screen.queryByRole("menuitem", { name: "Injected" })).not.toBeInTheDocument();
     expect(first).toHaveFocus();
 
@@ -112,10 +116,14 @@ describe("local wallet controls", () => {
     expect(last).toHaveFocus();
     fireEvent.keyDown(last, { key: "Home" });
     expect(first).toHaveFocus();
-    fireEvent.keyDown(first, { key: "ArrowUp" });
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    expect(secondWallet).toHaveFocus();
+    fireEvent.keyDown(secondWallet, { key: "ArrowDown" });
     expect(last).toHaveFocus();
     fireEvent.keyDown(last, { key: "ArrowDown" });
     expect(first).toHaveFocus();
+    fireEvent.keyDown(first, { key: "ArrowUp" });
+    expect(last).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu", { name: "Available wallets" })).not.toBeInTheDocument();
@@ -130,6 +138,16 @@ describe("local wallet controls", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu", { name: "Available wallets" })).not.toBeInTheDocument();
+  });
+
+  it("keeps View as inside the Sign in menu as its final separated action", async () => {
+    render(<WalletButton />);
+
+    expect(screen.queryByRole("button", { name: "View as" })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+
+    const items = screen.getAllByRole("menuitem");
+    expect(items.at(-1)).toHaveAccessibleName("View as…");
   });
 
   it("shows the connected address, native balance, network, and disconnect action", async () => {
@@ -151,6 +169,25 @@ describe("local wallet controls", () => {
     expect(screen.getByText("Ethereum")).toBeVisible();
     fireEvent.click(screen.getByRole("menuitem", { name: "Disconnect" }));
     await waitFor(() => expect(wallet.disconnectAsync).toHaveBeenCalledOnce());
+  });
+
+  it("replaces the connected wallet with the viewed identity and returns through its menu", async () => {
+    wallet.account.mockReturnValue({
+      address: "0x1234567890abcdef1234567890abcdef12345678",
+      chain: { name: "Ethereum" },
+      isConnected: true,
+    });
+    setViewAs("0x2222222222222222222222222222222222222222" as Address);
+
+    render(<WalletButton />);
+
+    const viewed = await screen.findByRole("button", { name: /Viewing as 0x2222.*2222/i });
+    expect(screen.queryByRole("button", { name: /0x1234.*5678/i })).not.toBeInTheDocument();
+
+    fireEvent.click(viewed);
+    fireEvent.click(screen.getByRole("menuitem", { name: "View as connected wallet" }));
+
+    expect(await screen.findByRole("button", { name: /0x1234.*5678/i })).toBeVisible();
   });
 
   it("keeps a failed Para logout connected and offers a sanitized retry", async () => {
