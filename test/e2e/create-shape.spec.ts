@@ -33,16 +33,11 @@ test("production create surface stays visible and contained", async ({ page }) =
 
   await expect(page.getByRole("navigation")).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
-  // Chains come first, so every chain-dependent section below can specialize
-  // per selected chain at the point of input.
+  // Settlement (chains + reserve asset) comes before every chain-dependent
+  // section, so each one can specialize per selected chain at the point of
+  // input. "Look" carries no chain-dependent field, so it leads.
   const sectionHeadings = page.getByRole("heading", { level: 2 });
-  await expect(sectionHeadings).toHaveText([
-    "1. Chains",
-    "2. Look",
-    "3. Assets",
-    "4. Terms",
-    "5. Deploy",
-  ]);
+  await expect(sectionHeadings).toHaveText(["1. Look", "2. Settlement", "3. Terms", "4. Deploy"]);
   await expect(page.getByRole("combobox", { name: "Deployment environment" })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
@@ -51,22 +46,21 @@ test("production create surface stays visible and contained", async ({ page }) =
   await expect(page.getByRole("checkbox", { name: "ETH", exact: true })).toBeChecked();
   await expect(page.getByText("backed by both ETH and USDC", { exact: false })).toBeVisible();
 
-  // The issuance denomination is one global choice in the assets section; the
-  // stage dialog reflects it instead of asking again.
-  const issuanceCurrency = page.getByRole("combobox", { name: "Issuance currency" });
-  await expect(issuanceCurrency).toHaveCount(1);
-  await expect(issuanceCurrency).toHaveValue("ETH");
-  await issuanceCurrency.selectOption("USD");
-  await expect(issuanceCurrency).toHaveValue("USD");
+  // The issuance denomination is one global value edited at its point of use:
+  // inline in the stage's issuance row, not in a standalone block.
+  await expect(page.getByRole("combobox", { name: "Issuance currency" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Add stage" }).click();
   const stageDialog = page.getByRole("dialog");
   await expect(stageDialog).toBeVisible();
-  await expect(stageDialog.getByRole("combobox", { name: "Issuance currency" })).toHaveCount(0);
   const issuanceAmount = page.locator("#initialIssuance");
   const issuanceSuffix = page.locator("#initialIssuance + span");
+  const issuanceCurrency = issuanceSuffix.getByRole("combobox", { name: "Issuance currency" });
+  await expect(issuanceCurrency).toHaveCount(1);
+  await expect(issuanceCurrency).toHaveValue("ETH");
+  await issuanceCurrency.selectOption("USD");
+  await expect(issuanceCurrency).toHaveValue("USD");
   await issuanceAmount.fill("1000000");
-  await expect(issuanceSuffix).toHaveText(/\/\s*USD$/);
   const amountBox = await issuanceAmount.boundingBox();
   const suffixBox = await issuanceSuffix.boundingBox();
   expect(amountBox).not.toBeNull();
@@ -109,6 +103,29 @@ test("production create surface stays visible and contained", async ({ page }) =
   await expect(page.locator('a[href*="/undefined/"]')).toHaveCount(0);
 
   await expectContained(page, ["nav", "main", "footer", "h1", "#name", "#tokenSymbol"]);
+  await page.waitForTimeout(250);
+  expectBoundaryToStayLocal(boundary);
+});
+
+test("environment flip swaps the chain list and prunes hidden-environment picks", async ({
+  page,
+}) => {
+  const boundary = await openCreatePage(page);
+  const environment = page.getByRole("combobox", { name: "Deployment environment" });
+
+  await page.getByRole("checkbox", { name: "Ethereum", exact: true }).check();
+  await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeChecked();
+
+  await environment.click();
+  await page.getByRole("option", { name: "Testnets" }).click();
+  await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "Sepolia", exact: true })).toBeVisible();
+
+  // The hidden environment's pick was dropped, not silently kept.
+  await environment.click();
+  await page.getByRole("option", { name: "Production" }).click();
+  await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).not.toBeChecked();
+
   await page.waitForTimeout(250);
   expectBoundaryToStayLocal(boundary);
 });

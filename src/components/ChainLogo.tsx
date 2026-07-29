@@ -7,10 +7,16 @@ type ImageProps = React.ComponentProps<typeof Image>;
 
 type Props = {
   chainId: JBChainId;
+  /**
+   * Set only where the mark is the sole chain signal — a bare table cell, an
+   * icon-only link, a stack of marks. Beside a visible chain name the mark is
+   * decorative, and naming it too would announce the chain twice.
+   */
+  standalone?: boolean;
 } & Omit<ImageProps, "src" | "alt" | "title">;
 
 export const ChainLogo = (props: Props) => {
-  const { chainId, width, height, style, ...rest } = props;
+  const { chainId, width, height, style, standalone, ...rest } = props;
   const chainName = JB_CHAINS[chainId].name;
   const src = chainIdToLogo[chainId];
   const displayWidth = width ?? 20;
@@ -21,8 +27,8 @@ export const ChainLogo = (props: Props) => {
     <Image
       {...rest}
       src={src}
-      alt={`${chainName} Logo`}
-      title={chainName}
+      alt={standalone ? chainName : ""}
+      aria-hidden={standalone ? undefined : "true"}
       width={isArbitrum ? 374 : 1}
       height={isArbitrum ? 422 : 1}
       style={{

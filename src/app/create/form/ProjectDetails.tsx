@@ -9,7 +9,7 @@ export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
   return (
     <>
       <div className="md:col-span-1">
-        <h2 className="mb-4 text-lg font-bold md:mb-2">2. Look</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">1. Look</h2>
       </div>
       <div className="md:col-span-2">
         <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-12">

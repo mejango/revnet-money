@@ -54,21 +54,56 @@ beforeEach(() => {
   vi.spyOn(console, "debug").mockImplementation(() => undefined);
 });
 
+function precedes(first: Element, second: Element) {
+  return Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+}
+
 describe("create form section order", () => {
-  it("asks for chains in the first section, before every chain-dependent section", () => {
+  it("numbers the sections in render order", () => {
     renderCreateForm(validRevnetForm());
 
     const headings = screen
       .getAllByRole("heading", { level: 2 })
       .map((heading) => heading.textContent ?? "");
-    const indexOf = (pattern: RegExp) => headings.findIndex((heading) => pattern.test(heading));
 
-    expect(headings[0]).toMatch(/chains/i);
-    expect(indexOf(/chains/i)).toBeLessThan(indexOf(/look/i));
-    expect(indexOf(/chains/i)).toBeLessThan(indexOf(/assets/i));
-    expect(indexOf(/chains/i)).toBeLessThan(indexOf(/terms/i));
-    expect(indexOf(/chains/i)).toBeLessThan(indexOf(/deploy/i));
-    expect(indexOf(/deploy/i)).toBe(headings.length - 1);
+    expect(headings).toEqual(["1. Look", "2. Settlement", "3. Terms", "4. Deploy"]);
+  });
+
+  it("settles chains and the reserve asset in one section, chains first", () => {
+    renderCreateForm(validRevnetForm());
+
+    // "Look" (name, ticker, logo, about, socials) has no chain-dependent
+    // field, so it leads. Everything from the chain picker down does.
+    const environment = screen.getByLabelText("Deployment environment");
+    const chain = screen.getByRole("checkbox", { name: "Ethereum" });
+    const reserveAsset = screen.getByRole("checkbox", { name: "Custom token" });
+    const terms = screen.getByRole("heading", { name: "3. Terms" });
+
+    expect(precedes(environment, chain)).toBe(true);
+    expect(precedes(chain, reserveAsset)).toBe(true);
+    expect(precedes(reserveAsset, terms)).toBe(true);
+  });
+
+  it("describes chains and reserve asset from the settlement section's copy", () => {
+    renderCreateForm(validRevnetForm());
+
+    const settlement = screen.getByRole("heading", { name: "2. Settlement" }).closest("div");
+    expect(settlement?.textContent).toContain(
+      "Pick which chains your revnet will accept money on and issue SAFE from, and which reserve asset will back the value of SAFE.",
+    );
+    expect(settlement?.textContent).toContain(
+      "Holders of SAFE can cash out on any of the selected chains for the reserve token(s), and can move their SAFE between chains at any time, which moves proportional reserved tokens alongside.",
+    );
+  });
+
+  it("promises operator-added chains from the deploy step, not the chain picker", () => {
+    renderCreateForm(validRevnetForm());
+
+    // The operator is configured in Terms, below the chain picker: this
+    // promise only reads correctly once it sits with the other post-deploy
+    // expectations.
+    const copy = screen.getByText(/able to add new chains to the revnet later/i);
+    expect(copy.closest("div")?.querySelector("h2")?.textContent).toBe("4. Deploy");
   });
 });
 
@@ -137,17 +172,30 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
     ).toBe(false);
   });
 
-  it("asks for the issuance base currency once, in the assets section, not per stage", () => {
+  it("edits the issuance denomination inline in the stage, as one global value", () => {
     renderCreateForm(multiChainForm());
 
-    // One global control in the form body.
-    const select = screen.getByLabelText("Issuance currency");
-    fireEvent.change(select, { target: { value: "USD" } });
+    // No standalone denomination block in the form body: the control lives at
+    // the point of use, in the stage's issuance row.
+    expect(screen.queryByLabelText("Issuance currency")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Edit stage 1"));
+    const inline = screen.getByLabelText("Issuance currency");
+    expect(inline).toHaveValue("ETH");
+    fireEvent.change(inline, { target: { value: "USD" } });
+
+    // Buffered like the dialog's other parent-form fields: nothing reaches the
+    // create form until Save.
+    expect(formState().issuanceBaseCurrency).toBe("ETH");
+    fireEvent.click(screen.getByText("Save stage"));
     expect(formState().issuanceBaseCurrency).toBe("USD");
 
-    // The stage dialog shows the chosen denomination without asking again.
-    fireEvent.click(screen.getByLabelText("Edit stage 1"));
-    expect(screen.queryAllByLabelText("Issuance currency")).toHaveLength(1);
+    // The value is global: the stage summary quotes issuance in it.
+    expect(
+      screen.getAllByText(
+        (_, element) => element?.tagName === "DD" && /\/\s*USD/.test(element.textContent ?? ""),
+      ).length,
+    ).toBeGreaterThan(0);
   });
 
   it("assigns each auto-issuance row a selected chain at input time and saves it", () => {

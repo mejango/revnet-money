@@ -329,9 +329,9 @@ export function QueuedMovementsCard({
                   <td className={cell}>{timeAgo(row.createdAt)}</td>
                   <td className={cell}>
                     <span className="inline-flex items-center gap-1">
-                      <ChainLogo chainId={row.chainId} width={16} height={16} />
+                      <ChainLogo chainId={row.chainId} width={16} height={16} standalone />
                       <span className="text-zinc-300">→</span>
-                      <ChainLogo chainId={row.peerChainId} width={16} height={16} />
+                      <ChainLogo chainId={row.peerChainId} width={16} height={16} standalone />
                     </span>
                   </td>
                   <td className={cell}>

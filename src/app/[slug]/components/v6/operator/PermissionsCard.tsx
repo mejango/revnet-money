@@ -139,6 +139,7 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
                               chainId={chainId as JBChainId}
                               width={14}
                               height={14}
+                              standalone
                             />
                           ))}
                         </span>

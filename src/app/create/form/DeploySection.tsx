@@ -21,10 +21,14 @@ export function DeploySection({
   return (
     <>
       <div className="md:col-span-1">
-        <h2 className="mb-4 text-lg font-bold md:mb-2">5. Deploy</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">4. Deploy</h2>
         <p className="text-lg text-zinc-600">
           Deploy your revnet on the chains you selected. Anyone will be able to pay it to receive{" "}
           {revnetTokenSymbol} right away.
+        </p>
+        <p className="mt-2 text-lg text-zinc-600">
+          The project operator you set in your revnet&apos;s terms will also be able to add new
+          chains to the revnet later.
         </p>
       </div>
       <div className="mt-6 md:col-span-2 md:mt-0">

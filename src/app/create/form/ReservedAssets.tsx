@@ -15,7 +15,7 @@ type LookupState =
 
 type CanonicalReserveAsset = "ETH" | "USDC";
 
-export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
+export function ReserveAssetFields({ disabled = false }: { disabled?: boolean }) {
   const { values, setFieldValue, revnetTokenSymbol } = useCreateForm();
   const { reserveAsset, customReserveAsset, chainIds } = values;
   const customSelected = reserveAsset === "CUSTOM";
@@ -44,7 +44,7 @@ export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
     if (chainIds.length === 0) {
       setLookup({
         kind: "idle",
-        message: "Choose at least one chain below to verify this token.",
+        message: "Choose at least one chain above to verify this token.",
       });
       return;
     }
@@ -114,136 +114,103 @@ export function AssetsSection({ disabled = false }: { disabled?: boolean }) {
     customSelected && customReserveCoversChains(customReserveAsset, chainIds as JBChainId[]);
 
   return (
-    <>
-      <div className="md:col-span-1">
-        <h2 className="mb-4 text-lg font-bold md:mb-2">3. Assets</h2>
-        <p className="text-lg text-zinc-600">
-          Pick which reserve asset will back the value of {revnetTokenSymbol}.
-        </p>
-      </div>
-      <div className="col-span-2 mt-6 mb-4 md:mt-0">
-        <span className="mr-4 text-md font-semibold">Choose your reserve asset</span>
-        <div className="mt-2 flex flex-wrap gap-x-8 gap-y-3">
-          {(["ETH", "USDC"] as const).map((asset) => (
-            <label className="flex items-center gap-2" key={asset}>
-              <input
-                type="checkbox"
-                name="reserveAsset"
-                value={asset}
-                checked={canonicalSelected.includes(asset)}
-                onChange={() => toggleCanonical(asset)}
-                disabled={disabled}
-              />
-              {asset}
-            </label>
-          ))}
-          <label className="flex items-center gap-2">
+    <div className="mt-8">
+      <span className="mr-4 text-md font-semibold">Choose your reserve asset</span>
+      <div className="mt-2 flex flex-wrap gap-x-8 gap-y-3">
+        {(["ETH", "USDC"] as const).map((asset) => (
+          <label className="flex items-center gap-2" key={asset}>
             <input
               type="checkbox"
               name="reserveAsset"
-              value="CUSTOM"
-              checked={customSelected}
-              onChange={selectCustom}
+              value={asset}
+              checked={canonicalSelected.includes(asset)}
+              onChange={() => toggleCanonical(asset)}
               disabled={disabled}
             />
-            Custom token
+            {asset}
           </label>
-        </div>
-
-        {!customSelected ? (
-          <>
-            <p className="mt-3 max-w-xl text-sm text-zinc-600">
-              Accounting contexts cannot be added or removed later.
-            </p>
-            {/* One global choice: issuance and shop prices are denominated in
-                this currency across every stage. Custom reserves are their own
-                denomination, so the control only applies to canonical assets. */}
-            <div className="mt-5">
-              <label htmlFor="issuanceBaseCurrency" className="block text-md font-semibold">
-                Issuance denomination
-              </label>
-              <p className="mt-1 max-w-xl text-sm text-zinc-600">
-                {revnetTokenSymbol} issuance and shop prices are quoted per 1 of this currency, in
-                every stage.
-              </p>
-              <select
-                id="issuanceBaseCurrency"
-                aria-label="Issuance currency"
-                className="mt-2 h-9 w-32 border-2 border-melon-300 bg-melon-25 px-2 text-md hover:border-melon-400 focus:border-melon-600 focus:ring-0"
-                value={values.issuanceBaseCurrency}
-                onChange={(event) =>
-                  setFieldValue("issuanceBaseCurrency", event.target.value as "ETH" | "USD")
-                }
-                disabled={disabled}
-              >
-                <option value="ETH">ETH</option>
-                <option value="USD">USD</option>
-              </select>
-            </div>
-            {reserveAsset === "ETH_USDC" ? (
-              <div className="mt-3 max-w-xl border border-pink-200 bg-pink-50 p-3 text-sm text-zinc-700">
-                {revnetTokenSymbol}&nbsp;will be backed by both ETH and USDC paid in by users.
-                Holders can cash out for either reserve, and the backing mix is set by the
-                proportion received—you cannot rebalance between them later. Issuance and shop
-                prices can use ETH or USD; the canonical ETH and USDC accounting contexts use the
-                protocol&apos;s default ETH/USD feed to convert between them.
-              </div>
-            ) : null}
-          </>
-        ) : null}
-
-        {customSelected ? (
-          <div className="mt-5 max-w-xl border-l border-zinc-300 pl-4">
-            <label className="block text-sm font-semibold" htmlFor="customReserveAsset.address">
-              ERC-20 token address
-            </label>
-            <input
-              id="customReserveAsset.address"
-              type="text"
-              className="mt-2 h-10 w-full border border-zinc-300 bg-white px-3 font-mono text-sm"
-              placeholder="0x…"
-              value={customReserveAsset.address}
-              onChange={(event) =>
-                setFieldValue("customReserveAsset", {
-                  address: event.target.value.trim(),
-                  symbol: "",
-                  decimals: null,
-                  verifiedChainIds: [],
-                })
-              }
-              disabled={disabled}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            {lookup.message ? (
-              <p
-                className={`mt-2 text-sm ${
-                  lookup.kind === "error"
-                    ? "text-red-700"
-                    : lookup.kind === "success"
-                      ? "text-teal-700"
-                      : "text-zinc-500"
-                }`}
-                role={lookup.kind === "error" ? "alert" : "status"}
-              >
-                {lookup.message}
-              </p>
-            ) : null}
-            <p className="mt-3 text-sm text-zinc-600">
-              A custom reserve is exclusive. {verified ? customReserveAsset.symbol : "The token"}{" "}
-              becomes the denomination for issuance and shop prices, so no ETH or USD price feed is
-              needed. It must exist at the same address with the same symbol and decimals on every
-              selected chain.
-            </p>
-            {chainIds.length > 1 ? (
-              <p className="mt-2 text-sm text-zinc-600">
-                Linked chains bridge the revnet token. Custom reserve balances remain local because
-                the protocol has no canonical cross-chain mapping for arbitrary ERC-20s.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        ))}
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            name="reserveAsset"
+            value="CUSTOM"
+            checked={customSelected}
+            onChange={selectCustom}
+            disabled={disabled}
+          />
+          Custom token
+        </label>
       </div>
-    </>
+
+      {!customSelected ? (
+        <>
+          <p className="mt-3 max-w-xl text-sm text-zinc-600">
+            Accounting contexts cannot be added or removed later.
+          </p>
+          {reserveAsset === "ETH_USDC" ? (
+            <div className="mt-3 max-w-xl border border-pink-200 bg-pink-50 p-3 text-sm text-zinc-700">
+              {revnetTokenSymbol}&nbsp;will be backed by both ETH and USDC paid in by users. Holders
+              can cash out for either reserve, and the backing mix is set by the proportion
+              received—you cannot rebalance between them later. Issuance and shop prices can use ETH
+              or USD; the canonical ETH and USDC accounting contexts use the protocol&apos;s default
+              ETH/USD feed to convert between them.
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {customSelected ? (
+        <div className="mt-5 max-w-xl border-l border-zinc-300 pl-4">
+          <label className="block text-sm font-semibold" htmlFor="customReserveAsset.address">
+            ERC-20 token address
+          </label>
+          <input
+            id="customReserveAsset.address"
+            type="text"
+            className="mt-2 h-10 w-full border border-zinc-300 bg-white px-3 font-mono text-sm"
+            placeholder="0x…"
+            value={customReserveAsset.address}
+            onChange={(event) =>
+              setFieldValue("customReserveAsset", {
+                address: event.target.value.trim(),
+                symbol: "",
+                decimals: null,
+                verifiedChainIds: [],
+              })
+            }
+            disabled={disabled}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {lookup.message ? (
+            <p
+              className={`mt-2 text-sm ${
+                lookup.kind === "error"
+                  ? "text-red-700"
+                  : lookup.kind === "success"
+                    ? "text-teal-700"
+                    : "text-zinc-500"
+              }`}
+              role={lookup.kind === "error" ? "alert" : "status"}
+            >
+              {lookup.message}
+            </p>
+          ) : null}
+          <p className="mt-3 text-sm text-zinc-600">
+            A custom reserve is exclusive. {verified ? customReserveAsset.symbol : "The token"}{" "}
+            becomes the denomination for issuance and shop prices, so no ETH or USD price feed is
+            needed. It must exist at the same address with the same symbol and decimals on every
+            selected chain.
+          </p>
+          {chainIds.length > 1 ? (
+            <p className="mt-2 text-sm text-zinc-600">
+              Linked chains bridge the revnet token. Custom reserve balances remain local because
+              the protocol has no canonical cross-chain mapping for arbitrary ERC-20s.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }

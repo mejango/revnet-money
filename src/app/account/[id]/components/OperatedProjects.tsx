@@ -88,7 +88,7 @@ export function OperatedProjects({ address }: { address: Address }) {
             return (
               <div key={`${project.chainId}:${project.projectId}`} className="py-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <ChainLogo chainId={project.chainId} width={16} height={16} />
+                  <ChainLogo chainId={project.chainId} width={16} height={16} standalone />
                   {slug ? (
                     <Link href={`/${slug}`} className="text-sm font-medium hover:underline">
                       {label}

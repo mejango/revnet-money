@@ -38,7 +38,7 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
   return (
     <>
       <div className="md:col-span-1">
-        <h2 className="mb-4 text-lg font-bold md:mb-2">4. Terms</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">3. Terms</h2>
         <p className="text-zinc-600 text-lg">
           <span className="capitalize">{revnetTokenSymbol}</span> issuance and cash out terms evolve
           over time automatically in stages.

@@ -547,7 +547,7 @@ export function PayerDeployForm({
               <div className="mt-2 space-y-1">
                 {deployed.map((result) => (
                   <div key={result.chainId} className="flex items-center gap-2 text-sm">
-                    <ChainLogo chainId={result.chainId} width={16} height={16} />
+                    <ChainLogo chainId={result.chainId} width={16} height={16} standalone />
                     {result.payer ? (
                       <>
                         <code className="font-mono text-xs break-all">{result.payer}</code>

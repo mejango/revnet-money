@@ -217,7 +217,7 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
                     chain={JB_CHAINS[state.chainId].chain}
                     className="inline-flex rounded-full"
                   >
-                    <ChainLogo chainId={state.chainId} width={18} height={18} />
+                    <ChainLogo chainId={state.chainId} width={18} height={18} standalone />
                   </EtherscanLink>
                 ))}
             </span>

@@ -255,6 +255,7 @@ export function Header(props: Props) {
                                   chainId={pair.peerChainId as JBChainId}
                                   width={18}
                                   height={18}
+                                  standalone
                                 />
                               </Link>
                             );

@@ -170,7 +170,7 @@ export function StoreItemHoldings({ address }: { address: Address }) {
             {groups.map((group) => (
               <div key={group.key} className="py-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <ChainLogo chainId={group.chainId} width={16} height={16} />
+                  <ChainLogo chainId={group.chainId} width={16} height={16} standalone />
                   {group.slug ? (
                     <Link
                       href={`/${group.slug}/shop`}

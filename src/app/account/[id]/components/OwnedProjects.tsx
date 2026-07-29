@@ -53,7 +53,7 @@ function ProjectCard({
   const chain = JB_CHAINS[project.chainId as JBChainId]?.chain;
   const body = (
     <div className="flex items-center gap-3 py-3">
-      <ChainLogo chainId={project.chainId as JBChainId} width={16} height={16} />
+      <ChainLogo chainId={project.chainId as JBChainId} width={16} height={16} standalone />
       <div className="min-w-0 flex-1">
         <span className="text-sm font-medium text-zinc-800">
           {project.name ?? project.handle ?? `Project #${project.projectId}`}

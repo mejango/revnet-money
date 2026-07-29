@@ -97,7 +97,7 @@ function LoanRow({
     <TableRow className={`hover:bg-zinc-100 ${selectedLoanId === loan.id ? "bg-zinc-100" : ""}`}>
       <TableCell className="whitespace-nowrap px-3 py-2">
         {loan.chainId in JB_CHAINS ? (
-          <ChainLogo chainId={loan.chainId as JBChainId} width={15} height={15} />
+          <ChainLogo chainId={loan.chainId as JBChainId} width={15} height={15} standalone />
         ) : (
           <span>{loan.chainId}</span>
         )}

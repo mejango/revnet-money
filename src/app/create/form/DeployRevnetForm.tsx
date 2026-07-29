@@ -2,12 +2,11 @@ import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import Image from "next/image";
 import { GoToProjectButton } from "../buttons/GoToProjectButton";
 import { useTestData } from "../helpers/useTestData";
-import { ChainSelect } from "./ChainSelect";
 import { DeploySection } from "./DeploySection";
 import { Divider } from "./Divider";
 import { ProjectDetails } from "./ProjectDetails";
 import { QuoteResponse } from "./QuoteResponse";
-import { AssetsSection } from "./ReservedAssets";
+import { SettlementSection } from "./SettlementSection";
 import { Stages } from "./Stages";
 
 export type DirectDeployment = { chainId: JBChainId; hash: string };
@@ -46,13 +45,12 @@ export function DeployRevnetForm({
         alt="A figure holding a lightning bolt above the clouds"
       />
       <h1 className="mb-16 text-2xl md:col-span-3 font-semibold">Create a revnet</h1>
-      {/* Chains come first: every chain-dependent input below specializes per
-          selected chain at the point of input. */}
-      <ChainSelect disabled={disabled} />
-      <Divider />
+      {/* "Look" carries no chain-dependent field, so it leads. Settlement
+          (chains + reserve asset) comes next: every chain-dependent input
+          below specializes per selected chain at the point of input. */}
       <ProjectDetails disabled={disabled} />
       <Divider />
-      <AssetsSection disabled={disabled} />
+      <SettlementSection disabled={disabled} />
       <Divider />
       <Stages disabled={disabled} />
       <Divider />

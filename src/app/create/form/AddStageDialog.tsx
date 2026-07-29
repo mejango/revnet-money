@@ -76,13 +76,20 @@ export function AddStageDialog({
   onSave: (newStage: StageData) => void;
 }) {
   const {
-    values: { stages, chainIds, operator: perChainOperators },
+    values: {
+      stages,
+      chainIds,
+      operator: perChainOperators,
+      issuanceBaseCurrency,
+      reserveAsset: reserveAssetChoice,
+    },
     setFieldValue: setCreateFieldValue,
     revnetTokenSymbol,
     reserveAssetSymbol,
-    issuanceBaseCurrencySymbol,
   } = useCreateForm();
   const reserveAsset = reserveAssetSymbol;
+  // A custom reserve is its own denomination, so there is nothing to choose.
+  const customReserve = reserveAssetChoice === "CUSTOM";
   // Chains are picked in the form's first section, so every chain-dependent
   // input in this dialog can specialize per selected chain inline.
   const sortedChainIds = sortChains(chainIds);
@@ -95,6 +102,12 @@ export function AddStageDialog({
   // and committed only on "Save stage" — closing the dialog without saving
   // must leave the parent form untouched.
   const [draftOperators, setDraftOperators] = useState(perChainOperators);
+
+  // The issuance denomination is a single global value (the ruleset's base
+  // currency for the whole revnet), edited inline in the issuance row below
+  // and buffered like the operators.
+  const [draftBaseCurrency, setDraftBaseCurrency] = useState(issuanceBaseCurrency);
+  const draftBaseCurrencySymbol = customReserve ? reserveAssetSymbol : draftBaseCurrency;
 
   // Move enableCut state to top level
   const [enableCut, setEnableCut] = useState(
@@ -123,8 +136,11 @@ export function AddStageDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        // (Re)start the buffer from the parent's current state on every open.
-        if (nextOpen) setDraftOperators(perChainOperators);
+        // (Re)start the buffers from the parent's current state on every open.
+        if (nextOpen) {
+          setDraftOperators(perChainOperators);
+          setDraftBaseCurrency(issuanceBaseCurrency);
+        }
         setOpen(nextOpen);
       }}
     >
@@ -149,8 +165,9 @@ export function AddStageDialog({
                   newValues.priceCeilingIncreaseFrequency = "0";
                 }
 
-                // Commit the buffered per-chain operators along with the stage.
+                // Commit the buffered parent-form fields along with the stage.
                 if (stageIdx === 0) setCreateFieldValue("operator", draftOperators);
+                setCreateFieldValue("issuanceBaseCurrency", draftBaseCurrency);
                 onSave(newValues);
                 setOpen(false);
               } catch (e: any) {
@@ -218,7 +235,8 @@ export function AddStageDialog({
                         1. {revnetTokenSymbol} issuance
                       </div>
                       <p className="text-md text-zinc-500 mt-3">
-                        How many {revnetTokenSymbol} to issue when receiving {reserveAsset}.
+                        How many {revnetTokenSymbol} to issue when receiving 1{" "}
+                        {draftBaseCurrencySymbol}.
                       </p>
 
                       <PickupFromPreviousStage
@@ -247,15 +265,29 @@ export function AddStageDialog({
                                 : values.initialIssuance
                             }
                           />
-                          {/* The base currency is one global choice made in the
-                              assets section — the dialog only reflects it. */}
+                          {/* The denomination is one global value for the whole
+                              revnet; every stage's row edits the same one. */}
                           <span className="flex shrink-0 items-center pr-2 text-md text-zinc-500">
                             <span className="pointer-events-none whitespace-nowrap">
                               {revnetTokenSymbol} /
                             </span>
-                            <span className="pointer-events-none ml-1 whitespace-nowrap">
-                              {issuanceBaseCurrencySymbol}
-                            </span>
+                            {customReserve ? (
+                              <span className="pointer-events-none ml-1 whitespace-nowrap">
+                                {draftBaseCurrencySymbol}
+                              </span>
+                            ) : (
+                              <select
+                                aria-label="Issuance currency"
+                                className="ml-1 h-7 border-0 bg-transparent py-0 pl-1 pr-5 text-md text-zinc-600 focus:outline-none focus:ring-0"
+                                value={draftBaseCurrency}
+                                onChange={(event) =>
+                                  setDraftBaseCurrency(event.target.value as "ETH" | "USD")
+                                }
+                              >
+                                <option value="ETH">ETH</option>
+                                <option value="USD">USD</option>
+                              </select>
+                            )}
                           </span>
                         </div>
                         <div className="flex w-full flex-wrap items-center gap-2">

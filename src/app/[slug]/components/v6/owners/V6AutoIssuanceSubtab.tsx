@@ -152,7 +152,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
               {rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>
-                    <ChainLogo chainId={row.chainId as JBChainId} />
+                    <ChainLogo chainId={row.chainId as JBChainId} standalone />
                   </TableCell>
                   <TableCell>{row.stage ?? "—"}</TableCell>
                   <TableCell>

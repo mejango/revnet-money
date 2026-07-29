@@ -110,7 +110,7 @@ export function ParticipantsTable({
             <TableCell className="whitespace-nowrap pr-20">
               <div className="flex items-center gap-1">
                 {participant.chains.map((chain) => (
-                  <ChainLogo chainId={chain as JBChainId} key={chain} width={14} height={14} />
+                  <ChainLogo chainId={chain as JBChainId} key={chain} width={14} height={14} standalone />
                 ))}
               </div>
             </TableCell>

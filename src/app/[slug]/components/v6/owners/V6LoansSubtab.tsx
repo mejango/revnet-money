@@ -54,7 +54,7 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
               {rows.map((loan) => (
                 <tr key={`${loan.chainId}:${loan.id}`} className="border-b border-zinc-100">
                   <td className="py-2 pr-4">
-                    <ChainLogo chainId={loan.chainId as JBChainId} />
+                    <ChainLogo chainId={loan.chainId as JBChainId} standalone />
                   </td>
                   <td className="py-2 pr-4">
                     <EthereumAddress address={loan.owner as `0x${string}`} short withEnsName />
