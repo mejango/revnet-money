@@ -44,9 +44,7 @@ if (
 }
 if (
   !dockerfile.includes("ARG RAILWAY_GIT_COMMIT_SHA") ||
-  !dockerfile.includes(
-    "NEXT_PUBLIC_VERSION=${NEXT_PUBLIC_VERSION:-${RAILWAY_GIT_COMMIT_SHA}}",
-  )
+  !dockerfile.includes("NEXT_PUBLIC_VERSION=${NEXT_PUBLIC_VERSION:-${RAILWAY_GIT_COMMIT_SHA}}")
 ) {
   throw new Error("Railway builds must derive NEXT_PUBLIC_VERSION from the deployed commit");
 }

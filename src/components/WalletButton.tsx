@@ -256,9 +256,7 @@ export function WalletConnectButton({
           </button>
         </div>
       ) : null}
-      {viewAsOpen ? (
-        <ViewAsDialog open={viewAsOpen} onOpenChange={setViewAsOpen} />
-      ) : null}
+      {viewAsOpen ? <ViewAsDialog open={viewAsOpen} onOpenChange={setViewAsOpen} /> : null}
     </div>
   );
 }
