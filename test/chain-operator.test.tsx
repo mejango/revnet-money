@@ -81,7 +81,10 @@ describe("ChainOperator per-chain binding", () => {
 
     const operators = operatorState();
     expect(operators).toContainEqual({ chainId: String(sepolia.id), address: TEST_ACCOUNT });
-    expect(operators).toContainEqual({ chainId: String(baseSepolia.id), address: TEST_BENEFICIARY });
+    expect(operators).toContainEqual({
+      chainId: String(baseSepolia.id),
+      address: TEST_BENEFICIARY,
+    });
 
     // The deploy encoding receives the address typed next to each chain.
     const form = { ...operatorForm(), operator: operators };

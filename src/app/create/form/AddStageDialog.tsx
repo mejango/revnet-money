@@ -129,12 +129,7 @@ export function AddStageDialog({
       }}
     >
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent
-        overlayClassName="data-[state=open]:animate-none"
-        overlayStyle={{ animation: "none" }}
-        style={{ animation: "none" }}
-        className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl p-4 duration-0 data-[state=open]:animate-none sm:p-6"
-      >
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl p-4 sm:p-6">
         <DialogHeader className="text-left">
           <DialogTitle className="text-xl">Add stage</DialogTitle>
         </DialogHeader>

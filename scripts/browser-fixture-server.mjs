@@ -687,7 +687,10 @@ registerCall({
   address: addresses.splits,
   result: ([requestedProjectId, rulesetId]) => {
     requireFixture(requestedProjectId === 1n, `splitsOf projectId=${requestedProjectId}`);
-    requireFixture(rulesetId === ruleset.id, `splitsOf rulesetId=${rulesetId}`);
+    // JBSplits.FALLBACK_RULESET_ID (0) is a real read: the splits surfaces size
+    // the fallback group alongside the stage's own group, because `splitsOf`
+    // serves the fallback whenever a ruleset's group is empty.
+    requireFixture(rulesetId === ruleset.id || rulesetId === 0n, `splitsOf rulesetId=${rulesetId}`);
     return [];
   },
 });

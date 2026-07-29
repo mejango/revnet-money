@@ -1,5 +1,6 @@
 "use client";
 
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { resumePendingRelayrBundles, waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
 import {
@@ -16,7 +17,6 @@ import {
 } from "@/lib/transaction-review";
 import { JB_CHAINS, jbContractAddress, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from "react";
-import { createPortal } from "react-dom";
 import { formatEther, toFunctionSelector, type AbiFunction, type Address } from "viem";
 import { useAccount } from "wagmi";
 
@@ -43,15 +43,6 @@ const SAFE_PREFIX: Partial<Record<number, string>> = {
   42161: "arb1",
   11155111: "sep",
 };
-const REVIEW_FOCUSABLE_SELECTOR = [
-  "a[href]",
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
-
 function json(value: unknown): string {
   return JSON.stringify(value, (_, item) => (typeof item === "bigint" ? item.toString() : item), 2);
 }
@@ -162,7 +153,6 @@ function ReviewModal({
 }) {
   const [agreed, setAgreed] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const ref = useRef<HTMLDivElement>(null);
   const authorization = pending.request.kind === "authorization";
   // Callers assemble the description from optional fragments, so a blank string
   // means "nothing extra to say" and must fall back to the standing guidance
@@ -173,77 +163,26 @@ function ReviewModal({
       ? "This signature authorizes the exact typed data and resulting calls below; it does not itself prove those calls have executed."
       : "These are the exact app-controlled fields your wallet will be asked to send. Wallet-selected nonce and network fees are not shown.");
 
-  useEffect(() => {
-    const overflow = document.body.style.overflow;
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    document.body.style.overflow = "hidden";
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        finish(false);
-        return;
-      }
-      if (event.key !== "Tab") return;
-
-      const focusable = Array.from(
-        ref.current?.querySelectorAll<HTMLElement>(REVIEW_FOCUSABLE_SELECTOR) ?? [],
-      ).filter((element) => !element.hidden && getComputedStyle(element).visibility !== "hidden");
-      if (!focusable.length) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        ref.current?.focus();
-        return;
-      }
-
-      const first = focusable[0]!;
-      const last = focusable.at(-1)!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        first.focus();
-      } else {
-        event.stopImmediatePropagation();
-      }
-    };
-    document.addEventListener("keydown", keydown, true);
-    queueMicrotask(() => {
-      ref.current?.querySelector<HTMLElement>(REVIEW_FOCUSABLE_SELECTOR)?.focus();
-    });
-    return () => {
-      document.removeEventListener("keydown", keydown, true);
-      document.body.style.overflow = overflow;
-      previouslyFocused?.focus({ preventScroll: true });
-    };
-  }, [finish]);
-
-  return createPortal(
-    <div
-      // The review renders as a body child above whatever dialog started the
-      // transaction, so it opts out of that dialog's inert sweep.
-      data-ui-modal-portal=""
-      className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-melon-950/60 p-3 sm:p-8"
-      onMouseDown={(event) => event.target === event.currentTarget && finish(false)}
+  // The review is the last thing opened before a wallet prompt, so the shared
+  // dialog shell puts it on top of whatever dialog started the transaction.
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) finish(false);
+      }}
     >
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`transaction-review-title-${pending.id}`}
-        tabIndex={-1}
-        className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col border border-melon-700 bg-melon-25 shadow-2xl sm:max-h-[calc(100vh-4rem)]"
+      <DialogContent
+        showCloseButton={false}
+        className="flex w-[calc(100%-1.5rem)] max-w-3xl flex-col gap-0 border-melon-700 bg-melon-25 p-0 shadow-2xl max-h-[calc(100vh-1.5rem)] sm:w-[calc(100%-4rem)] sm:max-h-[calc(100vh-4rem)]"
       >
         <header className="flex items-start justify-between border-b border-melon-300 bg-melon-50 p-4 sm:p-6">
           <div>
             <p className="text-xs font-bold uppercase text-peel-600">Transaction safety check</p>
-            <h2 id={`transaction-review-title-${pending.id}`} className="mt-1 text-xl font-bold">
+            <DialogTitle className="mt-1 text-xl font-bold">
               {pending.request.title ??
                 (authorization ? "Review authorization" : "Review transaction")}
-            </h2>
+            </DialogTitle>
           </div>
           <button
             type="button"
@@ -328,9 +267,8 @@ function ReviewModal({
             </button>
           </div>
         </footer>
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -4,6 +4,7 @@ import { requireTransactionReview } from "@/lib/transaction-review";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { isBlockedByModalDialog, openModalDialogs } from "./native-dialog-shim";
 
 vi.mock("@/hooks/useReviewedRelayr", () => ({
   resumePendingRelayrBundles: vi.fn(),
@@ -27,7 +28,7 @@ vi.mock("wagmi", () => ({
 }));
 
 describe("TransactionReviewProvider", () => {
-  it("portals the review above inert app content and keeps its actions interactive", async () => {
+  it("opens above the app shell in the top layer and keeps its actions interactive", async () => {
     const writeText = vi.fn(async () => undefined);
     vi.stubGlobal("navigator", {
       ...navigator,
@@ -43,7 +44,6 @@ describe("TransactionReviewProvider", () => {
     );
 
     const shell = screen.getByTestId("app-shell");
-    shell.setAttribute("inert", "");
 
     const review = requireTransactionReview({
       title: "Review approve",
@@ -59,8 +59,9 @@ describe("TransactionReviewProvider", () => {
     const dialog = await screen.findByRole("dialog", { name: "Review approve" });
     expect(screen.getByRole("heading", { name: "Review approve" })).toBeInTheDocument();
     expect(shell.contains(dialog)).toBe(false);
-    expect(dialog.closest("[inert]")).toBeNull();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Close review" })).toHaveFocus());
+    expect(isBlockedByModalDialog(dialog)).toBe(false);
+    expect(isBlockedByModalDialog(shell)).toBe(true);
+    expect(screen.getByRole("button", { name: "Close review" })).toHaveFocus();
 
     fireEvent.click(screen.getByRole("button", { name: "[copy tx audit prompt]" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
@@ -81,7 +82,7 @@ describe("TransactionReviewProvider", () => {
         <TransactionReviewProvider>
           <button onClick={() => setOpen(true)}>Open pay</button>
           <Dialog open={open} onOpenChange={(next) => setOpen(next)}>
-            <DialogContent onOpenAutoFocus={(event) => event.preventDefault()}>
+            <DialogContent>
               <DialogTitle>Pay</DialogTitle>
               <button>Pay now</button>
             </DialogContent>
@@ -105,11 +106,11 @@ describe("TransactionReviewProvider", () => {
       rerender(<PayFlow tick={renderCount} />);
     }
 
-    expect(dialog.closest("[inert]")).toBeNull();
-    expect(dialog.parentElement).not.toHaveAttribute("aria-hidden");
-    for (let node: HTMLElement | null = dialog; node; node = node.parentElement) {
-      expect(node.inert).not.toBe(true);
-    }
+    expect(openModalDialogs().at(-1)).toBe(dialog);
+    expect(isBlockedByModalDialog(dialog)).toBe(false);
+    expect(isBlockedByModalDialog(screen.getByRole("dialog", { name: "Pay", hidden: true }))).toBe(
+      true,
+    );
 
     fireEvent.click(screen.getByRole("checkbox"));
     const approve = screen.getByRole("button", { name: "Agree & continue" });
@@ -118,15 +119,16 @@ describe("TransactionReviewProvider", () => {
     await expect(review).resolves.toBeUndefined();
   });
 
-  it("opts out of the inert sweep of a dialog opened while the review is up", async () => {
+  it("hands the top layer back to the pay dialog once the review is answered", async () => {
     function Shell() {
       const [open, setOpen] = useState(false);
       return (
         <TransactionReviewProvider>
           <button onClick={() => setOpen(true)}>Open pay</button>
           <Dialog open={open} onOpenChange={(next) => setOpen(next)}>
-            <DialogContent onOpenAutoFocus={(event) => event.preventDefault()}>
+            <DialogContent>
               <DialogTitle>Pay</DialogTitle>
+              <button>Pay now</button>
             </DialogContent>
           </Dialog>
         </TransactionReviewProvider>
@@ -134,23 +136,24 @@ describe("TransactionReviewProvider", () => {
     }
 
     render(<Shell />);
+    fireEvent.click(screen.getByRole("button", { name: "Open pay" }));
+    const payDialog = await screen.findByRole("dialog", { name: "Pay" });
+
     const review = requireTransactionReview({
       title: "Review pay",
       calls: [{ chainId: 8453, to: `0x${"22".repeat(20)}`, data: "0x12345678" }],
     });
-    const dialog = await screen.findByRole("dialog", { name: "Review pay" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Open pay" }));
-    await screen.findByRole("dialog", { name: "Pay" });
-
-    for (let node: HTMLElement | null = dialog; node; node = node.parentElement) {
-      expect(node.inert).not.toBe(true);
-      expect(node).not.toHaveAttribute("aria-hidden");
-    }
+    await screen.findByRole("dialog", { name: "Review pay" });
+    expect(isBlockedByModalDialog(payDialog)).toBe(true);
 
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Agree & continue" }));
     await expect(review).resolves.toBeUndefined();
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Review pay" })).toBeNull());
+    expect(openModalDialogs()).toEqual([payDialog]);
+    expect(isBlockedByModalDialog(screen.getByRole("button", { name: "Pay now" }))).toBe(false);
+    expect(document.body.style.overflow).toBe("hidden");
   });
 
   it("never renders an empty guidance banner when the description is blank", async () => {

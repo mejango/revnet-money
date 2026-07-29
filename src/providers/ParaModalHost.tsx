@@ -1,5 +1,6 @@
 "use client";
 
+import { PortalContainerProvider } from "@getpara/react-component-library";
 import { ParaProvider, useModal } from "@getpara/react-sdk-lite";
 import "@getpara/react-sdk-lite/styles.css";
 import { useEffect, useRef, useState } from "react";
@@ -7,10 +8,12 @@ import { createPortal } from "react-dom";
 import { getParaClient, PARA_APP } from "./para-config";
 
 function ModalDriver({
+  host,
   requestId,
   onOpenChange,
   onSettled,
 }: {
+  host: HTMLDialogElement;
   requestId: number;
   onOpenChange: (open: boolean) => void;
   onSettled: () => void;
@@ -24,6 +27,13 @@ function ModalDriver({
     handledRequest.current = requestId;
     openModal();
   }, [requestId, openModal]);
+
+  // Para owns whether its modal is showing; the host only mirrors that into
+  // the top layer. `showModal()` throws on a dialog that is already open.
+  useEffect(() => {
+    if (isOpen && !host.open) host.showModal();
+    else if (!isOpen && host.open) host.close();
+  }, [host, isOpen]);
 
   useEffect(() => {
     onOpenChange(isOpen);
@@ -46,39 +56,58 @@ export default function ParaModalHost({
 }) {
   const paraClient = getParaClient();
 
-  // The Para modal renders inline, so inside the app root it would inherit
-  // the `inert` that an open ui/dialog places on pre-existing body children,
-  // freezing the sign-in UI. Render it in a body-level portal that the
-  // dialog's inert sweep explicitly skips (data-ui-modal-portal).
-  const [portalNode, setPortalNode] = useState<HTMLElement | null>(null);
+  // Sign-in is reachable from inside an app dialog, and a dialog opened with
+  // `showModal()` inerts everything outside itself. So the Para overlay has to
+  // be in the top layer too, which means it has to be a `showModal()` dialog:
+  // the host below. Para renders its overlay through a portal container, so
+  // `PortalContainerProvider` points that container at the host instead of the
+  // body. The provider tree itself lives in the host as well, because Para's
+  // warm-up iframe is a sibling of the overlay and has to stay above the
+  // dialog underneath along with it.
+  const [host, setHost] = useState<HTMLDialogElement | null>(null);
   useEffect(() => {
-    const node = document.createElement("div");
+    const node = document.createElement("dialog");
+    node.className = "ui-modal-host";
     node.dataset.uiModalPortal = "";
+    // Escape belongs to Para's own dismissal path. Closing the host natively
+    // would leave Para believing its modal was still open.
+    const preventNativeCancel = (event: Event) => event.preventDefault();
+    node.addEventListener("cancel", preventNativeCancel);
     document.body.appendChild(node);
-    setPortalNode(node);
-    return () => node.remove();
+    setHost(node);
+    return () => {
+      node.removeEventListener("cancel", preventNativeCancel);
+      node.remove();
+    };
   }, []);
 
-  if (!portalNode) return null;
+  if (!host) return null;
 
   return createPortal(
-    <ParaProvider
-      paraClientConfig={paraClient}
-      config={{ appName: PARA_APP.appName }}
-      paraModalConfig={{
-        authLayout: ["AUTH:FULL"],
-        oAuthMethods: ["GOOGLE", "TWITTER", "APPLE", "DISCORD", "FARCASTER"],
-        theme: {
-          mode: "light",
-          backgroundColor: "#ffffff",
-          foregroundColor: "#18181b",
-          borderRadius: "md",
-        },
-      }}
-      externalWalletConfig={{ wallets: [] }}
-    >
-      <ModalDriver requestId={requestId} onOpenChange={onOpenChange} onSettled={onSettled} />
-    </ParaProvider>,
-    portalNode,
+    <PortalContainerProvider container={host}>
+      <ParaProvider
+        paraClientConfig={paraClient}
+        config={{ appName: PARA_APP.appName }}
+        paraModalConfig={{
+          authLayout: ["AUTH:FULL"],
+          oAuthMethods: ["GOOGLE", "TWITTER", "APPLE", "DISCORD", "FARCASTER"],
+          theme: {
+            mode: "light",
+            backgroundColor: "#ffffff",
+            foregroundColor: "#18181b",
+            borderRadius: "md",
+          },
+        }}
+        externalWalletConfig={{ wallets: [] }}
+      >
+        <ModalDriver
+          host={host}
+          requestId={requestId}
+          onOpenChange={onOpenChange}
+          onSettled={onSettled}
+        />
+      </ParaProvider>
+    </PortalContainerProvider>,
+    host,
   );
 }

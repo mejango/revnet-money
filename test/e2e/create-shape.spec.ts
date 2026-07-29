@@ -33,31 +33,48 @@ test("production create surface stays visible and contained", async ({ page }) =
 
   await expect(page.getByRole("navigation")).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "1. Look" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "2. Assets" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "3. Terms" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "4. Deploy" })).toBeVisible();
+  // Chains come first, so every chain-dependent section below can specialize
+  // per selected chain at the point of input.
+  const sectionHeadings = page.getByRole("heading", { level: 2 });
+  await expect(sectionHeadings).toHaveText([
+    "1. Chains",
+    "2. Look",
+    "3. Assets",
+    "4. Terms",
+    "5. Deploy",
+  ]);
+  await expect(page.getByRole("combobox", { name: "Deployment environment" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Ticker", exact: true })).toBeVisible();
   await page.getByRole("checkbox", { name: "USDC" }).check();
   await expect(page.getByRole("checkbox", { name: "ETH", exact: true })).toBeChecked();
   await expect(page.getByText("backed by both ETH and USDC", { exact: false })).toBeVisible();
 
-  await page.getByRole("button", { name: "Add stage" }).click();
-  const issuanceAmount = page.locator("#initialIssuance");
+  // The issuance denomination is one global choice in the assets section; the
+  // stage dialog reflects it instead of asking again.
   const issuanceCurrency = page.getByRole("combobox", { name: "Issuance currency" });
-  await issuanceAmount.fill("1000000");
+  await expect(issuanceCurrency).toHaveCount(1);
   await expect(issuanceCurrency).toHaveValue("ETH");
+  await issuanceCurrency.selectOption("USD");
+  await expect(issuanceCurrency).toHaveValue("USD");
+
+  await page.getByRole("button", { name: "Add stage" }).click();
+  const stageDialog = page.getByRole("dialog");
+  await expect(stageDialog).toBeVisible();
+  await expect(stageDialog.getByRole("combobox", { name: "Issuance currency" })).toHaveCount(0);
+  const issuanceAmount = page.locator("#initialIssuance");
+  const issuanceSuffix = page.locator("#initialIssuance + span");
+  await issuanceAmount.fill("1000000");
+  await expect(issuanceSuffix).toHaveText(/\/\s*USD$/);
   const amountBox = await issuanceAmount.boundingBox();
-  const suffixBox = await issuanceCurrency.locator("xpath=../..").boundingBox();
+  const suffixBox = await issuanceSuffix.boundingBox();
   expect(amountBox).not.toBeNull();
   expect(suffixBox).not.toBeNull();
   expect(amountBox!.x + amountBox!.width).toBeLessThanOrEqual(suffixBox!.x + 0.5);
-  await issuanceCurrency.selectOption("USD");
-  await expect(issuanceCurrency).toHaveValue("USD");
   await page.getByRole("checkbox", { name: "add automatic cuts?" }).check();
   const dialogBox = await page.getByRole("dialog").boundingBox();
-  const enabledSuffixBox = await issuanceCurrency.boundingBox();
+  const enabledSuffixBox = await issuanceSuffix.boundingBox();
   const cutLabelBox = await page.locator('label[for="uiCutPercentage"]').boundingBox();
   const cutToggleBox = await page.locator("#enableCut").boundingBox();
   const cutPercentageBox = await page.locator("#uiCutPercentage").boundingBox();

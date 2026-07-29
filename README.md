@@ -39,7 +39,11 @@ for anonymous visitors.
 
 See [TESTING.md](./TESTING.md) for the invariant suite, transaction coverage inventory, and CI gates.
 
-After `npm run build`, run `npm run test:browser` for deterministic production layout, keyboard, and accessibility checks at the supported viewport widths.
+Run `npm run build:browser` first, then `npm run test:browser`, for deterministic
+production layout, keyboard, and accessibility checks at the supported viewport
+widths. `test:browser` only stages and starts the existing build — the fixture
+RPC and indexer origins are baked in at build time, so a plain `npm run build`
+leaves the suite pointed at live networks and it fails wholesale.
 
 `npm run check` is the release-equivalent local gate. See
 [DEPLOYMENT.md](./DEPLOYMENT.md) for the standalone container, configuration,

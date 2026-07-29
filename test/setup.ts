@@ -1,6 +1,9 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
+import { installNativeDialogShim, resetNativeDialogShim } from "./native-dialog-shim";
+
+installNativeDialogShim(window);
 
 function blockedNetworkConstructor(transport: string) {
   return class {
@@ -29,6 +32,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetNativeDialogShim();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });

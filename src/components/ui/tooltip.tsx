@@ -1,5 +1,6 @@
 "use client";
 
+import { topLayerHost } from "@/lib/topLayer";
 import { cn } from "@/lib/utils";
 import * as React from "react";
 import { createPortal } from "react-dom";
@@ -257,7 +258,7 @@ function useTooltipPortal(open: boolean) {
     if (!open) return;
     const portal = document.createElement("div");
     portal.dataset.uiTooltipPortal = "";
-    document.body.appendChild(portal);
+    topLayerHost().appendChild(portal);
     setNode(portal);
     return () => {
       portal.remove();

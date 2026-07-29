@@ -1,6 +1,6 @@
-import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { changeSplitsSchema } from "@/app/[slug]/owners/components/changeSplitsSchema";
 import { prepareArgs } from "@/app/[slug]/owners/components/hooks/useSetSplitGroups";
+import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { describe, expect, it } from "vitest";
 

@@ -9,11 +9,23 @@ import {
   ToastViewport,
 } from "@/components/ui/toast";
 import { useToast } from "@/components/ui/use-toast";
+import { subscribeToTopLayer, topLayerHost } from "@/lib/topLayer";
+import { useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 
 export function Toaster() {
   const { toasts } = useToast();
+  // Toasts are raised from inside dialogs (validation, upload failures), and a
+  // dialog in the top layer paints its backdrop over every body-level element.
+  // The viewport follows the topmost open dialog so those toasts stay visible.
+  const host = useSyncExternalStore(
+    subscribeToTopLayer,
+    topLayerHost,
+    () => null as HTMLElement | null,
+  );
+  if (!host) return null;
 
-  return (
+  return createPortal(
     <ToastProvider>
       <ToastViewport>
         {toasts.map(function ({ id, title, description, action, ...props }) {
@@ -33,6 +45,7 @@ export function Toaster() {
           );
         })}
       </ToastViewport>
-    </ToastProvider>
+    </ToastProvider>,
+    host,
   );
 }

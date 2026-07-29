@@ -16,7 +16,7 @@ npm run lint
 npm run protocol:check
 npm test
 npm run test:coverage
-npm run build
+npm run build:browser
 npm run standalone:check
 npm run bundle:check
 npm run test:browser

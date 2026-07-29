@@ -65,10 +65,7 @@ export function DeployRevnetForm({
           <p className="mt-4 text-sm text-zinc-600">
             Deployment submitted. The button unlocks once the transaction is confirmed onchain.
           </p>
-          <GoToProjectButton
-            txHash={directDeployment.hash}
-            chainId={directDeployment.chainId}
-          />
+          <GoToProjectButton txHash={directDeployment.hash} chainId={directDeployment.chainId} />
         </div>
       )}
     </div>

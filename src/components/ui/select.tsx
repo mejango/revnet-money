@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronUp } from "@/components/ui/icons";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
+import { topLayerHost } from "@/lib/topLayer";
 import { cn } from "@/lib/utils";
 import { composeRefs } from "./slot";
 
@@ -359,7 +360,7 @@ function useSelectPortal() {
   React.useEffect(() => {
     const portal = document.createElement("div");
     portal.dataset.uiSelectPortal = "";
-    document.body.appendChild(portal);
+    topLayerHost().appendChild(portal);
     setNode(portal);
     return () => portal.remove();
   }, []);
@@ -432,11 +433,10 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
 
     React.useLayoutEffect(() => {
       if (!context.open) return;
-      if (portal?.parentElement === document.body) {
-        // The option registry is mounted while closed. Move its portal to the
-        // top of the stacking order when it becomes interactive.
-        document.body.appendChild(portal);
-      }
+      // The option registry is mounted while closed. Re-host it when it
+      // becomes interactive: that puts it at the top of the stacking order,
+      // and inside the open dialog when the select lives in one.
+      if (portal) topLayerHost().appendChild(portal);
       updatePosition();
       window.addEventListener("resize", updatePosition);
       window.addEventListener("scroll", updatePosition, true);

@@ -23,7 +23,10 @@ import { DeployRevnetForm } from "@/app/create/form/DeployRevnetForm";
 
 const TX_HASH = `0x${"ab".repeat(32)}`;
 
-function renderForm(directDeployment?: { chainId: RevnetFormData["chainIds"][number]; hash: string }) {
+function renderForm(directDeployment?: {
+  chainId: RevnetFormData["chainIds"][number];
+  hash: string;
+}) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <FormProvider
@@ -32,7 +35,10 @@ function renderForm(directDeployment?: { chainId: RevnetFormData["chainIds"][num
         validate={withSchema(createSchema)}
         onSubmit={() => undefined}
       >
-        <DeployRevnetForm resetRelayrResponse={() => undefined} directDeployment={directDeployment} />
+        <DeployRevnetForm
+          resetRelayrResponse={() => undefined}
+          directDeployment={directDeployment}
+        />
       </FormProvider>
     </QueryClientProvider>,
   );

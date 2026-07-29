@@ -115,6 +115,73 @@
 }
 
 /*
+ * Modal shell. Every dialog is a native `<dialog>` opened with `showModal()`,
+ * so the browser promotes it into the top layer, paints `::backdrop` behind it
+ * and inerts everything outside it. That leaves no z-index to manage and no
+ * overlay element to render. The dialog spans the viewport so the panel inside
+ * it can be centered and so a press on the empty area targets the dialog
+ * itself, which is what dismisses it.
+ */
+dialog.ui-dialog {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  overflow: hidden;
+}
+
+dialog.ui-dialog[open] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+dialog.ui-dialog::backdrop {
+  background-color: rgb(0 0 0 / 0.8);
+}
+
+/*
+ * The Para sign-in overlay has to be usable above an open dialog, and the top
+ * layer is the only place where that is true, so its host is a dialog too.
+ * Para paints its own overlay inside the host, hence the transparent backdrop.
+ * While closed the host stays displayed but collapsed to nothing: it holds
+ * Para's warm-up iframe, which must keep its browsing context between sign-ins.
+ */
+dialog.ui-modal-host {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  overflow: visible;
+  pointer-events: none;
+}
+
+dialog.ui-modal-host[open] {
+  width: 100%;
+  height: 100%;
+  /* Radix sets `pointer-events: none` on the body while its modal is open. */
+  pointer-events: auto;
+}
+
+dialog.ui-modal-host::backdrop {
+  background-color: transparent;
+}
+
+/*
  * @tailwindcss/forms' base strategy, kept explicitly so upgrading Tailwind
  * cannot change the appearance, dimensions, or accessibility of native form
  * controls. Product-specific Melon overrides remain below this layer.

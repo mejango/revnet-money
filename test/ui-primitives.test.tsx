@@ -26,7 +26,7 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 describe("dependency-free UI primitives", () => {
-  it("traps and restores dialog focus and supports Escape and backdrop dismissal", async () => {
+  it("moves and restores dialog focus and supports Escape and backdrop dismissal", async () => {
     const onOpenChange = vi.fn();
     render(
       <Dialog onOpenChange={onOpenChange}>
@@ -46,30 +46,24 @@ describe("dependency-free UI primitives", () => {
     trigger.focus();
     fireEvent.click(trigger);
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    // `showModal()` makes `role="dialog"` and `aria-modal` implicit, and the
+    // backdrop is `::backdrop` rather than an element, so there is nothing in
+    // the portal but the dialog itself.
+    expect(dialog.tagName).toBe("DIALOG");
+    expect(dialog).toHaveAttribute("open");
     expect(dialog).toHaveAccessibleDescription("Change project settings.");
     expect(dialog.className).not.toMatch(/animate-in|fade-in|zoom-in|slide-in/);
-    const openOverlay = document.querySelector<HTMLElement>(
-      "[data-ui-dialog-portal] > [aria-hidden=true]",
-    );
-    expect(openOverlay?.className).not.toMatch(/animate-in|fade-in/);
-    await waitFor(() => expect(screen.getByLabelText("Project name")).toHaveFocus());
-
-    const close = screen.getByRole("button", { name: "Close" });
-    close.focus();
-    fireEvent.keyDown(document, { key: "Tab" });
+    expect(dialog.closest("[data-ui-dialog-portal]")?.children).toHaveLength(1);
     expect(screen.getByLabelText("Project name")).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(trigger).toHaveFocus();
     expect(onOpenChange).toHaveBeenLastCalledWith(false);
 
     fireEvent.click(trigger);
-    const overlay = document.querySelector<HTMLElement>(
-      "[data-ui-dialog-portal] > [aria-hidden=true]",
-    );
-    expect(overlay).not.toBeNull();
-    fireEvent.pointerDown(overlay!);
+    const reopened = await screen.findByRole("dialog", { name: "Settings" });
+    fireEvent.pointerDown(reopened);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 

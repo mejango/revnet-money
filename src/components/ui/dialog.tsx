@@ -4,6 +4,7 @@ import { X } from "@/components/ui/icons";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
+import { registerOpenDialog } from "@/lib/topLayer";
 import { cn } from "@/lib/utils";
 import { composeRefs, Slot } from "./slot";
 
@@ -12,7 +13,6 @@ type DialogContextValue = {
   descriptionId: string;
   hasDescription: boolean;
   hasTitle: boolean;
-  modal: boolean;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   registerDescription: () => () => void;
@@ -54,7 +54,6 @@ function useControllableState({
 interface DialogProps {
   children?: React.ReactNode;
   defaultOpen?: boolean;
-  modal?: boolean;
   onOpenChange?: (open: boolean) => void;
   open?: boolean;
 }
@@ -62,7 +61,6 @@ interface DialogProps {
 function Dialog({
   children,
   defaultOpen = false,
-  modal = true,
   onOpenChange,
   open: controlledOpen,
 }: DialogProps) {
@@ -90,7 +88,6 @@ function Dialog({
       descriptionId: `dialog-description-${reactId}`,
       hasDescription: descriptionCount > 0,
       hasTitle: titleCount > 0,
-      modal,
       onOpenChange: setOpen,
       open,
       registerDescription,
@@ -98,16 +95,7 @@ function Dialog({
       titleId: `dialog-title-${reactId}`,
       triggerRef,
     }),
-    [
-      descriptionCount,
-      modal,
-      open,
-      reactId,
-      registerDescription,
-      registerTitle,
-      setOpen,
-      titleCount,
-    ],
+    [descriptionCount, open, reactId, registerDescription, registerTitle, setOpen, titleCount],
   );
 
   return <DialogContext.Provider value={context}>{children}</DialogContext.Provider>;
@@ -148,31 +136,6 @@ const DialogTrigger = React.forwardRef<HTMLElement, DialogTriggerProps>(
   },
 );
 DialogTrigger.displayName = "DialogTrigger";
-
-interface DialogPortalProps {
-  children?: React.ReactNode;
-  container?: HTMLElement | null;
-  forceMount?: boolean;
-}
-
-function DialogPortal({ children, container }: DialogPortalProps) {
-  const [portalNode, setPortalNode] = React.useState<HTMLElement | null>(container ?? null);
-
-  React.useEffect(() => {
-    if (container) {
-      setPortalNode(container);
-      return;
-    }
-
-    const node = document.createElement("div");
-    node.dataset.uiDialogPortal = "";
-    document.body.appendChild(node);
-    setPortalNode(node);
-    return () => node.remove();
-  }, [container]);
-
-  return portalNode ? createPortal(children, portalNode) : null;
-}
 
 function useDialogPortalNode(open: boolean) {
   const [portalNode, setPortalNode] = React.useState<HTMLElement | null>(null);
@@ -218,342 +181,143 @@ const DialogClose = React.forwardRef<HTMLElement, DialogCloseProps>(
 );
 DialogClose.displayName = "DialogClose";
 
-interface DialogOverlayProps extends React.HTMLAttributes<HTMLDivElement> {
-  forceMount?: boolean;
-}
-
-const DialogOverlay = React.forwardRef<HTMLDivElement, DialogOverlayProps>(
-  ({ className, forceMount: _forceMount, onPointerDown, ...props }, ref) => {
-    const context = useDialog("DialogOverlay");
-    if (!context.open) return null;
-
-    return (
-      <div
-        ref={ref}
-        aria-hidden="true"
-        data-state="open"
-        className={cn("fixed inset-0 z-50 bg-black/80", className)}
-        onPointerDown={(event) => {
-          onPointerDown?.(event);
-          if (event.target === event.currentTarget && !event.defaultPrevented) {
-            context.onOpenChange(false);
-          }
-        }}
-        {...props}
-      />
-    );
-  },
-);
-DialogOverlay.displayName = "DialogOverlay";
-
-const FOCUSABLE_SELECTOR = [
-  "a[href]",
-  "area[href]",
-  "button:not([disabled])",
-  "input:not([disabled]):not([type=hidden])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "iframe",
-  "[tabindex]:not([tabindex='-1'])",
-  "[contenteditable=true]",
-].join(",");
-
-function getFocusableElements(container: HTMLElement) {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-    (element) =>
-      !element.hidden &&
-      element.getAttribute("aria-hidden") !== "true" &&
-      getComputedStyle(element).display !== "none" &&
-      getComputedStyle(element).visibility !== "hidden",
-  );
-}
-
 let bodyLockCount = 0;
 let originalBodyOverflow = "";
-let hiddenBodyChildren: Array<{
-  element: HTMLElement;
-  ariaHidden: string | null;
-  inert: boolean;
-}> = [];
 
 /**
- * Body children the modal sweep must never touch. Other dialogs are layered
- * through `dialogStack` instead, so a dialog never inerts a dialog that opened
- * on top of it; the remaining markers belong to overlays that stay usable
- * beside or above an open dialog (select and tooltip popovers, and the Para
- * sign-in modal, which renders itself into a `data-ui-modal-portal` node).
- */
-const SWEEP_EXEMPT_MARKERS = [
-  "uiDialogPortal",
-  "uiSelectPortal",
-  "uiTooltipPortal",
-  "uiModalPortal",
-] as const;
-
-function sweepableBodyChildren() {
-  return Array.from(document.body.children).filter(
-    (child): child is HTMLElement =>
-      child instanceof HTMLElement &&
-      !SWEEP_EXEMPT_MARKERS.some((marker) => child.dataset[marker] !== undefined),
-  );
-}
-
-/**
- * Locking is reference counted and the sweep is dialog agnostic, so repeated
- * acquire/release pairs are idempotent: only the first open captures the
- * document state and only the last close restores it.
+ * The top layer is the browser's job; scroll is not. `showModal()` inerts the
+ * page behind the dialog but still lets it scroll, so the lock stays here and
+ * stays reference counted: only the first open captures the document state and
+ * only the last close restores it.
  */
 function lockBody() {
   bodyLockCount += 1;
   if (bodyLockCount > 1) return;
   originalBodyOverflow = document.body.style.overflow;
   document.body.style.overflow = "hidden";
-  hiddenBodyChildren = sweepableBodyChildren().map((element) => {
-    const captured = {
-      element,
-      ariaHidden: element.getAttribute("aria-hidden"),
-      inert: element.inert,
-    };
-    element.setAttribute("aria-hidden", "true");
-    element.inert = true;
-    return captured;
-  });
 }
 
 function unlockBody() {
   bodyLockCount = Math.max(0, bodyLockCount - 1);
   if (bodyLockCount > 0) return;
   document.body.style.overflow = originalBodyOverflow;
-  hiddenBodyChildren.forEach(({ element, ariaHidden, inert }) => {
-    if (ariaHidden === null) element.removeAttribute("aria-hidden");
-    else element.setAttribute("aria-hidden", ariaHidden);
-    element.inert = inert;
-  });
-  hiddenBodyChildren = [];
 }
 
-type DialogLayer = {
-  covered: boolean;
-  modal: boolean;
-  portal: HTMLElement | null;
-};
-
-const dialogStack: DialogLayer[] = [];
-
-function setLayerCovered(layer: DialogLayer, covered: boolean) {
-  if (covered === layer.covered || !layer.portal) return;
-  layer.covered = covered;
-  if (covered) {
-    layer.portal.setAttribute("aria-hidden", "true");
-    layer.portal.inert = true;
-  } else {
-    layer.portal.removeAttribute("aria-hidden");
-    layer.portal.inert = false;
-  }
-}
-
-/** Only the topmost dialog is interactive; modal dialogs cover everything below. */
-function applyDialogLayering() {
-  dialogStack.forEach((layer, index) =>
-    setLayerCovered(
-      layer,
-      dialogStack.slice(index + 1).some((above) => above.modal),
-    ),
-  );
-}
-
-function useModalEffects({
-  contentRef,
+function useNativeModalDialog({
+  dialogRef,
   enabled,
-  modal,
-  onOpenChange,
-  onCloseAutoFocus,
   onEscapeKeyDown,
-  onOpenAutoFocus,
+  onOpenChange,
   open,
-  triggerRef,
 }: {
-  contentRef: React.RefObject<HTMLDivElement | null>;
+  dialogRef: React.RefObject<HTMLDialogElement | null>;
   enabled: boolean;
-  modal: boolean;
+  onEscapeKeyDown?: (event: Event) => void;
   onOpenChange: (open: boolean) => void;
-  onCloseAutoFocus?: (event: Event) => void;
-  onEscapeKeyDown?: (event: KeyboardEvent) => void;
-  onOpenAutoFocus?: (event: Event) => void;
   open: boolean;
-  triggerRef: React.RefObject<HTMLElement | null>;
 }) {
   // Callers pass inline arrows, so these identities change on every parent
   // render. Reading them through a ref keeps the effect below tied to real
-  // state changes instead of re-running (and re-sweeping the document) on
-  // every quote refresh or keystroke in the card that owns the dialog.
-  const callbacks = React.useRef({
-    onOpenChange,
-    onCloseAutoFocus,
-    onEscapeKeyDown,
-    onOpenAutoFocus,
-  });
+  // state changes instead of re-running (and re-opening the dialog) on every
+  // quote refresh or keystroke in the card that owns the dialog.
+  const callbacks = React.useRef({ onEscapeKeyDown, onOpenChange });
   React.useLayoutEffect(() => {
-    callbacks.current = { onOpenChange, onCloseAutoFocus, onEscapeKeyDown, onOpenAutoFocus };
+    callbacks.current = { onEscapeKeyDown, onOpenChange };
   });
 
   React.useLayoutEffect(() => {
     if (!open || !enabled) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
 
-    const content = contentRef.current;
-    if (!content) return;
-    const layer: DialogLayer = {
-      covered: false,
-      modal,
-      portal: content.closest<HTMLElement>("[data-ui-dialog-portal]"),
+    // `showModal()` throws on a dialog that is already open.
+    if (!dialog.open) dialog.showModal();
+    const releaseTopLayer = registerOpenDialog(dialog);
+    lockBody();
+
+    let closingForReact = false;
+    const handleCancel = (event: Event) => {
+      // Escape reaches only the topmost dialog. Preventing the cancel is how a
+      // caller refuses dismissal, for instance while a send is in flight.
+      callbacks.current.onEscapeKeyDown?.(event);
     };
-    dialogStack.push(layer);
-    applyDialogLayering();
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const restoreTrigger = triggerRef.current;
-    const openEvent = new Event("dialog.openAutoFocus", { cancelable: true });
-    callbacks.current.onOpenAutoFocus?.(openEvent);
-    if (!openEvent.defaultPrevented) {
-      queueMicrotask(() => {
-        const target = getFocusableElements(content)[0] ?? content;
-        target.focus({ preventScroll: true });
-      });
-    }
-
-    if (modal) lockBody();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (dialogStack.at(-1) !== layer) return;
-      // While an opt-out overlay (Para sign-in) has focus, leave Escape and
-      // the Tab trap to it instead of closing or refocusing this dialog.
-      if (
-        document.activeElement instanceof HTMLElement &&
-        document.activeElement.closest("[data-ui-modal-portal]")
-      ) {
-        return;
-      }
-      if (event.key === "Escape") {
-        callbacks.current.onEscapeKeyDown?.(event);
-        if (!event.defaultPrevented) {
-          event.preventDefault();
-          callbacks.current.onOpenChange(false);
-        }
-        return;
-      }
-
-      if (event.key !== "Tab") return;
-      const focusable = getFocusableElements(content);
-      if (focusable.length === 0) {
-        event.preventDefault();
-        content.focus();
-        return;
-      }
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (
-        event.shiftKey &&
-        (document.activeElement === first || document.activeElement === content)
-      ) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      } else if (!content.contains(document.activeElement)) {
-        event.preventDefault();
-        first.focus();
-      }
+    const handleClose = () => {
+      if (closingForReact) return;
+      callbacks.current.onOpenChange(false);
     };
+    dialog.addEventListener("cancel", handleCancel);
+    dialog.addEventListener("close", handleClose);
 
-    document.addEventListener("keydown", handleKeyDown, true);
     return () => {
-      const stackIndex = dialogStack.lastIndexOf(layer);
-      if (stackIndex >= 0) dialogStack.splice(stackIndex, 1);
-      setLayerCovered(layer, false);
-      applyDialogLayering();
-      document.removeEventListener("keydown", handleKeyDown, true);
-      if (modal) unlockBody();
-
-      const closeEvent = new Event("dialog.closeAutoFocus", { cancelable: true });
-      callbacks.current.onCloseAutoFocus?.(closeEvent);
-      if (!closeEvent.defaultPrevented) {
-        queueMicrotask(() => {
-          const restoreTarget = restoreTrigger ?? previouslyFocused;
-          if (restoreTarget?.isConnected) restoreTarget.focus({ preventScroll: true });
-        });
-      }
+      dialog.removeEventListener("cancel", handleCancel);
+      dialog.removeEventListener("close", handleClose);
+      releaseTopLayer();
+      unlockBody();
+      closingForReact = true;
+      dialog.close();
     };
-  }, [contentRef, enabled, modal, open, triggerRef]);
+  }, [dialogRef, enabled, open]);
 }
 
+const DIALOG_PANEL_CLASS =
+  "relative grid max-h-[90%] w-full max-w-lg gap-4 overflow-y-auto overscroll-none border border-zinc-200 bg-white p-6 shadow-lg dark:border-zinc-800 dark:bg-zinc-950";
+
 interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement> {
-  forceMount?: boolean;
-  onCloseAutoFocus?: (event: Event) => void;
-  onEscapeKeyDown?: (event: KeyboardEvent) => void;
-  onOpenAutoFocus?: (event: Event) => void;
-  overlayClassName?: string;
-  overlayStyle?: React.CSSProperties;
+  /**
+   * Runs on the native `cancel` event. Calling `preventDefault()` on it keeps
+   * the dialog open, which is the only supported way to refuse a dismissal.
+   */
+  onEscapeKeyDown?: (event: Event) => void;
+  /** Off for dialogs that render their own dismissal control. */
+  showCloseButton?: boolean;
 }
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
-  (
-    {
-      className,
-      children,
-      forceMount: _forceMount,
-      onCloseAutoFocus,
-      onEscapeKeyDown,
-      onOpenAutoFocus,
-      overlayClassName,
-      overlayStyle,
-      ...props
-    },
-    forwardedRef,
-  ) => {
+  ({ className, children, onEscapeKeyDown, showCloseButton = true, ...props }, forwardedRef) => {
     const context = useDialog("DialogContent");
-    const localRef = React.useRef<HTMLDivElement>(null);
-    const ref = composeRefs(forwardedRef, localRef);
+    const dialogRef = React.useRef<HTMLDialogElement>(null);
     const portalNode = useDialogPortalNode(context.open);
-    useModalEffects({
-      contentRef: localRef,
+    useNativeModalDialog({
+      dialogRef,
       enabled: portalNode !== null,
-      modal: context.modal,
-      onOpenChange: context.onOpenChange,
-      onCloseAutoFocus,
       onEscapeKeyDown,
-      onOpenAutoFocus,
+      onOpenChange: context.onOpenChange,
       open: context.open,
-      triggerRef: context.triggerRef,
     });
 
     if (!context.open || !portalNode) return null;
 
     return createPortal(
-      <>
-        <DialogOverlay className={overlayClassName} style={overlayStyle} />
+      // `role="dialog"` and `aria-modal` are implicit for a dialog opened with
+      // `showModal()`, and the backdrop is painted by `::backdrop`. The element
+      // spans the viewport so a press on the empty area targets the dialog
+      // itself and dismisses it, while presses inside the panel do not.
+      <dialog
+        ref={dialogRef}
+        id={context.contentId}
+        aria-labelledby={context.hasTitle ? context.titleId : undefined}
+        aria-describedby={context.hasDescription ? context.descriptionId : undefined}
+        tabIndex={-1}
+        className="ui-dialog"
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) context.onOpenChange(false);
+        }}
+      >
         <div
-          ref={ref}
-          id={context.contentId}
-          role="dialog"
-          aria-modal={context.modal || undefined}
-          aria-labelledby={context.hasTitle ? context.titleId : undefined}
-          aria-describedby={context.hasDescription ? context.descriptionId : undefined}
-          tabIndex={-1}
+          ref={forwardedRef}
           data-state="open"
-          className={cn(
-            "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-zinc-200 bg-white p-6 shadow-lg dark:border-zinc-800 dark:bg-zinc-950 max-h-[90%] overflow-y-auto overscroll-none",
-            className,
-          )}
+          className={cn(DIALOG_PANEL_CLASS, className)}
           {...props}
         >
           {children}
-          <DialogClose className="absolute right-4 top-4 opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-zinc-950 focus:ring-offset-2 disabled:pointer-events-none dark:ring-offset-zinc-950 dark:focus:ring-zinc-300">
-            <X aria-hidden="true" className="h-4 w-4" />
-            <span className="sr-only">Close</span>
-          </DialogClose>
+          {showCloseButton ? (
+            <DialogClose className="absolute right-4 top-4 opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-zinc-950 focus:ring-offset-2 disabled:pointer-events-none dark:ring-offset-zinc-950 dark:focus:ring-zinc-300">
+              <X aria-hidden="true" className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </DialogClose>
+          ) : null}
         </div>
-      </>,
+      </dialog>,
       portalNode,
     );
   },
@@ -628,8 +392,6 @@ export {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogOverlay,
-  DialogPortal,
   DialogTitle,
   DialogTrigger,
 };
