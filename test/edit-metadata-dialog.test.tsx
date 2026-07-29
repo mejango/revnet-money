@@ -90,6 +90,16 @@ function advancedTextarea() {
   return screen.getByLabelText(/custom properties/i) as HTMLTextAreaElement;
 }
 
+/**
+ * The advanced editor mounts before the authoritative metadata resolves, so
+ * every test that reads or edits it must wait for the prefill to land instead
+ * of racing the re-initialisation that would otherwise clobber the edit.
+ */
+async function prefilledAdvancedTextarea() {
+  await waitFor(() => expect(advancedTextarea().value).toContain("leagueID"));
+  return advancedTextarea();
+}
+
 async function save() {
   fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 }
@@ -118,8 +128,8 @@ describe("EditMetadataDialog advanced custom properties", () => {
     const details = screen.getByText("Advanced").closest("details") as HTMLDetailsElement;
     expect(details.open).toBe(false);
 
-    await waitFor(() => expect(advancedTextarea()).toBeInTheDocument());
-    expect(JSON.parse(advancedTextarea().value)).toEqual({ leagueID: "l-1", tags: ["defi"] });
+    const textarea = await prefilledAdvancedTextarea();
+    expect(JSON.parse(textarea.value)).toEqual({ leagueID: "l-1", tags: ["defi"] });
   });
 
   it("shows loading and blocks saving until the metadata JSON resolves", async () => {
@@ -145,7 +155,7 @@ describe("EditMetadataDialog advanced custom properties", () => {
 
   it("blocks saving on invalid JSON and shows an inline error", async () => {
     await openDialog();
-    await waitFor(() => expect(advancedTextarea()).toBeInTheDocument());
+    await prefilledAdvancedTextarea();
 
     fireEvent.change(advancedTextarea(), { target: { value: "{ oops" } });
     await save();
@@ -156,7 +166,7 @@ describe("EditMetadataDialog advanced custom properties", () => {
 
   it("rejects JSON that is not an object", async () => {
     await openDialog();
-    await waitFor(() => expect(advancedTextarea()).toBeInTheDocument());
+    await prefilledAdvancedTextarea();
 
     fireEvent.change(advancedTextarea(), { target: { value: "[1,2]" } });
     await save();
@@ -169,7 +179,7 @@ describe("EditMetadataDialog advanced custom properties", () => {
 
   it("keeps custom properties when the advanced editor is untouched", async () => {
     await openDialog();
-    await waitFor(() => expect(advancedTextarea()).toBeInTheDocument());
+    await prefilledAdvancedTextarea();
 
     await save();
 
@@ -181,7 +191,7 @@ describe("EditMetadataDialog advanced custom properties", () => {
 
   it("edits, adds, and deletes custom properties", async () => {
     await openDialog();
-    await waitFor(() => expect(advancedTextarea()).toBeInTheDocument());
+    await prefilledAdvancedTextarea();
 
     fireEvent.change(advancedTextarea(), {
       target: { value: JSON.stringify({ leagueID: "l-2", newKey: { deep: true } }) },
@@ -196,7 +206,7 @@ describe("EditMetadataDialog advanced custom properties", () => {
 
   it("clears every custom property when the prefill is emptied", async () => {
     await openDialog();
-    await waitFor(() => expect(advancedTextarea()).toBeInTheDocument());
+    await prefilledAdvancedTextarea();
 
     fireEvent.change(advancedTextarea(), { target: { value: "" } });
     await save();
@@ -209,7 +219,7 @@ describe("EditMetadataDialog advanced custom properties", () => {
 
   it("lets the form fields win on a managed-key collision and notes it", async () => {
     await openDialog();
-    await waitFor(() => expect(advancedTextarea()).toBeInTheDocument());
+    await prefilledAdvancedTextarea();
 
     fireEvent.change(advancedTextarea(), {
       target: { value: JSON.stringify({ name: "Custom name", leagueID: "l-1" }) },

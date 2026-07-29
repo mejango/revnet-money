@@ -164,6 +164,14 @@ function ReviewModal({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const ref = useRef<HTMLDivElement>(null);
   const authorization = pending.request.kind === "authorization";
+  // Callers assemble the description from optional fragments, so a blank string
+  // means "nothing extra to say" and must fall back to the standing guidance
+  // rather than render an empty banner.
+  const description =
+    pending.request.description?.trim() ||
+    (authorization
+      ? "This signature authorizes the exact typed data and resulting calls below; it does not itself prove those calls have executed."
+      : "These are the exact app-controlled fields your wallet will be asked to send. Wallet-selected nonce and network fees are not shown.");
 
   useEffect(() => {
     const overflow = document.body.style.overflow;
@@ -215,6 +223,9 @@ function ReviewModal({
 
   return createPortal(
     <div
+      // The review renders as a body child above whatever dialog started the
+      // transaction, so it opts out of that dialog's inert sweep.
+      data-ui-modal-portal=""
       className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-melon-950/60 p-3 sm:p-8"
       onMouseDown={(event) => event.target === event.currentTarget && finish(false)}
     >
@@ -245,10 +256,7 @@ function ReviewModal({
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           <p className="border border-peel-200 bg-peel-25 p-3 text-sm leading-relaxed text-peel-800">
-            {pending.request.description ??
-              (authorization
-                ? "This signature authorizes the exact typed data and resulting calls below; it does not itself prove those calls have executed."
-                : "These are the exact app-controlled fields your wallet will be asked to send. Wallet-selected nonce and network fees are not shown.")}
+            {description}
           </p>
           <button
             type="button"

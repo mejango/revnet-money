@@ -220,9 +220,10 @@ export function useWriteContract(
           confirmLabel: safe
             ? "Agree & propose to Safe"
             : (transactionReview?.confirmLabel ?? "Agree & continue"),
-          description: [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
-            .filter(Boolean)
-            .join("\n\n"),
+          description:
+            [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
+              .filter(Boolean)
+              .join("\n\n") || undefined,
         },
       );
 

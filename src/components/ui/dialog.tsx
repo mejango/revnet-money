@@ -270,7 +270,97 @@ function getFocusableElements(container: HTMLElement) {
 
 let bodyLockCount = 0;
 let originalBodyOverflow = "";
-const dialogStack: symbol[] = [];
+let hiddenBodyChildren: Array<{
+  element: HTMLElement;
+  ariaHidden: string | null;
+  inert: boolean;
+}> = [];
+
+/**
+ * Body children the modal sweep must never touch. Other dialogs are layered
+ * through `dialogStack` instead, so a dialog never inerts a dialog that opened
+ * on top of it; the remaining markers belong to overlays that stay usable
+ * beside or above an open dialog (select and tooltip popovers, and the Para
+ * sign-in modal, which renders itself into a `data-ui-modal-portal` node).
+ */
+const SWEEP_EXEMPT_MARKERS = [
+  "uiDialogPortal",
+  "uiSelectPortal",
+  "uiTooltipPortal",
+  "uiModalPortal",
+] as const;
+
+function sweepableBodyChildren() {
+  return Array.from(document.body.children).filter(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement &&
+      !SWEEP_EXEMPT_MARKERS.some((marker) => child.dataset[marker] !== undefined),
+  );
+}
+
+/**
+ * Locking is reference counted and the sweep is dialog agnostic, so repeated
+ * acquire/release pairs are idempotent: only the first open captures the
+ * document state and only the last close restores it.
+ */
+function lockBody() {
+  bodyLockCount += 1;
+  if (bodyLockCount > 1) return;
+  originalBodyOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  hiddenBodyChildren = sweepableBodyChildren().map((element) => {
+    const captured = {
+      element,
+      ariaHidden: element.getAttribute("aria-hidden"),
+      inert: element.inert,
+    };
+    element.setAttribute("aria-hidden", "true");
+    element.inert = true;
+    return captured;
+  });
+}
+
+function unlockBody() {
+  bodyLockCount = Math.max(0, bodyLockCount - 1);
+  if (bodyLockCount > 0) return;
+  document.body.style.overflow = originalBodyOverflow;
+  hiddenBodyChildren.forEach(({ element, ariaHidden, inert }) => {
+    if (ariaHidden === null) element.removeAttribute("aria-hidden");
+    else element.setAttribute("aria-hidden", ariaHidden);
+    element.inert = inert;
+  });
+  hiddenBodyChildren = [];
+}
+
+type DialogLayer = {
+  covered: boolean;
+  modal: boolean;
+  portal: HTMLElement | null;
+};
+
+const dialogStack: DialogLayer[] = [];
+
+function setLayerCovered(layer: DialogLayer, covered: boolean) {
+  if (covered === layer.covered || !layer.portal) return;
+  layer.covered = covered;
+  if (covered) {
+    layer.portal.setAttribute("aria-hidden", "true");
+    layer.portal.inert = true;
+  } else {
+    layer.portal.removeAttribute("aria-hidden");
+    layer.portal.inert = false;
+  }
+}
+
+/** Only the topmost dialog is interactive; modal dialogs cover everything below. */
+function applyDialogLayering() {
+  dialogStack.forEach((layer, index) =>
+    setLayerCovered(
+      layer,
+      dialogStack.slice(index + 1).some((above) => above.modal),
+    ),
+  );
+}
 
 function useModalEffects({
   contentRef,
@@ -293,17 +383,36 @@ function useModalEffects({
   open: boolean;
   triggerRef: React.RefObject<HTMLElement | null>;
 }) {
+  // Callers pass inline arrows, so these identities change on every parent
+  // render. Reading them through a ref keeps the effect below tied to real
+  // state changes instead of re-running (and re-sweeping the document) on
+  // every quote refresh or keystroke in the card that owns the dialog.
+  const callbacks = React.useRef({
+    onOpenChange,
+    onCloseAutoFocus,
+    onEscapeKeyDown,
+    onOpenAutoFocus,
+  });
+  React.useLayoutEffect(() => {
+    callbacks.current = { onOpenChange, onCloseAutoFocus, onEscapeKeyDown, onOpenAutoFocus };
+  });
+
   React.useLayoutEffect(() => {
     if (!open || !enabled) return;
 
     const content = contentRef.current;
     if (!content) return;
-    const stackEntry = Symbol("dialog");
-    dialogStack.push(stackEntry);
+    const layer: DialogLayer = {
+      covered: false,
+      modal,
+      portal: content.closest<HTMLElement>("[data-ui-dialog-portal]"),
+    };
+    dialogStack.push(layer);
+    applyDialogLayering();
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const restoreTrigger = triggerRef.current;
     const openEvent = new Event("dialog.openAutoFocus", { cancelable: true });
-    onOpenAutoFocus?.(openEvent);
+    callbacks.current.onOpenAutoFocus?.(openEvent);
     if (!openEvent.defaultPrevented) {
       queueMicrotask(() => {
         const target = getFocusableElements(content)[0] ?? content;
@@ -311,44 +420,10 @@ function useModalEffects({
       });
     }
 
-    const hiddenSiblings: Array<{
-      element: HTMLElement;
-      ariaHidden: string | null;
-      inert: boolean;
-    }> = [];
-
-    if (modal) {
-      bodyLockCount += 1;
-      if (bodyLockCount === 1) {
-        originalBodyOverflow = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-      }
-
-      const portal = content.closest<HTMLElement>("[data-ui-dialog-portal]");
-      for (const child of Array.from(document.body.children)) {
-        if (
-          !(child instanceof HTMLElement) ||
-          child === portal ||
-          child.dataset.uiSelectPortal !== undefined ||
-          child.dataset.uiTooltipPortal !== undefined ||
-          // Overlays that must stay usable above an open dialog (e.g. the
-          // Para sign-in modal) opt out of the inert sweep with this marker.
-          child.dataset.uiModalPortal !== undefined
-        ) {
-          continue;
-        }
-        hiddenSiblings.push({
-          element: child,
-          ariaHidden: child.getAttribute("aria-hidden"),
-          inert: child.inert,
-        });
-        child.setAttribute("aria-hidden", "true");
-        child.inert = true;
-      }
-    }
+    if (modal) lockBody();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (dialogStack.at(-1) !== stackEntry) return;
+      if (dialogStack.at(-1) !== layer) return;
       // While an opt-out overlay (Para sign-in) has focus, leave Escape and
       // the Tab trap to it instead of closing or refocusing this dialog.
       if (
@@ -358,10 +433,10 @@ function useModalEffects({
         return;
       }
       if (event.key === "Escape") {
-        onEscapeKeyDown?.(event);
+        callbacks.current.onEscapeKeyDown?.(event);
         if (!event.defaultPrevented) {
           event.preventDefault();
-          onOpenChange(false);
+          callbacks.current.onOpenChange(false);
         }
         return;
       }
@@ -393,21 +468,15 @@ function useModalEffects({
 
     document.addEventListener("keydown", handleKeyDown, true);
     return () => {
-      const stackIndex = dialogStack.lastIndexOf(stackEntry);
+      const stackIndex = dialogStack.lastIndexOf(layer);
       if (stackIndex >= 0) dialogStack.splice(stackIndex, 1);
+      setLayerCovered(layer, false);
+      applyDialogLayering();
       document.removeEventListener("keydown", handleKeyDown, true);
-      hiddenSiblings.forEach(({ element, ariaHidden, inert }) => {
-        if (ariaHidden === null) element.removeAttribute("aria-hidden");
-        else element.setAttribute("aria-hidden", ariaHidden);
-        element.inert = inert;
-      });
-      if (modal) {
-        bodyLockCount = Math.max(0, bodyLockCount - 1);
-        if (bodyLockCount === 0) document.body.style.overflow = originalBodyOverflow;
-      }
+      if (modal) unlockBody();
 
       const closeEvent = new Event("dialog.closeAutoFocus", { cancelable: true });
-      onCloseAutoFocus?.(closeEvent);
+      callbacks.current.onCloseAutoFocus?.(closeEvent);
       if (!closeEvent.defaultPrevented) {
         queueMicrotask(() => {
           const restoreTarget = restoreTrigger ?? previouslyFocused;
@@ -415,17 +484,7 @@ function useModalEffects({
         });
       }
     };
-  }, [
-    contentRef,
-    enabled,
-    modal,
-    onOpenChange,
-    onCloseAutoFocus,
-    onEscapeKeyDown,
-    onOpenAutoFocus,
-    open,
-    triggerRef,
-  ]);
+  }, [contentRef, enabled, modal, open, triggerRef]);
 }
 
 interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement> {

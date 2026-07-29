@@ -191,6 +191,20 @@ describe("reviewed write hook", () => {
     );
   });
 
+  it("leaves the review description unset when there is no extra guidance", async () => {
+    const { review, hooks } = await freshHarness();
+    const reviewer = vi.fn().mockResolvedValue(true);
+    review.registerTransactionReviewHandler(reviewer);
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    // An empty string would render as a blank guidance banner in the review.
+    expect(reviewer.mock.calls[0][0].description).toBeUndefined();
+  });
+
   it("stops before simulation when the connected account changes during review", async () => {
     const { review, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => {
