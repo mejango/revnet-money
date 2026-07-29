@@ -1,4 +1,5 @@
 import {
+  prepareAddLiquidity,
   prepareRemoveLiquidity,
   type PoolSnapshot,
   type UserLpPosition,
@@ -23,6 +24,7 @@ const pool = {
   sqrtP: 1n,
   pair: { addr: zeroAddress, decimals: 18, symbol: "ETH" },
   pairIsC0: true,
+  projectToken,
   price: 1,
   poolManager: "0x5555555555555555555555555555555555555555",
 } as PoolSnapshot;
@@ -69,5 +71,30 @@ describe("Revnet LP removal", () => {
     );
     expect(plan.pairMinimum).toBe(1n);
     expect(plan.tokenMinimum).toBe(1n);
+  });
+});
+
+describe("Revnet LP entry", () => {
+  // wallet-action:add-liquidity
+  // wallet-action:liquidity-management
+  it("encodes a bounded mint with Permit2 token settlement and native refund", () => {
+    const plan = prepareAddLiquidity(
+      { ...pool, sqrtP: 2n ** 96n },
+      {
+        pairAmount: 1_000_000_000_000_000_000n,
+        tokenAmount: 1_000_000_000_000_000_000n,
+      },
+      { minimumPrice: 0.5, maximumPrice: 2 },
+      recipient,
+    );
+
+    expect(plan.liquidity).toBeGreaterThan(0n);
+    expect(plan.value).toBe(plan.pairMaximum);
+    expect(plan.erc20Sides).toEqual([{ currency: projectToken, max: plan.tokenMaximum }]);
+    const [actions] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      plan.unlockData,
+    );
+    expect(actions).toBe("0x02121214");
   });
 });

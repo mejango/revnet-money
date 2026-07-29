@@ -27,6 +27,12 @@ const reviewedHookModules = {
       bindings: { sendRelayrTx: "reviewed-relayr-payment" },
     },
   },
+  "@/hooks/useReviewedSafeSignature": {
+    useReviewedSafeSignature: {
+      hookKind: "reviewed-safe-signature-hook",
+      bindings: { signSafeTransactionAsync: "reviewed-safe-signature" },
+    },
+  },
 };
 
 const rawWalletImports = {
@@ -93,7 +99,7 @@ const rawRpcPattern =
   /^(?:eth_send|eth_sign|personal_sign$|wallet_sendCalls|wallet_sendTransaction)/i;
 const allowedRawBoundary = {
   write: "src/hooks/useReviewedWriteContract.ts",
-  sendOrSign: "src/hooks/useReviewedRelayr.ts",
+  sendOrSign: ["src/hooks/useReviewedRelayr.ts", "src/hooks/useReviewedSafeSignature.ts"],
 };
 
 function sourceFiles(directory) {
@@ -137,10 +143,10 @@ function ownerOf(node) {
   return "<module>";
 }
 
-function rawBoundaryFor(callee) {
+function rawBoundariesFor(callee) {
   const name = callee.split(":").at(-1);
   if (["useWriteContract", "writeContract", "writeContractAsync"].includes(name)) {
-    return allowedRawBoundary.write;
+    return [allowedRawBoundary.write];
   }
   if (
     [
@@ -154,7 +160,11 @@ function rawBoundaryFor(callee) {
   ) {
     return allowedRawBoundary.sendOrSign;
   }
-  return undefined;
+  return [];
+}
+
+function isAllowedRawBoundary(file, callee) {
+  return rawBoundariesFor(callee).includes(file);
 }
 
 function aggregate(sites) {
@@ -219,7 +229,7 @@ for (const path of sourceFiles(sourceRoot).sort()) {
           bindings: Object.fromEntries([...rawCallNames].map((name) => [name, "raw-wallet-call"])),
           callee: imported,
         });
-        if (!rawBoundaryFor(callee) || file !== rawBoundaryFor(callee)) {
+        if (!isAllowedRawBoundary(file, callee)) {
           rawBoundaryViolations.push(`${file} imports ${callee}`);
         }
       }
@@ -277,10 +287,7 @@ for (const path of sourceFiles(sourceRoot).sort()) {
 
       if (site) {
         discovered.push(site);
-        if (
-          site.kind.startsWith("raw-") &&
-          (!rawBoundaryFor(site.callee) || file !== rawBoundaryFor(site.callee))
-        ) {
+        if (site.kind.startsWith("raw-") && !isAllowedRawBoundary(file, site.callee)) {
           rawBoundaryViolations.push(`${file} calls ${site.callee} in ${site.owner}`);
         }
       }

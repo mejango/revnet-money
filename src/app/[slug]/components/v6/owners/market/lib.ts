@@ -15,11 +15,16 @@ import {
 } from "@bananapus/nana-sdk-core";
 import {
   getAccountingContexts,
+  UNISWAP_PERMIT2_ADDRESS,
   UNISWAP_V4_INITIALIZE_TOPIC,
+  UNISWAP_V4_MAX_TICK,
   UNISWAP_V4_MODIFY_LIQUIDITY_TOPIC,
   UNISWAP_V4_POOL_MANAGER_ADDRESSES,
   UNISWAP_V4_POSITION_MANAGER_ADDRESSES,
+  uniswapV4AlignTickDown,
+  uniswapV4AlignTickUp,
   uniswapV4AmountsForLiquidity,
+  uniswapV4LiquidityForAmounts,
   uniswapV4PoolId,
   uniswapV4PoolStateSlot,
   uniswapV4PositionTicks,
@@ -32,6 +37,7 @@ import {
 import {
   Address,
   encodeAbiParameters,
+  encodeFunctionData,
   erc20Abi,
   Hex,
   parseAbiItem,
@@ -253,6 +259,7 @@ export interface PoolSnapshot {
   sqrtP: bigint;
   pair: PairToken;
   pairIsC0: boolean;
+  projectToken: Address;
   /** Human pair-token per project token. */
   price: number | null;
   poolManager: Address;
@@ -330,6 +337,10 @@ export async function readPoolSnapshot(
   if (sqrtP === 0n) return { hook, pool: null };
 
   const pairIsC0 = c0 === pair.addr.toLowerCase();
+  const projectToken = (pairIsC0 ? key.currency1 : key.currency0) as Address;
+  if (projectToken === zeroAddress || projectToken.toLowerCase() === pair.addr.toLowerCase()) {
+    return { hook, pool: null };
+  }
   const price = uniswapV4PriceFromSqrtPriceX96(sqrtP, pairIsC0, pair.decimals);
 
   return {
@@ -342,6 +353,7 @@ export async function readPoolSnapshot(
       sqrtP,
       pair,
       pairIsC0,
+      projectToken,
       price,
       poolManager,
     },
@@ -663,6 +675,246 @@ export function prepareRemoveLiquidity(
     deadline: BigInt(nowSeconds + 1_200),
     pairMinimum,
     tokenMinimum,
+  };
+}
+
+// ── Add liquidity ────────────────────────────────────────────────────────────
+
+const ACTION_MINT_POSITION = "02";
+const ACTION_CLOSE_CURRENCY = "12";
+const ACTION_SWEEP = "14";
+
+export const PERMIT2_ADDRESS = UNISWAP_PERMIT2_ADDRESS;
+export const PERMIT2_ABI = [
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [{ type: "address" }, { type: "address" }, { type: "address" }],
+    outputs: [
+      { name: "amount", type: "uint160" },
+      { name: "expiration", type: "uint48" },
+      { name: "nonce", type: "uint48" },
+    ],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint160" },
+      { name: "expiration", type: "uint48" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+export interface AddLiquidityPlan {
+  poolId: Hex;
+  unlockData: Hex;
+  tickLower: number;
+  tickUpper: number;
+  liquidity: bigint;
+  amount0Max: bigint;
+  amount1Max: bigint;
+  pairMaximum: bigint;
+  tokenMaximum: bigint;
+  value: bigint;
+  erc20Sides: Array<{ currency: Address; max: bigint }>;
+  recipient: Address;
+}
+
+/**
+ * Build a reviewed V4 MINT_POSITION plan. The position can be two-sided or
+ * single-sided; maxima include 1% price headroom and unused native value is
+ * swept back to the recipient.
+ */
+export function prepareAddLiquidity(
+  pool: PoolSnapshot,
+  amounts: { pairAmount: bigint; tokenAmount: bigint },
+  range: { minimumPrice: number; maximumPrice: number },
+  recipient: Address,
+): AddLiquidityPlan {
+  if (!(range.minimumPrice > 0) || !(range.maximumPrice > range.minimumPrice)) {
+    throw new Error("Set a valid positive price range.");
+  }
+  const amount0 = pool.pairIsC0 ? amounts.pairAmount : amounts.tokenAmount;
+  const amount1 = pool.pairIsC0 ? amounts.tokenAmount : amounts.pairAmount;
+  if (amount0 <= 0n && amount1 <= 0n) throw new Error("Enter an amount.");
+
+  const spacing = Number(pool.key.tickSpacing);
+  const maxUsable = Math.trunc(UNISWAP_V4_MAX_TICK / spacing) * spacing;
+  const minUsable = Math.trunc(-UNISWAP_V4_MAX_TICK / spacing) * spacing;
+  const rawPrice = (price: number) =>
+    pool.pairIsC0
+      ? 10 ** (18 - pool.pair.decimals) / price
+      : price * 10 ** (pool.pair.decimals - 18);
+  const tickA = Math.log(rawPrice(range.minimumPrice)) / Math.log(1.0001);
+  const tickB = Math.log(rawPrice(range.maximumPrice)) / Math.log(1.0001);
+  let tickLower = Math.max(
+    minUsable,
+    uniswapV4AlignTickDown(Math.floor(Math.min(tickA, tickB)), spacing),
+  );
+  let tickUpper = Math.min(
+    maxUsable,
+    uniswapV4AlignTickUp(Math.ceil(Math.max(tickA, tickB)), spacing),
+  );
+  if (tickUpper <= tickLower) tickUpper = Math.min(maxUsable, tickLower + spacing);
+
+  const currentTick = Math.floor((2 * Math.log(Number(pool.sqrtP) / 2 ** 96)) / Math.log(1.0001));
+  if (amount1 <= 0n && amount0 > 0n && currentTick >= tickLower) {
+    tickLower = Math.min(maxUsable, uniswapV4AlignTickUp(currentTick + 1, spacing));
+  }
+  if (amount0 <= 0n && amount1 > 0n && currentTick < tickUpper) {
+    tickUpper = Math.max(minUsable, uniswapV4AlignTickDown(currentTick, spacing));
+  }
+  if (tickUpper <= tickLower) tickUpper = Math.min(maxUsable, tickLower + spacing);
+
+  const sqrtA = uniswapV4SqrtPriceX96AtTick(tickLower);
+  const sqrtB = uniswapV4SqrtPriceX96AtTick(tickUpper);
+  const liquidity = uniswapV4LiquidityForAmounts(pool.sqrtP, sqrtA, sqrtB, amount0, amount1);
+  if (liquidity <= 0n) throw new Error("Amounts are too small for this range.");
+  const required = uniswapV4AmountsForLiquidity(pool.sqrtP, sqrtA, sqrtB, liquidity);
+  const amount0Max = required.amount0 + required.amount0 / 100n + 1n;
+  const amount1Max = required.amount1 + required.amount1 / 100n + 1n;
+  const nativeIsC0 = pool.pairIsC0 && pool.pair.addr === zeroAddress;
+  const nativeIsC1 = !pool.pairIsC0 && pool.pair.addr === zeroAddress;
+  const value = nativeIsC0 ? amount0Max : nativeIsC1 ? amount1Max : 0n;
+  const erc20Sides: Array<{ currency: Address; max: bigint }> = [];
+  if (!nativeIsC0 && amount0Max > 1n) {
+    erc20Sides.push({ currency: pool.key.currency0, max: amount0Max });
+  }
+  if (!nativeIsC1 && amount1Max > 1n) {
+    erc20Sides.push({ currency: pool.key.currency1, max: amount1Max });
+  }
+
+  const mint = encodeAbiParameters(
+    [
+      {
+        type: "tuple",
+        components: [
+          { type: "address" },
+          { type: "address" },
+          { type: "uint24" },
+          { type: "int24" },
+          { type: "address" },
+        ],
+      },
+      { type: "int24" },
+      { type: "int24" },
+      { type: "uint256" },
+      { type: "uint128" },
+      { type: "uint128" },
+      { type: "address" },
+      { type: "bytes" },
+    ],
+    [
+      [pool.key.currency0, pool.key.currency1, pool.key.fee, pool.key.tickSpacing, pool.key.hooks],
+      tickLower,
+      tickUpper,
+      liquidity,
+      amount0Max,
+      amount1Max,
+      recipient,
+      "0x",
+    ],
+  );
+  const close0 = encodeAbiParameters([{ type: "address" }], [pool.key.currency0]);
+  const close1 = encodeAbiParameters([{ type: "address" }], [pool.key.currency1]);
+  const parameters: Hex[] = [mint, close0, close1];
+  let actions = `0x${ACTION_MINT_POSITION}${ACTION_CLOSE_CURRENCY}${ACTION_CLOSE_CURRENCY}` as Hex;
+  if (value > 0n) {
+    parameters.push(
+      encodeAbiParameters([{ type: "address" }, { type: "address" }], [pool.pair.addr, recipient]),
+    );
+    actions =
+      `0x${ACTION_MINT_POSITION}${ACTION_CLOSE_CURRENCY}${ACTION_CLOSE_CURRENCY}${ACTION_SWEEP}` as Hex;
+  }
+
+  return {
+    poolId: pool.poolId,
+    unlockData: encodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      [actions, parameters],
+    ),
+    tickLower,
+    tickUpper,
+    liquidity,
+    amount0Max,
+    amount1Max,
+    pairMaximum: pool.pairIsC0 ? amount0Max : amount1Max,
+    tokenMaximum: pool.pairIsC0 ? amount1Max : amount0Max,
+    value,
+    erc20Sides,
+    recipient,
+  };
+}
+
+export async function permit2AllowanceCovers(
+  chainId: JBChainId,
+  owner: Address,
+  token: Address,
+  amount: bigint,
+): Promise<boolean> {
+  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(chainId)];
+  if (!positionManager) return false;
+  const [allowed, expiration] = await getViemPublicClient(chainId).readContract({
+    address: PERMIT2_ADDRESS,
+    abi: PERMIT2_ABI,
+    functionName: "allowance",
+    args: [owner, token, positionManager],
+  });
+  return BigInt(allowed) >= amount && Number(expiration) > Math.floor(Date.now() / 1000) + 300;
+}
+
+export function permit2ApprovalArgs(
+  chainId: JBChainId,
+  token: Address,
+  amount: bigint,
+  nowSeconds = Math.floor(Date.now() / 1000),
+) {
+  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(chainId)];
+  if (!positionManager) throw new Error("LP management is unavailable on this chain.");
+  return [token, positionManager, amount, nowSeconds + 30 * 24 * 60 * 60] as const;
+}
+
+/** Abort a reviewed mint when the live price moved beyond its 1% maxima. */
+export async function reverifyAddLiquidity(
+  pool: PoolSnapshot,
+  plan: AddLiquidityPlan,
+): Promise<void> {
+  const client = getViemPublicClient(pool.chainId) as PublicClient;
+  const slot0 = await client.readContract({
+    address: pool.poolManager,
+    abi: EXTSLOAD_ABI,
+    functionName: "extsload",
+    args: [uniswapV4PoolStateSlot(plan.poolId)],
+  });
+  const sqrtP = uniswapV4SqrtPriceX96FromSlot0(slot0);
+  const required = uniswapV4AmountsForLiquidity(
+    sqrtP,
+    uniswapV4SqrtPriceX96AtTick(plan.tickLower),
+    uniswapV4SqrtPriceX96AtTick(plan.tickUpper),
+    plan.liquidity,
+  );
+  if (required.amount0 > plan.amount0Max || required.amount1 > plan.amount1Max) {
+    throw new Error("The pool price moved beyond the reviewed range. Review fresh amounts.");
+  }
+}
+
+export function encodeAddLiquidityCall(
+  plan: AddLiquidityPlan,
+  deadline = BigInt(Math.floor(Date.now() / 1000) + 1_200),
+) {
+  return {
+    args: [plan.unlockData, deadline] as const,
+    data: encodeFunctionData({
+      abi: POSITION_MANAGER_ABI,
+      functionName: "modifyLiquidities",
+      args: [plan.unlockData, deadline],
+    }),
   };
 }
 

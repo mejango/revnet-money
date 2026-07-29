@@ -2,10 +2,16 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { useAllowance } from "@/hooks/useAllowance";
+import {
+  submittedViaSafe,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
+import { erc20Abi, parseUnits, zeroAddress } from "viem";
+import { useAccount, usePublicClient } from "wagmi";
 import {
   chainName,
   ChainProject,
@@ -15,12 +21,20 @@ import {
 } from "../settlement/lib";
 import {
   AmmChainState,
+  encodeAddLiquidityCall,
   fetchAmmStates,
+  PERMIT2_ABI,
+  PERMIT2_ADDRESS,
+  permit2AllowanceCovers,
+  permit2ApprovalArgs,
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
+  prepareAddLiquidity,
   prepareRemoveLiquidity,
   readUserLpPositions,
   refreshUserLpPosition,
+  reverifyAddLiquidity,
+  type AddLiquidityPlan,
   type UserLpPosition,
 } from "./lib";
 
@@ -81,9 +95,268 @@ function AmmChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol
               "PoolManager"
             )}
           </div>
+          <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
           <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
         </div>
       )}
+    </div>
+  );
+}
+
+function AddLiquidityForm({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
+  const { address } = useAccount();
+  const chainId = Number(state.chainId);
+  const publicClient = usePublicClient({ chainId });
+  const { ensureAllowance, isApproving } = useAllowance(chainId);
+  const { writeContractAsync, isPending } = useWriteContract();
+  const [minimumPrice, setMinimumPrice] = useState("");
+  const [maximumPrice, setMaximumPrice] = useState("");
+  const [pairAmount, setPairAmount] = useState("");
+  const [tokenAmount, setTokenAmount] = useState("");
+  const [reviewed, setReviewed] = useState<{
+    plan: AddLiquidityPlan;
+    snapshot: string;
+  } | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const pool = state.pool;
+
+  useEffect(() => {
+    if (!pool?.price || pool.price <= 0) return;
+    setMinimumPrice(String(Number((pool.price * 0.5).toPrecision(6))));
+    setMaximumPrice(String(Number((pool.price * 2).toPrecision(6))));
+    setReviewed(null);
+  }, [pool?.poolId, pool?.price]);
+
+  if (!pool || !POSITION_MANAGER_BY_CHAIN[chainId]) return null;
+
+  const snapshot = [minimumPrice, maximumPrice, pairAmount, tokenAmount].join("|");
+  const review = reviewed?.snapshot === snapshot ? reviewed.plan : null;
+  const prepare = async () => {
+    if (!address || !publicClient) {
+      setStatus("Connect a wallet first.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Reading fresh pool and wallet balances…");
+    try {
+      const pairRaw = pairAmount ? parseUnits(pairAmount, pool.pair.decimals) : 0n;
+      const tokenRaw = tokenAmount ? parseUnits(tokenAmount, 18) : 0n;
+      const plan = prepareAddLiquidity(
+        pool,
+        { pairAmount: pairRaw, tokenAmount: tokenRaw },
+        {
+          minimumPrice: Number(minimumPrice),
+          maximumPrice: Number(maximumPrice),
+        },
+        address,
+      );
+      const [tokenBalance, pairBalance] = await Promise.all([
+        publicClient.readContract({
+          address: pool.projectToken,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address],
+        }),
+        pool.pair.addr === zeroAddress
+          ? publicClient.getBalance({ address })
+          : publicClient.readContract({
+              address: pool.pair.addr,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [address],
+            }),
+      ]);
+      if (plan.tokenMaximum > tokenBalance) {
+        throw new Error(`The reviewed maximum exceeds your ${tokenSymbol} balance.`);
+      }
+      if (plan.pairMaximum > pairBalance) {
+        throw new Error(`The reviewed maximum exceeds your ${pool.pair.symbol} balance.`);
+      }
+      setReviewed({ plan, snapshot });
+      setStatus(null);
+    } catch (cause) {
+      setReviewed(null);
+      setStatus(cause instanceof Error ? cause.message : "Could not prepare liquidity.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const execute = async () => {
+    if (!address || !publicClient || !review) return;
+    setBusy(true);
+    setStatus("Checking token authorizations…");
+    try {
+      for (const side of review.erc20Sides) {
+        await ensureAllowance(side.currency, PERMIT2_ADDRESS, side.max);
+        const covered = await permit2AllowanceCovers(
+          state.chainId,
+          address,
+          side.currency,
+          side.max,
+        );
+        if (!covered) {
+          const approvalArgs = permit2ApprovalArgs(state.chainId, side.currency, side.max);
+          const approvalHash = await writeContractAsync({
+            chainId,
+            address: PERMIT2_ADDRESS,
+            abi: PERMIT2_ABI,
+            functionName: "approve",
+            args: approvalArgs,
+          });
+          if (submittedViaSafe(approvalHash)) {
+            setStatus(
+              "Permit2 authorization was proposed to Safe. Execute it, then review liquidity again.",
+            );
+            setReviewed(null);
+            return;
+          }
+          const receipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+          if (receipt.status !== "success") {
+            throw new Error(`Permit2 authorization ${approvalHash} reverted.`);
+          }
+        }
+      }
+      setStatus("Re-checking the pool price…");
+      await reverifyAddLiquidity(pool, review);
+      const call = encodeAddLiquidityCall(review);
+      const hash = await writeContractAsync({
+        chainId,
+        address: POSITION_MANAGER_BY_CHAIN[chainId]!,
+        abi: POSITION_MANAGER_ABI,
+        functionName: "modifyLiquidities",
+        args: call.args,
+        value: review.value,
+      });
+      if (submittedViaSafe(hash)) {
+        setStatus("Liquidity mint was proposed to Safe and awaits approvals and execution.");
+        setReviewed(null);
+        return;
+      }
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error(`Liquidity mint ${hash} reverted.`);
+      setStatus("Liquidity added successfully.");
+      setReviewed(null);
+      setPairAmount("");
+      setTokenAmount("");
+    } catch (cause) {
+      setStatus(cause instanceof Error ? cause.message : "Could not add liquidity.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disabled = busy || isApproving || isPending;
+  return (
+    <div className="mt-3 border-t border-zinc-100 pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-medium text-zinc-600">Add liquidity</div>
+        <span className="text-[11px] text-zinc-400">
+          Current ~{pool.price?.toPrecision(6) ?? "—"} {pool.pair.symbol}/{tokenSymbol}
+        </span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <label className="text-[11px] text-zinc-500">
+          Min price
+          <input
+            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+            type="number"
+            min="0"
+            value={minimumPrice}
+            disabled={disabled}
+            onChange={(event) => {
+              setMinimumPrice(event.target.value);
+              setReviewed(null);
+            }}
+          />
+        </label>
+        <label className="text-[11px] text-zinc-500">
+          Max price
+          <input
+            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+            type="number"
+            min="0"
+            value={maximumPrice}
+            disabled={disabled}
+            onChange={(event) => {
+              setMaximumPrice(event.target.value);
+              setReviewed(null);
+            }}
+          />
+        </label>
+        <label className="text-[11px] text-zinc-500">
+          {tokenSymbol}
+          <input
+            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+            type="number"
+            min="0"
+            placeholder="0"
+            value={tokenAmount}
+            disabled={disabled}
+            onChange={(event) => {
+              setTokenAmount(event.target.value);
+              setReviewed(null);
+            }}
+          />
+        </label>
+        <label className="text-[11px] text-zinc-500">
+          {pool.pair.symbol}
+          <input
+            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+            type="number"
+            min="0"
+            placeholder="0"
+            value={pairAmount}
+            disabled={disabled}
+            onChange={(event) => {
+              setPairAmount(event.target.value);
+              setReviewed(null);
+            }}
+          />
+        </label>
+      </div>
+      {review ? (
+        <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
+          <p>
+            Mint ticks {review.tickLower} → {review.tickUpper}, using at most{" "}
+            {fmtUnits(review.tokenMaximum, 18)} {tokenSymbol} +{" "}
+            {fmtUnits(review.pairMaximum, pool.pair.decimals)} {pool.pair.symbol}.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              className="bg-zinc-900 px-3 py-1.5 text-white disabled:opacity-50"
+              disabled={disabled}
+              onClick={() => void execute()}
+            >
+              Confirm & add
+            </button>
+            <button
+              type="button"
+              className="border border-zinc-300 px-3 py-1.5"
+              disabled={disabled}
+              onClick={() => setReviewed(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="mt-2 border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-50"
+          disabled={disabled || !address}
+          onClick={() => void prepare()}
+        >
+          {disabled ? "Checking…" : address ? "Review add liquidity" : "Connect to add liquidity"}
+        </button>
+      )}
+      {status ? (
+        <p className="mt-2 text-xs text-zinc-500" role="status">
+          {status}
+        </p>
+      ) : null}
     </div>
   );
 }

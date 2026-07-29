@@ -1,5 +1,6 @@
 import {
   aggregateParticipants,
+  participantCountSummary,
   PARTICIPANTS_FETCH_LIMIT,
 } from "@/app/[slug]/components/v6/owners/accounts/participantsAggregate";
 import { readFileSync } from "node:fs";
@@ -33,6 +34,26 @@ describe("owners All-card participants", () => {
     expect(a?.chains).toEqual([1, 10]);
     const b = aggregated.find((p) => p.address === "0xb");
     expect(b?.balance).toBe(3n);
+  });
+
+  it("deduplicates address casing and reports bounded counts as lower bounds", () => {
+    const rows = [
+      { address: "0xAa", chainId: 1, balance: "10", volume: "5" },
+      { address: "0xaa", chainId: 10, balance: "7", volume: "1" },
+    ];
+    expect(aggregateParticipants(rows)).toHaveLength(1);
+    expect(participantCountSummary(rows, 2000)).toEqual({
+      count: 1,
+      exact: false,
+    });
+    expect(participantCountSummary(rows, 2)).toEqual({
+      count: 1,
+      exact: true,
+    });
+    expect(participantCountSummary(rows, undefined)).toEqual({
+      count: 1,
+      exact: false,
+    });
   });
 
   it("skips null rows", () => {

@@ -6,6 +6,7 @@ import { BuybackRouterCard } from "./BuybackRouterCard";
 import { OperatorAccountCard } from "./OperatorAccountCard";
 import { OperatorEditsCard } from "./OperatorEditsCard";
 import { PermissionsCard } from "./PermissionsCard";
+import { SafeQueueCard } from "./SafeQueueCard";
 import { SuckerExtensionCard } from "./SuckerExtensionCard";
 import { chainProjectRows } from "./operatorLib";
 
@@ -34,6 +35,7 @@ export function V6OperatorTab({
   return (
     <div className="flex flex-col min-w-0 gap-8">
       <OperatorAccountCard rows={rows} fallbackOperator={operator} />
+      <SafeQueueCard rows={rows} fallbackOperator={operator} />
       <OperatorEditsCard projects={projects} />
       <SuckerExtensionCard rows={rows} />
       <BuybackRouterCard rows={rows} />

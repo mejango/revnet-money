@@ -84,6 +84,19 @@
       ]
     },
     {
+      "id": "safe-signature",
+      "label": "Reviewed Safe co-signature boundary",
+      "sites": [
+        [
+          "raw-wallet-call",
+          "src/hooks/useReviewedSafeSignature.ts",
+          "signSafeTransactionAsync",
+          "signTypedData",
+          1
+        ]
+      ]
+    },
+    {
       "id": "create",
       "label": "Revnet creation",
       "sites": [
@@ -221,6 +234,20 @@
           "ClaimRow",
           "useWriteContract",
           1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "AddLiquidityForm",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "execute",
+          "writeContractAsync",
+          2
         ],
         [
           "reviewed-write-hook",
@@ -454,6 +481,34 @@
         ],
         [
           "reviewed-write",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "execute",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-safe-signature-hook",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "SafeQueueCard",
+          "useReviewedSafeSignature",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "SafeQueueCard",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-safe-signature",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "sign",
+          "signSafeTransactionAsync",
+          1
+        ],
+        [
+          "reviewed-write",
           "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
           "SyncButton",
           "writeContractAsync",
@@ -525,6 +580,12 @@
       "tests": ["test/reviewed-relayr.test.ts", "test/reviewed-relayr-hooks.test.tsx"]
     },
     {
+      "id": "safe-signature-boundary",
+      "risk": "boundary",
+      "files": ["src/hooks/useReviewedSafeSignature.ts"],
+      "tests": ["test/reviewed-safe-signature.test.tsx"]
+    },
+    {
       "id": "create-revnet",
       "risk": "money",
       "files": ["src/app/create/buttons/PayAndDeploy.tsx", "src/app/create/page.tsx"],
@@ -573,7 +634,7 @@
       "tests": ["test/wallet-project-controls.test.ts"]
     },
     {
-      "id": "remove-liquidity",
+      "id": "liquidity-management",
       "risk": "money",
       "files": ["src/app/[slug]/components/v6/owners/market/AmmCard.tsx"],
       "tests": ["test/liquidity-remove.test.ts"]
@@ -630,6 +691,12 @@
         "src/app/[slug]/components/v6/operator/operatorLib.ts"
       ],
       "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "safe-queue",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/components/v6/operator/SafeQueueCard.tsx"],
+      "tests": ["test/safe-queue.test.ts"]
     },
     {
       "id": "settlement-sync",

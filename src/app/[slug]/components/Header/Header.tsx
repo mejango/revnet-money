@@ -20,6 +20,10 @@ import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { Suspense, use, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  PARTICIPANTS_FETCH_LIMIT,
+  participantCountSummary,
+} from "../v6/owners/accounts/participantsAggregate";
 import { TvlDatum } from "./TvlDatum";
 
 interface Props {
@@ -41,27 +45,31 @@ export function Header(props: Props) {
   const { metadata } = useJBProjectMetadataContext();
   const { token: tokenContext } = useJBTokenContext();
 
-  const { data: participants } = useBendystrawQuery(
+  const participantsQuery = useBendystrawQuery(
     ParticipantsOperation,
     {
       where: {
         suckerGroupId: projects[0].suckerGroupId,
         balance_gt: 0,
       },
-      limit: 1000, // TODO will break once more than 1000 participants exist
+      limit: PARTICIPANTS_FETCH_LIMIT,
     },
     { chainId: Number(chainId) },
   );
 
-  const contributorsCount = useMemo(() => {
-    // de-dupe participants who are on multiple chains
-    const participantWallets = participants?.participants.items.reduce(
-      (acc, curr) => (acc.includes(curr.address) ? acc : [...acc, curr.address]),
-      [] as string[],
-    );
-
-    return participantWallets?.length;
-  }, [participants?.participants]);
+  const holderSummary = useMemo(
+    () =>
+      participantCountSummary(
+        participantsQuery.data?.participants.items,
+        participantsQuery.data?.participants.totalCount,
+      ),
+    [participantsQuery.data?.participants],
+  );
+  const holderValue = participantsQuery.isError
+    ? "—"
+    : participantsQuery.isLoading
+      ? "…"
+      : `${holderSummary.count}${holderSummary.exact ? "" : "+"}`;
 
   const { data: suckers } = useSuckers();
   const { name: projectName, logoUri } = metadata?.data ?? {};
@@ -177,9 +185,22 @@ export function Header(props: Props) {
               <div className="flex flex-row flex-wrap items-center gap-x-4 gap-y-1">
                 <TvlDatum projects={projects} />
                 <div className="sm:text-xl text-lg">
-                  <span className="font-medium text-black-500">{contributorsCount ?? 0}</span>{" "}
+                  <span
+                    className="font-medium text-black-500"
+                    title={
+                      participantsQuery.isError
+                        ? "Token-holder data is unavailable."
+                        : holderSummary.exact
+                          ? undefined
+                          : "At least this many unique token holders were found before the indexer result cap."
+                    }
+                  >
+                    {holderValue}
+                  </span>{" "}
                   <span className="text-zinc-500">
-                    {contributorsCount === 1 ? "token holder" : "token holders"}
+                    {holderSummary.exact && holderSummary.count === 1
+                      ? "token holder"
+                      : "token holders"}
                   </span>
                 </div>
                 {/* <div className="sm:text-xl text-lg">
