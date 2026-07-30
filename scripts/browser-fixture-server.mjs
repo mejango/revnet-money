@@ -160,6 +160,7 @@ const fixtureProject = {
   currency: "2",
   tokenSymbol: "USDC",
   isRevnet: true,
+  volume: "1250000000",
   owner: fixtureOwner,
   permissionHolders: { items: [] },
   suckerGroup: {
@@ -221,10 +222,11 @@ const allowedGraphqlOperations = new Set([
   "ActivityEvents",
   "AutoIssueEvents",
   "CashOutTaxSnapshots",
-  "DiscoverRevnets",
   "HasPermission",
   "IndexedBuybackPools",
   "IndexedPoolSwaps",
+  "IndexedProjects",
+  "IndexedSuckerGroup",
   "LoansByAccount",
   "MintNftEvents",
   "OwnedNfts",
@@ -232,6 +234,7 @@ const allowedGraphqlOperations = new Set([
   "Project",
   "ProjectAccountingContext",
   "ProjectCreateEvent",
+  "ProjectErc20Tickers",
   "ProjectOperator",
   "ProjectWithPermissions",
   "Projects",
@@ -265,9 +268,21 @@ function requireExactVariables(operation, actual, expected) {
 }
 
 const graphqlHandlers = {
-  DiscoverRevnets(variables) {
-    requireExactVariables("DiscoverRevnets", variables, { limit: 250, offset: 0 });
+  IndexedProjects(variables) {
+    requireFixture(
+      [32, 250].includes(variables.limit) &&
+        variables.offset === 0 &&
+        ["createdAt", "volume"].includes(variables.orderBy) &&
+        variables.orderDirection === "desc" &&
+        variables.where &&
+        typeof variables.where === "object",
+      `IndexedProjects variables=${JSON.stringify(variables)}`,
+    );
     return { projects: { items: [fixtureProject], totalCount: 1 } };
+  },
+  IndexedSuckerGroup(variables) {
+    requireExactVariables("IndexedSuckerGroup", variables, { id: suckerGroupId });
+    return { suckerGroup: { projects: { items: [fixtureProject] } } };
   },
   Project(variables) {
     requireExactVariables("Project", variables, { chainId, projectId, version: 6 });
@@ -280,6 +295,13 @@ const graphqlHandlers = {
       version: 6,
     });
     return { project: fixtureProject };
+  },
+  ProjectErc20Tickers(variables) {
+    requireFixture(
+      variables.where && typeof variables.where.symbol_contains_nocase === "string",
+      `ProjectErc20Tickers variables=${JSON.stringify(variables)}`,
+    );
+    return { deployErc20Events: { items: [], totalCount: 0 } };
   },
   ProjectOperator(variables) {
     requireExactVariables("ProjectOperator", variables, { chainId, projectId, version: 6 });
@@ -460,6 +482,7 @@ const graphqlHandlers = {
             },
           },
         ],
+        totalCount: 1,
       },
     };
   },
@@ -541,7 +564,7 @@ const graphqlHandlers = {
       limit: 250,
       offset: 0,
     });
-    return { storeAutoIssuanceAmountEvents: { items: [] } };
+    return { storeAutoIssuanceAmountEvents: { items: [], totalCount: 0 } };
   },
   V6AutoIssueEvents(variables) {
     requireExactVariables("V6AutoIssueEvents", variables, {
@@ -551,7 +574,7 @@ const graphqlHandlers = {
       limit: 250,
       offset: 0,
     });
-    return { autoIssueEvents: { items: [] } };
+    return { autoIssueEvents: { items: [], totalCount: 0 } };
   },
   V6AllLoans(variables) {
     requireExactVariables("V6AllLoans", variables, {

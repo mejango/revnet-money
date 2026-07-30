@@ -237,7 +237,7 @@ test("home and discover shells stay contained and deterministic", async ({ page,
   await expectNoBlockingAccessibilityFindings(page);
 
   await expect
-    .poll(async () => (await fixtureStatus(request)).graphqlOperations.DiscoverRevnets ?? 0)
+    .poll(async () => (await fixtureStatus(request)).graphqlOperations.IndexedProjects ?? 0)
     .toBeGreaterThan(0);
   const status = await fixtureStatus(request);
   expect(status.unknownRequests).toEqual([]);

@@ -126,6 +126,35 @@ export type SuckerGroupQuery = {
   } | null;
 };
 
+export type IndexedProjectSummary = Pick<
+  Project,
+  | "chainId"
+  | "createdAt"
+  | "handle"
+  | "isRevnet"
+  | "logoUri"
+  | "name"
+  | "projectId"
+  | "projectTagline"
+  | "suckerGroupId"
+  | "tokenSymbol"
+  | "version"
+> & { volume: BigNumberish };
+export type IndexedProjectsQueryVariables = {
+  where: BendystrawFilter;
+  orderBy?: string;
+  orderDirection?: string;
+  limit?: number;
+  offset?: number;
+};
+export type IndexedProjectsQuery = {
+  projects: { items: IndexedProjectSummary[]; totalCount: number };
+};
+export type IndexedSuckerGroupQueryVariables = { id: string };
+export type IndexedSuckerGroupQuery = {
+  suckerGroup: { projects: { items: IndexedProjectSummary[] } | null } | null;
+};
+
 export type AccountTokenBalancesQueryVariables = {
   account: string;
   limit?: number;

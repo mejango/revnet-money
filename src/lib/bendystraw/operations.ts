@@ -19,6 +19,10 @@ import type {
   IndexedBuybackPoolsQueryVariables,
   IndexedPoolSwapsQuery,
   IndexedPoolSwapsQueryVariables,
+  IndexedProjectsQuery,
+  IndexedProjectsQueryVariables,
+  IndexedSuckerGroupQuery,
+  IndexedSuckerGroupQueryVariables,
   LoansByAccountQuery,
   LoansByAccountQueryVariables,
   MintNftEventsQuery,
@@ -190,6 +194,30 @@ export const ProjectAccountingContextOperation = operation<
   ProjectAccountingContextQuery,
   ProjectAccountingContextQueryVariables
 >("project-accounting-context.v1", projectVariables, hasRoot("project", "nullable-object"));
+export const IndexedProjectsOperation = operation<
+  IndexedProjectsQuery,
+  IndexedProjectsQueryVariables
+>(
+  "indexed-projects.v1",
+  variablesWith(
+    { where: filter },
+    {
+      orderBy: isString,
+      orderDirection: isString,
+      limit: positiveLimit,
+      offset,
+    },
+  ),
+  hasRoot("projects", "items"),
+);
+export const IndexedSuckerGroupOperation = operation<
+  IndexedSuckerGroupQuery,
+  IndexedSuckerGroupQueryVariables
+>(
+  "indexed-sucker-group.v1",
+  variablesWith({ id: isString }),
+  hasRoot("suckerGroup", "nullable-object"),
+);
 export const SuckerGroupOperation = operation<SuckerGroupQuery, SuckerGroupQueryVariables>(
   "sucker-group.v1",
   variablesWith({ id: isString }),
@@ -418,6 +446,8 @@ export const ShieldGroupOperation = operation<ShieldGroupQuery, ShieldGroupQuery
 export const BENDYSTRAW_OPERATIONS = [
   ProjectOperation,
   ProjectAccountingContextOperation,
+  IndexedProjectsOperation,
+  IndexedSuckerGroupOperation,
   SuckerGroupOperation,
   ParticipantsOperation,
   ActivityEventsOperation,

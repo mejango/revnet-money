@@ -1,11 +1,7 @@
-import { arbitrum, base, mainnet, optimism } from "viem/chains";
+import { normalizeBendystrawEndpoint, selectBendystrawEndpoint } from "@bananapus/nana-sdk-core";
 
 function graphqlEndpoint(value: string | undefined, fallback: string): string {
-  const url = new URL(value?.trim() || fallback);
-  url.pathname = `${url.pathname.replace(/\/graphql\/?$/u, "").replace(/\/$/u, "")}/graphql`;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
+  return normalizeBendystrawEndpoint(value?.trim() || fallback);
 }
 
 const bendystrawUrl = graphqlEndpoint(
@@ -18,7 +14,8 @@ const testnetBendystrawUrl = graphqlEndpoint(
 );
 
 export function getBendystrawUrl(chainId: number): string {
-  const isMainnet = [mainnet, base, arbitrum, optimism].some((c) => c.id === chainId);
-
-  return isMainnet ? bendystrawUrl : testnetBendystrawUrl;
+  return selectBendystrawEndpoint(
+    { mainnet: bendystrawUrl, testnet: testnetBendystrawUrl },
+    { chainId },
+  );
 }

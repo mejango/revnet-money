@@ -11,6 +11,8 @@ import {
   HasPermissionOperation,
   IndexedBuybackPoolsOperation,
   IndexedPoolSwapsOperation,
+  IndexedProjectsOperation,
+  IndexedSuckerGroupOperation,
   LoansByAccountOperation,
   MintNftEventsOperation,
   OwnedNftsOperation,
@@ -102,6 +104,21 @@ const PROJECT_FIELDS = `
   isRevnet
 `;
 
+const INDEXED_PROJECT_FIELDS = `
+  projectId
+  chainId
+  version
+  suckerGroupId
+  name
+  handle
+  logoUri
+  projectTagline
+  tokenSymbol
+  isRevnet
+  createdAt
+  volume
+`;
+
 export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>> = {
   [ProjectOperation.id]: {
     operationName: "Project",
@@ -122,6 +139,37 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         token
         decimals
         currency
+      }
+    }`,
+  },
+  [IndexedProjectsOperation.id]: {
+    operationName: "IndexedProjects",
+    query: `query IndexedProjects(
+      $where: projectFilter!
+      $orderBy: String
+      $orderDirection: String
+      $limit: Int
+      $offset: Int
+    ) {
+      projects(
+        where: $where
+        orderBy: $orderBy
+        orderDirection: $orderDirection
+        limit: $limit
+        offset: $offset
+      ) {
+        totalCount
+        items { ${INDEXED_PROJECT_FIELDS} }
+      }
+    }`,
+  },
+  [IndexedSuckerGroupOperation.id]: {
+    operationName: "IndexedSuckerGroup",
+    query: `query IndexedSuckerGroup($id: String!) {
+      suckerGroup(id: $id) {
+        projects {
+          items { ${INDEXED_PROJECT_FIELDS} }
+        }
       }
     }`,
   },

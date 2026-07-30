@@ -1,43 +1,14 @@
-import { getBendystrawUrl } from "@/graphql/constants";
-import { projectRefGraphqlInput } from "@/lib/bendystraw/projectRefs";
-import { requestBendystraw } from "@bananapus/nana-sdk-core";
+import {
+  IndexedProjectsOperation,
+  IndexedSuckerGroupOperation,
+  ProjectErc20TickersOperation,
+} from "@/lib/bendystraw/operations";
+import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
+import { queryBendystraw } from "@/lib/bendystraw/query.server";
+import type { IndexedProjectSummary } from "@/lib/bendystraw/types";
 import { NextRequest, NextResponse } from "next/server";
 
-type IndexedProject = {
-  projectId: number;
-  chainId: number;
-  suckerGroupId: string | null;
-  name: string | null;
-  handle: string | null;
-  logoUri: string | null;
-  projectTagline: string | null;
-  tokenSymbol: string | null;
-  volume: string;
-};
-
-type SearchProject = IndexedProject & { ticker: string | null };
-
-const PROJECT_FIELDS = `
-  projectId chainId suckerGroupId name handle logoUri projectTagline
-  tokenSymbol volume
-`;
-
-async function queryBendystraw<T>(
-  operationName: string,
-  query: string,
-  variables: Record<string, unknown>,
-): Promise<T> {
-  return requestBendystraw<T, Record<string, unknown>>(getBendystrawUrl(1), query, variables, {
-    fetch: (input, init) => {
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      return fetch(input, {
-        ...init,
-        body: JSON.stringify({ ...body, operationName }),
-        cache: "no-store",
-      });
-    },
-  });
-}
+type SearchProject = IndexedProjectSummary & { ticker: string | null };
 
 export async function GET(request: NextRequest) {
   const text = (request.nextUrl.searchParams.get("q")?.trim() ?? "").replace(/^\$/u, "");
@@ -46,96 +17,69 @@ export async function GET(request: NextRequest) {
   }
 
   const numericId = /^\d+$/u.test(text) ? Number(text) : null;
-  const idFilter =
-    numericId !== null && Number.isSafeInteger(numericId) && numericId > 0
-      ? `{ projectId: ${numericId} }`
-      : null;
-  const filters = ["{ name_contains_nocase: $text }", ...(idFilter ? [idFilter] : [])].join("\n");
+  const validNumericId =
+    numericId !== null && Number.isSafeInteger(numericId) && numericId > 0 ? numericId : null;
 
   try {
-    const [data, tickerData] = await Promise.all([
-      queryBendystraw<{
-        projects?: { items?: IndexedProject[] };
-      }>(
-        "SearchRevnets",
-        `query SearchRevnets($text: String!) {
-          projects(
+    const [nameData, idData, tickerData] = await Promise.all([
+      queryBendystraw(1, IndexedProjectsOperation, {
+        where: {
+          AND: [{ version: 6 }, { isRevnet: true }, { name_contains_nocase: text }],
+        },
+        orderBy: "volume",
+        orderDirection: "desc",
+        limit: 32,
+        offset: 0,
+      }),
+      validNumericId === null
+        ? null
+        : queryBendystraw(1, IndexedProjectsOperation, {
             where: {
-              version: 6
-              isRevnet: true
-              OR: [
-                ${filters}
-              ]
-            }
-            orderBy: "volume"
-            orderDirection: "desc"
-            limit: 32
-          ) {
-            items { ${PROJECT_FIELDS} }
-          }
-        }`,
-        { text },
-      ),
-      queryBendystraw<{
-        deployErc20Events?: {
-          items?: Array<{
-            chainId: number;
-            projectId: number;
-            symbol: string;
-          }>;
-        };
-      }>(
-        "SearchRevnetTickers",
-        `query SearchRevnetTickers($text: String!) {
-          deployErc20Events(
-            where: { symbol_contains_nocase: $text }
-            limit: 100
-          ) {
-            items { chainId projectId symbol }
-          }
-        }`,
-        { text },
-      ),
+              AND: [{ version: 6 }, { isRevnet: true }, { projectId: validNumericId }],
+            },
+            orderBy: "volume",
+            orderDirection: "desc",
+            limit: 32,
+            offset: 0,
+          }),
+      queryBendystraw(1, ProjectErc20TickersOperation, {
+        where: { symbol_contains_nocase: text },
+        limit: 100,
+        offset: 0,
+      }),
     ]);
 
     const tickerByDeployment = new Map<string, string>();
-    for (const event of tickerData.deployErc20Events?.items ?? []) {
+    for (const event of tickerData.deployErc20Events.items) {
       tickerByDeployment.set(`${event.chainId}:${event.projectId}`, event.symbol);
     }
-    const tickerPairs = Array.from(tickerByDeployment.keys()).map((pair) => {
+    const tickerRefs = Array.from(tickerByDeployment.keys()).map((pair) => {
       const [chainId, projectId] = pair.split(":").map(Number);
-      return projectRefGraphqlInput({ chainId, projectId, version: 6 });
+      return { chainId, projectId, version: 6 };
     });
     const tickerProjects =
-      tickerPairs.length > 0
-        ? ((
-            await queryBendystraw<{
-              projects?: { items?: IndexedProject[] };
-            }>(
-              "SearchRevnetTickerProjects",
-              `query SearchRevnetTickerProjects {
-                projects(
-                  where: {
-                    version: 6
-                    isRevnet: true
-                    OR: [${tickerPairs.join("\n")}]
-                  }
-                  orderBy: "volume"
-                  orderDirection: "desc"
-                  limit: 32
-                ) {
-                  items { ${PROJECT_FIELDS} }
-                }
-              }`,
-              {},
-            )
-          ).projects?.items ?? [])
+      tickerRefs.length > 0
+        ? (
+            await queryBendystraw(1, IndexedProjectsOperation, {
+              where: {
+                AND: [{ isRevnet: true }, projectRefsWhere(tickerRefs)!],
+              },
+              orderBy: "volume",
+              orderDirection: "desc",
+              limit: 32,
+              offset: 0,
+            })
+          ).projects.items
         : [];
-    const matchedDeployments = new Map<string, IndexedProject>();
+    const matchedDeployments = new Map<string, IndexedProjectSummary>();
     const exactTickerProjects = tickerProjects.filter((project) =>
       tickerByDeployment.has(`${project.chainId}:${project.projectId}`),
     );
-    for (const project of [...(data.projects?.items ?? []), ...exactTickerProjects]) {
+    for (const project of [
+      ...nameData.projects.items,
+      ...(idData?.projects.items ?? []),
+      ...exactTickerProjects,
+    ]) {
       matchedDeployments.set(`${project.chainId}:${project.projectId}`, project);
     }
     const matches: SearchProject[] = Array.from(matchedDeployments.values()).map((project) => ({
@@ -164,17 +108,7 @@ export async function GET(request: NextRequest) {
         const id = group.representative.suckerGroupId;
         if (!id) return group;
         try {
-          const groupData = await queryBendystraw<{
-            suckerGroup?: { projects?: { items?: IndexedProject[] } };
-          }>(
-            "SearchRevnetGroup",
-            `query SearchRevnetGroup($id: String!) {
-              suckerGroup(id: $id) {
-                projects(limit: 10) { items { ${PROJECT_FIELDS} } }
-              }
-            }`,
-            { id },
-          );
+          const groupData = await queryBendystraw(1, IndexedSuckerGroupOperation, { id });
           return {
             ...group,
             members:

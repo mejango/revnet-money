@@ -15,8 +15,8 @@ import { describe, expect, it } from "vitest";
 const contractFetch = globalThis.fetch.bind(globalThis);
 
 const ENDPOINTS = [
-  process.env.NEXT_PUBLIC_BENDYSTRAW_URL ?? "https://bendystraw.xyz/graphql",
-  process.env.NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL ?? "https://testnet.bendystraw.xyz/graphql",
+  process.env.BENDYSTRAW_SCHEMA_MAINNET_URL ?? "https://bendystraw.xyz/graphql",
+  process.env.BENDYSTRAW_SCHEMA_TESTNET_URL ?? "https://testnet.bendystraw.xyz/graphql",
 ];
 
 async function liveSchema(endpoint: string) {

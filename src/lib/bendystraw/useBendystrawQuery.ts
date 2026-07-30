@@ -1,5 +1,6 @@
 "use client";
 
+import { bendystrawCacheTtl } from "@bananapus/nana-sdk-core";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { queryBendystrawFromBrowser } from "./client";
 import type { BendystrawOperation } from "./operations";
@@ -21,6 +22,8 @@ export function useBendystrawQuery<TResult, TVariables extends Record<string, un
     enabled: options.enabled ?? true,
     refetchInterval: options.pollInterval || false,
     retry: 2,
-    staleTime: options.pollInterval ? Math.min(options.pollInterval, 15_000) : 30_000,
+    staleTime: options.pollInterval
+      ? Math.min(options.pollInterval, bendystrawCacheTtl("live"))
+      : bendystrawCacheTtl("standard"),
   });
 }
