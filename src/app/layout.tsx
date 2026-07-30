@@ -19,6 +19,13 @@ const simplonMono = localFont({
 
 export const revalidate = 300;
 
+const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
+const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+const assetOrigin =
+  railwayDomain && /^[a-z0-9.-]+$/iu.test(railwayDomain) ? `https://${railwayDomain}` : siteOrigin;
+const siteTitle = "Revnet";
+const siteDescription = "An autonomous business model for the open web. 100% open source.";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -39,19 +46,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
-
   // For the root layout, our fullPath is '/'
   const fullPath = "/";
-  const url = new URL(fullPath, origin);
+  const url = new URL(fullPath, siteOrigin);
 
-  const imgUrl = `${origin}/assets/img/revnet-social.png`;
+  const imgUrl = new URL("/assets/img/revnet-social.png", assetOrigin).href;
   return {
-    metadataBase: new URL(origin),
-    title: "Revnet",
+    metadataBase: new URL(siteOrigin),
+    title: siteTitle,
+    description: siteDescription,
     openGraph: {
-      title: "Revnet",
-      description: "Explore onchain revenue networks",
+      title: siteTitle,
+      description: siteDescription,
       url: url.href,
       images: [
         {
@@ -66,8 +72,8 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     twitter: {
       card: "summary_large_image",
-      title: "Revnet",
-      description: "Explore onchain revenue networks",
+      title: siteTitle,
+      description: siteDescription,
       images: [imgUrl],
     },
   };

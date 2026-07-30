@@ -24,6 +24,9 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  const assetOrigin =
+    railwayDomain && /^[a-z0-9.-]+$/iu.test(railwayDomain) ? `https://${railwayDomain}` : origin;
   const { slug: encodedSlug } = await params;
   const slug = decodeURIComponent(encodedSlug ?? "");
 
@@ -31,8 +34,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (!slug.includes(":")) {
     const title = "Revnet";
-    const description = "Explore onchain revenue networks";
-    const imageUrl = `${origin}/assets/img/rev-og-191-1.png`;
+    const description = "An autonomous business model for the open web. 100% open source.";
+    const imageUrl = new URL("/assets/img/revnet-social.png", assetOrigin).href;
     return buildMetadata({
       title,
       description,
@@ -45,12 +48,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const project = projectId ? await getProject(projectId, chainId) : null;
   const imageUrl =
     project && projectId
-      ? new URL(`/api/project-og/${chainId}/${projectId}`, origin).href
-      : `${origin}/assets/img/revnet-social.png`;
+      ? new URL(`/api/project-og/${chainId}/${projectId}`, assetOrigin).href
+      : new URL("/assets/img/revnet-social.png", assetOrigin).href;
 
   return buildMetadata({
     title: project?.name ? `${project.name} | REVNET` : "Revnet",
-    description: "Explore onchain revenue networks",
+    description: "An autonomous business model for the open web. 100% open source.",
     imageUrl,
     url: url.href,
   });

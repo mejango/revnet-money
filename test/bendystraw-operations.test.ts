@@ -7,6 +7,7 @@ import {
   IndexedPoolSwapsOperation,
   OwnedNftsOperation,
   ParticipantsOperation,
+  PermissionHoldersOperation,
   ProjectOperation,
   ProjectsByOwnerOperation,
   ShieldGroupOperation,
@@ -35,6 +36,12 @@ describe("reviewed Bendystraw operations", () => {
     expect(getBrowserOperationById(ProjectOperation.id)).toBe(ProjectOperation);
     expect(BROWSER_BENDYSTRAW_OPERATIONS).not.toContain(ShieldGroupOperation);
     expect(getBrowserOperationById(ShieldGroupOperation.id)).toBeUndefined();
+  });
+
+  it("uses Bendystraw's case-sensitive permission-holder filter type", () => {
+    const registered = BENDYSTRAW_QUERY_REGISTRY[PermissionHoldersOperation.id];
+    expect(registered.query).toContain("$where: permissionHolderFilter");
+    expect(registered.query).not.toContain("$where: PermissionHolderFilter");
   });
 
   it("rejects extra keys, invalid scalars, and unbounded pagination at the BFF boundary", () => {

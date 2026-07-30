@@ -607,7 +607,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [ProjectPayersOperation.id]: {
     operationName: "V6ProjectPayers",
-    query: `query V6ProjectPayers($where: ProjectPayerFilter, $limit: Int, $offset: Int) {
+    query: `query V6ProjectPayers($where: projectPayerFilter, $limit: Int, $offset: Int) {
       projectPayers(
         where: $where
         orderBy: "totalFacilitatedUsd"
@@ -634,7 +634,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [PermissionHoldersOperation.id]: {
     operationName: "V6PermissionHolders",
-    query: `query V6PermissionHolders($where: PermissionHolderFilter, $limit: Int, $offset: Int) {
+    query: `query V6PermissionHolders($where: permissionHolderFilter, $limit: Int, $offset: Int) {
       permissionHolders(where: $where, limit: $limit, offset: $offset) {
         totalCount
         items {
@@ -782,7 +782,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [ShieldProjectOperation.id]: {
     operationName: "ShieldProject",
-    query: `query ShieldProject($chainId: Int!, $projectId: Int!) {
+    query: `query ShieldProject($chainId: Float!, $projectId: Float!) {
       project(chainId: $chainId, projectId: $projectId, version: 6) {
         id
         suckerGroupId

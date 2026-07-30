@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
+import { pickRevnetOperator } from "@/lib/revnetOperator";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { Address, isAddress } from "viem";
@@ -92,7 +93,7 @@ function OperatorCell({ chainId, projectId }: { chainId: JBChainId; projectId: n
     isRevnetOperator: true,
   });
 
-  const operator = data?.find((row) => (row.permissions?.length ?? 0) > 0)?.operator;
+  const operator = pickRevnetOperator(data ?? []);
 
   if (isLoading) return <Skeleton className="h-4 w-24" />;
   if (!operator || !isAddress(operator)) return <span className="text-zinc-400">—</span>;

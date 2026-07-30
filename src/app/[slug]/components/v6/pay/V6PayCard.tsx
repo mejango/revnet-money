@@ -919,7 +919,11 @@ export function V6PayCard() {
                   labelClassName="text-md text-black-700"
                   options={[
                     { value: "pay", label: "Pay" },
-                    { value: "addbalance", label: "Add to balance" },
+                    {
+                      value: "addbalance",
+                      label: "Add to balance",
+                      selectedLabel: "Add",
+                    },
                   ]}
                 />
                 <span className="text-md text-zinc-500">on</span>

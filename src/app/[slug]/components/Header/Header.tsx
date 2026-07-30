@@ -121,7 +121,7 @@ export function Header(props: Props) {
 
   return (
     <header>
-      <div className="flex flex-col sm:flex-row sm:items-center items-start gap-4 sm:mb-6 mb-4">
+      <div className="flex flex-col items-start gap-4 sm:mb-6 sm:flex-row sm:items-center sm:gap-6 mb-4">
         <IpfsImage
           src={logoUri}
           className="block size-[120px] overflow-hidden border border-zinc-200 object-cover sm:size-36"
@@ -173,6 +173,9 @@ export function Header(props: Props) {
             <>
               <div className="flex flex-row flex-wrap items-center gap-x-4 gap-y-1">
                 <TvlDatum projects={projects} />
+                <span aria-hidden className="text-lg text-zinc-300 sm:text-xl">
+                  |
+                </span>
                 <div className="sm:text-xl text-lg">
                   <span
                     className="font-medium text-black-500"

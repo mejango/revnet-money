@@ -3,6 +3,7 @@
 import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import { useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { pickRevnetOperator } from "@/lib/revnetOperator";
 import {
   SAFE_EXEC_ABI,
   SAFE_VIEW_ABI,
@@ -54,13 +55,16 @@ export function SafeQueueCard({
   );
   const operatorByChain = useMemo(() => {
     const map = new Map<number, Address>();
-    for (const item of holders.data ?? []) {
-      if (item.isRevnetOperator && isAddress(item.operator) && !map.has(item.chainId)) {
-        map.set(item.chainId, item.operator as Address);
+    for (const row of rows) {
+      const indexed = pickRevnetOperator(
+        (holders.data ?? []).filter(
+          (item) => item.chainId === row.chainId && item.projectId === row.projectId,
+        ),
+      );
+      if (indexed) map.set(row.chainId, indexed);
+      else if (fallbackOperator && isAddress(fallbackOperator)) {
+        map.set(row.chainId, fallbackOperator as Address);
       }
-    }
-    if (map.size === 0 && fallbackOperator && isAddress(fallbackOperator)) {
-      for (const row of rows) map.set(row.chainId, fallbackOperator as Address);
     }
     return map;
   }, [fallbackOperator, holders.data, rows]);

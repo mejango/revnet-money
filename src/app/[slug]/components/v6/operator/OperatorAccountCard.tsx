@@ -9,6 +9,7 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { isSafeProposalPendingError, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { pickRevnetOperator } from "@/lib/revnetOperator";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
@@ -103,13 +104,16 @@ export function OperatorAccountCard({
 
   const operatorByChain = useMemo(() => {
     const map = new Map<number, Address>();
-    for (const item of holdersQuery.data ?? []) {
-      if (item.isRevnetOperator && isAddress(item.operator) && !map.has(item.chainId)) {
-        map.set(item.chainId, item.operator as Address);
+    for (const row of rows) {
+      const indexed = pickRevnetOperator(
+        (holdersQuery.data ?? []).filter(
+          (item) => item.chainId === row.chainId && item.projectId === row.projectId,
+        ),
+      );
+      if (indexed) map.set(row.chainId, indexed);
+      else if (fallbackOperator && isAddress(fallbackOperator)) {
+        map.set(row.chainId, fallbackOperator as Address);
       }
-    }
-    if (map.size === 0 && fallbackOperator && isAddress(fallbackOperator)) {
-      for (const row of rows) map.set(row.chainId, fallbackOperator as Address);
     }
     return map;
   }, [holdersQuery.data, fallbackOperator, rows]);

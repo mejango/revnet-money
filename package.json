@@ -70,6 +70,7 @@
     "eslint": "^10.7.0",
     "eslint-config-next": "16.2.11",
     "eslint-config-prettier": "^10.1.8",
+    "graphql": "17.0.2",
     "jsdom": "^29.1.1",
     "postcss": "8.5.22",
     "prettier": "3.9.6",

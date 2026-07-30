@@ -11,6 +11,51 @@ import type { ParticipantRow } from "./ParticipantsTable";
 const OWNER_COLOR = "#EE6F3A"; // peel-400
 const OWNER_HOVER_COLOR = "#BD4513"; // peel-600
 
+function polarPoint(cx: number, cy: number, radius: number, angle: number) {
+  return {
+    x: (cx + Math.cos(angle) * radius).toFixed(3),
+    y: (cy + Math.sin(angle) * radius).toFixed(3),
+  };
+}
+
+/** A closed donut wedge whose separators are straight radial lines. */
+export function donutSlicePath(start: number, end: number): string {
+  const cx = 120;
+  const cy = 112;
+  const outer = 92;
+  const inner = 54;
+  const largeArc = end - start > Math.PI ? 1 : 0;
+  const p1 = polarPoint(cx, cy, outer, start);
+  const p2 = polarPoint(cx, cy, outer, end);
+  const p3 = polarPoint(cx, cy, inner, end);
+  const p4 = polarPoint(cx, cy, inner, start);
+  return [
+    `M ${p1.x} ${p1.y}`,
+    `A ${outer} ${outer} 0 ${largeArc} 1 ${p2.x} ${p2.y}`,
+    `L ${p3.x} ${p3.y}`,
+    `A ${inner} ${inner} 0 ${largeArc} 0 ${p4.x} ${p4.y}`,
+    "Z",
+  ].join(" ");
+}
+
+export function donutSliceRanges(balances: readonly bigint[]) {
+  const total = balances.reduce((sum, balance) => sum + balance, 0n);
+  if (total === 0n) return [];
+
+  const drawable = balances
+    .map((balance, index) => ({ balance, index }))
+    .filter(({ balance }) => balance > 0n)
+    .reverse();
+  let angle = 0;
+  return drawable.map(({ balance, index }) => {
+    const share = Number((balance * 1_000_000_000_000n) / total) / 1_000_000_000_000;
+    const start = angle;
+    const end = angle + share * Math.PI * 2;
+    angle = end;
+    return { index, start, end };
+  });
+}
+
 const OwnerTooltip = ({
   item,
   totalSupply,
@@ -49,21 +94,16 @@ export function ParticipantsPieChart({
   );
 
   const pieChartData = useMemo(() => {
-    let offset = 0;
-    return participants?.map((participant) => {
+    if (totalBalance === 0n) return [];
+    const ranges = donutSliceRanges(participants.map((participant) => BigInt(participant.balance)));
+    return ranges.map(({ index, start, end }) => {
+      const participant = participants[index];
       const balance = new JBProjectToken(BigInt(participant?.balance));
-      const share =
-        totalBalance === 0n ? 0 : Number((balance.value * 1_000_000n) / totalBalance) / 10_000;
-      const segment = {
+      return {
         address: participant?.address as Address,
         balance,
-        offset,
-        share,
-      };
-      offset += share;
-      return {
-        ...segment,
-        visibleShare: Math.max(0, share - Math.min(0.25, share / 2)),
+        path:
+          ranges.length === 1 ? donutSlicePath(0, Math.PI * 2 - 0.001) : donutSlicePath(start, end),
       };
     });
   }, [participants, totalBalance]);
@@ -75,24 +115,18 @@ export function ParticipantsPieChart({
   return (
     <div className="relative h-[240px] w-full sm:h-[360px]">
       <svg
-        viewBox="0 0 100 100"
+        viewBox="0 0 240 224"
         role="img"
         aria-label={`Distribution of ${participants.length} owners`}
-        className="h-full w-full -rotate-90"
+        className="h-full w-full"
       >
-        <circle cx="50" cy="50" r="35" fill="none" stroke="#C6EDD5" strokeWidth="30" />
         {pieChartData.map((item, index) => (
-          <circle
+          <path
             key={item.address}
-            cx="50"
-            cy="50"
-            r="35"
-            pathLength="100"
-            fill="none"
-            stroke={index === activeIndex ? OWNER_HOVER_COLOR : OWNER_COLOR}
-            strokeWidth="30"
-            strokeDasharray={`${item.visibleShare} ${100 - item.visibleShare}`}
-            strokeDashoffset={-item.offset}
+            d={item.path}
+            fill={index === activeIndex ? OWNER_HOVER_COLOR : OWNER_COLOR}
+            stroke="white"
+            strokeWidth="0.8"
             className="cursor-default transition-colors duration-150"
             onMouseEnter={() => setActiveIndex(index)}
             onMouseLeave={() => setActiveIndex(null)}

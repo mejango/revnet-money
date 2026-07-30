@@ -18,6 +18,7 @@ import { useAllRulesetsByChain } from "@/hooks/useAllRulesetsByChain";
 import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
+import { pickRevnetOperator } from "@/lib/revnetOperator";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
   formatUnits,
@@ -70,7 +71,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
     version: 6,
     isRevnetOperator: true,
   });
-  const operator = operatorQuery.data?.find((row) => (row.permissions?.length ?? 0) > 0)?.operator;
+  const operator = pickRevnetOperator(operatorQuery.data ?? []);
 
   // Each chain's ruleset list (chronological). Stage tabs follow the context
   // chain; per-chain reads use each chain's own ruleset id at that index.

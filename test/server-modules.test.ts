@@ -43,10 +43,11 @@ describe("server-only profile modules", () => {
   });
 
   it("resolves the indexed operator address to its profile", async () => {
-    const profile = { address: "0xoperator", name: "Operator" };
+    const operator = "0x1111111111111111111111111111111111111111";
+    const profile = { address: operator, name: "Operator" };
     mocks.request.mockResolvedValue({
       permissionHolders: {
-        items: [{ operator: "0xoperator", permissions: [1] }],
+        items: [{ operator, permissions: [1] }],
         totalCount: 1,
       },
     });

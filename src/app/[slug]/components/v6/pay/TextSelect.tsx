@@ -19,14 +19,20 @@ export function TextSelect({
 }: {
   value: string;
   onChange: (value: string) => void;
-  options: { value: string; label: string; disabled?: boolean }[];
+  options: {
+    value: string;
+    label: string;
+    selectedLabel?: string;
+    disabled?: boolean;
+  }[];
   disabled?: boolean;
   ariaLabel: string;
   className?: string;
   labelClassName?: string;
   selectClassName?: string;
 }) {
-  const current = options.find((o) => o.value === value)?.label ?? "";
+  const selected = options.find((o) => o.value === value);
+  const current = selected?.selectedLabel ?? selected?.label ?? "";
   return (
     <span className={`min-h-11 ${className} ${disabled ? "opacity-60" : ""}`}>
       <span className={labelClassName || undefined}>{current}</span>

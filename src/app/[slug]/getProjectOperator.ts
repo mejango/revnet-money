@@ -3,6 +3,7 @@ import "server-only";
 import { PermissionHoldersOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import { fetchProfile } from "@/lib/profile";
+import { pickRevnetOperator } from "@/lib/revnetOperator";
 import { unstable_cache } from "next/cache";
 
 export const getProjectOperator = unstable_cache(
@@ -32,7 +33,7 @@ async function getProjectOperatorAddress(projectId: number, chainId: number) {
       if (!page.length) break;
     } while (items.length < totalCount);
 
-    return items.find((item) => (item.permissions?.length ?? 0) > 0)?.operator ?? null;
+    return pickRevnetOperator(items);
   } catch (err) {
     console.error((err as Error).message);
     return null;
