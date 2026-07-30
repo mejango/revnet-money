@@ -1,4 +1,5 @@
 import { chainSortOrder } from "@/app/constants";
+import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import type { ProjectPayer, ProjectPayerFilter } from "@/lib/bendystraw/types";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { ProjectItem } from "../shared";
@@ -17,6 +18,8 @@ export function chainProjectRows(projects: ProjectItem[]): ChainProjectRow[] {
 export type PayerRow = Pick<
   ProjectPayer,
   | "chainId"
+  | "projectId"
+  | "version"
   | "address"
   | "defaultAddToBalance"
   | "defaultBeneficiary"
@@ -30,14 +33,8 @@ export type PayerRow = Pick<
 >;
 
 /** Per-project (chainId, projectId) filter for v6 projects. */
-export function payersWhere(rows: ChainProjectRow[]): ProjectPayerFilter {
-  return {
-    OR: rows.map((row) => ({
-      chainId: row.chainId,
-      projectId: row.projectId,
-      version: 6,
-    })),
-  };
+export function payersWhere(rows: readonly ChainProjectRow[]): ProjectPayerFilter {
+  return projectRefsWhere(rows.map((row) => ({ ...row, version: 6 }))) ?? { OR: [] };
 }
 
 /** Bendystraw USD aggregates are 18-decimal fixed-point. */

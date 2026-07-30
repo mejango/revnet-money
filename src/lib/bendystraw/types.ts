@@ -505,6 +505,8 @@ export type ProjectPayersQuery = {
         ProjectPayer,
         | "address"
         | "chainId"
+        | "projectId"
+        | "version"
         | "owner"
         | "paymentsCount"
         | "defaultAddToBalance"
@@ -530,7 +532,13 @@ export type PermissionHoldersQuery = {
     items: Array<
       Pick<
         PermissionHolder,
-        "chainId" | "projectId" | "account" | "operator" | "permissions" | "isRevnetOperator"
+        | "chainId"
+        | "projectId"
+        | "version"
+        | "account"
+        | "operator"
+        | "permissions"
+        | "isRevnetOperator"
       >
     >;
     totalCount: number;

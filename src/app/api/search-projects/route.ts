@@ -1,4 +1,5 @@
 import { getBendystrawUrl } from "@/graphql/constants";
+import { projectRefGraphqlInput } from "@/lib/bendystraw/projectRefs";
 import {
   BENDYSTRAW_TIMEOUT_MS,
   bendystrawFetch,
@@ -105,7 +106,7 @@ export async function GET(request: NextRequest) {
     }
     const tickerPairs = Array.from(tickerByDeployment.keys()).map((pair) => {
       const [chainId, projectId] = pair.split(":").map(Number);
-      return `{ chainId: ${chainId}, projectId: ${projectId} }`;
+      return projectRefGraphqlInput({ chainId, projectId, version: 6 });
     });
     const tickerProjects =
       tickerPairs.length > 0
@@ -133,7 +134,10 @@ export async function GET(request: NextRequest) {
           ).projects?.items ?? [])
         : [];
     const matchedDeployments = new Map<string, IndexedProject>();
-    for (const project of [...(data.projects?.items ?? []), ...tickerProjects]) {
+    const exactTickerProjects = tickerProjects.filter((project) =>
+      tickerByDeployment.has(`${project.chainId}:${project.projectId}`),
+    );
+    for (const project of [...(data.projects?.items ?? []), ...exactTickerProjects]) {
       matchedDeployments.set(`${project.chainId}:${project.projectId}`, project);
     }
     const matches: SearchProject[] = Array.from(matchedDeployments.values()).map((project) => ({

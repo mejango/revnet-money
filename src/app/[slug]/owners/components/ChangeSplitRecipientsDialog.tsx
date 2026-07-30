@@ -40,7 +40,7 @@ type Props = {
   stageIdx: number;
   initialChainId: JBChainId;
   splitLimit?: string;
-  triggerVariant?: "default" | "outline";
+  triggerVariant?: "default" | "outline" | "secondary";
 };
 
 export function ChangeSplitRecipientsDialog(props: Props) {

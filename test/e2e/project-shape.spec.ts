@@ -176,7 +176,20 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   for (const heading of ["Account", "Edits", "Buyback & swap router", "Permissions"]) {
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
-  await expect(page.getByText("No revnet operator permissions found.")).toBeVisible();
+  await expect(page.getByText("Set project uri")).toBeVisible();
+  const secondaryActions = [
+    "Transfer revnet operator",
+    "Edit metadata",
+    "Extend to another chain",
+    "Set buyback hook",
+    "Set router terminal",
+    "Initialize buyback pool",
+  ];
+  for (const name of secondaryActions) {
+    const button = page.getByRole("button", { name, exact: true });
+    await expect(button).toBeVisible();
+    await expect(button).toHaveClass(/bg-zinc-100/u);
+  }
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 

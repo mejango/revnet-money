@@ -27,9 +27,11 @@ function samePermissionSet(a: number[], b: number[]): boolean {
   return aa.every((value, index) => value === bb[index]);
 }
 
-function aggregateGrants(items: PermissionHolderRow[], rows: ChainProjectRow[]): Grant[] {
+export function aggregateGrants(items: PermissionHolderRow[], rows: ChainProjectRow[]): Grant[] {
+  const expectedProjects = new Set(rows.map((row) => `${row.chainId}:${row.projectId}`));
   const groups = new Map<string, Grant>();
   for (const item of items) {
+    if (!expectedProjects.has(`${item.chainId}:${item.projectId}`)) continue;
     const permissions = (item.permissions ?? []).map(Number).filter((id) => id > 0);
     if (!permissions.length) continue; // stale/cleared grant — holds nothing
     if (!isAddress(item.operator)) continue;
@@ -41,16 +43,29 @@ function aggregateGrants(items: PermissionHolderRow[], rows: ChainProjectRow[]):
       union: [],
       differs: false,
     };
-    grant.rows.push(item);
+    const existing = grant.rows.find(
+      (row) => row.chainId === item.chainId && row.projectId === item.projectId,
+    );
+    if (existing) {
+      existing.permissions = [
+        ...new Set([
+          ...(existing.permissions ?? []).map(Number),
+          ...(item.permissions ?? []).map(Number),
+        ]),
+      ];
+      existing.isRevnetOperator ||= Boolean(item.isRevnetOperator);
+    } else {
+      grant.rows.push({ ...item, permissions });
+    }
     grant.isRevnetOperator ||= Boolean(item.isRevnetOperator);
     grant.union = [...new Set([...grant.union, ...permissions])].sort((a, b) => a - b);
     groups.set(key, grant);
   }
   for (const grant of groups.values()) {
     const first = (grant.rows[0]?.permissions ?? []).map(Number).filter((id) => id > 0);
-    const coveredChains = new Set(grant.rows.map((row) => row.chainId));
+    const coveredProjects = new Set(grant.rows.map((row) => `${row.chainId}:${row.projectId}`));
     grant.differs =
-      rows.some((row) => !coveredChains.has(row.chainId)) ||
+      rows.some((row) => !coveredProjects.has(`${row.chainId}:${row.projectId}`)) ||
       grant.rows.some(
         (row) =>
           !samePermissionSet(
@@ -77,9 +92,8 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
       <h3 className="mb-2 text-base font-semibold text-zinc-700">Permissions</h3>
       <div className="max-w-screen-sm">
         <p className="text-sm text-zinc-500">
-          What this revnet&apos;s revnet operator is allowed to do. These powers come with the
-          revnet operator role — the default revnet powers plus any NFT powers granted when the
-          revnet was deployed.
+          Every power the revnet&apos;s revnet operator role currently holds, including any NFT
+          powers granted at launch.
         </p>
         {query.isLoading ? (
           <SkeletonLines lines={4} className="mt-3" />
@@ -125,7 +139,10 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
                           <span className="ml-1 font-mono text-[10px] text-zinc-500">#{id}</span>
                         </span>
                         <span className="text-xs text-zinc-500">{info.description}</span>
-                        <span className="flex items-center gap-1" title="Granted on">
+                        <span
+                          className="flex flex-wrap items-center gap-1 sm:justify-end"
+                          title="Granted on"
+                        >
                           {onChains.map((chainId) => (
                             <ChainLogo
                               key={chainId}

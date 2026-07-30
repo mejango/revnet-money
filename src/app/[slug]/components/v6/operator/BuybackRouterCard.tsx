@@ -410,7 +410,7 @@ function ActionRow({
       })()}
 
       <Button
-        variant="default"
+        variant="secondary"
         size="sm"
         className="mt-3"
         disabled={!available.length}

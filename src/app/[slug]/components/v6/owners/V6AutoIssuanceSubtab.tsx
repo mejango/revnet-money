@@ -25,6 +25,7 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { matchesProjectRef, projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import { formatShortDateTime } from "@/lib/date";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
@@ -51,11 +52,10 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
     .filter((p) => Boolean(JB_CHAINS[p.chainId as JBChainId]))
     .map((p) => ({ chainId: p.chainId as JBChainId, projectId: p.projectId }));
 
-  // One project can have different ids per chain — OR the exact pairs.
-  const where = {
-    version: 6,
-    OR: chains.map((c) => ({ chainId: Number(c.chainId), projectId: c.projectId })),
-  };
+  // One project can have different ids per chain. Every OR branch must contain
+  // an explicit AND group in Bendystraw's Ponder filter dialect.
+  const projectRefs = chains.map((chain) => ({ ...chain, version: 6 }));
+  const where = projectRefsWhere(projectRefs) ?? { OR: [] };
   const stored = useCompleteStoredAutoIssuances(where, chains.length > 0);
   const issued = useCompleteAutoIssueEvents(where, chains.length > 0);
 
@@ -83,6 +83,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
   }, [isSuccess]);
 
   const rows = (stored.data ?? [])
+    .filter((row) => matchesProjectRef(row, projectRefs))
     .map((row) => {
       const rulesets = rulesetsByChain.get(row.chainId) ?? [];
       const stageIdx = rulesets.findIndex((r) => String(r.id) === row.stageId);

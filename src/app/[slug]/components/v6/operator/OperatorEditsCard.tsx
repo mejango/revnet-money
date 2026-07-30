@@ -40,7 +40,7 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
             Update the project&apos;s name, logo, description, links, and tags. Requires the project
             operator&apos;s SET_PROJECT_URI permission.
           </p>
-          <EditMetadataDialog projects={projects} triggerVariant="default" />
+          <EditMetadataDialog projects={projects} triggerVariant="secondary" />
         </div>
         <div className="bg-melon-50 p-4">
           <p className="text-sm font-medium">Set splits</p>
@@ -52,7 +52,7 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
             <ChangeSplitRecipientsDialog
               stageIdx={currentStageIdx}
               initialChainId={chainId}
-              triggerVariant="default"
+              triggerVariant="secondary"
             />
           ) : (
             <Skeleton className="h-8 w-36" />

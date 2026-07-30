@@ -469,7 +469,9 @@ const graphqlHandlers = {
   },
   V6ProjectPayers(variables) {
     requireExactVariables("V6ProjectPayers", variables, {
-      where: { OR: [{ chainId, projectId, version: 6 }] },
+      where: {
+        OR: [{ AND: [{ chainId }, { projectId }, { version: 6 }] }],
+      },
       limit: 250,
       offset: 0,
     });
@@ -477,16 +479,22 @@ const graphqlHandlers = {
   },
   V6PermissionHolders(variables) {
     const expectedBase = { chainId, projectId, version: 6 };
+    const exactProjects = {
+      OR: [{ AND: [{ chainId }, { projectId }, { version: 6 }] }],
+    };
+    const exactOperator = {
+      AND: [exactProjects, { isRevnetOperator: true }],
+    };
     const expected = [
-      { where: { OR: [expectedBase] } },
-      { where: { OR: [{ ...expectedBase, isRevnetOperator: true }] } },
+      { where: exactProjects },
+      { where: exactOperator },
       {
-        where: { OR: [expectedBase] },
+        where: exactProjects,
         limit: 250,
         offset: 0,
       },
       {
-        where: { OR: [{ ...expectedBase, isRevnetOperator: true }] },
+        where: exactOperator,
         limit: 250,
         offset: 0,
       },
@@ -500,14 +508,41 @@ const graphqlHandlers = {
       expected.some((candidate) => stableJson(candidate) === stableJson(variables)),
       `V6PermissionHolders variables=${JSON.stringify(variables)}`,
     );
-    return { permissionHolders: { items: [], totalCount: 0 } };
+    return {
+      permissionHolders: {
+        items: [
+          {
+            chainId,
+            projectId,
+            version: 6,
+            account: fixtureOwner,
+            operator: fixtureOwner,
+            permissions: [7, 19, 30],
+            isRevnetOperator: true,
+          },
+        ],
+        totalCount: 1,
+      },
+    };
   },
   V6StoredAutoIssuances(variables) {
-    requireFixture(Array.isArray(variables.where?.OR), "missing stored issuance chain filters");
+    requireExactVariables("V6StoredAutoIssuances", variables, {
+      where: {
+        OR: [{ AND: [{ chainId }, { projectId }, { version: 6 }] }],
+      },
+      limit: 250,
+      offset: 0,
+    });
     return { storeAutoIssuanceAmountEvents: { items: [] } };
   },
   V6AutoIssueEvents(variables) {
-    requireFixture(Array.isArray(variables.where?.OR), "missing auto issue chain filters");
+    requireExactVariables("V6AutoIssueEvents", variables, {
+      where: {
+        OR: [{ AND: [{ chainId }, { projectId }, { version: 6 }] }],
+      },
+      limit: 250,
+      offset: 0,
+    });
     return { autoIssueEvents: { items: [] } };
   },
   V6AllLoans(variables) {
@@ -937,11 +972,12 @@ function handleRpc(request) {
     );
     const requested = getAddress(params[0]);
     const known =
+      requested === fixtureOwner ||
       requested === projectToken ||
       requested === addresses.multicall ||
       Object.values(addresses).includes(requested);
     requireFixture(known, `eth_getCode address=${requested}`);
-    result = "0x60006000";
+    result = requested === fixtureOwner ? "0x" : "0x60006000";
   } else {
     throw unknown("JSON-RPC method", String(method));
   }

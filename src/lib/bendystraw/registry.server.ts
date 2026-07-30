@@ -167,6 +167,8 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         totalCount
         items {
           chainId
+          projectId
+          version
           address
           volume
           lastPaidTimestamp
@@ -422,6 +424,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         items {
           chainId
           projectId
+          version
           account
           operator
           permissions
@@ -640,6 +643,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         items {
           chainId
           projectId
+          version
           account
           operator
           permissions

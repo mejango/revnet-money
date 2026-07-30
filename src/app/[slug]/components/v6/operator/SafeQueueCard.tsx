@@ -83,6 +83,8 @@ export function SafeQueueCard({
           if (!safe) return null;
           const client = publicClientFor(row.chainId);
           try {
+            const code = await client.getCode({ address: safe });
+            if (!code || code === "0x") return null;
             const [owners, threshold, nonce] = await Promise.all([
               client.readContract({ address: safe, abi: SAFE_VIEW_ABI, functionName: "getOwners" }),
               client.readContract({

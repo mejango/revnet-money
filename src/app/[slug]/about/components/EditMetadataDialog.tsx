@@ -104,7 +104,7 @@ const metadataSchema = schema<MetadataFormData>((input) => {
 
 interface Props {
   projects: Array<Pick<Project, "projectId" | "token" | "chainId">>;
-  triggerVariant?: "default" | "outline";
+  triggerVariant?: "default" | "outline" | "secondary";
 }
 
 export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Props) {

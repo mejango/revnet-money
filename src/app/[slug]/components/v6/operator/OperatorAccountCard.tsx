@@ -323,7 +323,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
   if (!open) {
     return (
       <Button
-        variant="default"
+        variant="secondary"
         size="sm"
         className="mt-3"
         onClick={() => {

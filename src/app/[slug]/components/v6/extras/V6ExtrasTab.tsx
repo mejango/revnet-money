@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useCompleteProjectPayers } from "@/hooks/useCompleteBendystrawLists";
+import { matchesProjectRef } from "@/lib/bendystraw/projectRefs";
 import { useMemo } from "react";
 import { ProjectItem } from "../shared";
 import { PayerAddressList } from "./PayerAddressList";
@@ -24,9 +25,10 @@ import { chainProjectRows, payersWhere } from "./projectPayers";
  */
 export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
   const rows = useMemo(() => chainProjectRows(projects), [projects]);
+  const projectRefs = useMemo(() => rows.map((row) => ({ ...row, version: 6 })), [rows]);
 
   const payersQuery = useCompleteProjectPayers(payersWhere(rows), rows.length > 0);
-  const payerRows = payersQuery.data ?? [];
+  const payerRows = (payersQuery.data ?? []).filter((row) => matchesProjectRef(row, projectRefs));
 
   if (rows.length === 0) {
     return <div className="text-zinc-500">Nothing here yet.</div>;

@@ -181,7 +181,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
           </p>
         ) : !open ? (
           <Button
-            variant="default"
+            variant="secondary"
             size="sm"
             className="mt-3"
             onClick={() => {

@@ -1,5 +1,6 @@
 import { chainSortOrder } from "@/app/constants";
 import { requireOnchainExecution } from "@/hooks/useReviewedWriteContract";
+import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import type { PermissionHolder, PermissionHolderFilter } from "@/lib/bendystraw/types";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, jbContractAddress } from "@bananapus/nana-sdk-core";
@@ -48,17 +49,11 @@ export type PermissionHolderRow = Pick<
 
 /** Per-project (chainId, projectId) filter for v6 projects. */
 export function permissionHoldersWhere(
-  rows: ChainProjectRow[],
+  rows: readonly ChainProjectRow[],
   extra?: Partial<PermissionHolderFilter>,
 ): PermissionHolderFilter {
-  return {
-    OR: rows.map((row) => ({
-      chainId: row.chainId,
-      projectId: row.projectId,
-      version: 6,
-      ...extra,
-    })),
-  };
+  const exactProjects = projectRefsWhere(rows.map((row) => ({ ...row, version: 6 }))) ?? { OR: [] };
+  return extra && Object.keys(extra).length > 0 ? { AND: [exactProjects, extra] } : exactProjects;
 }
 
 // ---------------------------------------------------------------------------
