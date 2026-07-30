@@ -1,4 +1,4 @@
-import { mainnet } from "viem/chains";
+import { mainnet } from "@/lib/chains";
 
 export {
   projectRefKey,

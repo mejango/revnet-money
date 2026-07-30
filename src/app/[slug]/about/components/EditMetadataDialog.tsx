@@ -254,8 +254,12 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
 
         const controller = contractAddress(JBCoreContracts.JBController, chainId);
         const args = [BigInt(project.projectId), metadataUri] as const;
+        const publicClient = getPublicClient(wagmiConfig, { chainId });
+        if (!publicClient) {
+          throw new Error(`Public client unavailable for chain ${chainId}.`);
+        }
 
-        const gasEstimate = await getPublicClient(wagmiConfig, { chainId }).estimateContractGas({
+        const gasEstimate = await publicClient.estimateContractGas({
           address: controller,
           abi: jbControllerAbi,
           functionName: "setUriOf",

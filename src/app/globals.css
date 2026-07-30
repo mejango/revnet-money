@@ -1,4 +1,4 @@
-@config "../../tailwind.config.ts";
+@config "../../tailwind.config.mjs";
 @import "tailwindcss";
 
 /* Tailwind 4 defaults `dark:` to the user's media preference. REVNET has

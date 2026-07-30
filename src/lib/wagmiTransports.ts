@@ -1,5 +1,3 @@
-import { cache } from "react";
-import { createPublicClient, PublicClient } from "viem";
 import {
   arbitrum,
   arbitrumSepolia,
@@ -9,7 +7,9 @@ import {
   optimism,
   optimismSepolia,
   sepolia,
-} from "viem/chains";
+} from "@/lib/chains";
+import { cache } from "react";
+import { createPublicClient, PublicClient } from "viem";
 import { fallback, http, type Transport } from "wagmi";
 import { getDwellirRpcUrl } from "./dwellir";
 

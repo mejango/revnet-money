@@ -4,10 +4,10 @@ import { EthereumAddress, ensAvatarUrlForAddress } from "@/components/EthereumAd
 import { Button } from "@/components/ui/button";
 import { useEnsName } from "@/hooks/ens/useEnsName";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
+import { mainnet } from "@/lib/chains";
 import { useViewAs } from "@/lib/view-as";
 import Image from "next/image";
 import { type Address } from "viem";
-import { mainnet } from "viem/chains";
 
 export function AccountHeader({ address, ensName }: { address: Address; ensName?: string }) {
   const { data: reverseName } = useEnsName(address, { enabled: !ensName });

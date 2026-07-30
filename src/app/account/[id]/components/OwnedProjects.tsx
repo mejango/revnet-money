@@ -6,6 +6,7 @@ import { EthereumAddress } from "@/components/EthereumAddress";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useCompleteProjectsByOwner } from "@/hooks/useCompleteBendystrawLists";
 import type { OwnedProjectRow } from "@/lib/bendystraw/types";
+import { mainnet } from "@/lib/chains";
 import type { JBChainId } from "@/lib/nana/types";
 import { fetchSafesOwnedBy, type OwnedSafe } from "@/lib/safeOwners";
 import { slugFor } from "@/lib/slug";
@@ -14,7 +15,6 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo } from "react";
 import type { Address } from "viem";
-import { mainnet } from "viem/chains";
 
 const safeThresholdAbi = [
   {

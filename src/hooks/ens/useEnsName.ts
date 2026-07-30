@@ -1,6 +1,6 @@
+import { mainnet } from "@/lib/chains";
 import { useQuery } from "@tanstack/react-query";
 import { Address, isAddress, PublicClient } from "viem";
-import { mainnet } from "viem/chains";
 import { usePublicClient } from "wagmi";
 
 /**

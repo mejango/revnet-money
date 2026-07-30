@@ -48,8 +48,8 @@ if (
 ) {
   throw new Error("Railway builds must derive NEXT_PUBLIC_VERSION from the deployed commit");
 }
-if (packageManifest.scripts?.["audit:production"] !== "npm audit --omit=dev --audit-level=high") {
-  throw new Error("The production dependency audit must fail on high or critical advisories");
+if (packageManifest.scripts?.["audit:production"] !== "node scripts/audit-production.mjs") {
+  throw new Error("The production dependency audit must reject every unreviewed advisory");
 }
 if (packageManifest.scripts?.["dependencies:check"] !== "npm ls --depth=0") {
   throw new Error("The installed dependency tree must have an explicit npm integrity gate");

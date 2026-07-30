@@ -1,5 +1,3 @@
-import type { Config } from "tailwindcss";
-
 const melon = {
   25: "#F6FEF9",
   50: "#EBFAF1",
@@ -100,7 +98,7 @@ const legacyColors = {
   },
 };
 
-export default {
+const config = {
   darkMode: "class",
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
@@ -160,4 +158,6 @@ export default {
     },
   },
   plugins: [],
-} satisfies Config;
+};
+
+export default config;

@@ -1,4 +1,5 @@
 import { chainSortOrder } from "@/app/constants";
+import { mainnet } from "@/lib/chains";
 import type { JBChainId, JBTokenContextData } from "@/lib/nana/types";
 import {
   CashOutTaxRate,
@@ -8,7 +9,6 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { twMerge } from "tailwind-merge";
 import { Address, Chain, formatEther } from "viem";
-import { mainnet } from "viem/chains";
 
 export type ClassValue =
   string | number | boolean | null | undefined | ClassValue[] | { [className: string]: unknown };

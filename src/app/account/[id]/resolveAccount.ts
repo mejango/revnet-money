@@ -1,9 +1,9 @@
 import "server-only";
 
+import { mainnet } from "@/lib/chains";
 import { getDwellirRpcUrl } from "@/lib/dwellir";
 import { cache } from "react";
 import { createPublicClient, getAddress, http, isAddress, type Address } from "viem";
-import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 
 /**

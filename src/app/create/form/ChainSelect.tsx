@@ -5,9 +5,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FormField } from "@/lib/forms";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useEffect, useState } from "react";
 import {
   arbitrum,
   arbitrumSepolia,
@@ -17,7 +14,10 @@ import {
   optimism,
   optimismSepolia,
   sepolia,
-} from "viem/chains";
+} from "@/lib/chains";
+import { FormField } from "@/lib/forms";
+import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { useEffect, useState } from "react";
 import {
   pruneDeselectedChain,
   pruneHiddenEnvironmentChains,

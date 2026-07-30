@@ -1,12 +1,12 @@
 import { TopSuckerGroupsOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { TopSuckerGroupsQuery } from "@/lib/bendystraw/types";
+import { mainnet } from "@/lib/chains";
 import { fetchEthPrice } from "@/lib/ethPrice";
 import { ipfsUriToAppUrl } from "@/lib/ipfs";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
-import { mainnet } from "viem/chains";
 
 export async function getTopProjects() {
   let top: TopSuckerGroupsQuery;

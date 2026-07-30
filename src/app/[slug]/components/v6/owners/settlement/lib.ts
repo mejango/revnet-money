@@ -1,3 +1,13 @@
+import {
+  arbitrum,
+  arbitrumSepolia,
+  base,
+  baseSepolia,
+  mainnet,
+  optimism,
+  optimismSepolia,
+  sepolia,
+} from "@/lib/chains";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   JB_CHAINS,
@@ -34,16 +44,6 @@ import {
   PublicClient,
   zeroAddress,
 } from "viem";
-import {
-  arbitrum,
-  arbitrumSepolia,
-  base,
-  baseSepolia,
-  mainnet,
-  optimism,
-  optimismSepolia,
-  sepolia,
-} from "viem/chains";
 import { ProjectItem } from "../../shared";
 
 /** One (chainId, projectId) leg of the omnichain project group. */

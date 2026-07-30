@@ -1,4 +1,3 @@
-import type { JBChainId } from "@/lib/nana/types";
 import {
   arbitrum,
   arbitrumSepolia,
@@ -8,7 +7,8 @@ import {
   optimism,
   optimismSepolia,
   sepolia,
-} from "viem/chains";
+} from "@/lib/chains";
+import type { JBChainId } from "@/lib/nana/types";
 
 export const RESERVED_TOKEN_SPLIT_GROUP_ID = 1n;
 /** JBSplits.FALLBACK_RULESET_ID — the default group `splitsOf` serves when a ruleset's group is empty. */
