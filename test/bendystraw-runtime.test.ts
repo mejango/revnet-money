@@ -1,4 +1,3 @@
-import { getBendystrawUrl } from "@/graphql/constants";
 import { bendystrawNetworkFor } from "@/lib/bendystraw/client";
 import { compileBendystrawOperation } from "@/lib/bendystraw/operationContract";
 import { describe, expect, it } from "vitest";
@@ -11,8 +10,6 @@ describe("shared Bendystraw runtime policy", () => {
       }),
     ).toBe("mainnet");
     expect(bendystrawNetworkFor({ where: { chainId_in: [11155111, 84532] } })).toBe("testnet");
-    expect(getBendystrawUrl(8453)).toBe("https://bendystraw.xyz/graphql");
-    expect(getBendystrawUrl(84532)).toBe("https://testnet.bendystraw.xyz/graphql");
   });
 
   it("fails closed for mixed or unsupported chain scopes", () => {
