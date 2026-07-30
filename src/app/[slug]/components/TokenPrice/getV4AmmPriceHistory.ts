@@ -4,8 +4,7 @@ import {
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { IndexedBuybackPoolsQuery, IndexedPoolSwapsQuery } from "@/lib/bendystraw/types";
-import { downsampleTimeSeries } from "@/lib/downsample";
-import { JBChainId } from "@bananapus/nana-sdk-core";
+import { downsampleTimeSeries, JBChainId } from "@bananapus/nana-sdk-core";
 import { uniswapV4PriceFromSqrtPriceX96 } from "@bananapus/nana-sdk-core/v6";
 import type { PriceDataPoint } from "./getTokenPriceChartData";
 
