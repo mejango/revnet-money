@@ -1,19 +1,10 @@
-import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
-import type { Chain } from "viem";
+import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 
-type SupportedChain<ChainId extends JBChainId> = Chain & { id: ChainId };
-
-function supportedChain<const ChainId extends JBChainId>(
-  chainId: ChainId,
-): SupportedChain<ChainId> {
-  return JB_CHAINS[chainId].chain as SupportedChain<ChainId>;
-}
-
-export const mainnet = supportedChain(1);
-export const optimism = supportedChain(10);
-export const arbitrum = supportedChain(42161);
-export const base = supportedChain(8453);
-export const sepolia = supportedChain(11155111);
-export const optimismSepolia = supportedChain(11155420);
-export const arbitrumSepolia = supportedChain(421614);
-export const baseSepolia = supportedChain(84532);
+export const mainnet = JB_CHAINS[1].chain;
+export const optimism = JB_CHAINS[10].chain;
+export const arbitrum = JB_CHAINS[42161].chain;
+export const base = JB_CHAINS[8453].chain;
+export const sepolia = JB_CHAINS[11155111].chain;
+export const optimismSepolia = JB_CHAINS[11155420].chain;
+export const arbitrumSepolia = JB_CHAINS[421614].chain;
+export const baseSepolia = JB_CHAINS[84532].chain;

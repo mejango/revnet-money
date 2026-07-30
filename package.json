@@ -39,7 +39,7 @@
     "format:check": "prettier --check \"**/*.{js,jsx,mjs,ts,tsx,json,css,scss}\""
   },
   "dependencies": {
-    "@bananapus/nana-sdk-core": "1.9.1",
+    "@bananapus/nana-sdk-core": "1.9.2",
     "@getpara/react-component-library": "3.11.0",
     "@getpara/react-sdk-lite": "3.11.0",
     "@getpara/wagmi-v2-connector": "3.11.0",
