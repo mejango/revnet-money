@@ -2,61 +2,136 @@
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Project } from "@/lib/bendystraw/types";
-import { isUsd } from "@/lib/currency";
-import { formatTokenAmount, getTokenFractionDigits, isNativeToken } from "@/lib/token";
-import { DEFAULT_NATIVE_TOKEN_SYMBOL, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { formatTokenAmount } from "@/lib/token";
+import {
+  getJBContractAddress,
+  JBCoreContracts,
+  jbPricesAbi,
+  jbTerminalStoreAbi,
+  NATIVE_TOKEN,
+  USD_CURRENCY_ID,
+  USDC_ADDRESSES,
+  type JBChainId,
+} from "@bananapus/nana-sdk-core";
+import { getAccountingContexts } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import { formatUnits } from "viem";
+import type { Address, PublicClient } from "viem";
+import { useConfig } from "wagmi";
+import { getPublicClient } from "wagmi/actions";
 
-const PRICE_REFRESH_INTERVAL = 5 * 60_000;
+type TreasuryRow = {
+  chainId: JBChainId;
+  token: Address;
+  symbol: string;
+  decimals: number;
+  balance: bigint;
+  usd: bigint | null;
+};
+
+type ChainTreasury = {
+  chainId: JBChainId;
+  verified: boolean;
+  rows: TreasuryRow[];
+};
 
 interface Props {
-  projects: Array<
-    Pick<Project, "chainId" | "projectId" | "token" | "decimals" | "balance" | "tokenSymbol">
-  >;
+  projects: Array<Pick<Project, "chainId" | "projectId">>;
 }
 
-export function TvlDatum(props: Props) {
-  const { projects } = props;
+function symbolOf(chainId: JBChainId, token: Address): string {
+  if (token.toLowerCase() === NATIVE_TOKEN.toLowerCase()) return "ETH";
+  if (USDC_ADDRESSES[chainId]?.toLowerCase() === token.toLowerCase()) return "USDC";
+  return `${token.slice(0, 6)}…${token.slice(-4)}`;
+}
 
-  const token = useMemo(() => {
-    return {
-      address: projects[0].token as `0x${string}`,
-      symbol: projects[0].tokenSymbol || DEFAULT_NATIVE_TOKEN_SYMBOL,
-      decimals: projects[0].decimals || 18,
-      isNative: isNativeToken(projects[0].token),
-    };
-  }, [projects]);
+async function readChainTreasury(
+  config: ReturnType<typeof useConfig>,
+  project: Props["projects"][number],
+): Promise<ChainTreasury> {
+  const chainId = project.chainId as JBChainId;
+  const client = getPublicClient(config, { chainId }) as PublicClient | undefined;
+  if (!client) return { chainId, verified: false, rows: [] };
 
-  // Non-ETH projects do not need this external price. Keeping the query
-  // disabled avoids unnecessary traffic, latency, and a needless failure
-  // dependency for USDC-denominated project headers.
-  const { data: ethPrice } = useQuery({
-    queryKey: ["revnet", "etherPrice"],
-    queryFn: async () => {
-      const response = await fetch("https://juicebox.money/api/juicebox/prices/ethusd");
-      if (!response.ok) throw new Error(`ETH price request failed (${response.status})`);
-      const data = (await response.json()) as { price: number | string };
-      const price = Number(data.price);
-      if (!Number.isFinite(price) || price <= 0) throw new Error("ETH price response is invalid");
-      return price;
-    },
-    enabled: token.symbol === "ETH",
-    staleTime: PRICE_REFRESH_INTERVAL,
+  try {
+    const projectId = BigInt(project.projectId);
+    const terminal = getJBContractAddress(JBCoreContracts.JBMultiTerminal, 6, chainId);
+    const store = getJBContractAddress(JBCoreContracts.JBTerminalStore, 6, chainId);
+    const prices = getJBContractAddress(JBCoreContracts.JBPrices, 6, chainId);
+    const contexts = await getAccountingContexts(client, { chainId, projectId });
+    const rows = await Promise.all(
+      contexts.map(async (context): Promise<TreasuryRow> => {
+        const balance = await client.readContract({
+          address: store,
+          abi: jbTerminalStoreAbi,
+          functionName: "balanceOf",
+          args: [terminal, projectId, context.token],
+        });
+        const usdPrice =
+          balance === 0n
+            ? 0n
+            : await client
+                .readContract({
+                  address: prices,
+                  abi: jbPricesAbi,
+                  functionName: "pricePerUnitOf",
+                  args: [projectId, BigInt(USD_CURRENCY_ID(6)), BigInt(context.currency), 18n],
+                })
+                .catch(() => null);
+        return {
+          chainId,
+          token: context.token,
+          symbol: symbolOf(chainId, context.token),
+          decimals: context.decimals,
+          balance,
+          usd: usdPrice == null ? null : (balance * usdPrice) / 10n ** BigInt(context.decimals),
+        };
+      }),
+    );
+    return { chainId, verified: true, rows };
+  } catch {
+    return { chainId, verified: false, rows: [] };
+  }
+}
+
+export function treasuryUsdTotal(
+  chainResults: readonly ChainTreasury[],
+  expectedChains: number,
+): bigint | null {
+  const rows = chainResults.flatMap((result) => result.rows);
+  if (
+    chainResults.length !== expectedChains ||
+    chainResults.some((result) => !result.verified) ||
+    rows.some((row) => row.balance !== 0n && row.usd == null)
+  ) {
+    return null;
+  }
+  return rows.reduce((sum, row) => sum + (row.usd ?? 0n), 0n);
+}
+
+export function formatUsd18(value: bigint): string {
+  const whole = value / 10n ** 18n;
+  const cents = ((value % 10n ** 18n) * 100n) / 10n ** 18n;
+  return `$${whole.toLocaleString("en-US")}.${cents.toString().padStart(2, "0")}`;
+}
+
+export function TvlDatum({ projects }: Props) {
+  const config = useConfig();
+  const query = useQuery({
+    queryKey: [
+      "revnet",
+      "treasury",
+      projects.map(({ chainId, projectId }) => [chainId, projectId]),
+    ],
+    queryFn: () => Promise.all(projects.map((project) => readChainTreasury(config, project))),
+    enabled: projects.length > 0,
+    staleTime: 30_000,
+    retry: 1,
   });
 
-  const total = useMemo(() => {
-    const value = projects.reduce((acc, project) => acc + BigInt(project.balance), 0n);
-    if (token.symbol === "ETH" && ethPrice) {
-      const usdValue = Number(formatUnits(value, token.decimals)) * ethPrice;
-      return `$${usdValue.toLocaleString("en-US", getTokenFractionDigits("USD"))}`;
-    }
-    if (isUsd(token.symbol)) {
-      return `$${formatTokenAmount(value, token)}`;
-    }
-    return `${formatTokenAmount(value, token)} ${token.symbol}`;
-  }, [projects, ethPrice, token]);
+  const chainResults = query.data ?? [];
+  const rows = chainResults.flatMap((result) => result.rows);
+  const totalUsd = treasuryUsdTotal(chainResults, projects.length);
+  const total = query.isLoading ? "…" : totalUsd == null ? "—" : formatUsd18(totalUsd);
 
   return (
     <Tooltip>
@@ -66,22 +141,26 @@ export function TvlDatum(props: Props) {
           <span className="text-zinc-500">balance</span>
         </span>
       </TooltipTrigger>
-      <TooltipContent className="w-64">
-        {projects.map((project) => {
-          const symbol = project.tokenSymbol || DEFAULT_NATIVE_TOKEN_SYMBOL;
-          return (
-            <div key={project.chainId} className="flex justify-between gap-2">
-              {JB_CHAINS[project.chainId as JBChainId].name}
-              <span className="font-medium">
-                {formatTokenAmount(BigInt(project.balance), {
-                  symbol,
-                  decimals: project.decimals || 18,
-                })}{" "}
-                {symbol}
-              </span>
+      <TooltipContent className="w-72">
+        {rows.map((row) => (
+          <div key={`${row.chainId}:${row.token}`} className="flex justify-between gap-2">
+            <span>
+              Chain {row.chainId} · {row.symbol}
+            </span>
+            <span className="font-medium">
+              {formatTokenAmount(row.balance, row)} {row.symbol}
+              {row.usd == null ? " · USD unavailable" : ` · ${formatUsd18(row.usd)}`}
+            </span>
+          </div>
+        ))}
+        {chainResults
+          .filter((result) => !result.verified)
+          .map((result) => (
+            <div key={result.chainId} className="flex justify-between gap-2">
+              <span>Chain {result.chainId}</span>
+              <span className="font-medium">Unavailable</span>
             </div>
-          );
-        })}
+          ))}
         <hr className="py-1" />
         <div className="flex justify-between gap-2">
           <span>[All chains]</span>

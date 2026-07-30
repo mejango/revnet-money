@@ -19,11 +19,11 @@ import { ProjectItem } from "../shared";
 
 function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; tokenSymbol: string }) {
   const { data, isLoading, isError } = useCompleteLoans(
-    {
-      projectId_in: projects.map((p) => p.projectId),
+    projects.map((project) => ({
+      chainId: project.chainId,
+      projectId: project.projectId,
       version: 6,
-      chainId_in: projects.map((p) => p.chainId),
-    },
+    })),
     projects.length > 0,
   );
   const rows = data ?? [];

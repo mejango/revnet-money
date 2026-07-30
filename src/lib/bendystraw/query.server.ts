@@ -1,14 +1,12 @@
 import "server-only";
 
 import { getBendystrawUrl } from "@/graphql/constants";
+import {
+  BendystrawRequestError as BendystrawError,
+  requestBendystraw,
+} from "@bananapus/nana-sdk-core";
 import type { BendystrawOperation } from "./operations";
 import { getRegisteredQuery } from "./registry.server";
-import {
-  BENDYSTRAW_TIMEOUT_MS,
-  BendystrawError,
-  bendystrawFetch,
-  readBendystrawResponse,
-} from "./transport";
 
 function configuredGraphqlUrl(chainId: number): string {
   const configured = getBendystrawUrl(chainId);
@@ -45,18 +43,21 @@ export async function queryBendystraw<TResult, TVariables extends Record<string,
     throw new BendystrawError("Unknown Bendystraw operation", 400);
   }
 
-  const response = await bendystrawFetch(configuredGraphqlUrl(chainId), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      operationName: registered.operationName,
-      query: registered.query,
-      variables,
-    }),
-    cache: "no-store",
-    signal: AbortSignal.timeout(BENDYSTRAW_TIMEOUT_MS),
-  });
-  const data = await readBendystrawResponse(response);
+  const data = await requestBendystraw<unknown, TVariables>(
+    configuredGraphqlUrl(chainId),
+    registered.query,
+    variables,
+    {
+      fetch: (input, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return fetch(input, {
+          ...init,
+          body: JSON.stringify({ ...body, operationName: registered.operationName }),
+          cache: "no-store",
+        });
+      },
+    },
+  );
   if (!operation.validateData(data)) {
     throw new BendystrawError(`Invalid response for ${operation.id}`, 502);
   }

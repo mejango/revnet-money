@@ -130,7 +130,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
     query: `query SuckerGroup($id: String!) {
       suckerGroup(id: $id) {
         id
+        paymentsCount
         tokenSupply
+        volumeUsd
         projects {
           items {
             balance
@@ -475,7 +477,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         }
         limit: 1
       ) {
-        items { operator }
+        items { chainId projectId version operator }
       }
     }`,
   },
@@ -509,7 +511,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         orderBy: $orderBy
         orderDirection: $orderDirection
       ) {
-        items { id projectId beneficiary count stageId caller }
+        items { id chainId projectId version beneficiary count stageId caller }
       }
     }`,
   },
@@ -525,7 +527,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         orderBy: $orderBy
         orderDirection: $orderDirection
       ) {
-        items { id projectId stageId beneficiary count caller }
+        items { id chainId projectId version stageId beneficiary count caller }
       }
     }`,
   },
@@ -621,6 +623,8 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         totalCount
         items {
           chainId
+          projectId
+          version
           address
           defaultAddToBalance
           defaultBeneficiary
@@ -661,7 +665,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
     ) {
       storeAutoIssuanceAmountEvents(where: $where, limit: $limit, offset: $offset) {
         totalCount
-        items { id chainId projectId stageId beneficiary count }
+        items { id chainId projectId version stageId beneficiary count }
       }
     }`,
   },
@@ -670,7 +674,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
     query: `query V6AutoIssueEvents($where: autoIssueEventFilter, $limit: Int, $offset: Int) {
       autoIssueEvents(where: $where, limit: $limit, offset: $offset) {
         totalCount
-        items { id chainId stageId beneficiary count }
+        items { id chainId projectId version stageId beneficiary count }
       }
     }`,
   },
@@ -684,7 +688,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         limit: $limit
         offset: $offset
       ) {
-        items { id borrowAmount collateral beneficiary owner createdAt chainId }
+        items { id borrowAmount collateral beneficiary owner createdAt chainId projectId version }
         totalCount
       }
     }`,
@@ -707,6 +711,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       ) {
         totalCount
         items {
+          chainId
+          projectId
+          version
           timestamp
           terminalToken
           poolId
@@ -733,6 +740,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         offset: $offset
       ) {
         items {
+          chainId
+          projectId
+          version
           timestamp
           direction
           poolId
@@ -774,6 +784,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           beneficiary
           chainId
           projectId
+          version
           tierId
           timestamp
           tokenId

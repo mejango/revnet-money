@@ -1,5 +1,8 @@
+import {
+  BENDYSTRAW_TIMEOUT_MS,
+  BendystrawRequestError as BendystrawError,
+} from "@bananapus/nana-sdk-core";
 import type { BendystrawOperation } from "./operations";
-import { BENDYSTRAW_TIMEOUT_MS, BendystrawError } from "./transport";
 
 const TESTNET_CHAIN_IDS = new Set([11155111, 11155420, 84532, 421614]);
 

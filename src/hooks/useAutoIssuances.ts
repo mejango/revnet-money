@@ -3,6 +3,7 @@ import {
   StoreAutoIssuanceAmountEventsOperation,
   useBendystrawQuery,
 } from "@/lib/bendystraw";
+import { matchesProjectRef } from "@/lib/bendystraw/projectRefs";
 import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { useMemo } from "react";
 import { useRulesets } from "./useRulesets";
@@ -11,22 +12,48 @@ export function useAutoIssuances() {
   const { projectId } = useJBContractContext();
 
   const chainId = useJBChainId();
+  const numericProjectId = Number(projectId);
+  const enabled =
+    chainId !== undefined && Number.isSafeInteger(numericProjectId) && numericProjectId > 0;
 
-  const { data: autoIssuancesData } = useBendystrawQuery(StoreAutoIssuanceAmountEventsOperation, {
-    where: { projectId: Number(projectId), chainId, version: 6 },
-  });
+  const { data: autoIssuancesData } = useBendystrawQuery(
+    StoreAutoIssuanceAmountEventsOperation,
+    {
+      where: { projectId: numericProjectId, chainId: chainId ?? 0, version: 6 },
+    },
+    { enabled },
+  );
 
-  const { data: autoIssueEventsQuery } = useBendystrawQuery(AutoIssueEventsOperation, {
-    where: { projectId: Number(projectId), chainId, version: 6 },
-  });
+  const { data: autoIssueEventsQuery } = useBendystrawQuery(
+    AutoIssueEventsOperation,
+    {
+      where: { projectId: numericProjectId, chainId: chainId ?? 0, version: 6 },
+    },
+    { enabled },
+  );
 
   const { rulesets } = useRulesets();
 
   const autoIssuances = useMemo(() => {
-    return autoIssuancesData?.storeAutoIssuanceAmountEvents.items.map((autoIssuance) => {
+    const projectRefs = enabled
+      ? [
+          {
+            chainId: chainId as NonNullable<typeof chainId>,
+            projectId: numericProjectId,
+            version: 6,
+          },
+        ]
+      : [];
+    const storedRows = autoIssuancesData?.storeAutoIssuanceAmountEvents.items.filter((row) =>
+      matchesProjectRef(row, projectRefs),
+    );
+    const issuedRows = autoIssueEventsQuery?.autoIssueEvents.items.filter((row) =>
+      matchesProjectRef(row, projectRefs),
+    );
+    return storedRows?.map((autoIssuance) => {
       const rulesetIndex = rulesets?.findIndex((r) => String(r.id) === autoIssuance.stageId) || 0;
 
-      const distributed = autoIssueEventsQuery?.autoIssueEvents.items.find((event) => {
+      const distributed = issuedRows?.find((event) => {
         return (
           event.stageId === autoIssuance.stageId &&
           event.beneficiary === autoIssuance.beneficiary &&
@@ -46,6 +73,6 @@ export function useAutoIssuances() {
         distributedTxn,
       };
     });
-  }, [autoIssuancesData, rulesets, autoIssueEventsQuery]);
+  }, [autoIssuancesData, rulesets, autoIssueEventsQuery, chainId, numericProjectId, enabled]);
   return autoIssuances;
 }

@@ -82,12 +82,13 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess]);
 
+  const issuedRows = (issued.data ?? []).filter((row) => matchesProjectRef(row, projectRefs));
   const rows = (stored.data ?? [])
     .filter((row) => matchesProjectRef(row, projectRefs))
     .map((row) => {
       const rulesets = rulesetsByChain.get(row.chainId) ?? [];
       const stageIdx = rulesets.findIndex((r) => String(r.id) === row.stageId);
-      const distributed = issued.data?.find(
+      const distributed = issuedRows.find(
         (event) =>
           event.chainId === row.chainId &&
           event.stageId === row.stageId &&

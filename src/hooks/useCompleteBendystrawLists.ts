@@ -16,6 +16,11 @@ import {
   V6StoredAutoIssuancesOperation,
 } from "@/lib/bendystraw";
 import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
+import {
+  matchesProjectRef,
+  projectRefsWheres,
+  type VersionedProjectRef,
+} from "@/lib/bendystraw/projectRefs";
 import type {
   AccountActivityEventsQuery,
   AccountPermissionHolderRow,
@@ -23,7 +28,6 @@ import type {
   ActivityEventsQuery,
   ActivityEventsQueryVariables,
   AllLoansQuery,
-  AllLoansQueryVariables,
   BendystrawFilter,
   OwnedNftsQuery,
   OwnedProjectRow,
@@ -211,21 +215,34 @@ async function completeAutoIssueEvents(where: BendystrawFilter) {
   return items;
 }
 
-async function completeLoans(where: AllLoansQueryVariables["where"]) {
-  const items: NonNullable<AllLoansQuery["loans"]>["items"] = [];
-  let totalCount = 0;
-  do {
-    const data = await queryBendystrawFromBrowser(AllLoansOperation, {
-      where,
-      limit: PAGE_SIZE,
-      offset: items.length,
-    });
-    const page = data.loans?.items ?? [];
-    totalCount = data.loans?.totalCount ?? page.length;
-    items.push(...page);
-    if (!page.length) break;
-  } while (items.length < totalCount);
-  return items;
+export async function fetchCompleteLoans(refs: readonly VersionedProjectRef[]) {
+  const batches = projectRefsWheres(refs);
+  const pages = await Promise.all(
+    batches.map(async (where) => {
+      const items: NonNullable<AllLoansQuery["loans"]>["items"] = [];
+      let totalCount = 0;
+      do {
+        const data = await queryBendystrawFromBrowser(AllLoansOperation, {
+          where,
+          limit: PAGE_SIZE,
+          offset: items.length,
+        });
+        const page = data.loans?.items ?? [];
+        totalCount = data.loans?.totalCount ?? page.length;
+        for (const row of page) {
+          if (!matchesProjectRef(row, refs)) {
+            throw new Error("Bendystraw returned a loan for the wrong deployment.");
+          }
+        }
+        items.push(...page);
+        if (!page.length && items.length < totalCount) {
+          throw new Error("Indexed loan data ended before its reported total.");
+        }
+      } while (items.length < totalCount);
+      return items;
+    }),
+  );
+  return pages.flat().sort((a, b) => b.createdAt - a.createdAt);
 }
 
 async function completeParticipants(where: BendystrawFilter, chainId: number) {
@@ -374,11 +391,11 @@ export function useCompleteAutoIssueEvents(where: BendystrawFilter, enabled = tr
   });
 }
 
-export function useCompleteLoans(where: AllLoansQueryVariables["where"], enabled = true) {
+export function useCompleteLoans(refs: readonly VersionedProjectRef[], enabled = true) {
   return useQuery({
-    queryKey: ["complete-loans", where],
-    queryFn: () => completeLoans(where),
-    enabled,
+    queryKey: ["complete-loans", refs],
+    queryFn: () => fetchCompleteLoans(refs),
+    enabled: enabled && refs.length > 0,
   });
 }
 

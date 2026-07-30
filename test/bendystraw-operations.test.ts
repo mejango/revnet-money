@@ -2,15 +2,24 @@ import {
   AccountActivityEventsOperation,
   AccountPermissionHoldersOperation,
   AccountTokenBalancesOperation,
+  AllLoansOperation,
+  AutoIssueEventsOperation,
   BENDYSTRAW_OPERATIONS,
   BROWSER_BENDYSTRAW_OPERATIONS,
+  IndexedBuybackPoolsOperation,
   IndexedPoolSwapsOperation,
+  MintNftEventsOperation,
   OwnedNftsOperation,
   ParticipantsOperation,
   PermissionHoldersOperation,
   ProjectOperation,
+  ProjectOperatorOperation,
+  ProjectPayersOperation,
   ProjectsByOwnerOperation,
   ShieldGroupOperation,
+  StoreAutoIssuanceAmountEventsOperation,
+  V6AutoIssueEventsOperation,
+  V6StoredAutoIssuancesOperation,
   getBrowserOperationById,
 } from "@/lib/bendystraw/operations";
 import { BENDYSTRAW_QUERY_REGISTRY } from "@/lib/bendystraw/registry.server";
@@ -156,5 +165,50 @@ describe("reviewed Bendystraw operations", () => {
         swapEvents: { items: [null], totalCount: 1 },
       }),
     ).toBe(false);
+  });
+
+  it("requires exact deployment identity on every project-scoped list response", () => {
+    const operations = [
+      [ParticipantsOperation, "participants"],
+      [AccountTokenBalancesOperation, "participants"],
+      [AccountPermissionHoldersOperation, "permissionHolders"],
+      [ProjectOperatorOperation, "permissionHolders"],
+      [StoreAutoIssuanceAmountEventsOperation, "storeAutoIssuanceAmountEvents"],
+      [AutoIssueEventsOperation, "autoIssueEvents"],
+      [ProjectPayersOperation, "projectPayers"],
+      [PermissionHoldersOperation, "permissionHolders"],
+      [V6StoredAutoIssuancesOperation, "storeAutoIssuanceAmountEvents"],
+      [V6AutoIssueEventsOperation, "autoIssueEvents"],
+      [AllLoansOperation, "loans"],
+      [IndexedBuybackPoolsOperation, "buybackPoolEvents"],
+      [IndexedPoolSwapsOperation, "swapEvents"],
+      [OwnedNftsOperation, "nfts"],
+      [MintNftEventsOperation, "mintNftEvents"],
+    ] as const;
+
+    for (const [operation, root] of operations) {
+      const registered = BENDYSTRAW_QUERY_REGISTRY[operation.id];
+      for (const field of ["chainId", "projectId", "version"]) {
+        expect(registered.query, `${registered.operationName} must select ${field}`).toMatch(
+          new RegExp(`\\b${field}\\b`, "u"),
+        );
+      }
+
+      expect(
+        operation.validateData({
+          [root]: { items: [{ chainId: 8453, projectId: 6, version: 6 }] },
+        }),
+      ).toBe(true);
+      expect(
+        operation.validateData({
+          [root]: { items: [{ chainId: 8453, projectId: 6 }] },
+        }),
+      ).toBe(false);
+      expect(
+        operation.validateData({
+          [root]: { items: [{ chainId: 8453, projectId: 7, version: 0 }] },
+        }),
+      ).toBe(false);
+    }
   });
 });

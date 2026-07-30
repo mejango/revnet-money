@@ -1,9 +1,5 @@
 import { getBendystrawUrl } from "@/graphql/constants";
-import {
-  BENDYSTRAW_TIMEOUT_MS,
-  bendystrawFetch,
-  readBendystrawResponse,
-} from "@/lib/bendystraw/transport";
+import { requestBendystraw } from "@bananapus/nana-sdk-core";
 import { NextResponse } from "next/server";
 
 type IndexedProject = {
@@ -28,7 +24,7 @@ function graphqlUrl() {
   url.pathname = `${url.pathname.replace(/\/graphql\/?$/u, "").replace(/\/$/u, "")}/graphql`;
   url.search = "";
   url.hash = "";
-  return url;
+  return url.toString();
 }
 
 export async function GET() {
@@ -36,12 +32,7 @@ export async function GET() {
     const projects: IndexedProject[] = [];
     let totalCount = 0;
     do {
-      const response = await bendystrawFetch(graphqlUrl(), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          operationName: "DiscoverRevnets",
-          query: `query DiscoverRevnets($limit: Int!, $offset: Int!) {
+      const query = `query DiscoverRevnets($limit: Int!, $offset: Int!) {
           projects(
             where: { version: 6, isRevnet: true }
             orderBy: "createdAt"
@@ -52,15 +43,27 @@ export async function GET() {
             totalCount
             items { ${PROJECT_FIELDS} }
           }
-        }`,
-          variables: { limit: 250, offset: projects.length },
-        }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(BENDYSTRAW_TIMEOUT_MS),
-      });
-      const data = (await readBendystrawResponse(response)) as {
-        projects?: { items?: IndexedProject[]; totalCount?: number };
-      };
+        }`;
+      const data = await requestBendystraw<
+        {
+          projects?: { items?: IndexedProject[]; totalCount?: number };
+        },
+        { limit: number; offset: number }
+      >(
+        graphqlUrl(),
+        query,
+        { limit: 250, offset: projects.length },
+        {
+          fetch: (input, init) => {
+            const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+            return fetch(input, {
+              ...init,
+              body: JSON.stringify({ ...body, operationName: "DiscoverRevnets" }),
+              cache: "no-store",
+            });
+          },
+        },
+      );
       const page = data.projects?.items ?? [];
       totalCount = data.projects?.totalCount ?? page.length;
       projects.push(...page);

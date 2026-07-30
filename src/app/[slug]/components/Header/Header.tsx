@@ -21,21 +21,23 @@ import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { Suspense, use, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { participantCountSummary } from "../v6/owners/accounts/participantsAggregate";
-import { TvlDatum } from "./TvlDatum";
+import { formatUsd18, TvlDatum } from "./TvlDatum";
 
 interface Props {
   isRevnet: boolean;
   operatorPromise: Promise<Profile | null>;
+  paymentsCount: number;
   projects: Array<
     Pick<
       Project,
       "chainId" | "projectId" | "token" | "decimals" | "balance" | "suckerGroupId" | "tokenSymbol"
     >
   >;
+  volumeUsd: string | number | bigint;
 }
 
 export function Header(props: Props) {
-  const { isRevnet, operatorPromise, projects } = props;
+  const { isRevnet, operatorPromise, paymentsCount, projects, volumeUsd } = props;
   const operator = use(operatorPromise);
   const chainId = useJBChainId();
   const project = useJBProject();
@@ -45,9 +47,10 @@ export function Header(props: Props) {
   const participantsQuery = useCompleteParticipants(
     {
       suckerGroupId: projects[0].suckerGroupId,
-      balance_gt: 0,
+      balance_gt: "0",
     },
     Number(chainId),
+    Boolean(projects[0].suckerGroupId),
   );
 
   const holderSummary = useMemo(
@@ -59,6 +62,17 @@ export function Header(props: Props) {
     : participantsQuery.isLoading
       ? "…"
       : `${holderSummary.count}${holderSummary.exact ? "" : "+"}`;
+  const raisedValue = useMemo(() => {
+    try {
+      return formatUsd18(BigInt(volumeUsd));
+    } catch {
+      return "—";
+    }
+  }, [volumeUsd]);
+  const paymentValue =
+    Number.isSafeInteger(paymentsCount) && paymentsCount >= 0
+      ? paymentsCount.toLocaleString("en-US")
+      : "—";
 
   const { data: suckers } = useSuckers();
   const { name: projectName, logoUri } = metadata?.data ?? {};
@@ -172,7 +186,23 @@ export function Header(props: Props) {
           {isRevnet ? (
             <>
               <div className="flex flex-row flex-wrap items-center gap-x-4 gap-y-1">
+                <div className="sm:text-xl text-lg">
+                  <span className="font-medium text-black">{raisedValue}</span>{" "}
+                  <span className="text-zinc-500">raised</span>
+                </div>
+                <span aria-hidden className="text-lg text-zinc-300 sm:text-xl">
+                  |
+                </span>
                 <TvlDatum projects={projects} />
+                <span aria-hidden className="text-lg text-zinc-300 sm:text-xl">
+                  |
+                </span>
+                <div className="sm:text-xl text-lg">
+                  <span className="font-medium text-black">{paymentValue}</span>{" "}
+                  <span className="text-zinc-500">
+                    {paymentsCount === 1 ? "payment" : "payments"}
+                  </span>
+                </div>
                 <span aria-hidden className="text-lg text-zinc-300 sm:text-xl">
                   |
                 </span>

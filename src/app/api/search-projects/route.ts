@@ -1,10 +1,6 @@
 import { getBendystrawUrl } from "@/graphql/constants";
 import { projectRefGraphqlInput } from "@/lib/bendystraw/projectRefs";
-import {
-  BENDYSTRAW_TIMEOUT_MS,
-  bendystrawFetch,
-  readBendystrawResponse,
-} from "@/lib/bendystraw/transport";
+import { requestBendystraw } from "@bananapus/nana-sdk-core";
 import { NextRequest, NextResponse } from "next/server";
 
 type IndexedProject = {
@@ -31,14 +27,16 @@ async function queryBendystraw<T>(
   query: string,
   variables: Record<string, unknown>,
 ): Promise<T> {
-  const response = await bendystrawFetch(getBendystrawUrl(1), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ operationName, query, variables }),
-    cache: "no-store",
-    signal: AbortSignal.timeout(BENDYSTRAW_TIMEOUT_MS),
+  return requestBendystraw<T, Record<string, unknown>>(getBendystrawUrl(1), query, variables, {
+    fetch: (input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return fetch(input, {
+        ...init,
+        body: JSON.stringify({ ...body, operationName }),
+        cache: "no-store",
+      });
+    },
   });
-  return (await readBendystrawResponse(response)) as T;
 }
 
 export async function GET(request: NextRequest) {

@@ -8,6 +8,7 @@ import {
   jbControllerAbi,
   jbDirectoryAbi,
   jbMultiTerminalAbi,
+  jbPricesAbi,
   jbProjectsAbi,
   jbRouterTerminalRegistryAbi,
   jbRulesetsAbi,
@@ -99,6 +100,7 @@ const addresses = {
   fundAccessLimits: addressOf(JBCoreContracts.JBFundAccessLimits),
   multicall: getAddress(mainnet.contracts.multicall3.address),
   projects: addressOf(JBCoreContracts.JBProjects),
+  prices: addressOf(JBCoreContracts.JBPrices),
   rulesets: addressOf(JBCoreContracts.JBRulesets),
   splits: addressOf(JBCoreContracts.JBSplits),
   terminal: addressOf(JBCoreContracts.JBMultiTerminal),
@@ -170,7 +172,9 @@ const fixtureProject = {
 };
 const fixtureSuckerGroup = {
   id: suckerGroupId,
+  paymentsCount: 2,
   tokenSupply: "1000000000000000000000000",
+  volumeUsd: "1250000000000000000000",
   projects: {
     items: [
       {
@@ -295,7 +299,7 @@ const graphqlHandlers = {
   },
   Participants(variables) {
     requireFixture(
-      variables.where?.suckerGroupId === suckerGroupId && variables.where?.balance_gt === 0,
+      variables.where?.suckerGroupId === suckerGroupId && variables.where?.balance_gt === "0",
       `Participants variables=${JSON.stringify(variables)}`,
     );
     requireFixture(
@@ -317,6 +321,8 @@ const graphqlHandlers = {
         items: [
           {
             chainId,
+            projectId,
+            version: 6,
             address: fixtureOwner,
             volume: "750000000",
             lastPaidTimestamp: 1_760_000_000,
@@ -326,6 +332,8 @@ const graphqlHandlers = {
           },
           {
             chainId,
+            projectId,
+            version: 6,
             address: fixtureParticipant,
             volume: "500000000",
             lastPaidTimestamp: 1_750_000_000,
@@ -546,12 +554,13 @@ const graphqlHandlers = {
     return { autoIssueEvents: { items: [] } };
   },
   V6AllLoans(variables) {
-    requireFixture(
-      variables.where?.version === 6 &&
-        Array.isArray(variables.where?.projectId_in) &&
-        Array.isArray(variables.where?.chainId_in),
-      `V6AllLoans variables=${JSON.stringify(variables)}`,
-    );
+    requireExactVariables("V6AllLoans", variables, {
+      where: {
+        OR: [{ AND: [{ chainId }, { projectId }, { version: 6 }] }],
+      },
+      limit: 250,
+      offset: 0,
+    });
     return { loans: { items: [], totalCount: 0 } };
   },
   OwnedNfts(variables) {
@@ -807,6 +816,30 @@ registerCall({
   result: ([requestedProjectId]) => {
     requireFixture(requestedProjectId === 1n, `cashOutDelayOf projectId=${requestedProjectId}`);
     return 0n;
+  },
+});
+registerCall({
+  abi: jbTerminalStoreAbi,
+  functionName: "balanceOf",
+  address: addresses.terminalStore,
+  result: ([terminal, requestedProjectId, token]) => {
+    requireFixture(terminal === addresses.terminal, `balanceOf terminal=${terminal}`);
+    requireFixture(requestedProjectId === 1n, `balanceOf projectId=${requestedProjectId}`);
+    requireFixture(token === usdc, `balanceOf token=${token}`);
+    return 1_250_000_000n;
+  },
+});
+registerCall({
+  abi: jbPricesAbi,
+  functionName: "pricePerUnitOf",
+  address: addresses.prices,
+  result: ([requestedProjectId, pricingCurrency, unitCurrency, decimals]) => {
+    requireFixture(requestedProjectId === 1n, `pricePerUnitOf projectId=${requestedProjectId}`);
+    requireFixture(
+      pricingCurrency === 2n && unitCurrency === 2n && decimals === 18n,
+      `pricePerUnitOf quote=${pricingCurrency}:${unitCurrency}:${decimals}`,
+    );
+    return 1_000_000_000_000_000_000n;
   },
 });
 registerCall({

@@ -84,7 +84,9 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
   const degraded = resolved.degraded || !indexedSuckerGroup;
   const suckerGroup = indexedSuckerGroup ?? {
     id: project.suckerGroupId,
+    paymentsCount: 0,
     tokenSupply: "0",
+    volumeUsd: "0",
     projects: {
       items: [
         {
@@ -122,7 +124,13 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
           </div>
         )}
         <div className="w-full px-4 sm:container pt-6">
-          <Header isRevnet={isRevnet} operatorPromise={operatorPromise} projects={projects} />
+          <Header
+            isRevnet={isRevnet}
+            operatorPromise={operatorPromise}
+            paymentsCount={suckerGroup.paymentsCount}
+            projects={projects}
+            volumeUsd={suckerGroup.volumeUsd}
+          />
         </div>
         {isRevnet ? (
           <ResponsiveProjectLayout

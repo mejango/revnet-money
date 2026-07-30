@@ -46,7 +46,7 @@ export function V6AllCard() {
   const participantsQuery = useCompleteParticipants(
     {
       suckerGroupId,
-      balance_gt: 0,
+      balance_gt: "0",
     },
     Number(chainId),
     !!suckerGroupId,

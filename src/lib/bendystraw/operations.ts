@@ -138,6 +138,31 @@ function hasRoot(
   };
 }
 
+function hasDeploymentIdentity(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isInteger(value.chainId) &&
+    value.chainId > 0 &&
+    isInteger(value.projectId) &&
+    value.projectId > 0 &&
+    isInteger(value.version) &&
+    value.version > 0
+  );
+}
+
+function hasIdentityItems(root: string, nullableRoot = false): (value: unknown) => boolean {
+  return (value) => {
+    if (!isObject(value) || !(root in value)) return false;
+    const rootValue = value[root];
+    if (rootValue === null) return nullableRoot;
+    return (
+      isObject(rootValue) &&
+      Array.isArray(rootValue.items) &&
+      rootValue.items.every(hasDeploymentIdentity)
+    );
+  };
+}
+
 function operation<TResult, TVariables extends Record<string, unknown>>(
   id: string,
   validateVariables: (value: unknown) => boolean,
@@ -182,7 +207,7 @@ export const ParticipantsOperation = operation<ParticipantsQuery, ParticipantsQu
       offset,
     },
   ),
-  hasRoot("participants", "items"),
+  hasIdentityItems("participants"),
 );
 export const ActivityEventsOperation = operation<ActivityEventsQuery, ActivityEventsQueryVariables>(
   "activity-events.v1",
@@ -212,7 +237,7 @@ export const AccountTokenBalancesOperation = operation<
 >(
   "account-token-balances.v1",
   variablesWith({ account: isString }, { limit: positiveLimit, offset }),
-  hasRoot("participants", "items"),
+  hasIdentityItems("participants"),
 );
 export const ProjectsByOwnerOperation = operation<
   ProjectsByOwnerQuery,
@@ -236,7 +261,7 @@ export const AccountPermissionHoldersOperation = operation<
 >(
   "account-permission-holders.v1",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
-  hasRoot("permissionHolders", "nullable-items"),
+  hasIdentityItems("permissionHolders", true),
 );
 export const HasPermissionOperation = operation<HasPermissionQuery, HasPermissionQueryVariables>(
   "has-permission.v1",
@@ -260,7 +285,7 @@ export const ProjectCreateEventOperation = operation<
 export const ProjectOperatorOperation = operation<
   ProjectOperatorQuery,
   ProjectOperatorQueryVariables
->("project-operator.v1", projectVariables, hasRoot("permissionHolders", "items"));
+>("project-operator.v1", projectVariables, hasIdentityItems("permissionHolders"));
 export const ProjectWithPermissionsOperation = operation<
   ProjectWithPermissionsQuery,
   ProjectWithPermissionsQueryVariables
@@ -271,7 +296,7 @@ export const StoreAutoIssuanceAmountEventsOperation = operation<
 >(
   "stored-auto-issuance-events.v1",
   variablesWith({}, { where: filter, orderBy: isString, orderDirection: isString }),
-  hasRoot("storeAutoIssuanceAmountEvents", "items"),
+  hasIdentityItems("storeAutoIssuanceAmountEvents"),
 );
 export const AutoIssueEventsOperation = operation<
   AutoIssueEventsQuery,
@@ -279,7 +304,7 @@ export const AutoIssueEventsOperation = operation<
 >(
   "auto-issue-events.v1",
   variablesWith({}, { where: filter, orderBy: isString, orderDirection: isString }),
-  hasRoot("autoIssueEvents", "items"),
+  hasIdentityItems("autoIssueEvents"),
 );
 export const LoansByAccountOperation = operation<LoansByAccountQuery, LoansByAccountQueryVariables>(
   "loans-by-account.v1",
@@ -313,7 +338,7 @@ export const TopSuckerGroupsOperation = operation<
 export const ProjectPayersOperation = operation<ProjectPayersQuery, ProjectPayersQueryVariables>(
   "project-payers.v1",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
-  hasRoot("projectPayers", "nullable-items"),
+  hasIdentityItems("projectPayers", true),
 );
 export const PermissionHoldersOperation = operation<
   PermissionHoldersQuery,
@@ -321,7 +346,7 @@ export const PermissionHoldersOperation = operation<
 >(
   "permission-holders.v1",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
-  hasRoot("permissionHolders", "nullable-items"),
+  hasIdentityItems("permissionHolders", true),
 );
 export const V6StoredAutoIssuancesOperation = operation<
   V6StoredAutoIssuancesQuery,
@@ -329,7 +354,7 @@ export const V6StoredAutoIssuancesOperation = operation<
 >(
   "v6-stored-auto-issuances.v1",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
-  hasRoot("storeAutoIssuanceAmountEvents", "items"),
+  hasIdentityItems("storeAutoIssuanceAmountEvents"),
 );
 export const V6AutoIssueEventsOperation = operation<
   V6AutoIssueEventsQuery,
@@ -337,12 +362,12 @@ export const V6AutoIssueEventsOperation = operation<
 >(
   "v6-auto-issue-events.v1",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
-  hasRoot("autoIssueEvents", "items"),
+  hasIdentityItems("autoIssueEvents"),
 );
 export const AllLoansOperation = operation<AllLoansQuery, AllLoansQueryVariables>(
   "all-loans.v1",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
-  hasRoot("loans", "nullable-items"),
+  hasIdentityItems("loans", true),
 );
 export const IndexedBuybackPoolsOperation = operation<
   IndexedBuybackPoolsQuery,
@@ -353,7 +378,7 @@ export const IndexedBuybackPoolsOperation = operation<
     { projectId: isNumber, chainId: isNumber, version: isNumber },
     { limit: positiveLimit, offset },
   ),
-  hasRoot("buybackPoolEvents", "items"),
+  hasIdentityItems("buybackPoolEvents"),
 );
 export const IndexedPoolSwapsOperation = operation<
   IndexedPoolSwapsQuery,
@@ -367,17 +392,17 @@ export const IndexedPoolSwapsOperation = operation<
     limit: positiveLimit,
     offset,
   }),
-  hasRoot("swapEvents", "items"),
+  hasIdentityItems("swapEvents"),
 );
 export const OwnedNftsOperation = operation<OwnedNftsQuery, OwnedNftsQueryVariables>(
   "owned-nfts.v1",
   variablesWith({ where: filter, limit: positiveLimit, offset }),
-  hasRoot("nfts", "items"),
+  hasIdentityItems("nfts"),
 );
 export const MintNftEventsOperation = operation<MintNftEventsQuery, MintNftEventsQueryVariables>(
   "mint-nft-events.v1",
   variablesWith({ where: filter, limit: positiveLimit, offset }),
-  hasRoot("mintNftEvents", "items"),
+  hasIdentityItems("mintNftEvents"),
 );
 export const ShieldProjectOperation = operation<ShieldProjectQuery, ShieldProjectQueryVariables>(
   "shield-project.v1",

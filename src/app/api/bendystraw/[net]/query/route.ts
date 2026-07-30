@@ -1,7 +1,7 @@
 import { getBrowserOperationById } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import { BendystrawError } from "@/lib/bendystraw/transport";
 import { readBoundedBody } from "@/lib/server/readBoundedBody";
+import { BendystrawRequestError as BendystrawError } from "@bananapus/nana-sdk-core";
 import { NextRequest } from "next/server";
 
 const MAX_REQUEST_BYTES = 32 * 1024;

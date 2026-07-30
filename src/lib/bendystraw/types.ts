@@ -119,7 +119,9 @@ export type SuckerGroupQueryVariables = { id: string };
 export type SuckerGroupQuery = {
   suckerGroup: {
     id: string;
+    paymentsCount: number;
     tokenSupply: BigNumberish;
+    volumeUsd: BigNumberish;
     projects: { items: SuckerGroupProject[] } | null;
   } | null;
 };
@@ -151,6 +153,8 @@ export type ParticipantsQuery = {
       Pick<
         Participant,
         | "chainId"
+        | "projectId"
+        | "version"
         | "address"
         | "volume"
         | "lastPaidTimestamp"
@@ -373,7 +377,14 @@ export type ProjectOperatorQueryVariables = {
   version: number;
 };
 export type ProjectOperatorQuery = {
-  permissionHolders: { items: Array<{ operator: string }> };
+  permissionHolders: {
+    items: Array<{
+      chainId: number;
+      projectId: number;
+      version: number;
+      operator: string;
+    }>;
+  };
 };
 
 export type ProjectWithPermissionsQueryVariables = ProjectQueryVariables;
@@ -398,7 +409,9 @@ export type StoreAutoIssuanceAmountEventsQuery = {
   storeAutoIssuanceAmountEvents: {
     items: Array<{
       id: string;
+      chainId: number;
       projectId: number;
+      version: number;
       beneficiary: string;
       count: BigNumberish;
       stageId: BigNumberish;
@@ -412,7 +425,9 @@ export type AutoIssueEventsQuery = {
   autoIssueEvents: {
     items: Array<{
       id: string;
+      chainId: number;
       projectId: number;
+      version: number;
       stageId: BigNumberish;
       beneficiary: string;
       count: BigNumberish;
@@ -557,6 +572,7 @@ export type V6StoredAutoIssuancesQuery = {
       id: string;
       chainId: number;
       projectId: number;
+      version: number;
       stageId: string;
       beneficiary: string;
       count: string;
@@ -574,6 +590,8 @@ export type V6AutoIssueEventsQuery = {
     items: Array<{
       id: string;
       chainId: number;
+      projectId: number;
+      version: number;
       stageId: string;
       beneficiary: string;
       count: string;
@@ -582,7 +600,7 @@ export type V6AutoIssueEventsQuery = {
 };
 
 export type AllLoansQueryVariables = {
-  where: { projectId_in: number[]; version: number; chainId_in: number[] };
+  where: BendystrawFilter;
   limit?: number;
   offset?: number;
 };
@@ -596,6 +614,8 @@ export type AllLoansQuery = {
       owner: string;
       createdAt: number;
       chainId: number;
+      projectId: number;
+      version: number;
     }>;
     totalCount: number;
   } | null;
@@ -612,6 +632,9 @@ export type IndexedBuybackPoolsQuery = {
   buybackPoolEvents: {
     totalCount?: number;
     items: Array<{
+      chainId: number;
+      projectId: number;
+      version: number;
       timestamp: number;
       terminalToken: string;
       poolId: string;
@@ -627,6 +650,9 @@ export type IndexedPoolSwapsQueryVariables = IndexedBuybackPoolsQueryVariables &
 export type IndexedPoolSwapsQuery = {
   swapEvents: {
     items: Array<{
+      chainId: number;
+      projectId: number;
+      version: number;
       timestamp: number;
       direction: string;
       poolId: string | null;
@@ -670,6 +696,7 @@ export type MintNftEventsQuery = {
       beneficiary: string;
       chainId: number;
       projectId: number;
+      version: number;
       tierId: number;
       timestamp: number;
       tokenId: BigNumberish;

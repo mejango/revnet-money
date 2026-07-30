@@ -35,6 +35,15 @@ describe("exact Bendystraw project-pair filters", () => {
       "{ AND: [{ chainId: 8453 }, { projectId: 6 }, { version: 6 }] }",
     );
   });
+
+  it("rejects invalid protocol identities before constructing a query", () => {
+    expect(() => projectRefsWhere([{ chainId: BASE, projectId: 0, version: 6 }])).toThrow(
+      "Invalid Bendystraw project reference",
+    );
+    expect(() => projectRefGraphqlInput({ chainId: BASE, projectId: 6, version: 0 })).toThrow(
+      "Invalid Bendystraw project reference",
+    );
+  });
 });
 
 describe("permission grant scoping", () => {

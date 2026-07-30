@@ -30,7 +30,9 @@ async function openFixtureProject(page: Page): Promise<BrowserBoundary> {
 
   await expect(page.getByRole("heading", { level: 1, name: "Fixture Revnet" })).toBeVisible();
   await expect(page.getByRole("link", { name: "FREV", exact: true })).toBeVisible();
+  await expect(page.getByText("$1,250.00 raised", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "$1,250.00 balance" })).toBeVisible();
+  await expect(page.getByText("2 payments", { exact: true })).toBeVisible();
   await expect(page.getByText("2 token holders", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Amount")).toBeEnabled();
   await expect(page.getByLabel("Payment mode")).toHaveValue("pay");
@@ -99,6 +101,8 @@ test("fixture project renders its contract-hydrated production shape", async ({
   expect(status.graphqlOperations.Participants).toBeGreaterThan(0);
   expect(status.contractFunctions.currentRulesetOf).toBeGreaterThan(0);
   expect(status.contractFunctions.accountingContextsOf).toBeGreaterThan(0);
+  expect(status.contractFunctions.balanceOf).toBeGreaterThan(0);
+  expect(status.contractFunctions.pricePerUnitOf).toBeGreaterThan(0);
   expect(status.contractFunctions.tokenOf).toBeGreaterThan(0);
   expect(status.contractFunctions.symbol).toBeGreaterThan(0);
   expect(status.multicallBatches).toBeGreaterThan(0);
@@ -127,7 +131,8 @@ test("fixture project remains keyboard-usable and accessible", async ({ page, re
 test("project terms stay contract-backed, contained, and accessible", async ({ page, request }) => {
   const boundary = await openFixtureProject(page);
 
-  await page.getByRole("link", { name: "Terms" }).click();
+  await expect(page.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/eth:1/terms");
+  await page.goto("/eth:1/terms", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/eth:1\/terms$/);
   await expect(page.getByRole("heading", { name: "Token issuance" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Stages" })).toBeVisible();
@@ -156,6 +161,11 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   await expect(page.getByRole("button", { name: "Accounts" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "You", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "All", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Auto issuance", exact: true }).click();
+  await expect(page.getByText("No auto issuances")).toBeVisible();
+  await page.getByRole("button", { name: "Loans", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Active loans", exact: true })).toBeVisible();
+  await expect(page.getByText("No active loans indexed.")).toBeVisible();
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 
@@ -197,6 +207,9 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   expect(status.unknownRequests).toEqual([]);
   expect(status.graphqlOperations.V6ProjectPayers).toBeGreaterThan(0);
   expect(status.graphqlOperations.V6PermissionHolders).toBeGreaterThan(0);
+  expect(status.graphqlOperations.V6StoredAutoIssuances).toBeGreaterThan(0);
+  expect(status.graphqlOperations.V6AutoIssueEvents).toBeGreaterThan(0);
+  expect(status.graphqlOperations.V6AllLoans).toBeGreaterThan(0);
   expect(status.contractFunctions.ownerOf).toBeGreaterThan(0);
   await page.waitForTimeout(250);
   expectBoundaryToStayLocal(boundary);
