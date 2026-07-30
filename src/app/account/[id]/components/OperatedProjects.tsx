@@ -4,8 +4,7 @@ import { permissionInfo } from "@/app/[slug]/components/v6/operator/permissionMe
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { ACCOUNT_BENDYSTRAW_CHAIN_ID } from "@/lib/accountHoldings";
-import { AccountPermissionHoldersOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useCompleteAccountPermissions } from "@/hooks/useCompleteBendystrawLists";
 import type { AccountPermissionHolderRow } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { slugFor } from "@/lib/slug";
@@ -60,16 +59,12 @@ export function aggregateOperatedProjects(items: AccountPermissionHolderRow[]): 
 }
 
 export function OperatedProjects({ address }: { address: Address }) {
-  const query = useBendystrawQuery(
-    AccountPermissionHoldersOperation,
-    { where: { operator: address.toLowerCase(), version: 6 } },
-    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID },
-  );
+  const query = useCompleteAccountPermissions({
+    operator: address.toLowerCase(),
+    version: 6,
+  });
 
-  const projects = useMemo(
-    () => aggregateOperatedProjects(query.data?.permissionHolders?.items ?? []),
-    [query.data],
-  );
+  const projects = useMemo(() => aggregateOperatedProjects(query.data ?? []), [query.data]);
 
   return (
     <section>

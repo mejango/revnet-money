@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
+import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { isSafeProposalPendingError, useWriteContract } from "@/hooks/useReviewedWriteContract";
-import { PermissionHoldersOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
@@ -96,15 +96,14 @@ export function OperatorAccountCard({
   /** Server-resolved operator for the page chain (bendystraw fallback). */
   fallbackOperator?: string;
 }) {
-  const holdersQuery = useBendystrawQuery(
-    PermissionHoldersOperation,
-    { where: permissionHoldersWhere(rows, { isRevnetOperator: true }) },
-    { enabled: rows.length > 0 },
+  const holdersQuery = useCompleteProjectPermissions(
+    permissionHoldersWhere(rows, { isRevnetOperator: true }),
+    rows.length > 0,
   );
 
   const operatorByChain = useMemo(() => {
     const map = new Map<number, Address>();
-    for (const item of holdersQuery.data?.permissionHolders?.items ?? []) {
+    for (const item of holdersQuery.data ?? []) {
       if (item.isRevnetOperator && isAddress(item.operator) && !map.has(item.chainId)) {
         map.set(item.chainId, item.operator as Address);
       }

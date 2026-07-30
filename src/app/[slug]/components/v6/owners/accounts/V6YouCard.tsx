@@ -37,6 +37,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
 import { ProjectItem } from "../../shared";
+import { BurnRow, V6BurnTokensDialog } from "./V6BurnTokensDialog";
 import { CreditRow, V6ClaimCreditsDialog } from "./V6ClaimCreditsDialog";
 
 const BorrowDialog = dynamic(() =>
@@ -199,6 +200,11 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
       }),
     [held, creditByChain],
   );
+  const burnRows: BurnRow[] = held.map((b) => ({
+    chainId: b.chainId as JBChainId,
+    projectId: b.projectId,
+    balance: b.balance.value,
+  }));
   const hasErc20 = !!token?.data?.symbol;
 
   if (!address) {
@@ -337,6 +343,17 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
       )}
 
       <div className="flex flex-wrap gap-2 mt-4">
+        {burnRows.length > 0 && (
+          <V6BurnTokensDialog rows={burnRows} tokenSymbol={tokenSymbol}>
+            <Button
+              variant="outline"
+              className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
+            >
+              Burn
+            </Button>
+          </V6BurnTokensDialog>
+        )}
+
         {hasErc20 && primaryNativeTerminal.data ? (
           <RedeemDialog projectId={projectId} tokenSymbol={tokenSymbol}>
             <Button

@@ -2,7 +2,7 @@
 
 import { ProfilesProvider } from "@/components/ProfilesContext";
 import { ActivityFeedSkeleton } from "@/components/loading/LoadingSkeletons";
-import { ActivityEventsOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useCompleteActivityEvents } from "@/hooks/useCompleteBendystrawLists";
 import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
 import { useState } from "react";
 import { ActivityItem } from "./ActivityItem";
@@ -22,17 +22,16 @@ const LOAD_MORE_COUNT = 5;
 
 export function ActivityFeed({ suckerGroupId, projects }: Props) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
-  const { data, isLoading } = useBendystrawQuery(
-    ActivityEventsOperation,
+  const { data, isLoading, isError } = useCompleteActivityEvents(
     {
       orderBy: "timestamp",
       orderDirection: "desc",
       where: { suckerGroupId },
     },
-    { pollInterval: 15_000, chainId: Number(projects[0]?.chainId ?? 1) },
+    Number(projects[0]?.chainId ?? 1),
   );
 
-  const items = data?.activityEvents.items ?? [];
+  const items = data ?? [];
 
   // Token amounts when every chain shares one accounting-token kind; indexed
   // USD when the sucker group's chains disagree (ecosystem convention).
@@ -47,7 +46,11 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
       <h3 className="text-lg font-medium mb-2">Activity</h3>
       <ProfilesProvider addresses={addresses}>
         <div className="pr-1">
-          {visibleEvents.length > 0 ? (
+          {isError ? (
+            <p className="py-4 text-center text-sm text-red-600">
+              Activity is temporarily unavailable. Try again shortly.
+            </p>
+          ) : visibleEvents.length > 0 ? (
             <div className="flex flex-col">
               {visibleEvents.map((event) => (
                 <ActivityItem key={event.id} event={event} />

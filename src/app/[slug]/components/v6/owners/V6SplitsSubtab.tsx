@@ -1,6 +1,6 @@
 "use client";
 
-import { MAX_RULESET_COUNT, RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
+import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
@@ -14,7 +14,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ProjectOperatorOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useAllRulesetsByChain } from "@/hooks/useAllRulesetsByChain";
+import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { formatTokenSymbol } from "@/lib/utils";
@@ -23,7 +24,6 @@ import {
   JB_CHAINS,
   jbControllerAbi,
   JBCoreContracts,
-  jbRulesetsAbi,
   jbSplitsAbi,
 } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
@@ -64,35 +64,24 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
 
   // The real operator (bendystraw permissionHolders isRevnetOperator) — NOT the
   // first split's beneficiary, which is zero when the split routes to a hook.
-  const operatorQuery = useBendystrawQuery(ProjectOperatorOperation, {
+  const operatorQuery = useCompleteProjectPermissions({
     chainId: Number(chainId),
     projectId: Number(projectId),
     version: 6,
+    isRevnetOperator: true,
   });
-  const operator = operatorQuery.data?.permissionHolders?.items?.[0]?.operator;
+  const operator = operatorQuery.data?.find((row) => (row.permissions?.length ?? 0) > 0)?.operator;
 
   // Each chain's ruleset list (chronological). Stage tabs follow the context
   // chain; per-chain reads use each chain's own ruleset id at that index.
-  const rulesetReads = useReadContracts({
-    contracts: chains.map((c) => ({
-      chainId: c.chainId,
-      address: contractAddress(JBCoreContracts.JBRulesets, c.chainId),
-      abi: jbRulesetsAbi,
-      functionName: "allOf" as const,
-      args: [BigInt(c.projectId), 0n, BigInt(MAX_RULESET_COUNT)] as const,
-    })),
-    query: { enabled: chains.length > 0 },
-  });
+  const rulesetReads = useAllRulesetsByChain(chains);
 
   type RulesetRow = { id: number; start: number; metadata: bigint };
   const rulesetsByChain = new Map<number, RulesetRow[]>();
-  chains.forEach((c, i) => {
-    const result = rulesetReads.data?.[i];
-    if (result?.status === "success") {
-      rulesetsByChain.set(
-        Number(c.chainId),
-        (result.result as unknown as readonly RulesetRow[]).slice().reverse(),
-      );
+  chains.forEach((c) => {
+    const result = rulesetReads.data?.get(Number(c.chainId));
+    if (result) {
+      rulesetsByChain.set(Number(c.chainId), result as unknown as RulesetRow[]);
     }
   });
 

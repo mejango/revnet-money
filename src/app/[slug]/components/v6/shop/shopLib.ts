@@ -113,6 +113,53 @@ export interface ShopInventory {
   configFlags: ShopConfigFlags | null;
 }
 
+const TIER_PAGE_SIZE = 200;
+
+async function readTierPage(
+  client: PublicClient,
+  store: Address,
+  hook: Address,
+  startingId: bigint,
+) {
+  return client.readContract({
+    address: store,
+    abi: jb721TiersHookStoreAbi,
+    functionName: "tiersOf",
+    args: [
+      hook,
+      [],
+      false,
+      startingId,
+      BigInt(startingId === 0n ? TIER_PAGE_SIZE : TIER_PAGE_SIZE + 1),
+    ],
+  });
+}
+
+async function readAllActiveTiers(client: PublicClient, store: Address, hook: Address) {
+  const tiers: Awaited<ReturnType<typeof readTierPage>>[number][] = [];
+  const seen = new Set<number>();
+  let startingId = 0n;
+
+  for (;;) {
+    const page = await readTierPage(client, store, hook, startingId);
+    if (page.length === 0) break;
+    if (startingId !== 0n && BigInt(page[0].id) !== startingId) {
+      throw new Error("Tier inventory changed while it was being read.");
+    }
+    const fresh = startingId === 0n ? page : page.slice(1);
+    for (const tier of fresh) {
+      if (seen.has(tier.id)) throw new Error(`Tier inventory repeated tier ${tier.id}.`);
+      seen.add(tier.id);
+      tiers.push(tier);
+    }
+    if (fresh.length < TIER_PAGE_SIZE) break;
+    const next = BigInt(fresh[fresh.length - 1].id);
+    if (next === startingId) throw new Error("Tier inventory returned a cyclic cursor.");
+    startingId = next;
+  }
+  return tiers;
+}
+
 /**
  * The project's 721 shop on the context chain: hook + store + pricing context
  * (with a display symbol) + full tier data (supply, discount, reserve, flags).
@@ -154,12 +201,7 @@ export async function loadShopInventory(
   if (!resolved) return null;
 
   const [rawTiers, symbol, configFlags] = await Promise.all([
-    client.readContract({
-      address: resolved.store,
-      abi: jb721TiersHookStoreAbi,
-      functionName: "tiersOf",
-      args: [resolved.hook, [], false, 0n, 200n],
-    }),
+    readAllActiveTiers(client, resolved.store, resolved.hook),
     resolveShopPricingSymbol(client, chainId, projectId, resolved.pricing.currency),
     client
       .readContract({

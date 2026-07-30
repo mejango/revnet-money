@@ -122,7 +122,7 @@ const noVariables = (value: unknown): value is Record<string, never> =>
   isObject(value) && Object.keys(value).length === 0;
 const filter = (value: unknown): boolean => isObject(value) && isSafeInput(value);
 const positiveLimit = (value: unknown): boolean => isInteger(value) && value > 0 && value <= 1_000;
-const offset = (value: unknown): boolean => isInteger(value) && value >= 0 && value <= 100_000;
+const offset = (value: unknown): boolean => isInteger(value) && value >= 0;
 
 function hasRoot(
   root: string,
@@ -179,13 +179,23 @@ export const ParticipantsOperation = operation<ParticipantsQuery, ParticipantsQu
       orderBy: isString,
       orderDirection: isString,
       limit: positiveLimit,
+      offset,
     },
   ),
   hasRoot("participants", "items"),
 );
 export const ActivityEventsOperation = operation<ActivityEventsQuery, ActivityEventsQueryVariables>(
   "activity-events.v1",
-  variablesWith({}, { where: filter, orderBy: isString, orderDirection: isString }),
+  variablesWith(
+    {},
+    {
+      where: filter,
+      orderBy: isString,
+      orderDirection: isString,
+      limit: positiveLimit,
+      offset,
+    },
+  ),
   hasRoot("activityEvents", "items"),
 );
 export const AccountActivityEventsOperation = operation<
@@ -193,7 +203,7 @@ export const AccountActivityEventsOperation = operation<
   AccountActivityEventsQueryVariables
 >(
   "account-activity-events.v1",
-  variablesWith({ address: isString }, { limit: positiveLimit }),
+  variablesWith({ address: isString }, { limit: positiveLimit, offset }),
   hasRoot("activityEvents", "items"),
 );
 export const AccountTokenBalancesOperation = operation<
@@ -201,19 +211,23 @@ export const AccountTokenBalancesOperation = operation<
   AccountTokenBalancesQueryVariables
 >(
   "account-token-balances.v1",
-  variablesWith({ account: isString }, { limit: positiveLimit }),
+  variablesWith({ account: isString }, { limit: positiveLimit, offset }),
   hasRoot("participants", "items"),
 );
 export const ProjectsByOwnerOperation = operation<
   ProjectsByOwnerQuery,
   ProjectsByOwnerQueryVariables
->("projects-by-owner.v1", variablesWith({ where: filter }), hasRoot("projects", "items"));
+>(
+  "projects-by-owner.v1",
+  variablesWith({ where: filter }, { limit: positiveLimit, offset }),
+  hasRoot("projects", "items"),
+);
 export const ProjectErc20TickersOperation = operation<
   ProjectErc20TickersQuery,
   ProjectErc20TickersQueryVariables
 >(
   "project-erc20-tickers.v1",
-  variablesWith({ where: filter }),
+  variablesWith({ where: filter }, { limit: positiveLimit, offset }),
   hasRoot("deployErc20Events", "items"),
 );
 export const AccountPermissionHoldersOperation = operation<
@@ -221,7 +235,7 @@ export const AccountPermissionHoldersOperation = operation<
   AccountPermissionHoldersQueryVariables
 >(
   "account-permission-holders.v1",
-  variablesWith({ where: filter }),
+  variablesWith({ where: filter }, { limit: positiveLimit, offset }),
   hasRoot("permissionHolders", "nullable-items"),
 );
 export const HasPermissionOperation = operation<HasPermissionQuery, HasPermissionQueryVariables>(
@@ -291,10 +305,14 @@ export const SuckerGroupMomentsOperation = operation<
 export const TopSuckerGroupsOperation = operation<
   TopSuckerGroupsQuery,
   TopSuckerGroupsQueryVariables
->("top-sucker-groups.v1", noVariables, hasRoot("suckerGroups", "items"));
+>(
+  "top-sucker-groups.v1",
+  variablesWith({}, { limit: positiveLimit, offset }),
+  hasRoot("suckerGroups", "items"),
+);
 export const ProjectPayersOperation = operation<ProjectPayersQuery, ProjectPayersQueryVariables>(
   "project-payers.v1",
-  variablesWith({ where: filter }),
+  variablesWith({ where: filter }, { limit: positiveLimit, offset }),
   hasRoot("projectPayers", "nullable-items"),
 );
 export const PermissionHoldersOperation = operation<
@@ -302,7 +320,7 @@ export const PermissionHoldersOperation = operation<
   PermissionHoldersQueryVariables
 >(
   "permission-holders.v1",
-  variablesWith({ where: filter }),
+  variablesWith({ where: filter }, { limit: positiveLimit, offset }),
   hasRoot("permissionHolders", "nullable-items"),
 );
 export const V6StoredAutoIssuancesOperation = operation<
@@ -310,22 +328,33 @@ export const V6StoredAutoIssuancesOperation = operation<
   V6StoredAutoIssuancesQueryVariables
 >(
   "v6-stored-auto-issuances.v1",
-  variablesWith({ where: filter }),
+  variablesWith({ where: filter }, { limit: positiveLimit, offset }),
   hasRoot("storeAutoIssuanceAmountEvents", "items"),
 );
 export const V6AutoIssueEventsOperation = operation<
   V6AutoIssueEventsQuery,
   V6AutoIssueEventsQueryVariables
->("v6-auto-issue-events.v1", variablesWith({ where: filter }), hasRoot("autoIssueEvents", "items"));
+>(
+  "v6-auto-issue-events.v1",
+  variablesWith({ where: filter }, { limit: positiveLimit, offset }),
+  hasRoot("autoIssueEvents", "items"),
+);
 export const AllLoansOperation = operation<AllLoansQuery, AllLoansQueryVariables>(
   "all-loans.v1",
-  variablesWith({ where: filter }),
+  variablesWith({ where: filter }, { limit: positiveLimit, offset }),
   hasRoot("loans", "nullable-items"),
 );
 export const IndexedBuybackPoolsOperation = operation<
   IndexedBuybackPoolsQuery,
   IndexedBuybackPoolsQueryVariables
->("indexed-buyback-pools.v1", projectVariables, hasRoot("buybackPoolEvents", "items"));
+>(
+  "indexed-buyback-pools.v1",
+  variablesWith(
+    { projectId: isNumber, chainId: isNumber, version: isNumber },
+    { limit: positiveLimit, offset },
+  ),
+  hasRoot("buybackPoolEvents", "items"),
+);
 export const IndexedPoolSwapsOperation = operation<
   IndexedPoolSwapsQuery,
   IndexedPoolSwapsQueryVariables

@@ -43,24 +43,25 @@ export async function getTokenPriceChartData(params: {
   }
 
   // V6 buyback pools are Uniswap V4 pools identified by bytes32 pool IDs.
-  const v4History = await getV4AmmPriceHistory({
-    projectId,
-    chainId,
-    terminalToken: baseToken.address,
-    terminalDecimals: baseToken.decimals,
-  }).catch(() => null);
-
-  const ammData = v4History?.hasPool ? v4History.data : [];
-
   const currentCashOutTax = await getCurrentCashOutTax(projectId, chainId);
-
-  const floorData = await getFloorPriceHistory({
-    suckerGroupId,
-    chainId,
-    baseTokenDecimals: baseToken.decimals,
-    currentCashOutTax,
-    projectStart,
-  });
+  const [v4Result, floorResult] = await Promise.allSettled([
+    getV4AmmPriceHistory({
+      projectId,
+      chainId,
+      terminalToken: baseToken.address,
+      terminalDecimals: baseToken.decimals,
+    }),
+    getFloorPriceHistory({
+      suckerGroupId,
+      chainId,
+      baseTokenDecimals: baseToken.decimals,
+      currentCashOutTax,
+      projectStart,
+    }),
+  ]);
+  const v4History = v4Result.status === "fulfilled" ? v4Result.value : null;
+  const ammData = v4History?.hasPool ? v4History.data : [];
+  const floorData = floorResult.status === "fulfilled" ? floorResult.value : [];
 
   const { interval } = getTimeRangeConfig(range);
   const data = mergeDataPoints(issuanceData, ammData, floorData, interval);
@@ -68,6 +69,10 @@ export async function getTokenPriceChartData(params: {
   return {
     chartData: range === "all" ? data : data.filter((d) => d.timestamp >= startTime),
     hasPool: !!v4History?.hasPool,
+    unavailableSources: [
+      ...(v4Result.status === "rejected" ? ["pool"] : []),
+      ...(floorResult.status === "rejected" ? ["cash out"] : []),
+    ],
     stages: rulesets.map((ruleset, index) => ({
       name: `Stage ${index + 1}`,
       timestamp: normalizeToInterval(ruleset.start, interval),

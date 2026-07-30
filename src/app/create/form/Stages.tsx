@@ -1,7 +1,5 @@
-import { MAX_RULESET_COUNT } from "@/app/constants";
 import { Button } from "@/components/ui/button";
 import {
-  CircleAlert as ExclamationCircleIcon,
   Lock as LockClosedIcon,
   SquarePen as PencilSquareIcon,
   Plus as PlusIcon,
@@ -18,11 +16,6 @@ import { useCreateForm } from "./useCreateForm";
 export function Stages({ disabled = false }: { disabled?: boolean }) {
   const { values, revnetTokenSymbol, issuanceBaseCurrencySymbol } = useCreateForm();
 
-  const hasStages = values.stages.length > 0;
-
-  const maxStageReached = values.stages.length >= MAX_RULESET_COUNT;
-  const canAddStage = !hasStages || !maxStageReached;
-
   const getDynamicDuration = (currentStageIndex: number): number => {
     if (currentStageIndex >= values.stages.length - 1) {
       return 0; // Last stage is forever
@@ -34,7 +27,6 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
     const duration = getCurrentStageDuration(nextStage, currentStage);
     return Number(duration);
   };
-
   return (
     <>
       <div className="md:col-span-1">
@@ -157,22 +149,11 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
               <Button
                 className="flex gap-1 border border-dashed border-zinc-400"
                 variant="secondary"
-                disabled={!canAddStage || disabled}
+                disabled={disabled}
               >
                 Add stage <PlusIcon className="h-3 w-3" />
               </Button>
             </AddStageDialog>
-            {maxStageReached ? (
-              <div className="text-md text-orange-900 mt-2 flex gap-1 p-2 bg-orange-50">
-                <ExclamationCircleIcon className="h-4 w-4" /> You've added the maximum number of
-                stages.
-              </div>
-            ) : !canAddStage ? (
-              <div className="text-md text-orange-900 mt-2 flex gap-1 p-2 bg-orange-50">
-                <ExclamationCircleIcon className="h-4 w-4" /> Your last stage is indefinite. Set a
-                duration to add another stage.
-              </div>
-            ) : null}
           </div>
         )}
       />

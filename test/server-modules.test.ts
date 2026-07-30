@@ -45,15 +45,23 @@ describe("server-only profile modules", () => {
   it("resolves the indexed operator address to its profile", async () => {
     const profile = { address: "0xoperator", name: "Operator" };
     mocks.request.mockResolvedValue({
-      permissionHolders: { items: [{ operator: "0xoperator" }] },
+      permissionHolders: {
+        items: [{ operator: "0xoperator", permissions: [1] }],
+        totalCount: 1,
+      },
     });
     mocks.fetchProfile.mockResolvedValue(profile);
 
     await expect(getProjectOperator(7, 8453)).resolves.toEqual(profile);
     expect(mocks.request).toHaveBeenCalledWith(8453, expect.anything(), {
-      chainId: 8453,
-      projectId: 7,
-      version: 6,
+      where: {
+        chainId: 8453,
+        projectId: 7,
+        version: 6,
+        isRevnetOperator: true,
+      },
+      limit: 250,
+      offset: 0,
     });
   });
 

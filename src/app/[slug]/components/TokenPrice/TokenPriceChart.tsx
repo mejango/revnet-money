@@ -202,6 +202,11 @@ export function TokenPriceChart({
         </div>
         <RangeSelector ranges={TIME_RANGES} defaultValue="1y" />
       </div>
+      {(data?.unavailableSources.length ?? 0) > 0 ? (
+        <p className="mt-3 text-xs text-amber-700">
+          {data!.unavailableSources.join(" and ")} price history is temporarily unavailable.
+        </p>
+      ) : null}
 
       {hasData ? (
         <CartesianChart

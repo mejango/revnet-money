@@ -262,8 +262,8 @@ function requireExactVariables(operation, actual, expected) {
 
 const graphqlHandlers = {
   DiscoverRevnets(variables) {
-    requireExactVariables("DiscoverRevnets", variables, {});
-    return { projects: { items: [fixtureProject] } };
+    requireExactVariables("DiscoverRevnets", variables, { limit: 250, offset: 0 });
+    return { projects: { items: [fixtureProject], totalCount: 1 } };
   },
   Project(variables) {
     requireExactVariables("Project", variables, { chainId, projectId, version: 6 });
@@ -301,12 +301,13 @@ const graphqlHandlers = {
     requireFixture(
       [undefined, "balance"].includes(variables.orderBy) &&
         [undefined, "desc"].includes(variables.orderDirection) &&
-        [undefined, 1000].includes(variables.limit),
+        [undefined, 250, 1000].includes(variables.limit) &&
+        [undefined, 0].includes(variables.offset),
       `Participants paging=${JSON.stringify(variables)}`,
     );
     requireFixture(
       Object.keys(variables).every((key) =>
-        ["where", "orderBy", "orderDirection", "limit"].includes(key),
+        ["where", "orderBy", "orderDirection", "limit", "offset"].includes(key),
       ),
       `Participants unexpected keys=${JSON.stringify(variables)}`,
     );
@@ -341,8 +342,10 @@ const graphqlHandlers = {
       orderBy: "timestamp",
       orderDirection: "desc",
       where: { suckerGroupId },
+      limit: 250,
+      offset: 0,
     });
-    return { activityEvents: { items: [] } };
+    return { activityEvents: { items: [], totalCount: 0 } };
   },
   CashOutTaxSnapshots(variables) {
     requireExactVariables("CashOutTaxSnapshots", variables, { suckerGroupId });
@@ -399,8 +402,14 @@ const graphqlHandlers = {
     return { autoIssueEvents: { items: [] } };
   },
   IndexedBuybackPools(variables) {
-    requireExactVariables("IndexedBuybackPools", variables, { projectId, chainId, version: 6 });
-    return { buybackPoolEvents: { items: [] } };
+    requireExactVariables("IndexedBuybackPools", variables, {
+      projectId,
+      chainId,
+      version: 6,
+      limit: 1000,
+      offset: 0,
+    });
+    return { buybackPoolEvents: { items: [], totalCount: 0 } };
   },
   IndexedPoolSwaps(variables) {
     requireFixture(
@@ -420,7 +429,7 @@ const graphqlHandlers = {
     return { projectCreateEvents: { items: [] } };
   },
   TopSuckerGroups(variables) {
-    requireExactVariables("TopSuckerGroups", variables, {});
+    requireExactVariables("TopSuckerGroups", variables, { limit: 1000, offset: 0 });
     return {
       suckerGroups: {
         items: [
@@ -461,20 +470,37 @@ const graphqlHandlers = {
   V6ProjectPayers(variables) {
     requireExactVariables("V6ProjectPayers", variables, {
       where: { OR: [{ chainId, projectId, version: 6 }] },
+      limit: 250,
+      offset: 0,
     });
-    return { projectPayers: { items: [] } };
+    return { projectPayers: { items: [], totalCount: 0 } };
   },
   V6PermissionHolders(variables) {
     const expectedBase = { chainId, projectId, version: 6 };
     const expected = [
       { where: { OR: [expectedBase] } },
       { where: { OR: [{ ...expectedBase, isRevnetOperator: true }] } },
+      {
+        where: { OR: [expectedBase] },
+        limit: 250,
+        offset: 0,
+      },
+      {
+        where: { OR: [{ ...expectedBase, isRevnetOperator: true }] },
+        limit: 250,
+        offset: 0,
+      },
+      {
+        where: { ...expectedBase, isRevnetOperator: true },
+        limit: 250,
+        offset: 0,
+      },
     ];
     requireFixture(
       expected.some((candidate) => stableJson(candidate) === stableJson(variables)),
       `V6PermissionHolders variables=${JSON.stringify(variables)}`,
     );
-    return { permissionHolders: { items: [] } };
+    return { permissionHolders: { items: [], totalCount: 0 } };
   },
   V6StoredAutoIssuances(variables) {
     requireFixture(Array.isArray(variables.where?.OR), "missing stored issuance chain filters");
@@ -677,7 +703,7 @@ registerCall({
   address: addresses.rulesets,
   result: ([requestedProjectId, startingId, size]) => {
     requireFixture(requestedProjectId === 1n, `allOf projectId=${requestedProjectId}`);
-    requireFixture(startingId === 0n && size === 3n, `allOf range=${startingId}:${size}`);
+    requireFixture(startingId === 0n && size === 100n, `allOf range=${startingId}:${size}`);
     return [ruleset];
   },
 });

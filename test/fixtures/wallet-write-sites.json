@@ -236,6 +236,20 @@
           1
         ],
         [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/accounts/V6BurnTokensDialog.tsx",
+          "burn",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/accounts/V6BurnTokensDialog.tsx",
+          "BurnChainRow",
+          "useWriteContract",
+          1
+        ],
+        [
           "reviewed-write-hook",
           "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
           "AddLiquidityForm",
@@ -632,6 +646,12 @@
       "risk": "money",
       "files": ["src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx"],
       "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "burn-tokens",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/v6/owners/accounts/V6BurnTokensDialog.tsx"],
+      "tests": ["test/burn-tokens.test.ts"]
     },
     {
       "id": "liquidity-management",

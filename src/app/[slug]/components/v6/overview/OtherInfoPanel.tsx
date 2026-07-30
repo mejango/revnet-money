@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ProjectOperatorOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { Address, isAddress } from "viem";
@@ -85,13 +85,14 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
 
 /** The revnet operator on one chain, ENS-resolved and explorer-linked. */
 function OperatorCell({ chainId, projectId }: { chainId: JBChainId; projectId: number }) {
-  const { data, isLoading } = useBendystrawQuery(ProjectOperatorOperation, {
+  const { data, isLoading } = useCompleteProjectPermissions({
     chainId,
     projectId,
     version: 6,
+    isRevnetOperator: true,
   });
 
-  const operator = data?.permissionHolders?.items?.[0]?.operator;
+  const operator = data?.find((row) => (row.permissions?.length ?? 0) > 0)?.operator;
 
   if (isLoading) return <Skeleton className="h-4 w-24" />;
   if (!operator || !isAddress(operator)) return <span className="text-zinc-400">—</span>;

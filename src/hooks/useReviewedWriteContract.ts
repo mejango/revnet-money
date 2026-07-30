@@ -161,6 +161,10 @@ function followSubmission(
 
 type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] & {
   transactionReview?: TransactionReviewOptions;
+  reverify?: (
+    variables: Parameters<ReturnType<typeof useWagmiWriteContract>["writeContractAsync"]>[0],
+    account: Address,
+  ) => Promise<void>;
 };
 
 export function useWriteContract(
@@ -168,7 +172,7 @@ export function useWriteContract(
 ): ReturnType<typeof useWagmiWriteContract> {
   const config = useConfig();
   const queryClient = useQueryClient();
-  const { transactionReview, ...wagmiOptions } = options ?? {};
+  const { transactionReview, reverify, ...wagmiOptions } = options ?? {};
   const mutation = useWagmiWriteContract(wagmiOptions);
 
   const writeContractAsync = useCallback(
@@ -231,6 +235,11 @@ export function useWriteContract(
       if (!reviewedAccount || reviewedAccount.toLowerCase() !== before.address.toLowerCase()) {
         throw new Error("Connected account changed. Review the transaction again.");
       }
+      await reverify?.(variables, reviewedAccount);
+      const reverifiedAccount = getAccount(config).address;
+      if (!reverifiedAccount || reverifiedAccount.toLowerCase() !== reviewedAccount.toLowerCase()) {
+        throw new Error("Connected account changed. Review the transaction again.");
+      }
 
       const simulation = await simulateContract(config, {
         ...variables,
@@ -247,7 +256,7 @@ export function useWriteContract(
       followSubmission(config, hash, chainId, functionName, reviewedAccount, callKey);
       return hash;
     },
-    [config, mutation, transactionReview],
+    [config, mutation, reverify, transactionReview],
   );
 
   const writeContract = useCallback(

@@ -24,6 +24,33 @@ vi.mock("@/lib/bendystraw", () => ({
   ProjectOperatorOperation: "ProjectOperatorOperation",
 }));
 
+vi.mock("@/hooks/useAllRulesetsByChain", () => ({
+  useAllRulesetsByChain: () => ({
+    data: new Map([
+      [
+        8453,
+        [
+          {
+            id: 1_700_000_001,
+            start: 1_700_000_001,
+            metadata: reads.reservedPercentBps[0] << 4n,
+          },
+          {
+            id: 1_700_000_002,
+            start: 1_700_000_002,
+            metadata: reads.reservedPercentBps[1] << 4n,
+          },
+        ],
+      ],
+    ]),
+    isLoading: false,
+  }),
+}));
+
+vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
+  useCompleteProjectPermissions: () => ({ data: [], isLoading: false }),
+}));
+
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/components/EthereumAddress", () => ({
   EthereumAddress: ({ address }: { address: string }) => <span>{address}</span>,

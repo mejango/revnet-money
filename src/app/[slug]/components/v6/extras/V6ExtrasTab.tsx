@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { ProjectPayersOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useCompleteProjectPayers } from "@/hooks/useCompleteBendystrawLists";
 import { useMemo } from "react";
 import { ProjectItem } from "../shared";
 import { PayerAddressList } from "./PayerAddressList";
@@ -25,12 +25,8 @@ import { chainProjectRows, payersWhere } from "./projectPayers";
 export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
   const rows = useMemo(() => chainProjectRows(projects), [projects]);
 
-  const payersQuery = useBendystrawQuery(
-    ProjectPayersOperation,
-    { where: payersWhere(rows) },
-    { enabled: rows.length > 0 },
-  );
-  const payerRows = payersQuery.data?.projectPayers?.items ?? [];
+  const payersQuery = useCompleteProjectPayers(payersWhere(rows), rows.length > 0);
+  const payerRows = payersQuery.data ?? [];
 
   if (rows.length === 0) {
     return <div className="text-zinc-500">Nothing here yet.</div>;

@@ -1,12 +1,8 @@
 "use client";
 
+import { useCompleteParticipants } from "@/hooks/useCompleteBendystrawLists";
 import { useTotalOutstandingTokens } from "@/hooks/useTotalOutstandingTokens";
-import {
-  ParticipantsOperation,
-  ProjectOperation,
-  SuckerGroupOperation,
-  useBendystrawQuery,
-} from "@/lib/bendystraw";
+import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { prettyNumber } from "@/lib/number";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
@@ -14,7 +10,7 @@ import { formatTokenSymbol } from "@/lib/utils";
 import { formatUnits } from "@bananapus/nana-sdk-core";
 import { ParticipantsPieChart } from "../../../../owners/components/ParticipantsPieChart";
 import { ParticipantsTable } from "../../../../owners/components/ParticipantsTable";
-import { aggregateParticipants, PARTICIPANTS_FETCH_LIMIT } from "./participantsAggregate";
+import { aggregateParticipants } from "./participantsAggregate";
 
 /**
  * "All" card (website/ parity: renderOwnersAll): the holder distribution pie +
@@ -47,24 +43,17 @@ export function V6AllCard() {
     : undefined;
   const baseTokenDecimals = chainTokenConfig?.decimals;
 
-  const participantsQuery = useBendystrawQuery(
-    ParticipantsOperation,
+  const participantsQuery = useCompleteParticipants(
     {
-      orderBy: "balance",
-      orderDirection: "desc",
-      limit: PARTICIPANTS_FETCH_LIMIT,
-      where: {
-        suckerGroupId,
-        balance_gt: 0,
-      },
+      suckerGroupId,
+      balance_gt: 0,
     },
-    { enabled: !!suckerGroupId, chainId: Number(chainId) },
+    Number(chainId),
+    !!suckerGroupId,
   );
 
   // Aggregate each account's balance/volume across the chains it holds on.
-  const participants = aggregateParticipants(participantsQuery.data?.participants.items);
-  const fetchedCount = participantsQuery.data?.participants.items?.length ?? 0;
-  const totalCount = participantsQuery.data?.participants.totalCount ?? fetchedCount;
+  const participants = aggregateParticipants(participantsQuery.data);
   const shownCount = Math.min(10, participants.length);
   const totalLabel = token?.data
     ? `${prettyNumber(
@@ -78,6 +67,9 @@ export function V6AllCard() {
         {formatTokenSymbol(token)} owners are accounts who either paid in, received splits, received
         auto issuance, or traded for them on the secondary market.
       </p>
+      {participantsQuery.isError ? (
+        <p className="mb-3 text-sm text-red-600">Owner balances are temporarily unavailable.</p>
+      ) : null}
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(280px,0.72fr)_minmax(560px,1.28fr)]">
         <div className="min-w-0">
           <ParticipantsPieChart
@@ -106,10 +98,8 @@ export function V6AllCard() {
       </div>
       {participants.length > 0 ? (
         <p className="mt-4 text-sm text-melon-700">
-          {totalCount > fetchedCount
-            ? `${totalCount} holder rows — aggregated from the ${fetchedCount} largest positions`
-            : `${participants.length} holder${participants.length === 1 ? "" : "s"}`}{" "}
-          — showing the {shownCount} largest, as shares of the balances tracked here
+          {participants.length} holder{participants.length === 1 ? "" : "s"} — showing the{" "}
+          {shownCount} largest, as shares of the balances tracked here
         </p>
       ) : null}
     </div>

@@ -4,8 +4,8 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { WalletConnectButton } from "@/components/WalletButton";
+import { useCompleteLoans } from "@/hooks/useCompleteBendystrawLists";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
-import { AllLoansOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
@@ -18,24 +18,23 @@ import { RepayDialog } from "../../Value/RepayDialog";
 import { ProjectItem } from "../shared";
 
 function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; tokenSymbol: string }) {
-  const { data, isLoading } = useBendystrawQuery(
-    AllLoansOperation,
+  const { data, isLoading, isError } = useCompleteLoans(
     {
-      where: {
-        projectId_in: projects.map((p) => p.projectId),
-        version: 6,
-        chainId_in: projects.map((p) => p.chainId),
-      },
+      projectId_in: projects.map((p) => p.projectId),
+      version: 6,
+      chainId_in: projects.map((p) => p.chainId),
     },
-    { enabled: projects.length > 0, chainId: Number(projects[0]?.chainId ?? 1) },
+    projects.length > 0,
   );
-  const rows = data?.loans?.items ?? [];
+  const rows = data ?? [];
 
   return (
     <div className="mb-8">
       <h3 className="mb-2 text-base font-semibold text-zinc-700">Active loans</h3>
       {isLoading ? (
         <TableSkeleton rows={4} columns={5} />
+      ) : isError ? (
+        <div className="text-red-600">Active loans are unavailable.</div>
       ) : rows.length === 0 ? (
         <div className="text-zinc-500">No active loans indexed.</div>
       ) : (

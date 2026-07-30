@@ -4,10 +4,9 @@ import { ActivityItemRow } from "@/app/[slug]/components/ActivityFeed/ActivityIt
 import { mapActivityEvents } from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
 import { ProfilesProvider } from "@/components/ProfilesContext";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { useCompleteAccountActivity } from "@/hooks/useCompleteBendystrawLists";
 import { waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
-import { ACCOUNT_BENDYSTRAW_CHAIN_ID } from "@/lib/accountHoldings";
-import { AccountActivityEventsOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { mergeAccountActivity } from "@/lib/bendystraw/accountActivity";
 import type { AccountActivityEventItem } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
@@ -20,7 +19,6 @@ import type { Address } from "viem";
 
 const INITIAL_ITEMS = 25;
 const LOAD_MORE_COUNT = 25;
-const FETCH_LIMIT = 500;
 
 function statusLabel(status: TransactionActivity["status"]): string {
   return status === "safe-proposed" ? "Safe proposal pending" : status;
@@ -80,11 +78,7 @@ export function AccountActivity({ address }: { address: Address }) {
   const { address: viewed } = useViewedAccount();
   const isSelf = !!viewed && viewed.toLowerCase() === address.toLowerCase();
   const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
-  const { data, isLoading } = useBendystrawQuery(
-    AccountActivityEventsOperation,
-    { address: address.toLowerCase(), limit: FETCH_LIMIT },
-    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID, pollInterval: 15_000 },
-  );
+  const { data, isLoading, isError } = useCompleteAccountActivity(address.toLowerCase());
 
   // From-branch rows merged with beneficiary-branch rows (payments to the
   // account, mints, auto-issues), deduped and sorted newest first.
@@ -131,21 +125,6 @@ export function AccountActivity({ address }: { address: Address }) {
   const hasMore = events.length > visibleCount;
   const addresses = visibleEvents.map((event) => event.beneficiary);
 
-  // Each query root is windowed to the most recent FETCH_LIMIT rows; when any
-  // root fills its window, older activity exists that this feed cannot show.
-  const windowCapped = useMemo(() => {
-    if (!data) return false;
-    const roots = [
-      data.activityEvents,
-      data.beneficiaryPayEvents,
-      data.beneficiaryCashOutEvents,
-      data.beneficiaryMintTokensEvents,
-      data.beneficiaryManualMintTokensEvents,
-      data.beneficiaryAutoIssueEvents,
-    ];
-    return roots.some((root) => (root?.items.length ?? 0) >= FETCH_LIMIT);
-  }, [data]);
-
   return (
     <section>
       <h2 className="mb-2 text-base font-semibold text-zinc-700">Activity</h2>
@@ -159,6 +138,10 @@ export function AccountActivity({ address }: { address: Address }) {
       <ProfilesProvider addresses={addresses}>
         {isLoading ? (
           <SkeletonLines lines={6} className="mt-3" />
+        ) : isError ? (
+          <p className="py-4 text-sm text-red-600">
+            Activity is temporarily unavailable. Try again shortly.
+          </p>
         ) : visibleEvents.length === 0 ? (
           <p className="py-4 text-sm text-zinc-500">No activity yet</p>
         ) : (
@@ -190,11 +173,6 @@ export function AccountActivity({ address }: { address: Address }) {
           >
             Load more
           </button>
-        ) : null}
-        {windowCapped ? (
-          <p className="mt-2 text-xs text-zinc-500">
-            Showing the most recent {FETCH_LIMIT} events per category; older activity is not listed.
-          </p>
         ) : null}
       </ProfilesProvider>
     </section>

@@ -5,11 +5,10 @@ import { tierDisplayName, type TierMedia } from "@/app/[slug]/components/v6/shop
 import { ChainLogo } from "@/components/ChainLogo";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import {
-  ACCOUNT_BENDYSTRAW_CHAIN_ID,
-  projectRefKey,
-  projectRefsWhere,
-} from "@/lib/accountHoldings";
-import { OwnedNftsOperation, ProjectsByOwnerOperation, useBendystrawQuery } from "@/lib/bendystraw";
+  useCompleteOwnedNfts,
+  useCompleteProjectsByRefs,
+} from "@/hooks/useCompleteBendystrawLists";
+import { projectRefKey, projectRefsWheres } from "@/lib/accountHoldings";
 import type { OwnedProjectRow } from "@/lib/bendystraw/types";
 import { ipfsUriToAppUrl } from "@/lib/ipfs";
 import type { JBChainId } from "@/lib/nana/types";
@@ -20,8 +19,6 @@ import { useQueries } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo } from "react";
 import type { Address } from "viem";
-
-const FETCH_LIMIT = 1000;
 
 type TierHolding = {
   /** Media/query key — one resolution per (chainId, projectId, tierId). */
@@ -74,27 +71,18 @@ async function resolveNftTokenMedia(tokenUri: string | null): Promise<TierMedia>
 export function StoreItemHoldings({ address }: { address: Address }) {
   // This app is V6-only: the version pin keeps other protocol versions' rows
   // (which reuse projectIds for unrelated projects) out entirely.
-  const nftsQuery = useBendystrawQuery(
-    OwnedNftsOperation,
-    { where: { owner: address.toLowerCase(), version: 6 }, limit: FETCH_LIMIT, offset: 0 },
-    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID },
-  );
+  const nftsQuery = useCompleteOwnedNfts({ owner: address.toLowerCase(), version: 6 });
 
   const items = useMemo(
-    () =>
-      (nftsQuery.data?.nfts.items ?? []).filter((item) => !!JB_CHAINS[item.chainId as JBChainId]),
+    () => (nftsQuery.data ?? []).filter((item) => !!JB_CHAINS[item.chainId as JBChainId]),
     [nftsQuery.data],
   );
 
-  const refsWhere = useMemo(() => projectRefsWhere(items), [items]);
-  const projectsQuery = useBendystrawQuery(
-    ProjectsByOwnerOperation,
-    { where: refsWhere ?? {} },
-    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID, enabled: !!refsWhere },
-  );
+  const refsWheres = useMemo(() => projectRefsWheres(items), [items]);
+  const projectsQuery = useCompleteProjectsByRefs(refsWheres, refsWheres.length > 0);
   const projectByRef = useMemo(() => {
     const map = new Map<string, OwnedProjectRow>();
-    for (const project of projectsQuery.data?.projects.items ?? []) {
+    for (const project of projectsQuery.data ?? []) {
       map.set(projectRefKey(project), project);
     }
     return map;
@@ -202,12 +190,6 @@ export function StoreItemHoldings({ address }: { address: Address }) {
               </div>
             ))}
           </div>
-          {(nftsQuery.data?.nfts.totalCount ?? 0) > (nftsQuery.data?.nfts.items.length ?? 0) ? (
-            <p className="mt-2 text-xs text-zinc-500">
-              Showing the {nftsQuery.data?.nfts.items.length} most recent items of{" "}
-              {nftsQuery.data?.nfts.totalCount}.
-            </p>
-          ) : null}
         </>
       )}
     </section>

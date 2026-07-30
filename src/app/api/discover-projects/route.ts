@@ -33,32 +33,42 @@ function graphqlUrl() {
 
 export async function GET() {
   try {
-    const response = await bendystrawFetch(graphqlUrl(), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        operationName: "DiscoverRevnets",
-        query: `query DiscoverRevnets {
+    const projects: IndexedProject[] = [];
+    let totalCount = 0;
+    do {
+      const response = await bendystrawFetch(graphqlUrl(), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operationName: "DiscoverRevnets",
+          query: `query DiscoverRevnets($limit: Int!, $offset: Int!) {
           projects(
             where: { version: 6, isRevnet: true }
             orderBy: "createdAt"
             orderDirection: "desc"
-            limit: 200
+            limit: $limit
+            offset: $offset
           ) {
+            totalCount
             items { ${PROJECT_FIELDS} }
           }
         }`,
-        variables: {},
-      }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(BENDYSTRAW_TIMEOUT_MS),
-    });
-    const data = (await readBendystrawResponse(response)) as {
-      projects?: { items?: IndexedProject[] };
-    };
+          variables: { limit: 250, offset: projects.length },
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(BENDYSTRAW_TIMEOUT_MS),
+      });
+      const data = (await readBendystrawResponse(response)) as {
+        projects?: { items?: IndexedProject[]; totalCount?: number };
+      };
+      const page = data.projects?.items ?? [];
+      totalCount = data.projects?.totalCount ?? page.length;
+      projects.push(...page);
+      if (!page.length) break;
+    } while (projects.length < totalCount);
     const groups = new Map<string, { representative: IndexedProject; members: IndexedProject[] }>();
 
-    for (const project of data.projects?.items ?? []) {
+    for (const project of projects) {
       const key = project.suckerGroupId ?? `${project.chainId}:${project.projectId}`;
       const group = groups.get(key);
       if (!group) {

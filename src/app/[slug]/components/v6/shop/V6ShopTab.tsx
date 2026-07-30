@@ -93,7 +93,7 @@ export function V6ShopTab({ projects }: { projects: ProjectItem[] }) {
 
       {visited.customers ? (
         <div className={subtab === "customers" ? "" : "hidden"}>
-          <CustomersSection shop={shop} mediaById={mediaById} />
+          <CustomersSection shop={shop} mediaById={mediaById} projects={projects} />
         </div>
       ) : null}
     </div>

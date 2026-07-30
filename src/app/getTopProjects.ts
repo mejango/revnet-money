@@ -71,7 +71,21 @@ export async function getTopProjects() {
 }
 
 const fetchTopProjects = unstable_cache(
-  async () => queryBendystraw(mainnet.id, TopSuckerGroupsOperation, {}),
+  async () => {
+    const items: TopSuckerGroupsQuery["suckerGroups"]["items"] = [];
+    let totalCount = 0;
+    do {
+      const page = await queryBendystraw(mainnet.id, TopSuckerGroupsOperation, {
+        limit: 1000,
+        offset: items.length,
+      });
+      const pageItems = page.suckerGroups.items ?? [];
+      totalCount = page.suckerGroups.totalCount ?? pageItems.length;
+      items.push(...pageItems);
+      if (!pageItems.length) break;
+    } while (items.length < totalCount);
+    return { suckerGroups: { items, totalCount } };
+  },
   ["top-projects-v2"],
   { revalidate: 600 }, // 10 minutes
 );

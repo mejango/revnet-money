@@ -1,8 +1,8 @@
 "use client";
 
+import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import { useWriteContract } from "@/hooks/useReviewedWriteContract";
-import { PermissionHoldersOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import {
   SAFE_EXEC_ABI,
   SAFE_VIEW_ABI,
@@ -48,14 +48,13 @@ export function SafeQueueCard({
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const holders = useBendystrawQuery(
-    PermissionHoldersOperation,
-    { where: permissionHoldersWhere(rows, { isRevnetOperator: true }) },
-    { enabled: rows.length > 0 },
+  const holders = useCompleteProjectPermissions(
+    permissionHoldersWhere(rows, { isRevnetOperator: true }),
+    rows.length > 0,
   );
   const operatorByChain = useMemo(() => {
     const map = new Map<number, Address>();
-    for (const item of holders.data?.permissionHolders?.items ?? []) {
+    for (const item of holders.data ?? []) {
       if (item.isRevnetOperator && isAddress(item.operator) && !map.has(item.chainId)) {
         map.set(item.chainId, item.operator as Address);
       }

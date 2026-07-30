@@ -6,6 +6,7 @@ import {
   BROWSER_BENDYSTRAW_OPERATIONS,
   IndexedPoolSwapsOperation,
   OwnedNftsOperation,
+  ParticipantsOperation,
   ProjectOperation,
   ProjectsByOwnerOperation,
   ShieldGroupOperation,
@@ -77,6 +78,13 @@ describe("reviewed Bendystraw operations", () => {
     expect(
       AccountActivityEventsOperation.validateData({
         activityEvents: { items: [], pageInfo: { hasNextPage: false, endCursor: null } },
+      }),
+    ).toBe(true);
+    expect(
+      ParticipantsOperation.validateVariables({
+        where: { suckerGroupId: "group" },
+        limit: 250,
+        offset: 250,
       }),
     ).toBe(true);
 

@@ -119,14 +119,20 @@ describe("reviewed write hook", () => {
     });
     mocks.waitForTransactionReceipt.mockResolvedValue({ status: "success" });
 
-    const { result } = renderHook(() => hooks.useWriteContract());
+    const reverify = vi.fn(async (variables, account) => {
+      order.push("reverify");
+      expect(variables).toBe(CALL);
+      expect(account).toBe(ACCOUNT);
+    });
+    const { result } = renderHook(() => hooks.useWriteContract({ reverify }));
     let hash: Hex | undefined;
     await act(async () => {
       hash = await result.current.writeContractAsync(CALL as never);
     });
 
     expect(hash).toBe(HASH);
-    expect(order).toEqual(["review", "simulate", "submit"]);
+    expect(order).toEqual(["review", "reverify", "simulate", "submit"]);
+    expect(reverify).toHaveBeenCalledOnce();
     await waitFor(() =>
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         kind: "direct",
@@ -134,6 +140,19 @@ describe("reviewed write hook", () => {
         account: ACCOUNT,
       }),
     );
+  });
+
+  it("fails closed before simulation when reviewed state changes", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const reverify = vi.fn().mockRejectedValue(new Error("The project controller changed."));
+    const { result } = renderHook(() => hooks.useWriteContract({ reverify }));
+
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      "controller changed",
+    );
+    expect(mocks.simulateContract).not.toHaveBeenCalled();
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 
   it("preserves Wagmi 3 per-call mutation callback context", async () => {

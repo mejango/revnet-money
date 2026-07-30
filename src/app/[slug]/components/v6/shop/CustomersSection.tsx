@@ -5,9 +5,10 @@ import { EthereumAddress } from "@/components/EthereumAddress";
 import EtherscanLink from "@/components/EtherscanLink";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
-import { useOwnedShopItems, useShopPurchases } from "@/lib/nana/shop";
-import { useMemo } from "react";
+import { useAllOwnedShopItems, useAllShopPurchases } from "@/lib/nana/shop";
+import { useMemo, useState } from "react";
 import { Address } from "viem";
+import type { ProjectItem } from "../shared";
 import { ShopInventory, TierMedia, tierDisplayName } from "./shopLib";
 
 /**
@@ -21,9 +22,11 @@ import { ShopInventory, TierMedia, tierDisplayName } from "./shopLib";
 export function CustomersSection({
   shop,
   mediaById,
+  projects,
 }: {
   shop: ShopInventory;
   mediaById: Record<number, TierMedia> | undefined;
+  projects: ProjectItem[];
 }) {
   const { address } = useViewedAccount();
 
@@ -35,13 +38,19 @@ export function CustomersSection({
     [shop.tiers, mediaById],
   );
 
-  const owned = useOwnedShopItems({ owner: address, enabled: !!address });
-  const purchases = useShopPurchases({ limit: 100 });
+  const refs = useMemo(
+    () => projects.map((project) => ({ chainId: project.chainId, projectId: project.projectId })),
+    [projects],
+  );
+  const owned = useAllOwnedShopItems(refs, address);
+  const purchases = useAllShopPurchases(refs);
+  const [visibleCustomers, setVisibleCustomers] = useState(50);
 
   // Mint rows only — anything without a real tier/token is a non-purchase
   // artifact (e.g. an indexed redemption) and never counts as a sale.
   const purchaseRows = useMemo(
-    () => (purchases.data ?? []).filter((purchase) => purchase.tierId > 0 && !!purchase.tokenId),
+    () =>
+      (purchases.data?.items ?? []).filter((purchase) => purchase.tierId > 0 && !!purchase.tokenId),
     [purchases.data],
   );
 
@@ -66,16 +75,18 @@ export function CustomersSection({
           </p>
         ) : owned.isLoading ? (
           <SkeletonLines lines={2} className="mt-3" />
-        ) : owned.isError ? (
+        ) : owned.isError ||
+          ((owned.data?.items.length ?? 0) === 0 &&
+            (owned.data?.failedScopes.length ?? 0) === refs.length) ? (
           <p className="mt-2 text-sm text-zinc-600">Couldn&apos;t load your items right now.</p>
-        ) : (owned.data?.length ?? 0) > 0 ? (
+        ) : (owned.data?.items.length ?? 0) > 0 ? (
           <>
             <p className="mt-2 text-sm font-medium text-zinc-900">
-              {owned.totalCount || owned.data!.length}{" "}
-              {(owned.totalCount || owned.data!.length) === 1 ? "item" : "items"} owned
+              {owned.data!.totalCount || owned.data!.items.length}{" "}
+              {(owned.data!.totalCount || owned.data!.items.length) === 1 ? "item" : "items"} owned
             </p>
             <div className="mt-2 divide-y divide-zinc-100">
-              {tallyItems(owned.data!, names).map((item) => (
+              {tallyItems(owned.data!.items, names).map((item) => (
                 <div
                   key={item.tierId}
                   className="flex items-baseline justify-between gap-3 py-1.5 text-sm"
@@ -85,6 +96,11 @@ export function CustomersSection({
                 </div>
               ))}
             </div>
+            {owned.data!.failedScopes.length > 0 ? (
+              <p className="mt-2 text-xs text-amber-700">
+                Some chains could not be loaded; this ownership list is partial.
+              </p>
+            ) : null}
           </>
         ) : (
           <p className="mt-2 text-sm text-zinc-500">
@@ -97,7 +113,9 @@ export function CustomersSection({
         <h2 className="font-medium text-zinc-900">All</h2>
         {purchases.isLoading ? (
           <SkeletonLines lines={4} className="mt-3" />
-        ) : purchases.isError ? (
+        ) : purchases.isError ||
+          (purchaseRows.length === 0 &&
+            (purchases.data?.failedScopes.length ?? 0) === refs.length) ? (
           <p className="mt-2 text-sm text-zinc-600">Couldn&apos;t load customers right now.</p>
         ) : customers.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-500">No items have been bought yet.</p>
@@ -106,11 +124,11 @@ export function CustomersSection({
             <p className="mt-2 text-sm font-medium text-zinc-900">
               {customers.length.toLocaleString("en-US")}{" "}
               {customers.length === 1 ? "customer" : "customers"} ·{" "}
-              {(purchases.totalCount || purchaseRows.length).toLocaleString("en-US")}{" "}
-              {(purchases.totalCount || purchaseRows.length) === 1 ? "item" : "items"} sold
+              {(purchases.data?.totalCount || purchaseRows.length).toLocaleString("en-US")}{" "}
+              {(purchases.data?.totalCount || purchaseRows.length) === 1 ? "item" : "items"} sold
             </p>
             <div className="mt-2 divide-y divide-zinc-100">
-              {customers.slice(0, 50).map((rows) => (
+              {customers.slice(0, visibleCustomers).map((rows) => (
                 <div
                   key={rows[0].beneficiary.toLowerCase()}
                   className="flex flex-col gap-1 py-1.5 text-sm sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
@@ -129,6 +147,20 @@ export function CustomersSection({
                 </div>
               ))}
             </div>
+            {visibleCustomers < customers.length ? (
+              <button
+                type="button"
+                className="mt-3 w-full border border-zinc-200 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                onClick={() => setVisibleCustomers((count) => count + 50)}
+              >
+                Load more customers ({customers.length - visibleCustomers} remaining)
+              </button>
+            ) : null}
+            {(purchases.data?.failedScopes.length ?? 0) > 0 ? (
+              <p className="mt-2 text-xs text-amber-700">
+                Some chains could not be loaded; customer totals and rankings are partial.
+              </p>
+            ) : null}
           </>
         )}
       </div>

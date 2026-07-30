@@ -20,8 +20,8 @@ export type VersionedProjectRef = {
   version: number;
 };
 
-/** The most project refs a metadata lookup resolves (mirrors the query limit). */
-export const REF_LOOKUP_LIMIT = 200;
+/** Keep exact-ref OR filters small enough for the indexer's input parser. */
+export const REF_LOOKUP_BATCH_SIZE = 200;
 
 /** The lookup key for a project ref — matches `projectRefsWhere`'s AND groups. */
 export function projectRefKey(ref: VersionedProjectRef): string {
@@ -35,6 +35,11 @@ export function projectRefKey(ref: VersionedProjectRef): string {
  * projects table spans protocol versions.
  */
 export function projectRefsWhere(refs: readonly VersionedProjectRef[]): BendystrawFilter | null {
+  return projectRefsWheres(refs)[0] ?? null;
+}
+
+/** Exact project-ref filters in complete, independently queryable batches. */
+export function projectRefsWheres(refs: readonly VersionedProjectRef[]): BendystrawFilter[] {
   const seen = new Set<string>();
   const groups: BendystrawFilter[] = [];
   for (const ref of refs) {
@@ -45,5 +50,9 @@ export function projectRefsWhere(refs: readonly VersionedProjectRef[]): Bendystr
       AND: [{ chainId: ref.chainId }, { projectId: ref.projectId }, { version: ref.version }],
     });
   }
-  return groups.length ? { OR: groups.slice(0, REF_LOOKUP_LIMIT) } : null;
+  const batches: BendystrawFilter[] = [];
+  for (let index = 0; index < groups.length; index += REF_LOOKUP_BATCH_SIZE) {
+    batches.push({ OR: groups.slice(index, index + REF_LOOKUP_BATCH_SIZE) });
+  }
+  return batches;
 }

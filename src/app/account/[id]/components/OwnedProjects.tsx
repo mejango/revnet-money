@@ -4,8 +4,7 @@ import { publicClientFor } from "@/app/[slug]/components/v6/operator/operatorLib
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { ACCOUNT_BENDYSTRAW_CHAIN_ID } from "@/lib/accountHoldings";
-import { ProjectsByOwnerOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useCompleteProjectsByOwner } from "@/hooks/useCompleteBendystrawLists";
 import type { OwnedProjectRow } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { fetchSafesOwnedBy, type OwnedSafe } from "@/lib/safeOwners";
@@ -85,11 +84,10 @@ function ProjectCard({
 }
 
 export function OwnedProjects({ address }: { address: Address }) {
-  const directQuery = useBendystrawQuery(
-    ProjectsByOwnerOperation,
-    { where: { owner: address.toLowerCase(), version: 6 } },
-    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID },
-  );
+  const directQuery = useCompleteProjectsByOwner({
+    owner: address.toLowerCase(),
+    version: 6,
+  });
 
   const safesQuery = useQuery({
     queryKey: ["safes-owned-by", address.toLowerCase()],
@@ -102,10 +100,9 @@ export function OwnedProjects({ address }: { address: Address }) {
     () => [...new Set(safes.map((safe) => safe.safe.toLowerCase()))],
     [safes],
   );
-  const safeProjectsQuery = useBendystrawQuery(
-    ProjectsByOwnerOperation,
-    { where: { owner_in: safeAddresses, version: 6 } },
-    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID, enabled: safeAddresses.length > 0 },
+  const safeProjectsQuery = useCompleteProjectsByOwner(
+    { owner_in: safeAddresses, version: 6 },
+    safeAddresses.length > 0,
   );
 
   // Threshold badge data via the same onchain getOwners/getThreshold probe the
@@ -145,8 +142,8 @@ export function OwnedProjects({ address }: { address: Address }) {
     },
   });
 
-  const direct = directQuery.data?.projects.items ?? [];
-  const viaSafe = safeProjectsQuery.data?.projects.items ?? [];
+  const direct = directQuery.data ?? [];
+  const viaSafe = safeProjectsQuery.data ?? [];
   const isLoading =
     directQuery.isLoading ||
     safesQuery.isLoading ||
@@ -157,6 +154,8 @@ export function OwnedProjects({ address }: { address: Address }) {
       <h2 className="mb-2 text-base font-semibold text-zinc-700">Owned projects</h2>
       {isLoading ? (
         <SkeletonLines lines={3} className="mt-3" />
+      ) : directQuery.isError || (safeAddresses.length > 0 && safeProjectsQuery.isError) ? (
+        <p className="text-sm text-zinc-500">Could not load the complete owned-project list.</p>
       ) : direct.length === 0 && viaSafe.length === 0 ? (
         <p className="text-sm text-zinc-500">No projects owned by this account.</p>
       ) : (

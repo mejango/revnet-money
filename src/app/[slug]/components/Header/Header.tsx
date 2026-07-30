@@ -4,7 +4,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
 import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
 import { FastForward as ForwardIcon } from "@/components/ui/icons";
-import { ParticipantsOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { useCompleteParticipants } from "@/hooks/useCompleteBendystrawLists";
 import type { Project } from "@/lib/bendystraw/types";
 import {
   useJBChainId,
@@ -20,10 +20,7 @@ import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { Suspense, use, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  PARTICIPANTS_FETCH_LIMIT,
-  participantCountSummary,
-} from "../v6/owners/accounts/participantsAggregate";
+import { participantCountSummary } from "../v6/owners/accounts/participantsAggregate";
 import { TvlDatum } from "./TvlDatum";
 
 interface Props {
@@ -45,25 +42,17 @@ export function Header(props: Props) {
   const { metadata } = useJBProjectMetadataContext();
   const { token: tokenContext } = useJBTokenContext();
 
-  const participantsQuery = useBendystrawQuery(
-    ParticipantsOperation,
+  const participantsQuery = useCompleteParticipants(
     {
-      where: {
-        suckerGroupId: projects[0].suckerGroupId,
-        balance_gt: 0,
-      },
-      limit: PARTICIPANTS_FETCH_LIMIT,
+      suckerGroupId: projects[0].suckerGroupId,
+      balance_gt: 0,
     },
-    { chainId: Number(chainId) },
+    Number(chainId),
   );
 
   const holderSummary = useMemo(
-    () =>
-      participantCountSummary(
-        participantsQuery.data?.participants.items,
-        participantsQuery.data?.participants.totalCount,
-      ),
-    [participantsQuery.data?.participants],
+    () => participantCountSummary(participantsQuery.data, participantsQuery.data?.length),
+    [participantsQuery.data],
   );
   const holderValue = participantsQuery.isError
     ? "—"

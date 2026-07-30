@@ -155,12 +155,14 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       $orderBy: String
       $orderDirection: String
       $limit: Int
+      $offset: Int
     ) {
       participants(
         where: $where
         orderBy: $orderBy
         orderDirection: $orderDirection
         limit: $limit
+        offset: $offset
       ) {
         totalCount
         items {
@@ -181,13 +183,17 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       $where: activityEventFilter
       $orderBy: String
       $orderDirection: String
+      $limit: Int
+      $offset: Int
     ) {
       activityEvents(
         where: $where
         orderBy: $orderBy
         orderDirection: $orderDirection
-        limit: 1000
+        limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           id
           chainId
@@ -206,13 +212,15 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
     // client-side (mergeAccountActivity). Every branch pins version 6 in an
     // explicit AND group — this Ponder version does not AND sibling fields
     // inside OR branches.
-    query: `query AccountActivityEvents($address: String!, $limit: Int) {
+    query: `query AccountActivityEvents($address: String!, $limit: Int, $offset: Int) {
       activityEvents(
         where: { AND: [{ from: $address }, { version: 6 }] }
         orderBy: "timestamp"
         orderDirection: "desc"
         limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           id
           chainId
@@ -228,7 +236,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         orderBy: "timestamp"
         orderDirection: "desc"
         limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           id
           chainId
@@ -252,7 +262,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         orderBy: "timestamp"
         orderDirection: "desc"
         limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           id
           chainId
@@ -272,7 +284,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         orderBy: "timestamp"
         orderDirection: "desc"
         limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           id
           chainId
@@ -291,7 +305,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         orderBy: "timestamp"
         orderDirection: "desc"
         limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           id
           chainId
@@ -309,7 +325,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         orderBy: "timestamp"
         orderDirection: "desc"
         limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           id
           chainId
@@ -329,12 +347,13 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
     // rows (which reuse projectIds for unrelated projects) out entirely.
     // totalCount lets the client surface the fetch cap; the credit/ERC-20
     // split distinguishes claimed tokens from unclaimed credits.
-    query: `query AccountTokenBalances($account: String!, $limit: Int) {
+    query: `query AccountTokenBalances($account: String!, $limit: Int, $offset: Int) {
       participants(
         where: { address: $account, balance_gt: "0", version: 6 }
         orderBy: "balance"
         orderDirection: "desc"
         limit: $limit
+        offset: $offset
       ) {
         totalCount
         items {
@@ -353,8 +372,13 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
     // The project ERC-20 ticker (what balances are denominated in). The
     // project row's tokenSymbol is the ACCOUNTING context's symbol — never
     // use it to label project-token amounts.
-    query: `query ProjectErc20Tickers($where: deployErc20EventFilter) {
-      deployErc20Events(where: $where, limit: 200) {
+    query: `query ProjectErc20Tickers(
+      $where: deployErc20EventFilter
+      $limit: Int
+      $offset: Int
+    ) {
+      deployErc20Events(where: $where, limit: $limit, offset: $offset) {
+        totalCount
         items {
           chainId
           projectId
@@ -365,13 +389,15 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [ProjectsByOwnerOperation.id]: {
     operationName: "ProjectsByOwner",
-    query: `query ProjectsByOwner($where: projectFilter) {
+    query: `query ProjectsByOwner($where: projectFilter, $limit: Int, $offset: Int) {
       projects(
         where: $where
         orderBy: "createdAt"
         orderDirection: "desc"
-        limit: 200
+        limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           chainId
           projectId
@@ -390,8 +416,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [AccountPermissionHoldersOperation.id]: {
     operationName: "AccountPermissionHolders",
-    query: `query AccountPermissionHolders($where: permissionHolderFilter) {
-      permissionHolders(where: $where, limit: 500) {
+    query: `query AccountPermissionHolders($where: permissionHolderFilter, $limit: Int, $offset: Int) {
+      permissionHolders(where: $where, limit: $limit, offset: $offset) {
+        totalCount
         items {
           chainId
           projectId
@@ -550,13 +577,15 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [TopSuckerGroupsOperation.id]: {
     operationName: "TopSuckerGroups",
-    query: `query TopSuckerGroups {
+    query: `query TopSuckerGroups($limit: Int, $offset: Int) {
       suckerGroups(
         orderBy: "paymentsCount"
         orderDirection: "desc"
         where: { version: 6 }
-        limit: 1000
+        limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           balance
           projects(limit: 1, orderBy: "chainId", orderDirection: "asc") {
@@ -578,13 +607,15 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [ProjectPayersOperation.id]: {
     operationName: "V6ProjectPayers",
-    query: `query V6ProjectPayers($where: ProjectPayerFilter) {
+    query: `query V6ProjectPayers($where: ProjectPayerFilter, $limit: Int, $offset: Int) {
       projectPayers(
         where: $where
         orderBy: "totalFacilitatedUsd"
         orderDirection: "desc"
-        limit: 250
+        limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           chainId
           address
@@ -603,8 +634,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [PermissionHoldersOperation.id]: {
     operationName: "V6PermissionHolders",
-    query: `query V6PermissionHolders($where: PermissionHolderFilter) {
-      permissionHolders(where: $where, limit: 500) {
+    query: `query V6PermissionHolders($where: PermissionHolderFilter, $limit: Int, $offset: Int) {
+      permissionHolders(where: $where, limit: $limit, offset: $offset) {
+        totalCount
         items {
           chainId
           projectId
@@ -618,24 +650,36 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [V6StoredAutoIssuancesOperation.id]: {
     operationName: "V6StoredAutoIssuances",
-    query: `query V6StoredAutoIssuances($where: storeAutoIssuanceAmountEventFilter) {
-      storeAutoIssuanceAmountEvents(where: $where, limit: 200) {
+    query: `query V6StoredAutoIssuances(
+      $where: storeAutoIssuanceAmountEventFilter
+      $limit: Int
+      $offset: Int
+    ) {
+      storeAutoIssuanceAmountEvents(where: $where, limit: $limit, offset: $offset) {
+        totalCount
         items { id chainId projectId stageId beneficiary count }
       }
     }`,
   },
   [V6AutoIssueEventsOperation.id]: {
     operationName: "V6AutoIssueEvents",
-    query: `query V6AutoIssueEvents($where: autoIssueEventFilter) {
-      autoIssueEvents(where: $where, limit: 200) {
+    query: `query V6AutoIssueEvents($where: autoIssueEventFilter, $limit: Int, $offset: Int) {
+      autoIssueEvents(where: $where, limit: $limit, offset: $offset) {
+        totalCount
         items { id chainId stageId beneficiary count }
       }
     }`,
   },
   [AllLoansOperation.id]: {
     operationName: "V6AllLoans",
-    query: `query V6AllLoans($where: loanFilter) {
-      loans(where: $where, orderBy: "createdAt", orderDirection: "desc", limit: 50) {
+    query: `query V6AllLoans($where: loanFilter, $limit: Int, $offset: Int) {
+      loans(
+        where: $where
+        orderBy: "createdAt"
+        orderDirection: "desc"
+        limit: $limit
+        offset: $offset
+      ) {
         items { id borrowAmount collateral beneficiary owner createdAt chainId }
         totalCount
       }
@@ -643,13 +687,21 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [IndexedBuybackPoolsOperation.id]: {
     operationName: "IndexedBuybackPools",
-    query: `query IndexedBuybackPools($projectId: Int!, $chainId: Int!, $version: Int!) {
+    query: `query IndexedBuybackPools(
+      $projectId: Int!
+      $chainId: Int!
+      $version: Int!
+      $limit: Int
+      $offset: Int
+    ) {
       buybackPoolEvents(
         where: { projectId: $projectId, chainId: $chainId, version: $version }
         orderBy: "timestamp"
         orderDirection: "desc"
-        limit: 100
+        limit: $limit
+        offset: $offset
       ) {
+        totalCount
         items {
           timestamp
           terminalToken

@@ -3,7 +3,7 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { jb721TiersHookStoreAbi, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { effectiveTierPrice, getProject721Shop } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { PublicClient } from "viem";
@@ -98,9 +98,21 @@ export function TierDetailModal({
               chainId: targetChainId,
               projectId: BigInt(project.projectId),
               isRevnet: true,
-              tierLimit: 200,
+              tierLimit: 0,
             });
-            const targetTier = targetShop?.tiers.find((candidate) => candidate.id === tier.id);
+            const targetTier = targetShop
+              ? (
+                  await client.readContract({
+                    address: targetShop.store,
+                    abi: jb721TiersHookStoreAbi,
+                    functionName: "tiersOf",
+                    args: [targetShop.hook, [], false, BigInt(tier.id), 1n],
+                  })
+                )[0]
+              : undefined;
+            if (targetTier && Number(targetTier.id) !== tier.id) {
+              return { chainId: targetChainId, state: "missing" as const };
+            }
             if (!targetTier) return { chainId: targetChainId, state: "missing" as const };
             return {
               chainId: targetChainId,

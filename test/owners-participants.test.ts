@@ -1,23 +1,19 @@
 import {
   aggregateParticipants,
   participantCountSummary,
-  PARTICIPANTS_FETCH_LIMIT,
 } from "@/app/[slug]/components/v6/owners/accounts/participantsAggregate";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("owners All-card participants", () => {
-  it("caps the fetch explicitly at the proxy's maximum", () => {
-    expect(PARTICIPANTS_FETCH_LIMIT).toBe(1000);
-
-    // The card must pass the explicit limit — an omitted limit falls back to
-    // the server default and silently truncates large holder sets.
+  it("uses the complete paginated participant reader", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/app/[slug]/components/v6/owners/accounts/V6AllCard.tsx"),
       "utf8",
     );
-    expect(source).toMatch(/limit:\s*PARTICIPANTS_FETCH_LIMIT/u);
+    expect(source).toMatch(/useCompleteParticipants/u);
+    expect(source).not.toMatch(/PARTICIPANTS_FETCH_LIMIT/u);
   });
 
   it("aggregates each account across chains", () => {

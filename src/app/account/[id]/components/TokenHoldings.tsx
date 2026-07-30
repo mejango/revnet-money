@@ -3,17 +3,11 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import {
-  ACCOUNT_BENDYSTRAW_CHAIN_ID,
-  projectRefKey,
-  projectRefsWhere,
-  REF_LOOKUP_LIMIT,
-} from "@/lib/accountHoldings";
-import {
-  AccountTokenBalancesOperation,
-  ProjectErc20TickersOperation,
-  ProjectsByOwnerOperation,
-  useBendystrawQuery,
-} from "@/lib/bendystraw";
+  useCompleteAccountTokenBalances,
+  useCompleteProjectsByRefs,
+  useCompleteProjectTickersByRefs,
+} from "@/hooks/useCompleteBendystrawLists";
+import { projectRefKey, projectRefsWheres } from "@/lib/accountHoldings";
 import type { AccountTokenBalanceRow, OwnedProjectRow } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { slugFor } from "@/lib/slug";
@@ -22,8 +16,6 @@ import { formatUnits, JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { useMemo } from "react";
 import type { Address } from "viem";
-
-const FETCH_LIMIT = 1000;
 
 export type HoldingRow = AccountTokenBalanceRow & {
   project: OwnedProjectRow | undefined;
@@ -78,42 +70,30 @@ export function groupHoldings(rows: HoldingRow[]): HoldingGroup[] {
 }
 
 export function TokenHoldings({ address }: { address: Address }) {
-  const balancesQuery = useBendystrawQuery(
-    AccountTokenBalancesOperation,
-    { account: address.toLowerCase(), limit: FETCH_LIMIT },
-    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID },
-  );
+  const balancesQuery = useCompleteAccountTokenBalances(address.toLowerCase());
 
   const holdings = useMemo(
     () =>
-      (balancesQuery.data?.participants.items ?? []).filter(
+      (balancesQuery.data ?? []).filter(
         (row) => !!JB_CHAINS[row.chainId as JBChainId] && BigInt(row.balance) > 0n,
       ),
     [balancesQuery.data],
   );
 
   // Name/sucker-group lookup and ERC-20 ticker lookup for the held refs.
-  const refsWhere = useMemo(() => projectRefsWhere(holdings), [holdings]);
-  const projectsQuery = useBendystrawQuery(
-    ProjectsByOwnerOperation,
-    { where: refsWhere ?? {} },
-    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID, enabled: !!refsWhere },
-  );
-  const tickersQuery = useBendystrawQuery(
-    ProjectErc20TickersOperation,
-    { where: refsWhere ?? {} },
-    { chainId: ACCOUNT_BENDYSTRAW_CHAIN_ID, enabled: !!refsWhere },
-  );
+  const refsWheres = useMemo(() => projectRefsWheres(holdings), [holdings]);
+  const projectsQuery = useCompleteProjectsByRefs(refsWheres, refsWheres.length > 0);
+  const tickersQuery = useCompleteProjectTickersByRefs(refsWheres, refsWheres.length > 0);
   const projectByRef = useMemo(() => {
     const map = new Map<string, OwnedProjectRow>();
-    for (const project of projectsQuery.data?.projects.items ?? []) {
+    for (const project of projectsQuery.data ?? []) {
       map.set(projectRefKey(project), project);
     }
     return map;
   }, [projectsQuery.data]);
   const tickerByDeployment = useMemo(() => {
     const map = new Map<string, string>();
-    for (const event of tickersQuery.data?.deployErc20Events.items ?? []) {
+    for (const event of tickersQuery.data ?? []) {
       map.set(`${event.chainId}:${event.projectId}`, event.symbol);
     }
     return map;
@@ -130,9 +110,6 @@ export function TokenHoldings({ address }: { address: Address }) {
       ),
     [holdings, projectByRef, tickerByDeployment],
   );
-
-  const totalCount = balancesQuery.data?.participants.totalCount ?? holdings.length;
-  const fetchedCount = balancesQuery.data?.participants.items.length ?? 0;
 
   const isLoading = balancesQuery.isLoading || (holdings.length > 0 && projectsQuery.isLoading);
 
@@ -191,16 +168,6 @@ export function TokenHoldings({ address }: { address: Address }) {
               </div>
             ))}
           </div>
-          {totalCount > fetchedCount ? (
-            <p className="mt-2 text-xs text-zinc-500">
-              Showing the {fetchedCount} largest balances of {totalCount}.
-            </p>
-          ) : null}
-          {holdings.length > REF_LOOKUP_LIMIT ? (
-            <p className="mt-1 text-xs text-zinc-500">
-              Project names and tickers are resolved for the first {REF_LOOKUP_LIMIT} projects.
-            </p>
-          ) : null}
         </>
       )}
     </section>

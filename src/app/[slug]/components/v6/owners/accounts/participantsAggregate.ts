@@ -1,6 +1,3 @@
-/** The explicit participants fetch cap (the Bendystraw proxy's maximum). */
-export const PARTICIPANTS_FETCH_LIMIT = 1000;
-
 export type ParticipantInput = {
   address: string;
   chainId: number;

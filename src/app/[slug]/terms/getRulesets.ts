@@ -1,4 +1,4 @@
-import { MAX_RULESET_COUNT } from "@/app/constants";
+import { readAllProjectRulesets } from "@/lib/nana/rulesets";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   getJBContractAddress,
@@ -27,7 +27,7 @@ export const getRulesets = unstable_cache(
       client,
     });
 
-    const data = await contract.read.allOf([BigInt(projectId), 0n, BigInt(MAX_RULESET_COUNT)]);
+    const data = await readAllProjectRulesets(client, contract.address, BigInt(projectId));
 
     return data
       .map((r) => ({

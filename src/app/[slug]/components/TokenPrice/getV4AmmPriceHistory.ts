@@ -4,12 +4,13 @@ import {
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { IndexedBuybackPoolsQuery, IndexedPoolSwapsQuery } from "@/lib/bendystraw/types";
+import { downsampleTimeSeries } from "@/lib/downsample";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { uniswapV4PriceFromSqrtPriceX96 } from "@bananapus/nana-sdk-core/v6";
 import type { PriceDataPoint } from "./getTokenPriceChartData";
 
 const PAGE_SIZE = 1000;
-const MAX_SWAPS = 3000;
+const MAX_DISPLAY_POINTS = 3000;
 
 type RawPool = IndexedBuybackPoolsQuery["buybackPoolEvents"]["items"][number];
 type RawSwap = IndexedPoolSwapsQuery["swapEvents"]["items"][number];
@@ -46,18 +47,30 @@ export async function getV4AmmPriceHistory({
     chainId: Number(chainId),
     version: 6,
   };
-  const poolResult = await queryBendystraw(chainId, IndexedBuybackPoolsOperation, variables);
-  const pool = (poolResult.buybackPoolEvents?.items ?? []).find(
+  const pools: RawPool[] = [];
+  let poolTotalCount = 0;
+  do {
+    const poolResult = await queryBendystraw(chainId, IndexedBuybackPoolsOperation, {
+      ...variables,
+      limit: PAGE_SIZE,
+      offset: pools.length,
+    });
+    const page = poolResult.buybackPoolEvents?.items ?? [];
+    poolTotalCount = poolResult.buybackPoolEvents?.totalCount ?? page.length;
+    pools.push(...page);
+    if (!page.length) break;
+  } while (pools.length < poolTotalCount);
+  const pool = pools.find(
     (item) => item.terminalToken.toLowerCase() === terminalToken.toLowerCase(),
   );
   if (!pool) return { data: [], hasPool: false };
 
   const swaps: RawSwap[] = [];
   let totalCount = 0;
-  while (swaps.length < MAX_SWAPS) {
+  while (swaps.length < totalCount || swaps.length === 0) {
     const page = await queryBendystraw(chainId, IndexedPoolSwapsOperation, {
       ...variables,
-      limit: Math.min(PAGE_SIZE, MAX_SWAPS - swaps.length),
+      limit: PAGE_SIZE,
       offset: swaps.length,
     });
     const items = page.swapEvents?.items ?? [];
@@ -100,5 +113,13 @@ export async function getV4AmmPriceHistory({
   }
 
   data.sort((a, b) => a.timestamp - b.timestamp);
-  return { data, hasPool: true };
+  return {
+    data: downsampleTimeSeries(
+      data,
+      MAX_DISPLAY_POINTS,
+      (point) => point.timestamp,
+      (point) => point.ammPrice ?? 0,
+    ),
+    hasPool: true,
+  };
 }

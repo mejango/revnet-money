@@ -1,10 +1,10 @@
-import { MAX_RULESET_COUNT } from "@/app/constants";
 import { useJBContractContext } from "@/lib/nana/project";
+import { readAllProjectRulesets } from "@/lib/nana/rulesets";
 import { decodeRulesetMetadata, RulesetMetadata } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { JBCoreContracts, jbRulesetsAbi, SuckerPair } from "@bananapus/nana-sdk-core";
+import { JBCoreContracts, SuckerPair } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useState } from "react";
-import { readContract } from "wagmi/actions";
+import { getPublicClient } from "wagmi/actions";
 
 type RuleSet = {
   cycleNumber: number;
@@ -35,15 +35,17 @@ export function useFetchProjectRulesets(suckers: SuckerPair[] | undefined | null
     setIsLoading(true);
     try {
       const allRuleSets = await Promise.all(
-        suckers.map((sucker) =>
-          readContract(wagmiConfig, {
+        suckers.map((sucker) => {
+          const client = getPublicClient(wagmiConfig, {
             chainId: sucker.peerChainId,
-            address: contractAddress(JBCoreContracts.JBRulesets, sucker.peerChainId),
-            abi: jbRulesetsAbi,
-            functionName: "allOf",
-            args: [sucker.projectId, 0n, BigInt(MAX_RULESET_COUNT)],
-          }),
-        ),
+          });
+          if (!client) throw new Error(`No public client for chain ${sucker.peerChainId}.`);
+          return readAllProjectRulesets(
+            client,
+            contractAddress(JBCoreContracts.JBRulesets, sucker.peerChainId),
+            sucker.projectId,
+          );
+        }),
       );
       if (allRuleSets.length === 0) return undefined;
       const pairsWithRulesets = suckers.map((sucker, index) => ({
@@ -69,7 +71,7 @@ export function useFetchProjectRulesets(suckers: SuckerPair[] | undefined | null
     if (!suckers) return undefined;
     fetchRuleSets();
     // console.log("ERROR", error)
-  }, [suckers, fetchRuleSets, error]);
+  }, [suckers, fetchRuleSets]);
 
   return {
     suckerPairsWithRulesets: error ? undefined : suckerPairsWithRulesets,

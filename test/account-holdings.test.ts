@@ -3,7 +3,8 @@ import {
   ACCOUNT_BENDYSTRAW_CHAIN_ID,
   projectRefKey,
   projectRefsWhere,
-  REF_LOOKUP_LIMIT,
+  projectRefsWheres,
+  REF_LOOKUP_BATCH_SIZE,
 } from "@/lib/accountHoldings";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -59,14 +60,16 @@ describe("projectRefsWhere", () => {
     expect(projectRefsWhere([])).toBeNull();
   });
 
-  it("caps the lookup at the documented limit", () => {
-    const refs = Array.from({ length: REF_LOOKUP_LIMIT + 50 }, (_, index) => ({
+  it("batches every lookup without dropping refs", () => {
+    const refs = Array.from({ length: REF_LOOKUP_BATCH_SIZE + 50 }, (_, index) => ({
       chainId: 1,
       projectId: index + 1,
       version: 6,
     }));
-    const where = projectRefsWhere(refs) as { OR: unknown[] };
-    expect(where.OR).toHaveLength(REF_LOOKUP_LIMIT);
+    const wheres = projectRefsWheres(refs) as Array<{ OR: unknown[] }>;
+    expect(wheres).toHaveLength(2);
+    expect(wheres[0].OR).toHaveLength(REF_LOOKUP_BATCH_SIZE);
+    expect(wheres[1].OR).toHaveLength(50);
   });
 
   it("keys lookups by chain and project", () => {

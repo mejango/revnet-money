@@ -1,6 +1,5 @@
 "use client";
 
-import { MAX_RULESET_COUNT } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
@@ -16,25 +15,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "@/components/ui/use-toast";
+import { useAllRulesetsByChain } from "@/hooks/useAllRulesetsByChain";
+import {
+  useCompleteAutoIssueEvents,
+  useCompleteStoredAutoIssuances,
+} from "@/hooks/useCompleteBendystrawLists";
 import {
   submittedViaSafe,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import {
-  useBendystrawQuery,
-  V6AutoIssueEventsOperation,
-  V6StoredAutoIssuancesOperation,
-} from "@/lib/bendystraw";
 import { formatShortDateTime } from "@/lib/date";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
-import { formatUnits, JB_CHAINS, JBCoreContracts, jbRulesetsAbi } from "@bananapus/nana-sdk-core";
+import { formatUnits, JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { buildAutoIssueTx } from "@bananapus/nana-sdk-core/v6";
 import { useEffect, useState } from "react";
-import { useReadContracts } from "wagmi";
 import { ProjectItem } from "../shared";
 
 /**
@@ -58,36 +56,16 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
     version: 6,
     OR: chains.map((c) => ({ chainId: Number(c.chainId), projectId: c.projectId })),
   };
-  const stored = useBendystrawQuery(
-    V6StoredAutoIssuancesOperation,
-    { where },
-    { enabled: chains.length > 0, chainId: Number(chains[0]?.chainId ?? 1) },
-  );
-  const issued = useBendystrawQuery(
-    V6AutoIssueEventsOperation,
-    { where },
-    { enabled: chains.length > 0, chainId: Number(chains[0]?.chainId ?? 1) },
-  );
+  const stored = useCompleteStoredAutoIssuances(where, chains.length > 0);
+  const issued = useCompleteAutoIssueEvents(where, chains.length > 0);
 
   // Each chain's ruleset list, chronological, for stage numbers + unlock dates.
-  const rulesetReads = useReadContracts({
-    contracts: chains.map((c) => ({
-      chainId: c.chainId,
-      address: contractAddress(JBCoreContracts.JBRulesets, c.chainId),
-      abi: jbRulesetsAbi,
-      functionName: "allOf" as const,
-      args: [BigInt(c.projectId), 0n, BigInt(MAX_RULESET_COUNT)] as const,
-    })),
-    query: { enabled: chains.length > 0 },
-  });
+  const rulesetReads = useAllRulesetsByChain(chains);
   const rulesetsByChain = new Map<number, { id: number; start: number }[]>();
-  chains.forEach((c, i) => {
-    const result = rulesetReads.data?.[i];
-    if (result?.status === "success") {
-      rulesetsByChain.set(
-        Number(c.chainId),
-        (result.result as readonly { id: number; start: number }[]).slice().reverse(),
-      );
+  chains.forEach((c) => {
+    const result = rulesetReads.data?.get(Number(c.chainId));
+    if (result) {
+      rulesetsByChain.set(Number(c.chainId), result as unknown as { id: number; start: number }[]);
     }
   });
 
@@ -104,11 +82,11 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess]);
 
-  const rows = (stored.data?.storeAutoIssuanceAmountEvents.items ?? [])
+  const rows = (stored.data ?? [])
     .map((row) => {
       const rulesets = rulesetsByChain.get(row.chainId) ?? [];
       const stageIdx = rulesets.findIndex((r) => String(r.id) === row.stageId);
-      const distributed = issued.data?.autoIssueEvents.items.find(
+      const distributed = issued.data?.find(
         (event) =>
           event.chainId === row.chainId &&
           event.stageId === row.stageId &&
@@ -126,6 +104,9 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
 
   if (stored.isLoading || rulesetReads.isLoading) {
     return <TableSkeleton rows={4} columns={6} />;
+  }
+  if (stored.isError || issued.isError || rulesetReads.isError) {
+    return <div className="text-center text-red-600">Auto issuance data is unavailable.</div>;
   }
   if (rows.length === 0) return <div className="text-center text-zinc-400">No auto issuances</div>;
 

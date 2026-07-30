@@ -127,6 +127,7 @@ export type SuckerGroupQuery = {
 export type AccountTokenBalancesQueryVariables = {
   account: string;
   limit?: number;
+  offset?: number;
 };
 export type AccountTokenBalanceRow = Pick<
   Participant,
@@ -141,6 +142,7 @@ export type ParticipantsQueryVariables = {
   orderBy?: string;
   orderDirection?: string;
   limit?: number;
+  offset?: number;
 };
 export type ParticipantsQuery = {
   participants: {
@@ -195,9 +197,12 @@ export type ActivityEventsQueryVariables = {
   where?: BendystrawFilter;
   orderBy?: string;
   orderDirection?: string;
+  limit?: number;
+  offset?: number;
 };
 export type ActivityEventsQuery = {
   activityEvents: {
+    totalCount?: number;
     items: Array<{
       id: string;
       chainId: number;
@@ -262,9 +267,11 @@ type BeneficiaryRow<TKey extends keyof AccountActivityEventItem> = Omit<
 export type AccountActivityEventsQueryVariables = {
   address: string;
   limit?: number;
+  offset?: number;
 };
 export type AccountActivityEventsQuery = {
   activityEvents: {
+    totalCount?: number;
     items: AccountActivityEventItem[];
   };
   /**
@@ -272,11 +279,26 @@ export type AccountActivityEventsQuery = {
    * activityEventFilter has no beneficiary field, so these come from the
    * beneficiary-bearing sub-event roots and are merged client-side.
    */
-  beneficiaryPayEvents?: { items: BeneficiaryRow<"payEvent">[] };
-  beneficiaryCashOutEvents?: { items: BeneficiaryRow<"cashOutTokensEvent">[] };
-  beneficiaryMintTokensEvents?: { items: BeneficiaryRow<"mintTokensEvent">[] };
-  beneficiaryManualMintTokensEvents?: { items: BeneficiaryRow<"manualMintTokensEvent">[] };
-  beneficiaryAutoIssueEvents?: { items: BeneficiaryRow<"autoIssueEvent">[] };
+  beneficiaryPayEvents?: {
+    totalCount?: number;
+    items: BeneficiaryRow<"payEvent">[];
+  };
+  beneficiaryCashOutEvents?: {
+    totalCount?: number;
+    items: BeneficiaryRow<"cashOutTokensEvent">[];
+  };
+  beneficiaryMintTokensEvents?: {
+    totalCount?: number;
+    items: BeneficiaryRow<"mintTokensEvent">[];
+  };
+  beneficiaryManualMintTokensEvents?: {
+    totalCount?: number;
+    items: BeneficiaryRow<"manualMintTokensEvent">[];
+  };
+  beneficiaryAutoIssueEvents?: {
+    totalCount?: number;
+    items: BeneficiaryRow<"autoIssueEvent">[];
+  };
 };
 
 export type OwnedProjectRow = Pick<
@@ -293,26 +315,40 @@ export type OwnedProjectRow = Pick<
   | "tokenSymbol"
   | "createdAt"
 >;
-export type ProjectsByOwnerQueryVariables = { where: BendystrawFilter };
-export type ProjectsByOwnerQuery = { projects: { items: OwnedProjectRow[] } };
+export type ProjectsByOwnerQueryVariables = {
+  where: BendystrawFilter;
+  limit?: number;
+  offset?: number;
+};
+export type ProjectsByOwnerQuery = {
+  projects: { items: OwnedProjectRow[]; totalCount: number };
+};
 
 /**
  * The project ERC-20's ticker (from its deploy event). Distinct from the
  * project row's `tokenSymbol`, which names the ACCOUNTING context's token.
  */
 export type ProjectErc20TickerRow = { chainId: number; projectId: number; symbol: string };
-export type ProjectErc20TickersQueryVariables = { where: BendystrawFilter };
+export type ProjectErc20TickersQueryVariables = {
+  where: BendystrawFilter;
+  limit?: number;
+  offset?: number;
+};
 export type ProjectErc20TickersQuery = {
-  deployErc20Events: { items: ProjectErc20TickerRow[] };
+  deployErc20Events: { items: ProjectErc20TickerRow[]; totalCount?: number };
 };
 
 export type AccountPermissionHolderRow = Pick<
   PermissionHolder,
   "chainId" | "projectId" | "account" | "operator" | "permissions" | "isRevnetOperator" | "version"
 > & { project: { name: string | null; handle: string | null } | null };
-export type AccountPermissionHoldersQueryVariables = { where: BendystrawFilter };
+export type AccountPermissionHoldersQueryVariables = {
+  where: BendystrawFilter;
+  limit?: number;
+  offset?: number;
+};
 export type AccountPermissionHoldersQuery = {
-  permissionHolders: { items: AccountPermissionHolderRow[] } | null;
+  permissionHolders: { items: AccountPermissionHolderRow[]; totalCount: number } | null;
 };
 
 export type HasPermissionQueryVariables = {
@@ -431,9 +467,10 @@ export type SuckerGroupMomentsQuery = {
   };
 };
 
-export type TopSuckerGroupsQueryVariables = Record<string, never>;
+export type TopSuckerGroupsQueryVariables = { limit?: number; offset?: number };
 export type TopSuckerGroupsQuery = {
   suckerGroups: {
+    totalCount?: number;
     items: Array<{
       balance: BigNumberish;
       projects: {
@@ -456,7 +493,11 @@ export type TopSuckerGroupsQuery = {
   };
 };
 
-export type ProjectPayersQueryVariables = { where: ProjectPayerFilter };
+export type ProjectPayersQueryVariables = {
+  where: ProjectPayerFilter;
+  limit?: number;
+  offset?: number;
+};
 export type ProjectPayersQuery = {
   projectPayers: {
     items: Array<
@@ -475,10 +516,15 @@ export type ProjectPayersQuery = {
         | "lastUsedAt"
       >
     >;
+    totalCount?: number;
   } | null;
 };
 
-export type PermissionHoldersQueryVariables = { where: PermissionHolderFilter };
+export type PermissionHoldersQueryVariables = {
+  where: PermissionHolderFilter;
+  limit?: number;
+  offset?: number;
+};
 export type PermissionHoldersQuery = {
   permissionHolders: {
     items: Array<
@@ -487,12 +533,18 @@ export type PermissionHoldersQuery = {
         "chainId" | "projectId" | "account" | "operator" | "permissions" | "isRevnetOperator"
       >
     >;
+    totalCount: number;
   } | null;
 };
 
-export type V6StoredAutoIssuancesQueryVariables = { where: BendystrawFilter };
+export type V6StoredAutoIssuancesQueryVariables = {
+  where: BendystrawFilter;
+  limit?: number;
+  offset?: number;
+};
 export type V6StoredAutoIssuancesQuery = {
   storeAutoIssuanceAmountEvents: {
+    totalCount?: number;
     items: Array<{
       id: string;
       chainId: number;
@@ -503,9 +555,14 @@ export type V6StoredAutoIssuancesQuery = {
     }>;
   };
 };
-export type V6AutoIssueEventsQueryVariables = { where: BendystrawFilter };
+export type V6AutoIssueEventsQueryVariables = {
+  where: BendystrawFilter;
+  limit?: number;
+  offset?: number;
+};
 export type V6AutoIssueEventsQuery = {
   autoIssueEvents: {
+    totalCount?: number;
     items: Array<{
       id: string;
       chainId: number;
@@ -518,6 +575,8 @@ export type V6AutoIssueEventsQuery = {
 
 export type AllLoansQueryVariables = {
   where: { projectId_in: number[]; version: number; chainId_in: number[] };
+  limit?: number;
+  offset?: number;
 };
 export type AllLoansQuery = {
   loans: {
@@ -538,9 +597,12 @@ export type IndexedBuybackPoolsQueryVariables = {
   projectId: number;
   chainId: number;
   version: number;
+  limit?: number;
+  offset?: number;
 };
 export type IndexedBuybackPoolsQuery = {
   buybackPoolEvents: {
+    totalCount?: number;
     items: Array<{
       timestamp: number;
       terminalToken: string;
