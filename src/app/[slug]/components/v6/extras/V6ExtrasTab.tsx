@@ -9,12 +9,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useAllRulesetsByChain } from "@/hooks/useAllRulesetsByChain";
 import {
   useCompleteProjectPayers,
   useCompleteProjectPermissions,
   useCompleteStoredAutoIssuances,
 } from "@/hooks/useCompleteBendystrawLists";
-import { useAllRulesetsByChain } from "@/hooks/useAllRulesetsByChain";
 import { matchesProjectRef, projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import {
   useJBChainId,

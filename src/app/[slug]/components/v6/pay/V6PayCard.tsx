@@ -1103,8 +1103,7 @@ export function V6PayCard() {
                         <div className="flex justify-between gap-3 text-zinc-500">
                           <span>Shop credit available</span>
                           <span className="tabular-nums">
-                            {formatPayAmount(shopCredits, shop.pricingDecimals)}{" "}
-                            {shopPricingSymbol}
+                            {formatPayAmount(shopCredits, shop.pricingDecimals)} {shopPricingSymbol}
                           </span>
                         </div>
                       ) : null}
