@@ -8,7 +8,6 @@ export type MiniHeaderCardProps = {
   infoUri?: string;
   projectId: string | number;
   handle?: string | null;
-  peerChainId?: 1 | 10 | 8453 | 42161 | 84532 | 421614 | 11155111 | 11155420;
 };
 
 export default function MiniHeaderCard({
@@ -17,7 +16,6 @@ export default function MiniHeaderCard({
   infoUri,
   projectId,
   handle,
-  peerChainId,
 }: MiniHeaderCardProps) {
   return (
     <div className="flex items-center gap-4 mb-2">

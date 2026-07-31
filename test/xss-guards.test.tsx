@@ -1,5 +1,5 @@
 import { RichPreview } from "@/app/[slug]/about/components/RichPreview";
-import { Html } from "@/components/ui/html";
+import { ProjectRichText } from "@/components/ui/html";
 import { getProjectLinks } from "@/lib/projectLinks";
 import type { JBProjectMetadata } from "@bananapus/nana-sdk-core";
 import { render, screen } from "@testing-library/react";
@@ -13,7 +13,7 @@ describe("untrusted project content", () => {
       "ipt>alert(1)</scr",
       "ipt><img src='x' onerror='alert(2)'><a href='javascript:alert(3)'>unsafe</a>",
     ].join("");
-    const { container } = render(createElement(Html, { source: maliciousHtml }));
+    const { container } = render(createElement(ProjectRichText, { source: maliciousHtml }));
 
     expect(screen.getByText("Project description")).toBeInTheDocument();
     expect(container.querySelector("script")).toBeNull();
@@ -36,7 +36,7 @@ describe("untrusted project content", () => {
 
   it("hardens absolute external links and rejects relative project links", () => {
     const { container } = render(
-      createElement(Html, {
+      createElement(ProjectRichText, {
         source: '<a href="https://example.com/docs">external</a><a href="/account">relative</a>',
       }),
     );
@@ -52,7 +52,7 @@ describe("untrusted project content", () => {
 
   it("caps project-controlled input before parsing", () => {
     const { container } = render(
-      createElement(Html, {
+      createElement(ProjectRichText, {
         source: `<p>${"a".repeat(60_000)}</p>`,
       }),
     );

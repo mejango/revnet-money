@@ -45,7 +45,6 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     selectedChainId,
     cashOutChainId,
     prepaidPercent,
-    nativeToWallet,
     grossBorrowedNative,
     internalSelectedLoan,
     loading,
@@ -315,7 +314,6 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
             prepaidPercent={prepaidPercent}
             setPrepaidPercent={setPrepaidPercent}
             feeData={feeData}
-            nativeToWallet={nativeToWallet}
             grossBorrowedNative={grossBorrowedNative}
             collateralAmount={collateralAmount}
             tokenSymbol={selectedChainTokenSymbol}

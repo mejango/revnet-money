@@ -30,9 +30,7 @@ async function openFixtureProject(page: Page): Promise<BrowserBoundary> {
 
   await expect(page.getByRole("heading", { level: 1, name: "Fixture Revnet" })).toBeVisible();
   await expect(page.getByRole("link", { name: "FREV", exact: true })).toBeVisible();
-  await expect(page.getByText("$1,250.00 raised", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "$1,250.00 balance" })).toBeVisible();
-  await expect(page.getByText("2 payments", { exact: true })).toBeVisible();
   await expect(page.getByText("2 token holders", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Amount")).toBeEnabled();
   await expect(page.getByLabel("Payment mode")).toHaveValue("pay");

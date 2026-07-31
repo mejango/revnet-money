@@ -7,7 +7,7 @@ export interface ValidationIssue {
   path: ValidationPath;
 }
 
-export type ValidationResult<Values> =
+type ValidationResult<Values> =
   { data: Values; success: true } | { error: { issues: ValidationIssue[] }; success: false };
 
 export interface ValidationSchema<Values> {

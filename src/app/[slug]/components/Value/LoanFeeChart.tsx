@@ -4,7 +4,6 @@ export function LoanFeeChart({
   prepaidPercent,
   setPrepaidPercent,
   feeData,
-  nativeToWallet,
   grossBorrowedNative,
   collateralAmount,
   tokenSymbol,
@@ -15,7 +14,6 @@ export function LoanFeeChart({
   prepaidPercent: string;
   setPrepaidPercent: (v: string) => void;
   feeData: { year: number; totalCost: number }[];
-  nativeToWallet: number;
   grossBorrowedNative: number;
   collateralAmount: string;
   tokenSymbol: string;

@@ -6,8 +6,6 @@ export {
   projectRefsWheres,
   REF_LOOKUP_BATCH_SIZE,
 } from "@/lib/bendystraw/projectRefs";
-export type { VersionedProjectRef } from "@/lib/bendystraw/projectRefs";
-
 /**
  * The account view spans chains, so it has no single chainId to route its
  * Bendystraw queries by (project pages route by the project's own chain).

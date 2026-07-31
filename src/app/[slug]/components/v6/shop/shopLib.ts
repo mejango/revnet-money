@@ -64,7 +64,7 @@ export function resolvedUriTierIds(
 }
 
 /** Stored-tier flags (`tiersOf`'s 5-bool shape — not the 7-bool config shape). */
-export interface ShopTierFlags {
+interface ShopTierFlags {
   allowOwnerMint: boolean;
   transfersPausable: boolean;
   cantBeRemoved: boolean;

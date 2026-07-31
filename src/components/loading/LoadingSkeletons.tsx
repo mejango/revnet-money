@@ -64,7 +64,7 @@ export function ChartSkeleton({ className = "" }: { className?: string }) {
   );
 }
 
-export function OverviewContentSkeleton() {
+function OverviewContentSkeleton() {
   return (
     <div role="status" aria-label="Loading overview" className="flex flex-col gap-6">
       <span className="sr-only">Loading overview</span>
@@ -295,7 +295,7 @@ function NavigationSkeleton() {
   );
 }
 
-export function DiscoverPageSkeleton() {
+function DiscoverPageSkeleton() {
   return (
     <div className="container mt-40 px-6 sm:px-8" role="status" aria-label="Loading discover page">
       <span className="sr-only">Loading discover page</span>
@@ -310,7 +310,7 @@ export function DiscoverPageSkeleton() {
   );
 }
 
-export function CreatePageSkeleton() {
+function CreatePageSkeleton() {
   return (
     <div className="min-h-screen" role="status" aria-label="Loading creation form">
       <span className="sr-only">Loading creation form</span>
@@ -336,7 +336,7 @@ export function AppLoadingSkeleton({ pathname }: { pathname: string }) {
   return <ProjectPageSkeleton />;
 }
 
-export function ProjectPageSkeleton() {
+function ProjectPageSkeleton() {
   return (
     <div className="min-h-screen" role="status" aria-label="Loading project">
       <span className="sr-only">Loading project</span>

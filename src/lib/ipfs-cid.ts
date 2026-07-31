@@ -1,7 +1,7 @@
 // Keep these boundaries aligned with juicebox-money. CIDv0 is base58btc and
 // CIDv1 is the lowercase base32 form emitted by our pinning providers.
-export const CID_V0 = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/u;
-export const CID_V1 = /^b[a-z2-7]{20,120}$/u;
+const CID_V0 = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/u;
+const CID_V1 = /^b[a-z2-7]{20,120}$/u;
 
 export function isIpfsCid(value: unknown): value is string {
   if (typeof value !== "string") return false;

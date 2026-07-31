@@ -14,7 +14,7 @@ const MAX_DISPLAY_POINTS = 3000;
 type RawPool = IndexedBuybackPoolsQuery["buybackPoolEvents"]["items"][number];
 type RawSwap = IndexedPoolSwapsQuery["swapEvents"]["items"][number];
 
-export function v4PriceFromSqrtPriceX96(
+function v4PriceFromSqrtPriceX96(
   sqrtPriceX96: string | bigint,
   projectTokenIsCurrency0: boolean,
   terminalDecimals: number,

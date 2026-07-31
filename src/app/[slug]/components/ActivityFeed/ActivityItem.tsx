@@ -10,7 +10,7 @@ import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { Address } from "viem";
 
-export type ActivityEventType =
+type ActivityEventType =
   | "in"
   | "out"
   | "addToBalance"

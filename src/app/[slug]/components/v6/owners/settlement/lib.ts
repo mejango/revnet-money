@@ -124,7 +124,7 @@ export function timeAgo(ts?: number): string {
 
 // ── Token identity ────────────────────────────────────────────────────────────
 
-export function isNativeToken(token: string): boolean {
+function isNativeToken(token: string): boolean {
   const lc = token.toLowerCase();
   return lc === NATIVE_TOKEN.toLowerCase() || lc === zeroAddress;
 }
@@ -195,7 +195,7 @@ async function readSupply(
 
 // ── Across-chains card data ───────────────────────────────────────────────────
 
-export interface AcrossChainBalance {
+interface AcrossChainBalance {
   token: Address;
   symbol: string;
   decimals: number;
@@ -306,10 +306,7 @@ const infraCache = new Map<string, SuckerInfra>();
  * native suckers are identified positively via their bridge getters (a CCIP_ROUTER
  * revert alone could just be an RPC failure).
  */
-export async function classifySuckerInfra(
-  chainId: JBChainId,
-  sucker: Address,
-): Promise<SuckerInfra> {
+async function classifySuckerInfra(chainId: JBChainId, sucker: Address): Promise<SuckerInfra> {
   const key = `${chainId}:${sucker.toLowerCase()}`;
   const cached = infraCache.get(key);
   if (cached) return cached;

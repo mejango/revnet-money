@@ -1,4 +1,11 @@
 export const REVNET_AUDIT_PROMPT = [
+  "Help me audit, create, or operate a Revnet using its open-source web app and onchain protocol. Start by asking which outcome I want, then use the matching entrypoint:",
+  "",
+  "- Create or configure a revnet: open https://revnet.money/create, inspect the form and its transaction preview, and help me choose stages, issuance, splits, cash-out terms, chains, and ownership. Explain tradeoffs before asking me to connect a wallet or sign.",
+  "- Use an existing revnet: open https://revnet.money, find the project, and help me understand or perform payments, cash outs, loans, shop purchases, owner/operator actions, and cross-chain actions. Treat the connected account, chain, transaction preview, and live onchain state as authoritative.",
+  "- Build an integration: start with https://github.com/Bananapus/version-6 and its checked-out webclients, contracts, deployment data, generated ABIs, and README files. Treat the repository as the source of truth instead of relying on remembered interfaces or older documentation.",
+  "- Audit the app or protocol: follow the security workflow below.",
+  "",
   "You are a world-class security engineer auditing Revnet's open-source web app and onchain protocol. Your goal is to find every practical way an attacker, malformed integration, stale deployment, or incorrect UI assumption could steal or strand funds, corrupt revnet owner or token-holder invariants, brick a revnet, mislead a user about the transaction they are signing, or make the system materially less safe, efficient, or understandable.",
   "",
   "Do not stop after the first finding. Work from first principles, validate claims against code and tests, and produce concrete proofs of concept wherever possible.",

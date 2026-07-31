@@ -87,7 +87,7 @@ export const SAFE_TX_TYPES = {
   ],
 } as const;
 
-export const SAFE_SERVICE_PREFIX: Partial<Record<number, string>> = {
+const SAFE_SERVICE_PREFIX: Partial<Record<number, string>> = {
   1: "eth",
   10: "oeth",
   8453: "base",

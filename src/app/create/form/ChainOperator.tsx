@@ -78,6 +78,9 @@ export function ChainOperator({ disabled = false }: { disabled?: boolean }) {
                 value={entryFor(chain)?.address ?? ""}
                 onChange={(event) => setAddress(chain, event.target.value)}
               />
+              <p className="mt-1 text-xs text-zinc-500">
+                Currently set to {entryFor(chain)?.address.trim() || "no operator yet"}.
+              </p>
             </div>
           </div>
         ))}

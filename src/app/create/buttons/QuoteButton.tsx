@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { CheckCircle, FastForwardIcon } from "@/components/ui/icons";
+import { CheckCircle, FastForward } from "@/components/ui/icons";
 import type { ReactElement } from "react";
 import { twMerge } from "tailwind-merge";
 
@@ -13,7 +13,7 @@ const getButtonContent = (isLoading: boolean, validBundle: boolean): ButtonConte
   if (isLoading) {
     return {
       text: "Get quote",
-      icon: <FastForwardIcon className="h-4 w-4 fill-transparent ml-2 animate-spin" />,
+      icon: <FastForward className="h-4 w-4 fill-transparent ml-2 animate-spin" />,
       className: "opacity-70",
     };
   }
@@ -28,7 +28,7 @@ const getButtonContent = (isLoading: boolean, validBundle: boolean): ButtonConte
 
   return {
     text: "Get quote",
-    icon: <FastForwardIcon className="h-4 w-4 fill-transparent ml-2" />,
+    icon: <FastForward className="h-4 w-4 fill-transparent ml-2" />,
     className: "",
   };
 };

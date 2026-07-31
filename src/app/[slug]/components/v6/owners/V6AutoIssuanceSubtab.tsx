@@ -5,7 +5,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import EtherscanLink from "@/components/EtherscanLink";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
-import { CheckIcon } from "@/components/ui/icons";
+import { Check } from "@/components/ui/icons";
 import {
   Table,
   TableBody,
@@ -27,7 +27,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { matchesProjectRef, projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import { formatShortDateTime } from "@/lib/date";
-import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
+import { useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
@@ -43,7 +43,6 @@ import { ProjectItem } from "../shared";
  * economically aligned).
  */
 export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) {
-  const { contractAddress } = useJBContractContext();
   const { token } = useJBTokenContext();
   const tokenSymbol = formatTokenSymbol(token);
   const now = Math.floor(Date.now() / 1000);
@@ -162,7 +161,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
                           chain={JB_CHAINS[row.chainId as JBChainId]?.chain}
                           truncateTo={4}
                         />
-                        <CheckIcon className="w-4 h-4 text-teal-500" />
+                        <Check className="w-4 h-4 text-teal-500" />
                       </div>
                     ) : (
                       <ButtonWithWallet

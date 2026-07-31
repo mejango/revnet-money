@@ -29,8 +29,6 @@ export function Check(props: IconProps) {
   );
 }
 
-export const CheckIcon = Check;
-
 export function ChevronDown(props: IconProps) {
   return (
     <Icon {...props}>
@@ -72,8 +70,6 @@ export function FastForward(props: IconProps) {
     </Icon>
   );
 }
-
-export const FastForwardIcon = FastForward;
 
 export function CheckCircle(props: IconProps) {
   return (
@@ -126,16 +122,6 @@ export function SquareArrowOutUpRightIcon(props: IconProps) {
       <path d="M15 3h6v6" />
       <path d="m10 14 11-11" />
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-    </Icon>
-  );
-}
-
-export function CircleAlert(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 8v4" />
-      <path d="M12 16h.01" />
     </Icon>
   );
 }

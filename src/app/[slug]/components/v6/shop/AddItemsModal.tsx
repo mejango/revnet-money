@@ -1,5 +1,6 @@
 "use client";
 
+import { pinJsonMetadata } from "@/app/create/helpers/pinProjectMetaData";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +27,9 @@ import { waitForTransactionReceipt } from "wagmi/actions";
 import { encodeIpfsCid, ShopInventory, TIER_UNLIMITED_SUPPLY } from "./shopLib";
 
 interface DraftItem {
+  name: string;
+  description: string;
+  mediaUri: string;
   /** ipfs:// URI (or bare DAG-PB CID) of the item's metadata JSON. Optional. */
   uri: string;
   price: string;
@@ -38,6 +42,9 @@ interface DraftItem {
 
 function newDraftItem(): DraftItem {
   return {
+    name: "",
+    description: "",
+    mediaUri: "",
     uri: "",
     price: "",
     supply: "",
@@ -199,12 +206,13 @@ export function AddItemsModal({
 
   const [items, setItems] = useState<DraftItem[]>([newDraftItem()]);
   const [phase, setPhase] = useState<
-    "form" | "simulating" | "sending" | "confirming" | "safe-proposed" | "done"
+    "form" | "pinning" | "simulating" | "sending" | "confirming" | "safe-proposed" | "done"
   >("form");
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
 
-  const busy = phase === "simulating" || phase === "sending" || phase === "confirming";
+  const busy =
+    phase === "pinning" || phase === "simulating" || phase === "sending" || phase === "confirming";
 
   const updateItem = (index: number, patch: Partial<DraftItem>) => {
     setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)));
@@ -215,13 +223,29 @@ export function AddItemsModal({
     if (!address || !publicClient || busy) return;
     setError(null);
 
-    const configs = buildTierConfigs(items, shop.pricing.decimals);
-    if (typeof configs === "string") {
-      setError(configs);
-      return;
-    }
-
     try {
+      setPhase("pinning");
+      const preparedItems = await Promise.all(
+        items.map(async (item, index) => {
+          const composesMetadata =
+            item.name.trim() || item.description.trim() || item.mediaUri.trim();
+          if (!composesMetadata) return item;
+          if (!item.name.trim()) {
+            throw new Error(
+              `${items.length > 1 ? `Item ${index + 1}: ` : ""}enter a name when composing item metadata.`,
+            );
+          }
+          const cid = await pinJsonMetadata({
+            name: item.name.trim(),
+            ...(item.description.trim() ? { description: item.description.trim() } : {}),
+            ...(item.mediaUri.trim() ? { image: item.mediaUri.trim() } : {}),
+          });
+          return { ...item, uri: `ipfs://${cid}` };
+        }),
+      );
+      const configs = buildTierConfigs(preparedItems, shop.pricing.decimals);
+      if (typeof configs === "string") throw new Error(configs);
+
       // Simulate first — a revert (missing ADJUST_721_TIERS permission, bad
       // ordering, hook paused…) surfaces here instead of costing gas.
       setPhase("simulating");
@@ -314,6 +338,37 @@ export function AddItemsModal({
                   </div>
 
                   <div className="mt-2 grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <Label className="text-xs">Name</Label>
+                      <Input
+                        value={item.name}
+                        onChange={(e) => updateItem(index, { name: e.target.value })}
+                        placeholder="My juicy thing"
+                        disabled={busy}
+                        className="mt-1 h-9"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-xs">Description</Label>
+                      <textarea
+                        value={item.description}
+                        onChange={(e) => updateItem(index, { description: e.target.value })}
+                        placeholder="What is this item?"
+                        disabled={busy}
+                        rows={3}
+                        className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm disabled:opacity-50"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-xs">Media URI</Label>
+                      <Input
+                        value={item.mediaUri}
+                        onChange={(e) => updateItem(index, { mediaUri: e.target.value })}
+                        placeholder="ipfs://… or https://…"
+                        disabled={busy}
+                        className="mt-1 h-9"
+                      />
+                    </div>
                     <div>
                       <Label className="text-xs">Price ({shop.pricing.symbol})</Label>
                       <Input
@@ -335,19 +390,17 @@ export function AddItemsModal({
                       />
                     </div>
                     <div className="col-span-2">
-                      <Label className="text-xs">Media / metadata IPFS URI</Label>
+                      <Label className="text-xs">Existing metadata IPFS URI (optional)</Label>
                       <Input
                         value={item.uri}
                         onChange={(e) => updateItem(index, { uri: e.target.value })}
-                        placeholder="ipfs://Qm… (metadata JSON with name + image)"
+                        placeholder="ipfs://Qm…"
                         disabled={busy}
                         className="mt-1 h-9"
                       />
                       <p className="mt-1 text-[11px] text-zinc-500">
-                        A pinned JSON file with <span className="font-mono">name</span>,{" "}
-                        <span className="font-mono">description</span> and{" "}
-                        <span className="font-mono">image</span>. DAG-PB CIDv0 or CIDv1 — it&apos;s
-                        stored onchain as bytes32.
+                        Use this instead of the fields above if the complete item metadata is
+                        already pinned. New name, description, or media fields take precedence.
                       </p>
                     </div>
                     <div>
@@ -422,11 +475,13 @@ export function AddItemsModal({
               >
                 {phase === "simulating"
                   ? "Simulating…"
-                  : phase === "sending"
-                    ? "Confirm in wallet…"
-                    : phase === "confirming"
-                      ? "Confirming…"
-                      : "Add items"}
+                  : phase === "pinning"
+                    ? "Pinning metadata…"
+                    : phase === "sending"
+                      ? "Confirm in wallet…"
+                      : phase === "confirming"
+                        ? "Confirming…"
+                        : "Add items"}
               </ButtonWithWallet>
             </div>
           </>

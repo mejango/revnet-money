@@ -7,7 +7,7 @@ import {
   CircleDotDashedIcon,
   CircleDotIcon,
   CircleXIcon,
-  FastForwardIcon,
+  FastForward,
   SquareArrowOutUpRightIcon,
 } from "@/components/ui/icons";
 import { useToast } from "@/components/ui/use-toast";
@@ -90,7 +90,7 @@ export function PayAndDeploy({ relayrResponse, revnetTokenSymbol }: PaymentAndDe
           {isComplete ? (
             <CheckCircle className={"h-4 w-4 ml-2 fill-none text-emerald-500"} />
           ) : (
-            <FastForwardIcon
+            <FastForward
               className={twMerge(
                 "h-4 w-4 fill-melon-950 ml-2",
                 payIsProcessing ? "animate-spin" : "animate-pulse",

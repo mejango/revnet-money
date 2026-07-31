@@ -40,7 +40,7 @@ export type ChartSeries<T extends ChartDatum> = {
   };
 };
 
-export type ChartBand = {
+type ChartBand = {
   key: string;
   x1: number;
   x2: number;
@@ -66,7 +66,7 @@ export type ChartTooltipSeries<T extends ChartDatum> = {
   datum: T;
 };
 
-export type ChartTooltipContext<T extends ChartDatum> = {
+type ChartTooltipContext<T extends ChartDatum> = {
   datum: T;
   index: number;
   series: ChartTooltipSeries<T>[];

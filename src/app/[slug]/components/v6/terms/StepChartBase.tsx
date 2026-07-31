@@ -19,8 +19,8 @@ import {
  * dashed gridlines, muted HTML labels.
  */
 
-export const ISSUANCE_COLOR = "#4FA270"; // melon-600
-export const NOW_COLOR = "#EE6F3A"; // peel-400
+const ISSUANCE_COLOR = "#4FA270"; // melon-600
+const NOW_COLOR = "#EE6F3A"; // peel-400
 
 // Plot area gutters inside a 320×140 viewBox. Text lives in HTML overlays so
 // the gutters only pad the plot itself.

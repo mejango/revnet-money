@@ -17,18 +17,6 @@ export function projectRefKey(ref: VersionedProjectRef): string {
   return `${ref.chainId}:${ref.projectId}:${ref.version}`;
 }
 
-/**
- * Build one exact project-ref branch.
- *
- * Bendystraw's Ponder filter dialect does not AND sibling fields inside an OR
- * branch. The explicit nested AND is therefore required: without it, a branch
- * containing chainId, projectId, and version can match any one of those fields
- * and leak unrelated projects into the result.
- */
-export function projectRefAnd(ref: VersionedProjectRef): BendystrawFilter {
-  return bendystrawProjectRefFilter(ref);
-}
-
 /** A filter matching every unique ref exactly, or null for an empty input. */
 export function projectRefsWhere(refs: readonly VersionedProjectRef[]): BendystrawFilter | null {
   if (refs.length === 0) return null;

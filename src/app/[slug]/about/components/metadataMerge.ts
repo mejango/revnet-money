@@ -5,7 +5,7 @@ import type { JBProjectMetadata } from "@bananapus/nana-sdk-core";
  * Keys the edit-metadata form recognizes. `version` has no editable control,
  * but is retained outside the custom-properties section.
  */
-export const EDITOR_MANAGED_KEYS = [
+const EDITOR_MANAGED_KEYS = [
   "name",
   "description",
   "logoUri",

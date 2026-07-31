@@ -25,7 +25,7 @@ import { RevnetFormData } from "../types";
 // 6-arg overload so the empty 721 store can inherit the ERC-20's own decimals.
 // Keep both argument shapes typed against the deployer ABI.
 type RevDeployerAbi = ReturnType<typeof buildDeployRevnetTx>["abi"];
-export type DeployForArgs = ContractFunctionArgs<RevDeployerAbi, "payable", "deployFor">;
+type DeployForArgs = ContractFunctionArgs<RevDeployerAbi, "payable", "deployFor">;
 export type DeployRevnetRequest = Omit<ReturnType<typeof buildDeployRevnetTx>, "args"> & {
   args: DeployForArgs;
 };

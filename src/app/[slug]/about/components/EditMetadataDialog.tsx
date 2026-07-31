@@ -28,7 +28,7 @@ import {
 import { useTokenA } from "@/hooks/useTokenA";
 import type { Project } from "@/lib/bendystraw/types";
 import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
-import { FormProvider } from "@/lib/forms";
+import { FormProvider, type FormHelpers } from "@/lib/forms";
 import { ipfsUri } from "@/lib/ipfs";
 import { useJBContractContext, useJBProjectMetadataContext } from "@/lib/nana/project";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
@@ -48,17 +48,23 @@ import {
 } from "./metadataMerge";
 
 type MetadataFormData = {
-  customProperties?: string;
+  customProperties: string;
   description: string;
-  discord?: string;
-  farcaster?: string;
-  infoUri?: string;
-  logoUri?: string;
+  discord: string;
+  farcaster: string;
+  infoUri: string;
+  logoUri: string;
   name: string;
-  payDisclosure?: string;
-  telegram?: string;
-  twitter?: string;
+  payDisclosure: string;
+  telegram: string;
+  twitter: string;
 };
+
+function metadataString(source: unknown, field: keyof MetadataFormData): string {
+  if (!isRecord(source)) return "";
+  const value = source[field];
+  return typeof value === "string" ? value : "";
+}
 
 const metadataSchema = schema<MetadataFormData>((input) => {
   const issues: ValidationIssue[] = [];
@@ -142,10 +148,10 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
   metadataRef.current = metadata;
 
   const resolveCurrentMetadata = useCallback(async (): Promise<Record<string, unknown>> => {
-    const source = metadataRef.current as
-      { data?: unknown; refetch?: () => Promise<{ data?: unknown } | undefined> } | undefined;
+    const source = metadataRef.current;
     const refetched = await source?.refetch?.();
-    const data = isRecord(refetched?.data) ? refetched.data : source?.data;
+    const refetchedData = isRecord(refetched) ? refetched.data : undefined;
+    const data = isRecord(refetchedData) ? refetchedData : source?.data;
     return isRecord(data) ? data : {};
   }, []);
 
@@ -187,7 +193,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       description: "New data will be visible shortly.",
     });
     setTimeout(() => {
-      (metadata as any).refetch();
+      void metadata.refetch?.();
       router.refresh();
     }, 5000);
   }, [toast, metadata, router, resetQuote]);
@@ -198,7 +204,10 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     setCallbackCalled(true);
   }, [isSuccess, open, callbackCalled, onSuccess]);
 
-  const handleSubmit = async (values: MetadataFormData, { setSubmitting }: any) => {
+  const handleSubmit = async (
+    values: MetadataFormData,
+    { setSubmitting }: FormHelpers<MetadataFormData>,
+  ) => {
     try {
       if (!address) throw new Error("Please connect your wallet");
       // Fail closed: never merge onto a metadata JSON we could not read.
@@ -292,7 +301,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
 
       setRelayrQuote(quote);
       selectPayment(quote.payment_info[0]);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -324,7 +333,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
         description: "Relayr confirmed every destination transaction.",
       });
       onSuccess();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -350,15 +359,15 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       <DialogContent>
         <FormProvider
           initialValues={{
-            name: (initialMetadata as any)?.name || "",
-            description: (initialMetadata as any)?.description || "",
-            logoUri: (initialMetadata as any)?.logoUri || "",
-            twitter: (initialMetadata as any)?.twitter || "",
-            telegram: (initialMetadata as any)?.telegram || "",
-            discord: (initialMetadata as any)?.discord || "",
-            infoUri: (initialMetadata as any)?.infoUri || "",
-            farcaster: (initialMetadata as any)?.farcaster || "",
-            payDisclosure: (initialMetadata as any)?.payDisclosure || "",
+            name: metadataString(initialMetadata, "name"),
+            description: metadataString(initialMetadata, "description"),
+            logoUri: metadataString(initialMetadata, "logoUri"),
+            twitter: metadataString(initialMetadata, "twitter"),
+            telegram: metadataString(initialMetadata, "telegram"),
+            discord: metadataString(initialMetadata, "discord"),
+            infoUri: metadataString(initialMetadata, "infoUri"),
+            farcaster: metadataString(initialMetadata, "farcaster"),
+            payDisclosure: metadataString(initialMetadata, "payDisclosure"),
             customProperties: formatCustomProperties(currentMetadata),
           }}
           validate={withSchema(metadataSchema)}

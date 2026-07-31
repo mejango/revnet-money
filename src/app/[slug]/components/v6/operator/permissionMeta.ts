@@ -53,7 +53,7 @@ function labelFromName(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export const V6_PERMISSIONS: PermissionInfo[] = JBPermissionCatalogV6.map(({ key: name, id }) => ({
+const V6_PERMISSIONS: PermissionInfo[] = JBPermissionCatalogV6.map(({ key: name, id }) => ({
   id,
   name,
   label: labelFromName(name),

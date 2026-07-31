@@ -48,7 +48,7 @@ import { ChainProject } from "../settlement/lib";
 
 // ── Uniswap V4 singletons (from deploy-all-v6 Deploy.s.sol) ──────────────────
 
-export const POOL_MANAGER_BY_CHAIN = UNISWAP_V4_POOL_MANAGER_ADDRESSES as Readonly<
+const POOL_MANAGER_BY_CHAIN = UNISWAP_V4_POOL_MANAGER_ADDRESSES as Readonly<
   Partial<Record<number, Address>>
 >;
 export const POSITION_MANAGER_BY_CHAIN = UNISWAP_V4_POSITION_MANAGER_ADDRESSES as Readonly<
@@ -144,7 +144,7 @@ export const POSITION_MANAGER_ABI = [
   },
 ] as const;
 
-export type PoolKey = UniswapV4PoolKey;
+type PoolKey = UniswapV4PoolKey;
 
 // ── Buyback hook resolution ───────────────────────────────────────────────────
 
@@ -191,7 +191,7 @@ async function projectDataHook(
  * JBOmnichainDeployer → unwrap extraDataHookOf and recognize that;
  * the concrete JBBuybackHook wired directly → itself; anything else → null.
  */
-export async function projectBuybackHook(
+async function projectBuybackHook(
   client: PublicClient,
   chainId: JBChainId,
   projectId: bigint,
@@ -244,7 +244,7 @@ export async function projectBuybackHook(
 
 // ── Pool state ────────────────────────────────────────────────────────────────
 
-export interface PairToken {
+interface PairToken {
   /** Pool-currency form: native ETH = zero address, else the ERC-20. */
   addr: Address;
   decimals: number;
@@ -373,7 +373,7 @@ const SCAN_WINDOW = 45_000n;
 const SCAN_BATCH = 6;
 const SCAN_MAX_WINDOWS = 80; // ~3.6M blocks back before giving up
 
-export interface PoolComposition {
+interface PoolComposition {
   /** Exact pool reserves at the current price (fees excluded). */
   pairAmount: bigint;
   tokenAmount: bigint;
@@ -387,7 +387,7 @@ const compositionCache = new Map<string, { block: bigint; value: PoolComposition
  * the pool's Initialize event, then valuing each surviving range at the current
  * price. Null when the RPC can't return the complete history.
  */
-export async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition | null> {
+async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition | null> {
   const client = getViemPublicClient(pool.chainId) as PublicClient;
   const cacheKey = `${pool.chainId}:${pool.poolId}`;
   const latest = await client.getBlockNumber();

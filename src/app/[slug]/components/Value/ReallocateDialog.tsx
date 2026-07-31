@@ -47,7 +47,6 @@ export function ReallocateDialog({
     collateralAmount,
     cashOutChainId,
     prepaidPercent,
-    nativeToWallet,
     grossBorrowedNative,
     loading,
     projectTokenDecimals,
@@ -334,7 +333,6 @@ export function ReallocateDialog({
                     prepaidPercent={prepaidPercent}
                     setPrepaidPercent={setPrepaidPercent}
                     feeData={newLoanFeeData}
-                    nativeToWallet={nativeToWallet}
                     grossBorrowedNative={grossBorrowedNative}
                     collateralAmount={newLoanCollateral.toFixed(8)}
                     tokenSymbol={selectedChainTokenSymbol ?? "…"}

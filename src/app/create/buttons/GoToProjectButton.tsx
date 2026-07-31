@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { FastForwardIcon } from "@/components/ui/icons";
+import { FastForward } from "@/components/ui/icons";
 import type { JBChainId } from "@/lib/nana/types";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
@@ -30,7 +30,7 @@ export function GoToProjectButton({ txHash, chainId }: { txHash?: string; chainI
           onClick={() => setIsLoading(true)}
         >
           Go to your revnet
-          <FastForwardIcon className={"h-4 w-4 fill-white ml-2 animate-pulse"} />
+          <FastForward className={"h-4 w-4 fill-white ml-2 animate-pulse"} />
         </Button>
       </Link>
     </div>

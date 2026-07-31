@@ -65,7 +65,7 @@ function toPlainParagraphs(source: string): string[] {
  * only, no embedded content or active attributes, and only absolute external
  * HTTP(S)/mailto links. Unsafe anchors are unwrapped so their labels remain.
  */
-export function sanitizeProjectRichText(source: string): string {
+function sanitizeProjectRichText(source: string): string {
   if (typeof window === "undefined") return "";
 
   const purifier = createDOMPurify(window);
@@ -145,5 +145,3 @@ export const ProjectRichText = ({ className, source }: { className?: string; sou
     />
   );
 };
-
-export const Html = ProjectRichText;

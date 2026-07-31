@@ -326,7 +326,6 @@ type ToastActionElement = React.ReactElement<React.ComponentPropsWithoutRef<type
 
 export {
   Toast,
-  ToastAction,
   ToastClose,
   ToastDescription,
   ToastProvider,

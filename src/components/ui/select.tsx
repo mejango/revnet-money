@@ -626,15 +626,4 @@ const SelectSeparator = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HT
 );
 SelectSeparator.displayName = "SelectSeparator";
 
-export {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-};
+export { Select, SelectContent, SelectItem, SelectTrigger, SelectValue };

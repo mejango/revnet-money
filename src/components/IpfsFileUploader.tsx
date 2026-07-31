@@ -4,11 +4,11 @@ import { isIpfsCid } from "@/lib/ipfs-cid";
 import { useMutation } from "@tanstack/react-query";
 import { twMerge } from "tailwind-merge";
 
-export type IpfsPinResponse = {
+type IpfsPinResponse = {
   Hash: string;
 };
 
-export const pinFile = async (file: File | Blob | string, options?: { signal?: AbortSignal }) => {
+const pinFile = async (file: File | Blob | string, options?: { signal?: AbortSignal }) => {
   const formData = new FormData();
   formData.append("file", file);
 

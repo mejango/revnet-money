@@ -3,7 +3,7 @@ import { expect, type Page, type Response } from "@playwright/test";
 import browserProject from "../fixtures/browser-project.json";
 
 export const FIXTURE_ORIGIN = `http://127.0.0.1:${browserProject.fixturePort}`;
-export const FIXTURE_CID = browserProject.cid;
+const FIXTURE_CID = browserProject.cid;
 
 export type BrowserBoundary = {
   externalRequests: string[];

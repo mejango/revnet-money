@@ -194,7 +194,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                                           can burn them.
                                         </p>
                                       ))}
-                                    {chain.splits.map((split, splitIdx) => (
+                                    {chain.splits.map((_, splitIdx) => (
                                       <div key={splitIdx} className="flex gap-2 items-start">
                                         <div className="flex-1">
                                           <label className="text-sm text-zinc-600 mb-1 block">
