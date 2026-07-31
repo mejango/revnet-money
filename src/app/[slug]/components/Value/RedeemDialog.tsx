@@ -24,6 +24,11 @@ import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import {
+  cashOutExecutionErrorMessage,
+  cashOutPoolBufferBps,
+  resolveCashOutChainId,
+} from "@/lib/cashOutQuote";
+import {
   buildDirectSellSwapTx,
   PERMIT2_ADDRESS,
   permit2Abi,
@@ -68,18 +73,25 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { address } = useAccount();
   const { data: balances } = useSuckersUserTokenBalance();
   const [cashOutChainId, setCashOutChainId] = useState<string>();
+  const cashOutableBalances = balances?.filter((balance) => balance.balance.value > 0n) ?? [];
+  const activeCashOutChainId = resolveCashOutChainId(
+    cashOutableBalances.map((balance) => balance.chainId),
+    cashOutChainId,
+  );
   const chainId = useJBChainId();
   const [isApproving, setIsApproving] = useState(false);
   const { toast } = useToast();
   const { data: suckers } = useSuckers();
   const { token } = useJBTokenContext();
   const baseToken = useProjectBaseToken();
-  const selectedChainId = cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined;
+  const selectedChainId = activeCashOutChainId
+    ? (Number(activeCashOutChainId) as JBChainId)
+    : undefined;
   const publicClient = usePublicClient({ chainId: selectedChainId }) as PublicClient | undefined;
 
   // Get the selected sucker based on cashOutChainId
-  const selectedSucker = cashOutChainId
-    ? suckers?.find((s) => s.peerChainId === Number(cashOutChainId))
+  const selectedSucker = activeCashOutChainId
+    ? suckers?.find((s) => s.peerChainId === Number(activeCashOutChainId))
     : suckers?.find((s) => s.peerChainId === chainId);
   const cashOutTerminal = selectedSucker
     ? getJBContractAddress(
@@ -128,7 +140,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   //   chainId: selectedSucker?.peerChainId as JBChainId,
   // });
   const loading = isWriteLoading || isTxLoading || approvalSigning || approvalConfirming;
-  const { balance } = balances?.find((b) => b.chainId === Number(cashOutChainId)) || {
+  const { balance } = balances?.find((b) => b.chainId === Number(activeCashOutChainId)) || {
     balance: { value: 0n },
   };
   const maxRedeemAmount = balance ? formatUnits(balance.value, projectTokenDecimals) : "0";
@@ -138,8 +150,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // The selected chain's accounting-token config. Null while a chain is
   // selected means LOADING — never assume the native token: gate the quote
   // and submission until it resolves.
-  const selectedChainTokenConfig = cashOutChainId
-    ? getTokenConfigForChain(suckerGroupData, Number(cashOutChainId))
+  const selectedChainTokenConfig = activeCashOutChainId
+    ? getTokenConfigForChain(suckerGroupData, Number(activeCashOutChainId))
     : null;
 
   // Determine what token to receive from cashout: the native sentinel for
@@ -158,8 +170,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     data: cashOutRoute,
     isFetching: isQuoteFetching,
     isError: isQuoteError,
+    refetch: refetchCashOutRoute,
   } = useCashOutRoute({
-    chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
+    chainId: activeCashOutChainId ? (Number(activeCashOutChainId) as JBChainId) : undefined,
     projectId: redeemAmountBN ? effectiveProjectId : undefined,
     holder: address,
     cashOutCount: redeemAmountBN || undefined,
@@ -174,6 +187,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const minimumReclaim = cashOutRoute
     ? Number(formatUnits(cashOutRoute.minimumReturn, baseDecimals))
     : 0;
+  const poolBufferBps = cashOutPoolBufferBps(cashOutRoute);
 
   const { data: projectTokenAddress } = useQuery({
     queryKey: ["cashOutProjectToken", selectedChainId, effectiveProjectId.toString()],
@@ -314,28 +328,34 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     </Label>
                     <div className="grid grid-cols-7 gap-2">
                       <div className="col-span-3">
-                        <Select onValueChange={(v) => setCashOutChainId(v)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select chain" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {balances
-                              ?.filter((b) => b.balance.value > 0n)
-                              .map((balance) => {
-                                return (
-                                  <SelectItem
-                                    value={balance.chainId.toString()}
-                                    key={balance.chainId}
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <ChainLogo chainId={balance.chainId as JBChainId} />
-                                      {JB_CHAINS[balance.chainId as JBChainId].name}
-                                    </div>
-                                  </SelectItem>
-                                );
-                              })}
-                          </SelectContent>
-                        </Select>
+                        {cashOutableBalances.length === 1 ? (
+                          <div className="flex h-10 items-center gap-2 border border-melon-300 bg-melon-25 px-3 text-zinc-700">
+                            <ChainLogo chainId={cashOutableBalances[0].chainId as JBChainId} />
+                            {JB_CHAINS[cashOutableBalances[0].chainId as JBChainId].name}
+                          </div>
+                        ) : (
+                          <Select
+                            value={cashOutChainId}
+                            onValueChange={(v) => setCashOutChainId(v)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select chain" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {cashOutableBalances.map((balance) => (
+                                <SelectItem
+                                  value={balance.chainId.toString()}
+                                  key={balance.chainId}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <ChainLogo chainId={balance.chainId as JBChainId} />
+                                    {JB_CHAINS[balance.chainId as JBChainId].name}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                       <div className="col-span-4">
                         <div className="relative">
@@ -355,7 +375,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                               key={pct}
                               type="button"
                               onClick={() => {
-                                if (!cashOutChainId) {
+                                if (!activeCashOutChainId) {
                                   return toast({
                                     variant: "warning",
                                     description: "Please select a chain first.",
@@ -377,10 +397,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     </div>
                   </div>
 
-                  {redeemAmount && cashOutChainId && !valid ? (
+                  {redeemAmount && activeCashOutChainId && !valid ? (
                     <div className="text-red-500 mt-4">
                       Insufficient {tokenSymbol} on{" "}
-                      {JB_CHAINS[Number(cashOutChainId) as JBChainId].name}
+                      {JB_CHAINS[Number(activeCashOutChainId) as JBChainId].name}
                     </div>
                   ) : null}
 
@@ -408,8 +428,36 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                           {bps / 100}%
                         </button>
                       ))}
+                      <label className="flex h-7 items-center border border-melon-300 bg-melon-25 px-2 text-sm text-zinc-700">
+                        <span className="sr-only">Custom max slippage percent</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="99.99"
+                          step="0.1"
+                          inputMode="decimal"
+                          value={slippageBps / 100}
+                          onChange={(event) => {
+                            const percent = Number(event.target.value);
+                            if (Number.isFinite(percent) && percent >= 0 && percent < 100) {
+                              setSlippageBps(Math.round(percent * 100));
+                            }
+                          }}
+                          className="w-12 bg-transparent text-right outline-none"
+                        />
+                        <span>%</span>
+                      </label>
                     </div>
                   </div>
+
+                  {!directSell && poolBufferBps !== null ? (
+                    <div className="mt-2 text-sm text-zinc-500">
+                      This pool&apos;s preview already allows about{" "}
+                      {(poolBufferBps / 100).toFixed(2).replace(/\.00$/, "")}% for its fee and price
+                      impact. Your {slippageBps / 100}% setting additionally covers movement before
+                      the transaction lands.
+                    </div>
+                  ) : null}
 
                   {redeemAmount && valid && cashOutRoute ? (
                     <div className="text-base mt-4">
@@ -511,6 +559,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       return;
                     }
 
+                    const refreshedRoute = await refetchCashOutRoute();
+                    if (
+                      refreshedRoute.isError ||
+                      !refreshedRoute.data ||
+                      refreshedRoute.data.expectedReturn <= 0n
+                    ) {
+                      throw new Error(
+                        "The cash-out quote is no longer available. Review and try again.",
+                      );
+                    }
+
                     await writeContractAsync({
                       abi: jbMultiTerminalAbi,
                       functionName: "cashOutTokensOf",
@@ -523,9 +582,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                         tokenToReceive, // token to reclaim
                         // On the treasury route the slippage floor lives here; on
                         // the AMM route it lives in the metadata and this is 0.
-                        cashOutRoute.terminalMinimum, // min tokens reclaimed
+                        refreshedRoute.data.terminalMinimum, // min tokens reclaimed
                         address, // beneficiary
-                        cashOutRoute.metadata, // metadata
+                        refreshedRoute.data.metadata, // metadata
                       ],
                     });
                   } catch (err) {
@@ -534,7 +593,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     toast({
                       variant: "destructive",
                       title: "Cashout Failed",
-                      description: formatWalletError(err),
+                      description: cashOutExecutionErrorMessage(err) ?? formatWalletError(err),
                     });
                   }
                 }}
