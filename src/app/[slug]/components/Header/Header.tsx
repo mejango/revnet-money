@@ -231,10 +231,10 @@ export function Header(props: Props) {
                   >
                     {operator && (
                       <span ref={operatorRef} className="inline-flex items-center">
-                        <span className="text-zinc-500">Operator:</span>{" "}
+                        <span className="text-zinc-500">Operator:</span>
                         <EtherscanLink
                           value={operator.address}
-                          className="inline-flex min-h-11 items-center font-medium text-zinc-900 sm:min-h-0"
+                          className="ml-1 inline-flex min-h-11 items-center font-medium text-zinc-900 sm:min-h-0"
                         >
                           {operator.displayName}
                         </EtherscanLink>
@@ -248,12 +248,12 @@ export function Header(props: Props) {
                             className="absolute -left-2.5 top-1/2 h-4 w-px -translate-y-1/2 bg-zinc-300"
                           />
                         ) : null}
-                        <span className="text-zinc-500">Site:</span>{" "}
+                        <span className="text-zinc-500">Site:</span>
                         <a
                           href={website.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex min-h-11 items-center font-medium text-zinc-900 hover:underline sm:min-h-0"
+                          className="ml-1 inline-flex min-h-11 items-center font-medium text-zinc-900 hover:underline sm:min-h-0"
                         >
                           {website.url.replace(/^https?:\/\//, "")}
                         </a>
@@ -267,8 +267,8 @@ export function Header(props: Props) {
                             className="absolute -left-2.5 top-1/2 h-4 w-px -translate-y-1/2 bg-zinc-300"
                           />
                         ) : null}
-                        <span className="text-zinc-500">Created:</span>{" "}
-                        <span className="font-medium text-zinc-900">
+                        <span className="text-zinc-500">Created:</span>
+                        <span className="ml-1 font-medium text-zinc-900">
                           {formatShortDate(new Date(createdAt * 1000))}
                         </span>
                       </span>
