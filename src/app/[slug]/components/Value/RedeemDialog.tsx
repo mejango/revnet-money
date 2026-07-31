@@ -411,9 +411,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     </div>
                   ) : null}
 
-                  <div className="flex items-center gap-2 mt-4">
-                    <span className="text-sm text-zinc-700">Max slippage</span>
-                    <div className="flex gap-1">
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <span className="shrink-0 text-sm text-zinc-700">Max slippage</span>
+                    <div className="flex flex-wrap items-center gap-1">
                       {[50, 100, 300].map((bps) => (
                         <button
                           key={bps}
@@ -428,7 +428,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                           {bps / 100}%
                         </button>
                       ))}
-                      <label className="flex h-7 items-center border border-melon-300 bg-melon-25 px-2 text-sm text-zinc-700">
+                      <label className="flex h-7 w-[4.75rem] shrink-0 items-center border border-melon-300 bg-melon-25 px-2 text-sm text-zinc-700 focus-within:border-teal-600">
                         <span className="sr-only">Custom max slippage percent</span>
                         <input
                           type="number"
@@ -443,7 +443,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                               setSlippageBps(Math.round(percent * 100));
                             }
                           }}
-                          className="w-12 bg-transparent text-right outline-none"
+                          className="min-w-0 flex-1 !border-0 !bg-transparent !p-0 text-right !shadow-none outline-none !ring-0 focus:!border-0 focus:!shadow-none focus:!ring-0"
                         />
                         <span>%</span>
                       </label>
