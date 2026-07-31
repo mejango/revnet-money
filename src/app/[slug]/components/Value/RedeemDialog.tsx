@@ -46,11 +46,14 @@ import {
   JB_CHAINS,
   JB_TOKEN_DECIMALS,
   JBCoreContracts,
-  jbMultiTerminalAbi,
   JBProjectToken,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
-import { getTokenAddress, uniswapV4Deployment } from "@bananapus/nana-sdk-core/v6";
+import {
+  getTokenAddress,
+  prepareHookAwareCashOut,
+  uniswapV4Deployment,
+} from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { PropsWithChildren, useEffect, useState } from "react";
 import { erc20Abi, type Address, type PublicClient } from "viem";
@@ -209,23 +212,21 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         args: [address!],
       }),
   });
-  const {
-    data: directSell,
-    isFetching: directSellLoading,
-    refetch: refetchDirectSell,
-  } = useQuery({
+  const { data: directSell, isFetching: directSellLoading } = useQuery({
     queryKey: [
       "directCashOutSell",
       selectedChainId,
       effectiveProjectId.toString(),
       redeemAmountBN.toString(),
       cashOutRoute?.expectedReturn.toString(),
+      tokenToReceive,
       slippageBps,
     ],
     enabled:
       !!publicClient &&
       !!selectedChainId &&
       !!projectTokenAddress &&
+      !!tokenToReceive &&
       !!cashOutRoute &&
       redeemAmountBN > 0n &&
       (claimedBalance ?? 0n) >= redeemAmountBN,
@@ -240,8 +241,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         chainId: selectedChainId!,
         poolKey: pool.key,
         projectToken: projectTokenAddress!,
+        tokenToReclaim: tokenToReceive!,
         amount: redeemAmountBN,
-        terminalOutput: cashOutRoute!.expectedReturn,
+        cashOutRoute: cashOutRoute!,
         slippageBps,
       });
     },
@@ -541,8 +543,28 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                         });
                         return;
                       }
-                      const fresh = await refetchDirectSell();
-                      if (!fresh.data) {
+                      const refreshedCashOut = await refetchCashOutRoute();
+                      if (refreshedCashOut.isError || !refreshedCashOut.data) {
+                        throw new Error(
+                          "The cash-out quote is no longer available. Review and try again.",
+                        );
+                      }
+                      const pool = await readPoolSnapshot(selectedChainId, effectiveProjectId).then(
+                        (result) => result.pool,
+                      );
+                      const fresh = pool
+                        ? await quoteDirectSellSwap({
+                            client: publicClient!,
+                            chainId: selectedChainId,
+                            poolKey: pool.key,
+                            projectToken: projectTokenAddress,
+                            tokenToReclaim: tokenToReceive,
+                            amount: redeemAmountBN,
+                            cashOutRoute: refreshedCashOut.data,
+                            slippageBps,
+                          })
+                        : null;
+                      if (!fresh) {
                         throw new Error(
                           "The pool no longer beats cashing out. Review the refreshed quote.",
                         );
@@ -550,7 +572,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       await writeContractAsync(
                         buildDirectSellSwapTx({
                           chainId: selectedChainId,
-                          quote: fresh.data,
+                          quote: fresh,
                           amount: redeemAmountBN,
                           recipient: address,
                           deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
@@ -559,34 +581,23 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       return;
                     }
 
-                    const refreshedRoute = await refetchCashOutRoute();
-                    if (
-                      refreshedRoute.isError ||
-                      !refreshedRoute.data ||
-                      refreshedRoute.data.expectedReturn <= 0n
-                    ) {
+                    const prepared = await prepareHookAwareCashOut(publicClient!, {
+                      chainId: selectedChainId!,
+                      projectId: effectiveProjectId,
+                      holder: address,
+                      cashOutCount: redeemAmountBN,
+                      tokenToReclaim: tokenToReceive,
+                      terminal: cashOutTerminal,
+                      beneficiary: address,
+                      slippageBps: BigInt(slippageBps),
+                    });
+                    if (prepared.route.expectedReturn <= 0n) {
                       throw new Error(
                         "The cash-out quote is no longer available. Review and try again.",
                       );
                     }
 
-                    await writeContractAsync({
-                      abi: jbMultiTerminalAbi,
-                      functionName: "cashOutTokensOf",
-                      chainId: selectedSucker?.peerChainId,
-                      address: cashOutTerminal,
-                      args: [
-                        address, // holder
-                        effectiveProjectId, // project id
-                        redeemAmountBN, // cash out count
-                        tokenToReceive, // token to reclaim
-                        // On the treasury route the slippage floor lives here; on
-                        // the AMM route it lives in the metadata and this is 0.
-                        refreshedRoute.data.terminalMinimum, // min tokens reclaimed
-                        address, // beneficiary
-                        refreshedRoute.data.metadata, // metadata
-                      ],
-                    });
+                    await writeContractAsync(prepared.transaction);
                   } catch (err) {
                     setIsApproving(false);
                     console.error("Cashout failed:", err);

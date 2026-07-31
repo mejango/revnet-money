@@ -1,4 +1,3 @@
-import { protectHookAwareCashOutRoute } from "@/lib/cashOutQuote";
 import type { JBChainId } from "@/lib/nana/types";
 import { type CashOutRoute, getHookAwareCashOutQuote } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
@@ -42,18 +41,15 @@ export function useCashOutRoute(params: {
     ],
     enabled:
       !!publicClient && !!chainId && !!projectId && !!holder && !!cashOutCount && !!tokenToReclaim,
-    queryFn: async () =>
-      protectHookAwareCashOutRoute(
-        await getHookAwareCashOutQuote(publicClient as PublicClient, {
-          chainId: chainId as JBChainId,
-          projectId: projectId as bigint,
-          holder: holder as Address,
-          cashOutCount: cashOutCount as bigint,
-          tokenToReclaim: tokenToReclaim as Address,
-          terminal,
-          slippageBps,
-        }),
-        slippageBps ?? 100n,
-      ),
+    queryFn: () =>
+      getHookAwareCashOutQuote(publicClient as PublicClient, {
+        chainId: chainId as JBChainId,
+        projectId: projectId as bigint,
+        holder: holder as Address,
+        cashOutCount: cashOutCount as bigint,
+        tokenToReclaim: tokenToReclaim as Address,
+        terminal,
+        slippageBps,
+      }),
   });
 }

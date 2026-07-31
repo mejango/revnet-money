@@ -4,7 +4,6 @@ import {
   cashOutPoolBufferBps,
   contractCashOutQuote,
   exitFloorQuote,
-  protectHookAwareCashOutRoute,
   resolveCashOutChainId,
 } from "@/lib/cashOutQuote";
 import type { CashOutRoute } from "@bananapus/nana-sdk-core/v6";
@@ -24,11 +23,11 @@ describe("wallet-action:cash-out — contract-derived cash-out quote", () => {
     ).toMatch(/pool moved below your protected minimum/i);
   });
 
-  it("protects the hook's executable quote instead of its optimistic raw quote", () => {
+  it("reports the SDK buyback quote buffer in display basis points", () => {
     const route: CashOutRoute = {
       route: "amm",
       expectedReturn: 16_419_630n,
-      minimumReturn: 16_255_433n,
+      minimumReturn: 15_840_000n,
       terminalMinimum: 0n,
       metadata: "0xabcdef",
       treasuryGross: 1_546_940n,
@@ -47,43 +46,7 @@ describe("wallet-action:cash-out — contract-derived cash-out quote", () => {
       },
     };
 
-    const protectedRoute = protectHookAwareCashOutRoute(route, 100n);
-    expect(protectedRoute.route).toBe("amm");
-    expect(protectedRoute.minimumReturn).toBe(15_840_000n);
-    expect(protectedRoute.metadata).not.toBe(route.metadata);
-    expect(cashOutPoolBufferBps(protectedRoute)).toBe(256);
-  });
-
-  it("falls back to a protected treasury route when the pool no longer wins", () => {
-    const route: CashOutRoute = {
-      route: "amm",
-      expectedReturn: 1_050n,
-      minimumReturn: 1_039n,
-      terminalMinimum: 0n,
-      metadata: "0xabcdef",
-      treasuryGross: 1_020n,
-      treasuryProtocolFee: 25n,
-      treasuryNet: 995n,
-      buyback: {
-        hook: "0x4444444444444444444444444444444444444444",
-        minimumSwapAmountOut: 1_000n,
-        cashOutCountToSell: 1n,
-        netDirectCashOutAmount: 995n,
-        twapTick: 0,
-        twapLiquidity: 1n,
-        poolId: `0x${"11".repeat(32)}`,
-        rawSwapQuote: 1_050n,
-        hasUserSpecifiedMinimumSwapAmountOut: false,
-      },
-    };
-
-    expect(protectHookAwareCashOutRoute(route, 100n)).toMatchObject({
-      route: "treasury",
-      expectedReturn: 995n,
-      minimumReturn: 985n,
-      terminalMinimum: 985n,
-      metadata: "0x",
-    });
+    expect(cashOutPoolBufferBps(route)).toBe(256);
   });
 
   it("matches the contract's zero and full-supply branches", () => {

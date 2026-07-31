@@ -2,9 +2,12 @@ import { isNativePayToken } from "@/lib/v6/pay";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import {
   buildUniswapV4ExactInputSwapTx,
+  chooseBestCashOutRoute,
   chooseBestPayRoute,
   quoteUniswapV4ExactInputSingle,
   uniswapV4Deployment,
+  uniswapV4SwapDirection,
+  type CashOutRoute,
   type PayPreview,
   type UniswapV4PoolKey,
 } from "@bananapus/nana-sdk-core/v6";
@@ -76,16 +79,18 @@ export async function quoteDirectSellSwap({
   chainId,
   poolKey,
   projectToken,
+  tokenToReclaim,
   amount,
-  terminalOutput,
+  cashOutRoute,
   slippageBps,
 }: {
   client: PublicClient;
   chainId: JBChainId;
   poolKey: UniswapV4PoolKey;
   projectToken: Address;
+  tokenToReclaim: Address;
   amount: bigint;
-  terminalOutput: bigint;
+  cashOutRoute: CashOutRoute;
   slippageBps: number;
 }): Promise<DirectSellQuote | null> {
   if (
@@ -95,20 +100,34 @@ export async function quoteDirectSellSwap({
     slippageBps > 10_000
   )
     return null;
-  const c0 = poolKey.currency0.toLowerCase();
-  const c1 = poolKey.currency1.toLowerCase();
-  const token = projectToken.toLowerCase();
-  if (token !== c0 && token !== c1) return null;
-  const zeroForOne = token === c0;
+  const zeroForOne = uniswapV4SwapDirection({
+    poolKey,
+    tokenIn: projectToken,
+    tokenOut: tokenToReclaim,
+  });
+  if (zeroForOne === null) return null;
   const quotedOutput = await quoteUniswapV4ExactInputSingle(client, {
     chainId,
     poolKey,
     zeroForOne,
     amountIn: amount,
   });
-  const minimumOutput = (quotedOutput * BigInt(10_000 - slippageBps)) / 10_000n;
-  if (minimumOutput <= terminalOutput) return null;
-  return { poolKey, zeroForOne, quotedOutput, minimumOutput };
+  const best = chooseBestCashOutRoute({
+    cashOut: cashOutRoute,
+    directSwapQuote: quotedOutput,
+    directSwapPoolKey: poolKey,
+    directSwapZeroForOne: zeroForOne,
+    spendableProjectTokenCount: amount,
+    cashOutCount: amount,
+    slippageBps: BigInt(slippageBps),
+  });
+  if (best.kind !== "direct-swap") return null;
+  return {
+    poolKey: best.poolKey,
+    zeroForOne: best.zeroForOne,
+    quotedOutput: best.expectedReturn,
+    minimumOutput: best.minimumReturn,
+  };
 }
 
 export function buildDirectSellSwapTx({
