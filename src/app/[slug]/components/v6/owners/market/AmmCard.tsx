@@ -44,8 +44,8 @@ function formatPrice(price: number): string {
   return Intl.NumberFormat("en", { maximumFractionDigits: price >= 1 ? 4 : 8 }).format(price);
 }
 
-function AmmChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
-  const { pool, composition } = state;
+function MarketChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
+  const { pool } = state;
   const explorer = pool ? explorerAddressUrl(state.chainId, pool.poolManager) : null;
   return (
     <div className="border-b border-zinc-50 py-3 last:border-b-0">
@@ -67,19 +67,6 @@ function AmmChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol
               ? "—"
               : `${formatPrice(pool.price)} ${pool.pair.symbol}/${tokenSymbol}`}
           </div>
-          <div>
-            <span className="text-zinc-400">Composition</span>{" "}
-            {composition == null ? (
-              <span className="text-zinc-400">
-                unavailable (the RPC could not return the complete pool history)
-              </span>
-            ) : (
-              <>
-                {fmtUnits(composition.tokenAmount, 18)} {tokenSymbol} +{" "}
-                {fmtUnits(composition.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
-              </>
-            )}
-          </div>
           <div className="text-xs text-zinc-400">
             Uniswap V4 pool (fee {pool.key.fee / 10_000}%) held by the{" "}
             {explorer ? (
@@ -95,15 +82,45 @@ function AmmChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol
               "PoolManager"
             )}
           </div>
-          <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
-          <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
         </div>
       )}
     </div>
   );
 }
 
-function AddLiquidityForm({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
+function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
+  const { pool, composition } = state;
+  return (
+    <div className="border-b border-zinc-50 py-3 last:border-b-0">
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
+        <ChainLogo chainId={state.chainId} width={16} height={16} />
+        {chainName(state.chainId)}
+      </div>
+      {!state.hook ? (
+        <p className="mt-1 text-sm text-zinc-400">No buyback hook configured on this chain.</p>
+      ) : !pool ? (
+        <p className="mt-1 text-sm text-zinc-400">This pool is not initialized yet.</p>
+      ) : composition == null ? (
+        <p className="mt-2 text-sm text-zinc-400">
+          The RPC could not return the complete pool history, so liquidity is unavailable.
+        </p>
+      ) : (
+        <div className="mt-2 text-sm text-zinc-700">
+          <span className="text-zinc-400">Composition</span> {fmtUnits(composition.tokenAmount, 18)}{" "}
+          {tokenSymbol} + {fmtUnits(composition.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AddLiquidityForm({
+  state,
+  tokenSymbol,
+}: {
+  state: AmmChainState;
+  tokenSymbol: string;
+}) {
   const { address } = useAccount();
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
@@ -361,7 +378,13 @@ function AddLiquidityForm({ state, tokenSymbol }: { state: AmmChainState; tokenS
   );
 }
 
-function LiquidityManager({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
+export function LiquidityManager({
+  state,
+  tokenSymbol,
+}: {
+  state: AmmChainState;
+  tokenSymbol: string;
+}) {
   const { address } = useAccount();
   const pool = state.pool;
   const positionManager = POSITION_MANAGER_BY_CHAIN[Number(state.chainId)];
@@ -538,29 +561,45 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
 
   const anyHook = data?.some((s) => s.hook) ?? false;
 
+  const content = (kind: "market" | "liquidity") => {
+    if (isLoading) return <SkeletonLines lines={Math.max(chains.length, 2)} className="py-3" />;
+    if (isError || !data) {
+      return <div className="py-3 text-sm text-zinc-500">Could not read the buyback pool.</div>;
+    }
+    if (!anyHook) {
+      return (
+        <div className="py-3 text-sm text-zinc-400">
+          No buyback hook configured — there is no project-owned AMM pool to show.
+        </div>
+      );
+    }
+    return data.map((state) =>
+      kind === "market" ? (
+        <MarketChainRow key={state.chainId} state={state} tokenSymbol={tokenSymbol} />
+      ) : (
+        <LiquidityChainRow key={state.chainId} state={state} tokenSymbol={tokenSymbol} />
+      ),
+    );
+  };
+
   return (
-    <div className="border border-zinc-200 bg-white p-4">
-      <h3 className="font-medium text-zinc-900">
-        Market <span className="text-xs uppercase tracking-wide text-zinc-400 ml-1">AMM</span>
-      </h3>
-      <p className="text-sm text-zinc-500 mt-1">
-        The market is used to fill orders that give payers more {tokenSymbol} than issuance would.
-      </p>
-      <div className="mt-2">
-        {isLoading ? (
-          <SkeletonLines lines={Math.max(chains.length, 2)} className="py-3" />
-        ) : isError || !data ? (
-          <div className="text-sm text-zinc-500 py-3">Could not read the buyback pool.</div>
-        ) : !anyHook ? (
-          <div className="text-sm text-zinc-400 py-3">
-            No buyback hook configured — payments always mint at the issuance rate, and there is no
-            project-owned AMM pool to show.
-          </div>
-        ) : (
-          data.map((state) => (
-            <AmmChainRow key={state.chainId} state={state} tokenSymbol={tokenSymbol} />
-          ))
-        )}
+    <div className="flex flex-col gap-4">
+      <div className="border border-zinc-200 bg-white p-4">
+        <h3 className="font-medium text-zinc-900">
+          Market <span className="ml-1 text-xs uppercase tracking-wide text-zinc-400">AMM</span>
+        </h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          The market is used to fill orders that give payers more {tokenSymbol} than issuance would.
+        </p>
+        <div className="mt-2">{content("market")}</div>
+      </div>
+
+      <div className="border border-zinc-200 bg-white p-4">
+        <h3 className="font-medium text-zinc-900">Liquidity</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          The tokens currently pooled across the market&apos;s active price ranges.
+        </p>
+        <div className="mt-2">{content("liquidity")}</div>
       </div>
     </div>
   );

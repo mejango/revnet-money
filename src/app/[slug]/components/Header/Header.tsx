@@ -6,6 +6,7 @@ import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
 import { FastForward as ForwardIcon } from "@/components/ui/icons";
 import { useCompleteParticipants } from "@/hooks/useCompleteBendystrawLists";
 import type { Project } from "@/lib/bendystraw/types";
+import { formatShortDate } from "@/lib/date";
 import {
   useJBChainId,
   useJBProject,
@@ -25,6 +26,7 @@ import { TvlDatum } from "./TvlDatum";
 
 interface Props {
   isRevnet: boolean;
+  createdAt: number;
   operatorPromise: Promise<Profile | null>;
   projects: Array<
     Pick<
@@ -35,7 +37,7 @@ interface Props {
 }
 
 export function Header(props: Props) {
-  const { isRevnet, operatorPromise, projects } = props;
+  const { isRevnet, operatorPromise, projects, createdAt } = props;
   const operator = use(operatorPromise);
   const chainId = useJBChainId();
   const project = useJBProject();
@@ -80,23 +82,35 @@ export function Header(props: Props) {
   const metadataRef = useRef<HTMLDivElement>(null);
   const operatorRef = useRef<HTMLSpanElement>(null);
   const websiteRef = useRef<HTMLSpanElement>(null);
+  const createdRef = useRef<HTMLSpanElement>(null);
   const chainsRef = useRef<HTMLSpanElement>(null);
-  const [joinedMetadata, setJoinedMetadata] = useState({ website: false, chains: false });
+  const [joinedMetadata, setJoinedMetadata] = useState({
+    website: false,
+    created: false,
+    chains: false,
+  });
   const hasOperator = operator != null;
   const hasWebsite = website != null;
+  const hasCreated = Number(createdAt) > 0;
   const hasSuckers = Boolean(suckers?.length);
 
   useLayoutEffect(() => {
     const updateSeparators = () => {
       const operatorElement = operatorRef.current;
       const websiteElement = websiteRef.current;
+      const createdElement = createdRef.current;
       const chainsElement = chainsRef.current;
-      const previousChainsElement = websiteElement ?? operatorElement;
+      const previousCreatedElement = websiteElement ?? operatorElement;
+      const previousChainsElement = createdElement ?? previousCreatedElement;
       const nextJoinedMetadata = {
         website:
           operatorElement != null &&
           websiteElement != null &&
           operatorElement.offsetTop === websiteElement.offsetTop,
+        created:
+          previousCreatedElement != null &&
+          createdElement != null &&
+          previousCreatedElement.offsetTop === createdElement.offsetTop,
         chains:
           previousChainsElement != null &&
           chainsElement != null &&
@@ -105,6 +119,7 @@ export function Header(props: Props) {
 
       setJoinedMetadata((current) =>
         current.website === nextJoinedMetadata.website &&
+        current.created === nextJoinedMetadata.created &&
         current.chains === nextJoinedMetadata.chains
           ? current
           : nextJoinedMetadata,
@@ -117,7 +132,7 @@ export function Header(props: Props) {
     const observer = new ResizeObserver(updateSeparators);
     observer.observe(metadataElement);
     return () => observer.disconnect();
-  }, [hasOperator, hasWebsite, hasSuckers]);
+  }, [hasOperator, hasWebsite, hasCreated, hasSuckers]);
 
   return (
     <header>
@@ -181,18 +196,16 @@ export function Header(props: Props) {
                     className="font-medium text-black-500"
                     title={
                       participantsQuery.isError
-                        ? "Token-holder data is unavailable."
+                        ? "Owner data is unavailable."
                         : holderSummary.exact
                           ? undefined
-                          : "At least this many unique token holders were found before the indexer result cap."
+                          : "At least this many unique owners were found before the indexer result cap."
                     }
                   >
                     {holderValue}
                   </span>{" "}
                   <span className="text-zinc-500">
-                    {holderSummary.exact && holderSummary.count === 1
-                      ? "token holder"
-                      : "token holders"}
+                    {holderSummary.exact && holderSummary.count === 1 ? "owner" : "owners"}
                   </span>
                 </div>
                 {/* <div className="sm:text-xl text-lg">
@@ -211,7 +224,7 @@ export function Header(props: Props) {
             </div> */}
               </div>
               <Suspense>
-                {(operator || website || suckers?.length) && (
+                {(operator || website || hasCreated || suckers?.length) && (
                   <div
                     ref={metadataRef}
                     className="mt-1.5 flex flex-wrap items-center gap-x-5 text-[15px] text-zinc-700"
@@ -246,6 +259,20 @@ export function Header(props: Props) {
                         </a>
                       </span>
                     )}
+                    {hasCreated ? (
+                      <span ref={createdRef} className="relative inline-flex items-center">
+                        {joinedMetadata.created ? (
+                          <span
+                            aria-hidden
+                            className="absolute -left-2.5 top-1/2 h-4 w-px -translate-y-1/2 bg-zinc-300"
+                          />
+                        ) : null}
+                        <span className="text-zinc-500">Created:</span>{" "}
+                        <span className="font-medium text-zinc-900">
+                          {formatShortDate(new Date(createdAt * 1000))}
+                        </span>
+                      </span>
+                    ) : null}
                     {suckers?.length ? (
                       <span ref={chainsRef} className="relative inline-flex items-center">
                         {joinedMetadata.chains ? (

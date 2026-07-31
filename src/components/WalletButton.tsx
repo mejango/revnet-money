@@ -2,9 +2,11 @@
 
 import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { useEnsName } from "@/hooks/ens/useEnsName";
+import { useMobileWallet } from "@/hooks/useMobileWallet";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
 import { cn, formatEthAddress } from "@/lib/utils";
 import { useViewAs } from "@/lib/view-as";
+import { mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
 import {
   logoutParaSession,
   ParaLocalDisconnectError,
@@ -136,8 +138,14 @@ export function WalletConnectButton({
   const { connectAsync, error, isPending, reset } = useConnect();
   const [open, setOpen] = useState(false);
   const [viewAsOpen, setViewAsOpen] = useState(false);
+  const mobileWallet = useMobileWallet();
   const menuId = useId();
   const menu = useDismissableMenu(open, setOpen);
+
+  const shownConnectors =
+    mobileWallet === "checking" || mobileWallet === "handoff"
+      ? connectors.filter((connector) => connector.id !== "injected")
+      : connectors;
 
   const connect = async (connector: (typeof connectors)[number]) => {
     reset();
@@ -216,8 +224,8 @@ export function WalletConnectButton({
               <div className="mx-3 my-1 border-t border-zinc-100" aria-hidden />
             </>
           ) : null}
-          {connectors.length ? (
-            connectors.map((connector) => (
+          {shownConnectors.length ? (
+            shownConnectors.map((connector) => (
               <button
                 key={connector.uid}
                 type="button"
@@ -229,11 +237,56 @@ export function WalletConnectButton({
                 {connector.name}
               </button>
             ))
-          ) : (
+          ) : mobileWallet !== "checking" && mobileWallet !== "handoff" ? (
             <p className="max-w-64 px-3 py-2 text-sm text-zinc-600">
               No browser wallet was detected. Install or enable an EIP-6963 wallet, then reload.
             </p>
-          )}
+          ) : null}
+          {mobileWallet === "checking" ? (
+            <p className="max-w-64 px-3 py-2 text-sm text-zinc-600">
+              Checking this browser for MetaMask…
+            </p>
+          ) : null}
+          {mobileWallet === "handoff" && typeof window !== "undefined" ? (
+            <>
+              <p className="max-w-64 border-t border-zinc-100 px-3 py-2 text-xs text-zinc-600">
+                Open this page inside a wallet app to connect.
+              </p>
+              {mobileWalletLinks(window.location.href).map((link) => (
+                <a
+                  key={link.name}
+                  href={link.url}
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                  className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+                >
+                  Open in {link.name}
+                </a>
+              ))}
+              {typeof navigator.share === "function" ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    void navigator
+                      .share({
+                        title: document.title,
+                        url: walletDappUrl(window.location.href),
+                      })
+                      .catch((shareError) => {
+                        if (shareError instanceof Error && shareError.name === "AbortError") {
+                          return;
+                        }
+                        console.error("Wallet handoff share failed:", shareError);
+                      });
+                  }}
+                  className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+                >
+                  Open in another wallet…
+                </button>
+              ) : null}
+            </>
+          ) : null}
           {error ? (
             <p
               role="alert"
