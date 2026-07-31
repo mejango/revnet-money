@@ -51,10 +51,6 @@ export function formatMonthYear(value: DateInput): string {
   return format(value, { month: "short", year: "numeric" });
 }
 
-export function formatYear(value: DateInput): string {
-  return format(value, { year: "numeric" });
-}
-
 export function differenceInWholeDays(end: DateInput, start: DateInput): number {
   return Math.trunc((asDate(end).getTime() - asDate(start).getTime()) / 86_400_000);
 }

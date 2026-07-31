@@ -73,11 +73,6 @@ export type BendystrawOperation<TResult, TVariables extends Record<string, unkno
   readonly validateVariables: (value: unknown) => value is TVariables;
 };
 
-export type OperationResult<TOperation> =
-  TOperation extends BendystrawOperation<infer TResult, Record<string, unknown>> ? TResult : never;
-export type OperationVariables<TOperation> =
-  TOperation extends BendystrawOperation<unknown, infer TVariables> ? TVariables : never;
-
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const isString = (value: unknown): value is string => typeof value === "string";
@@ -85,7 +80,6 @@ const isNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 const isInteger = (value: unknown): value is number => isNumber(value) && Number.isInteger(value);
 const isOptionalString = (value: unknown): boolean => value === undefined || isString(value);
-const isOptionalNumber = (value: unknown): boolean => value === undefined || isNumber(value);
 
 function isSafeInput(value: unknown, depth = 0): boolean {
   if (depth > 8) return false;
@@ -122,8 +116,6 @@ function variablesWith(
   };
 }
 
-const noVariables = (value: unknown): value is Record<string, never> =>
-  isObject(value) && Object.keys(value).length === 0;
 const filter = (value: unknown): boolean => isObject(value) && isSafeInput(value);
 const positiveLimit = (value: unknown): boolean => isInteger(value) && value > 0 && value <= 1_000;
 const offset = (value: unknown): boolean => isInteger(value) && value >= 0;
@@ -478,12 +470,6 @@ export const BENDYSTRAW_OPERATIONS = [
   ShieldProjectOperation,
   ShieldGroupOperation,
 ] as const;
-
-export type RegisteredBendystrawOperation = (typeof BENDYSTRAW_OPERATIONS)[number];
-
-export function getOperationById(id: string): RegisteredBendystrawOperation | undefined {
-  return BENDYSTRAW_OPERATIONS.find((operation) => operation.id === id);
-}
 
 /**
  * Operations needed by client components through the same-origin BFF.

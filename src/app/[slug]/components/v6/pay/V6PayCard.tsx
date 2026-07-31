@@ -142,7 +142,6 @@ export function V6PayCard() {
   const tokens = useMemo(() => surface?.tokens ?? [], [surface]);
   const selected = tokens.length > 0 ? tokens[Math.min(tokenIndex, tokens.length - 1)] : undefined;
   const decimals = selected?.decimals ?? 18;
-  const isNative = !selected || isNativePayToken(selected.token);
 
   // Keep the index in lock-step with the token list as it (re)resolves: default
   // to list[0] (the accounting token) until touched; re-find an explicit pick.
@@ -1092,16 +1091,7 @@ export function V6PayCard() {
                           {formatPayAmount(cartTotal, shop.pricingDecimals)} {shopPricingSymbol}
                         </span>
                       </div>
-                      {address && shopCreditsLoading ? (
-                        <div className="flex justify-between gap-3 text-zinc-500">
-                          <span>Shop credit</span>
-                          <Skeleton
-                            className="h-4 w-16"
-                            role="status"
-                            aria-label="Loading shop credit"
-                          />
-                        </div>
-                      ) : shopCreditApplied > 0n ? (
+                      {!shopCreditsLoading && shopCreditApplied > 0n ? (
                         <div className="flex justify-between gap-3 text-teal-700">
                           <span>Shop credit applied</span>
                           <span className="tabular-nums">
@@ -1109,28 +1099,27 @@ export function V6PayCard() {
                             {shopPricingSymbol}
                           </span>
                         </div>
+                      ) : !shopCreditsLoading && shopCredits > 0n ? (
+                        <div className="flex justify-between gap-3 text-zinc-500">
+                          <span>Shop credit available</span>
+                          <span className="tabular-nums">
+                            {formatPayAmount(shopCredits, shop.pricingDecimals)}{" "}
+                            {shopPricingSymbol}
+                          </span>
+                        </div>
                       ) : null}
-                      {restrictedCartTotal > 0n ? (
-                        <>
-                          <div className="flex justify-between gap-3 text-zinc-500">
-                            <span>
-                              {restrictedCartTotal === cartTotal
-                                ? "Shop credit not accepted"
-                                : "Shop credit not accepted by some items"}
-                            </span>
-                            <span className="tabular-nums">
-                              {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
-                              {shopPricingSymbol}
-                            </span>
-                          </div>
-                          <div className="flex justify-between gap-3 text-zinc-500">
-                            <span>Fresh payment required</span>
-                            <span className="tabular-nums">
-                              {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
-                              {shopPricingSymbol}
-                            </span>
-                          </div>
-                        </>
+                      {!shopCreditsLoading && shopCredits > 0n && restrictedCartTotal > 0n ? (
+                        <div className="flex justify-between gap-3 text-zinc-500">
+                          <span>
+                            {restrictedCartTotal === cartTotal
+                              ? "These items require fresh payment"
+                              : "Some items require fresh payment"}
+                          </span>
+                          <span className="tabular-nums">
+                            {formatPayAmount(restrictedCartTotal, shop.pricingDecimals)}{" "}
+                            {shopPricingSymbol}
+                          </span>
+                        </div>
                       ) : null}
                       <div className="flex justify-between gap-3 pt-0.5 font-semibold text-zinc-900">
                         <span>Amount due</span>

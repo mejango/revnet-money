@@ -63,7 +63,7 @@ type TransactionRequest = {
   virtual_nonce: null | number;
 };
 
-export type TransactionStatus =
+type TransactionStatus =
   | {
       state: "Pending" | "Completed" | "Failed" | "Included";
       data?: {

@@ -159,7 +159,6 @@ export function LoanDetailsTable({
   address,
   onSelectLoan,
   onReallocateLoan,
-  chainId,
   tokenSymbol,
   title,
   selectedLoanId,
@@ -169,7 +168,6 @@ export function LoanDetailsTable({
   address: string;
   onSelectLoan?: (loanId: string, chainId: number) => void;
   onReallocateLoan?: (loan: any) => void;
-  chainId?: number;
   tokenSymbol: string;
   title?: string;
   selectedLoanId?: string;

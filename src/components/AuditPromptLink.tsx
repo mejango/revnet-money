@@ -31,7 +31,7 @@ export function AuditPromptLink({ className }: { className?: string }) {
           }
         }}
       >
-        {copied ? "audit prompt copied to clipboard" : "audit with your AI"}
+        {copied ? "AI prompt copied to clipboard" : "audit or create with your AI"}
       </button>
       .
     </p>

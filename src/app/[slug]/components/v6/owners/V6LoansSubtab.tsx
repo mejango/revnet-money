@@ -123,7 +123,6 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
         title="Your loans"
         revnetId={projectId}
         address={address}
-        chainId={0}
         tokenSymbol={tokenSymbol}
         projects={projects}
         onSelectLoan={(loanId, chainId) => {

@@ -3,7 +3,7 @@ import { buildBorrowTx, buildReallocateCollateralTx } from "@bananapus/nana-sdk-
 import { Address, getAddress, PublicClient } from "viem";
 import { protectedOutputFloor } from "./bridgePrepare";
 
-export const DEFAULT_BORROW_SLIPPAGE_BPS = 100n;
+const DEFAULT_BORROW_SLIPPAGE_BPS = 100n;
 
 export async function readFreshBorrowableAmount(
   client: PublicClient,

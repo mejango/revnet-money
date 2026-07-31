@@ -1,7 +1,5 @@
 import { cidV0ToCidV1, isIpfsCid, isIpfsUri } from "./ipfs-cid";
 
-export { isIpfsCid, isIpfsUri } from "./ipfs-cid";
-
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]{1,128}$/u;
 
 // This is an open gateway. It exposes any IPFS content, not just content we
@@ -18,17 +16,9 @@ const IPFS_MEDIA_CACHE_HOSTNAME = "eth.sucks";
  * The 'open' gateway returns any content that is available on IPFS,
  * not just the content we have pinned.
  */
-export const ipfsGatewayUrl = (cid: string | undefined): string => {
+const ipfsGatewayUrl = (cid: string | undefined): string => {
   if (!cid || !isSafeIpfsPath(cid)) throw new Error("Invalid IPFS CID or path");
   return `https://${OPEN_IPFS_GATEWAY_HOSTNAME}/ipfs/${cid}`;
-};
-
-/**
- * Return a URL to a public IPFS gateway for the given cid
- */
-export const ipfsPublicGatewayUrl = (cid: string | undefined): string => {
-  if (!cid || !isSafeIpfsPath(cid)) throw new Error("Invalid IPFS CID or path");
-  return `https://${PUBLIC_IPFS_GATEWAY_HOSTNAME}/ipfs/${cid}`;
 };
 
 /**
@@ -39,17 +29,6 @@ export function ipfsUri(cid: string, path?: string) {
   if (!isSafeIpfsPath(suffix)) throw new Error("Invalid IPFS CID or path");
   return `ipfs://${suffix}`;
 }
-
-/**
- * Return the IPFS CID from a given [url].
- *
- * Assumes that the last path segment is the CID.
- * @todo this isn't a great assumption. We should make this more robust, perhaps using a regex.
- */
-export const cidFromUrl = (url: string) => {
-  const candidate = url.split("/").pop();
-  return isIpfsCid(candidate) ? candidate : undefined;
-};
 
 export const cidFromIpfsUri = (uri: string) =>
   isIpfsUri(uri) ? uri.slice("ipfs://".length) : undefined;

@@ -1,12 +1,7 @@
 import { chainSortOrder } from "@/app/constants";
 import { mainnet } from "@/lib/chains";
 import type { JBChainId, JBTokenContextData } from "@/lib/nana/types";
-import {
-  CashOutTaxRate,
-  JBRulesetData,
-  JB_CHAINS,
-  ReservedPercent,
-} from "@bananapus/nana-sdk-core";
+import { CashOutTaxRate, JB_CHAINS, ReservedPercent } from "@bananapus/nana-sdk-core";
 import { twMerge } from "tailwind-merge";
 import { Address, Chain, formatEther } from "viem";
 
@@ -116,14 +111,6 @@ export function formatTokenSymbol(token?: JBTokenContextData["token"] | string) 
 }
 
 /**
- * Get start date for ruleset
- */
-export function rulesetStartDate(ruleset?: JBRulesetData) {
-  if (!ruleset) return undefined;
-  return new Date(ruleset.start * 1000);
-}
-
-/**
  * Hex formated wei from Relayr API to Ether
  */
 export const formatHexEther = (hexWei: `0x${string}` | undefined, fixed = 8) => {
@@ -202,31 +189,14 @@ export function decodeRulesetMetadata(packed: bigint): RulesetMetadata {
   };
 }
 
-/**
- * Create a beneficiary set from an address for multiple chains
- */
-export function makeBeneficiarySet(addr: string, chains: number[]) {
-  return chains.map((chainId) => ({ chainId, address: addr }));
-}
-
-/**
- * Create an operator set from an address for multiple chains
- */
-export function makeOperatorSet(addr: string, chains: number[]) {
-  return chains.map((chainId) => ({ chainId, address: addr }));
-}
-
-/**
- * Convert human-readable token amount to wei
- */
-export function toWei(amount: string | number): bigint {
-  return BigInt(Math.floor(Number(amount) * 1e18));
-}
-
-export function formatWalletError(error: any, defaultMessage = "Please try again") {
+export function formatWalletError(error: unknown, defaultMessage = "Please try again") {
   if (typeof error === "string") return error;
-  if (error.shortMessage)
-    return (error.shortMessage as string).replace("User rejected", "You rejected");
-  if (error.message) return error.message as string;
+  if (!error || typeof error !== "object") return defaultMessage;
+
+  const { shortMessage, message } = error as Record<string, unknown>;
+  if (typeof shortMessage === "string" && shortMessage) {
+    return shortMessage.replace("User rejected", "You rejected");
+  }
+  if (typeof message === "string" && message) return message;
   return defaultMessage;
 }

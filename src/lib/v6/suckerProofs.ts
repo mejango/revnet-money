@@ -28,7 +28,7 @@ import { Address, encodeFunctionData, Hex, PublicClient } from "viem";
  * App row built from the SDK's root-verified sucker movements. Display-only
  * accounting context and timestamp fields remain local to revnet-money.
  */
-export type V6BridgeRowStatus = JBSuckerMovementStatus;
+type V6BridgeRowStatus = JBSuckerMovementStatus;
 
 export interface V6BridgeRow {
   createdAt?: number;

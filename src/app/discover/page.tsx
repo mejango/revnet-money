@@ -19,17 +19,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import MiniHeaderCard from "./MiniHeaderCard";
 
-const RevLink = ({ network, id, text }: { network: string; id: number; text: string }) => {
-  return (
-    <span>
-      $
-      <Link href={`/${network}:${id}`} className="underline hover:text-black/70">
-        {text}
-      </Link>
-    </span>
-  );
-};
-
 const CHAIN_SLUGS: Record<number, string> = {
   1: "eth",
   10: "op",

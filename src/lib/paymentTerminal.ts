@@ -11,7 +11,7 @@ import { Address, PublicClient } from "viem";
 
 export type PaymentTerminalType = "multi" | "swap";
 
-export type PaymentTerminal = {
+type PaymentTerminal = {
   address: Address;
   abi: typeof jbMultiTerminalAbi | typeof jbRouterTerminalRegistryAbi;
   type: PaymentTerminalType;

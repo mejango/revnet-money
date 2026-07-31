@@ -12,7 +12,7 @@ import { toBaseCurrencyId } from "./currency";
 import { applyNanaFee, applyRevFee } from "./feeHelpers";
 import { getViemPublicClient } from "./wagmiTransports";
 
-export async function getReclaimableSurplus(
+async function getReclaimableSurplus(
   chainId: JBChainId,
   projectId: number,
   tokenAmountWei: bigint,
@@ -43,7 +43,7 @@ export async function getReclaimableSurplus(
   }
 }
 
-export async function getProjectsReclaimableSurplus(
+async function getProjectsReclaimableSurplus(
   projects: Array<Pick<Project, "chainId" | "projectId" | "tokenSupply" | "decimals" | "currency">>,
 ) {
   return await Promise.all(

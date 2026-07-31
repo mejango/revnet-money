@@ -7,36 +7,21 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { TopProjectsTable } from "./TopProjectsTable";
 
-function RevLink({ network, id, text }: { network: string; id: number; text: string }) {
-  return (
-    <span>
-      $
-      <Link href={`/${network}:${id}`} className="underline hover:text-black/70">
-        {text}
-      </Link>
-    </span>
-  );
-}
-
-function Pipe() {
-  return <div className="text-zinc-300">{" | "}</div>;
-}
-
 const WHY_REVNET_POINTS = [
-  "Turn fundraises and revenues into tokens that align builders, investors, customers, and communities.",
-  "Accept money instantly from anyone around the world.",
-  "Keep incoming funds in a treasury that backs the value of the tokens, with access available through cash-outs.",
-  "Reward people who participate earlier and those who stay involved longer.",
-  "Route a preset split of newly issued tokens over time to incentive mechanisms.",
-  "Schedule issuance, splits, and cash-out terms to evolve automatically through stages fixed at launch.",
-  "Avoid governance takeovers and treasury overreach by default.",
-  "Work with open markets to make and take liquidity instead of depending on a separate liquidity program.",
-  "Run one financial network across supported Ethereum chains.",
-  "Build your own website or app around its pay, cash-out, and loan functions. No platform lock-in.",
-  "Pay a predictable, transparent fee that sustains the public payment network instead of changing over time.",
-  "Use treasury-backed tokens as collateral for loans issued by the revnet itself.",
-  "Inspect every rule, balance, and transaction without asking anyone for permission.",
-  "Build on a familiar, interoperable standard that becomes easier to trust and extend with every revnet.",
+  "Turn fundraises and revenues into tokens that align builders, investors, customers, and communities, so everyone benefits from the same growth.",
+  "Accept money instantly from anyone around the world, so support and revenue are not constrained by borders or banking hours.",
+  "Keep incoming funds locked backing the value of the tokens, with access available only through cash outs and loans, so holders can trust that their backing cannot be pulled out from under them.",
+  "Reward people who participate earlier and those who stay involved longer, so long-term contribution matters more than short-term extraction.",
+  "Split a fixed amount of newly issued tokens over time to incentive mechanisms, so builders and other contributors are funded predictably.",
+  "Schedule issuance, splits, and cash-out terms to evolve automatically through stages defined at launch, so everyone can plan around future terms without trusting an administrator.",
+  "Avoid governance takeovers and treasury overreach by default, so no vote or insider can rewrite the deal.",
+  "Work with open markets to make and take liquidity instead of depending on a separate liquidity program, so tokens can stay liquid without permanent subsidies.",
+  "Run one programmable financial network across supported Ethereum chains, so users share the same economics wherever they transact.",
+  "Build your own website or app around its pay, cash-out, and loan functions, so teams own their distribution and integrations without platform lock-in.",
+  "Pay a predictable, transparent fee that sustains the public payment network, so costs stay knowable instead of changing over time.",
+  "Use revenue-backed tokens as collateral for loans issued by the revnet itself, so holders can access liquidity without giving up their future upside.",
+  "Inspect every rule, balance, and transaction without asking anyone for permission, so users can verify instead of trust.",
+  "Build on a familiar, interoperable standard that becomes easier to trust and extend with every revnet, so each new integration benefits the whole network.",
 ];
 
 export default function Page() {
@@ -106,13 +91,14 @@ export default function Page() {
           <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 sm:ml-10">
             <li>Money enters through fundraises and revenues.</li>
             <li>
-              Payers receive tokens, with preset splits optionally issuing some to builders and
-              others.
+              Funds are only used to issue new tokens or buyback from the market, whichever is
+              better.
             </li>
-            <li>The money stays in the treasury, backing the value of every token.</li>
+            <li>Payers receive the tokens, with some optionally split to builders and others.</li>
+            <li>Funds used to issue tokens stay in the treasury, backing their value.</li>
             <li>
-              Holders can return tokens to cash out their share of the treasury, or borrow that
-              amount against them and recover the tokens by repaying the loan.
+              Holders can cash out tokens for their share of the balance, or borrow against their
+              tokens to keep options open.
             </li>
             <li>Cash-out taxes, loan fees, and new revenues reward the holders who remain.</li>
             <li>Issuance, splits, and taxes evolve through stages fixed at launch.</li>

@@ -1,7 +1,11 @@
+import { useFormContext } from "@/lib/forms";
 import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
+import { parseRevnetDraft } from "@/lib/revnet-draft";
 import Image from "next/image";
+import { useRef, useState } from "react";
 import { GoToProjectButton } from "../buttons/GoToProjectButton";
 import { useTestData } from "../helpers/useTestData";
+import type { RevnetFormData } from "../types";
 import { DeploySection } from "./DeploySection";
 import { Divider } from "./Divider";
 import { ProjectDetails } from "./ProjectDetails";
@@ -44,7 +48,10 @@ export function DeployRevnetForm({
         className="mx-auto mb-10 h-auto w-full max-w-[560px] md:col-span-3"
         alt="A figure holding a lightning bolt above the clouds"
       />
-      <h1 className="mb-16 text-2xl md:col-span-3 font-semibold">Create a revnet</h1>
+      <div className="mb-16 flex flex-wrap items-center justify-between gap-3 md:col-span-3">
+        <h1 className="text-2xl font-semibold">Create a revnet</h1>
+        <DraftImport disabled={disabled} />
+      </div>
       {/* "Look" carries no chain-dependent field, so it leads. Settlement
           (chains + reserve asset) comes next: every chain-dependent input
           below specializes per selected chain at the point of input. */}
@@ -66,6 +73,44 @@ export function DeployRevnetForm({
           <GoToProjectButton txHash={directDeployment.hash} chainId={directDeployment.chainId} />
         </div>
       )}
+    </div>
+  );
+}
+
+function DraftImport({ disabled }: { disabled: boolean }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { setValues } = useFormContext<RevnetFormData>();
+  const [status, setStatus] = useState("");
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".jb,application/json"
+        aria-label="Import deployment draft"
+        className="sr-only"
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (!file) return;
+          try {
+            setValues(parseRevnetDraft(await file.text()));
+            setStatus("Draft imported. Review every section before deploying.");
+          } catch (error) {
+            setStatus(error instanceof Error ? error.message : "Could not import that draft.");
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
+        disabled={disabled}
+        onClick={() => inputRef.current?.click()}
+      >
+        Import .jb
+      </button>
+      {status ? <p className="max-w-sm text-right text-xs text-zinc-600">{status}</p> : null}
     </div>
   );
 }

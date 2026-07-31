@@ -92,7 +92,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   const [selectedChainId, setSelectedChainId] = useState<number | undefined>(undefined);
   const [cashOutChainId, setCashOutChainId] = useState<string>();
   const [prepaidPercent, setPrepaidPercent] = useState("2.5");
-  const [nativeToWallet, setNativeToWallet] = useState(0);
   const [grossBorrowedNative, setGrossBorrowedNative] = useState(0);
   const [internalSelectedLoan, setInternalSelectedLoan] = useState<SelectedLoan | null>(
     selectedLoan ?? null,
@@ -461,7 +460,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         // Clear all form state
         setCollateralAmount("");
         setPrepaidPercent("2.5");
-        setNativeToWallet(0);
         setGrossBorrowedNative(0);
 
         // Clear all status states
@@ -500,7 +498,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     [balances, projectTokenDecimals],
   );
 
-  const handleLoanSelection = useCallback((loanId: string, loanData: SelectedLoan) => {
+  const handleLoanSelection = useCallback((_loanId: string, loanData: SelectedLoan) => {
     setInternalSelectedLoan(loanData);
     // Set the cashOutChainId based on the loan's chain
     if (loanData?.chainId) {
@@ -781,10 +779,9 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     handleOpenChange,
   ]);
 
-  // Calculate native to wallet and gross borrowed
+  // Calculate gross borrowed
   useEffect(() => {
     if (!collateralAmount || isNaN(Number(collateralAmount))) {
-      setNativeToWallet(0);
       setGrossBorrowedNative(0);
       return;
     }
@@ -793,7 +790,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     // the estimates at 0 instead of computing with ETH/18 defaults.
     const selectedChainTokenConfig = cashOutChainId ? tokenConfigForChain(cashOutChainId) : null;
     if (!selectedChainTokenConfig) {
-      setNativeToWallet(0);
       setGrossBorrowedNative(0);
       return;
     }
@@ -807,14 +803,11 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       ? Number(formatUnits(borrowableAmountRaw, tokenDecimals))
       : 0;
     const adjusted = estimatedRaw * percent;
-    const afterNetworkFee = adjusted * (1 - totalFixedFees / 1000);
-    setNativeToWallet(afterNetworkFee);
     setGrossBorrowedNative(adjusted);
   }, [
     collateralAmount,
     userProjectTokenBalance,
     borrowableAmountRaw,
-    totalFixedFees,
     projectTokenDecimals,
     cashOutChainId,
     tokenConfigForChain,
@@ -880,7 +873,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     selectedChainId,
     cashOutChainId,
     prepaidPercent,
-    nativeToWallet,
     grossBorrowedNative,
     internalSelectedLoan,
     repayStatus,

@@ -1,4 +1,4 @@
-export type BigNumberish = string | number;
+type BigNumberish = string | number;
 export type BendystrawFilter = Record<string, unknown>;
 
 export type Project = {
@@ -23,7 +23,7 @@ export type Project = {
   version: number;
 };
 
-export type Participant = {
+type Participant = {
   address: string;
   balance: BigNumberish;
   chainId: number;
@@ -102,7 +102,7 @@ export type ProjectAccountingContextQuery = {
   project: Pick<Project, "token" | "decimals" | "currency"> | null;
 };
 
-export type SuckerGroupProject = Pick<
+type SuckerGroupProject = Pick<
   Project,
   | "balance"
   | "chainId"
@@ -275,10 +275,7 @@ export type ActivityEventsQuery = {
   };
 };
 
-export type AccountActivityProject = Pick<
-  Project,
-  "projectId" | "handle" | "version" | "chainId"
-> & {
+type AccountActivityProject = Pick<Project, "projectId" | "handle" | "version" | "chainId"> & {
   name: string | null;
   tokenSymbol: string | null;
   decimals: number | null;
@@ -465,7 +462,7 @@ export type AutoIssueEventsQuery = {
   };
 };
 
-export type LoanRow = {
+type LoanRow = {
   borrowAmount: BigNumberish;
   collateral: BigNumberish;
   prepaidDuration: number;

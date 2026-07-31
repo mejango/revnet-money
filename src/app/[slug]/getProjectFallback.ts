@@ -67,7 +67,7 @@ const isRevertError = (err: unknown) =>
  * rethrows transport failures so an RPC outage surfaces as an error rather
  * than a false 404.
  */
-export const getOnchainProjectFallback = cache(
+const getOnchainProjectFallback = cache(
   async (projectId: number, chainId: JBChainId): Promise<ProjectRow | null> => {
     const client = getViemPublicClient(chainId);
     const id = BigInt(projectId);

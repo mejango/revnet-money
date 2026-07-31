@@ -108,7 +108,7 @@ export function treasuryUsdTotal(
   return rows.reduce((sum, row) => sum + (row.usd ?? 0n), 0n);
 }
 
-export function formatUsd18(value: bigint): string {
+function formatUsd18(value: bigint): string {
   const whole = value / 10n ** 18n;
   const cents = ((value % 10n ** 18n) * 100n) / 10n ** 18n;
   return `$${whole.toLocaleString("en-US")}.${cents.toString().padStart(2, "0")}`;

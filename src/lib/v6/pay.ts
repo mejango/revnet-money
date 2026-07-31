@@ -1,7 +1,6 @@
 import { jbRouterTerminalRegistryAbi, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import {
   parseTierMetadataJson,
-  pickTierMetadata,
   tierDisplayMetadata as sdkTierDisplayMetadata,
   tierMediaAssetUrl as sdkTierMediaAssetUrl,
   tierMediaImageUrl as sdkTierMediaImageUrl,
@@ -85,9 +84,7 @@ export function routerPayRouteWorks(
   return cached;
 }
 
-export { parseTierMetadataJson, pickTierMetadata, TIER_UNLIMITED_SUPPLY };
-
-export type PickedTierMetadata = TierMetadata;
+export { parseTierMetadataJson, TIER_UNLIMITED_SUPPLY };
 export type TierDisplayMetadata = TierMetadata;
 
 const APP_IPFS_GATEWAY = "/api/ipfs/";

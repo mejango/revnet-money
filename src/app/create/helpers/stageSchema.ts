@@ -64,12 +64,6 @@ export const addressSchema = schema<string>((input) => {
   return issues;
 });
 
-export const chainIdSchema = schema<string | number>((input) => {
-  const issues: ValidationIssue[] = [];
-  if (!isChainId(input)) issue(issues, [], "Invalid chain");
-  return issues;
-});
-
 export function validateStage(
   input: unknown,
   prefix: Array<string | number> = [],

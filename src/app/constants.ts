@@ -33,8 +33,6 @@ export const chainIdToLogo = {
   [arbitrum.id]: "/assets/img/logo/arbitrum.svg",
 };
 
-export const BACKED_BY_TOKENS = ["ETH", "USDC"] as const;
-
 export const USDC_ADDRESSES: Record<number, `0x${string}`> = {
   42161: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // Arbitrum
   8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // Base
@@ -47,8 +45,3 @@ export const USDC_ADDRESSES: Record<number, `0x${string}`> = {
 };
 
 export const USDC_DECIMALS = 6;
-
-export const isProduction = process.env.NODE_ENV === "production";
-export const externalBaseUrl = isProduction
-  ? "https://revnet.money"
-  : "https://147585e1f72a.ngrok.app";

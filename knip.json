@@ -1,0 +1,5 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/vendor/HeartbeatWorker.js"],
+  "ignoreDependencies": ["@getpara/core-sdk"]
+}

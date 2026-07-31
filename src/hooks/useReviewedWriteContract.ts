@@ -35,7 +35,7 @@ const SAFE_PREFIX: Partial<Record<number, string>> = {
   42161: "arb1",
   11155111: "sep",
 };
-export const SAFE_NONCE_GUIDANCE =
+const SAFE_NONCE_GUIDANCE =
   "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
 const safeInflight = new Map<string, Promise<void>>();
 

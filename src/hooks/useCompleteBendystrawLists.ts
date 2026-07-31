@@ -426,15 +426,6 @@ export function useCompleteOwnedNfts(where: BendystrawFilter, enabled = true) {
   });
 }
 
-export function useCompleteProjectTickers(where: BendystrawFilter, enabled = true) {
-  return useQuery({
-    queryKey: ["complete-project-tickers", where],
-    queryFn: () => completeProjectTickers(where),
-    enabled,
-    staleTime: 60_000,
-  });
-}
-
 export function useCompleteProjectsByRefs(wheres: BendystrawFilter[], enabled = true) {
   return useQuery({
     queryKey: ["complete-projects-by-refs", wheres],

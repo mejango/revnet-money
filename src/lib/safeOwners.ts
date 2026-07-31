@@ -13,7 +13,7 @@ export const SAFE_TX_SERVICE_PREFIX: Partial<Record<number, string>> = {
 };
 
 /** Mainnet chains the Safe Transaction Service covers for this app. */
-export const SAFE_MAINNET_CHAIN_IDS = [1, 10, 8453, 42161] as const;
+const SAFE_MAINNET_CHAIN_IDS = [1, 10, 8453, 42161] as const;
 
 export function safeOwnersUrl(chainId: number, owner: string): string | null {
   const prefix = SAFE_TX_SERVICE_PREFIX[chainId];
