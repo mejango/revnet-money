@@ -8,20 +8,20 @@ import { Suspense } from "react";
 import { TopProjectsTable } from "./TopProjectsTable";
 
 const WHY_REVNET_POINTS = [
-  "Turn fundraises and revenues into tokens that align builders, investors, customers, and communities, so everyone benefits from the same growth.",
-  "Accept money instantly from anyone around the world, so support and revenue are not constrained by borders or banking hours.",
-  "Keep incoming funds locked backing the value of the tokens, with access available only through cash outs and loans, so holders can trust that their backing cannot be pulled out from under them.",
-  "Reward people who participate earlier and those who stay involved longer, so long-term contribution matters more than short-term extraction.",
-  "Split a fixed amount of newly issued tokens over time to incentive mechanisms, so builders and other contributors are funded predictably.",
-  "Schedule issuance, splits, and cash-out terms to evolve automatically through stages defined at launch, so everyone can plan around future terms without trusting an administrator.",
-  "Avoid governance takeovers and treasury overreach by default, so no vote or insider can rewrite the deal.",
-  "Work with open markets to make and take liquidity instead of depending on a separate liquidity program, so tokens can stay liquid without permanent subsidies.",
-  "Run one programmable financial network across supported Ethereum chains, so users share the same economics wherever they transact.",
-  "Build your own website or app around its pay, cash-out, and loan functions, so teams own their distribution and integrations without platform lock-in.",
-  "Pay a predictable, transparent fee that sustains the public payment network, so costs stay knowable instead of changing over time.",
-  "Use revenue-backed tokens as collateral for loans issued by the revnet itself, so holders can access liquidity without giving up their future upside.",
-  "Inspect every rule, balance, and transaction without asking anyone for permission, so users can verify instead of trust.",
-  "Build on a familiar, interoperable standard that becomes easier to trust and extend with every revnet, so each new integration benefits the whole network.",
+  "Turn fundraises and revenues into tokens that align builders, investors, customers, and communities — so everyone benefits from the same growth.",
+  "Accept money instantly from anyone around the world — so support and revenue are not constrained by borders or banking hours.",
+  "Keep incoming funds locked backing the value of the tokens, with access available only through cash outs and loans — so holders can trust that their backing cannot be pulled out from under them.",
+  "Reward people who participate earlier and those who stay involved longer — so long-term contribution matters more than short-term interactions.",
+  "Split a fixed amount of newly issued tokens over time to incentive mechanisms — so builders and other contributors are funded predictably.",
+  "Schedule issuance, splits, and cash-out terms to evolve automatically through stages defined at launch — so everyone can plan around future terms without trusting an administrator.",
+  "Avoid governance takeovers and treasury overreach by default — so no vote or insider can rewrite the deal.",
+  "Work with open markets to make and take liquidity instead of depending on a separate liquidity program — so tokens can stay liquid without permanent subsidies.",
+  "Run one programmable financial network across supported Ethereum chains — so users share the same economics wherever they transact.",
+  "Build your own website or app around its pay, cash-out, and loan functions — so teams own their distribution and integrations without platform lock-in.",
+  "Pay a predictable, transparent fee that sustains the public payment network — so costs stay knowable instead of changing over time.",
+  "Use revenue-backed tokens as collateral for loans issued by the revnet itself — so holders can access liquidity without giving up their future upside.",
+  "Inspect every rule, balance, and transaction without asking anyone for permission — so users can verify instead of trust.",
+  "Build on a familiar, interoperable standard that becomes easier to trust and extend with every revnet — so each new integration benefits the whole network.",
 ];
 
 export default function Page() {

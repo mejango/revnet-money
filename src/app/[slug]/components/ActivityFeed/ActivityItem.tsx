@@ -132,7 +132,7 @@ export function ActivityItemRow({
           <EtherscanLink type="tx" value={event.txHash} chain={chain}>
             <DateRelative timestamp={event.timestamp} />
           </EtherscanLink>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {event.baseAmount && (
               <span>
                 {event.baseTokenSymbol

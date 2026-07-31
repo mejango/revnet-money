@@ -33,10 +33,14 @@ import {
   RevnetCoreContracts,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
+import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
 import { ProjectItem } from "../../shared";
+import { AddLiquidityForm, LiquidityManager } from "../market/AmmCard";
+import { fetchAmmStates } from "../market/lib";
+import { chainName, chainProjectsKey, toChainProjects } from "../settlement/lib";
 import { BurnRow, V6BurnTokensDialog } from "./V6BurnTokensDialog";
 import { CreditRow, V6ClaimCreditsDialog } from "./V6ClaimCreditsDialog";
 
@@ -72,6 +76,18 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   const { token } = useJBTokenContext();
   const tokenSymbol = formatTokenSymbol(token);
   const projectTokenDecimals = token?.data?.decimals ?? 18;
+  const ammChains = useMemo(() => toChainProjects(projects), [projects]);
+  const { data: ammStates } = useQuery({
+    queryKey: ["v6AmmStates", chainProjectsKey(ammChains)],
+    enabled: ammChains.length > 0,
+    staleTime: 60_000,
+    queryFn: () => fetchAmmStates(ammChains),
+  });
+  const pooledAmmStates = useMemo(
+    () => ammStates?.filter((state) => state.pool) ?? [],
+    [ammStates],
+  );
+  const [showLiquidity, setShowLiquidity] = useState(false);
 
   const { data: balances, isLoading: isLoadingBalances } = useSuckersUserTokenBalance();
 
@@ -400,7 +416,43 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
             </Button>
           </V6ClaimCreditsDialog>
         )}
+
+        {pooledAmmStates.length > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
+            aria-expanded={showLiquidity}
+            onClick={() => setShowLiquidity((current) => !current)}
+          >
+            {showLiquidity ? "Hide liquidity controls" : "Manage market liquidity"}
+          </Button>
+        ) : null}
       </div>
+
+      {showLiquidity && pooledAmmStates.length > 0 ? (
+        <section className="mt-4 border border-zinc-200 bg-white p-4" aria-label="Market liquidity">
+          <h3 className="font-medium text-zinc-900">Market liquidity</h3>
+          <p className="mt-1 text-sm text-zinc-500">
+            Add liquidity or manage positions owned by your connected wallet.
+          </p>
+          <div className="mt-3 space-y-4">
+            {pooledAmmStates.map((state) => (
+              <div
+                key={state.chainId}
+                className="border-t border-zinc-100 pt-3 first:border-t-0 first:pt-0"
+              >
+                <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
+                  <ChainLogo chainId={state.chainId} width={16} height={16} />
+                  {chainName(state.chainId)}
+                </div>
+                <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
+                <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

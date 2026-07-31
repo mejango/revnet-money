@@ -124,7 +124,12 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
           </div>
         )}
         <div className="w-full px-4 sm:container pt-6">
-          <Header isRevnet={isRevnet} operatorPromise={operatorPromise} projects={projects} />
+          <Header
+            isRevnet={isRevnet}
+            operatorPromise={operatorPromise}
+            projects={projects}
+            createdAt={project.createdAt}
+          />
         </div>
         {isRevnet ? (
           <ResponsiveProjectLayout
