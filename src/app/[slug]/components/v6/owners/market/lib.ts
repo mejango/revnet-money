@@ -370,16 +370,85 @@ const MODIFY_EVENT = parseAbiItem(
 );
 
 const SCAN_WINDOW = 45_000n;
-const SCAN_BATCH = 6;
+const SCAN_BATCH = 8;
 const SCAN_MAX_WINDOWS = 80; // ~3.6M blocks back before giving up
+const SCAN_REORG_OVERLAP = 128n;
 
-interface PoolComposition {
+export interface PoolLiquidityRange {
+  tickLower: number;
+  tickUpper: number;
+  liquidity: bigint;
+}
+
+export interface PoolComposition {
   /** Exact pool reserves at the current price (fees excluded). */
   pairAmount: bigint;
   tokenAmount: bigint;
+  /** Every active tick range used to reconstruct the reserves above. */
+  ranges: PoolLiquidityRange[];
 }
 
-const compositionCache = new Map<string, { block: bigint; value: PoolComposition }>();
+interface PoolLiquidityEvent {
+  key: string;
+  blockNumber: bigint;
+  tickLower: number;
+  tickUpper: number;
+  delta: bigint;
+}
+
+interface PoolHistoryCache {
+  initializeBlock: bigint;
+  throughBlock: bigint;
+  events: PoolLiquidityEvent[];
+}
+
+const compositionCache = new Map<string, PoolHistoryCache>();
+
+async function modifyLogsInRange(
+  client: PublicClient,
+  pool: PoolSnapshot,
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<PoolLiquidityEvent[]> {
+  if (fromBlock > toBlock) return [];
+  const logs = await client.getLogs({
+    address: pool.poolManager,
+    event: MODIFY_EVENT,
+    args: { id: pool.poolId },
+    fromBlock,
+    toBlock,
+  });
+  return logs.map((log, index) => ({
+    key: `${log.transactionHash ?? log.blockHash ?? log.blockNumber}:${log.logIndex ?? index}`,
+    blockNumber: log.blockNumber ?? 0n,
+    tickLower: Number(log.args.tickLower),
+    tickUpper: Number(log.args.tickUpper),
+    delta: log.args.liquidityDelta ?? 0n,
+  }));
+}
+
+async function scanKnownPoolRange(
+  client: PublicClient,
+  pool: PoolSnapshot,
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<PoolLiquidityEvent[]> {
+  const events: PoolLiquidityEvent[] = [];
+  let cursor = fromBlock;
+  while (cursor <= toBlock) {
+    const spans: { lo: bigint; hi: bigint }[] = [];
+    for (let n = 0; n < SCAN_BATCH && cursor <= toBlock; n++) {
+      const hi = cursor + SCAN_WINDOW - 1n > toBlock ? toBlock : cursor + SCAN_WINDOW - 1n;
+      spans.push({ lo: cursor, hi });
+      cursor = hi + 1n;
+    }
+    const batches = await Promise.all(
+      spans.map(({ lo, hi }) => modifyLogsInRange(client, pool, lo, hi)),
+    );
+    for (const batch of batches) events.push(...batch);
+  }
+  return events;
+}
 
 /**
  * The pool's current reserves, reconstructed by netting every ModifyLiquidity
@@ -391,64 +460,111 @@ async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition
   const client = getViemPublicClient(pool.chainId) as PublicClient;
   const cacheKey = `${pool.chainId}:${pool.poolId}`;
   const latest = await client.getBlockNumber();
-  const cached = compositionCache.get(cacheKey);
-  // A pool's history only grows; reuse a snapshot taken within the last ~30 blocks.
-  if (cached && latest - cached.block < 30n) return cached.value;
+  let cached = compositionCache.get(cacheKey);
+  if (cached && latest < cached.throughBlock) {
+    compositionCache.delete(cacheKey);
+    cached = undefined;
+  }
 
-  const ranges = new Map<string, { tickLower: number; tickUpper: number; liquidity: bigint }>();
-  let initFound = false;
-  let cursor = latest;
-  let windows = 0;
-
-  while (!initFound && cursor >= 0n && windows < SCAN_MAX_WINDOWS) {
-    const spans: { lo: bigint; hi: bigint }[] = [];
-    for (let n = 0; n < SCAN_BATCH && cursor >= 0n && windows < SCAN_MAX_WINDOWS; n++) {
-      const hi = cursor;
-      const lo = hi >= SCAN_WINDOW ? hi - SCAN_WINDOW + 1n : 0n;
-      spans.push({ lo, hi });
-      cursor = lo === 0n ? -1n : lo - 1n;
-      windows++;
+  let initializeBlock: bigint | null = cached?.initializeBlock ?? null;
+  let events: PoolLiquidityEvent[] = [];
+  if (cached) {
+    const overlapStart =
+      cached.throughBlock > SCAN_REORG_OVERLAP
+        ? cached.throughBlock - SCAN_REORG_OVERLAP + 1n
+        : cached.initializeBlock;
+    const fromBlock = overlapStart < cached.initializeBlock ? cached.initializeBlock : overlapStart;
+    events = cached.events.filter((event) => event.blockNumber < fromBlock);
+    events.push(...(await scanKnownPoolRange(client, pool, fromBlock, latest)));
+  } else {
+    // A pool-id-filtered Initialize lookup is normally one cheap request and
+    // gives an authoritative lower bound for every subsequent range scan.
+    try {
+      const inits = await client.getLogs({
+        address: pool.poolManager,
+        event: INIT_EVENT,
+        args: { id: pool.poolId },
+        fromBlock: 0n,
+        toBlock: latest,
+      });
+      initializeBlock = inits.reduce<bigint | null>((earliest, log) => {
+        const block = log.blockNumber;
+        if (block == null) return earliest;
+        return earliest == null || block < earliest ? block : earliest;
+      }, null);
+    } catch {
+      initializeBlock = null;
     }
-    const results = await Promise.all(
-      spans.map(async (s) => {
-        const [inits, mods] = await Promise.all([
-          client.getLogs({
-            address: pool.poolManager,
-            event: INIT_EVENT,
-            args: { id: pool.poolId },
-            fromBlock: s.lo,
-            toBlock: s.hi,
+
+    if (initializeBlock != null) {
+      events = await scanKnownPoolRange(client, pool, initializeBlock, latest);
+    } else {
+      // Range-limited RPC fallback: walk backwards in parallel batches until
+      // the Initialize event proves that the collected history is complete.
+      let cursor = latest;
+      let windows = 0;
+      while (initializeBlock == null && cursor >= 0n && windows < SCAN_MAX_WINDOWS) {
+        const spans: { lo: bigint; hi: bigint }[] = [];
+        for (let n = 0; n < SCAN_BATCH && cursor >= 0n && windows < SCAN_MAX_WINDOWS; n++) {
+          const hi = cursor;
+          const lo = hi >= SCAN_WINDOW ? hi - SCAN_WINDOW + 1n : 0n;
+          spans.push({ lo, hi });
+          cursor = lo === 0n ? -1n : lo - 1n;
+          windows++;
+        }
+        const results = await Promise.all(
+          spans.map(async ({ lo, hi }) => {
+            const [inits, mods] = await Promise.all([
+              client.getLogs({
+                address: pool.poolManager,
+                event: INIT_EVENT,
+                args: { id: pool.poolId },
+                fromBlock: lo,
+                toBlock: hi,
+              }),
+              modifyLogsInRange(client, pool, lo, hi),
+            ]);
+            return { inits, mods };
           }),
-          client.getLogs({
-            address: pool.poolManager,
-            event: MODIFY_EVENT,
-            args: { id: pool.poolId },
-            fromBlock: s.lo,
-            toBlock: s.hi,
-          }),
-        ]);
-        return { inits, mods };
-      }),
-    );
-    for (const r of results) {
-      if (r.inits.length > 0) initFound = true;
-      for (const log of r.mods) {
-        const tickLower = Number(log.args.tickLower);
-        const tickUpper = Number(log.args.tickUpper);
-        const delta = log.args.liquidityDelta ?? 0n;
-        const key = `${tickLower}:${tickUpper}`;
-        const entry = ranges.get(key) ?? { tickLower, tickUpper, liquidity: 0n };
-        entry.liquidity += delta;
-        ranges.set(key, entry);
+        );
+        for (const result of results) {
+          events.push(...result.mods);
+          for (const log of result.inits) {
+            const block = log.blockNumber;
+            if (block != null && (initializeBlock == null || block < initializeBlock)) {
+              initializeBlock = block;
+            }
+          }
+        }
       }
     }
   }
-  if (!initFound) return null; // incomplete history — never show an invented composition
+  if (initializeBlock == null) return null; // incomplete history — never show an invented composition
 
+  const uniqueEvents = new Map(events.map((event) => [event.key, event]));
+  events = [...uniqueEvents.values()].sort(
+    (a, b) => Number(a.blockNumber - b.blockNumber) || a.key.localeCompare(b.key),
+  );
+  compositionCache.set(cacheKey, { initializeBlock, throughBlock: latest, events });
+
+  const ranges = new Map<string, { tickLower: number; tickUpper: number; liquidity: bigint }>();
+  for (const event of events) {
+    const key = `${event.tickLower}:${event.tickUpper}`;
+    const entry = ranges.get(key) ?? {
+      tickLower: event.tickLower,
+      tickUpper: event.tickUpper,
+      liquidity: 0n,
+    };
+    entry.liquidity += event.delta;
+    ranges.set(key, entry);
+  }
+
+  const activeRanges = [...ranges.values()]
+    .filter((range) => range.liquidity > 0n)
+    .sort((a, b) => a.tickLower - b.tickLower || a.tickUpper - b.tickUpper);
   let amount0 = 0n;
   let amount1 = 0n;
-  for (const r of ranges.values()) {
-    if (r.liquidity <= 0n) continue;
+  for (const r of activeRanges) {
     const amounts = uniswapV4AmountsForLiquidity(
       pool.sqrtP,
       uniswapV4SqrtPriceX96AtTick(r.tickLower),
@@ -461,8 +577,8 @@ async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition
   const value: PoolComposition = {
     pairAmount: pool.pairIsC0 ? amount0 : amount1,
     tokenAmount: pool.pairIsC0 ? amount1 : amount0,
+    ranges: activeRanges,
   };
-  compositionCache.set(cacheKey, { block: latest, value });
   return value;
 }
 

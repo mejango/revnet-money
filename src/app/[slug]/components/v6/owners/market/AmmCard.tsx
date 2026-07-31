@@ -9,8 +9,8 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { erc20Abi, parseUnits, zeroAddress } from "viem";
+import { useEffect, useMemo, useState } from "react";
+import { erc20Abi, formatUnits, parseUnits, zeroAddress } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import {
   chainName,
@@ -35,6 +35,8 @@ import {
   refreshUserLpPosition,
   reverifyAddLiquidity,
   type AddLiquidityPlan,
+  type PoolComposition,
+  type PoolSnapshot,
   type UserLpPosition,
 } from "./lib";
 
@@ -88,6 +90,182 @@ function MarketChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSym
   );
 }
 
+const DEPTH_WIDTH = 320;
+const DEPTH_BANDS = 48;
+
+function tickPrice(pool: PoolSnapshot, tick: number): number {
+  const decimalScale = 10 ** (18 - pool.pair.decimals);
+  const rawPrice = 1.0001 ** tick;
+  return (pool.pairIsC0 ? 1 / rawPrice : rawPrice) * decimalScale;
+}
+
+function LiquidityVisualization({
+  pool,
+  composition,
+  tokenSymbol,
+}: {
+  pool: PoolSnapshot;
+  composition: PoolComposition;
+  tokenSymbol: string;
+}) {
+  const model = useMemo(() => {
+    const pairAmount = Number(formatUnits(composition.pairAmount, pool.pair.decimals));
+    const tokenAmount = Number(formatUnits(composition.tokenAmount, 18));
+    const tokenValue = pool.price == null ? 0 : tokenAmount * pool.price;
+    const totalValue = pairAmount + tokenValue;
+    const pairPercent = totalValue > 0 ? (pairAmount / totalValue) * 100 : 0;
+    const tokenPercent = totalValue > 0 ? (tokenValue / totalValue) * 100 : 0;
+
+    const ranges = composition.ranges
+      .map((range) => {
+        const a = tickPrice(pool, range.tickLower);
+        const b = tickPrice(pool, range.tickUpper);
+        return {
+          low: Math.min(a, b),
+          high: Math.max(a, b),
+          liquidity: Number(range.liquidity),
+        };
+      })
+      .filter(
+        (range) =>
+          range.low > 0 &&
+          range.high > range.low &&
+          Number.isFinite(range.low) &&
+          Number.isFinite(range.high) &&
+          Number.isFinite(range.liquidity),
+      );
+
+    if (ranges.length === 0 || pool.price == null || pool.price <= 0) {
+      return { pairAmount, tokenAmount, pairPercent, tokenPercent, depth: null };
+    }
+
+    const low = Math.min(...ranges.map((range) => range.low), pool.price);
+    const high = Math.max(...ranges.map((range) => range.high), pool.price);
+    if (!(high > low)) {
+      return { pairAmount, tokenAmount, pairPercent, tokenPercent, depth: null };
+    }
+
+    const logLow = Math.log(low);
+    const logHigh = Math.log(high);
+    const span = logHigh - logLow;
+    const bands = Array.from({ length: DEPTH_BANDS }, (_, index) => {
+      const mid = Math.exp(logLow + ((index + 0.5) / DEPTH_BANDS) * span);
+      const liquidity = ranges.reduce(
+        (sum, range) => sum + (mid >= range.low && mid <= range.high ? range.liquidity : 0),
+        0,
+      );
+      return { mid, liquidity };
+    });
+    const maxLiquidity = Math.max(...bands.map((band) => band.liquidity), 1);
+    const priceX = ((Math.log(pool.price) - logLow) / span) * DEPTH_WIDTH;
+
+    return {
+      pairAmount,
+      tokenAmount,
+      pairPercent,
+      tokenPercent,
+      depth: { bands, maxLiquidity, low, high, priceX },
+    };
+  }, [composition, pool]);
+
+  return (
+    <div className="mt-3 space-y-5">
+      <div>
+        <div className="text-xs text-zinc-500">Composition</div>
+        {model.pairPercent + model.tokenPercent > 0 ? (
+          <>
+            <div
+              className="mt-2 flex h-3 w-full overflow-hidden bg-teal-100"
+              aria-label={`${pool.pair.symbol} ${model.pairPercent.toFixed(1)}%, ${tokenSymbol} ${model.tokenPercent.toFixed(1)}%`}
+            >
+              <div className="bg-teal-400" style={{ width: `${model.pairPercent}%` }} />
+              <div className="bg-amber-400" style={{ width: `${model.tokenPercent}%` }} />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-700">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 bg-teal-400" aria-hidden="true" />
+                {pool.pair.symbol} {fmtUnits(composition.pairAmount, pool.pair.decimals)} (
+                {model.pairPercent.toFixed(1)}%)
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 bg-amber-400" aria-hidden="true" />
+                {tokenSymbol} {fmtUnits(composition.tokenAmount, 18)} (
+                {model.tokenPercent.toFixed(1)}%)
+              </span>
+            </div>
+          </>
+        ) : (
+          <p className="mt-1 text-sm text-zinc-400">The pool has no active reserves.</p>
+        )}
+      </div>
+
+      {model.depth ? (
+        <div>
+          <div className="text-xs text-zinc-500">Depth</div>
+          <svg
+            viewBox={`0 0 ${DEPTH_WIDTH} 128`}
+            className="mt-2 h-auto w-full"
+            role="img"
+            aria-label={`${tokenSymbol} liquidity depth from ${formatPrice(model.depth.low)} to ${formatPrice(model.depth.high)} ${pool.pair.symbol}`}
+          >
+            {model.depth.bands.map((band, index) => {
+              if (band.liquidity <= 0) return null;
+              const width = DEPTH_WIDTH / DEPTH_BANDS;
+              const height = (band.liquidity / model.depth!.maxLiquidity) * 78;
+              return (
+                <rect
+                  key={index}
+                  x={(index * width).toFixed(1)}
+                  y={(98 - height).toFixed(1)}
+                  width={Math.max(0.5, width - 0.6).toFixed(1)}
+                  height={height.toFixed(1)}
+                  fill={band.mid < pool.price! ? "#99f6e4" : "#fcd34d"}
+                  opacity="0.75"
+                />
+              );
+            })}
+            <line x1="1" y1="20" x2="1" y2="98" stroke="#71717a" strokeDasharray="3 2" />
+            <line
+              x1={model.depth.priceX.toFixed(1)}
+              y1="20"
+              x2={model.depth.priceX.toFixed(1)}
+              y2="98"
+              stroke="#f59e0b"
+              strokeWidth="1.5"
+              strokeDasharray="3 2"
+            />
+            <line x1="319" y1="20" x2="319" y2="98" stroke="#14b8a6" strokeDasharray="3 2" />
+            <text x="1" y="13" fontSize="8" fill="#71717a">
+              range low
+            </text>
+            <text
+              x={Math.max(18, Math.min(DEPTH_WIDTH - 18, model.depth.priceX)).toFixed(1)}
+              y="13"
+              fontSize="8"
+              fill="#71717a"
+              textAnchor="middle"
+            >
+              price
+            </text>
+            <text x="319" y="13" fontSize="8" fill="#71717a" textAnchor="end">
+              range high
+            </text>
+            <text x="1" y="119" fontSize="8" fill="#71717a">
+              {formatPrice(model.depth.low)}
+            </text>
+            <text x="319" y="119" fontSize="8" fill="#71717a" textAnchor="end">
+              {formatPrice(model.depth.high)}
+            </text>
+          </svg>
+          <p className="mt-1 text-xs text-zinc-600">
+            ~{formatPrice(pool.price!)} {pool.pair.symbol}/{tokenSymbol}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
   const { pool, composition } = state;
   return (
@@ -105,10 +283,7 @@ function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; token
           The RPC could not return the complete pool history, so liquidity is unavailable.
         </p>
       ) : (
-        <div className="mt-2 text-sm text-zinc-700">
-          <span className="text-zinc-400">Composition</span> {fmtUnits(composition.tokenAmount, 18)}{" "}
-          {tokenSymbol} + {fmtUnits(composition.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
-        </div>
+        <LiquidityVisualization pool={pool} composition={composition} tokenSymbol={tokenSymbol} />
       )}
     </div>
   );
@@ -584,7 +759,7 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="border border-zinc-200 bg-white p-4">
+      <div className="border border-teal-200 bg-teal-50 p-4">
         <h3 className="font-medium text-zinc-900">
           Market <span className="ml-1 text-xs uppercase tracking-wide text-zinc-400">AMM</span>
         </h3>
@@ -594,7 +769,7 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
         <div className="mt-2">{content("market")}</div>
       </div>
 
-      <div className="border border-zinc-200 bg-white p-4">
+      <div className="border border-teal-200 bg-teal-50 p-4">
         <h3 className="font-medium text-zinc-900">Liquidity</h3>
         <p className="mt-1 text-sm text-zinc-500">
           The tokens currently pooled across the market&apos;s active price ranges.
