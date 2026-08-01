@@ -3,7 +3,6 @@
 import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/use-toast";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
   isSafeProposalPendingError,
@@ -26,6 +25,7 @@ import { useSuckers } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
 import { minReturnedTokens } from "@/lib/quote";
 import { Token } from "@/lib/token";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import {
   formatPayAmount,
@@ -110,7 +110,6 @@ export function V6PayCard() {
   const publicClient = usePublicClient({ chainId });
   const { writeContractAsync } = useWriteContract();
   const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId);
-  const { toast } = useToast();
 
   const projectToken = useJBTokenContext().token.data;
   const projectTokenLabel = projectToken?.symbol
@@ -123,6 +122,7 @@ export function V6PayCard() {
   const [amount, setAmount] = useState("");
   const [debouncedAmount, setDebouncedAmount] = useState("");
   const [memo, setMemo] = useState("");
+  const [showRouteComparison, setShowRouteComparison] = useState(false);
   const [tokenIndex, setTokenIndex] = useState(0);
   // True once the user explicitly picks a pay token. Until then the selection
   // auto-defaults to the project's accounting token (list[0]) so an ETH/USDC
@@ -395,6 +395,7 @@ export function V6PayCard() {
         return {
           beneficiaryTokenCount: directSwap.beneficiaryTokenCount,
           reservedTokenCount: directSwap.reservedTokenCount,
+          issuanceTokenCount: route.preview.beneficiaryTokenCount,
           terminal: UNIVERSAL_ROUTER_BY_CHAIN[chainId]!,
           routeType: "swap",
           directSwap,
@@ -453,7 +454,8 @@ export function V6PayCard() {
   const busy =
     phase === "safe-proposed" ||
     (confirmOpen &&
-      (phase === "approving" ||
+      (phase === "approving-token" ||
+        phase === "approving-router" ||
         phase === "simulating" ||
         phase === "signing" ||
         phase === "pending"));
@@ -688,10 +690,6 @@ export function V6PayCard() {
       return;
     }
     setTxError(null);
-    // The exact-payload safety review is the confirmation surface from this
-    // point forward. Close the human-summary dialog before an approval or pay
-    // review opens so dialogs never stack on top of one another.
-    setConfirmOpen(false);
     try {
       // Keep the newest prerequisite block. Base RPC providers are load
       // balanced: a receipt can be visible on one backend while `latest` on a
@@ -701,7 +699,7 @@ export function V6PayCard() {
       if (prepared.needsApproval) {
         // Direct ERC-20 swaps approve canonical Permit2; terminal routes approve
         // the resolved terminal.
-        setPhase("approving");
+        setPhase("approving-token");
         const approvalHash = await ensureAllowance(
           prepared.token.token,
           prepared.directSwapRoute ? PERMIT2_ADDRESS : prepared.request.address,
@@ -719,7 +717,7 @@ export function V6PayCard() {
       ) {
         const router = UNIVERSAL_ROUTER_BY_CHAIN[prepared.chainId];
         if (!router) throw new Error("The swap router is unavailable on this chain.");
-        setPhase("approving");
+        setPhase("approving-router");
         const expiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
         const approvalHash = await writeContractAsync({
           chainId: prepared.chainId,
@@ -729,9 +727,15 @@ export function V6PayCard() {
           args: [prepared.token.token, router, prepared.amount, expiration],
         });
         requireOnchainExecution(approvalHash, "Swap authorization");
-        const approvalReceipt = await publicClient.waitForTransactionReceipt({
-          hash: approvalHash,
-        });
+        const approvalReceipt = await waitForReceiptWithRetry(
+          publicClient as PublicClient,
+          approvalHash,
+        );
+        if (!approvalReceipt) {
+          throw new Error(
+            `Swap authorization ${approvalHash} was submitted, but confirmation is unavailable.`,
+          );
+        }
         if (approvalReceipt.status !== "success") {
           throw new Error(`Swap authorization ${approvalHash} reverted onchain.`);
         }
@@ -775,60 +779,31 @@ export function V6PayCard() {
       setPhase("pending");
       if (submittedViaSafe(hash)) {
         setPhase("safe-proposed");
-        toast({
-          title: "Safe proposal submitted",
-          description:
-            "The payment is awaiting Safe approvals and execution. It has not reached the project yet; do not submit it again.",
-        });
         return;
       }
       requireOnchainExecution(hash, prepared.mode === "pay" ? "Payment" : "Balance addition");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash }).catch(() => null);
+      const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
       if (!receipt) {
         // The wallet already broadcast the transaction. A lagging or
         // load-balanced RPC can fail to track its receipt; keep the honest
         // submitted state instead of claiming the payment failed or inviting
         // a duplicate submission.
         setPhase("pending");
-        toast({
-          title: prepared.mode === "pay" ? "Payment submitted" : "Balance addition submitted",
-          description: `Confirmation is temporarily unavailable. Check ${hash} before trying again.`,
-        });
         return;
       }
       if (receipt.status !== "success") {
         throw new Error(`Transaction ${hash} reverted onchain.`);
       }
       setPhase("success");
-      toast({
-        title: prepared.mode === "pay" ? "Payment confirmed" : "Added to the balance",
-        description:
-          prepared.mode === "pay"
-            ? `You paid ${formatPayAmount(prepared.amount, prepared.token.decimals)} ${prepared.token.symbol}.`
-            : "The project balance grew — no tokens were minted.",
-      });
-      setPrepared(null);
-      setPhase("preparing");
-      setTxHash(undefined);
-      setAmount("");
-      setDebouncedAmount("");
-      setMemo("");
-      for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
     } catch (err) {
       if (isSafeProposalPendingError(err)) {
         setPhase("safe-proposed");
         setTxHash(err.hash);
-        toast({ title: "Safe proposal submitted", description: err.message });
         return;
       }
       setPhase("ready");
       const message = formatWalletError(err);
       setTxError(message);
-      toast({
-        variant: "destructive",
-        title: prepared.mode === "pay" ? "Payment not sent" : "Balance addition not sent",
-        description: message,
-      });
     }
   };
 
@@ -853,10 +828,6 @@ export function V6PayCard() {
       setDebouncedAmount("");
       setMemo("");
       for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
-      toast({
-        title: prepared?.mode === "pay" ? "Safe payment confirmed" : "Safe top-up confirmed",
-        description: "The Safe proposal executed successfully onchain.",
-      });
     } else if (safeReceipt.isError) {
       setPhase("ready");
       setTxError(
@@ -864,12 +835,6 @@ export function V6PayCard() {
           ? safeReceipt.error.message
           : "The Safe proposal executed but failed onchain.",
       );
-      toast({
-        variant: "destructive",
-        title: "Safe execution failed",
-        description:
-          "The proposal did not complete the payment. Review its status before retrying.",
-      });
     }
   }, [
     cart,
@@ -879,7 +844,6 @@ export function V6PayCard() {
     safeReceipt.error,
     safeReceipt.isError,
     safeReceipt.isSuccess,
-    toast,
   ]);
 
   // Chain switching lives in the confirm dialog (old PayDialog style). The
@@ -1047,16 +1011,19 @@ export function V6PayCard() {
                     {routeIsRouter ? "You get at least" : "You get"}
                   </p>
                   {preview && !previewLoading && !previewIsPrevious ? (
-                    <span
+                    <button
+                      type="button"
+                      onClick={() => setShowRouteComparison((current) => !current)}
+                      aria-expanded={showRouteComparison}
                       title={
                         routeIsRouter
-                          ? "This payment is routed through the swap terminal."
+                          ? "Compare the selected swap with project issuance."
                           : "This payment issues tokens from the project."
                       }
-                      className="shrink-0 border border-melon-500 bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-700"
+                      className="shrink-0 border border-melon-500 bg-white px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-zinc-700 hover:bg-melon-50"
                     >
                       {paySettlementLabel(preview.routeType)}
-                    </span>
+                    </button>
                   ) : null}
                 </div>
                 {preview && preview.beneficiaryTokenCount > 0n ? (
@@ -1075,6 +1042,32 @@ export function V6PayCard() {
                     role="status"
                     aria-label="Calculating token return"
                   />
+                ) : null}
+
+                {showRouteComparison && preview?.routeType === "swap" ? (
+                  "issuanceTokenCount" in preview ? (
+                    <div className="mt-2 grid grid-cols-2 gap-2 border-t border-zinc-200 pt-2 text-xs">
+                      <div>
+                        <p className="text-zinc-500">Swap</p>
+                        <p className="font-medium text-zinc-900">
+                          {formatPayAmount(preview.beneficiaryTokenCount, 18)} {projectTokenLabel}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-zinc-500">Issuance</p>
+                        <p className="font-medium text-zinc-900">
+                          {formatPayAmount(preview.issuanceTokenCount ?? 0n, 18)} {projectTokenLabel}
+                        </p>
+                      </div>
+                      <p className="col-span-2 text-zinc-500">
+                        The better guaranteed return is selected automatically.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-2 border-t border-zinc-200 pt-2 text-xs text-zinc-500">
+                      This payment settles through the project&apos;s configured swap route.
+                    </p>
+                  )
                 ) : null}
 
                 {cartCount > 0 && shop ? (

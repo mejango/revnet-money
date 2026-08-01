@@ -6,7 +6,7 @@ import { useEnsName } from "@/hooks/ens/useEnsName";
 import { useMobileWallet } from "@/hooks/useMobileWallet";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
 import { useJBProject, useJBTokenContext } from "@/lib/nana/project";
-import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { cn, formatEthAddress, formatTokenSymbol } from "@/lib/utils";
 import { useViewAs } from "@/lib/view-as";
 import { mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
@@ -17,6 +17,7 @@ import {
 } from "@/providers/para-logout";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   type Dispatch,
@@ -34,9 +35,11 @@ import {
   useBalance,
   useConnect,
   useConnectors,
+  useConfig,
   useDisconnect,
   useReadContract,
 } from "wagmi";
+import { getBalance, readContract } from "wagmi/actions";
 import { Button, type ButtonProps } from "./ui/button";
 
 type WalletConnectButtonProps = Omit<ButtonProps, "children"> & {
@@ -74,6 +77,80 @@ function ProjectWalletBalance() {
       label={symbol}
       value={isLoading || token.isLoading ? "Loading…" : `${total.format(4)} ${symbol}`}
     />
+  );
+}
+
+function ProjectWalletBalances({ address }: { address: `0x${string}` }) {
+  const config = useConfig();
+  const suckers = useSuckers();
+  const pairs = suckers.data ?? [];
+  const pairKey = pairs.map((pair) => `${pair.peerChainId}:${pair.projectId}`).join(",");
+  const balances = useQuery({
+    queryKey: ["revnet", "walletAssetBalances", address, pairKey],
+    enabled: !!pairKey && !suckers.isLoading,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const rows = await Promise.all(
+        pairs.map(async ({ peerChainId: chainId }) => {
+          const usdc = USDC_ADDRESSES[chainId];
+          const [nativeBalance, usdcBalance] = await Promise.all([
+            getBalance(config, { address, chainId }),
+            usdc
+              ? readContract(config, {
+                  abi: erc20Abi,
+                  address: usdc,
+                  chainId,
+                  functionName: "balanceOf",
+                  args: [address],
+                })
+              : Promise.resolve(0n),
+          ]);
+          return { nativeBalance, usdcBalance };
+        }),
+      );
+
+      return {
+        native: rows.reduce((total, row) => total + row.nativeBalance.value, 0n),
+        nativeSymbol: rows[0]?.nativeBalance.symbol ?? "ETH",
+        usdc: rows.reduce((total, row) => total + row.usdcBalance, 0n),
+      };
+    },
+  });
+  const isLoading = suckers.isLoading || balances.isLoading;
+
+  return (
+    <>
+      <div className="mb-1.5">
+        {pairs.length ? `Across ${pairs.length} project chains` : "Across project chains"}
+      </div>
+      <dl className="space-y-1">
+        <BalanceRow
+          label={balances.data?.nativeSymbol ?? "ETH"}
+          value={
+            isLoading
+              ? "Loading…"
+              : balances.data
+                ? formattedWalletBalance(
+                    balances.data.native,
+                    18,
+                    balances.data.nativeSymbol,
+                  )
+                : "Unavailable"
+          }
+        />
+        <BalanceRow
+          label="USDC"
+          value={
+            isLoading
+              ? "Loading…"
+              : balances.data
+                ? formattedWalletBalance(balances.data.usdc, USDC_DECIMALS, "USDC")
+                : "Unavailable"
+          }
+        />
+        <ProjectWalletBalance />
+      </dl>
+    </>
   );
 }
 
@@ -436,15 +513,20 @@ export function WalletButton() {
               Transactions are disabled while viewing as another account.
             </div>
             <div className="border-b border-amber-100 px-3 py-2 text-xs text-zinc-600">
-              <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
-              <dl className="space-y-1">
-                <BalanceRow
-                  label={balance?.symbol ?? "Native"}
-                  value={formattedBalance ?? "Unavailable"}
-                />
-                <BalanceRow label="USDC" value={formattedUsdcBalance} />
-                {project ? <ProjectWalletBalance /> : null}
-              </dl>
+              {project ? (
+                <ProjectWalletBalances address={viewAs} />
+              ) : (
+                <>
+                  <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
+                  <dl className="space-y-1">
+                    <BalanceRow
+                      label={balance?.symbol ?? "Native"}
+                      value={formattedBalance ?? "Unavailable"}
+                    />
+                    <BalanceRow label="USDC" value={formattedUsdcBalance} />
+                  </dl>
+                </>
+              )}
             </div>
             <Link
               href={`/account/${viewAs}`}
@@ -453,7 +535,7 @@ export function WalletButton() {
                 setOpen(false);
                 menu.triggerRef.current?.focus();
               }}
-              className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+              className="flex min-h-11 w-full items-center px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
             >
               Account
             </Link>
@@ -533,12 +615,20 @@ export function WalletButton() {
           className="absolute right-0 top-full z-50 mt-2 min-w-64 border border-zinc-200 bg-white p-1 shadow-lg"
         >
           <div className="border-b border-zinc-100 px-3 py-2 text-xs text-zinc-600">
-            <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
-            <dl className="space-y-1">
-              <BalanceRow label={balance?.symbol ?? "Native"} value={formattedBalance ?? "Unavailable"} />
-              <BalanceRow label="USDC" value={formattedUsdcBalance} />
-              {project ? <ProjectWalletBalance /> : null}
-            </dl>
+            {project ? (
+              <ProjectWalletBalances address={address} />
+            ) : (
+              <>
+                <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
+                <dl className="space-y-1">
+                  <BalanceRow
+                    label={balance?.symbol ?? "Native"}
+                    value={formattedBalance ?? "Unavailable"}
+                  />
+                  <BalanceRow label="USDC" value={formattedUsdcBalance} />
+                </dl>
+              </>
+            )}
           </div>
           <Link
             href={`/account/${viewAs ?? address}`}
@@ -547,7 +637,7 @@ export function WalletButton() {
               setOpen(false);
               menu.triggerRef.current?.focus();
             }}
-            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+            className="flex min-h-11 w-full items-center px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
           >
             Account
           </Link>

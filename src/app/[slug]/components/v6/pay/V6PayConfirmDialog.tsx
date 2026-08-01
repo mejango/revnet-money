@@ -10,7 +10,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
+import {
+  registerTransactionReviewHandler,
+  transactionReviewJson,
+  type TransactionReviewRequest,
+} from "@/lib/transaction-review";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { useEffect, useRef, useState } from "react";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
@@ -18,7 +24,8 @@ import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
 export type V6PayPhase =
   | "preparing"
   | "ready"
-  | "approving"
+  | "approving-token"
+  | "approving-router"
   | "simulating"
   | "signing"
   | "pending"
@@ -56,7 +63,8 @@ export interface PreparedV6Pay {
 
 const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "safe-proposed" | "success">, string> = {
   preparing: "Getting a fresh quote…",
-  approving: "Approving the terminal to pull your tokens…",
+  "approving-token": "Confirm token access in your wallet. The payment will continue automatically…",
+  "approving-router": "Confirm the swap-router authorization in your wallet. The payment will continue automatically…",
   simulating: "Simulating the transaction…",
   signing: "Confirm in your wallet…",
   pending: "Transaction submitted, awaiting confirmation…",
@@ -92,8 +100,42 @@ export function V6PayConfirmDialog({
   onSwitchChain?: (chainId: string) => void;
   onDone: () => void;
 }) {
+  const [review, setReview] = useState<TransactionReviewRequest | null>(null);
+  const reviewResolver = useRef<((approved: boolean) => void) | null>(null);
+  const [reviewAgreed, setReviewAgreed] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    return registerTransactionReviewHandler(
+      (request) =>
+        new Promise<boolean>((resolve) => {
+          reviewResolver.current?.(false);
+          reviewResolver.current = resolve;
+          setReviewAgreed(false);
+          setReview(request);
+        }),
+    );
+  }, [open]);
+  useEffect(
+    () => () => {
+      reviewResolver.current?.(false);
+      reviewResolver.current = null;
+    },
+    [],
+  );
+  const finishReview = (approved: boolean) => {
+    const resolve = reviewResolver.current;
+    reviewResolver.current = null;
+    setReview(null);
+    setReviewAgreed(false);
+    resolve?.(approved);
+  };
   const busy =
-    phase === "approving" || phase === "simulating" || phase === "signing" || phase === "pending";
+    !!review ||
+    phase === "approving-token" ||
+    phase === "approving-router" ||
+    phase === "simulating" ||
+    phase === "signing" ||
+    phase === "pending";
   const { address } = useAccount();
   const { selectedSucker } = useSelectedSucker();
   const chainId = prepared?.chainId ?? selectedSucker.peerChainId;
@@ -111,7 +153,11 @@ export function V6PayConfirmDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {phase === "success"
+            {review
+              ? review.kind === "authorization"
+                ? "Review authorization"
+                : "Review wallet action"
+              : phase === "success"
               ? mode === "pay"
                 ? "Payment confirmed"
                 : "Added to the balance"
@@ -123,7 +169,65 @@ export function V6PayConfirmDialog({
           </DialogTitle>
           <DialogDescription asChild>
             <div className="text-left">
-              {phase === "success" ? (
+              {review ? (
+                <div className="space-y-4 py-2">
+                  <p className="text-sm leading-relaxed text-zinc-600">
+                    This is the next wallet action in your payment sequence. Review it here, then
+                    continue in your wallet.
+                  </p>
+                  {review.calls.map((call, index) => (
+                    <div key={`${call.to}:${index}`} className="rounded border border-zinc-200 bg-zinc-50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-zinc-900">
+                            {call.label ?? humanFunctionName(call.functionName)}
+                          </p>
+                          <p className="mt-0.5 text-xs text-zinc-500">
+                            {knownDestination(call.to, prepared)}
+                          </p>
+                        </div>
+                        <span className="text-xs text-zinc-500">
+                          {JB_CHAINS[call.chainId as JBChainId]?.name ?? call.chainId}
+                        </span>
+                      </div>
+                      {call.functionName ? (
+                        <p className="mt-3 font-mono text-xs text-zinc-700">
+                          {call.functionName}({humanArgs(call.args, prepared)})
+                        </p>
+                      ) : null}
+                      <details className="mt-3 border-t border-zinc-200 pt-2 text-xs">
+                        <summary className="cursor-pointer select-none text-zinc-500">
+                          Raw transaction data
+                        </summary>
+                        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-zinc-900 p-3 font-mono text-[10px] leading-relaxed text-zinc-100">
+                          {transactionReviewJson({ ...review, calls: [call] })}
+                        </pre>
+                      </details>
+                    </div>
+                  ))}
+                  <label className="flex cursor-pointer items-start gap-3 rounded border border-zinc-200 p-3 text-sm text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={reviewAgreed}
+                      onChange={(event) => setReviewAgreed(event.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>I reviewed this wallet action and agree to continue with the payment.</span>
+                  </label>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => finishReview(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      disabled={!reviewAgreed}
+                      className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+                      onClick={() => finishReview(true)}
+                    >
+                      Continue to wallet
+                    </Button>
+                  </div>
+                </div>
+              ) : phase === "success" ? (
                 <div className="py-2">
                   <p className="text-sm text-zinc-700">
                     {mode === "pay"
@@ -204,30 +308,59 @@ export function V6PayConfirmDialog({
                       {prepared.memo ? <SummaryRow label="Note">{prepared.memo}</SummaryRow> : null}
                       {prepared.needsApproval || prepared.needsPermit2Approval ? (
                         <p className="text-xs text-zinc-500">
-                          {prepared.directSwapRoute
-                            ? "Your wallet may ask for token and swap-router approvals before the swap."
-                            : `Two wallet steps: approve ${prepared.token.symbol} for the terminal, then the ${
-                                prepared.mode === "pay" ? "payment" : "top-up"
-                              } itself.`}
+                          Your wallet will ask for {walletActionCount(prepared)} actions. This dialog
+                          stays open and advances through each one.
                         </p>
-                      ) : null}
+                      ) : (
+                        <p className="text-xs text-zinc-500">
+                          Your wallet will ask for one action to execute this {prepared.mode === "pay" ? "payment" : "balance addition"}.
+                        </p>
+                      )}
+
+                      <ol className="space-y-1 rounded border border-zinc-200 bg-white p-3 text-xs">
+                        {walletActionSteps(prepared).map((step, index) => (
+                          <li key={step} className="flex items-center gap-2">
+                            <span
+                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                                activeStepIndex(prepared, phase) === index
+                                  ? "border-teal-600 bg-teal-50 text-teal-700"
+                                  : activeStepIndex(prepared, phase) > index
+                                    ? "border-teal-500 bg-teal-500 text-white"
+                                    : "border-zinc-300 text-zinc-400"
+                              }`}
+                            >
+                              {activeStepIndex(prepared, phase) > index ? "✓" : index + 1}
+                            </span>
+                            <span className={activeStepIndex(prepared, phase) === index ? "font-medium text-zinc-900" : "text-zinc-500"}>
+                              {step}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
 
                       <details className="mt-1 rounded border border-zinc-200 bg-zinc-50 p-2 text-xs">
                         <summary className="cursor-pointer select-none text-zinc-600">
                           Transaction details
                         </summary>
-                        <div className="mt-2 space-y-1 font-mono text-[11px] text-zinc-600">
-                          <div className="break-all">to: {prepared.request.address}</div>
-                          <div>function: {prepared.request.functionName}</div>
-                          {prepared.request.args.map((arg, i) => (
-                            <div key={i} className="break-all">
-                              arg[{i}]: {stringifyArg(arg)}
-                            </div>
-                          ))}
-                          <div className="break-all">
-                            value: {prepared.request.value.toString()}
+                        <div className="mt-2 space-y-2 text-[11px] text-zinc-600">
+                          <div>
+                            <span className="text-zinc-500">Destination · </span>
+                            <span className="font-medium text-zinc-800">
+                              {knownDestination(prepared.request.address, prepared)}
+                            </span>
                           </div>
-                          <div className="break-all">calldata: {prepared.calldata}</div>
+                          <div>
+                            <span className="text-zinc-500">Action · </span>
+                            <span className="font-mono text-zinc-800">
+                              {prepared.request.functionName}
+                            </span>
+                          </div>
+                          <details>
+                            <summary className="cursor-pointer select-none">Raw calldata</summary>
+                            <div className="mt-1 break-all font-mono text-[10px]">
+                              {prepared.calldata}
+                            </div>
+                          </details>
                         </div>
                       </details>
 
@@ -250,11 +383,7 @@ export function V6PayConfirmDialog({
                       connectWalletText="Connect Wallet"
                       className="bg-teal-500 text-melon-950 hover:bg-teal-600"
                     >
-                      {prepared?.needsApproval || prepared?.needsPermit2Approval
-                        ? "Approve and send"
-                        : mode === "pay"
-                          ? "Pay"
-                          : "Add to balance"}
+                      {mode === "pay" ? "Pay" : "Add to balance"}
                     </ButtonWithWallet>
                   </div>
                 </>
@@ -276,13 +405,70 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
   );
 }
 
-function stringifyArg(arg: unknown): string {
-  if (typeof arg === "bigint") return arg.toString();
-  if (typeof arg === "string") return arg === "" ? '""' : arg;
-  if (typeof arg === "boolean") return String(arg);
-  try {
-    return JSON.stringify(arg, (_, v) => (typeof v === "bigint" ? v.toString() : v));
-  } catch {
-    return String(arg);
+function walletActionSteps(prepared: PreparedV6Pay): string[] {
+  const steps: string[] = [];
+  if (prepared.needsApproval) {
+    steps.push(`Approve ${prepared.token.symbol} access`);
   }
+  if (prepared.needsPermit2Approval) {
+    steps.push("Authorize the Uniswap swap router");
+  }
+  steps.push(
+    prepared.mode === "pay"
+      ? prepared.directSwapRoute
+        ? "Execute the swap"
+        : "Execute the payment"
+      : "Add to the project balance",
+  );
+  return steps;
+}
+
+function walletActionCount(prepared: PreparedV6Pay): number {
+  return walletActionSteps(prepared).length;
+}
+
+function activeStepIndex(prepared: PreparedV6Pay, phase: V6PayPhase): number {
+  const steps = walletActionSteps(prepared);
+  if (phase === "approving-token") return 0;
+  if (phase === "approving-router") return prepared.needsApproval ? 1 : 0;
+  if (phase === "simulating" || phase === "signing" || phase === "pending") return steps.length - 1;
+  if (phase === "success") return steps.length;
+  return 0;
+}
+
+function humanFunctionName(functionName?: string): string {
+  if (functionName === "approve") return "Approve token access";
+  if (functionName === "execute") return "Execute swap";
+  if (functionName === "pay") return "Send payment";
+  if (functionName === "addToBalanceOf") return "Add to project balance";
+  return functionName ? `Review ${functionName}` : "Review wallet action";
+}
+
+function knownDestination(address: Address, prepared: PreparedV6Pay | null): string {
+  if (prepared?.directSwapRoute && address.toLowerCase() === prepared.request.address.toLowerCase()) {
+    return `Uniswap Universal Router · ${address}`;
+  }
+  if (prepared && address.toLowerCase() === prepared.token.token.toLowerCase()) {
+    return `${prepared.token.symbol} token · ${address}`;
+  }
+  if (prepared && address.toLowerCase() === prepared.terminal.toLowerCase()) {
+    return `${prepared.viaRouterRoute ? "Juicebox Router Terminal" : "Juicebox Multi Terminal"} · ${address}`;
+  }
+  if (address.toLowerCase() === "0x000000000022d473030f116ddee9f6b43ac78ba3") {
+    return `Permit2 · ${address}`;
+  }
+  return address;
+}
+
+function humanArgs(args: readonly unknown[] | undefined, prepared: PreparedV6Pay | null): string {
+  if (!args?.length) return "";
+  if (prepared && args.length === 2 && typeof args[0] === "string" && typeof args[1] === "bigint") {
+    return `${knownDestination(args[0] as Address, prepared)}, ${formatPayAmount(args[1], prepared.token.decimals)} ${prepared.token.symbol}`;
+  }
+  if (prepared && args.length === 4 && typeof args[0] === "string" && typeof args[2] === "bigint") {
+    return `${prepared.token.symbol}, ${knownDestination(args[1] as Address, prepared)}, ${formatPayAmount(args[2], prepared.token.decimals)} ${prepared.token.symbol}, expires ${new Date(Number(args[3]) * 1000).toLocaleString()}`;
+  }
+  return args
+    .map((arg) => (typeof arg === "bigint" ? arg.toString() : typeof arg === "string" ? arg : "…"))
+    .join(", ");
 }

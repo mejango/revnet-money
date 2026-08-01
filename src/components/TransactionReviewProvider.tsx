@@ -324,7 +324,7 @@ function TransactionStatusCenter() {
   const visible = [...active, ...terminal.slice(0, 4)];
   return (
     <aside
-      className="fixed bottom-3 right-3 z-[900] max-h-[70vh] w-[min(26rem,calc(100vw-1.5rem))] space-y-2 overflow-y-auto"
+      className="hidden"
       aria-label="Transaction status"
     >
       {visible.map((activity) => (

@@ -40,17 +40,19 @@ export type TransactionReviewOptions = Omit<TransactionReviewRequest, "calls"> &
 };
 
 type ReviewHandler = (request: TransactionReviewRequest) => Promise<boolean>;
-let handler: ReviewHandler | null = null;
+const handlers: ReviewHandler[] = [];
 
 export function registerTransactionReviewHandler(next: ReviewHandler): () => void {
-  handler = next;
+  handlers.push(next);
   return () => {
-    if (handler === next) handler = null;
+    const index = handlers.lastIndexOf(next);
+    if (index >= 0) handlers.splice(index, 1);
   };
 }
 
 async function requestTransactionReview(request: TransactionReviewRequest): Promise<boolean> {
   if (!request.calls.length) throw new Error("There is no transaction to review.");
+  const handler = handlers[handlers.length - 1];
   if (!handler) {
     throw new Error("Transaction review is unavailable. Reload the page before continuing.");
   }

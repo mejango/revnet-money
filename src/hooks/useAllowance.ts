@@ -1,6 +1,7 @@
 "use client";
 
 import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useCallback, useRef, useState } from "react";
 import { erc20Abi, type Hex, type TransactionReceipt } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
@@ -36,7 +37,10 @@ export function useAllowance(chainId: number) {
           args: [spender, value],
         });
         requireOnchainExecution(hash, "Token approval");
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        const receipt = await waitForReceiptWithRetry(publicClient, hash);
+        if (!receipt) {
+          throw new Error(`Token approval ${hash} was submitted, but confirmation is unavailable.`);
+        }
         if (receipt.status !== "success") {
           throw new Error(`Token approval ${hash} reverted onchain.`);
         }
