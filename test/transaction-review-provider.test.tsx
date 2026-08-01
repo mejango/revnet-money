@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
+import { encodeFunctionData } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { isBlockedByModalDialog, openModalDialogs } from "./native-dialog-shim";
 
@@ -188,5 +189,47 @@ describe("TransactionReviewProvider", () => {
     expect(
       screen.queryByText(/These are the exact app-controlled fields your wallet will be asked/),
     ).toBeNull();
+  });
+
+  it("labels the Permit2 approval destination, USDC token, and Uniswap spender", async () => {
+    const abi = [
+      {
+        type: "function",
+        name: "approve",
+        stateMutability: "nonpayable",
+        inputs: [
+          { name: "token", type: "address" },
+          { name: "spender", type: "address" },
+          { name: "amount", type: "uint160" },
+          { name: "expiration", type: "uint48" },
+        ],
+        outputs: [],
+      },
+    ] as const;
+    const args = [
+      "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "0x6fF5693b99212Da76ad316178A184AB56D299b43",
+      50_000_000n,
+      1_800_000_000,
+    ] as const;
+    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+
+    void requireTransactionReview({
+      calls: [
+        {
+          chainId: 8453,
+          to: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+          data: encodeFunctionData({ abi, functionName: "approve", args }),
+          abi,
+          functionName: "approve",
+          args,
+        },
+      ],
+    }).catch(() => undefined);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Destination · Permit2");
+    expect(dialog).toHaveTextContent("USDC |");
+    expect(dialog).toHaveTextContent("Uniswap Universal Router |");
   });
 });

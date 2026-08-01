@@ -1,10 +1,13 @@
 "use client";
 
 import { ViewAsDialog } from "@/components/ViewAsDialog";
+import { USDC_ADDRESSES, USDC_DECIMALS } from "@/app/constants";
 import { useEnsName } from "@/hooks/ens/useEnsName";
 import { useMobileWallet } from "@/hooks/useMobileWallet";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
-import { cn, formatEthAddress } from "@/lib/utils";
+import { useJBProject, useJBTokenContext } from "@/lib/nana/project";
+import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import { cn, formatEthAddress, formatTokenSymbol } from "@/lib/utils";
 import { useViewAs } from "@/lib/view-as";
 import { mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
 import {
@@ -13,6 +16,7 @@ import {
   ParaSessionLogoutError,
 } from "@/providers/para-logout";
 import { useParaAuth } from "@/providers/ParaAuthContext";
+import { JBProjectToken } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import {
   type Dispatch,
@@ -24,8 +28,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { formatUnits } from "viem";
-import { useAccount, useBalance, useConnect, useConnectors, useDisconnect } from "wagmi";
+import { erc20Abi, formatUnits } from "viem";
+import {
+  useAccount,
+  useBalance,
+  useConnect,
+  useConnectors,
+  useDisconnect,
+  useReadContract,
+} from "wagmi";
 import { Button, type ButtonProps } from "./ui/button";
 
 type WalletConnectButtonProps = Omit<ButtonProps, "children"> & {
@@ -34,6 +45,37 @@ type WalletConnectButtonProps = Omit<ButtonProps, "children"> & {
 };
 
 const MENU_ITEM_SELECTOR = '[role="menuitem"]:not([disabled])';
+
+function formattedWalletBalance(value: bigint, decimals: number, symbol: string) {
+  return `${Number(formatUnits(value, decimals)).toLocaleString(undefined, {
+    maximumFractionDigits: 4,
+  })} ${symbol}`;
+}
+
+function BalanceRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-6">
+      <dt className="text-zinc-500">{label}</dt>
+      <dd className="whitespace-nowrap font-medium text-zinc-950">{value}</dd>
+    </div>
+  );
+}
+
+function ProjectWalletBalance() {
+  const { data: balances, isLoading } = useSuckersUserTokenBalance();
+  const { token } = useJBTokenContext();
+  const total = new JBProjectToken(
+    balances?.reduce((sum, balance) => sum + balance.balance.value, 0n) ?? 0n,
+  );
+  const symbol = formatTokenSymbol(token) || "tokens";
+
+  return (
+    <BalanceRow
+      label={symbol}
+      value={isLoading || token.isLoading ? "Loading…" : `${total.format(4)} ${symbol}`}
+    />
+  );
+}
 
 function menuItems(menu: HTMLElement | null) {
   return Array.from(menu?.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR) ?? []);
@@ -316,7 +358,19 @@ export function WalletConnectButton({
 
 export function WalletButton() {
   const { address, chain, connector: activeConnector, isConnected } = useAccount();
-  const { data: balance } = useBalance({ address });
+  const { viewAs, clearViewAs } = useViewAs();
+  const balanceAddress = viewAs ?? address;
+  const { data: balance } = useBalance({ address: balanceAddress });
+  const usdcAddress = chain?.id ? USDC_ADDRESSES[chain.id] : undefined;
+  const { data: usdcBalance } = useReadContract({
+    abi: erc20Abi,
+    address: usdcAddress,
+    chainId: chain?.id,
+    functionName: "balanceOf",
+    args: balanceAddress ? [balanceAddress] : undefined,
+    query: { enabled: !!balanceAddress && !!usdcAddress },
+  });
+  const project = useJBProject();
   const { disconnectAsync, isPending } = useDisconnect();
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
@@ -324,7 +378,6 @@ export function WalletButton() {
   const [paraLogoutPending, setParaLogoutPending] = useState(false);
   const menuId = useId();
   const menu = useDismissableMenu(open, setOpen);
-  const { viewAs, clearViewAs } = useViewAs();
   const { data: ensName } = useEnsName(viewAs ?? address);
   const [viewAsOpen, setViewAsOpen] = useState(false);
 
@@ -333,6 +386,15 @@ export function WalletButton() {
   const viewAsDialog = viewAsOpen ? (
     <ViewAsDialog open={viewAsOpen} onOpenChange={setViewAsOpen} />
   ) : null;
+  const formattedBalance = balance
+    ? formattedWalletBalance(balance.value, balance.decimals, balance.symbol)
+    : null;
+  const formattedUsdcBalance =
+    usdcBalance !== undefined
+      ? formattedWalletBalance(usdcBalance, USDC_DECIMALS, "USDC")
+      : usdcAddress
+        ? "Loading…"
+        : "Unavailable";
 
   if (mounted && viewAs) {
     return (
@@ -372,6 +434,17 @@ export function WalletButton() {
           >
             <div className="border-b border-amber-100 px-3 py-2 text-xs text-amber-800">
               Transactions are disabled while viewing as another account.
+            </div>
+            <div className="border-b border-amber-100 px-3 py-2 text-xs text-zinc-600">
+              <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
+              <dl className="space-y-1">
+                <BalanceRow
+                  label={balance?.symbol ?? "Native"}
+                  value={formattedBalance ?? "Unavailable"}
+                />
+                <BalanceRow label="USDC" value={formattedUsdcBalance} />
+                {project ? <ProjectWalletBalance /> : null}
+              </dl>
             </div>
             <Link
               href={`/account/${viewAs}`}
@@ -419,12 +492,6 @@ export function WalletButton() {
     return <WalletConnectButton menuAlign="right" />;
   }
 
-  const formattedBalance = balance
-    ? `${Number(formatUnits(balance.value, balance.decimals)).toLocaleString(undefined, {
-        maximumFractionDigits: 4,
-      })} ${balance.symbol}`
-    : null;
-
   return (
     <div
       className="relative inline-flex"
@@ -466,10 +533,12 @@ export function WalletButton() {
           className="absolute right-0 top-full z-50 mt-2 min-w-64 border border-zinc-200 bg-white p-1 shadow-lg"
         >
           <div className="border-b border-zinc-100 px-3 py-2 text-xs text-zinc-600">
-            <div className="font-medium text-zinc-950">
-              {formattedBalance ?? "Balance unavailable"}
-            </div>
-            <div>{chain?.name ?? "Unsupported network"}</div>
+            <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
+            <dl className="space-y-1">
+              <BalanceRow label={balance?.symbol ?? "Native"} value={formattedBalance ?? "Unavailable"} />
+              <BalanceRow label="USDC" value={formattedUsdcBalance} />
+              {project ? <ProjectWalletBalance /> : null}
+            </dl>
           </div>
           <Link
             href={`/account/${viewAs ?? address}`}

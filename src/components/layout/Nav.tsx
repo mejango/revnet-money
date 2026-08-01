@@ -2,7 +2,6 @@ import { WalletButton } from "@/components/WalletButton";
 import Image from "next/image";
 import Link from "next/link";
 import { RevnetSearch } from "./RevnetSearch";
-import { UserBalance } from "./UserBalance";
 
 export function Nav() {
   return (
@@ -21,9 +20,6 @@ export function Nav() {
         </div>
         <RevnetSearch />
         <div className="flex gap-2 items-stretch justify-self-end [&>button]:min-h-11">
-          <div className="hidden min-[360px]:flex">
-            <UserBalance />
-          </div>
           <WalletButton />
         </div>
       </div>

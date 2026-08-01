@@ -688,6 +688,10 @@ export function V6PayCard() {
       return;
     }
     setTxError(null);
+    // The exact-payload safety review is the confirmation surface from this
+    // point forward. Close the human-summary dialog before an approval or pay
+    // review opens so dialogs never stack on top of one another.
+    setConfirmOpen(false);
     try {
       // Keep the newest prerequisite block. Base RPC providers are load
       // balanced: a receipt can be visible on one backend while `latest` on a
@@ -779,7 +783,19 @@ export function V6PayCard() {
         return;
       }
       requireOnchainExecution(hash, prepared.mode === "pay" ? "Payment" : "Balance addition");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash }).catch(() => null);
+      if (!receipt) {
+        // The wallet already broadcast the transaction. A lagging or
+        // load-balanced RPC can fail to track its receipt; keep the honest
+        // submitted state instead of claiming the payment failed or inviting
+        // a duplicate submission.
+        setPhase("pending");
+        toast({
+          title: prepared.mode === "pay" ? "Payment submitted" : "Balance addition submitted",
+          description: `Confirmation is temporarily unavailable. Check ${hash} before trying again.`,
+        });
+        return;
+      }
       if (receipt.status !== "success") {
         throw new Error(`Transaction ${hash} reverted onchain.`);
       }
@@ -791,6 +807,13 @@ export function V6PayCard() {
             ? `You paid ${formatPayAmount(prepared.amount, prepared.token.decimals)} ${prepared.token.symbol}.`
             : "The project balance grew — no tokens were minted.",
       });
+      setPrepared(null);
+      setPhase("preparing");
+      setTxHash(undefined);
+      setAmount("");
+      setDebouncedAmount("");
+      setMemo("");
+      for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
     } catch (err) {
       if (isSafeProposalPendingError(err)) {
         setPhase("safe-proposed");
@@ -799,7 +822,13 @@ export function V6PayCard() {
         return;
       }
       setPhase("ready");
-      setTxError(formatWalletError(err));
+      const message = formatWalletError(err);
+      setTxError(message);
+      toast({
+        variant: "destructive",
+        title: prepared.mode === "pay" ? "Payment not sent" : "Balance addition not sent",
+        description: message,
+      });
     }
   };
 

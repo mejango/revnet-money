@@ -15,6 +15,7 @@ const wallet = vi.hoisted(() => ({
   disconnectAsync: vi.fn(),
   jbChainId: vi.fn(),
   logoutParaSession: vi.fn(),
+  readContract: vi.fn(),
   reset: vi.fn(),
   switchChainAsync: vi.fn(),
 }));
@@ -31,13 +32,21 @@ vi.mock("wagmi", () => ({
   }),
   useConnectors: wallet.connectors,
   useDisconnect: () => ({ disconnectAsync: wallet.disconnectAsync, isPending: false }),
+  useReadContract: wallet.readContract,
   useSwitchChain: () => ({
     isPending: false,
     switchChainAsync: wallet.switchChainAsync,
   }),
 }));
 
-vi.mock("@/lib/nana/project", () => ({ useJBChainId: wallet.jbChainId }));
+vi.mock("@/lib/nana/project", () => ({
+  useJBChainId: wallet.jbChainId,
+  useJBProject: () => undefined,
+  useJBTokenContext: vi.fn(),
+}));
+vi.mock("@/lib/nana/suckers", () => ({
+  useSuckersUserTokenBalance: vi.fn(),
+}));
 vi.mock("@/hooks/ens/useEnsName", () => ({ useEnsName: () => ({ data: null }) }));
 vi.mock("@/providers/para-logout", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/providers/para-logout")>();
@@ -54,6 +63,7 @@ describe("local wallet controls", () => {
       isConnected: false,
     });
     wallet.balance.mockReturnValue({ data: undefined });
+    wallet.readContract.mockReturnValue({ data: undefined });
     wallet.chainId.mockReturnValue(1);
     wallet.jbChainId.mockReturnValue(1);
     wallet.connectors.mockReturnValue([
@@ -153,12 +163,13 @@ describe("local wallet controls", () => {
   it("shows the connected address, native balance, network, and disconnect action", async () => {
     wallet.account.mockReturnValue({
       address: "0x1234567890abcdef1234567890abcdef12345678",
-      chain: { name: "Ethereum" },
+      chain: { id: 1, name: "Ethereum" },
       isConnected: true,
     });
     wallet.balance.mockReturnValue({
       data: { value: 1_234_567_000_000_000_000n, decimals: 18, symbol: "ETH" },
     });
+    wallet.readContract.mockReturnValue({ data: 12_500_000n });
 
     render(<WalletButton />);
 
@@ -169,6 +180,7 @@ describe("local wallet controls", () => {
     fireEvent.click(account);
 
     expect(screen.getByText("Ethereum")).toBeVisible();
+    expect(screen.getByText("12.5 USDC")).toBeVisible();
     fireEvent.click(screen.getByRole("menuitem", { name: "Disconnect" }));
     await waitFor(() => expect(wallet.disconnectAsync).toHaveBeenCalledOnce());
   });

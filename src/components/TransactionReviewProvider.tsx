@@ -1,8 +1,10 @@
 "use client";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { USDC_ADDRESSES } from "@/app/constants";
 import { resumePendingRelayrBundles, waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
+import { PERMIT2_ADDRESS, UNIVERSAL_ROUTER_BY_CHAIN } from "@/lib/directPaySwap";
 import {
   dismissTransactionActivity,
   updateTransactionActivity,
@@ -47,17 +49,34 @@ function json(value: unknown): string {
   return JSON.stringify(value, (_, item) => (typeof item === "bigint" ? item.toString() : item), 2);
 }
 
-function knownContract(call: TransactionReviewCall): string | null {
-  if (call.contractName) return call.contractName;
+function knownAddress(chainId: number, address: unknown): string | null {
+  if (typeof address !== "string" || !/^0x[0-9a-f]{40}$/iu.test(address)) return null;
+  if (address.toLowerCase() === PERMIT2_ADDRESS.toLowerCase()) return "Permit2";
+  if (
+    UNIVERSAL_ROUTER_BY_CHAIN[chainId as JBChainId]?.toLowerCase() === address.toLowerCase()
+  ) {
+    return "Uniswap Universal Router";
+  }
+  if (USDC_ADDRESSES[chainId]?.toLowerCase() === address.toLowerCase()) return "USDC";
   const contracts = jbContractAddress["6"] as unknown as Record<
     string,
     Partial<Record<number, Address>>
   >;
   return (
     Object.entries(contracts).find(
-      ([, addresses]) => addresses[call.chainId]?.toLowerCase() === call.to.toLowerCase(),
+      ([, addresses]) => addresses[chainId]?.toLowerCase() === address.toLowerCase(),
     )?.[0] ?? null
   );
+}
+
+function knownContract(call: TransactionReviewCall): string | null {
+  return call.contractName || knownAddress(call.chainId, call.to);
+}
+
+function prettyArgument(call: TransactionReviewCall, argumentIndex: number) {
+  const value = call.args?.[argumentIndex];
+  const label = knownAddress(call.chainId, value);
+  return label ? `${label} | ${String(value)}` : json(value);
 }
 
 function functionOf(call: TransactionReviewCall): AbiFunction | null {
@@ -128,7 +147,7 @@ function PrettyCall({
                   <span className="font-normal">{input.type}</span>
                 </p>
                 <pre className="mt-1 overflow-auto whitespace-pre-wrap break-all font-mono">
-                  {json(call.args?.[argumentIndex])}
+                  {prettyArgument(call, argumentIndex)}
                 </pre>
               </div>
             ))}
@@ -163,8 +182,9 @@ function ReviewModal({
       ? "This signature authorizes the exact typed data and resulting calls below; it does not itself prove those calls have executed."
       : "These are the exact app-controlled fields your wallet will be asked to send. Wallet-selected nonce and network fees are not shown.");
 
-  // The review is the last thing opened before a wallet prompt, so the shared
-  // dialog shell puts it on top of whatever dialog started the transaction.
+  // The review is the last thing opened before a wallet prompt. Transaction
+  // starters close any summary dialog first, leaving this as the only active
+  // confirmation surface.
   return (
     <Dialog
       open
