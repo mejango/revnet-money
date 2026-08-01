@@ -197,7 +197,8 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   for (const name of secondaryActions) {
     const button = page.getByRole("button", { name, exact: true });
     await expect(button).toBeVisible();
-    await expect(button).toHaveClass(/bg-zinc-100/u);
+    await expect(button).toHaveClass(/border-melon-300/u);
+    await expect(button).toHaveClass(/bg-melon-25/u);
   }
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);

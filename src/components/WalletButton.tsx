@@ -450,7 +450,7 @@ export function WalletButton() {
         <span className="h-2 w-2 bg-teal-500" aria-hidden />
         <span>{ensName ?? formatEthAddress(address, { truncateTo: 4 })}</span>
         {formattedBalance ? (
-          <span className="hidden border-l border-zinc-200 pl-2 text-zinc-600 sm:inline">
+          <span className="hidden whitespace-nowrap border-l border-zinc-200 pl-2 text-zinc-600 sm:inline">
             {formattedBalance}
           </span>
         ) : null}

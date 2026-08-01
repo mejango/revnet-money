@@ -359,17 +359,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
       )}
 
       <div className="flex flex-wrap gap-2 mt-4">
-        {burnRows.length > 0 && (
-          <V6BurnTokensDialog rows={burnRows} tokenSymbol={tokenSymbol}>
-            <Button
-              variant="outline"
-              className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
-            >
-              Burn
-            </Button>
-          </V6BurnTokensDialog>
-        )}
-
         {hasErc20 && primaryNativeTerminal.data ? (
           <RedeemDialog projectId={projectId} tokenSymbol={tokenSymbol}>
             <Button
@@ -428,6 +417,12 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
             {showLiquidity ? "Hide liquidity controls" : "Manage market liquidity"}
           </Button>
         ) : null}
+
+        {burnRows.length > 0 && (
+          <V6BurnTokensDialog rows={burnRows} tokenSymbol={tokenSymbol}>
+            <Button variant="secondary">Burn</Button>
+          </V6BurnTokensDialog>
+        )}
       </div>
 
       {showLiquidity && pooledAmmStates.length > 0 ? (

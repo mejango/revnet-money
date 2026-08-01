@@ -163,7 +163,9 @@ describe("local wallet controls", () => {
     render(<WalletButton />);
 
     const account = await screen.findByRole("button", { name: /0x1234.*5678/i });
-    expect(account).toHaveTextContent("1.2346 ETH");
+    const nativeBalance = screen.getByText("1.2346 ETH");
+    expect(account).toContainElement(nativeBalance);
+    expect(nativeBalance).toHaveClass("whitespace-nowrap");
     fireEvent.click(account);
 
     expect(screen.getByText("Ethereum")).toBeVisible();

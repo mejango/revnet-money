@@ -54,7 +54,6 @@ export function V6AllCard() {
 
   // Aggregate each account's balance/volume across the chains it holds on.
   const participants = aggregateParticipants(participantsQuery.data);
-  const shownCount = Math.min(10, participants.length);
   const totalLabel = token?.data
     ? `${prettyNumber(
         formatUnits(totalOutstandingTokens, token.data.decimals, { fractionDigits: 1 }),
@@ -91,15 +90,14 @@ export function V6AllCard() {
               baseTokenSymbol={baseTokenSymbol}
               baseTokenDecimals={baseTokenDecimals}
               condensed
-              maxRows={10}
             />
           ) : null}
         </div>
       </div>
       {participants.length > 0 ? (
         <p className="mt-4 text-sm text-melon-700">
-          {participants.length} holder{participants.length === 1 ? "" : "s"} — showing the{" "}
-          {shownCount} largest, as shares of the balances tracked here
+          {participants.length} holder{participants.length === 1 ? "" : "s"} — ranked by balance, as
+          shares of the balances tracked here
         </p>
       ) : null}
     </div>
