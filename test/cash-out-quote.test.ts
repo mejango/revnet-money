@@ -23,7 +23,16 @@ describe("wallet-action:cash-out — contract-derived cash-out quote", () => {
     ).toMatch(/pool moved below your protected minimum/i);
   });
 
+  it("explains terminal minimum failures and ignores unrelated errors", () => {
+    expect(
+      cashOutExecutionErrorMessage(new Error("cashOutTokensOf reverted with signature 0x6b2bb382")),
+    ).toMatch(/project cash-out fell below your protected minimum/i);
+    expect(cashOutExecutionErrorMessage(new Error("wallet disconnected"))).toBeNull();
+  });
+
   it("reports the SDK buyback quote buffer in display basis points", () => {
+    expect(cashOutPoolBufferBps(undefined)).toBeNull();
+
     const route: CashOutRoute = {
       route: "amm",
       expectedReturn: 16_419_630n,

@@ -374,7 +374,7 @@ const SCAN_BATCH = 8;
 const SCAN_MAX_WINDOWS = 80; // ~3.6M blocks back before giving up
 const SCAN_REORG_OVERLAP = 128n;
 
-export interface PoolLiquidityRange {
+interface PoolLiquidityRange {
   tickLower: number;
   tickUpper: number;
   liquidity: bigint;
