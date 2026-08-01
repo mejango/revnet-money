@@ -10,7 +10,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
+import {
+  buildTransactionReviewPrompt,
+  type TransactionReviewRequest,
+} from "@/lib/transaction-review";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { useState } from "react";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
@@ -234,7 +239,7 @@ export function V6PayConfirmDialog({
                         </p>
                       )}
 
-                      <ol className="space-y-1 rounded border border-zinc-200 bg-white p-3 text-xs">
+                      <ol className="space-y-1 rounded border border-melon-200 bg-melon-50 p-3 text-xs">
                         {walletActionSteps(prepared).map((step, index) => (
                           <li key={step} className="flex items-center gap-2">
                             <span
@@ -348,9 +353,28 @@ function PreparedPaymentReview({
   projectTokenSymbol: string;
   beneficiary: Address | undefined;
 }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const request = action.request;
+  const destination = knownDestination(request.address, prepared);
+  const reviewRequest: TransactionReviewRequest = {
+    title: action.label,
+    calls: [
+      {
+        chainId: prepared.chainId,
+        to: request.address,
+        from: beneficiary,
+        value: request.value,
+        data: action.calldata,
+        abi: request.abi,
+        functionName: request.functionName,
+        args: request.args,
+        label: action.label,
+        contractName: destination.split(" | ")[0],
+      },
+    ],
+  };
   return (
-    <div className="rounded border border-zinc-200 bg-zinc-50 p-3 text-xs">
+    <div className="rounded border border-melon-200 bg-melon-50 p-3 text-xs">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="uppercase tracking-wide text-zinc-500">Exact wallet action</p>
@@ -362,7 +386,7 @@ function PreparedPaymentReview({
         <div>
           <dt className="text-zinc-500">Destination</dt>
           <dd className="mt-0.5 break-all text-zinc-800">
-            {knownDestination(request.address, prepared)}
+            {destination}
           </dd>
         </div>
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
@@ -375,7 +399,7 @@ function PreparedPaymentReview({
           {action.kind === "token-approval" ? (
             <>
               <dt className="text-zinc-500">Spender</dt>
-              <dd className="break-all text-right font-mono text-[10px] text-zinc-800">
+              <dd className="break-all text-right font-mono text-xs text-zinc-800">
                 {knownDestination(String(request.args[0]) as Address, prepared)}
               </dd>
             </>
@@ -383,11 +407,11 @@ function PreparedPaymentReview({
           {action.kind === "router-approval" ? (
             <>
               <dt className="text-zinc-500">Token</dt>
-              <dd className="break-all text-right font-mono text-[10px] text-zinc-800">
+              <dd className="break-all text-right font-mono text-xs text-zinc-800">
                 {String(request.args[0])}
               </dd>
               <dt className="text-zinc-500">Spender</dt>
-              <dd className="break-all text-right font-mono text-[10px] text-zinc-800">
+              <dd className="break-all text-right font-mono text-xs text-zinc-800">
                 {knownDestination(String(request.args[1]) as Address, prepared)}
               </dd>
               <dt className="text-zinc-500">Expires</dt>
@@ -407,7 +431,7 @@ function PreparedPaymentReview({
           {beneficiary && prepared.mode === "pay" && action.kind === "payment" ? (
             <>
               <dt className="text-zinc-500">Beneficiary</dt>
-              <dd className="break-all text-right font-mono text-[10px] text-zinc-800">
+              <dd className="break-all text-right font-mono text-xs text-zinc-800">
                 {beneficiary}
               </dd>
             </>
@@ -420,28 +444,49 @@ function PreparedPaymentReview({
           ) : null}
         </div>
       </dl>
-      <details className="mt-3 border-t border-zinc-200 pt-2">
+      <details className="mt-3 border-t border-melon-200 pt-2">
         <summary className="cursor-pointer select-none text-zinc-500">Show raw data</summary>
-        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all rounded bg-zinc-900 p-3 font-mono text-[10px] leading-relaxed text-zinc-100">
+        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all border border-melon-300 bg-melon-100 p-3 font-mono text-xs leading-relaxed text-melon-950">
           {preparedPaymentJson(prepared, action, chainLabel)}
         </pre>
       </details>
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          className="border border-melon-500 bg-melon-100 px-3 py-2 text-xs font-medium hover:bg-melon-200"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(buildTransactionReviewPrompt(reviewRequest));
+              setCopyState("copied");
+            } catch {
+              setCopyState("failed");
+            }
+            window.setTimeout(() => setCopyState("idle"), 2200);
+          }}
+        >
+          {copyState === "copied"
+            ? "Prompt copied — paste into your LLM"
+            : copyState === "failed"
+              ? "Could not copy prompt"
+              : "[copy tx audit prompt]"}
+        </button>
+      </div>
     </div>
   );
 }
 
 function knownDestination(address: Address, prepared: PreparedV6Pay | null): string {
   if (prepared?.directSwapRoute && address.toLowerCase() === prepared.request.address.toLowerCase()) {
-    return `Uniswap Universal Router · ${address}`;
+    return `Uniswap Universal Router | ${address}`;
   }
   if (prepared && address.toLowerCase() === prepared.token.token.toLowerCase()) {
-    return `${prepared.token.symbol} token · ${address}`;
+    return `${prepared.token.symbol} token | ${address}`;
   }
   if (prepared && address.toLowerCase() === prepared.terminal.toLowerCase()) {
-    return `${prepared.viaRouterRoute ? "Juicebox Router Terminal" : "Juicebox Multi Terminal"} · ${address}`;
+    return `${prepared.viaRouterRoute ? "Juicebox Router Terminal" : "Juicebox Multi Terminal"} | ${address}`;
   }
   if (address.toLowerCase() === "0x000000000022d473030f116ddee9f6b43ac78ba3") {
-    return `Permit2 · ${address}`;
+    return `Permit2 | ${address}`;
   }
   return address;
 }
@@ -479,7 +524,7 @@ function preparedPaymentJson(
     {
       chain: chainLabel,
       chainId: prepared.chainId,
-      contract: knownDestination(action.request.address, prepared).split(" · ")[0],
+      contract: knownDestination(action.request.address, prepared).split(" | ")[0],
       address: action.request.address,
       function: action.request.functionName,
       args: action.request.args,
