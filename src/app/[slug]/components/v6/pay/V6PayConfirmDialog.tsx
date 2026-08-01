@@ -14,7 +14,7 @@ import {
   buildTransactionReviewPrompt,
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { JB_CHAINS, USDC_ADDRESSES, JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
@@ -408,7 +408,7 @@ function PreparedPaymentReview({
             <>
               <dt className="text-zinc-500">Token</dt>
               <dd className="break-all text-right font-mono text-xs text-zinc-800">
-                {String(request.args[0])}
+                {knownTokenAddress(request.args[0], prepared.chainId)}
               </dd>
               <dt className="text-zinc-500">Spender</dt>
               <dd className="break-all text-right font-mono text-xs text-zinc-800">
@@ -489,6 +489,12 @@ function knownDestination(address: Address, prepared: PreparedV6Pay | null): str
     return `Permit2 | ${address}`;
   }
   return address;
+}
+
+function knownTokenAddress(value: unknown, chainId: JBChainId): string {
+  const address = typeof value === "string" ? value : String(value ?? "");
+  const name = USDC_ADDRESSES[chainId]?.toLowerCase() === address.toLowerCase() ? "USDC" : null;
+  return name ? `${name} | ${address}` : address;
 }
 
 function activeWalletAction(prepared: PreparedV6Pay, phase: V6PayPhase): PreparedV6WalletAction {
