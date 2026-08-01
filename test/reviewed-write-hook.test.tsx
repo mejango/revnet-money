@@ -142,6 +142,22 @@ describe("reviewed write hook", () => {
     );
   });
 
+  it("skips only the duplicate app review when a parent already showed the exact call", async () => {
+    const { hooks } = await freshHarness();
+    const reverify = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() =>
+      hooks.useWriteContract({ reviewedInParent: true, reverify }),
+    );
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    expect(reverify).toHaveBeenCalledOnce();
+    expect(mocks.simulateContract).toHaveBeenCalledOnce();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
   it("fails closed before simulation when reviewed state changes", async () => {
     const { review, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);

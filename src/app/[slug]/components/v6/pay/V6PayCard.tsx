@@ -108,8 +108,10 @@ export function V6PayCard() {
 
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId });
-  const { writeContractAsync } = useWriteContract();
-  const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId);
+  const { writeContractAsync } = useWriteContract({ reviewedInParent: true });
+  const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId, {
+    reviewedInParent: true,
+  });
 
   const projectToken = useJBTokenContext().token.data;
   const projectTokenLabel = projectToken?.symbol
@@ -595,6 +597,51 @@ export function V6PayCard() {
               amount: amountRaw,
             })
           : false;
+        const tokenApprovalNeeded = await needsApproval(
+          client,
+          selected.token,
+          address,
+          approvalSpender,
+          amountRaw,
+        );
+        const tokenApproval = tokenApprovalNeeded
+          ? {
+              kind: "token-approval" as const,
+              label: `Approve ${selected.symbol} access`,
+              request: {
+                address: selected.token,
+                abi: erc20Abi,
+                functionName: "approve",
+                args: [approvalSpender, amountRaw] as const,
+                value: 0n,
+              },
+              calldata: encodeFunctionData({
+                abi: erc20Abi,
+                functionName: "approve",
+                args: [approvalSpender, amountRaw],
+              }),
+            }
+          : null;
+        const routerExpiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+        const router = UNIVERSAL_ROUTER_BY_CHAIN[chainId];
+        const routerApproval = permit2Approval && router
+          ? {
+              kind: "router-approval" as const,
+              label: "Authorize the Uniswap swap router",
+              request: {
+                address: PERMIT2_ADDRESS,
+                abi: permit2Abi,
+                functionName: "approve",
+                args: [selected.token, router, amountRaw, routerExpiration] as const,
+                value: 0n,
+              },
+              calldata: encodeFunctionData({
+                abi: permit2Abi,
+                functionName: "approve",
+                args: [selected.token, router, amountRaw, routerExpiration],
+              }),
+            }
+          : null;
         next = {
           mode,
           chainId,
@@ -609,14 +656,10 @@ export function V6PayCard() {
             : freshPreview.beneficiaryTokenCount,
           reservedTokens: directSwap ? 0n : freshPreview.reservedTokenCount,
           minReturned,
-          needsApproval: await needsApproval(
-            client,
-            selected.token,
-            address,
-            approvalSpender,
-            amountRaw,
-          ),
+          needsApproval: tokenApprovalNeeded,
           needsPermit2Approval: permit2Approval,
+          tokenApproval,
+          routerApproval,
           cartRows,
           request: {
             address: request.address,
@@ -638,6 +681,13 @@ export function V6PayCard() {
         const terminal = jbContractAddress[6][JBCoreContracts.JBMultiTerminal][chainId];
         const args = [projectId, selected.token, amountRaw, false, memo.trim(), "0x"] as const;
         const value = isNativePayToken(selected.token) ? amountRaw : 0n;
+        const tokenApprovalNeeded = await needsApproval(
+          client,
+          selected.token,
+          address,
+          terminal,
+          amountRaw,
+        );
         next = {
           mode,
           chainId,
@@ -650,8 +700,27 @@ export function V6PayCard() {
           expectedTokens: null,
           reservedTokens: null,
           minReturned: 0n,
-          needsApproval: await needsApproval(client, selected.token, address, terminal, amountRaw),
+          needsApproval: tokenApprovalNeeded,
           needsPermit2Approval: false,
+          tokenApproval: tokenApprovalNeeded
+            ? {
+                kind: "token-approval",
+                label: `Approve ${selected.symbol} access`,
+                request: {
+                  address: selected.token,
+                  abi: erc20Abi,
+                  functionName: "approve",
+                  args: [terminal, amountRaw],
+                  value: 0n,
+                },
+                calldata: encodeFunctionData({
+                  abi: erc20Abi,
+                  functionName: "approve",
+                  args: [terminal, amountRaw],
+                }),
+              }
+            : null,
+          routerApproval: null,
           cartRows: [],
           request: {
             address: terminal,
@@ -696,10 +765,11 @@ export function V6PayCard() {
       // sibling still predates that approval, producing a false
       // Permit2.AllowanceExpired during the immediate swap simulation.
       let approvalBlock: bigint | undefined;
-      if (prepared.needsApproval) {
+      if (prepared.tokenApproval) {
         // Direct ERC-20 swaps approve canonical Permit2; terminal routes approve
         // the resolved terminal.
         setPhase("approving-token");
+        await nextUiPaint();
         const approvalHash = await ensureAllowance(
           prepared.token.token,
           prepared.directSwapRoute ? PERMIT2_ADDRESS : prepared.request.address,
@@ -710,21 +780,13 @@ export function V6PayCard() {
           approvalBlock = approvalReceipt.blockNumber;
         }
       }
-      if (
-        prepared.directSwapRoute &&
-        prepared.needsPermit2Approval &&
-        !isNativePayToken(prepared.token.token)
-      ) {
-        const router = UNIVERSAL_ROUTER_BY_CHAIN[prepared.chainId];
-        if (!router) throw new Error("The swap router is unavailable on this chain.");
+      if (prepared.routerApproval && !isNativePayToken(prepared.token.token)) {
+        const router = prepared.routerApproval.request.args[1] as Address;
         setPhase("approving-router");
-        const expiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+        await nextUiPaint();
         const approvalHash = await writeContractAsync({
           chainId: prepared.chainId,
-          address: PERMIT2_ADDRESS,
-          abi: permit2Abi,
-          functionName: "approve",
-          args: [prepared.token.token, router, prepared.amount, expiration],
+          ...prepared.routerApproval.request,
         });
         requireOnchainExecution(approvalHash, "Swap authorization");
         const approvalReceipt = await waitForReceiptWithRetry(
@@ -757,6 +819,7 @@ export function V6PayCard() {
         }
       }
       setPhase("simulating");
+      await nextUiPaint();
       await publicClient.simulateContract({
         address: prepared.request.address,
         abi: prepared.request.abi,
@@ -1283,4 +1346,10 @@ async function needsApproval(
     args: [owner, spender],
   });
   return allowance < amount;
+}
+
+function nextUiPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+  });
 }

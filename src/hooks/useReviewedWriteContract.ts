@@ -161,6 +161,13 @@ function followSubmission(
 
 type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] & {
   transactionReview?: TransactionReviewOptions;
+  /**
+   * The exact call is already visible in a parent confirmation dialog. This
+   * skips only the duplicate app review; duplicate detection, account checks,
+   * revalidation, simulation, wallet confirmation, and receipt tracking stay
+   * mandatory.
+   */
+  reviewedInParent?: boolean;
   reverify?: (
     variables: Parameters<ReturnType<typeof useWagmiWriteContract>["writeContractAsync"]>[0],
     account: Address,
@@ -172,7 +179,7 @@ export function useWriteContract(
 ): ReturnType<typeof useWagmiWriteContract> {
   const config = useConfig();
   const queryClient = useQueryClient();
-  const { transactionReview, reverify, ...wagmiOptions } = options ?? {};
+  const { transactionReview, reviewedInParent, reverify, ...wagmiOptions } = options ?? {};
   const mutation = useWagmiWriteContract(wagmiOptions);
 
   const writeContractAsync = useCallback(
@@ -207,29 +214,31 @@ export function useWriteContract(
       }
 
       const safe = isSafeConnection(config);
-      await requireContractTransactionReview(
-        {
-          chainId,
-          address: variables.address,
-          abi: variables.abi as Abi,
-          functionName,
-          args: variables.args,
-          value: variables.value,
-          account: before.address,
-        },
-        {
-          title: `Review ${functionName}`,
-          label: functionName,
-          ...transactionReview,
-          confirmLabel: safe
-            ? "Agree & propose to Safe"
-            : (transactionReview?.confirmLabel ?? "Agree & continue"),
-          description:
-            [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
-              .filter(Boolean)
-              .join("\n\n") || undefined,
-        },
-      );
+      if (!reviewedInParent) {
+        await requireContractTransactionReview(
+          {
+            chainId,
+            address: variables.address,
+            abi: variables.abi as Abi,
+            functionName,
+            args: variables.args,
+            value: variables.value,
+            account: before.address,
+          },
+          {
+            title: `Review ${functionName}`,
+            label: functionName,
+            ...transactionReview,
+            confirmLabel: safe
+              ? "Agree & propose to Safe"
+              : (transactionReview?.confirmLabel ?? "Agree & continue"),
+            description:
+              [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
+                .filter(Boolean)
+                .join("\n\n") || undefined,
+          },
+        );
+      }
 
       const reviewedAccount = getAccount(config).address;
       if (!reviewedAccount || reviewedAccount.toLowerCase() !== before.address.toLowerCase()) {
@@ -256,7 +265,7 @@ export function useWriteContract(
       followSubmission(config, hash, chainId, functionName, reviewedAccount, callKey);
       return hash;
     },
-    [config, mutation, reverify, transactionReview],
+    [config, mutation, reviewedInParent, reverify, transactionReview],
   );
 
   const writeContract = useCallback(
