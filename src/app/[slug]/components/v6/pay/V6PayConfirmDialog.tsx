@@ -260,6 +260,11 @@ export function V6PayConfirmDialog({
                         ))}
                       </ol>
 
+                      <p className="border border-peel-200 bg-peel-25 p-3 text-sm leading-relaxed text-peel-800">
+                        This is the exact wallet action that will be sent to your wallet. Review it
+                        before signing.
+                      </p>
+
                       <PreparedPaymentReview
                         prepared={prepared}
                         action={activeWalletAction(prepared, phase)}
@@ -375,74 +380,62 @@ function PreparedPaymentReview({
   };
   return (
     <div className="rounded border border-melon-200 bg-melon-50 p-3 text-xs">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="uppercase tracking-wide text-zinc-500">Exact wallet action</p>
-          <p className="mt-1 text-sm font-medium text-zinc-900">{action.label}</p>
-        </div>
-        <span className="text-zinc-500">{chainLabel}</span>
+      <div>
+        <p className="uppercase tracking-wide text-zinc-500">{chainLabel}</p>
+        <p className="mt-1 break-all text-zinc-600">{destination}</p>
+        <p className="mt-2 text-sm font-medium text-zinc-900">{action.label}</p>
       </div>
-      <dl className="mt-3 space-y-2">
-        <div>
-          <dt className="text-zinc-500">Destination</dt>
-          <dd className="mt-0.5 break-all text-zinc-800">
-            {destination}
-          </dd>
-        </div>
-        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-          <dt className="text-zinc-500">
-            {action.kind === "payment" ? "Amount in" : "Amount authorized"}
-          </dt>
-          <dd className="text-right text-zinc-800">
-            {formatPayAmount(prepared.amount, prepared.token.decimals)} {prepared.token.symbol}
-          </dd>
-          {action.kind === "token-approval" ? (
-            <>
-              <dt className="text-zinc-500">Spender</dt>
-              <dd className="break-all text-right font-mono text-xs text-zinc-800">
-                {knownDestination(String(request.args[0]) as Address, prepared)}
-              </dd>
-            </>
-          ) : null}
-          {action.kind === "router-approval" ? (
-            <>
-              <dt className="text-zinc-500">Token</dt>
-              <dd className="break-all text-right font-mono text-xs text-zinc-800">
-                {knownTokenAddress(request.args[0], prepared.chainId)}
-              </dd>
-              <dt className="text-zinc-500">Spender</dt>
-              <dd className="break-all text-right font-mono text-xs text-zinc-800">
-                {knownDestination(String(request.args[1]) as Address, prepared)}
-              </dd>
-              <dt className="text-zinc-500">Expires</dt>
-              <dd className="text-right text-zinc-800">
-                {new Date(Number(request.args[3]) * 1000).toLocaleString()}
-              </dd>
-            </>
-          ) : null}
-          {prepared.mode === "pay" && action.kind === "payment" ? (
-            <>
-              <dt className="text-zinc-500">Minimum received</dt>
-              <dd className="text-right text-zinc-800">
-                {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
-              </dd>
-            </>
-          ) : null}
-          {beneficiary && prepared.mode === "pay" && action.kind === "payment" ? (
-            <>
-              <dt className="text-zinc-500">Beneficiary</dt>
-              <dd className="break-all text-right font-mono text-xs text-zinc-800">
-                {beneficiary}
-              </dd>
-            </>
-          ) : null}
-          {prepared.memo && action.kind === "payment" ? (
-            <>
-              <dt className="text-zinc-500">Note</dt>
-              <dd className="text-right text-zinc-800">{prepared.memo}</dd>
-            </>
-          ) : null}
-        </div>
+      <dl className="mt-2 grid grid-cols-[max-content_minmax(0,1fr)] items-start gap-x-2 gap-y-1">
+        <dt className="text-zinc-500">
+          {action.kind === "payment" ? "Amount in:" : "Amount authorized:"}
+        </dt>
+        <dd className="text-zinc-800">
+          {formatPayAmount(prepared.amount, prepared.token.decimals)} {prepared.token.symbol}
+        </dd>
+        {action.kind === "token-approval" ? (
+          <>
+            <dt className="text-zinc-500">Spender:</dt>
+            <dd className="break-all font-mono text-xs text-zinc-800">
+              {knownDestination(String(request.args[0]) as Address, prepared)}
+            </dd>
+          </>
+        ) : null}
+        {action.kind === "router-approval" ? (
+          <>
+            <dt className="text-zinc-500">Token:</dt>
+            <dd className="break-all font-mono text-xs text-zinc-800">
+              {knownTokenAddress(request.args[0], prepared.chainId)}
+            </dd>
+            <dt className="text-zinc-500">Spender:</dt>
+            <dd className="break-all font-mono text-xs text-zinc-800">
+              {knownDestination(String(request.args[1]) as Address, prepared)}
+            </dd>
+            <dt className="text-zinc-500">Expires:</dt>
+            <dd className="text-zinc-800">
+              {new Date(Number(request.args[3]) * 1000).toLocaleString()}
+            </dd>
+          </>
+        ) : null}
+        {prepared.mode === "pay" && action.kind === "payment" ? (
+          <>
+            <dt className="text-zinc-500">Minimum received:</dt>
+            <dd className="text-zinc-800">
+              {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
+            </dd>
+          </>
+        ) : null}
+        {beneficiary && prepared.mode === "pay" && action.kind === "payment" ? (
+          <>
+            <dt className="text-zinc-500">Beneficiary:</dt>
+            <dd className="break-all font-mono text-xs text-zinc-800">{beneficiary}</dd>
+          </>
+        ) : null}
+        {prepared.memo && action.kind === "payment" ? (
+          <>
+            <dt className="text-zinc-500">Note:</dt>
+            <dd className="break-words text-zinc-800">{prepared.memo}</dd>
+          </>
+        ) : null}
       </dl>
       <details className="mt-3 border-t border-melon-200 pt-2">
         <summary className="cursor-pointer select-none text-zinc-500">Show raw data</summary>
