@@ -270,6 +270,14 @@ export type ActivityEventsQuery = {
         | (ActivityBase & { caller: string; operator: string; isRevnetOperator: boolean | null })
         | null;
       rulesetQueuedEvent: (ActivityBase & { caller: string; cycleNumber: number }) | null;
+      swapEvent:
+        | (ActivityBase & {
+            caller: string;
+            direction: string;
+            terminalTokenAmount: BigNumberish;
+            projectTokenAmount: BigNumberish;
+          })
+        | null;
       buybackPoolEvent: (ActivityBase & { caller: string }) | null;
     }>;
   };

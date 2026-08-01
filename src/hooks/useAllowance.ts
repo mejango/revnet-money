@@ -1,8 +1,8 @@
 "use client";
 
 import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
-import { useCallback, useState } from "react";
-import { erc20Abi } from "viem";
+import { useCallback, useRef, useState } from "react";
+import { erc20Abi, type Hex, type TransactionReceipt } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 
 export function useAllowance(chainId: number) {
@@ -10,6 +10,7 @@ export function useAllowance(chainId: number) {
   const publicClient = usePublicClient({ chainId });
   const { writeContractAsync } = useWriteContract();
   const [isApproving, setIsApproving] = useState(false);
+  const approvalReceipts = useRef(new Map<Hex, TransactionReceipt>());
 
   const ensureAllowance = useCallback(
     async (tokenAddress: `0x${string}`, spender: `0x${string}`, value: bigint) => {
@@ -39,6 +40,7 @@ export function useAllowance(chainId: number) {
         if (receipt.status !== "success") {
           throw new Error(`Token approval ${hash} reverted onchain.`);
         }
+        approvalReceipts.current.set(hash, receipt);
         return hash;
       } finally {
         setIsApproving(false);
@@ -47,5 +49,10 @@ export function useAllowance(chainId: number) {
     [address, chainId, publicClient, writeContractAsync],
   );
 
-  return { ensureAllowance, isApproving };
+  const getApprovalReceipt = useCallback(
+    (hash: Hex | null | undefined) => (hash ? approvalReceipts.current.get(hash) : undefined),
+    [],
+  );
+
+  return { ensureAllowance, getApprovalReceipt, isApproving };
 }

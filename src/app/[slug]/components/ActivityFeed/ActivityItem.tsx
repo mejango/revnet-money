@@ -21,6 +21,8 @@ type ActivityEventType =
   | "projectTransfer"
   | "operatorPermissionsSet"
   | "rulesetQueued"
+  | "swapBuy"
+  | "swapSell"
   | "buybackPool";
 
 export interface ActivityEvent {
@@ -60,6 +62,10 @@ function eventDescription(event: ActivityEvent, projectTokenSymbol: string): str
       return "updated permissions";
     case "rulesetQueued":
       return "queued a ruleset";
+    case "swapBuy":
+      return `bought ${event.tokenCount} ${projectTokenSymbol} via the buyback pool`;
+    case "swapSell":
+      return `sold ${event.tokenCount} ${projectTokenSymbol} via the buyback pool`;
     case "buybackPool":
       return "set the buyback pool";
   }
@@ -91,8 +97,8 @@ export function ActivityItemRow({
 
   const projectTokenSymbol = symbol ?? "tokens";
   const isPayEvent = event.type === "in";
-  const isInflow = isPayEvent || event.type === "addToBalance";
-  const isOutflow = event.type === "out";
+  const isInflow = isPayEvent || event.type === "addToBalance" || event.type === "swapBuy";
+  const isOutflow = event.type === "out" || event.type === "swapSell";
   const description = eventDescription(event, projectTokenSymbol);
 
   const handleShare = async () => {

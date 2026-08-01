@@ -56,6 +56,7 @@ function fromBranchItem(id: string, sub: Record<string, unknown>) {
     projectTransferEvent: null,
     operatorPermissionsSetEvent: null,
     rulesetQueuedEvent: null,
+    swapEvent: null,
     buybackPoolEvent: null,
     ...sub,
   };

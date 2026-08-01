@@ -1,6 +1,6 @@
 import type { ActivityEventsQuery } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
-import { formatDecimals } from "@/lib/number";
+import { formatDecimals, prettyNumber } from "@/lib/number";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
 import { Address, formatUnits } from "viem";
 import { formatUsd, usdFromScaled } from "../v6/extras/projectPayers";
@@ -239,6 +239,21 @@ export function mapActivityEvents(
         timestamp: e.timestamp,
         beneficiary: e.from as Address,
         chainId,
+      });
+    } else if (event.swapEvent) {
+      const e = event.swapEvent;
+      const isSell = e.direction.toLowerCase() === "sell";
+      events.push({
+        id: event.id,
+        type: isSell ? "swapSell" : "swapBuy",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        // PoolManager is the indexed caller; `from` is the payer/seller whose
+        // wallet should be attributed in the human activity feed.
+        beneficiary: e.from as Address,
+        chainId,
+        ...flowAmount(e.terminalTokenAmount),
+        tokenCount: prettyNumber(new JBProjectToken(BigInt(e.projectTokenAmount)).format(6)),
       });
     } else if (event.buybackPoolEvent) {
       const e = event.buybackPoolEvent;

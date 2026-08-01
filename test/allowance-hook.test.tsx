@@ -63,6 +63,7 @@ describe("wallet-action:allowance — allowance hook", () => {
 
   it("approves through the reviewed hook, enforces direct execution, and verifies the receipt", async () => {
     const order: string[] = [];
+    const receipt = { status: "success", blockNumber: 12_345n } as const;
     mocks.writeContractAsync.mockImplementation(async () => {
       order.push("write");
       return HASH;
@@ -70,7 +71,7 @@ describe("wallet-action:allowance — allowance hook", () => {
     mocks.requireOnchainExecution.mockImplementation(() => order.push("execution-boundary"));
     mocks.waitForTransactionReceipt.mockImplementation(async () => {
       order.push("receipt");
-      return { status: "success" };
+      return receipt;
     });
     const hooks = await freshHook();
     const { result } = renderHook(() => hooks.useAllowance(11155111));
@@ -90,6 +91,10 @@ describe("wallet-action:allowance — allowance hook", () => {
       }),
     );
     expect(order).toEqual(["write", "execution-boundary", "receipt"]);
+    expect(result.current.getApprovalReceipt(hash)).toEqual(receipt);
+    expect(result.current.getApprovalReceipt(null)).toBeUndefined();
+    expect(result.current.getApprovalReceipt(undefined)).toBeUndefined();
+    expect(result.current.getApprovalReceipt(`0x${"56".repeat(32)}`)).toBeUndefined();
     expect(result.current.isApproving).toBe(false);
   });
 

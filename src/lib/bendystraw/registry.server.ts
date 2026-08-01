@@ -85,6 +85,9 @@ const ACTIVITY_EVENT_FIELDS = `
     txHash timestamp from caller operator isRevnetOperator
   }
   rulesetQueuedEvent { txHash timestamp from caller cycleNumber }
+  swapEvent {
+    txHash timestamp from caller direction terminalTokenAmount projectTokenAmount
+  }
   buybackPoolEvent { txHash timestamp from caller }
 `;
 

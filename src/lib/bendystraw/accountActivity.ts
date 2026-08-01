@@ -12,6 +12,7 @@ const EMPTY_SUB_EVENTS = {
   projectTransferEvent: null,
   operatorPermissionsSetEvent: null,
   rulesetQueuedEvent: null,
+  swapEvent: null,
   buybackPoolEvent: null,
 } as const;
 

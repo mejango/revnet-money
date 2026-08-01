@@ -17,6 +17,7 @@ const EMPTY_EVENTS = {
   projectTransferEvent: null,
   operatorPermissionsSetEvent: null,
   rulesetQueuedEvent: null,
+  swapEvent: null,
   buybackPoolEvent: null,
 };
 
@@ -107,6 +108,36 @@ describe("mapActivityEvents", () => {
     }));
 
     expect(events.map((event) => event.id)).toEqual(["pay-1", "mint-2"]);
+  });
+
+  it("includes a buyback swap and attributes it to the payer, not PoolManager", () => {
+    const swap: ActivityEventItem = {
+      id: "swap-1",
+      chainId: 8453,
+      timestamp: 1_785_598_771,
+      txHash: "0xf20d5fb96401564562feca7e95f4eb055a1a3377b915dfc4b9bac6376c7a3ffb",
+      ...EMPTY_EVENTS,
+      swapEvent: {
+        txHash: "0xf20d5fb96401564562feca7e95f4eb055a1a3377b915dfc4b9bac6376c7a3ffb",
+        timestamp: 1_785_598_771,
+        direction: "buy",
+        terminalTokenAmount: "50000000",
+        projectTokenAmount: "468829854500197524612724",
+        caller: "0x498581ff718922c3f8e6a244956af099b2652b2b",
+        from: "0x823b92d6a4b2aed4b15675c7917c9f922ea8adad",
+      },
+    };
+
+    expect(mapActivityEvents([swap], () => ({ tokenSymbol: "USDC", decimals: 6 }))).toEqual([
+      expect.objectContaining({
+        id: "swap-1",
+        type: "swapBuy",
+        beneficiary: "0x823b92d6a4b2aed4b15675c7917c9f922ea8adad",
+        baseAmount: "50",
+        baseTokenSymbol: "USDC",
+        tokenCount: "469k",
+      }),
+    ]);
   });
 });
 

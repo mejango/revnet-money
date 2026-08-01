@@ -109,7 +109,7 @@ export function V6PayCard() {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId });
   const { writeContractAsync } = useWriteContract();
-  const { ensureAllowance } = useAllowance(chainId);
+  const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId);
   const { toast } = useToast();
 
   const projectToken = useJBTokenContext().token.data;
@@ -689,15 +689,24 @@ export function V6PayCard() {
     }
     setTxError(null);
     try {
+      // Keep the newest prerequisite block. Base RPC providers are load
+      // balanced: a receipt can be visible on one backend while `latest` on a
+      // sibling still predates that approval, producing a false
+      // Permit2.AllowanceExpired during the immediate swap simulation.
+      let approvalBlock: bigint | undefined;
       if (prepared.needsApproval) {
         // Direct ERC-20 swaps approve canonical Permit2; terminal routes approve
         // the resolved terminal.
         setPhase("approving");
-        await ensureAllowance(
+        const approvalHash = await ensureAllowance(
           prepared.token.token,
           prepared.directSwapRoute ? PERMIT2_ADDRESS : prepared.request.address,
           prepared.amount,
         );
+        const approvalReceipt = getApprovalReceipt(approvalHash);
+        if (approvalReceipt?.blockNumber !== undefined) {
+          approvalBlock = approvalReceipt.blockNumber;
+        }
       }
       if (
         prepared.directSwapRoute &&
@@ -722,6 +731,22 @@ export function V6PayCard() {
         if (approvalReceipt.status !== "success") {
           throw new Error(`Swap authorization ${approvalHash} reverted onchain.`);
         }
+        const [approvedAmount, approvedExpiration] = await publicClient.readContract({
+          address: PERMIT2_ADDRESS,
+          abi: permit2Abi,
+          functionName: "allowance",
+          args: [address, prepared.token.token, router],
+          blockNumber: approvalReceipt.blockNumber,
+        });
+        if (
+          approvedAmount < prepared.amount ||
+          approvedExpiration <= BigInt(Math.floor(Date.now() / 1000) + 1_800)
+        ) {
+          throw new Error("Swap authorization confirmed but did not grant the reviewed amount.");
+        }
+        if (approvalBlock === undefined || approvalReceipt.blockNumber > approvalBlock) {
+          approvalBlock = approvalReceipt.blockNumber;
+        }
       }
       setPhase("simulating");
       await publicClient.simulateContract({
@@ -731,6 +756,7 @@ export function V6PayCard() {
         args: prepared.request.args as unknown[],
         value: prepared.request.value,
         account: address,
+        blockNumber: approvalBlock,
       } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
       setPhase("signing");
       const hash = await writeContractAsync({
