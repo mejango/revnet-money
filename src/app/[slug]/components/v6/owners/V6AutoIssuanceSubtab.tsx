@@ -119,25 +119,25 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
       </p>
       <div className="mb-4 max-h-96 overflow-auto">
         <div className="flex flex-col">
-          <Table>
+          <Table className="min-w-max">
             <TableHeader>
               <TableRow>
-                <TableHead>Chain</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead>Account</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Unlock date</TableHead>
-                <TableHead>Distribute</TableHead>
+                <TableHead className="whitespace-nowrap">Chain</TableHead>
+                <TableHead className="whitespace-nowrap">Stage</TableHead>
+                <TableHead className="whitespace-nowrap">Account</TableHead>
+                <TableHead className="whitespace-nowrap">Amount</TableHead>
+                <TableHead className="whitespace-nowrap">Unlock date</TableHead>
+                <TableHead className="whitespace-nowrap">Distribute</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <ChainLogo chainId={row.chainId as JBChainId} standalone />
                   </TableCell>
-                  <TableCell>{row.stage ?? "—"}</TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">{row.stage ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <EthereumAddress
                       address={row.beneficiary as `0x${string}`}
                       chain={JB_CHAINS[row.chainId as JBChainId]?.chain}
@@ -146,13 +146,13 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
                       withEnsName
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums">
                     {commaNumber(formatUnits(BigInt(row.count), 18))} {tokenSymbol}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {row.startsAt ? formatShortDateTime(row.startsAt * 1000) : "—"}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {row.distributedTxn ? (
                       <div className="flex items-center gap-1 text-zinc-400">
                         <EtherscanLink

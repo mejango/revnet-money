@@ -18,6 +18,7 @@ import { useReclaimableSurplus } from "@/hooks/useReclaimableSurplus";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { formatShortDateTime } from "@/lib/date";
+import { netLoanProceeds } from "@/lib/feeHelpers";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
@@ -287,7 +288,12 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                 <TableHead>Chain</TableHead>
                 <TableHead className="text-right">Your balance</TableHead>
                 <TableHead className="text-right">Cash out value</TableHead>
-                <TableHead className="text-right">Max loan</TableHead>
+                <TableHead
+                  className="text-right"
+                  title="Estimated proceeds after the protocol, REV, and minimum source fees"
+                >
+                  Max loan
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -330,19 +336,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {locked ? (
-                      cashComplete && totalCashout > 0n ? (
-                        <CellWithSub main={fmtBase(totalCashout)} sub="locked" />
-                      ) : cashComplete ? (
-                        "Locked"
-                      ) : (
-                        "—"
-                      )
-                    ) : loanComplete ? (
-                      fmtBase(totalMaxLoan)
-                    ) : (
-                      "—"
-                    )}
+                    {locked ? "Locked" : loanComplete ? fmtBase(totalMaxLoan) : "—"}
                   </TableCell>
                 </TableRow>
               </TableFooter>
@@ -353,8 +347,9 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
       {locked && cashOutDelay != null && (
         <p className="text-sm text-zinc-500 mt-2">
-          Cash outs and loans unlock {formatShortDateTime(Number(cashOutDelay) * 1000)}. Locked
-          values estimate what you could redeem or borrow then.
+          Cash outs and loans unlock {formatShortDateTime(Number(cashOutDelay) * 1000)}. The cash
+          out value estimates what you could redeem then; net loan proceeds appear once loans
+          unlock.
         </p>
       )}
 
@@ -511,13 +506,15 @@ function YouChainRow({
 
   // v6 borrowableAmountFrom returns a (borrowableNow, capacity) tuple; the hook
   // returns borrowableNow. Reads 0 while the cash out delay is active.
-  const { data: maxLoan } = useBorrowableAmountFrom({
+  const { data: grossMaxLoan } = useBorrowableAmountFrom({
     address: getRevnetLoanContract(6, chainId),
     chainId,
     args: config
       ? [chainProjectId, balanceValue, BigInt(config.decimals), BigInt(config.currency)]
       : undefined,
   });
+
+  const maxLoan = grossMaxLoan === undefined ? undefined : netLoanProceeds(grossMaxLoan);
 
   useEffect(() => {
     onQuote(chainId, { cashout, maxLoan });
@@ -529,11 +526,9 @@ function YouChainRow({
   const loanCell = () => {
     if (maxLoan === undefined) return "—";
     if (maxLoan > 0n) return fmtBase(maxLoan);
-    // While locked, the would-be loan capacity ≈ the cash out value (same
-    // bonding-curve reclaim, in the accounting token).
-    if (locked && cashout != null && cashout > 0n) {
-      return <CellWithSub main={fmtBase(cashout)} sub="locked" />;
-    }
+    // `borrowableAmountFrom` deliberately returns 0 while loans are locked.
+    // Do not substitute the cash-out quote: it does not include the same fee
+    // path, so it cannot honestly describe net loan proceeds.
     return locked ? "Locked" : fmtBase(0n);
   };
 

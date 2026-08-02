@@ -86,6 +86,23 @@ export function applyNanaFee(reclaimableAmount: bigint) {
 }
 
 /**
+ * What a borrower receives from a new loan at the minimum source fee.
+ *
+ * `REVLoans` first withdraws the gross borrow through `JBMultiTerminal`, which
+ * takes the standard 2.5% protocol fee (`gross / 40`). It then takes the 1%
+ * REV fee and the selected source fee, both from the original gross amount.
+ * Owner summaries use the on-chain minimum source fee of 2.5% so their "Max
+ * loan" value describes spendable proceeds rather than principal owed.
+ */
+export function netLoanProceeds(grossBorrowAmount: bigint, prepaidSourceFeePercent = 25n): bigint {
+  const protocolFee = grossBorrowAmount / 40n;
+  const revFee = (grossBorrowAmount * 10n) / 1000n;
+  const sourceFee = (grossBorrowAmount * prepaidSourceFeePercent) / 1000n;
+  const fees = protocolFee + revFee + sourceFee;
+  return grossBorrowAmount > fees ? grossBorrowAmount - fees : 0n;
+}
+
+/**
  * Net cash-out value after the protocol fee, mirroring
  * `JBMultiTerminal._cashOutTokensOf`: a nonzero cash-out tax makes the whole
  * reclaim feeable; a zero tax charges the fee only up to `feeFreeSurplusOf`.

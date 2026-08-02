@@ -1,7 +1,7 @@
 import type { Ruleset } from "@/app/[slug]/terms/getRulesets";
 import { resolveProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { isUsd, toBaseCurrencyId } from "@/lib/currency";
-import { applyNanaFee, applyRevFee, generateFeeData } from "@/lib/feeHelpers";
+import { applyNanaFee, applyRevFee, generateFeeData, netLoanProceeds } from "@/lib/feeHelpers";
 import { calculatePriceAtTimestamp } from "@/lib/issuancePrice";
 import { getUnitValue } from "@/lib/reclaimableSurplus";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
@@ -16,6 +16,11 @@ describe("contract-derived monetary display math", () => {
     expect(applyRevFee(10_000n)).toBe(9_750n);
     expect(applyNanaFee(10_000n)).toBe(9_750n);
     expect(applyRevFee(1n)).toBe(0n);
+  });
+
+  it("shows minimum-fee loan proceeds instead of gross principal", () => {
+    expect(netLoanProceeds(1_000_000n)).toBe(940_000n);
+    expect(netLoanProceeds(4_001n)).toBe(3_761n);
   });
 
   it("derives issuance price after complete ruleset cycles", () => {
