@@ -51,7 +51,8 @@ export function registerTransactionReviewHandler(next: ReviewHandler): () => voi
 }
 
 async function requestTransactionReview(request: TransactionReviewRequest): Promise<boolean> {
-  if (!request.calls.length) throw new Error("There is no transaction to review.");
+  if (!request.calls.length && !request.authorization)
+    throw new Error("There is no transaction to review.");
   const handler = handlers[handlers.length - 1];
   if (!handler) {
     throw new Error("Transaction review is unavailable. Reload the page before continuing.");
@@ -116,7 +117,11 @@ export function transactionReviewJson(request: TransactionReviewRequest): string
   }));
   const resultingCall = transactions.length === 1 ? transactions[0] : { transactions };
   return JSON.stringify(
-    request.authorization ? { authorization: request.authorization, resultingCall } : resultingCall,
+    request.authorization
+      ? transactions.length > 0
+        ? { authorization: request.authorization, resultingCall }
+        : { authorization: request.authorization }
+      : resultingCall,
     (_, value) => (typeof value === "bigint" ? value.toString() : value),
     2,
   );

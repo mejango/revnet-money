@@ -9,12 +9,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
+import {
+  PERMIT2_ADDRESS,
+  permit2TypedData,
+  type Permit2SignatureAuthorization,
+} from "@/lib/directPaySwap";
 import {
   buildTransactionReviewPrompt,
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
-import { JB_CHAINS, USDC_ADDRESSES, JBChainId } from "@bananapus/nana-sdk-core";
+import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
+import { JB_CHAINS, JBChainId, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
@@ -31,7 +36,7 @@ export type V6PayPhase =
   | "safe-proposed"
   | "success";
 
-export interface PreparedV6WalletAction {
+export interface PreparedV6TransactionAction {
   kind: "token-approval" | "router-approval" | "payment";
   label: string;
   request: {
@@ -43,6 +48,14 @@ export interface PreparedV6WalletAction {
   };
   calldata: Hex;
 }
+
+export interface PreparedV6SignatureAction {
+  kind: "router-signature";
+  label: string;
+  authorization: Permit2SignatureAuthorization;
+}
+
+export type PreparedV6WalletAction = PreparedV6TransactionAction | PreparedV6SignatureAction;
 
 /** A fully resolved, encodable pay/add-to-balance transaction. */
 export interface PreparedV6Pay {
@@ -62,8 +75,11 @@ export interface PreparedV6Pay {
   minReturned: bigint;
   needsApproval: boolean;
   needsPermit2Approval: boolean;
-  tokenApproval: PreparedV6WalletAction | null;
-  routerApproval: PreparedV6WalletAction | null;
+  tokenApprovalComplete: boolean;
+  routerAuthorizationComplete: boolean;
+  tokenApproval: PreparedV6TransactionAction | null;
+  routerApproval: PreparedV6TransactionAction | null;
+  routerSignature: PreparedV6SignatureAction | null;
   cartRows: { tierId: number; quantity: number; name: string }[];
   request: {
     address: Address;
@@ -77,8 +93,10 @@ export interface PreparedV6Pay {
 
 const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "safe-proposed" | "success">, string> = {
   preparing: "Getting a fresh quote…",
-  "approving-token": "Confirm token access in your wallet. The payment will continue automatically…",
-  "approving-router": "Confirm the swap-router authorization in your wallet. The payment will continue automatically…",
+  "approving-token":
+    "Confirm token access in your wallet. The payment will continue automatically…",
+  "approving-router":
+    "Sign or confirm the swap-router authorization in your wallet. The payment will continue automatically…",
   simulating: "Simulating the transaction…",
   signing: "Confirm in your wallet…",
   pending: "Transaction submitted, awaiting confirmation…",
@@ -230,12 +248,13 @@ export function V6PayConfirmDialog({
                       {prepared.memo ? <SummaryRow label="Note">{prepared.memo}</SummaryRow> : null}
                       {prepared.needsApproval || prepared.needsPermit2Approval ? (
                         <p className="text-xs text-zinc-500">
-                          Your wallet will ask for {walletActionCount(prepared)} actions. This dialog
-                          stays open and advances through each one.
+                          Your wallet will ask for {walletActionCount(prepared)} actions. This
+                          dialog stays open and advances through each one.
                         </p>
                       ) : (
                         <p className="text-xs text-zinc-500">
-                          Your wallet will ask for one action to execute this {prepared.mode === "pay" ? "payment" : "balance addition"}.
+                          Your wallet will ask for one action to execute this{" "}
+                          {prepared.mode === "pay" ? "payment" : "balance addition"}.
                         </p>
                       )}
 
@@ -253,7 +272,13 @@ export function V6PayConfirmDialog({
                             >
                               {activeStepIndex(prepared, phase) > index ? "✓" : index + 1}
                             </span>
-                            <span className={activeStepIndex(prepared, phase) === index ? "font-medium text-zinc-900" : "text-zinc-500"}>
+                            <span
+                              className={
+                                activeStepIndex(prepared, phase) === index
+                                  ? "font-medium text-zinc-900"
+                                  : "text-zinc-500"
+                              }
+                            >
                               {step}
                             </span>
                           </li>
@@ -320,7 +345,11 @@ function walletActionSteps(prepared: PreparedV6Pay): string[] {
     steps.push(`Approve ${prepared.token.symbol} access`);
   }
   if (prepared.needsPermit2Approval) {
-    steps.push("Authorize the Uniswap swap router");
+    steps.push(
+      prepared.routerSignature
+        ? "Sign the swap authorization"
+        : "Authorize the Uniswap swap router",
+    );
   }
   steps.push(
     prepared.mode === "pay"
@@ -342,7 +371,11 @@ function activeStepIndex(prepared: PreparedV6Pay, phase: V6PayPhase): number {
   if (phase === "approving-router") return prepared.needsApproval ? 1 : 0;
   if (phase === "simulating" || phase === "signing" || phase === "pending") return steps.length - 1;
   if (phase === "success") return steps.length;
-  return 0;
+  if (prepared.needsApproval && !prepared.tokenApprovalComplete) return 0;
+  if (prepared.needsPermit2Approval && !prepared.routerAuthorizationComplete) {
+    return prepared.needsApproval ? 1 : 0;
+  }
+  return steps.length - 1;
 }
 
 function PreparedPaymentReview({
@@ -359,6 +392,15 @@ function PreparedPaymentReview({
   beneficiary: Address | undefined;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  if (action.kind === "router-signature") {
+    return (
+      <Permit2SignatureReview
+        action={action}
+        chainLabel={chainLabel}
+        amount={`${formatPayAmount(prepared.amount, prepared.token.decimals)} ${prepared.token.symbol}`}
+      />
+    );
+  }
   const request = action.request;
   const destination = knownDestination(request.address, prepared);
   const reviewRequest: TransactionReviewRequest = {
@@ -435,9 +477,7 @@ function PreparedPaymentReview({
         {beneficiary && prepared.mode === "pay" && action.kind === "payment" ? (
           <div className="flex items-start gap-1">
             <dt className="shrink-0 text-zinc-500">Beneficiary:</dt>
-            <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">
-              {beneficiary}
-            </dd>
+            <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">{beneficiary}</dd>
           </div>
         ) : null}
         {prepared.memo && action.kind === "payment" ? (
@@ -478,8 +518,100 @@ function PreparedPaymentReview({
   );
 }
 
+function Permit2SignatureReview({
+  action,
+  chainLabel,
+  amount,
+}: {
+  action: PreparedV6SignatureAction;
+  chainLabel: string;
+  amount: string;
+}) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const typedData = permit2TypedData(action.authorization);
+  const reviewRequest: TransactionReviewRequest = {
+    title: action.label,
+    calls: [],
+    kind: "authorization",
+    authorization: typedData,
+  };
+  return (
+    <div className="rounded border border-melon-200 bg-melon-50 p-3 text-xs">
+      <div>
+        <p className="uppercase tracking-wide text-zinc-500">{chainLabel}</p>
+        <p className="mt-1 break-all text-zinc-600">Permit2 | {PERMIT2_ADDRESS}</p>
+        <p className="mt-2 text-sm font-medium text-zinc-900">{action.label}</p>
+      </div>
+      <dl className="mt-2 space-y-1">
+        <div className="flex items-start gap-1">
+          <dt className="shrink-0 text-zinc-500">Token:</dt>
+          <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">
+            {knownTokenAddress(action.authorization.token, action.authorization.chainId)}
+          </dd>
+        </div>
+        <div className="flex items-start gap-1">
+          <dt className="shrink-0 text-zinc-500">Spender:</dt>
+          <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">
+            Uniswap Universal Router | {action.authorization.spender}
+          </dd>
+        </div>
+        <div className="flex items-start gap-1">
+          <dt className="shrink-0 text-zinc-500">Amount:</dt>
+          <dd className="min-w-0 text-zinc-800">{amount}</dd>
+        </div>
+        <div className="flex items-start gap-1">
+          <dt className="shrink-0 text-zinc-500">Expires:</dt>
+          <dd className="min-w-0 text-zinc-800">
+            {new Date(action.authorization.expiration * 1000).toLocaleString()}
+          </dd>
+        </div>
+        <div className="flex items-start gap-1">
+          <dt className="shrink-0 text-zinc-500">Gas:</dt>
+          <dd className="min-w-0 text-zinc-800">
+            No transaction fee — this is an EIP-712 signature
+          </dd>
+        </div>
+      </dl>
+      <details className="mt-3 border-t border-melon-200 pt-2">
+        <summary className="cursor-pointer select-none text-zinc-500">Show raw data</summary>
+        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all border border-melon-300 bg-melon-100 p-3 font-mono text-xs leading-relaxed text-melon-950">
+          {JSON.stringify(
+            typedData,
+            (_, value) => (typeof value === "bigint" ? value.toString() : value),
+            2,
+          )}
+        </pre>
+      </details>
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          className="border border-melon-500 bg-melon-100 px-3 py-2 text-xs font-medium hover:bg-melon-200"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(buildTransactionReviewPrompt(reviewRequest));
+              setCopyState("copied");
+            } catch {
+              setCopyState("failed");
+            }
+            window.setTimeout(() => setCopyState("idle"), 2200);
+          }}
+        >
+          {copyState === "copied"
+            ? "Prompt copied — paste into your LLM"
+            : copyState === "failed"
+              ? "Could not copy prompt"
+              : "[copy tx audit prompt]"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function knownDestination(address: Address, prepared: PreparedV6Pay | null): string {
-  if (prepared?.directSwapRoute && address.toLowerCase() === prepared.request.address.toLowerCase()) {
+  if (
+    prepared?.directSwapRoute &&
+    address.toLowerCase() === prepared.request.address.toLowerCase()
+  ) {
     return `Uniswap Universal Router | ${address}`;
   }
   if (prepared && address.toLowerCase() === prepared.token.token.toLowerCase()) {
@@ -501,17 +633,35 @@ function knownTokenAddress(value: unknown, chainId: JBChainId): string {
 }
 
 function activeWalletAction(prepared: PreparedV6Pay, phase: V6PayPhase): PreparedV6WalletAction {
-  if ((phase === "ready" || phase === "approving-token") && prepared.tokenApproval) {
+  if (
+    (phase === "ready" || phase === "approving-token") &&
+    prepared.tokenApproval &&
+    !prepared.tokenApprovalComplete
+  ) {
     return prepared.tokenApproval;
   }
   if (
     (phase === "ready" || phase === "approving-router") &&
-    !prepared.tokenApproval &&
-    prepared.routerApproval
+    (!prepared.tokenApproval || prepared.tokenApprovalComplete) &&
+    !prepared.routerAuthorizationComplete &&
+    (prepared.routerSignature || prepared.routerApproval)
+  ) {
+    return prepared.routerSignature ?? prepared.routerApproval!;
+  }
+  if (
+    phase === "approving-router" &&
+    prepared.routerSignature &&
+    !prepared.routerAuthorizationComplete
+  ) {
+    return prepared.routerSignature;
+  }
+  if (
+    phase === "approving-router" &&
+    prepared.routerApproval &&
+    !prepared.routerAuthorizationComplete
   ) {
     return prepared.routerApproval;
   }
-  if (phase === "approving-router" && prepared.routerApproval) return prepared.routerApproval;
   return {
     kind: "payment",
     label: prepared.directSwapRoute
@@ -526,7 +676,7 @@ function activeWalletAction(prepared: PreparedV6Pay, phase: V6PayPhase): Prepare
 
 function preparedPaymentJson(
   prepared: PreparedV6Pay,
-  action: PreparedV6WalletAction,
+  action: PreparedV6TransactionAction,
   chainLabel: string,
 ): string {
   return JSON.stringify(

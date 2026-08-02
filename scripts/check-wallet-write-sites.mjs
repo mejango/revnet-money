@@ -33,6 +33,12 @@ const reviewedHookModules = {
       bindings: { signSafeTransactionAsync: "reviewed-safe-signature" },
     },
   },
+  "@/hooks/useReviewedPermit2Signature": {
+    useReviewedPermit2Signature: {
+      hookKind: "reviewed-permit2-signature-hook",
+      bindings: { signPermit2Async: "reviewed-permit2-signature" },
+    },
+  },
 };
 
 const rawWalletImports = {
@@ -99,7 +105,11 @@ const rawRpcPattern =
   /^(?:eth_send|eth_sign|personal_sign$|wallet_sendCalls|wallet_sendTransaction)/i;
 const allowedRawBoundary = {
   write: "src/hooks/useReviewedWriteContract.ts",
-  sendOrSign: ["src/hooks/useReviewedRelayr.ts", "src/hooks/useReviewedSafeSignature.ts"],
+  sendOrSign: [
+    "src/hooks/useReviewedRelayr.ts",
+    "src/hooks/useReviewedSafeSignature.ts",
+    "src/hooks/useReviewedPermit2Signature.ts",
+  ],
 };
 
 function sourceFiles(directory) {

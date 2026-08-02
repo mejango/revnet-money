@@ -97,6 +97,33 @@
       ]
     },
     {
+      "id": "permit2-signature",
+      "label": "Reviewed Permit2 swap-signature boundary",
+      "sites": [
+        [
+          "raw-wallet-import",
+          "src/hooks/useReviewedPermit2Signature.ts",
+          "<module>",
+          "wagmi:useSignTypedData",
+          1
+        ],
+        [
+          "raw-wallet-call",
+          "src/hooks/useReviewedPermit2Signature.ts",
+          "signPermit2Async",
+          "signTypedDataAsync",
+          1
+        ],
+        [
+          "raw-wallet-hook",
+          "src/hooks/useReviewedPermit2Signature.ts",
+          "useReviewedPermit2Signature",
+          "useSignTypedData",
+          1
+        ]
+      ]
+    },
+    {
       "id": "create",
       "label": "Revnet creation",
       "sites": [
@@ -130,6 +157,20 @@
       "id": "pay-allowance",
       "label": "Pay, add-balance, and token allowance",
       "sites": [
+        [
+          "reviewed-permit2-signature",
+          "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
+          "confirm",
+          "signPermit2Async",
+          1
+        ],
+        [
+          "reviewed-permit2-signature-hook",
+          "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
+          "V6PayCard",
+          "useReviewedPermit2Signature",
+          1
+        ],
         [
           "reviewed-write",
           "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
@@ -598,6 +639,12 @@
       "risk": "boundary",
       "files": ["src/hooks/useReviewedSafeSignature.ts"],
       "tests": ["test/reviewed-safe-signature.test.tsx"]
+    },
+    {
+      "id": "permit2-signature-boundary",
+      "risk": "boundary",
+      "files": ["src/hooks/useReviewedPermit2Signature.ts"],
+      "tests": ["test/reviewed-permit2-signature.test.tsx"]
     },
     {
       "id": "create-revnet",

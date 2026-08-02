@@ -4,6 +4,7 @@ import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAllowance } from "@/hooks/useAllowance";
+import { useReviewedPermit2Signature } from "@/hooks/useReviewedPermit2Signature";
 import {
   isSafeProposalPendingError,
   requireOnchainExecution,
@@ -13,10 +14,12 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import {
+  addPermit2SignatureToDirectPaySwap,
   buildDirectPaySwapTx,
-  needsPermit2Approval,
   PERMIT2_ADDRESS,
   permit2Abi,
+  type Permit2SignatureAuthorization,
+  permit2SignatureNeedsOnchainFallback,
   quoteDirectPaySwap,
   UNIVERSAL_ROUTER_BY_CHAIN,
 } from "@/lib/directPaySwap";
@@ -25,7 +28,6 @@ import { useSuckers } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
 import { minReturnedTokens } from "@/lib/quote";
 import { Token } from "@/lib/token";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import {
   formatPayAmount,
@@ -34,6 +36,7 @@ import {
   payTokenKey,
   V6PayMode,
 } from "@/lib/v6/pay";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
   JB_CHAINS,
   JBChainId,
@@ -76,7 +79,12 @@ import {
   usePayShopRoutes,
 } from "./usePayShop";
 import { usePaySurface } from "./usePaySurface";
-import { PreparedV6Pay, V6PayConfirmDialog, V6PayPhase } from "./V6PayConfirmDialog";
+import {
+  PreparedV6Pay,
+  type PreparedV6TransactionAction,
+  V6PayConfirmDialog,
+  V6PayPhase,
+} from "./V6PayConfirmDialog";
 import { V6PayShopStrip } from "./V6PayShopStrip";
 
 function payChainName(chainId: JBChainId): string {
@@ -109,6 +117,7 @@ export function V6PayCard() {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId });
   const { writeContractAsync } = useWriteContract({ reviewedInParent: true });
+  const { signPermit2Async } = useReviewedPermit2Signature({ reviewedInParent: true });
   const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId, {
     reviewedInParent: true,
   });
@@ -588,15 +597,22 @@ export function V6PayCard() {
             ? jbRouterTerminalRegistryAbi
             : jbMultiTerminalAbi;
         const approvalSpender = directSwap ? PERMIT2_ADDRESS : terminal;
-        const permit2Approval = directSwap
-          ? await needsPermit2Approval({
-              client,
-              chainId,
-              owner: address,
-              token: selected.token,
-              amount: amountRaw,
-            })
-          : false;
+        const router = UNIVERSAL_ROUTER_BY_CHAIN[chainId];
+        const permit2State =
+          directSwap && router
+            ? await client.readContract({
+                address: PERMIT2_ADDRESS,
+                abi: permit2Abi,
+                functionName: "allowance",
+                args: [address, selected.token, router],
+              })
+            : null;
+        const permit2Approval =
+          !!directSwap &&
+          !!router &&
+          (!permit2State ||
+            permit2State[0] < amountRaw ||
+            Number(permit2State[1]) <= Math.floor(Date.now() / 1000) + 1_800);
         const tokenApprovalNeeded = await needsApproval(
           client,
           selected.token,
@@ -622,26 +638,59 @@ export function V6PayCard() {
               }),
             }
           : null;
-        const routerExpiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
-        const router = UNIVERSAL_ROUTER_BY_CHAIN[chainId];
-        const routerApproval = permit2Approval && router
-          ? {
-              kind: "router-approval" as const,
-              label: "Authorize the Uniswap swap router",
-              request: {
-                address: PERMIT2_ADDRESS,
-                abi: permit2Abi,
-                functionName: "approve",
-                args: [selected.token, router, amountRaw, routerExpiration] as const,
-                value: 0n,
-              },
-              calldata: encodeFunctionData({
-                abi: permit2Abi,
-                functionName: "approve",
-                args: [selected.token, router, amountRaw, routerExpiration],
-              }),
-            }
-          : null;
+        const now = Math.floor(Date.now() / 1000);
+        const walletBytecode = permit2Approval
+          ? await client.getBytecode({ address }).catch(() => "0x01" as Hex)
+          : undefined;
+        const routerAuthorization: Permit2SignatureAuthorization | null =
+          permit2Approval && router
+            ? {
+                chainId,
+                token: selected.token,
+                spender: router,
+                amount: amountRaw,
+                expiration: now + 1_800,
+                nonce: Number(permit2State?.[2] ?? 0),
+                sigDeadline: BigInt(now + 1_800),
+              }
+            : null;
+        const routerSignature =
+          routerAuthorization && !walletBytecode
+            ? {
+                kind: "router-signature" as const,
+                label: "Sign the swap authorization",
+                authorization: routerAuthorization,
+              }
+            : null;
+        const routerApproval =
+          routerAuthorization && !routerSignature
+            ? {
+                kind: "router-approval" as const,
+                label: "Authorize the Uniswap swap router",
+                request: {
+                  address: PERMIT2_ADDRESS,
+                  abi: permit2Abi,
+                  functionName: "approve",
+                  args: [
+                    selected.token,
+                    routerAuthorization.spender,
+                    amountRaw,
+                    now + 30 * 24 * 60 * 60,
+                  ] as const,
+                  value: 0n,
+                },
+                calldata: encodeFunctionData({
+                  abi: permit2Abi,
+                  functionName: "approve",
+                  args: [
+                    selected.token,
+                    routerAuthorization.spender,
+                    amountRaw,
+                    now + 30 * 24 * 60 * 60,
+                  ],
+                }),
+              }
+            : null;
         next = {
           mode,
           chainId,
@@ -658,8 +707,11 @@ export function V6PayCard() {
           minReturned,
           needsApproval: tokenApprovalNeeded,
           needsPermit2Approval: permit2Approval,
+          tokenApprovalComplete: false,
+          routerAuthorizationComplete: false,
           tokenApproval,
           routerApproval,
+          routerSignature,
           cartRows,
           request: {
             address: request.address,
@@ -702,6 +754,8 @@ export function V6PayCard() {
           minReturned: 0n,
           needsApproval: tokenApprovalNeeded,
           needsPermit2Approval: false,
+          tokenApprovalComplete: false,
+          routerAuthorizationComplete: false,
           tokenApproval: tokenApprovalNeeded
             ? {
                 kind: "token-approval",
@@ -721,6 +775,7 @@ export function V6PayCard() {
               }
             : null,
           routerApproval: null,
+          routerSignature: null,
           cartRows: [],
           request: {
             address: terminal,
@@ -765,7 +820,8 @@ export function V6PayCard() {
       // sibling still predates that approval, producing a false
       // Permit2.AllowanceExpired during the immediate swap simulation.
       let approvalBlock: bigint | undefined;
-      if (prepared.tokenApproval) {
+      let paymentRequest = prepared.request;
+      if (prepared.tokenApproval && !prepared.tokenApprovalComplete) {
         // Direct ERC-20 swaps approve canonical Permit2; terminal routes approve
         // the resolved terminal.
         setPhase("approving-token");
@@ -779,14 +835,97 @@ export function V6PayCard() {
         if (approvalReceipt?.blockNumber !== undefined) {
           approvalBlock = approvalReceipt.blockNumber;
         }
+        setPrepared((current) => (current ? { ...current, tokenApprovalComplete: true } : current));
       }
-      if (prepared.routerApproval && !isNativePayToken(prepared.token.token)) {
-        const router = prepared.routerApproval.request.args[1] as Address;
+      let routerApproval = prepared.routerApproval;
+      if (
+        prepared.routerSignature &&
+        !prepared.routerAuthorizationComplete &&
+        !isNativePayToken(prepared.token.token)
+      ) {
+        setPhase("approving-router");
+        await nextUiPaint();
+        try {
+          const signature = await signPermit2Async({
+            expectedAccount: address,
+            authorization: prepared.routerSignature.authorization,
+          });
+          const signedRequest = addPermit2SignatureToDirectPaySwap(
+            prepared.request as ReturnType<typeof buildDirectPaySwapTx>,
+            prepared.routerSignature.authorization,
+            signature,
+          );
+          paymentRequest = {
+            address: signedRequest.address,
+            abi: signedRequest.abi,
+            functionName: signedRequest.functionName,
+            args: signedRequest.args,
+            value: signedRequest.value,
+          };
+          setPrepared((current) =>
+            current
+              ? {
+                  ...current,
+                  routerAuthorizationComplete: true,
+                  request: paymentRequest,
+                  calldata: encodeFunctionData({
+                    abi: paymentRequest.abi,
+                    functionName: paymentRequest.functionName,
+                    args: paymentRequest.args,
+                  }),
+                }
+              : current,
+          );
+        } catch (reason) {
+          if (!permit2SignatureNeedsOnchainFallback(reason)) throw reason;
+          const authorization = prepared.routerSignature.authorization;
+          const expiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+          routerApproval = {
+            kind: "router-approval",
+            label: "Authorize the Uniswap swap router",
+            request: {
+              address: PERMIT2_ADDRESS,
+              abi: permit2Abi,
+              functionName: "approve",
+              args: [authorization.token, authorization.spender, authorization.amount, expiration],
+              value: 0n,
+            },
+            calldata: encodeFunctionData({
+              abi: permit2Abi,
+              functionName: "approve",
+              args: [authorization.token, authorization.spender, authorization.amount, expiration],
+            }),
+          } satisfies PreparedV6TransactionAction;
+          setPrepared((current) =>
+            current
+              ? {
+                  ...current,
+                  tokenApprovalComplete: true,
+                  routerAuthorizationComplete: false,
+                  routerSignature: null,
+                  routerApproval,
+                }
+              : current,
+          );
+          setPhase("ready");
+          setTxError(
+            "This wallet cannot sign Permit2 authorizations. Review the onchain fallback, then confirm again.",
+          );
+          await nextUiPaint();
+          return;
+        }
+      }
+      if (
+        routerApproval &&
+        !prepared.routerAuthorizationComplete &&
+        !isNativePayToken(prepared.token.token)
+      ) {
+        const router = routerApproval.request.args[1] as Address;
         setPhase("approving-router");
         await nextUiPaint();
         const approvalHash = await writeContractAsync({
           chainId: prepared.chainId,
-          ...prepared.routerApproval.request,
+          ...routerApproval.request,
         });
         requireOnchainExecution(approvalHash, "Swap authorization");
         const approvalReceipt = await waitForReceiptWithRetry(
@@ -817,26 +956,34 @@ export function V6PayCard() {
         if (approvalBlock === undefined || approvalReceipt.blockNumber > approvalBlock) {
           approvalBlock = approvalReceipt.blockNumber;
         }
+        setPrepared((current) =>
+          current
+            ? {
+                ...current,
+                routerAuthorizationComplete: true,
+              }
+            : current,
+        );
       }
       setPhase("simulating");
       await nextUiPaint();
       await publicClient.simulateContract({
-        address: prepared.request.address,
-        abi: prepared.request.abi,
-        functionName: prepared.request.functionName,
-        args: prepared.request.args as unknown[],
-        value: prepared.request.value,
+        address: paymentRequest.address,
+        abi: paymentRequest.abi,
+        functionName: paymentRequest.functionName,
+        args: paymentRequest.args as unknown[],
+        value: paymentRequest.value,
         account: address,
         blockNumber: approvalBlock,
       } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
       setPhase("signing");
       const hash = await writeContractAsync({
         chainId: prepared.chainId,
-        address: prepared.request.address,
-        abi: prepared.request.abi,
-        functionName: prepared.request.functionName,
-        args: prepared.request.args as unknown[],
-        value: prepared.request.value,
+        address: paymentRequest.address,
+        abi: paymentRequest.abi,
+        functionName: paymentRequest.functionName,
+        args: paymentRequest.args as unknown[],
+        value: paymentRequest.value,
       } as unknown as Parameters<typeof writeContractAsync>[0]);
       setTxHash(hash);
       setPhase("pending");
@@ -1119,7 +1266,8 @@ export function V6PayCard() {
                       <div>
                         <p className="text-zinc-500">Issuance</p>
                         <p className="font-medium text-zinc-900">
-                          {formatPayAmount(preview.issuanceTokenCount ?? 0n, 18)} {projectTokenLabel}
+                          {formatPayAmount(preview.issuanceTokenCount ?? 0n, 18)}{" "}
+                          {projectTokenLabel}
                         </p>
                       </div>
                       <p className="col-span-2 text-zinc-500">
