@@ -1,7 +1,7 @@
 "use client";
 
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { USDC_ADDRESSES } from "@/app/constants";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { resumePendingRelayrBundles, waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
 import { PERMIT2_ADDRESS, UNIVERSAL_ROUTER_BY_CHAIN } from "@/lib/directPaySwap";
@@ -52,9 +52,7 @@ function json(value: unknown): string {
 function knownAddress(chainId: number, address: unknown): string | null {
   if (typeof address !== "string" || !/^0x[0-9a-f]{40}$/iu.test(address)) return null;
   if (address.toLowerCase() === PERMIT2_ADDRESS.toLowerCase()) return "Permit2";
-  if (
-    UNIVERSAL_ROUTER_BY_CHAIN[chainId as JBChainId]?.toLowerCase() === address.toLowerCase()
-  ) {
+  if (UNIVERSAL_ROUTER_BY_CHAIN[chainId as JBChainId]?.toLowerCase() === address.toLowerCase()) {
     return "Uniswap Universal Router";
   }
   if (USDC_ADDRESSES[chainId]?.toLowerCase() === address.toLowerCase()) return "USDC";
@@ -323,10 +321,7 @@ function TransactionStatusCenter() {
   const terminal = activities.filter((activity) => !active.includes(activity));
   const visible = [...active, ...terminal.slice(0, 4)];
   return (
-    <aside
-      className="hidden"
-      aria-label="Transaction status"
-    >
+    <aside className="hidden" aria-label="Transaction status">
       {visible.map((activity) => (
         <div
           key={activity.id}

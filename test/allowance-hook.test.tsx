@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   address: "0x000000000000000000000000000000000000dEaD" as Address | undefined,
+  publicClientAvailable: true,
   readContract: vi.fn(),
   waitForTransactionReceipt: vi.fn(),
   writeContractAsync: vi.fn(),
@@ -12,10 +13,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("wagmi", () => ({
   useAccount: () => ({ address: mocks.address }),
-  usePublicClient: () => ({
-    readContract: mocks.readContract,
-    waitForTransactionReceipt: mocks.waitForTransactionReceipt,
-  }),
+  usePublicClient: () =>
+    mocks.publicClientAvailable
+      ? {
+          readContract: mocks.readContract,
+          waitForTransactionReceipt: mocks.waitForTransactionReceipt,
+        }
+      : undefined,
 }));
 
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
@@ -34,6 +38,7 @@ async function freshHook() {
 
 beforeEach(() => {
   mocks.address = "0x000000000000000000000000000000000000dEaD";
+  mocks.publicClientAvailable = true;
   mocks.readContract.mockResolvedValue(0n);
   mocks.writeContractAsync.mockResolvedValue(HASH);
   mocks.waitForTransactionReceipt.mockResolvedValue({ status: "success" });
@@ -136,5 +141,29 @@ describe("wallet-action:allowance — allowance hook", () => {
       "Wallet not connected",
     );
     expect(mocks.readContract).not.toHaveBeenCalled();
+  });
+
+  it("fails closed without a public client", async () => {
+    mocks.publicClientAvailable = false;
+    const hooks = await freshHook();
+    const { result } = renderHook(() => hooks.useAllowance(11155111));
+
+    await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n)).rejects.toThrow(
+      "Please try again",
+    );
+    expect(mocks.readContract).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when approval confirmation is unavailable", async () => {
+    mocks.waitForTransactionReceipt.mockResolvedValue(undefined);
+    const hooks = await freshHook();
+    const { result } = renderHook(() => hooks.useAllowance(11155111));
+
+    await act(async () => {
+      await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n)).rejects.toThrow(
+        `Token approval ${HASH} was submitted, but confirmation is unavailable`,
+      );
+    });
+    expect(result.current.isApproving).toBe(false);
   });
 });

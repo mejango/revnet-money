@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const { quoteMock } = vi.hoisted(() => ({ quoteMock: vi.fn() }));
 
-vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
+vi.mock("@bananapus/nana-sdk-core/v6/uniswap-v4", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6/uniswap-v4")>()),
   quoteUniswapV4ExactInputSingle: quoteMock,
 }));
 

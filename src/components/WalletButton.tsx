@@ -1,7 +1,7 @@
 "use client";
 
-import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { USDC_ADDRESSES, USDC_DECIMALS } from "@/app/constants";
+import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { useEnsName } from "@/hooks/ens/useEnsName";
 import { useMobileWallet } from "@/hooks/useMobileWallet";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
@@ -33,9 +33,9 @@ import { erc20Abi, formatUnits } from "viem";
 import {
   useAccount,
   useBalance,
+  useConfig,
   useConnect,
   useConnectors,
-  useConfig,
   useDisconnect,
   useReadContract,
 } from "wagmi";
@@ -130,11 +130,7 @@ function ProjectWalletBalances({ address }: { address: `0x${string}` }) {
             isLoading
               ? "Loading…"
               : balances.data
-                ? formattedWalletBalance(
-                    balances.data.native,
-                    18,
-                    balances.data.nativeSymbol,
-                  )
+                ? formattedWalletBalance(balances.data.native, 18, balances.data.nativeSymbol)
                 : "Unavailable"
           }
         />

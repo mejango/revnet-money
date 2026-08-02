@@ -50,7 +50,7 @@ export interface PreparedV6TransactionAction {
   calldata: Hex;
 }
 
-export interface PreparedV6SignatureAction {
+interface PreparedV6SignatureAction {
   kind: "router-signature";
   label: string;
   authorization: Permit2SignatureAuthorization;
