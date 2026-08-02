@@ -175,7 +175,7 @@ export function TokenPriceChart({
 
   return (
     <div className="w-full">
-      <div className="flex flex-col items-start gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col items-start gap-2.5">
         <div className="flex flex-wrap gap-1.5 lg:gap-4">
           <ChartToggleButton
             label="Issuance Price"
@@ -200,7 +200,9 @@ export function TokenPriceChart({
             onClick={() => setShowFloor(!showFloor)}
           />
         </div>
-        <RangeSelector ranges={TIME_RANGES} defaultValue="1y" />
+        <div className="flex w-full justify-start sm:justify-end">
+          <RangeSelector ranges={TIME_RANGES} defaultValue="1y" />
+        </div>
       </div>
       {(data?.unavailableSources.length ?? 0) > 0 ? (
         <p className="mt-3 text-xs text-amber-700">
