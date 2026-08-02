@@ -490,9 +490,11 @@ function BuybackActionForm({
           : kind === "terminal"
             ? (state.terminal ?? "")
             : // Pre-select the pool the chain already has, so a TWAP edit targets
-              // an initialized pair instead of defaulting to a native pool that
-              // may not exist.
-              (kind === "twap" ? state.pools[0]?.token : undefined) ?? NATIVE_TOKEN,
+              // an initialized pair instead of a native pool a USDC revnet never
+              // had. Native pools read back as address(0); show the sentinel.
+              kind === "twap" && state.pools[0] && state.pools[0].token !== zeroAddress
+              ? state.pools[0].token
+              : NATIVE_TOKEN,
       ]),
     ),
   );
