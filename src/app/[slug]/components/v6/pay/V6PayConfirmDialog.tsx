@@ -12,6 +12,7 @@ import {
 import {
   PERMIT2_ADDRESS,
   permit2TypedData,
+  type DirectSwapQuote,
   type Permit2SignatureAuthorization,
 } from "@/lib/directPaySwap";
 import {
@@ -69,6 +70,8 @@ export interface PreparedV6Pay {
   viaRouterRoute: boolean;
   /** True when payment bypasses the terminal for a better direct pool swap. */
   directSwapRoute: boolean;
+  /** How a direct swap reaches the project's hooked V4 pool. */
+  swapInputRoute: DirectSwapQuote["inputRoute"] | null;
   /** Fresh previewed token return (null for add-to-balance). */
   expectedTokens: bigint | null;
   reservedTokens: bigint | null;
@@ -238,6 +241,12 @@ export function V6PayConfirmDialog({
                           Adds to the project balance — nothing else.
                         </SummaryRow>
                       )}
+                      {prepared.swapInputRoute && prepared.swapInputRoute.kind !== "single-v4" ? (
+                        <SummaryRow label="Route">
+                          {prepared.token.symbol} → {prepared.swapInputRoute.bridgeTokenSymbol} →{" "}
+                          {projectTokenSymbol}
+                        </SummaryRow>
+                      ) : null}
                       {prepared.cartRows.length > 0 ? (
                         <SummaryRow label="Items">
                           {prepared.cartRows
@@ -467,12 +476,23 @@ function PreparedPaymentReview({
           </>
         ) : null}
         {prepared.mode === "pay" && action.kind === "payment" ? (
-          <div className="flex items-start gap-1">
-            <dt className="shrink-0 text-zinc-500">Minimum received:</dt>
-            <dd className="min-w-0 text-zinc-800">
-              {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
-            </dd>
-          </div>
+          <>
+            {prepared.swapInputRoute && prepared.swapInputRoute.kind !== "single-v4" ? (
+              <div className="flex items-start gap-1">
+                <dt className="shrink-0 text-zinc-500">Route:</dt>
+                <dd className="min-w-0 text-zinc-800">
+                  {prepared.token.symbol} → {prepared.swapInputRoute.bridgeTokenSymbol} →{" "}
+                  {projectTokenSymbol}
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex items-start gap-1">
+              <dt className="shrink-0 text-zinc-500">Minimum received:</dt>
+              <dd className="min-w-0 text-zinc-800">
+                {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
+              </dd>
+            </div>
+          </>
         ) : null}
         {beneficiary && prepared.mode === "pay" && action.kind === "payment" ? (
           <div className="flex items-start gap-1">

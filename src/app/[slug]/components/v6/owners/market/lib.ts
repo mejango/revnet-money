@@ -296,8 +296,9 @@ async function pairTokenFor(
 export async function readPoolSnapshot(
   chainId: JBChainId,
   projectId: bigint,
+  providedClient?: PublicClient,
 ): Promise<{ hook: Address | null; pool: PoolSnapshot | null }> {
-  const client = getViemPublicClient(chainId) as PublicClient;
+  const client = providedClient ?? (getViemPublicClient(chainId) as PublicClient);
   const poolManager = POOL_MANAGER_BY_CHAIN[Number(chainId)];
   const { hook } = await projectBuybackHook(client, chainId, projectId);
   if (!hook || !poolManager) return { hook: hook ?? null, pool: null };

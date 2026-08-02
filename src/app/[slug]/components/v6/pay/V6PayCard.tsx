@@ -599,7 +599,7 @@ export function V6PayCard() {
         const approvalSpender = directSwap ? PERMIT2_ADDRESS : terminal;
         const router = UNIVERSAL_ROUTER_BY_CHAIN[chainId];
         const permit2State =
-          directSwap && router
+          directSwap && router && !isNativePayToken(selected.token)
             ? await client.readContract({
                 address: PERMIT2_ADDRESS,
                 abi: permit2Abi,
@@ -610,6 +610,7 @@ export function V6PayCard() {
         const permit2Approval =
           !!directSwap &&
           !!router &&
+          !isNativePayToken(selected.token) &&
           (!permit2State ||
             permit2State[0] < amountRaw ||
             Number(permit2State[1]) <= Math.floor(Date.now() / 1000) + 1_800);
@@ -700,6 +701,7 @@ export function V6PayCard() {
           terminal,
           viaRouterRoute: routeType === "swap",
           directSwapRoute: !!directSwap,
+          swapInputRoute: directSwap?.inputRoute ?? null,
           expectedTokens: directSwap
             ? directSwap.beneficiaryTokenCount
             : freshPreview.beneficiaryTokenCount,
@@ -749,6 +751,7 @@ export function V6PayCard() {
           terminal,
           viaRouterRoute: false,
           directSwapRoute: false,
+          swapInputRoute: null,
           expectedTokens: null,
           reservedTokens: null,
           minReturned: 0n,
