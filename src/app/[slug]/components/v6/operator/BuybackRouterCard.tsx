@@ -4,6 +4,7 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
@@ -351,6 +352,9 @@ function ActionRow({
 }) {
   const action = ACTIONS[kind];
   const [open, setOpen] = useState(false);
+  // A running write owns the dialog: dismissing it would hide the only progress
+  // report for a transaction that keeps going regardless.
+  const [busy, setBusy] = useState(false);
   const available = states.filter((state) => isKindAvailable(kind, state));
 
   return (
@@ -443,20 +447,27 @@ function ActionRow({
         size="sm"
         className="mt-3"
         disabled={!available.length}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(true)}
       >
-        {open ? "Close" : action.title}
+        {action.title}
       </Button>
 
       {open ? (
-        <BuybackActionForm
-          kind={kind}
-          available={available}
-          onDone={() => {
-            setOpen(false);
-            onDone();
-          }}
-        />
+        <Dialog open onOpenChange={(next) => !next && !busy && setOpen(false)}>
+          <DialogContent className="max-w-xl">
+            <DialogTitle className="text-base font-medium">{action.title}</DialogTitle>
+            <p className="text-xs text-zinc-500">{action.description}</p>
+            <BuybackActionForm
+              kind={kind}
+              available={available}
+              onBusyChange={setBusy}
+              onDone={() => {
+                setOpen(false);
+                onDone();
+              }}
+            />
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   );
@@ -467,10 +478,12 @@ const DIGITS = /^\d+$/;
 function BuybackActionForm({
   kind,
   available,
+  onBusyChange,
   onDone,
 }: {
   kind: ActionKind;
   available: BuybackChainState[];
+  onBusyChange: (busy: boolean) => void;
   onDone: () => void;
 }) {
   const action = ACTIONS[kind];
@@ -505,7 +518,11 @@ function BuybackActionForm({
   );
   const [sqrtPriceX96, setSqrtPriceX96] = useState("");
   const [ack, setAck] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
+  const setBusy = (next: boolean) => {
+    setBusyState(next);
+    onBusyChange(next);
+  };
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -658,7 +675,7 @@ function BuybackActionForm({
   };
 
   return (
-    <div className="mt-3 bg-melon-100 p-3">
+    <div>
       <div className="mb-2">
         <label className="block text-sm font-medium mb-1">Run on</label>
         <div className="flex flex-wrap gap-x-5 gap-y-1.5">
