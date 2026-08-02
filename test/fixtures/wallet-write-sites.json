@@ -443,6 +443,13 @@
           "useSetSplitGroups",
           "useWriteContract",
           1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "claimFees",
+          "writeContractAsync",
+          1
         ]
       ]
     },

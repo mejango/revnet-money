@@ -10,7 +10,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { erc20Abi, formatUnits, parseUnits, zeroAddress } from "viem";
+import { erc20Abi, formatUnits, parseUnits, zeroAddress, type PublicClient } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import {
   chainName,
@@ -30,7 +30,9 @@ import {
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
   prepareAddLiquidity,
+  prepareCollectLpFees,
   prepareRemoveLiquidity,
+  readLpPositionFees,
   readUserLpPositions,
   refreshUserLpPosition,
   reverifyAddLiquidity,
@@ -569,6 +571,10 @@ export function LiquidityManager({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
+  const [claiming, setClaiming] = useState<bigint | null>(null);
+  const client = usePublicClient({ chainId: Number(state.chainId) }) as
+    | PublicClient
+    | undefined;
   const {
     writeContractAsync,
     data: hash,
@@ -590,10 +596,34 @@ export function LiquidityManager({
     queryFn: () => readUserLpPositions(pool!, address!),
   });
 
+  // Unclaimed fees per position — the reason an LP opens this panel. Read
+  // separately so the position list is not held up by two extra calls each.
+  const fees = useQuery({
+    queryKey: [
+      "revnetWalletLpFees",
+      state.chainId,
+      pool?.poolId,
+      (positions.data ?? []).map((position) => position.tokenId.toString()).join(","),
+    ],
+    enabled: Boolean(pool && positions.data?.length && client),
+    retry: 0,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const entries = await Promise.all(
+        (positions.data ?? []).map(async (position) => {
+          const owed = await readLpPositionFees(client!, pool!, position).catch(() => null);
+          return [position.tokenId.toString(), owed] as const;
+        }),
+      );
+      return Object.fromEntries(entries);
+    },
+  });
+
   useEffect(() => {
     if (receipt.isSuccess) {
       setReviewed(null);
       void positions.refetch();
+      void fees.refetch();
     }
     // Refetch only on the receipt transition; the query object changes each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -615,6 +645,29 @@ export function LiquidityManager({
       setError(cause instanceof Error ? cause.message : "Could not refresh this position.");
     } finally {
       setRefreshing(null);
+    }
+  };
+
+  // Claim fees only. Nothing is swapped and the position is untouched, so
+  // there is no reviewed amount to re-verify — only the wallet's ownership,
+  // which the PositionManager enforces itself.
+  const claimFees = async (position: UserLpPosition) => {
+    if (!address) return;
+    setError(null);
+    setClaiming(position.tokenId);
+    try {
+      const plan = prepareCollectLpFees(pool, position, address);
+      await writeContractAsync({
+        chainId: Number(state.chainId),
+        address: positionManager,
+        abi: POSITION_MANAGER_ABI,
+        functionName: "modifyLiquidities",
+        args: [plan.unlockData, plan.deadline],
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not claim fees.");
+    } finally {
+      setClaiming(null);
     }
   };
 
@@ -664,15 +717,44 @@ export function LiquidityManager({
               <span>
                 #{position.tokenId.toString()} · {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}{" "}
                 + {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
+                <span className="block text-zinc-500">
+                  {(() => {
+                    const owed = fees.data?.[position.tokenId.toString()];
+                    if (fees.isLoading || owed === undefined) return "unclaimed fees: reading…";
+                    if (!owed) return "unclaimed fees: unavailable on this chain";
+                    if (owed.pairFees <= 0n && owed.tokenFees <= 0n) return "unclaimed fees: none yet";
+                    return `unclaimed fees: ${fmtUnits(owed.tokenFees, 18)} ${tokenSymbol} + ${fmtUnits(owed.pairFees, pool.pair.decimals)} ${pool.pair.symbol}`;
+                  })()}
+                </span>
               </span>
-              <button
-                type="button"
-                className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
-                disabled={isPending || refreshing !== null || reviewed !== null}
-                onClick={() => void beginReview(position)}
-              >
-                {refreshing === position.tokenId ? "Refreshing…" : "Remove"}
-              </button>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
+                  disabled={(() => {
+                    const owed = fees.data?.[position.tokenId.toString()];
+                    return (
+                      isPending ||
+                      claiming !== null ||
+                      refreshing !== null ||
+                      reviewed !== null ||
+                      !owed ||
+                      (owed.pairFees <= 0n && owed.tokenFees <= 0n)
+                    );
+                  })()}
+                  onClick={() => void claimFees(position)}
+                >
+                  {claiming === position.tokenId ? "Claiming…" : "Claim fees"}
+                </button>
+                <button
+                  type="button"
+                  className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
+                  disabled={isPending || refreshing !== null || reviewed !== null}
+                  onClick={() => void beginReview(position)}
+                >
+                  {refreshing === position.tokenId ? "Refreshing…" : "Remove"}
+                </button>
+              </span>
             </div>
           ))}
         </div>

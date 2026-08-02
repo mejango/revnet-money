@@ -14,7 +14,9 @@ import {
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
 import {
+  buildCollectUniswapV4FeesTx,
   getAccountingContexts,
+  readUniswapV4PositionFees,
   UNISWAP_PERMIT2_ADDRESS,
   UNISWAP_V4_INITIALIZE_TOPIC,
   UNISWAP_V4_MAX_TICK,
@@ -36,6 +38,7 @@ import {
 } from "@bananapus/nana-sdk-core/v6";
 import {
   Address,
+  decodeFunctionData,
   encodeAbiParameters,
   encodeFunctionData,
   erc20Abi,
@@ -793,6 +796,71 @@ export function prepareRemoveLiquidity(
     pairMinimum,
     tokenMinimum,
   };
+}
+
+export interface LpPositionFees {
+  /** Unclaimed pair-token fees, in the pair token's decimals. */
+  pairFees: bigint;
+  /** Unclaimed project-token fees, 18 decimals. */
+  tokenFees: bigint;
+}
+
+/**
+ * A position's UNCLAIMED fees, mapped into pair/token terms.
+ *
+ * Not lifetime earnings: the pool rewrites the position's fee checkpoint on
+ * every collect, so anything already claimed is no longer visible here.
+ */
+export async function readLpPositionFees(
+  client: PublicClient,
+  pool: PoolSnapshot,
+  position: Pick<UserLpPosition, "tokenId" | "tickLower" | "tickUpper">,
+): Promise<LpPositionFees | null> {
+  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(pool.chainId)];
+  if (!positionManager) return null;
+  const fees = await readUniswapV4PositionFees(client, {
+    chainId: pool.chainId,
+    poolId: pool.poolId,
+    positionManager,
+    tokenId: position.tokenId,
+    tickLower: position.tickLower,
+    tickUpper: position.tickUpper,
+  });
+  return {
+    pairFees: pool.pairIsC0 ? fees.amount0 : fees.amount1,
+    tokenFees: pool.pairIsC0 ? fees.amount1 : fees.amount0,
+  };
+}
+
+/**
+ * Claim a position's fees without touching its liquidity — a zero-liquidity
+ * decrease paired with a take. No minimums: nothing is swapped, so the amounts
+ * are whatever the pool already accrued and a floor could only make a valid
+ * claim revert.
+ */
+export function prepareCollectLpFees(
+  pool: PoolSnapshot,
+  position: Pick<UserLpPosition, "tokenId">,
+  recipient: Address,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): { unlockData: Hex; deadline: bigint } {
+  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(pool.chainId)];
+  if (!positionManager) throw new Error("No position manager on this chain.");
+  const tx = buildCollectUniswapV4FeesTx({
+    positionManager,
+    tokenId: position.tokenId,
+    currency0: pool.key.currency0,
+    currency1: pool.key.currency1,
+    recipient,
+    deadline: BigInt(nowSeconds + 1_200),
+  });
+  // The caller sends through wagmi with the same ABI it uses for removals, so
+  // hand back the arguments rather than the encoded call.
+  const [unlockData] = decodeFunctionData({
+    abi: POSITION_MANAGER_ABI,
+    data: tx.data,
+  }).args as readonly [Hex, bigint];
+  return { unlockData, deadline: BigInt(nowSeconds + 1_200) };
 }
 
 // ── Add liquidity ────────────────────────────────────────────────────────────
