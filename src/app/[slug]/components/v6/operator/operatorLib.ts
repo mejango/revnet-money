@@ -66,6 +66,8 @@ export type ChainWrite = {
   abi: Abi;
   functionName: string;
   args: readonly unknown[];
+  /** Shown in the review dialog when the write is bundled through Relayr. */
+  contractName?: string;
 };
 
 /**

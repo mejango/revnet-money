@@ -508,13 +508,6 @@
         ],
         [
           "reviewed-write-hook",
-          "src/app/[slug]/components/v6/operator/BuybackRouterCard.tsx",
-          "BuybackActionForm",
-          "useWriteContract",
-          1
-        ],
-        [
-          "reviewed-write-hook",
           "src/app/[slug]/components/v6/operator/OperatorAccountCard.tsx",
           "TransferOperatorFlow",
           "useWriteContract",
@@ -616,6 +609,41 @@
           "src/app/[slug]/components/v6/shop/AddItemsModal.tsx",
           "submit",
           "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-relayr-payment",
+          "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
+          "runWrites",
+          "sendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote",
+          "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
+          "runWrites",
+          "getRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-relayr-payment-hook",
+          "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
+          "useOperatorWrites",
+          "useSendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote-hook",
+          "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
+          "useOperatorWrites",
+          "useGetRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
+          "useOperatorWrites",
+          "useWriteContract",
           1
         ]
       ]
@@ -755,7 +783,8 @@
         "src/app/[slug]/components/v6/operator/BuybackRouterCard.tsx",
         "src/app/[slug]/components/v6/operator/OperatorAccountCard.tsx",
         "src/app/[slug]/components/v6/operator/SuckerExtensionCard.tsx",
-        "src/app/[slug]/components/v6/operator/operatorLib.ts"
+        "src/app/[slug]/components/v6/operator/operatorLib.ts",
+        "src/app/[slug]/components/v6/operator/useOperatorWrites.ts"
       ],
       "tests": ["test/wallet-project-controls.test.ts"]
     },
