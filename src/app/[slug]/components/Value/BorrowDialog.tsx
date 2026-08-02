@@ -20,7 +20,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { JB_CHAINS, JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
-import { PropsWithChildren, useCallback, useEffect } from "react";
+import { PropsWithChildren, useCallback, useEffect, useMemo } from "react";
 import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
 import { LoanFeeChart } from "./LoanFeeChart";
@@ -42,7 +42,6 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     showInfo,
     borrowStatus,
     collateralAmount,
-    selectedChainId,
     cashOutChainId,
     prepaidPercent,
     grossBorrowedNative,
@@ -90,6 +89,13 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     ? getTokenSymbolForChain(Number(cashOutChainId))
     : baseToken?.symbol;
 
+  const selectableBalances = useMemo(
+    () => balances?.filter((balance) => balance.balance.value > 0n) ?? [],
+    [balances],
+  );
+  const defaultBalance = selectableBalances[0] ?? balances?.[0];
+  const hasOnlyOneProjectChain = balances?.length === 1;
+
   // Handle chain selection - exactly like RedeemDialog
   const handleChainSelect = useCallback(
     (chainId: string) => {
@@ -112,12 +118,15 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     ],
   );
 
-  // Restore chain selection if it gets reset while dialog is open
+  // Start on the first chain where the account can collateralize tokens (or
+  // the project's only chain when the balance is zero). Keep the amount empty:
+  // choosing a sensible chain should not silently opt the holder into using
+  // their full balance.
   useEffect(() => {
-    if (isDialogOpen && !cashOutChainId && selectedChainId && balances) {
-      setCashOutChainId(selectedChainId.toString());
-    }
-  }, [isDialogOpen, cashOutChainId, selectedChainId, balances, setCashOutChainId]);
+    if (!isDialogOpen || cashOutChainId || !defaultBalance) return;
+    setSelectedChainId(defaultBalance.chainId);
+    setCashOutChainId(defaultBalance.chainId.toString());
+  }, [isDialogOpen, cashOutChainId, defaultBalance, setSelectedChainId, setCashOutChainId]);
 
   const maxCollateralAmount = selectedBalance
     ? Number(formatUnits(selectedBalance.balance.value, projectTokenDecimals))
@@ -151,32 +160,37 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           </Label>
           <div className="grid grid-cols-7 gap-2">
             <div className="col-span-3">
-              <Select onValueChange={handleChainSelect} value={cashOutChainId || ""}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select chain">
-                    {cashOutChainId && (
-                      <div className="flex items-center gap-2">
-                        <ChainLogo chainId={Number(cashOutChainId) as JBChainId} />
-                        <span>{JB_CHAINS[Number(cashOutChainId) as JBChainId].name}</span>
-                      </div>
-                    )}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {balances
-                    ?.filter((b) => b.balance.value > 0n)
-                    .map((balance) => {
-                      return (
-                        <SelectItem value={balance.chainId.toString()} key={balance.chainId}>
-                          <div className="flex items-center gap-2">
-                            <ChainLogo chainId={balance.chainId as JBChainId} />
-                            {JB_CHAINS[balance.chainId as JBChainId].name}
-                          </div>
-                        </SelectItem>
-                      );
-                    })}
-                </SelectContent>
-              </Select>
+              {hasOnlyOneProjectChain && cashOutChainId ? (
+                <div className="flex h-10 w-full items-center border-2 border-melon-300 bg-melon-25 px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <ChainLogo chainId={Number(cashOutChainId) as JBChainId} />
+                    <span>{JB_CHAINS[Number(cashOutChainId) as JBChainId].name}</span>
+                  </div>
+                </div>
+              ) : (
+                <Select onValueChange={handleChainSelect} value={cashOutChainId || ""}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select chain">
+                      {cashOutChainId && (
+                        <div className="flex items-center gap-2">
+                          <ChainLogo chainId={Number(cashOutChainId) as JBChainId} />
+                          <span>{JB_CHAINS[Number(cashOutChainId) as JBChainId].name}</span>
+                        </div>
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectableBalances.map((balance) => (
+                      <SelectItem value={balance.chainId.toString()} key={balance.chainId}>
+                        <div className="flex items-center gap-2">
+                          <ChainLogo chainId={balance.chainId as JBChainId} />
+                          {JB_CHAINS[balance.chainId as JBChainId].name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="col-span-4">
               <div className="relative">
@@ -220,7 +234,6 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                   placeholder={
                     maxCollateralAmount ? maxCollateralAmount.toFixed(8) : "Enter amount"
                   }
-                  className="mt-2"
                 />
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 z-10">
                   <span className="text-zinc-500 sm:text-md">{tokenSymbol}</span>

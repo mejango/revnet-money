@@ -6,7 +6,11 @@ import { useCompleteActivityEvents } from "@/hooks/useCompleteBendystrawLists";
 import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
 import { useState } from "react";
 import { ActivityItem } from "./ActivityItem";
-import { mapActivityEvents, projectFeedTokenContext } from "./mapActivityEvents";
+import {
+  isProjectFeedActivityEvent,
+  mapActivityEvents,
+  projectFeedTokenContext,
+} from "./mapActivityEvents";
 
 type Project = NonNullable<
   NonNullable<SuckerGroupQuery["suckerGroup"]>["projects"]
@@ -35,7 +39,10 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
 
   // Token amounts when every chain shares one accounting-token kind; indexed
   // USD when the sucker group's chains disagree (ecosystem convention).
-  const events = mapActivityEvents(items, projectFeedTokenContext(projects));
+  const events = mapActivityEvents(
+    items.filter(isProjectFeedActivityEvent),
+    projectFeedTokenContext(projects),
+  );
 
   const visibleEvents = events.slice(0, visibleCount);
   const hasMore = events.length > visibleCount;

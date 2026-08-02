@@ -1,6 +1,5 @@
 import { useToast } from "@/components/ui/use-toast";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
-import { useHasBorrowPermission } from "@/hooks/useHasBorrowPermission";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalPendingError,
@@ -30,6 +29,7 @@ import {
   revLoansAbi,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
+import { hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWalletClient } from "wagmi";
@@ -344,15 +344,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     hash: repayTxHash,
   });
 
-  // Permission hook
-  const userHasPermission = useHasBorrowPermission({
-    address: address as `0x${string}`,
-    projectId: effectiveProjectId,
-    chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
-    resolvedPermissionsAddress: resolvedPermissionsAddress as `0x${string}`,
-    skip: false,
-  });
-
   // Additional derived values in native tokens
   const netAvailableToBorrow =
     selectedTab === "borrow" && selectedLoanReallocAmount !== undefined && internalSelectedLoan
@@ -597,13 +588,30 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       try {
         setBorrowStatus("checking");
 
-        if (!walletClient || !publicClient || !address || !resolvedPermissionsAddress) {
+        if (
+          !walletClient ||
+          !publicClient ||
+          !address ||
+          !cashOutChainId ||
+          !resolvedPermissionsAddress
+        ) {
           setBorrowStatus("error");
           return;
         }
 
         const feeBasisPoints = Math.round(parseFloat(prepaidPercent) * 10);
-        if (!userHasPermission) {
+        // Read permission live at submission time. The indexer can lag a newly
+        // granted permission, and treating an unresolved query as `false`
+        // would prompt an unnecessary approval. Loans need BURN_TOKENS (11),
+        // never the much broader ROOT permission (1).
+        const hasBorrowPermission = await hasPermissions(publicClient, {
+          chainId: Number(cashOutChainId) as JBChainId,
+          operator: revLoansContractAddress,
+          account: address,
+          projectId: effectiveProjectId,
+          permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
+        });
+        if (!hasBorrowPermission) {
           setBorrowStatus("granting-permission");
           try {
             const txHash = await permissionWriteAsync({
@@ -617,7 +625,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
                 {
                   operator: revLoansContractAddress,
                   projectId: effectiveProjectId,
-                  permissionIds: [1],
+                  permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
                 },
               ],
             });
@@ -709,7 +717,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     reallocateCollateralAsync,
     permissionWriteAsync,
     toast,
-    userHasPermission,
     resolvedPermissionsAddress,
     writeContractAsync,
     effectiveProjectId,

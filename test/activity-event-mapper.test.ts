@@ -1,4 +1,5 @@
 import {
+  isProjectFeedActivityEvent,
   mapActivityEvents,
   projectFeedTokenContext,
   type ActivityEventItem,
@@ -49,6 +50,17 @@ function payItem(overrides: Partial<ActivityEventItem> = {}): ActivityEventItem 
 }
 
 describe("mapActivityEvents", () => {
+  it("keeps holder permission grants out of project feeds", () => {
+    expect(isProjectFeedActivityEvent(payItem())).toBe(true);
+    expect(
+      isProjectFeedActivityEvent({
+        ...payItem(),
+        payEvent: null,
+        operatorPermissionsSetEvent: {},
+      } as ActivityEventItem),
+    ).toBe(false);
+  });
+
   it("denominates amounts with the context's symbol and decimals", () => {
     const events = mapActivityEvents([payItem()], () => ({ tokenSymbol: "USDC", decimals: 6 }));
 

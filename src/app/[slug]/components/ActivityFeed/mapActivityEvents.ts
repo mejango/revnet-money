@@ -8,6 +8,11 @@ import type { ActivityEvent } from "./ActivityItem";
 
 export type ActivityEventItem = ActivityEventsQuery["activityEvents"]["items"][number];
 
+/** Holder permission grants are account history, not project activity. */
+export function isProjectFeedActivityEvent(event: ActivityEventItem): boolean {
+  return !event.operatorPermissionsSetEvent;
+}
+
 /**
  * The token denomination for one event's amounts. Return null to skip the row
  * entirely (the project feed's behavior for chains it can't denominate);

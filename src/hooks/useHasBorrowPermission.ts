@@ -1,5 +1,6 @@
 import { HasPermissionOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { getRevnetLoanContract, JBChainId } from "@bananapus/nana-sdk-core";
+import { JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 
 export function useHasBorrowPermission({
   address,
@@ -31,5 +32,5 @@ export function useHasBorrowPermission({
     { enabled: !querySkip, chainId: Number(chainId ?? 0) },
   );
 
-  return data?.permissionHolder?.permissions?.includes(1) ?? undefined;
+  return data?.permissionHolder?.permissions?.includes(JBPermissionIdsV6.BURN_TOKENS) ?? undefined;
 }
