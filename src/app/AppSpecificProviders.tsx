@@ -1,6 +1,7 @@
 "use client";
 
 import { AppLoadingSkeleton } from "@/components/loading/LoadingSkeletons";
+import { installQueryPersistence } from "@/lib/query-persist";
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { IS_DETERMINISTIC_BROWSER, PARA_EMBEDDED_WALLET_ENABLED } from "@/lib/browserEnvironment";
@@ -26,6 +27,10 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Synchronous, so the first paint already has last session's values for every
+// query tagged in @/lib/query-persist.
+installQueryPersistence(queryClient);
 
 export function ParaConnectionBridge({
   modalOpen,

@@ -5,6 +5,8 @@ import {
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
 import { ChainLogo } from "@/components/ChainLogo";
+import { Revalidating } from "@/components/ui/Revalidating";
+import { cachedQuery } from "@/lib/query-persist";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import {
   Table,
@@ -63,7 +65,16 @@ function formatPrice(price: number): string {
   return Intl.NumberFormat("en", { maximumFractionDigits: price >= 1 ? 4 : 8 }).format(price);
 }
 
-function MarketChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
+function MarketChainRow({
+  state,
+  tokenSymbol,
+  pending = false,
+}: {
+  state: AmmChainState;
+  tokenSymbol: string;
+  /** Restored from a previous read and still confirming. */
+  pending?: boolean;
+}) {
   const { pool } = state;
   const explorer = pool ? explorerAddressUrl(state.chainId, pool.poolManager) : null;
   const inverse = pool?.price ? 1 / pool.price : null;
@@ -104,7 +115,9 @@ function MarketChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSym
                 <div className="flex items-baseline justify-between gap-3">
                   <dt className="text-zinc-500">Current issuance price</dt>
                   <dd className="font-medium text-zinc-900">
-                    {formatPrice(issuance)} {pool.pair.symbol}
+                    <Revalidating pending={pending}>
+                      {formatPrice(issuance)} {pool.pair.symbol}
+                    </Revalidating>
                   </dd>
                 </div>
               ) : null}
@@ -112,7 +125,9 @@ function MarketChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSym
                 <div className="flex items-baseline justify-between gap-3">
                   <dt className="text-zinc-500">Current cash out price</dt>
                   <dd className="font-medium text-zinc-900">
-                    {formatPrice(cashOut)} {pool.pair.symbol}
+                    <Revalidating pending={pending}>
+                      {formatPrice(cashOut)} {pool.pair.symbol}
+                    </Revalidating>
                   </dd>
                 </div>
               ) : null}
@@ -1036,12 +1051,14 @@ export function LiquidityManager({
  * hardcoded native token.
  */
 export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; tokenSymbol: string }) {
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["v6AmmStates", chainProjectsKey(chains)],
-    enabled: chains.length > 0,
-    staleTime: 60_000,
-    queryFn: () => fetchAmmStates(chains),
-  });
+  const { data, isLoading, isError, isFetching } = useQuery(
+    cachedQuery({
+      queryKey: ["v6AmmStates", chainProjectsKey(chains)],
+      enabled: chains.length > 0,
+      staleTime: 60_000,
+      queryFn: () => fetchAmmStates(chains),
+    }),
+  );
 
   const anyHook = data?.some((s) => s.hook) ?? false;
 
@@ -1059,7 +1076,12 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
     }
     return data.map((state) =>
       kind === "market" ? (
-        <MarketChainRow key={state.chainId} state={state} tokenSymbol={tokenSymbol} />
+        <MarketChainRow
+          key={state.chainId}
+          state={state}
+          tokenSymbol={tokenSymbol}
+          pending={isFetching}
+        />
       ) : (
         <LiquidityChainRow key={state.chainId} state={state} tokenSymbol={tokenSymbol} />
       ),

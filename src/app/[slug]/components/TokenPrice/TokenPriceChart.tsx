@@ -1,6 +1,7 @@
 "use client";
 
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
+import { cachedQuery } from "@/lib/query-persist";
 import { CartesianChart, type ChartReferenceLine, type ChartSeries } from "@/components/ui/chart";
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
@@ -46,7 +47,8 @@ export function TokenPriceChart({
   const searchParams = useSearchParams();
   const range = parseTimeRange(searchParams.get("range"));
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery(
+    cachedQuery({
     queryKey: ["chartData", projectId, chainId, suckerGroupId, range],
     queryFn: () =>
       getTokenPriceChartData({
@@ -57,7 +59,8 @@ export function TokenPriceChart({
         baseToken: { address: token, symbol: tokenSymbol, decimals: tokenDecimals },
       }),
     placeholderData: keepPreviousData,
-  });
+    }),
+  );
 
   const [showIssuance, setShowIssuance] = useState(true);
   const [showAmm, setShowAmm] = useState(true);

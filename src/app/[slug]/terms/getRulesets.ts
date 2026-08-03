@@ -18,8 +18,10 @@ export type Ruleset = {
   weightCutPercent: number;
 };
 
-export const getRulesets = unstable_cache(
-  async (projectId: string, chainId: JBChainId): Promise<Ruleset[]> => {
+const readRulesets = async (
+  projectId: string,
+  chainId: JBChainId,
+): Promise<Ruleset[]> => {
     const client = getViemPublicClient(chainId);
     const contract = getContract({
       address: getJBContractAddress(JBCoreContracts.JBRulesets, 6, chainId),
@@ -38,7 +40,25 @@ export const getRulesets = unstable_cache(
         weightCutPercent: new WeightCutPercent(r.weightCutPercent).toFloat(),
       }))
       .sort((a, b) => a.start - b.start);
-  },
-  ["rulesets"],
-  { revalidate: 300 },
-);
+};
+
+/**
+ * A revnet's stages are queued once at deployFor — REVDeployer launches them
+ * all in one call on a blank project, and no revnet actor holds
+ * QUEUE_RULESETS — so this answer can never change. Cache it permanently
+ * rather than re-reading the chain every few minutes.
+ */
+const cachedRulesets = unstable_cache(readRulesets, ["rulesets"], {
+  revalidate: false,
+});
+
+export async function getRulesets(
+  projectId: string,
+  chainId: JBChainId,
+): Promise<Ruleset[]> {
+  const cached = await cachedRulesets(projectId, chainId);
+  if (cached.length > 0) return cached;
+  // An empty read means the revnet is mid-deploy or the RPC failed — never let
+  // that become the permanent answer, so bypass the cache until it has stages.
+  return readRulesets(projectId, chainId);
+}

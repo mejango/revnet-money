@@ -1,6 +1,7 @@
 "use client";
 
 import { CartesianChart } from "@/components/ui/chart";
+import { cachedQuery } from "@/lib/query-persist";
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { formatClock, formatMonthDay, formatMonthYear, formatShortDateTime } from "@/lib/date";
@@ -57,7 +58,8 @@ function PoolChart({
 }) {
   const [rangeSeconds, setRangeSeconds] = useState<number>(30 * DAY);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery(
+    cachedQuery({
     queryKey: ["v6MarketPriceHistory", pool.chainId, pool.poolId],
     staleTime: 60_000,
     retry: 1,
@@ -68,7 +70,8 @@ function PoolChart({
         poolId: pool.poolId,
         pairDecimals: pool.pair.decimals,
       }),
-  });
+    }),
+  );
 
   const live = pool.price ?? 0;
   const now = Math.floor(Date.now() / 1000);
@@ -193,12 +196,14 @@ export function MarketPriceChart({
   tokenSymbol: string;
 }) {
   // Same key as AmmCard: the pools are read once for the whole subtab.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery(
+    cachedQuery({
     queryKey: ["v6AmmStates", chainProjectsKey(chains)],
     enabled: chains.length > 0,
     staleTime: 60_000,
     queryFn: () => fetchAmmStates(chains),
-  });
+    }),
+  );
 
   // A ghost while the pools resolve, so the tab does not reflow when the
   // chart lands. Once resolved, a project with no pool renders nothing.
