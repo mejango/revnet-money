@@ -23,7 +23,7 @@ export function RangeSelector<T extends string>({ ranges, defaultValue }: Props<
   const currentValue = validValues.includes(rangeParam as T) ? (rangeParam as T) : defaultValue;
 
   return (
-    <div className="flex gap-1 p-1 bg-zinc-100 rounded-lg shrink-0">
+    <div className="flex gap-1 p-1 bg-teal-50 rounded-lg shrink-0">
       {ranges.map(({ value, label }) => (
         <Link
           key={value}
@@ -31,9 +31,11 @@ export function RangeSelector<T extends string>({ ranges, defaultValue }: Props<
           scroll={false}
           className={cn(
             "inline-flex min-h-11 items-center px-3 py-1.5 text-sm font-medium rounded-md transition-all",
+            // A darker fill of the track's own green reads as selected; white
+            // read as a hole punched in the control.
             currentValue === value
-              ? "bg-white text-zinc-900 shadow-sm"
-              : "text-zinc-500 hover:text-zinc-700",
+              ? "bg-teal-100 text-zinc-900"
+              : "text-zinc-600 hover:bg-teal-100/60 hover:text-zinc-900",
           )}
         >
           {label}

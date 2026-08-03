@@ -28,6 +28,7 @@ import {
   classifySuckerTransport,
   findSuckerTransportValue,
   getAccountingContexts,
+  getTokenAddress,
   getV6SuckerPairs,
   NATIVE_SUCKER_TRANSPORT_VALUES,
   relativeSuckerDrift,
@@ -152,7 +153,28 @@ export async function tokenSymbolOf(chainId: JBChainId, token: Address): Promise
 }
 
 /** The project's ERC-20 symbol (same address on every chain of the group). */
+/**
+ * The project's OWN token symbol.
+ *
+ * `ProjectItem.token` is the project's ACCOUNTING token — USDC for a USDC
+ * revnet — so reading its symbol labels the project's own token as USDC. The
+ * project token comes from JBTokens instead, with the accounting token only as
+ * a last resort for a project that has not deployed one.
+ */
 export async function projectTokenSymbol(projects: ProjectItem[]): Promise<string> {
+  for (const project of projects) {
+    const chainId = project.chainId as JBChainId;
+    try {
+      const client = getViemPublicClient(chainId) as PublicClient;
+      const token = await getTokenAddress(client, {
+        chainId,
+        projectId: BigInt(project.projectId),
+      });
+      if (token && token !== zeroAddress) return tokenSymbolOf(chainId, token as Address);
+    } catch {
+      // Try the next chain rather than mislabeling with the accounting token.
+    }
+  }
   const withToken = projects.find((p) => p.token);
   if (!withToken?.token) return "tokens";
   return tokenSymbolOf(withToken.chainId as JBChainId, withToken.token as Address);

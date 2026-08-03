@@ -1,6 +1,16 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { EthereumAddress } from "@/components/EthereumAddress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
@@ -10,7 +20,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { erc20Abi, formatUnits, parseUnits, zeroAddress, type PublicClient } from "viem";
+import { erc20Abi, formatUnits, parseUnits, zeroAddress, type Address, type PublicClient } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import {
   chainName,
@@ -33,6 +43,7 @@ import {
   prepareCollectLpFees,
   prepareRemoveLiquidity,
   readLpPositionFees,
+  readPoolLpPositions,
   readUserLpPositions,
   refreshUserLpPosition,
   reverifyAddLiquidity,
@@ -99,6 +110,113 @@ function tickPrice(pool: PoolSnapshot, tick: number): number {
   const decimalScale = 10 ** (18 - pool.pair.decimals);
   const rawPrice = 1.0001 ** tick;
   return (pool.pairIsC0 ? 1 / rawPrice : rawPrice) * decimalScale;
+}
+
+/**
+ * Who supplies this pool: the owner breakdown's own pie and table, sized by the
+ * pair-token value of each provider's positions, so the two read as one family.
+ * The positions come from the index where it has them and the onchain scan
+ * otherwise, which is why this can render before the depth chart resolves.
+ */
+function LiquidityProviders({ pool, tokenSymbol }: { pool: PoolSnapshot; tokenSymbol: string }) {
+  const positions = useQuery({
+    queryKey: ["revnetPoolLpProviders", pool.chainId, pool.poolId],
+    retry: 0,
+    staleTime: 60_000,
+    queryFn: () => readPoolLpPositions(pool),
+  });
+
+  const owners = useMemo(() => {
+    const byOwner = new Map<
+      string,
+      { address: Address; pair: bigint; token: bigint; positions: number; value: number }
+    >();
+    for (const position of positions.data ?? []) {
+      const key = position.owner.toLowerCase();
+      const current = byOwner.get(key) ?? {
+        address: position.owner,
+        pair: 0n,
+        token: 0n,
+        positions: 0,
+        value: 0,
+      };
+      current.pair += position.pairAmount;
+      current.token += position.tokenAmount;
+      current.positions += 1;
+      current.value =
+        Number(formatUnits(current.pair, pool.pair.decimals)) +
+        (pool.price ?? 0) * Number(formatUnits(current.token, 18));
+      byOwner.set(key, current);
+    }
+    return [...byOwner.values()].sort((a, b) => b.value - a.value);
+  }, [positions.data, pool]);
+
+  if (positions.isLoading) {
+    return <p className="mt-2 text-sm text-zinc-400">Reading liquidity providers…</p>;
+  }
+  if (!owners.length) return null;
+
+  const total = owners.reduce((sum, owner) => sum + owner.value, 0);
+  // The pie is the owner chart's, fed the providers' pair-token value as its
+  // balance so the slices are sized the same way.
+  const participants = owners.map((owner) => ({
+    address: owner.address,
+    balance: owner.pair.toString(),
+    volume: "0",
+    chains: [Number(pool.chainId)],
+  }));
+  const totalPair = owners.reduce((sum, owner) => sum + owner.pair, 0n);
+
+  return (
+    <div className="mb-6">
+      <div className="text-xs font-medium text-zinc-600">Liquidity providers</div>
+      <div className="mt-2 grid items-start gap-8 lg:grid-cols-[minmax(280px,0.72fr)_minmax(360px,1.28fr)]">
+        <div className="min-w-0">
+          <ParticipantsPieChart
+            participants={participants}
+            totalSupply={totalPair}
+            token={null}
+            showOwnerCount
+          />
+        </div>
+        <div className="w-full min-w-0 overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Account</TableHead>
+                <TableHead className="text-right">{pool.pair.symbol}</TableHead>
+                <TableHead className="text-right">{tokenSymbol}</TableHead>
+                <TableHead className="text-right">Share</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {owners.map((owner) => (
+                <TableRow key={owner.address}>
+                  <TableCell>
+                    <EthereumAddress address={owner.address} short withEnsAvatar withEnsName />
+                    {owner.positions > 1 ? (
+                      <span className="block text-xs text-zinc-500">
+                        {owner.positions} positions
+                      </span>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {fmtUnits(owner.pair, pool.pair.decimals)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {fmtUnits(owner.token, 18)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">
+                    {total > 0 ? `${((owner.value / total) * 100).toFixed(1)}%` : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function LiquidityVisualization({
@@ -285,7 +403,10 @@ function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; token
           The RPC could not return the complete pool history, so liquidity is unavailable.
         </p>
       ) : (
-        <LiquidityVisualization pool={pool} composition={composition} tokenSymbol={tokenSymbol} />
+        <>
+          <LiquidityProviders pool={pool} tokenSymbol={tokenSymbol} />
+          <LiquidityVisualization pool={pool} composition={composition} tokenSymbol={tokenSymbol} />
+        </>
       )}
     </div>
   );

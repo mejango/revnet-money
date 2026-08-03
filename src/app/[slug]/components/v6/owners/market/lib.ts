@@ -782,7 +782,7 @@ async function positionFor(
  * position's fee checkpoint on every collect, so live state only ever shows
  * what is currently unclaimed.
  */
-export async function readIndexedLpPositions(
+async function readIndexedLpPositions(
   pool: PoolSnapshot,
 ): Promise<UserLpPosition[] | null> {
   try {
@@ -821,6 +821,29 @@ export async function readIndexedLpPositions(
   } catch {
     return null;
   }
+}
+
+/**
+ * Every position in the pool, whoever owns it — the index when it has this
+ * pool, the onchain scan otherwise.
+ */
+export async function readPoolLpPositions(
+  pool: PoolSnapshot,
+): Promise<UserLpPosition[]> {
+  const indexed = await readIndexedLpPositions(pool);
+  if (indexed) return indexed;
+
+  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(pool.chainId)];
+  if (!positionManager) return [];
+  const client = getViemPublicClient(pool.chainId) as PublicClient;
+  const ids = await poolPositionTokenIds(client, pool, positionManager);
+  const positions = await Promise.all(
+    ids.map((tokenId) => positionFor(client, pool, positionManager, tokenId)),
+  );
+  return positions.filter(
+    (position): position is UserLpPosition =>
+      position != null && position.liquidity > 0n,
+  );
 }
 
 export async function readUserLpPositions(
