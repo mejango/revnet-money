@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  uniswapV4AmountsForLiquidity,
+  uniswapV4SqrtPriceX96AtTick,
+} from "@bananapus/nana-sdk-core/v6";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import {
@@ -106,6 +110,13 @@ function MarketChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSym
 const DEPTH_WIDTH = 320;
 const DEPTH_BANDS = 48;
 
+/** Inverse of {@link tickPrice}: the raw tick at a pair/token price. */
+function priceTick(pool: PoolSnapshot, price: number): number {
+  const decimalScale = 10 ** (18 - pool.pair.decimals);
+  const rawPrice = pool.pairIsC0 ? decimalScale / price : price / decimalScale;
+  return Math.log(rawPrice) / Math.log(1.0001);
+}
+
 function tickPrice(pool: PoolSnapshot, tick: number): number {
   const decimalScale = 10 ** (18 - pool.pair.decimals);
   const rawPrice = 1.0001 ** tick;
@@ -169,8 +180,7 @@ function LiquidityProviders({ pool, tokenSymbol }: { pool: PoolSnapshot; tokenSy
 
   return (
     <div className="mb-6">
-      <div className="text-xs font-medium text-zinc-600">Liquidity providers</div>
-      <div className="mt-2 grid items-start gap-8 lg:grid-cols-[minmax(280px,0.72fr)_minmax(360px,1.28fr)]">
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(280px,0.72fr)_minmax(360px,1.28fr)]">
         <div className="min-w-0">
           <ParticipantsPieChart
             participants={participants}
@@ -241,6 +251,9 @@ function LiquidityVisualization({
         const a = tickPrice(pool, range.tickLower);
         const b = tickPrice(pool, range.tickUpper);
         return {
+          tickLower: range.tickLower,
+          tickUpper: range.tickUpper,
+          liquidityRaw: range.liquidity,
           low: Math.min(a, b),
           high: Math.max(a, b),
           liquidity: Number(range.liquidity),
@@ -270,11 +283,33 @@ function LiquidityVisualization({
     const span = logHigh - logLow;
     const bands = Array.from({ length: DEPTH_BANDS }, (_, index) => {
       const mid = Math.exp(logLow + ((index + 0.5) / DEPTH_BANDS) * span);
-      const liquidity = ranges.reduce(
-        (sum, range) => sum + (mid >= range.low && mid <= range.high ? range.liquidity : 0),
-        0,
-      );
-      return { mid, liquidity };
+      const bandLow = Math.exp(logLow + (index / DEPTH_BANDS) * span);
+      const bandHigh = Math.exp(logLow + ((index + 1) / DEPTH_BANDS) * span);
+      // Pair/token price falls with tick when the pair is currency0 and rises
+      // when it is currency1, so normalize both orientations before
+      // intersecting a band with a position's range.
+      const bandTicks = [priceTick(pool, bandLow), priceTick(pool, bandHigh)];
+      const bandTickLow = Math.min(...bandTicks);
+      const bandTickHigh = Math.max(...bandTicks);
+
+      let liquidity = 0;
+      let pair = 0n;
+      let token = 0n;
+      for (const range of ranges) {
+        if (mid >= range.low && mid <= range.high) liquidity += range.liquidity;
+        const overlapLow = Math.max(bandTickLow, range.tickLower);
+        const overlapHigh = Math.min(bandTickHigh, range.tickUpper);
+        if (overlapLow >= overlapHigh) continue;
+        const amounts = uniswapV4AmountsForLiquidity(
+          pool.sqrtP,
+          uniswapV4SqrtPriceX96AtTick(Math.round(overlapLow)),
+          uniswapV4SqrtPriceX96AtTick(Math.round(overlapHigh)),
+          range.liquidityRaw,
+        );
+        pair += pool.pairIsC0 ? amounts.amount0 : amounts.amount1;
+        token += pool.pairIsC0 ? amounts.amount1 : amounts.amount0;
+      }
+      return { mid, liquidity, pair, token };
     });
     const maxLiquidity = Math.max(...bands.map((band) => band.liquidity), 1);
     const priceX = ((Math.log(pool.price) - logLow) / span) * DEPTH_WIDTH;
@@ -287,6 +322,22 @@ function LiquidityVisualization({
       depth: { bands, maxLiquidity, low, high, priceX },
     };
   }, [composition, pool]);
+
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  // With nothing hovered, report the band holding the current price.
+  const priceIndex = useMemo(() => {
+    const bands = model.depth?.bands;
+    if (!bands?.length || pool.price == null) return null;
+    let nearest = 0;
+    bands.forEach((band, index) => {
+      if (Math.abs(band.mid - pool.price!) < Math.abs(bands[nearest].mid - pool.price!)) {
+        nearest = index;
+      }
+    });
+    return nearest;
+  }, [model.depth, pool.price]);
+  const shownIndex = hoverIndex ?? priceIndex;
+  const shownBand = shownIndex == null ? null : (model.depth?.bands[shownIndex] ?? null);
 
   return (
     <div className="mt-3 space-y-5">
@@ -324,9 +375,16 @@ function LiquidityVisualization({
           <div className="text-xs text-zinc-500">Depth</div>
           <svg
             viewBox={`0 0 ${DEPTH_WIDTH} 128`}
-            className="mt-2 h-auto w-full"
+            className="mt-2 h-auto w-full cursor-crosshair touch-none"
             role="img"
             aria-label={`${tokenSymbol} liquidity depth from ${formatPrice(model.depth.low)} to ${formatPrice(model.depth.high)} ${pool.pair.symbol}`}
+            onPointerMove={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              const x = ((event.clientX - rect.left) / rect.width) * DEPTH_WIDTH;
+              const index = Math.floor(x / (DEPTH_WIDTH / DEPTH_BANDS));
+              setHoverIndex(index >= 0 && index < DEPTH_BANDS ? index : null);
+            }}
+            onPointerLeave={() => setHoverIndex(null)}
           >
             {model.depth.bands.map((band, index) => {
               if (band.liquidity <= 0) return null;
@@ -340,7 +398,7 @@ function LiquidityVisualization({
                   width={Math.max(0.5, width - 0.6).toFixed(1)}
                   height={height.toFixed(1)}
                   fill={band.mid < pool.price! ? "#99f6e4" : "#fcd34d"}
-                  opacity="0.75"
+                  opacity={index === shownIndex ? 0.95 : 0.6}
                 />
               );
             })}
@@ -356,7 +414,7 @@ function LiquidityVisualization({
             />
             <line x1="319" y1="20" x2="319" y2="98" stroke="#14b8a6" strokeDasharray="3 2" />
             <text x="1" y="13" fontSize="8" fill="#71717a">
-              range low
+              floor
             </text>
             <text
               x={Math.max(18, Math.min(DEPTH_WIDTH - 18, model.depth.priceX)).toFixed(1)}
@@ -368,7 +426,7 @@ function LiquidityVisualization({
               price
             </text>
             <text x="319" y="13" fontSize="8" fill="#71717a" textAnchor="end">
-              range high
+              ceiling
             </text>
             <text x="1" y="119" fontSize="8" fill="#71717a">
               {formatPrice(model.depth.low)}
@@ -377,8 +435,21 @@ function LiquidityVisualization({
               {formatPrice(model.depth.high)}
             </text>
           </svg>
-          <p className="mt-1 text-xs text-zinc-600">
-            ~{formatPrice(pool.price!)} {pool.pair.symbol}/{tokenSymbol}
+          <p className="mt-1 text-xs text-zinc-600" aria-live="polite">
+            {shownBand ? (
+              <>
+                <span className="font-medium text-zinc-900">
+                  ~{formatPrice(shownBand.mid)} {pool.pair.symbol}/{tokenSymbol}
+                </span>{" "}
+                | {shownBand.mid < pool.price! ? "buy-side" : "sell-side"} —{" "}
+                {fmtUnits(shownBand.token, 18)} {tokenSymbol} +{" "}
+                {fmtUnits(shownBand.pair, pool.pair.decimals)} {pool.pair.symbol}
+              </>
+            ) : (
+              <>
+                ~{formatPrice(pool.price!)} {pool.pair.symbol}/{tokenSymbol}
+              </>
+            )}
           </p>
         </div>
       ) : null}
