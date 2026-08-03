@@ -9,6 +9,7 @@ import {
   jbDirectoryAbi,
   jbOmnichainDeployerAbi,
   JBOmnichainDeployerContracts,
+  jbPricesAbi,
   jbSplitsAbi,
   NATIVE_TOKEN,
   RevnetCoreContracts,
@@ -16,6 +17,8 @@ import {
 import {
   buildCollectUniswapV4FeesTx,
   getAccountingContexts,
+  getCashOutQuote,
+  getCurrentRuleset,
   readUniswapV4PositionFees,
   UNISWAP_PERMIT2_ADDRESS,
   UNISWAP_V4_INITIALIZE_TOPIC,
@@ -42,6 +45,7 @@ import {
   encodeAbiParameters,
   encodeFunctionData,
   erc20Abi,
+  formatUnits,
   Hex,
   parseAbiItem,
   PublicClient,
@@ -254,6 +258,8 @@ interface PairToken {
   addr: Address;
   decimals: number;
   symbol: string;
+  /** The accounting context's currency id — token-keyed, not a standard id. */
+  currency: number;
 }
 
 export interface PoolSnapshot {
@@ -290,6 +296,7 @@ async function pairTokenFor(
     addr: native ? zeroAddress : (primary.token.toLowerCase() as Address),
     decimals: primary.decimals,
     symbol,
+    currency: Number(primary.currency),
   };
 }
 
@@ -1245,17 +1252,123 @@ export interface AmmChainState {
   hook: Address | null;
   pool: PoolSnapshot | null;
   composition: PoolComposition | null;
+  /** The two prices arbitrage keeps the pool between. Null when unreadable. */
+  reference: MarketReferencePrices;
 }
+
+export interface MarketReferencePrices {
+  /** Issuance ceiling, in pair tokens per project token. */
+  issuance: number | null;
+  /** Cash-out floor, in pair tokens per project token. */
+  cashOut: number | null;
+}
+
+/**
+ * The issuance ceiling on the PAIR-TOKEN axis. The ruleset weight prices tokens
+ * against the ruleset's `baseCurrency` (a standard id like ETH=1/USD=2, or a
+ * token-keyed id), while the market card's axis is the accounting/pair token —
+ * so the base-per-token figure is converted through the same project-scoped
+ * JBPrices feed the terminal uses on every payment. Null when there is no
+ * usable feed: a missing ceiling is honest, a misdenominated one is not.
+ */
+async function issuanceCeilingOf(
+  client: PublicClient,
+  args: {
+    chainId: JBChainId;
+    projectId: bigint;
+    weight: bigint;
+    baseCurrency: number;
+    pairCurrency: number;
+  },
+): Promise<number | null> {
+  if (args.weight <= 0n) return null;
+  const basePerToken = 1 / (Number(args.weight) / 1e18);
+  if (args.baseCurrency === args.pairCurrency) return basePerToken;
+  const prices = v6Address(JBCoreContracts.JBPrices, args.chainId);
+  if (!prices) return null;
+  try {
+    const price = (await client.readContract({
+      address: prices,
+      abi: jbPricesAbi,
+      functionName: "pricePerUnitOf",
+      args: [args.projectId, BigInt(args.pairCurrency), BigInt(args.baseCurrency), 18n],
+    })) as bigint;
+    const pairPerBase = Number(price) / 1e18;
+    if (!(pairPerBase > 0) || !Number.isFinite(pairPerBase)) return null;
+    return basePerToken * pairPerBase;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The ceiling and floor the pool trades between, both in pair tokens per
+ * project token. Read best-effort: either half degrades to null on its own.
+ *
+ * The cash-out quote is hook-blind (`currentReclaimableSurplusOf` skips data
+ * hooks) and display-only — transactions must quote through the hook-aware
+ * path. It is taken in the accounting context's own terms, so no price-feed
+ * conversion is involved.
+ */
+export async function readMarketReferencePrices(
+  pool: PoolSnapshot,
+  projectId: bigint,
+  providedClient?: PublicClient,
+): Promise<MarketReferencePrices> {
+  const client = providedClient ?? (getViemPublicClient(pool.chainId) as PublicClient);
+
+  const [issuance, cashOut] = await Promise.all([
+    (async () => {
+      const current = await getCurrentRuleset(client, { chainId: pool.chainId, projectId });
+      return issuanceCeilingOf(client, {
+        chainId: pool.chainId,
+        projectId,
+        weight: current.ruleset.weight,
+        baseCurrency: Number(current.metadata.baseCurrency),
+        pairCurrency: pool.pair.currency,
+      });
+    })().catch(() => null),
+    (async () => {
+      // Quote the largest whole token unit the supply supports, never a scaled
+      // one-token extrapolation: cash-out is nonlinear, and on a few-decimal
+      // accounting token a one-token reclaim floors to zero at large supplies.
+      const quote = await getCashOutQuote(client, {
+        chainId: pool.chainId,
+        projectId,
+        cashOutCount: 10n ** 18n,
+        decimals: BigInt(pool.pair.decimals),
+        currency: BigInt(pool.pair.currency),
+      });
+      const value = Number(formatUnits(quote.reclaimAmount, pool.pair.decimals));
+      return Number.isFinite(value) && value > 0 ? value : null;
+    })().catch(() => null),
+  ]);
+
+  return { issuance, cashOut };
+}
+
+const EMPTY_REFERENCE: MarketReferencePrices = { issuance: null, cashOut: null };
 
 export async function fetchAmmStates(chains: ChainProject[]): Promise<AmmChainState[]> {
   return Promise.all(
     chains.map(async ({ chainId, projectId }): Promise<AmmChainState> => {
       try {
         const { hook, pool } = await readPoolSnapshot(chainId, projectId);
-        const composition = pool ? await fetchPoolComposition(pool).catch(() => null) : null;
-        return { chainId, hook, pool, composition };
+        const [composition, reference] = await Promise.all([
+          pool ? fetchPoolComposition(pool).catch(() => null) : null,
+          pool
+            ? readMarketReferencePrices(pool, projectId).catch(() => EMPTY_REFERENCE)
+            : EMPTY_REFERENCE,
+        ]);
+        return { chainId, hook, pool, composition, reference };
       } catch {
-        return { chainId, hook: null, pool: null, composition: null };
+        return {
+          chainId,
+          hook: null,
+          pool: null,
+          composition: null,
+          reference: EMPTY_REFERENCE,
+        };
       }
     }),
   );

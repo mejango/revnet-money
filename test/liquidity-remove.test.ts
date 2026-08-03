@@ -22,7 +22,7 @@ const pool = {
   },
   poolId: `0x${"44".repeat(32)}`,
   sqrtP: 1n,
-  pair: { addr: zeroAddress, decimals: 18, symbol: "ETH" },
+  pair: { addr: zeroAddress, decimals: 18, symbol: "ETH", currency: 1 },
   pairIsC0: true,
   projectToken,
   price: 1,

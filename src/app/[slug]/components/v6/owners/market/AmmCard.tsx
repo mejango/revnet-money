@@ -66,11 +66,23 @@ function formatPrice(price: number): string {
 function MarketChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
   const { pool } = state;
   const explorer = pool ? explorerAddressUrl(state.chainId, pool.poolManager) : null;
+  const inverse = pool?.price ? 1 / pool.price : null;
+  const { issuance, cashOut } = state.reference;
   return (
     <div className="border-b border-zinc-50 py-3 last:border-b-0">
       <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
         <ChainLogo chainId={state.chainId} width={16} height={16} />
         {chainName(state.chainId)}
+        {explorer ? (
+          <a
+            href={explorer}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-normal text-zinc-400 underline decoration-dotted hover:text-zinc-600"
+          >
+            PoolManager ↗
+          </a>
+        ) : null}
       </div>
       {!state.hook ? (
         <p className="text-sm text-zinc-400 mt-1">No buyback hook configured on this chain.</p>
@@ -79,29 +91,37 @@ function MarketChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSym
           Buyback hook configured, but its pool is not initialized yet.
         </p>
       ) : (
-        <div className="mt-2 text-sm text-zinc-700 space-y-1">
-          <div>
-            <span className="text-zinc-400">Price</span>{" "}
-            {pool.price == null
-              ? "—"
-              : `${formatPrice(pool.price)} ${pool.pair.symbol}/${tokenSymbol}`}
-          </div>
-          <div className="text-xs text-zinc-400">
-            Uniswap V4 pool (fee {pool.key.fee / 10_000}%) held by the{" "}
-            {explorer ? (
-              <a
-                href={explorer}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline decoration-dotted hover:text-zinc-600"
-              >
-                PoolManager ↗
-              </a>
-            ) : (
-              "PoolManager"
-            )}
-          </div>
-        </div>
+        <>
+          <p className="mt-2 text-lg font-medium text-zinc-900">
+            1 {tokenSymbol} = {formatPrice(pool.price ?? 0)} {pool.pair.symbol}
+          </p>
+          <p className="text-sm text-zinc-500">
+            1 {pool.pair.symbol} = {inverse ? formatPrice(inverse) : "—"} {tokenSymbol}
+          </p>
+          {issuance || cashOut ? (
+            <dl className="mt-4 space-y-1.5 border-t border-zinc-100 pt-3 text-sm">
+              {issuance ? (
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-zinc-500">Current issuance price</dt>
+                  <dd className="font-medium text-zinc-900">
+                    {formatPrice(issuance)} {pool.pair.symbol}
+                  </dd>
+                </div>
+              ) : null}
+              {cashOut ? (
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-zinc-500">Current cash out price</dt>
+                  <dd className="font-medium text-zinc-900">
+                    {formatPrice(cashOut)} {pool.pair.symbol}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
+          <p className="mt-3 text-xs text-zinc-400">
+            Uniswap V4 pool, {pool.key.fee / 10_000}% fee.
+          </p>
+        </>
       )}
     </div>
   );
@@ -1050,10 +1070,11 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
     <div className="flex flex-col gap-4">
       <div className="border border-teal-200 bg-teal-50 p-4">
         <h3 className="font-medium text-zinc-900">
-          Market <span className="ml-1 text-xs uppercase tracking-wide text-zinc-400">AMM</span>
+          Pool <span className="ml-1 text-xs uppercase tracking-wide text-zinc-400">AMM</span>
         </h3>
         <p className="mt-1 text-sm text-zinc-500">
-          The market is used to fill orders that give payers more {tokenSymbol} than issuance would.
+          The market fills orders that would give payers more {tokenSymbol} than issuance.
+          Arbitrage keeps its price between the issuance ceiling and the cash-out floor.
         </p>
         <div className="mt-2">{content("market")}</div>
       </div>
