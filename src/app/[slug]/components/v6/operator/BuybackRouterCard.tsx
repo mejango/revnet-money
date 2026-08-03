@@ -36,6 +36,7 @@ import {
   publicClientFor,
   v6ContractAddress,
 } from "./operatorLib";
+import { OperatorSection } from "./OperatorSection";
 import { useOperatorWrites } from "./useOperatorWrites";
 
 type BuybackChainState = ChainProjectRow & {
@@ -303,9 +304,8 @@ export function BuybackRouterCard({ rows }: { rows: ChainProjectRow[] }) {
   const states = stateQuery.data ?? [];
 
   return (
-    <div>
-      <h3 className="mb-2 text-base font-semibold text-zinc-700">Buyback &amp; swap router</h3>
-      <div className="max-w-screen-sm">
+    <OperatorSection title="Buyback &amp; swap router">
+      <div>
         <p className="text-sm text-zinc-500">
           Wire up the project&apos;s buyback hook and swap router, initialize its Uniswap pool, and
           tune the pool&apos;s TWAP window. Pick one chain and the operator&apos;s wallet signs it
@@ -324,7 +324,7 @@ export function BuybackRouterCard({ rows }: { rows: ChainProjectRow[] }) {
           </div>
         )}
       </div>
-    </div>
+    </OperatorSection>
   );
 }
 

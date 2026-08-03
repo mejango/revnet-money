@@ -8,6 +8,7 @@ import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useMemo } from "react";
 import { Address, isAddress } from "viem";
 import { ChainProjectRow, PermissionHolderRow, permissionHoldersWhere } from "./operatorLib";
+import { OperatorSection } from "./OperatorSection";
 import { permissionInfo } from "./permissionMeta";
 
 type Grant = {
@@ -88,9 +89,8 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
   const grants = useMemo(() => aggregateGrants(query.data ?? [], rows), [query.data, rows]);
 
   return (
-    <div>
-      <h3 className="mb-2 text-base font-semibold text-zinc-700">Permissions</h3>
-      <div className="max-w-screen-sm">
+    <OperatorSection title="Permissions">
+      <div>
         <p className="text-sm text-zinc-500">
           Every power the revnet&apos;s revnet operator role currently holds, including any NFT
           powers granted at launch.
@@ -162,6 +162,6 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
           </div>
         )}
       </div>
-    </div>
+    </OperatorSection>
   );
 }

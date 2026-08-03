@@ -7,6 +7,7 @@ import { useFetchProjectRulesets } from "@/hooks/useFetchProjectRulesets";
 import { useJBChainId } from "@/lib/nana/project";
 import { useSuckers } from "@/lib/nana/suckers";
 import { ProjectItem } from "../shared";
+import { OperatorSection } from "./OperatorSection";
 
 /**
  * website/-parity renderEditsCard: the operator's edit actions, each reusing
@@ -31,9 +32,8 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
   const currentStageIdx = nextStageIdx - 1;
 
   return (
-    <div>
-      <h3 className="mb-2 text-base font-semibold text-zinc-700">Edits</h3>
-      <div className="max-w-screen-sm space-y-4">
+    <OperatorSection title="Edits">
+      <div className="space-y-4">
         <div className="bg-melon-50 p-4">
           <p className="text-sm font-medium">Set project metadata</p>
           <p className="text-xs text-zinc-500 mt-1 mb-3">
@@ -59,6 +59,6 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
           )}
         </div>
       </div>
-    </div>
+    </OperatorSection>
   );
 }

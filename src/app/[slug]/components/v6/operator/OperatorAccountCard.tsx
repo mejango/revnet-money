@@ -25,6 +25,7 @@ import {
   runSequentialWrites,
   v6ContractAddress,
 } from "./operatorLib";
+import { OperatorSection } from "./OperatorSection";
 
 // Onchain Safe probe — no Safe transaction-service dependency, just bytecode +
 // the two view calls every Safe exposes.
@@ -174,9 +175,8 @@ export function OperatorAccountCard({
     known.some((row) => row.operator!.toLowerCase() !== known[0].operator!.toLowerCase());
 
   return (
-    <div>
-      <h3 className="mb-2 text-base font-semibold text-zinc-700">Account</h3>
-      <div className="max-w-screen-sm">
+    <OperatorSection title="Account">
+      <div>
         <p className="text-sm text-zinc-500">
           Revnets have no owner. The revnet operator holds only the permissions granted at launch,
           and can pass the role on.
@@ -255,7 +255,7 @@ export function OperatorAccountCard({
           </div>
         )}
       </div>
-    </div>
+    </OperatorSection>
   );
 }
 

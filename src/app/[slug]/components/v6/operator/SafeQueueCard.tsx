@@ -27,6 +27,7 @@ import {
   publicClientFor,
   type ChainProjectRow,
 } from "./operatorLib";
+import { OperatorSection } from "./OperatorSection";
 
 type QueueRow = {
   chainId: ChainProjectRow["chainId"];
@@ -210,8 +211,7 @@ export function SafeQueueCard({
   };
 
   return (
-    <section className="border border-melon-300 bg-melon-25 p-4">
-      <h2 className="font-bold">Pending multisig transactions</h2>
+    <OperatorSection title="Pending multisig transactions">
       <p className="mt-1 text-sm text-melon-800">
         Safe signers can inspect, co-sign, and execute operator proposals without leaving Revnet.
       </p>
@@ -306,6 +306,6 @@ export function SafeQueueCard({
           {error}
         </p>
       ) : null}
-    </section>
+    </OperatorSection>
   );
 }

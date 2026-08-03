@@ -33,7 +33,7 @@ export function V6OperatorTab({
   }
 
   return (
-    <div className="flex flex-col min-w-0 gap-8">
+    <div className="flex min-w-0 flex-col gap-4">
       <OperatorAccountCard rows={rows} fallbackOperator={operator} />
       <SafeQueueCard rows={rows} fallbackOperator={operator} />
       <OperatorEditsCard projects={projects} />

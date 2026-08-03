@@ -31,6 +31,7 @@ import {
   runSequentialWrites,
   v6ContractAddress,
 } from "./operatorLib";
+import { OperatorSection } from "./OperatorSection";
 import {
   assetsFromAccountingContexts,
   buildSuckerExtensionWrites,
@@ -166,9 +167,8 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
   };
 
   return (
-    <div>
-      <h3 className="mb-2 text-base font-semibold text-zinc-700">Chains</h3>
-      <div className="max-w-screen-sm">
+    <OperatorSection title="Chains">
+      <div>
         <p className="text-sm text-zinc-500">
           This revnet runs on {rows.length} chain{rows.length === 1 ? "" : "s"}
           {rows.length > 0 ? ": " : ""}
@@ -270,6 +270,6 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
           </div>
         )}
       </div>
-    </div>
+    </OperatorSection>
   );
 }

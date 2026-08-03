@@ -47,12 +47,14 @@ async function liveSchema(endpoint: string) {
 // Documents that query fields an unmerged indexer PR adds. They run behind a
 // fallback — a schema error degrades to the onchain read — so shipping them
 // ahead of the indexer is safe, but they cannot be validated until it deploys.
-// Each entry names the PR that removes it, and the contract FAILS once the field
-// exists, so the list cannot quietly rot after the feature lands.
+// Entries can be scoped to an endpoint while a schema is rolling out. The
+// contract FAILS as soon as that endpoint serves the field, so exceptions
+// cannot quietly rot after the rollout lands there.
 const PENDING_SCHEMA_FIELDS = [
   {
     field: "buybackPoolPositions",
-    reason: "peripheralist/bendystraw#24 — LP positions and lifetime fees",
+    endpoint: "https://bendystraw.xyz/graphql",
+    reason: "peripheralist/bendystraw#24 — production rollout",
   },
 ];
 
@@ -66,14 +68,15 @@ describe("live Bendystraw schema contract", () => {
       );
 
       const live = new Set(Object.keys(schema.getQueryType()?.getFields() ?? {}));
-      const shipped = PENDING_SCHEMA_FIELDS.filter(({ field }) => live.has(field));
+      const pending = PENDING_SCHEMA_FIELDS.filter((entry) => entry.endpoint === endpoint);
+      const shipped = pending.filter(({ field }) => live.has(field));
       expect(
         shipped.map(({ field }) => field),
         "drop these from PENDING_SCHEMA_FIELDS — the endpoint serves them now",
       ).toEqual([]);
 
       const blocking = failures.filter(
-        (failure) => !PENDING_SCHEMA_FIELDS.some(({ field }) => failure.includes(`\"${field}\"`)),
+        (failure) => !pending.some(({ field }) => failure.includes(`\"${field}\"`)),
       );
       expect(blocking).toEqual([]);
     },
