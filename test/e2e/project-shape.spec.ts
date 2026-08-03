@@ -51,6 +51,11 @@ test("fixture project renders its contract-hydrated production shape", async ({
   await expect(page.getByRole("link", { name: "Overview" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Terms" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Owners", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Extras" })).toHaveCount(0);
+  await page.getByRole("button", { name: "More project sections" }).click();
+  await expect(page.getByRole("menuitem", { name: "Extras" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Operator" })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
   await expect(page.getByText("No activity yet")).toBeVisible();
 

@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useSelectedLayoutSegment } from "next/navigation";
-import { PropsWithChildren } from "react";
+import { PropsWithChildren, useEffect, useRef, useState } from "react";
 
 export function ProjectMenu({
   mobileActivityActive = false,
@@ -13,8 +13,8 @@ export function ProjectMenu({
   onMobileActivityChange?: (active: boolean) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <ul className="flex w-max min-w-full gap-4 border-b border-zinc-200 sm:gap-6">
+    <div className="flex border-b border-zinc-200">
+      <ul className="scrollbar-none flex min-w-0 flex-1 gap-4 overflow-x-auto sm:gap-6">
         <MobileActivityOption
           active={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(true)}
@@ -47,21 +47,100 @@ export function ProjectMenu({
         >
           Shop
         </MenuOption>
-        <MenuOption
-          href="extras"
-          forceInactive={mobileActivityActive}
-          onSelect={() => onMobileActivityChange?.(false)}
-        >
-          Extras
-        </MenuOption>
-        <MenuOption
-          href="operator"
-          forceInactive={mobileActivityActive}
-          onSelect={() => onMobileActivityChange?.(false)}
-        >
-          Operator
-        </MenuOption>
       </ul>
+      <MoreProjectOptions
+        forceInactive={mobileActivityActive}
+        onSelect={() => onMobileActivityChange?.(false)}
+      />
+    </div>
+  );
+}
+
+function MoreProjectOptions({
+  forceInactive,
+  onSelect,
+}: {
+  forceInactive: boolean;
+  onSelect: () => void;
+}) {
+  const params = useParams<{ slug: string }>();
+  const segment = useSelectedLayoutSegment();
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const options = [
+    { href: "extras", label: "Extras" },
+    { href: "operator", label: "Operator" },
+  ];
+  const active = forceInactive ? undefined : options.find((option) => option.href === segment);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOutside);
+    return () => document.removeEventListener("mousedown", closeOutside);
+  }, [open]);
+
+  return (
+    <div
+      ref={root}
+      className="relative ml-auto shrink-0"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !open) return;
+        setOpen(false);
+        trigger.current?.focus();
+      }}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        aria-label={`More project sections${active ? `, current: ${active.label}` : ""}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={cn(
+          "-mb-px flex min-h-11 min-w-11 items-center justify-center border-b-2 px-3 text-2xl leading-none transition-all",
+          active
+            ? "border-teal-500 text-black"
+            : "border-transparent text-zinc-500 hover:text-zinc-800",
+        )}
+      >
+        <span aria-hidden>⋮</span>
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          aria-label="More project sections"
+          className="absolute right-0 top-full z-40 mt-1 min-w-36 border border-zinc-200 bg-white py-1 shadow-lg"
+        >
+          {options.map((option) => {
+            const selected = !forceInactive && segment === option.href;
+            return (
+              <Link
+                key={option.href}
+                href={`/${decodeURIComponent(params.slug)}/${option.href}`}
+                role="menuitem"
+                aria-current={selected ? "page" : undefined}
+                onClick={() => {
+                  setOpen(false);
+                  onSelect();
+                  requestAnimationFrame(() => trigger.current?.focus());
+                }}
+                className={cn(
+                  "block min-h-10 px-4 py-2 text-sm transition-colors",
+                  selected
+                    ? "bg-melon-50 font-medium text-black"
+                    : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900",
+                )}
+              >
+                {option.label}
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
