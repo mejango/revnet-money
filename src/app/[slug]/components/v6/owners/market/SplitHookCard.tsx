@@ -17,6 +17,7 @@ import {
   fmtUnits,
 } from "../settlement/lib";
 import { fetchSplitHookStates, lpSplitHookAbi, SplitHookChainState } from "./lib";
+import { PERSIST } from "@/lib/query-persist";
 
 /** Simulate-first write against the LP split hook on its chain. */
 function HookActionButton({
@@ -201,6 +202,7 @@ export function SplitHookCard({
 }) {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["v6SplitHookStates", chainProjectsKey(chains)],
+    meta: PERSIST,
     enabled: chains.length > 0,
     staleTime: 60_000,
     queryFn: () => fetchSplitHookStates(chains),

@@ -57,6 +57,7 @@ import {
 import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
+import { PERSIST } from "@/lib/query-persist";
 
 type TokenChainState = {
   chainId: JBChainId;
@@ -107,6 +108,7 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
 
   const tokenState = useQuery({
     queryKey: ["v6-token-panel", key],
+    meta: PERSIST,
     enabled: projects.length > 0,
     staleTime: 30_000,
     queryFn: async (): Promise<TokenChainState[]> =>
@@ -189,7 +191,12 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
       ) : tokenState.isError ? (
         <p className="text-sm text-red-600">Couldn&apos;t read this project&apos;s token.</p>
       ) : isDeployed && primary?.token ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+        <div
+          className={`flex flex-wrap items-center gap-x-3 gap-y-2 text-sm${
+            tokenState.isFetching ? " revalidating" : ""
+          }`}
+          aria-busy={tokenState.isFetching || undefined}
+        >
           <TokenField label="Name">{primary.name ?? primary.symbol ?? "Token"}</TokenField>
           <Pipe />
           <TokenField label="Symbol">{primary.symbol ?? "—"}</TokenField>

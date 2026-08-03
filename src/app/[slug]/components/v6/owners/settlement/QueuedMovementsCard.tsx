@@ -28,6 +28,7 @@ import {
   tokenSymbolOf,
   viemChainOf,
 } from "./lib";
+import { PERSIST } from "@/lib/query-persist";
 
 type Filter = "all" | "pending" | "claimable";
 
@@ -237,6 +238,7 @@ export function QueuedMovementsCard({
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["v6BridgeRows", chainProjectsKey(chains)],
+    meta: PERSIST,
     enabled: chains.length > 1,
     // In-flight movements flip to claimable on their own once the destination
     // inbox receives the root — keep re-reading so no manual reload is needed.

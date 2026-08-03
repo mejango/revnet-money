@@ -6,6 +6,7 @@ import { chainProjectsKey, projectTokenSymbol, toChainProjects } from "../settle
 import { AmmCard } from "./AmmCard";
 import { MarketPriceChart } from "./MarketPriceChart";
 import { SplitHookCard } from "./SplitHookCard";
+import { PERSIST } from "@/lib/query-persist";
 
 /**
  * Owners → Market: the project's buyback-hook Uniswap V4 pool per chain, plus
@@ -17,6 +18,7 @@ export function V6MarketSubtab({ projects }: { projects: ProjectItem[] }) {
 
   const { data: tokenSymbol = "tokens" } = useQuery({
     queryKey: ["v6ProjectTokenSymbol", chainProjectsKey(chains)],
+    meta: PERSIST,
     enabled: projects.length > 0,
     staleTime: Infinity,
     queryFn: () => projectTokenSymbol(projects),

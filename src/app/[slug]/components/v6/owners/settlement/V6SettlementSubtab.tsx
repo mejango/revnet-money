@@ -7,6 +7,7 @@ import { BridgesCard } from "./BridgesCard";
 import { GossipCard } from "./GossipCard";
 import { chainProjectsKey, projectTokenSymbol, toChainProjects } from "./lib";
 import { QueuedMovementsCard } from "./QueuedMovementsCard";
+import { PERSIST } from "@/lib/query-persist";
 
 /**
  * Owners → Settlement: the project's cross-chain accounting surface — per-chain
@@ -18,6 +19,7 @@ export function V6SettlementSubtab({ projects }: { projects: ProjectItem[] }) {
 
   const { data: tokenSymbol = "tokens" } = useQuery({
     queryKey: ["v6ProjectTokenSymbol", chainProjectsKey(chains)],
+    meta: PERSIST,
     enabled: projects.length > 0,
     staleTime: Infinity,
     queryFn: () => projectTokenSymbol(projects),

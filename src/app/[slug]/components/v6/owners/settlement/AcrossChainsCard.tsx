@@ -12,6 +12,7 @@ import {
   fmtUnits,
   pctOf,
 } from "./lib";
+import { PERSIST } from "@/lib/query-persist";
 
 /**
  * Per-chain token supply | terminal balance | unit cash-out value, with a totals
@@ -26,6 +27,7 @@ export function AcrossChainsCard({
 }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["v6AcrossChains", chainProjectsKey(chains)],
+    meta: PERSIST,
     enabled: chains.length > 0,
     staleTime: 30_000,
     refetchInterval: 60_000,

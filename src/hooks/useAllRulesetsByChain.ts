@@ -7,6 +7,7 @@ import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JBCoreContracts } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { getPublicClient } from "wagmi/actions";
+import { PERSIST_IMMUTABLE } from "@/lib/query-persist";
 
 export function useAllRulesetsByChain(
   projects: readonly { chainId: JBChainId; projectId: number }[],
@@ -19,8 +20,10 @@ export function useAllRulesetsByChain(
 
   return useQuery({
     queryKey: ["all-rulesets-by-chain", key],
+    meta: PERSIST_IMMUTABLE,
+    staleTime: Infinity,
+    gcTime: Infinity,
     enabled: projects.length > 0,
-    staleTime: 60_000,
     queryFn: async (): Promise<Map<number, RawRuleset[]>> => {
       const entries = await Promise.all(
         projects.map(async (project) => {

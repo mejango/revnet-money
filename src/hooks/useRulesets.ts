@@ -6,6 +6,7 @@ import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JBCoreContracts, RulesetWeight, WeightCutPercent } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { getPublicClient } from "wagmi/actions";
+import { PERSIST_IMMUTABLE } from "@/lib/query-persist";
 
 export function useRulesets() {
   const { projectId, contractAddress } = useJBContractContext();
@@ -13,8 +14,10 @@ export function useRulesets() {
 
   const { data, ...rest } = useQuery({
     queryKey: ["all-rulesets", chainId, projectId.toString()],
+    meta: PERSIST_IMMUTABLE,
+    staleTime: Infinity,
+    gcTime: Infinity,
     enabled: !!chainId,
-    staleTime: 60_000,
     queryFn: async () => {
       const client = getPublicClient(wagmiConfig, { chainId });
       if (!client) throw new Error(`No public client for chain ${chainId}.`);

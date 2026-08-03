@@ -6,6 +6,7 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { chainName, ChainProject, chainProjectsKey, fetchBridges, SuckerInfra } from "./lib";
+import { PERSIST } from "@/lib/query-persist";
 
 function InfraTag({ infra }: { infra: SuckerInfra }) {
   const styles =
@@ -35,6 +36,7 @@ export function BridgesCard({
 }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["v6Bridges", chainProjectsKey(chains)],
+    meta: PERSIST,
     enabled: chains.length > 0,
     staleTime: 5 * 60_000,
     queryFn: () => fetchBridges(chains),

@@ -23,6 +23,7 @@ import {
   GossipPeerRow,
   timeAgo,
 } from "./lib";
+import { PERSIST } from "@/lib/query-persist";
 
 function StatusBadge({ level, label }: { level: GossipLevel; label: string }) {
   const styles: Record<GossipLevel, string> = {
@@ -173,6 +174,7 @@ function PeerRow({ peer, onSynced }: { peer: GossipPeerRow; onSynced: () => void
 export function GossipCard({ chains }: { chains: ChainProject[] }) {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["v6Gossip", chainProjectsKey(chains)],
+    meta: PERSIST,
     enabled: chains.length > 1,
     staleTime: 30_000,
     refetchInterval: 60_000,
