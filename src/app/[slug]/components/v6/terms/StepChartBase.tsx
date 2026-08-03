@@ -156,7 +156,6 @@ export function StepChartBase({
                 style={{ top: `${(y / VH) * 100}%` }}
               >
                 {formatPrice(value)}
-                {i === 0 ? ` ${baseSymbol}` : ""}
               </span>
             );
           })}

@@ -650,6 +650,9 @@ export type AllLoansQuery = {
       chainId: number;
       projectId: number;
       version: number;
+      token: string;
+      prepaidFeePercent: number;
+      prepaidDuration: number;
     }>;
     totalCount: number;
   } | null;

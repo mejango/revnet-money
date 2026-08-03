@@ -11,6 +11,7 @@ import {
 import {
   decodeEncodedIpfsUriCandidates,
   encodeIpfsUri,
+  jb721TiersHookAbi,
   jb721TiersHookStoreAbi,
   JB_CHAINS,
   JBChainId,
@@ -108,6 +109,7 @@ export interface ShopInventory {
    * must key off this, never the clone hook address.
    */
   idTarget: Address;
+  collection: { name: string; symbol: string };
   pricing: { currency: number; decimals: number; symbol: string };
   tiers: ShopTier[];
   configFlags: ShopConfigFlags | null;
@@ -200,7 +202,7 @@ export async function loadShopInventory(
   });
   if (!resolved) return null;
 
-  const [rawTiers, symbol, configFlags] = await Promise.all([
+  const [rawTiers, symbol, configFlags, collectionMeta] = await Promise.all([
     readAllActiveTiers(client, resolved.store, resolved.hook),
     resolveShopPricingSymbol(client, chainId, projectId, resolved.pricing.currency),
     client
@@ -212,6 +214,24 @@ export async function loadShopInventory(
       })
       .then((flags) => ({ ...flags }))
       .catch(() => null),
+    Promise.all([
+      client
+        .readContract({
+          address: resolved.hook,
+          abi: jb721TiersHookAbi,
+          functionName: "name",
+        })
+        .then((name) => String(name).trim())
+        .catch(() => ""),
+      client
+        .readContract({
+          address: resolved.hook,
+          abi: jb721TiersHookAbi,
+          functionName: "symbol",
+        })
+        .then((collectionSymbol) => String(collectionSymbol).trim())
+        .catch(() => ""),
+    ]),
   ]);
   const activeTiers = rawTiers.filter((tier) => tier.initialSupply > 0);
 
@@ -243,6 +263,7 @@ export async function loadShopInventory(
     hook: resolved.hook,
     store: resolved.store,
     idTarget: resolved.metadataIdTarget,
+    collection: { name: collectionMeta[0], symbol: collectionMeta[1] },
     pricing: { ...resolved.pricing, symbol },
     configFlags,
     tiers: activeTiers.map((tier) => ({

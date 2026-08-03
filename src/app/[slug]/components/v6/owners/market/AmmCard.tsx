@@ -58,6 +58,7 @@ import {
   type PoolSnapshot,
   type UserLpPosition,
 } from "./lib";
+import { LiquidityRangePreview } from "./LiquidityRangePreview";
 
 function formatPrice(price: number): string {
   if (!isFinite(price) || price <= 0) return "—";
@@ -677,6 +678,15 @@ export function AddLiquidityForm({
           Current ~{pool.price?.toPrecision(6) ?? "—"} {pool.pair.symbol}/{tokenSymbol}
         </span>
       </div>
+      <LiquidityRangePreview
+        floor={state.reference.cashOut}
+        ceiling={state.reference.issuance}
+        current={pool.price}
+        minimum={Number(minimumPrice)}
+        maximum={Number(maximumPrice)}
+        pairSymbol={pool.pair.symbol}
+        tokenSymbol={tokenSymbol}
+      />
       <div className="mt-2 grid grid-cols-2 gap-2">
         <label className="text-[11px] text-zinc-500">
           Min price

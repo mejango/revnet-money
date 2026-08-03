@@ -135,7 +135,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
   return (
     <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>New loan</DialogTitle>
         </DialogHeader>

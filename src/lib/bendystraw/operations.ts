@@ -387,7 +387,7 @@ export const V6AutoIssueEventsOperation = operation<
   hasIdentityItems("autoIssueEvents"),
 );
 export const AllLoansOperation = operation<AllLoansQuery, AllLoansQueryVariables>(
-  "all-loans.v1",
+  "all-loans.v2",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
   hasIdentityItems("loans", true),
 );

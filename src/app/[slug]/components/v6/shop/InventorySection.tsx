@@ -116,106 +116,134 @@ export function InventorySection({
     detailTierId == null ? null : (shop.tiers.find((tier) => tier.id === detailTierId) ?? null);
 
   return (
-    <div className="border border-zinc-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-medium text-zinc-900">Items</h2>
-        {canAddItems ? (
-          <button
-            type="button"
-            onClick={() => setAddItemsOpen(true)}
-            className="text-sm text-teal-600 hover:text-teal-700"
-            title="Add items for sale (revnet operator only)"
+    <div className="space-y-5">
+      <section className="border border-melon-200 bg-white p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Items</h2>
+          {canAddItems ? (
+            <button
+              type="button"
+              onClick={() => setAddItemsOpen(true)}
+              className="min-h-10 bg-teal-500 px-4 text-sm font-medium text-melon-950 transition-colors hover:bg-teal-600"
+              title="Add items for sale (revnet operator only)"
+            >
+              + Add items
+            </button>
+          ) : null}
+        </div>
+
+        {address && (credits ?? 0n) > 0n ? (
+          <p
+            className="mt-4 bg-teal-50 px-3 py-2 text-sm text-teal-800"
+            title="Overpayment becomes shop credit and is applied automatically to eligible items at checkout."
           >
-            + Add items
-          </button>
+            Your shop credit:{" "}
+            <span className="font-medium">
+              {formatShopAmount(credits!, shop.pricing.decimals)} {shop.pricing.symbol}
+            </span>{" "}
+            — applied automatically at checkout.
+          </p>
         ) : null}
-      </div>
 
-      {address && (credits ?? 0n) > 0n ? (
-        <p
-          className="mt-3 bg-teal-50 px-3 py-2 text-sm text-teal-800"
-          title="Overpayment becomes shop credit and is applied automatically to eligible items at checkout."
-        >
-          Your shop credit:{" "}
-          <span className="font-medium">
-            {formatShopAmount(credits!, shop.pricing.decimals)} {shop.pricing.symbol}
-          </span>{" "}
-          — applied automatically at checkout.
-        </p>
-      ) : null}
+        {shop.tiers.length === 0 ? (
+          <p className="mt-4 text-sm text-zinc-500">
+            No items being sold yet.
+            {canAddItems ? " Add the first one with the button above." : ""}
+          </p>
+        ) : (
+          <>
+            {categories.length > 1 ? (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {[{ id: null as number | null, name: "All" }, ...categories].map((category) => (
+                  <button
+                    key={category.id ?? "all"}
+                    type="button"
+                    onClick={() => setSelectedCategory(category.id)}
+                    aria-pressed={selectedCategory === category.id}
+                    className={cn(
+                      "border px-3 py-1.5 text-xs font-medium transition-colors",
+                      selectedCategory === category.id
+                        ? "border-teal-500 bg-teal-50 text-teal-700"
+                        : "border-zinc-200 bg-white text-zinc-600 hover:border-teal-300 hover:text-teal-600",
+                    )}
+                  >
+                    {category.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
-      {shop.tiers.length === 0 ? (
-        <p className="mt-3 text-sm text-zinc-500">
-          No items being sold yet.
-          {canAddItems ? " Add the first one with “+ Add items”." : ""}
-        </p>
-      ) : (
-        <>
-          {categories.length > 1 ? (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {[{ id: null as number | null, name: "All" }, ...categories].map((category) => (
-                <button
-                  key={category.id ?? "all"}
-                  type="button"
-                  onClick={() => setSelectedCategory(category.id)}
-                  aria-pressed={selectedCategory === category.id}
-                  className={cn(
-                    "border px-3 py-1.5 text-xs font-medium transition-colors",
-                    selectedCategory === category.id
-                      ? "border-teal-500 bg-teal-50 text-teal-700"
-                      : "border-zinc-200 bg-white text-zinc-600 hover:border-teal-300 hover:text-teal-600",
-                  )}
-                >
-                  {category.name}
-                </button>
+            <div className="mt-4 flex flex-col gap-5">
+              {visibleCategories.map((category) => (
+                <div key={category.id}>
+                  {categories.length > 1 ? (
+                    <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      {category.name}
+                    </h3>
+                  ) : null}
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {category.tiers.map((tier) => (
+                      <TierCard
+                        key={tier.id}
+                        shop={shop}
+                        chainId={chainId}
+                        tier={tier}
+                        media={mediaById?.[tier.id]}
+                        onOpen={() => setDetailTierId(tier.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
-          ) : null}
+          </>
+        )}
 
-          <div className="mt-4 flex flex-col gap-5">
-            {visibleCategories.map((category) => (
-              <div key={category.id}>
-                {categories.length > 1 ? (
-                  <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                    {category.name}
-                  </h3>
-                ) : null}
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {category.tiers.map((tier) => (
-                    <TierCard
-                      key={tier.id}
-                      shop={shop}
-                      chainId={chainId}
-                      tier={tier}
-                      media={mediaById?.[tier.id]}
-                      onOpen={() => setDetailTierId(tier.id)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+        {count > 0 ? (
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            className="mt-4 flex w-full items-center justify-between gap-3 bg-teal-500 px-4 py-3 text-sm font-medium text-melon-950 hover:bg-teal-600"
+          >
+            <span>
+              {count} item{count === 1 ? "" : "s"} selected —{" "}
+              {formatShopAmount(total, shop.pricing.decimals)} {shop.pricing.symbol}
+            </span>
+            <span>Check out in the Pay card →</span>
+          </button>
+        ) : null}
+      </section>
+
+      <section className="border border-melon-200 bg-white p-5">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Collection</h2>
+        <dl className="mt-3 space-y-2 text-sm">
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-zinc-500">Name</dt>
+            <dd className="font-medium text-zinc-900">
+              {shop.collection.name || "Not yet named"}
+              {shop.collection.symbol ? (
+                <span className="ml-1.5 font-normal text-zinc-500">
+                  ({shop.collection.symbol})
+                </span>
+              ) : null}
+            </dd>
           </div>
-        </>
-      )}
-
-      {count > 0 ? (
-        <button
-          type="button"
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="mt-4 flex w-full items-center justify-between gap-3 bg-teal-500 px-4 py-3 text-sm font-medium text-melon-950 hover:bg-teal-600"
-        >
-          <span>
-            {count} item{count === 1 ? "" : "s"} selected —{" "}
-            {formatShopAmount(total, shop.pricing.decimals)} {shop.pricing.symbol}
-          </span>
-          <span>Check out in the Pay card →</span>
-        </button>
-      ) : null}
-
-      <div className="mt-4 border-t border-zinc-100 pt-3 text-xs text-zinc-500">
-        Collection:{" "}
-        <EtherscanLink value={shop.hook} truncateTo={6} className="font-mono text-zinc-600" />
-      </div>
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-zinc-500">Address</dt>
+            <dd>
+              <EtherscanLink
+                value={shop.hook}
+                truncateTo={6}
+                className="font-mono text-zinc-700"
+              />
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-zinc-500">Currency</dt>
+            <dd className="font-medium text-zinc-900">{shop.pricing.symbol}</dd>
+          </div>
+        </dl>
+      </section>
 
       <ShopConfigDetails flags={shop.configFlags} />
 
@@ -244,8 +272,8 @@ export function InventorySection({
 
 function ShopConfigDetails({ flags }: { flags: ShopConfigFlags | null }) {
   return (
-    <details className="group mt-4 border-t border-zinc-100 pt-3">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-zinc-700">
+    <details className="group border border-melon-200 bg-white px-5 py-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-medium uppercase tracking-wide text-zinc-500 transition-colors hover:text-zinc-700">
         <span>Shop config</span>
         <span
           aria-hidden="true"
@@ -255,7 +283,7 @@ function ShopConfigDetails({ flags }: { flags: ShopConfigFlags | null }) {
         </span>
       </summary>
       {flags ? (
-        <dl className="mt-3 space-y-2 text-sm">
+        <dl className="mt-4 space-y-2 border-t border-melon-200 pt-4 text-sm">
           {SHOP_CONFIG_ROWS.map(([key, label]) => (
             <div key={key} className="flex items-baseline justify-between gap-4">
               <dt className="text-zinc-500">{label}</dt>
@@ -264,11 +292,14 @@ function ShopConfigDetails({ flags }: { flags: ShopConfigFlags | null }) {
           ))}
         </dl>
       ) : (
-        <p className="mt-3 text-sm text-zinc-500">Couldn&apos;t read the current shop config.</p>
+        <p className="mt-4 border-t border-melon-200 pt-4 text-sm text-zinc-500">
+          Couldn&apos;t read the current shop config.
+        </p>
       )}
     </details>
   );
 }
+
 
 function TierCard({
   shop,

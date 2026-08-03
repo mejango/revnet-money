@@ -9,7 +9,7 @@ import { CurrentIssuanceSection } from "../../../terms/components/CurrentIssuanc
 import { StagesTable } from "../../../terms/components/StagesTable";
 import type { Ruleset } from "../../../terms/getRulesets";
 import { IssuanceLadder } from "./IssuanceLadder";
-import type { ChartStage } from "./chartUtils";
+import { issuanceBaseCurrencyLabel, type ChartStage } from "./chartUtils";
 
 /**
  * website/-parity Terms tab for V6 projects (renderStagesSection):
@@ -23,11 +23,14 @@ export function V6TermsTab({ rulesets }: { rulesets: Ruleset[] }) {
   const tokenA = useTokenA();
   const baseToken = useProjectBaseToken();
 
-  // The chart's price unit comes from the terminal's on-chain accounting
-  // context (authoritative for v6 — e.g. USDC, currency uint32(token)); the
-  // indexer-backed base token is only a fallback.
+  // Issuance weights are denominated in the ruleset's base currency (USD or
+  // ETH), which is distinct from the terminal token that settles payments.
+  // A USDC terminal can therefore settle a USD-denominated issuance price.
   const symbol = formatTokenSymbol(token);
-  const baseSymbol = baseToken?.symbol ?? tokenA?.symbol ?? "ETH";
+  const baseSymbol = issuanceBaseCurrencyLabel(
+    rulesets[0]?.baseCurrency,
+    baseToken?.symbol ?? tokenA?.symbol ?? "ETH",
+  );
 
   // getRulesets stores weightCutPercent as a fraction (WeightCutPercent.toFloat,
   // 0.38 = 38%); the chart math runs on the protocol's raw 1e9 scale.

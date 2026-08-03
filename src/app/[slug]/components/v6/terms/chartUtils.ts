@@ -1,4 +1,6 @@
 import {
+  BASE_CURRENCY_ETH,
+  BASE_CURRENCY_USD,
   resolveRulesetIssuanceStages,
   rulesetIssuanceRateAt,
   type ResolvedRulesetIssuanceStage,
@@ -25,6 +27,16 @@ export const CHART_RANGES: { label: string; years: number }[] = [
   { label: "10Y", years: 10 },
   { label: "All", years: 0 },
 ];
+
+/** Human label for the ruleset weight's denomination, not its payment token. */
+export function issuanceBaseCurrencyLabel(
+  baseCurrency: number | undefined,
+  fallback: string,
+): string {
+  if (baseCurrency === BASE_CURRENCY_ETH) return "ETH";
+  if (baseCurrency === BASE_CURRENCY_USD) return "USD";
+  return fallback;
+}
 
 /**
  * Sort stages and resolve each one's starting rate. Stored on-chain rulesets

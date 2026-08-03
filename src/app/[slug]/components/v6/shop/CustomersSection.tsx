@@ -66,9 +66,9 @@ export function CustomersSection({
   }, [purchaseRows]);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="border border-zinc-200 bg-white p-4">
-        <h2 className="font-medium text-zinc-900">You</h2>
+    <div className="flex flex-col gap-5">
+      <section className="border border-melon-200 bg-white p-5">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">You</h2>
         {!address ? (
           <p className="mt-2 text-sm text-zinc-500">
             Connect your wallet to see the items you own.
@@ -85,7 +85,7 @@ export function CustomersSection({
               {owned.data!.totalCount || owned.data!.items.length}{" "}
               {(owned.data!.totalCount || owned.data!.items.length) === 1 ? "item" : "items"} owned
             </p>
-            <div className="mt-2 divide-y divide-zinc-100">
+            <div className="mt-3 divide-y divide-melon-200">
               {tallyItems(owned.data!.items, names).map((item) => (
                 <div
                   key={item.tierId}
@@ -107,10 +107,10 @@ export function CustomersSection({
             You don&apos;t own any items from this shop yet.
           </p>
         )}
-      </div>
+      </section>
 
-      <div className="border border-zinc-200 bg-white p-4">
-        <h2 className="font-medium text-zinc-900">All</h2>
+      <section className="border border-melon-200 bg-white p-5">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">All</h2>
         {purchases.isLoading ? (
           <SkeletonLines lines={4} className="mt-3" />
         ) : purchases.isError ||
@@ -127,7 +127,7 @@ export function CustomersSection({
               {(purchases.data?.totalCount || purchaseRows.length).toLocaleString("en-US")}{" "}
               {(purchases.data?.totalCount || purchaseRows.length) === 1 ? "item" : "items"} sold
             </p>
-            <div className="mt-2 divide-y divide-zinc-100">
+            <div className="mt-3 divide-y divide-melon-200">
               {customers.slice(0, visibleCustomers).map((rows) => (
                 <div
                   key={rows[0].beneficiary.toLowerCase()}
@@ -163,16 +163,18 @@ export function CustomersSection({
             ) : null}
           </>
         )}
-      </div>
+      </section>
 
-      <div className="border border-zinc-200 bg-white p-4">
-        <h2 className="font-medium text-zinc-900">Recent purchases</h2>
+      <section className="border border-melon-200 bg-white p-5">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Recent purchases
+        </h2>
         {purchases.isLoading ? (
           <SkeletonLines lines={4} className="mt-3" />
         ) : purchaseRows.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-500">No purchases yet.</p>
         ) : (
-          <div className="mt-2 divide-y divide-zinc-100">
+          <div className="mt-3 divide-y divide-melon-200">
             {purchaseRows.slice(0, 25).map((purchase) => (
               <div
                 key={`${purchase.chainId}:${purchase.txHash}:${purchase.tokenId}`}
@@ -193,7 +195,7 @@ export function CustomersSection({
             ))}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

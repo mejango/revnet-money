@@ -31,6 +31,7 @@ describe("contract-derived monetary display math", () => {
         duration: 100,
         weight: "1000000000000000000000",
         weightCutPercent: 0.1,
+        baseCurrency: 2,
       },
     ];
 
@@ -42,7 +43,14 @@ describe("contract-derived monetary display math", () => {
   it("returns no price for a zero issuance weight", () => {
     expect(
       calculatePriceAtTimestamp(1_000, [
-        { id: 1, start: 1_000, duration: 0, weight: "0", weightCutPercent: 0 },
+        {
+          id: 1,
+          start: 1_000,
+          duration: 0,
+          weight: "0",
+          weightCutPercent: 0,
+          baseCurrency: 2,
+        },
       ]),
     ).toBeUndefined();
   });

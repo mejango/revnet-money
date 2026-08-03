@@ -120,7 +120,7 @@ const ruleset = {
   weight: 1_000_000_000_000_000_000_000_000n,
   weightCutPercent: 50_000_000,
   approvalHook: zeroAddress,
-  metadata: 0n,
+  metadata: 2n << 36n,
 };
 const rulesetMetadata = {
   reservedPercent: 2_000,
@@ -584,7 +584,27 @@ const graphqlHandlers = {
       limit: 250,
       offset: 0,
     });
-    return { loans: { items: [], totalCount: 0 } };
+    return {
+      loans: {
+        items: [
+          {
+            id: "1",
+            borrowAmount: "603574100",
+            collateral: "5021013808100000000000000",
+            beneficiary: fixtureOwner,
+            owner: fixtureOwner,
+            createdAt: Math.floor(Date.now() / 1000) - 60,
+            chainId,
+            projectId,
+            version: 6,
+            token: usdc,
+            prepaidFeePercent: 25,
+            prepaidDuration: 15_768_000,
+          },
+        ],
+        totalCount: 1,
+      },
+    };
   },
   OwnedNfts(variables) {
     requireFixture(

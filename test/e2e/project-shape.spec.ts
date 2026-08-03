@@ -140,6 +140,10 @@ test("project terms stay contract-backed, contained, and accessible", async ({ p
   await expect(page).toHaveURL(/\/eth:1\/terms$/);
   await expect(page.getByRole("heading", { name: "Token issuance" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Stages" })).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: /Projected .* issuance price in USD over time/ }),
+  ).toBeVisible();
+  await expect(page.getByText(/USD per /)).toBeVisible();
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 
@@ -169,7 +173,13 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   await expect(page.getByText("No auto issuances")).toBeVisible();
   await page.getByRole("button", { name: "Loans", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Active loans", exact: true })).toBeVisible();
-  await expect(page.getByText("No active loans indexed.")).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Prepaid fee" })).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "Current fee outstanding" }),
+  ).toBeVisible();
+  await expect(page.getByText("603.5741 USDC")).toBeVisible();
+  await expect(page.getByText("2.5%")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "0 USDC", exact: true })).toBeVisible();
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 

@@ -17,19 +17,31 @@ describe("ProjectMenu", () => {
     mocks.segment = null;
     render(<ProjectMenu />);
 
-    expect(screen.getByRole("link", { name: "Overview" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Owners" })).toBeInTheDocument();
+    const overview = screen.getByRole("link", { name: "Overview" });
+    const terms = screen.getByRole("link", { name: "Terms" });
+    const owners = screen.getByRole("link", { name: "Owners" });
+    const shop = screen.getByRole("link", { name: "Shop" });
+    expect(overview.querySelector('[data-project-tab-icon="globe"]')).toBeInTheDocument();
+    expect(terms.querySelector('[data-project-tab-icon="stages"]')).toBeInTheDocument();
+    expect(owners.querySelector('[data-project-tab-icon="stack"]')).toBeInTheDocument();
+    expect(shop.querySelector('[data-project-tab-icon="shop"]')).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Extras" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "More project sections" }));
-    expect(screen.getByRole("menuitem", { name: "Extras" })).toHaveAttribute(
+    const more = screen.getByRole("button", { name: "More project sections" });
+    expect(more.querySelector('[data-project-tab-icon="more"]')).toBeInTheDocument();
+    fireEvent.click(more);
+    const extras = screen.getByRole("menuitem", { name: "Extras" });
+    const operator = screen.getByRole("menuitem", { name: "Operator" });
+    expect(extras).toHaveAttribute(
       "href",
       "/base:42/extras",
     );
-    expect(screen.getByRole("menuitem", { name: "Operator" })).toHaveAttribute(
+    expect(extras.querySelector('[data-project-tab-icon="extras"]')).toBeInTheDocument();
+    expect(operator).toHaveAttribute(
       "href",
       "/base:42/operator",
     );
+    expect(operator.querySelector('[data-project-tab-icon="operator"]')).toBeInTheDocument();
   });
 
   it("names the active overflow section from the current route", () => {

@@ -432,7 +432,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
       {showLiquidity && pooledAmmStates.length > 0 ? (
         <Dialog open onOpenChange={(next) => !next && setShowLiquidity(false)}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-lg">
             <DialogTitle className="text-base font-medium">Market liquidity</DialogTitle>
             <p className="text-sm text-zinc-500">
               Add liquidity or manage positions owned by your connected wallet.

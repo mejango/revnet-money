@@ -1,4 +1,5 @@
 import { readAllProjectRulesets } from "@/lib/nana/rulesets";
+import { decodeRulesetMetadata } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   getJBContractAddress,
@@ -16,6 +17,7 @@ export type Ruleset = {
   duration: number;
   weight: string;
   weightCutPercent: number;
+  baseCurrency: number;
 };
 
 const readRulesets = async (
@@ -38,6 +40,7 @@ const readRulesets = async (
         duration: r.duration,
         weight: r.weight.toString(),
         weightCutPercent: new WeightCutPercent(r.weightCutPercent).toFloat(),
+        baseCurrency: decodeRulesetMetadata(BigInt(r.metadata)).baseCurrency,
       }))
       .sort((a, b) => a.start - b.start);
 };
@@ -48,7 +51,7 @@ const readRulesets = async (
  * QUEUE_RULESETS — so this answer can never change. Cache it permanently
  * rather than re-reading the chain every few minutes.
  */
-const cachedRulesets = unstable_cache(readRulesets, ["rulesets"], {
+const cachedRulesets = unstable_cache(readRulesets, ["rulesets-with-base-currency"], {
   revalidate: false,
 });
 

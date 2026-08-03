@@ -3,10 +3,21 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { WalletConnectButton } from "@/components/WalletButton";
 import { useCompleteLoans } from "@/hooks/useCompleteBendystrawLists";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
+import { currentOutstandingLoanFee } from "@/lib/loanFees";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
+import { commaNumber } from "@/lib/number";
+import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
@@ -27,53 +38,90 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
     projects.length > 0,
   );
   const rows = data ?? [];
+  const now = Math.floor(Date.now() / 1000);
 
   return (
-    <div className="mb-8">
+    <div className="mb-8 w-full min-w-0">
       <h3 className="mb-2 text-base font-semibold text-zinc-700">Active loans</h3>
       {isLoading ? (
-        <TableSkeleton rows={4} columns={5} />
+        <TableSkeleton rows={4} columns={7} />
       ) : isError ? (
         <div className="text-red-600">Active loans are unavailable.</div>
       ) : rows.length === 0 ? (
         <div className="text-zinc-500">No active loans indexed.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-zinc-500 border-b border-zinc-200">
-                <th className="py-2 pr-4 font-medium">Chain</th>
-                <th className="py-2 pr-4 font-medium">Borrower</th>
-                <th className="py-2 pr-4 font-medium">Borrowed</th>
-                <th className="py-2 pr-4 font-medium">Collateral</th>
-                <th className="py-2 font-medium">Opened</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((loan) => (
-                <tr key={`${loan.chainId}:${loan.id}`} className="border-b border-zinc-100">
-                  <td className="py-2 pr-4">
-                    <ChainLogo chainId={loan.chainId as JBChainId} standalone />
-                  </td>
-                  <td className="py-2 pr-4">
-                    <EthereumAddress address={loan.owner as `0x${string}`} short withEnsName />
-                  </td>
-                  <td className="py-2 pr-4">
-                    {Number(formatUnits(BigInt(loan.borrowAmount), 18)).toLocaleString("en-US", {
-                      maximumFractionDigits: 4,
-                    })}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {Number(formatUnits(BigInt(loan.collateral), 18)).toLocaleString("en-US", {
-                      maximumFractionDigits: 2,
-                    })}{" "}
-                    {tokenSymbol}
-                  </td>
-                  <td className="py-2">{new Date(loan.createdAt * 1000).toLocaleDateString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mb-4 max-h-96 w-full max-w-full min-w-0 overflow-auto">
+          <div className="flex min-w-0 flex-col">
+            <Table className="min-w-max">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="whitespace-nowrap">Chain</TableHead>
+                  <TableHead className="whitespace-nowrap">Borrower</TableHead>
+                  <TableHead className="whitespace-nowrap">Borrowed</TableHead>
+                  <TableHead className="whitespace-nowrap">Collateral</TableHead>
+                  <TableHead className="whitespace-nowrap">Prepaid fee</TableHead>
+                  <TableHead className="whitespace-nowrap">Current fee outstanding</TableHead>
+                  <TableHead className="whitespace-nowrap">Opened</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((loan) => {
+                  const project = projects.find(
+                    (candidate) =>
+                      candidate.chainId === loan.chainId &&
+                      candidate.projectId === loan.projectId,
+                  );
+                  const knownSymbol = getTokenSymbolFromAddress(loan.token);
+                  const sourceSymbol =
+                    knownSymbol === "TOKEN"
+                      ? project?.tokenSymbol || "TOKEN"
+                      : knownSymbol;
+                  const sourceDecimals =
+                    knownSymbol === "USDC" ? 6 : (project?.decimals ?? 18);
+                  const fee = currentOutstandingLoanFee({
+                    amount: BigInt(loan.borrowAmount),
+                    prepaidFeePercent: loan.prepaidFeePercent,
+                    prepaidDuration: loan.prepaidDuration,
+                    createdAt: loan.createdAt,
+                    now,
+                  });
+
+                  return (
+                    <TableRow key={`${loan.chainId}:${loan.id}`}>
+                      <TableCell className="whitespace-nowrap">
+                        <ChainLogo chainId={loan.chainId as JBChainId} standalone />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <EthereumAddress
+                          address={loan.owner as `0x${string}`}
+                          short
+                          withEnsName
+                        />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">
+                        {commaNumber(formatUnits(BigInt(loan.borrowAmount), sourceDecimals))}{" "}
+                        {sourceSymbol}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">
+                        {commaNumber(formatUnits(BigInt(loan.collateral), 18))} {tokenSymbol}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">
+                        {loan.prepaidFeePercent / 10}%
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">
+                        {fee === null
+                          ? "Expired"
+                          : `${commaNumber(formatUnits(fee, sourceDecimals))} ${sourceSymbol}`}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {new Date(loan.createdAt * 1000).toLocaleDateString()}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
     </div>
@@ -100,7 +148,7 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
 
   if (!address) {
     return (
-      <div className="flex flex-col items-start gap-3">
+      <div className="flex w-full min-w-0 flex-col items-start gap-3">
         <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} />
         <p className="text-md text-black font-light italic">
           Connect a wallet to see and manage your loans against {tokenSymbol} collateral.
@@ -111,7 +159,7 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
   }
 
   return (
-    <div>
+    <div className="w-full min-w-0">
       <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} />
 
       <p className="text-md text-black font-light italic mb-2">

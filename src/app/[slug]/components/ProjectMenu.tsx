@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useSelectedLayoutSegment } from "next/navigation";
 import { PropsWithChildren, useEffect, useRef, useState } from "react";
+import { ProjectOverflowIcon, ProjectTabIcon } from "./ProjectTabIcon";
 
 export function ProjectMenu({
   mobileActivityActive = false,
@@ -24,6 +25,7 @@ export function ProjectMenu({
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
         >
+          <ProjectTabIcon label="Overview" />
           Overview
         </MenuOption>
         <MenuOption
@@ -31,6 +33,7 @@ export function ProjectMenu({
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
         >
+          <ProjectTabIcon label="Terms" />
           Terms
         </MenuOption>
         <MenuOption
@@ -38,6 +41,7 @@ export function ProjectMenu({
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
         >
+          <ProjectTabIcon label="Owners" />
           Owners
         </MenuOption>
         <MenuOption
@@ -45,6 +49,7 @@ export function ProjectMenu({
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
         >
+          <ProjectTabIcon label="Shop" />
           Shop
         </MenuOption>
       </ul>
@@ -107,7 +112,7 @@ function MoreProjectOptions({
             : "border-transparent text-zinc-500 hover:text-zinc-800",
         )}
       >
-        <span aria-hidden>⋮</span>
+        <ProjectOverflowIcon />
       </button>
       {open ? (
         <div
@@ -129,13 +134,14 @@ function MoreProjectOptions({
                   requestAnimationFrame(() => trigger.current?.focus());
                 }}
                 className={cn(
-                  "block min-h-10 px-4 py-2 text-sm transition-colors",
+                  "flex min-h-10 items-center gap-2 px-4 py-2 text-sm transition-colors",
                   selected
                     ? "bg-melon-50 font-medium text-black"
                     : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900",
                 )}
               >
-                {option.label}
+                <ProjectTabIcon label={option.label} />
+                <span>{option.label}</span>
               </Link>
             );
           })}
@@ -187,7 +193,7 @@ function MenuOption({
         onClick={onSelect}
         className={cn(
           // -mb-px drops the active border onto the row's persistent baseline.
-          "-mb-px flex min-h-11 items-center whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all sm:text-lg",
+          "-mb-px flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all sm:text-lg",
           {
             "text-black border-teal-500": isSelected,
             "text-zinc-500 hover:text-zinc-800 border-transparent": !isSelected,

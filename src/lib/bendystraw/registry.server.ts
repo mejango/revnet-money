@@ -740,7 +740,10 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         limit: $limit
         offset: $offset
       ) {
-        items { id borrowAmount collateral beneficiary owner createdAt chainId projectId version }
+        items {
+          id borrowAmount collateral beneficiary owner createdAt chainId projectId version
+          token prepaidFeePercent prepaidDuration
+        }
         totalCount
       }
     }`,

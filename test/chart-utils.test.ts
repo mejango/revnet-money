@@ -1,6 +1,7 @@
 import {
   buildStepPoints,
   formatRate,
+  issuanceBaseCurrencyLabel,
   rateAtTime,
   resolveStages,
 } from "@/app/[slug]/components/v6/terms/chartUtils";
@@ -28,5 +29,11 @@ describe("issuance chart projections", () => {
 
   it("does not round a visible high issuance rate to a misleading integer", () => {
     expect(formatRate(9_999.90504)).toBe("9,999.91");
+  });
+
+  it("labels issuance from the ruleset base currency instead of its payment token", () => {
+    expect(issuanceBaseCurrencyLabel(2, "USDC")).toBe("USD");
+    expect(issuanceBaseCurrencyLabel(1, "USDC")).toBe("ETH");
+    expect(issuanceBaseCurrencyLabel(7, "TOKEN")).toBe("TOKEN");
   });
 });
