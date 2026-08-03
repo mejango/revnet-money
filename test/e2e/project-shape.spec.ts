@@ -53,9 +53,11 @@ test("fixture project renders its contract-hydrated production shape", async ({
   await expect(page.getByRole("link", { name: "Owners", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Extras" })).toHaveCount(0);
   await page.getByRole("button", { name: "More project sections" }).click();
-  await expect(page.getByRole("menuitem", { name: "Extras" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Operator" })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect(page.getByRole("link", { name: "Extras" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Operator" })).toBeVisible();
+  await expect(page.locator('[data-overflow-orientation="horizontal"]')).toBeVisible();
+  await page.getByRole("button", { name: "More project sections" }).click();
+  await expect(page.getByRole("link", { name: "Extras" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
   await expect(page.getByText("No activity yet")).toBeVisible();
 
@@ -174,9 +176,7 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   await page.getByRole("button", { name: "Loans", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Active loans", exact: true })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Prepaid fee" })).toBeVisible();
-  await expect(
-    page.getByRole("columnheader", { name: "Current fee outstanding" }),
-  ).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Current fee outstanding" })).toBeVisible();
   await expect(page.getByText("603.5741 USDC")).toBeVisible();
   await expect(page.getByText("2.5%")).toBeVisible();
   await expect(page.getByRole("cell", { name: "0 USDC", exact: true })).toBeVisible();

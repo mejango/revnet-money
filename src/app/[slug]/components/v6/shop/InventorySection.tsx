@@ -117,7 +117,7 @@ export function InventorySection({
 
   return (
     <div className="space-y-5">
-      <section className="border border-melon-200 bg-white p-5">
+      <section className="bg-melon-50 p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Items</h2>
           {canAddItems ? (
@@ -214,7 +214,7 @@ export function InventorySection({
         ) : null}
       </section>
 
-      <section className="border border-melon-200 bg-white p-5">
+      <section className="bg-melon-50 p-5">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Collection</h2>
         <dl className="mt-3 space-y-2 text-sm">
           <div className="flex items-baseline justify-between gap-4">
@@ -222,20 +222,14 @@ export function InventorySection({
             <dd className="font-medium text-zinc-900">
               {shop.collection.name || "Not yet named"}
               {shop.collection.symbol ? (
-                <span className="ml-1.5 font-normal text-zinc-500">
-                  ({shop.collection.symbol})
-                </span>
+                <span className="ml-1.5 font-normal text-zinc-500">({shop.collection.symbol})</span>
               ) : null}
             </dd>
           </div>
           <div className="flex items-center justify-between gap-4">
             <dt className="text-zinc-500">Address</dt>
             <dd>
-              <EtherscanLink
-                value={shop.hook}
-                truncateTo={6}
-                className="font-mono text-zinc-700"
-              />
+              <EtherscanLink value={shop.hook} truncateTo={6} className="font-mono text-zinc-700" />
             </dd>
           </div>
           <div className="flex items-baseline justify-between gap-4">
@@ -263,6 +257,7 @@ export function InventorySection({
           shop={shop}
           chainId={chainId}
           projectId={projectId}
+          categories={categories}
           onClose={() => setAddItemsOpen(false)}
         />
       ) : null}
@@ -272,7 +267,7 @@ export function InventorySection({
 
 function ShopConfigDetails({ flags }: { flags: ShopConfigFlags | null }) {
   return (
-    <details className="group border border-melon-200 bg-white px-5 py-4">
+    <details className="group bg-melon-50 px-5 py-4">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-medium uppercase tracking-wide text-zinc-500 transition-colors hover:text-zinc-700">
         <span>Shop config</span>
         <span
@@ -299,7 +294,6 @@ function ShopConfigDetails({ flags }: { flags: ShopConfigFlags | null }) {
     </details>
   );
 }
-
 
 function TierCard({
   shop,

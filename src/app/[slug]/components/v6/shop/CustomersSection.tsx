@@ -67,7 +67,7 @@ export function CustomersSection({
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="border border-melon-200 bg-white p-5">
+      <section className="bg-melon-50 p-5">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">You</h2>
         {!address ? (
           <p className="mt-2 text-sm text-zinc-500">
@@ -109,7 +109,7 @@ export function CustomersSection({
         )}
       </section>
 
-      <section className="border border-melon-200 bg-white p-5">
+      <section className="bg-melon-50 p-5">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">All</h2>
         {purchases.isLoading ? (
           <SkeletonLines lines={4} className="mt-3" />
@@ -165,7 +165,7 @@ export function CustomersSection({
         )}
       </section>
 
-      <section className="border border-melon-200 bg-white p-5">
+      <section className="bg-melon-50 p-5">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
           Recent purchases
         </h2>

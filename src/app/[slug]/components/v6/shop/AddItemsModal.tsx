@@ -1,6 +1,6 @@
 "use client";
 
-import { pinJsonMetadata } from "@/app/create/helpers/pinProjectMetaData";
+import { pinJsonMetadata, pinMediaFile } from "@/app/create/helpers/pinProjectMetaData";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,16 +20,24 @@ import {
 import { cidFromIpfsUri } from "@/lib/ipfs";
 import { jb721TiersHookAbi, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Address, Hex, isAddress, parseUnits, PublicClient, zeroAddress } from "viem";
 import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { encodeIpfsCid, ShopInventory, TIER_UNLIMITED_SUPPLY } from "./shopLib";
+import { canAdjust721Tiers } from "./shopPermissions";
 
-interface DraftItem {
+interface DraftSplit {
+  percent: string;
+  beneficiary: string;
+}
+
+export interface DraftItem {
   name: string;
   description: string;
   mediaUri: string;
+  mediaFile: File | null;
+  mediaPreview: string | null;
   /** ipfs:// URI (or bare DAG-PB CID) of the item's metadata JSON. Optional. */
   uri: string;
   price: string;
@@ -38,23 +46,42 @@ interface DraftItem {
   category: string;
   reserveFrequency: string;
   reserveBeneficiary: string;
+  discountPct: string;
+  votingUnits: string;
+  splits: DraftSplit[];
+  allowOwnerMint: boolean;
+  cantBeRemoved: boolean;
+  allowCredits: boolean;
+  operatorCanEditDiscount: boolean;
+  moreOpen: boolean;
 }
 
-function newDraftItem(): DraftItem {
+export function newDraftItem(): DraftItem {
   return {
     name: "",
     description: "",
     mediaUri: "",
+    mediaFile: null,
+    mediaPreview: null,
     uri: "",
     price: "",
     supply: "",
     category: "0",
     reserveFrequency: "",
     reserveBeneficiary: "",
+    discountPct: "",
+    votingUnits: "",
+    splits: [],
+    allowOwnerMint: false,
+    cantBeRemoved: false,
+    allowCredits: true,
+    operatorCanEditDiscount: true,
+    moreOpen: false,
   };
 }
 
 const MAX_UINT104 = (1n << 104n) - 1n;
+const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex;
 
 type TierConfig = {
@@ -76,7 +103,14 @@ type TierConfig = {
     cantBuyWithCredits: boolean;
   };
   splitPercent: number;
-  splits: never[];
+  splits: {
+    percent: number;
+    projectId: bigint;
+    beneficiary: Address;
+    preferAddToBalance: boolean;
+    lockedUntil: number;
+    hook: Address;
+  }[];
 };
 
 /**
@@ -90,7 +124,7 @@ type TierConfig = {
  *   the trap at the root by requiring an explicit per-tier beneficiary for
  *   every reserved tier (`useReserveBeneficiaryAsDefault` stays false).
  */
-function buildTierConfigs(items: DraftItem[], decimals: number): TierConfig[] | string {
+export function buildTierConfigs(items: DraftItem[], decimals: number): TierConfig[] | string {
   const configs: TierConfig[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
@@ -135,11 +169,55 @@ function buildTierConfigs(items: DraftItem[], decimals: number): TierConfig[] | 
       reserveBeneficiary = item.reserveBeneficiary.trim() as Address;
     }
 
+    const votingStr = item.votingUnits.trim() || "0";
+    if (!/^\d+$/.test(votingStr) || BigInt(votingStr) > 0xffffffffn) {
+      return `${label}voting units must be a whole number that fits uint32.`;
+    }
+    const votingUnits = Number(votingStr);
+
+    const discountText = item.discountPct.trim() || "0";
+    const discountPct = Number(discountText);
+    if (!Number.isFinite(discountPct) || discountPct < 0 || discountPct > 100) {
+      return `${label}the discount must be between 0 and 100%.`;
+    }
+    const discountPercent = Math.round(discountPct * 2);
+
+    const validSplits = item.splits.filter(
+      (split) => split.percent.trim() || split.beneficiary.trim(),
+    );
+    const splitValues: number[] = [];
+    for (let splitIndex = 0; splitIndex < validSplits.length; splitIndex++) {
+      const split = validSplits[splitIndex];
+      const percent = Number(split.percent);
+      if (!Number.isFinite(percent) || percent <= 0) {
+        return `${label}split ${splitIndex + 1} needs a percentage above 0.`;
+      }
+      if (!isAddress(split.beneficiary.trim())) {
+        return `${label}split ${splitIndex + 1} needs a valid beneficiary address.`;
+      }
+      splitValues.push(percent);
+    }
+    const totalSplitPct = splitValues.reduce((total, value) => total + value, 0);
+    if (totalSplitPct > 100) return `${label}sales splits cannot add up to more than 100%.`;
+    const splitPercents = splitValues.map((value) => Math.round((value / totalSplitPct) * 1e9));
+    if (splitPercents.length > 0) {
+      splitPercents[splitPercents.length - 1] =
+        1e9 - splitPercents.slice(0, -1).reduce((total, value) => total + value, 0);
+    }
+    const splits = validSplits.map((split, splitIndex) => ({
+      percent: splitPercents[splitIndex],
+      projectId: 0n,
+      beneficiary: split.beneficiary.trim() as Address,
+      preferAddToBalance: false,
+      lockedUntil: 0,
+      hook: zeroAddress,
+    }));
+
     let encodedIpfsUri: Hex = ZERO_BYTES32;
     const uri = item.uri.trim();
     if (uri) {
       const cid = uri.startsWith("ipfs://") ? cidFromIpfsUri(uri) : uri;
-      if (!cid) return `${label}the media URI must contain an IPFS CID.`;
+      if (!cid) return `${label}the metadata URI must contain an IPFS CID.`;
       try {
         encodedIpfsUri = encodeIpfsCid(cid);
       } catch {
@@ -150,23 +228,23 @@ function buildTierConfigs(items: DraftItem[], decimals: number): TierConfig[] | 
     configs.push({
       price,
       initialSupply,
-      votingUnits: 0,
+      votingUnits,
       reserveFrequency,
       reserveBeneficiary,
       encodedIpfsUri,
       category,
-      discountPercent: 0,
+      discountPercent,
       flags: {
-        allowOwnerMint: false,
+        allowOwnerMint: item.allowOwnerMint,
         useReserveBeneficiaryAsDefault: false,
         transfersPausable: false,
-        useVotingUnits: false,
-        cantBeRemoved: false,
-        cantIncreaseDiscountPercent: false,
-        cantBuyWithCredits: false,
+        useVotingUnits: votingUnits > 0,
+        cantBeRemoved: item.cantBeRemoved,
+        cantIncreaseDiscountPercent: !item.operatorCanEditDiscount,
+        cantBuyWithCredits: !item.allowCredits,
       },
-      splitPercent: 0,
-      splits: [],
+      splitPercent: Math.round((totalSplitPct / 100) * 1e9),
+      splits,
     });
   }
   // The store reverts InvalidCategorySortOrder unless categories ascend.
@@ -182,11 +260,13 @@ export function AddItemsModal({
   shop,
   chainId,
   projectId,
+  categories,
   onClose,
 }: {
   shop: ShopInventory;
   chainId: JBChainId;
   projectId: bigint;
+  categories: { id: number; name: string }[];
   onClose: () => void;
 }) {
   const config = useConfig();
@@ -210,6 +290,14 @@ export function AddItemsModal({
   >("form");
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
+  const mediaPreviews = useRef(new Set<string>());
+  useEffect(
+    () => () => {
+      for (const preview of mediaPreviews.current) URL.revokeObjectURL(preview);
+      mediaPreviews.current.clear();
+    },
+    [],
+  );
 
   const busy =
     phase === "pinning" || phase === "simulating" || phase === "sending" || phase === "confirming";
@@ -219,16 +307,71 @@ export function AddItemsModal({
     setError(null);
   };
 
+  const selectMedia = (index: number, file: File | null) => {
+    if (file && file.size > MAX_MEDIA_BYTES) {
+      setError("Media must be 25 MB or smaller.");
+      return;
+    }
+    const previous = items[index]?.mediaPreview;
+    if (previous) {
+      URL.revokeObjectURL(previous);
+      mediaPreviews.current.delete(previous);
+    }
+    const mediaPreview = file?.type.startsWith("image/") ? URL.createObjectURL(file) : null;
+    if (mediaPreview) mediaPreviews.current.add(mediaPreview);
+    updateItem(index, {
+      mediaFile: file,
+      mediaPreview,
+    });
+  };
+
+  const removeItem = (index: number) => {
+    const preview = items[index]?.mediaPreview;
+    if (preview) {
+      URL.revokeObjectURL(preview);
+      mediaPreviews.current.delete(preview);
+    }
+    setItems((current) => current.filter((_, i) => i !== index));
+    setError(null);
+  };
+
   const submit = async () => {
     if (!address || !publicClient || busy) return;
     setError(null);
 
     try {
+      setPhase("simulating");
+      const authorized = await canAdjust721Tiers(publicClient as PublicClient, {
+        chainId,
+        projectId,
+        hook: shop.hook,
+        operator: address,
+      });
+      if (!authorized) throw new Error("This wallet cannot manage this shop.");
+
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index];
+        if (
+          (item.name.trim() || item.description.trim() || item.mediaUri.trim() || item.mediaFile) &&
+          !item.name.trim()
+        ) {
+          throw new Error(
+            `${items.length > 1 ? `Item ${index + 1}: ` : ""}enter a name when composing item metadata.`,
+          );
+        }
+      }
+      const draftConfigs = buildTierConfigs(items, shop.pricing.decimals);
+      if (typeof draftConfigs === "string") throw new Error(draftConfigs);
+
       setPhase("pinning");
       const preparedItems = await Promise.all(
         items.map(async (item, index) => {
-          const composesMetadata =
-            item.name.trim() || item.description.trim() || item.mediaUri.trim();
+          let mediaUri = item.mediaUri.trim();
+          if (item.mediaFile) {
+            const mediaCid = await pinMediaFile(item.mediaFile);
+            mediaUri = `ipfs://${mediaCid}`;
+          }
+          const composesMetadata = item.name.trim() || item.description.trim() || mediaUri;
           if (!composesMetadata) return item;
           if (!item.name.trim()) {
             throw new Error(
@@ -238,7 +381,11 @@ export function AddItemsModal({
           const cid = await pinJsonMetadata({
             name: item.name.trim(),
             ...(item.description.trim() ? { description: item.description.trim() } : {}),
-            ...(item.mediaUri.trim() ? { image: item.mediaUri.trim() } : {}),
+            ...(mediaUri
+              ? item.mediaFile && !item.mediaFile.type.startsWith("image/")
+                ? { animation_url: mediaUri, mediaType: item.mediaFile.type }
+                : { image: mediaUri }
+              : {}),
           });
           return { ...item, uri: `ipfs://${cid}` };
         }),
@@ -286,13 +433,12 @@ export function AddItemsModal({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add items for sale</DialogTitle>
           <DialogDescription>
-            Stage one or more items, then add them to the shop with a single{" "}
-            <span className="font-mono text-xs">adjustTiers</span> transaction (revnet operator
-            only).
+            Stage one or more items, then add them to the collection in one revnet operator
+            transaction.
           </DialogDescription>
         </DialogHeader>
 
@@ -320,131 +466,359 @@ export function AddItemsModal({
           <>
             <div className="flex flex-col gap-5">
               {items.map((item, index) => (
-                <div key={index} className="border border-zinc-200 p-3">
+                <div key={index} className="bg-melon-50 p-4 sm:p-5">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                      Item {index + 1}
-                    </span>
+                    <span className="text-sm font-medium text-zinc-800">Item {index + 1}</span>
                     {items.length > 1 ? (
                       <button
                         type="button"
-                        onClick={() => setItems((current) => current.filter((_, i) => i !== index))}
+                        onClick={() => removeItem(index)}
                         disabled={busy}
-                        className="text-xs text-zinc-400 hover:text-zinc-700"
+                        className="text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
                       >
                         Remove
                       </button>
                     ) : null}
                   </div>
 
-                  <div className="mt-2 grid grid-cols-2 gap-3">
-                    <div className="col-span-2">
-                      <Label className="text-xs">Name</Label>
+                  <div className="mt-4 flex flex-col gap-4 sm:flex-row">
+                    <div className="flex shrink-0 flex-col items-start gap-2">
+                      {item.mediaPreview ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.mediaPreview}
+                          alt=""
+                          className="h-20 w-20 border border-zinc-200 object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-20 w-20 items-center justify-center border border-dashed border-zinc-300 bg-white text-2xl">
+                          {item.mediaFile ? "📄" : "🖼️"}
+                        </span>
+                      )}
+                      <label className="cursor-pointer border border-zinc-300 bg-white px-3 py-2 text-xs font-medium hover:border-zinc-500">
+                        {item.mediaFile ? "Change media" : "Upload media"}
+                        <input
+                          type="file"
+                          accept="image/*,video/*,audio/*,application/pdf,text/*,.md,.markdown"
+                          disabled={busy}
+                          className="sr-only"
+                          onChange={(event) => selectMedia(index, event.target.files?.[0] ?? null)}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-3">
                       <Input
+                        aria-label={`Item ${index + 1} name`}
                         value={item.name}
                         onChange={(e) => updateItem(index, { name: e.target.value })}
-                        placeholder="My juicy thing"
+                        placeholder="Item name"
                         disabled={busy}
-                        className="mt-1 h-9"
+                        className="h-11 bg-white"
                       />
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs">Description</Label>
-                      <textarea
-                        value={item.description}
-                        onChange={(e) => updateItem(index, { description: e.target.value })}
-                        placeholder="What is this item?"
-                        disabled={busy}
-                        rows={3}
-                        className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm disabled:opacity-50"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs">Media URI</Label>
-                      <Input
-                        value={item.mediaUri}
-                        onChange={(e) => updateItem(index, { mediaUri: e.target.value })}
-                        placeholder="ipfs://… or https://…"
-                        disabled={busy}
-                        className="mt-1 h-9"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Price ({shop.pricing.symbol})</Label>
-                      <Input
-                        value={item.price}
-                        onChange={(e) => updateItem(index, { price: e.target.value })}
-                        placeholder="0.01"
-                        disabled={busy}
-                        className="mt-1 h-9"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Supply (empty = unlimited)</Label>
-                      <Input
-                        value={item.supply}
-                        onChange={(e) => updateItem(index, { supply: e.target.value })}
-                        placeholder="Unlimited"
-                        disabled={busy}
-                        className="mt-1 h-9"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs">Existing metadata IPFS URI (optional)</Label>
-                      <Input
-                        value={item.uri}
-                        onChange={(e) => updateItem(index, { uri: e.target.value })}
-                        placeholder="ipfs://Qm…"
-                        disabled={busy}
-                        className="mt-1 h-9"
-                      />
-                      <p className="mt-1 text-[11px] text-zinc-500">
-                        Use this instead of the fields above if the complete item metadata is
-                        already pinned. New name, description, or media fields take precedence.
-                      </p>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Category</Label>
-                      <Input
-                        value={item.category}
-                        onChange={(e) => updateItem(index, { category: e.target.value })}
-                        placeholder="0"
-                        disabled={busy}
-                        className="mt-1 h-9"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Reserve frequency</Label>
-                      <Input
-                        value={item.reserveFrequency}
-                        onChange={(e) => updateItem(index, { reserveFrequency: e.target.value })}
-                        placeholder="0 (none)"
-                        disabled={busy}
-                        className="mt-1 h-9"
-                      />
-                      <p className="mt-1 text-[11px] text-zinc-500">
-                        1 of every N sold is minted to the beneficiary.
-                      </p>
-                    </div>
-                    {item.reserveFrequency.trim() !== "" && item.reserveFrequency.trim() !== "0" ? (
-                      <div className="col-span-2">
-                        <Label className="text-xs">Reserve beneficiary</Label>
-                        <Input
-                          value={item.reserveBeneficiary}
-                          onChange={(e) =>
-                            updateItem(index, { reserveBeneficiary: e.target.value })
-                          }
-                          placeholder="0x…"
-                          disabled={busy}
-                          className="mt-1 h-9 font-mono"
-                        />
-                        <p className="mt-1 text-[11px] text-zinc-500">
-                          Required — reserved tiers without their own beneficiary revert unless a
-                          default was set earlier in the batch.
-                        </p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <Label className="text-xs">Price ({shop.pricing.symbol})</Label>
+                          <Input
+                            value={item.price}
+                            onChange={(e) => updateItem(index, { price: e.target.value })}
+                            placeholder={shop.pricing.symbol === "USD" ? "25" : "0.01"}
+                            inputMode="decimal"
+                            disabled={busy}
+                            className="mt-1 h-11 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Quantity</Label>
+                          <Input
+                            value={item.supply}
+                            onChange={(e) => updateItem(index, { supply: e.target.value })}
+                            placeholder="Unlimited"
+                            inputMode="numeric"
+                            disabled={busy}
+                            className="mt-1 h-11 bg-white"
+                          />
+                        </div>
                       </div>
-                    ) : null}
+                    </div>
                   </div>
+
+                  <Input
+                    value={item.description}
+                    onChange={(e) => updateItem(index, { description: e.target.value })}
+                    placeholder="Short description (optional)"
+                    disabled={busy}
+                    className="mt-3 h-11 bg-white"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => updateItem(index, { moreOpen: !item.moreOpen })}
+                    disabled={busy}
+                    aria-expanded={item.moreOpen}
+                    className="mt-3 text-xs font-medium text-blue-600 hover:text-blue-800"
+                  >
+                    {item.moreOpen ? "Fewer options" : "More options"}
+                  </button>
+
+                  {item.moreOpen ? (
+                    <div className="mt-4 space-y-5 border-t border-zinc-200 pt-4">
+                      <div>
+                        <Label className="text-xs">Category</Label>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Group this item with others in the collection.
+                        </p>
+                        <select
+                          value={item.category}
+                          onChange={(e) => updateItem(index, { category: e.target.value })}
+                          disabled={busy}
+                          className="mt-2 h-11 min-w-56 border border-zinc-300 bg-white px-3 text-sm"
+                        >
+                          <option value="0">Default</option>
+                          {categories
+                            .filter((category) => category.id !== 0)
+                            .map((category) => (
+                              <option key={category.id} value={category.id}>
+                                {category.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Split sales</Label>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Route a share of each sale to other wallets.
+                        </p>
+                        {item.splits.length > 0 ? (
+                          <div className="mt-2 space-y-2">
+                            {item.splits.map((split, splitIndex) => (
+                              <div
+                                key={splitIndex}
+                                className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] gap-2"
+                              >
+                                <Input
+                                  aria-label={`Split ${splitIndex + 1} percent`}
+                                  value={split.percent}
+                                  onChange={(e) => {
+                                    const splits = item.splits.map((current, i) =>
+                                      i === splitIndex
+                                        ? { ...current, percent: e.target.value }
+                                        : current,
+                                    );
+                                    updateItem(index, { splits });
+                                  }}
+                                  placeholder="%"
+                                  inputMode="decimal"
+                                  disabled={busy}
+                                  className="h-10 bg-white"
+                                />
+                                <Input
+                                  aria-label={`Split ${splitIndex + 1} beneficiary`}
+                                  value={split.beneficiary}
+                                  onChange={(e) => {
+                                    const splits = item.splits.map((current, i) =>
+                                      i === splitIndex
+                                        ? { ...current, beneficiary: e.target.value }
+                                        : current,
+                                    );
+                                    updateItem(index, { splits });
+                                  }}
+                                  placeholder="0x… beneficiary"
+                                  disabled={busy}
+                                  className="h-10 bg-white font-mono text-xs"
+                                />
+                                <button
+                                  type="button"
+                                  aria-label={`Remove split ${splitIndex + 1}`}
+                                  onClick={() =>
+                                    updateItem(index, {
+                                      splits: item.splits.filter((_, i) => i !== splitIndex),
+                                    })
+                                  }
+                                  disabled={busy}
+                                  className="px-2 text-zinc-500 hover:text-zinc-900"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateItem(index, {
+                              splits: [...item.splits, { percent: "", beneficiary: "" }],
+                            })
+                          }
+                          disabled={busy}
+                          className="mt-2 border border-dashed border-zinc-400 bg-white px-3 py-2 text-xs font-medium"
+                        >
+                          + Add a recipient
+                        </button>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Discount</Label>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Launch this item at a discount off its listed price.
+                        </p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <Input
+                            value={item.discountPct}
+                            onChange={(e) => updateItem(index, { discountPct: e.target.value })}
+                            placeholder="0"
+                            inputMode="decimal"
+                            disabled={busy}
+                            className="h-10 w-24 bg-white"
+                          />
+                          <span className="text-sm text-zinc-600">% off</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Reserve inventory</Label>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Set aside some inventory for a specific wallet as others buy it.
+                        </p>
+                        {shop.configFlags?.noNewTiersWithReserves ? (
+                          <p className="mt-2 text-xs text-zinc-500">
+                            This collection no longer accepts new reserved items.
+                          </p>
+                        ) : (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="text-sm text-zinc-600">1 of every</span>
+                            <Input
+                              value={item.reserveFrequency}
+                              onChange={(e) =>
+                                updateItem(index, { reserveFrequency: e.target.value })
+                              }
+                              placeholder="—"
+                              inputMode="numeric"
+                              disabled={busy}
+                              className="h-10 w-20 bg-white"
+                            />
+                            <span className="text-sm text-zinc-600">sold goes to</span>
+                            <Input
+                              value={item.reserveBeneficiary}
+                              onChange={(e) =>
+                                updateItem(index, { reserveBeneficiary: e.target.value })
+                              }
+                              placeholder="0x… beneficiary"
+                              disabled={busy}
+                              className="h-10 min-w-52 flex-1 bg-white font-mono text-xs"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Voting power</Label>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Give each item a custom number of governance votes.
+                        </p>
+                        {shop.configFlags?.noNewTiersWithVotes ? (
+                          <p className="mt-2 text-xs text-zinc-500">
+                            This collection no longer accepts items with voting units.
+                          </p>
+                        ) : (
+                          <div className="mt-2 flex items-center gap-2">
+                            <Input
+                              value={item.votingUnits}
+                              onChange={(e) => updateItem(index, { votingUnits: e.target.value })}
+                              placeholder="0"
+                              inputMode="numeric"
+                              disabled={busy}
+                              className="h-10 w-28 bg-white"
+                            />
+                            <span className="text-sm text-zinc-600">votes each</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Item rules</Label>
+                        <div className="mt-2 space-y-2">
+                          {(
+                            [
+                              {
+                                key: "allowOwnerMint" as const,
+                                title: "Revnet operator can mint for free",
+                                description:
+                                  "The revnet operator can mint this item without paying.",
+                                disabled: !!shop.configFlags?.noNewTiersWithOwnerMinting,
+                              },
+                              {
+                                key: "cantBeRemoved" as const,
+                                title: "Permanent",
+                                description: "This item can never be removed from the shop.",
+                                disabled: false,
+                              },
+                              {
+                                key: "allowCredits" as const,
+                                title: "Allow credit purchases",
+                                description: "Buyers can spend leftover pay credits on this item.",
+                                disabled: false,
+                              },
+                              {
+                                key: "operatorCanEditDiscount" as const,
+                                title: "Discounts can change later",
+                                description:
+                                  "The revnet operator can raise or end the discount after launch.",
+                                disabled: false,
+                              },
+                            ] as const
+                          ).map((rule) => (
+                            <label
+                              key={rule.key}
+                              className="flex gap-3 border border-zinc-200 bg-white p-3"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={item[rule.key]}
+                                onChange={() => updateItem(index, { [rule.key]: !item[rule.key] })}
+                                disabled={busy || rule.disabled}
+                                className="mt-0.5 h-4 w-4"
+                              />
+                              <span>
+                                <span className="block text-sm font-medium text-zinc-800">
+                                  {rule.title}
+                                </span>
+                                <span className="mt-0.5 block text-xs text-zinc-500">
+                                  {rule.disabled
+                                    ? "This collection has locked this option."
+                                    : rule.description}
+                                </span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Use existing metadata (optional)</Label>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Enter already-pinned metadata, or a media URI if you are not uploading a
+                          file.
+                        </p>
+                        <Input
+                          value={item.uri}
+                          onChange={(e) => updateItem(index, { uri: e.target.value })}
+                          placeholder="ipfs://Qm… metadata"
+                          disabled={busy}
+                          className="mt-2 h-10 bg-white font-mono text-xs"
+                        />
+                        <Input
+                          value={item.mediaUri}
+                          onChange={(e) => updateItem(index, { mediaUri: e.target.value })}
+                          placeholder="ipfs://… or https://… media"
+                          disabled={busy || !!item.mediaFile}
+                          className="mt-2 h-10 bg-white font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ))}
 
@@ -452,9 +826,9 @@ export function AddItemsModal({
                 type="button"
                 onClick={() => setItems((current) => [...current, newDraftItem()])}
                 disabled={busy}
-                className="self-start text-sm text-zinc-500 hover:text-zinc-800"
+                className="self-start border border-dashed border-zinc-400 px-4 py-2.5 text-sm text-zinc-600 hover:border-zinc-700 hover:text-zinc-900"
               >
-                + Add another item
+                + Add an item
               </button>
             </div>
 
@@ -481,7 +855,7 @@ export function AddItemsModal({
                       ? "Confirm in wallet…"
                       : phase === "confirming"
                         ? "Confirming…"
-                        : "Add items"}
+                        : "Review items"}
               </ButtonWithWallet>
             </div>
           </>

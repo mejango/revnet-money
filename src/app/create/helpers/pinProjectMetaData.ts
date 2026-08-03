@@ -18,3 +18,19 @@ export async function pinJsonMetadata(metadata: Record<string, unknown>) {
 
   return Hash;
 }
+
+/** Pin item media after the caller has proved it can perform the related write. */
+export async function pinMediaFile(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch("https://api.juicebox.money/api/ipfs/file", {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) throw new Error(`Media pinning failed (${response.status})`);
+  const { Hash } = (await response.json()) as { Hash?: unknown };
+  if (!isIpfsCid(Hash)) throw new Error("Media pinning returned an invalid CID");
+
+  return Hash;
+}

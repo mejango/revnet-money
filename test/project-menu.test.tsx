@@ -13,7 +13,7 @@ vi.mock("next/navigation", () => ({
 import { ProjectMenu } from "@/app/[slug]/components/ProjectMenu";
 
 describe("ProjectMenu", () => {
-  it("keeps public sections on the tab bar and moves privileged sections into More", () => {
+  it("reveals and collapses privileged sections inline from More", () => {
     mocks.segment = null;
     render(<ProjectMenu />);
 
@@ -30,18 +30,17 @@ describe("ProjectMenu", () => {
     const more = screen.getByRole("button", { name: "More project sections" });
     expect(more.querySelector('[data-project-tab-icon="more"]')).toBeInTheDocument();
     fireEvent.click(more);
-    const extras = screen.getByRole("menuitem", { name: "Extras" });
-    const operator = screen.getByRole("menuitem", { name: "Operator" });
-    expect(extras).toHaveAttribute(
-      "href",
-      "/base:42/extras",
-    );
+    const extras = screen.getByRole("link", { name: "Extras" });
+    const operator = screen.getByRole("link", { name: "Operator" });
+    expect(extras).toHaveAttribute("href", "/base:42/extras");
     expect(extras.querySelector('[data-project-tab-icon="extras"]')).toBeInTheDocument();
-    expect(operator).toHaveAttribute(
-      "href",
-      "/base:42/operator",
-    );
+    expect(operator).toHaveAttribute("href", "/base:42/operator");
     expect(operator.querySelector('[data-project-tab-icon="operator"]')).toBeInTheDocument();
+    expect(more.querySelector('[data-overflow-orientation="horizontal"]')).toBeInTheDocument();
+
+    fireEvent.click(more);
+    expect(screen.queryByRole("link", { name: "Extras" })).not.toBeInTheDocument();
+    expect(more.querySelector('[data-overflow-orientation="vertical"]')).toBeInTheDocument();
   });
 
   it("names the active overflow section from the current route", () => {
