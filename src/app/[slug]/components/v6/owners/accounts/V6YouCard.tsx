@@ -1,5 +1,6 @@
 "use client";
 
+import type { PublicClient } from "viem";
 import { ChainLogo } from "@/components/ChainLogo";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Button } from "@/components/ui/button";
@@ -37,10 +38,15 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useReadContract, useReadContracts } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useReadContracts } from "wagmi";
 import { ProjectItem } from "../../shared";
 import { AddLiquidityForm, LiquidityManager } from "../market/AmmCard";
-import { fetchAmmStates } from "../market/lib";
+import {
+  fetchAmmStates,
+  readLpPositionFees,
+  readUserLpPositions,
+  type AmmChainState,
+} from "../market/lib";
 import { chainName, chainProjectsKey, toChainProjects } from "../settlement/lib";
 import { BurnRow, V6BurnTokensDialog } from "./V6BurnTokensDialog";
 import { CreditRow, V6ClaimCreditsDialog } from "./V6ClaimCreditsDialog";
@@ -294,6 +300,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                 >
                   Max loan
                 </TableHead>
+                <TableHead className="text-right">LP</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -310,6 +317,8 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                   accountingContext={accountingContextByChain.get(b.chainId)}
                   suckerGroupData={suckerGroupData}
                   onQuote={reportQuote}
+                  ammState={ammStates?.find((state) => state.chainId === b.chainId)}
+                  onManage={() => setShowLiquidity(true)}
                 />
               ))}
             </TableBody>
@@ -338,6 +347,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                   <TableCell className="text-right tabular-nums">
                     {locked ? "Locked" : loanComplete ? fmtBase(totalMaxLoan) : "—"}
                   </TableCell>
+                  <TableCell />
                 </TableRow>
               </TableFooter>
             )}
@@ -463,6 +473,96 @@ function CellWithSub({ main, sub }: { main: string; sub?: string }) {
   );
 }
 
+/**
+ * The wallet's LP standing on one chain: how many positions it owns and what
+ * they have earned, revealing the card's own Market liquidity section to claim
+ * or exit. "—" where the chain has no pool or the wallet has no position; an
+ * unreadable scan says so rather than reading as "none".
+ */
+function YourLpCell({
+  ammState,
+  tokenSymbol,
+  onManage,
+}: {
+  ammState: AmmChainState | undefined;
+  tokenSymbol: string;
+  onManage: () => void;
+}) {
+  const { address } = useAccount();
+  const pool = ammState?.pool ?? null;
+  const client = usePublicClient({ chainId: Number(pool?.chainId ?? 1) }) as
+    | PublicClient
+    | undefined;
+
+  const positions = useQuery({
+    queryKey: ["revnetWalletLpPositions", pool?.chainId, pool?.poolId, address?.toLowerCase()],
+    enabled: Boolean(pool && address),
+    retry: 0,
+    staleTime: 30_000,
+    queryFn: () => readUserLpPositions(pool!, address!),
+  });
+
+  const fees = useQuery({
+    queryKey: [
+      "revnetWalletLpFeeTotals",
+      pool?.chainId,
+      pool?.poolId,
+      (positions.data ?? []).map((position) => position.tokenId.toString()).join(","),
+    ],
+    enabled: Boolean(pool && client && positions.data?.length),
+    retry: 0,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const owed = await Promise.all(
+        (positions.data ?? []).map((position) =>
+          readLpPositionFees(client!, pool!, position).catch(() => null),
+        ),
+      );
+      return owed.reduce<{ pairFees: bigint; tokenFees: bigint }>(
+        (sum, entry) =>
+          entry
+            ? {
+                pairFees: sum.pairFees + entry.pairFees,
+                tokenFees: sum.tokenFees + entry.tokenFees,
+              }
+            : sum,
+        { pairFees: 0n, tokenFees: 0n },
+      );
+    },
+  });
+
+  if (!address || !pool) return <>—</>;
+  if (positions.isLoading) return <span className="text-zinc-400">…</span>;
+  if (positions.isError) {
+    return (
+      <span
+        className="text-zinc-400"
+        title="Could not verify the complete LP history on this chain."
+      >
+        Unavailable
+      </span>
+    );
+  }
+  if (!positions.data?.length) return <>—</>;
+
+  const owed = fees.data;
+  const owedLabel =
+    owed && (owed.pairFees > 0n || owed.tokenFees > 0n)
+      ? `${formatUnits(owed.tokenFees, 18, { fractionDigits: 4 })} ${tokenSymbol} + ${formatUnits(owed.pairFees, pool.pair.decimals, { fractionDigits: 4 })} ${pool.pair.symbol} fees`
+      : null;
+
+  return (
+    <button
+      type="button"
+      onClick={onManage}
+      className="underline decoration-dotted underline-offset-2 hover:text-zinc-900"
+    >
+      {positions.data.length} {positions.data.length === 1 ? "position" : "positions"}
+      {owedLabel ? <span className="block text-xs text-zinc-500">{owedLabel}</span> : null}
+    </button>
+  );
+}
+
 function YouChainRow({
   chainId,
   chainProjectId,
@@ -474,6 +574,8 @@ function YouChainRow({
   accountingContext,
   suckerGroupData,
   onQuote,
+  ammState,
+  onManage,
 }: {
   chainId: JBChainId;
   chainProjectId: bigint;
@@ -485,6 +587,8 @@ function YouChainRow({
   accountingContext: TokenConfig | undefined;
   suckerGroupData: any;
   onQuote: (chainId: number, quote: ChainQuote) => void;
+  ammState: AmmChainState | undefined;
+  onManage: () => void;
 }) {
   // Null while the accounting context is unresolved — the quotes stay gated
   // (rows show "—") instead of being asked in ETH/18 by default.
@@ -556,6 +660,9 @@ function YouChainRow({
         )}
       </TableCell>
       <TableCell className="text-right tabular-nums whitespace-nowrap">{loanCell()}</TableCell>
+      <TableCell className="text-right whitespace-nowrap">
+        <YourLpCell ammState={ammState} tokenSymbol={tokenSymbol} onManage={onManage} />
+      </TableCell>
     </TableRow>
   );
 }
