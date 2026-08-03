@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ProjectItem } from "../../shared";
 import { chainProjectsKey, projectTokenSymbol, toChainProjects } from "../settlement/lib";
 import { AmmCard } from "./AmmCard";
+import { MarketPriceChart } from "./MarketPriceChart";
 import { SplitHookCard } from "./SplitHookCard";
 
 /**
@@ -27,6 +28,7 @@ export function V6MarketSubtab({ projects }: { projects: ProjectItem[] }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <MarketPriceChart chains={chains} tokenSymbol={tokenSymbol} />
       <AmmCard chains={chains} tokenSymbol={tokenSymbol} />
       <SplitHookCard chains={chains} tokenSymbol={tokenSymbol} />
     </div>

@@ -35,11 +35,15 @@ export async function getV4AmmPriceHistory({
   chainId,
   terminalToken,
   terminalDecimals,
+  poolId,
 }: {
   projectId: string;
   chainId: JBChainId;
-  terminalToken: string;
+  /** Ignored when `poolId` is given. */
+  terminalToken?: string;
   terminalDecimals: number;
+  /** Selects the pool directly when the caller already read it onchain. */
+  poolId?: string;
 }): Promise<{ data: PriceDataPoint[]; hasPool: boolean }> {
   const variables = {
     projectId: Number(projectId),
@@ -59,9 +63,11 @@ export async function getV4AmmPriceHistory({
     pools.push(...page);
     if (!page.length) break;
   } while (pools.length < poolTotalCount);
-  const pool = pools.find(
-    (item) => item.terminalToken.toLowerCase() === terminalToken.toLowerCase(),
-  );
+  const pool = poolId
+    ? pools.find((item) => item.poolId.toLowerCase() === poolId.toLowerCase())
+    : pools.find(
+        (item) => item.terminalToken.toLowerCase() === terminalToken?.toLowerCase(),
+      );
   if (!pool) return { data: [], hasPool: false };
 
   const swaps: RawSwap[] = [];
