@@ -47,6 +47,8 @@ import {
   PublicClient,
   zeroAddress,
 } from "viem";
+import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
+import { IndexedLpPositionsOperation } from "@/lib/bendystraw/operations";
 import { ChainProject } from "../settlement/lib";
 
 // ── Uniswap V4 singletons (from deploy-all-v6 Deploy.s.sol) ──────────────────
@@ -603,6 +605,9 @@ export interface UserLpPosition {
   tickUpper: number;
   pairAmount: bigint;
   tokenAmount: bigint;
+  /** Fees already taken, from the index; undefined when it hasn't indexed this pool. */
+  claimedPairFees?: bigint;
+  claimedTokenFees?: bigint;
 }
 
 export interface RemoveLiquidityPlan {
@@ -768,12 +773,70 @@ async function positionFor(
   };
 }
 
+/**
+ * A pool's positions from bendystraw, or null when the index has nothing for it
+ * — which reads the same as "not indexed yet", so callers fall back to the
+ * onchain scan rather than presenting an empty pool as fact.
+ *
+ * `feesClaimed*` is the part no client can derive: the pool overwrites a
+ * position's fee checkpoint on every collect, so live state only ever shows
+ * what is currently unclaimed.
+ */
+export async function readIndexedLpPositions(
+  pool: PoolSnapshot,
+): Promise<UserLpPosition[] | null> {
+  try {
+    const result = await queryBendystrawFromBrowser(
+      IndexedLpPositionsOperation,
+      { chainId: Number(pool.chainId), poolId: pool.poolId, limit: 250 },
+      Number(pool.chainId),
+    );
+    const items = result.buybackPoolPositions?.items ?? [];
+    if (!items.length) return null;
+    return items
+      .map((item) => {
+        const liquidity = BigInt(item.liquidity);
+        const amounts = uniswapV4AmountsForLiquidity(
+          pool.sqrtP,
+          uniswapV4SqrtPriceX96AtTick(item.tickLower),
+          uniswapV4SqrtPriceX96AtTick(item.tickUpper),
+          liquidity,
+        );
+        const claimed0 = BigInt(item.feesClaimed0);
+        const claimed1 = BigInt(item.feesClaimed1);
+        return {
+          tokenId: BigInt(item.tokenId),
+          owner: item.owner as Address,
+          info: 0n,
+          liquidity,
+          tickLower: item.tickLower,
+          tickUpper: item.tickUpper,
+          pairAmount: pool.pairIsC0 ? amounts.amount0 : amounts.amount1,
+          tokenAmount: pool.pairIsC0 ? amounts.amount1 : amounts.amount0,
+          claimedPairFees: pool.pairIsC0 ? claimed0 : claimed1,
+          claimedTokenFees: pool.pairIsC0 ? claimed1 : claimed0,
+        };
+      })
+      .filter((position) => position.liquidity > 0n);
+  } catch {
+    return null;
+  }
+}
+
 export async function readUserLpPositions(
   pool: PoolSnapshot,
   account: Address,
 ): Promise<UserLpPosition[]> {
   const positionManager = POSITION_MANAGER_BY_CHAIN[Number(pool.chainId)];
   if (!positionManager) return [];
+
+  const indexed = await readIndexedLpPositions(pool);
+  if (indexed) {
+    return indexed.filter(
+      (position) => position.owner.toLowerCase() === account.toLowerCase(),
+    );
+  }
+
   const client = getViemPublicClient(pool.chainId) as PublicClient;
   const ids = await poolPositionTokenIds(client, pool, positionManager);
   const positions = await Promise.all(

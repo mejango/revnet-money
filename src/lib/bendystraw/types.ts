@@ -677,6 +677,28 @@ export type IndexedBuybackPoolsQuery = {
     }>;
   };
 };
+export type IndexedLpPositionsQueryVariables = {
+  chainId: number;
+  poolId: string;
+  limit?: number;
+  offset?: number;
+};
+export type IndexedLpPositionsQuery = {
+  buybackPoolPositions: {
+    totalCount?: number;
+    items: Array<{
+      chainId: number;
+      tokenId: string;
+      owner: string;
+      tickLower: number;
+      tickUpper: number;
+      liquidity: string;
+      feesClaimed0: string;
+      feesClaimed1: string;
+    }>;
+  } | null;
+};
+
 export type IndexedPoolSwapsQueryVariables = IndexedBuybackPoolsQueryVariables & {
   limit: number;
   offset: number;

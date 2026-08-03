@@ -17,6 +17,8 @@ import type {
   HasPermissionQueryVariables,
   IndexedBuybackPoolsQuery,
   IndexedBuybackPoolsQueryVariables,
+  IndexedLpPositionsQuery,
+  IndexedLpPositionsQueryVariables,
   IndexedPoolSwapsQuery,
   IndexedPoolSwapsQueryVariables,
   IndexedProjectsQuery,
@@ -400,6 +402,24 @@ export const IndexedBuybackPoolsOperation = operation<
   ),
   hasIdentityItems("buybackPoolEvents"),
 );
+export const IndexedLpPositionsOperation = operation<
+  IndexedLpPositionsQuery,
+  IndexedLpPositionsQueryVariables
+>(
+  "indexed-lp-positions.v1",
+  variablesWith(
+    { chainId: isNumber, poolId: isString },
+    { limit: positiveLimit, offset },
+  ),
+  // Rows carry no projectId, so the shared identity guard does not apply: a
+  // position is identified by its pool, which the query already pins.
+  (value) => {
+    if (!isObject(value) || !("buybackPoolPositions" in value)) return false;
+    const root = value.buybackPoolPositions;
+    if (root === null) return true;
+    return isObject(root) && Array.isArray(root.items);
+  },
+);
 export const IndexedPoolSwapsOperation = operation<
   IndexedPoolSwapsQuery,
   IndexedPoolSwapsQueryVariables
@@ -464,6 +484,7 @@ export const BENDYSTRAW_OPERATIONS = [
   V6AutoIssueEventsOperation,
   AllLoansOperation,
   IndexedBuybackPoolsOperation,
+  IndexedLpPositionsOperation,
   IndexedPoolSwapsOperation,
   OwnedNftsOperation,
   MintNftEventsOperation,

@@ -726,6 +726,21 @@ export function LiquidityManager({
                     return `unclaimed fees: ${fmtUnits(owed.tokenFees, 18)} ${tokenSymbol} + ${fmtUnits(owed.pairFees, pool.pair.decimals)} ${pool.pair.symbol}`;
                   })()}
                 </span>
+                {(() => {
+                  // The pool forgets what a position already took, so lifetime is
+                  // only knowable where the index has been accumulating it.
+                  const owed = fees.data?.[position.tokenId.toString()];
+                  if (position.claimedPairFees === undefined || !owed) return null;
+                  const lifetimeToken = position.claimedTokenFees! + owed.tokenFees;
+                  const lifetimePair = position.claimedPairFees + owed.pairFees;
+                  if (lifetimeToken <= 0n && lifetimePair <= 0n) return null;
+                  return (
+                    <span className="block text-zinc-500">
+                      lifetime fees: {fmtUnits(lifetimeToken, 18)} {tokenSymbol} +{" "}
+                      {fmtUnits(lifetimePair, pool.pair.decimals)} {pool.pair.symbol}
+                    </span>
+                  );
+                })()}
               </span>
               <span className="flex gap-2">
                 <button

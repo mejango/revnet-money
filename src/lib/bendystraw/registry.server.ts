@@ -10,6 +10,7 @@ import {
   CashOutTaxSnapshotsOperation,
   HasPermissionOperation,
   IndexedBuybackPoolsOperation,
+  IndexedLpPositionsOperation,
   IndexedPoolSwapsOperation,
   IndexedProjectsOperation,
   IndexedSuckerGroupOperation,
@@ -741,6 +742,35 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       ) {
         items { id borrowAmount collateral beneficiary owner createdAt chainId projectId version }
         totalCount
+      }
+    }`,
+  },
+  [IndexedLpPositionsOperation.id]: {
+    operationName: "IndexedLpPositions",
+    query: `query IndexedLpPositions(
+      $chainId: Int!
+      $poolId: String!
+      $limit: Int
+      $offset: Int
+    ) {
+      buybackPoolPositions(
+        where: { chainId: $chainId, poolId: $poolId, burned: false }
+        orderBy: "tokenId"
+        orderDirection: "asc"
+        limit: $limit
+        offset: $offset
+      ) {
+        totalCount
+        items {
+          chainId
+          tokenId
+          owner
+          tickLower
+          tickUpper
+          liquidity
+          feesClaimed0
+          feesClaimed1
+        }
       }
     }`,
   },
