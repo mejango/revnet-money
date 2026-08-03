@@ -2,6 +2,7 @@
 
 import { CartesianChart } from "@/components/ui/chart";
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import { formatClock, formatMonthDay, formatMonthYear, formatShortDateTime } from "@/lib/date";
 import { formatDecimals } from "@/lib/number";
 import { cn } from "@/lib/utils";
@@ -192,12 +193,32 @@ export function MarketPriceChart({
   tokenSymbol: string;
 }) {
   // Same key as AmmCard: the pools are read once for the whole subtab.
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["v6AmmStates", chainProjectsKey(chains)],
     enabled: chains.length > 0,
     staleTime: 60_000,
     queryFn: () => fetchAmmStates(chains),
   });
+
+  // A ghost while the pools resolve, so the tab does not reflow when the
+  // chart lands. Once resolved, a project with no pool renders nothing.
+  if (isLoading) {
+    return (
+      <div className="border border-teal-200 bg-teal-50 p-4" aria-hidden="true">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="w-full max-w-xs">
+            <SkeletonLines lines={2} />
+          </div>
+          <div className="flex shrink-0 gap-1 rounded-lg bg-teal-50 p-1">
+            {RANGES.map((range) => (
+              <div key={range.label} className="h-11 w-11 animate-pulse rounded-md bg-teal-100" />
+            ))}
+          </div>
+        </div>
+        <ChartSkeleton className="mt-4 aspect-[4/3] w-full sm:aspect-[2/1] lg:aspect-[5/2]" />
+      </div>
+    );
+  }
 
   const pooled = (data ?? []).filter((state) => state.pool);
   if (pooled.length === 0) return null;
