@@ -490,10 +490,19 @@ export function WalletButton() {
             if (open) setOpen(false);
             else menu.openMenu();
           }}
-          className="gap-2 border-amber-400 bg-amber-100 text-amber-950 hover:bg-amber-200"
+          className="min-w-0 justify-start gap-2 border-amber-400 bg-amber-100 px-2 text-left text-amber-950 hover:bg-amber-200"
+          // The visible label truncates and drops its prefix on narrow
+          // screens, so state the full identity explicitly.
+          aria-label={`Viewing as ${ensName ?? formatEthAddress(viewAs, { truncateTo: 4 })}`}
         >
-          <span className="h-2 w-2 bg-amber-500" aria-hidden />
-          <span>Viewing as {ensName ?? formatEthAddress(viewAs, { truncateTo: 4 })}</span>
+          <span className="h-2 w-2 shrink-0 bg-amber-500" aria-hidden />
+          {/* Ellipsize rather than wrap: a long ENS name centred over two
+              lines reads as a broken control. The label drops first on narrow
+              screens, since the account is the part that matters. */}
+          <span className="min-w-0 truncate">
+            <span className="hidden sm:inline">Viewing as </span>
+            {ensName ?? formatEthAddress(viewAs, { truncateTo: 4 })}
+          </span>
         </Button>
         {open ? (
           <div

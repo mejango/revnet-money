@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 const CID = "bafkreihz5xk2crdko5mllpxbfa443m2o6pmzcmbg5b3uvif6ho4x45z674";
 
 describe("IPFS image failure handling", () => {
-  it("bypasses Next optimization, then falls back from the media cache to the bounded route", () => {
+  // The bounded same-origin route leads, and the CID subdomain cache is only a
+  // fallback. A public gateway that HANGS instead of failing never fires
+  // onError, so leading with one strands the image on a blank frame forever —
+  // observed on a cold .eth.sucks CID, which is what broke project logos.
+  it("leads with the bounded route, then falls back to the media cache", () => {
     render(
       <IpfsImage
         src={`ipfs://${CID}/logo.png`}
@@ -18,13 +22,13 @@ describe("IPFS image failure handling", () => {
     );
 
     let image = screen.getByRole("img", { name: "Project logo" });
-    expect(image).toHaveAttribute("src", `https://${CID}.eth.sucks/logo.png`);
+    expect(image).toHaveAttribute("src", `/api/ipfs/${CID}/logo.png`);
     expect(image).not.toHaveAttribute("srcset");
     expect(image).toHaveAttribute("referrerpolicy", "no-referrer");
 
     fireEvent.error(image);
     image = screen.getByRole("img", { name: "Project logo" });
-    expect(image).toHaveAttribute("src", `/api/ipfs/${CID}/logo.png`);
+    expect(image).toHaveAttribute("src", `https://${CID}.eth.sucks/logo.png`);
 
     fireEvent.error(image);
     expect(screen.getByText("Project image unavailable")).toBeInTheDocument();

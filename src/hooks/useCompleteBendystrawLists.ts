@@ -41,6 +41,7 @@ import type {
   V6StoredAutoIssuancesQuery,
 } from "@/lib/bendystraw/types";
 import { useQuery } from "@tanstack/react-query";
+import { PERSIST } from "@/lib/query-persist";
 
 const PAGE_SIZE = 250;
 
@@ -402,6 +403,7 @@ export function useCompleteLoans(refs: readonly VersionedProjectRef[], enabled =
 export function useCompleteParticipants(where: BendystrawFilter, chainId: number, enabled = true) {
   return useQuery({
     queryKey: ["complete-participants", where, chainId],
+    meta: PERSIST,
     queryFn: () => completeParticipants(where, chainId),
     enabled,
     refetchInterval: 15_000,

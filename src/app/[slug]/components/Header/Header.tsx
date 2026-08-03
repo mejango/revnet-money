@@ -23,6 +23,7 @@ import Link from "next/link";
 import { Suspense, use, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { participantCountSummary } from "../v6/owners/accounts/participantsAggregate";
 import { TvlDatum } from "./TvlDatum";
+import { Revalidating } from "@/components/ui/Revalidating";
 
 interface Props {
   isRevnet: boolean;
@@ -62,6 +63,10 @@ export function Header(props: Props) {
     : participantsQuery.isLoading
       ? "…"
       : `${holderSummary.count}${holderSummary.exact ? "" : "+"}`;
+  // Restored from the last session: show the count now, mark it unconfirmed
+  // until the 15s poll answers.
+  const holdersPending =
+    participantsQuery.isFetching && !participantsQuery.isLoading;
   const { data: suckers } = useSuckers();
   const { name: projectName, logoUri } = metadata?.data ?? {};
   const tokenSymbol = tokenContext?.data ? formatTokenSymbol(tokenContext) : undefined;
@@ -202,7 +207,7 @@ export function Header(props: Props) {
                           : "At least this many unique owners were found before the indexer result cap."
                     }
                   >
-                    {holderValue}
+                    <Revalidating pending={holdersPending}>{holderValue}</Revalidating>
                   </span>{" "}
                   <span className="text-zinc-500">
                     {holderSummary.exact && holderSummary.count === 1 ? "owner" : "owners"}

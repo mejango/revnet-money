@@ -38,8 +38,13 @@ export function IpfsImage({ alt, fallback, src, ...props }: Props) {
   const inlineSrc = safeDataImageUrl(src);
   const appSrc = ipfsUriToAppUrl(src);
   const mediaCacheSrc = ipfsMediaGatewayUrls(src)[0];
+  // The same-origin route leads. A public gateway that HANGS rather than
+  // failing never fires onError, so putting one first strands the image on a
+  // blank frame forever — which is exactly what the CID subdomain cache does
+  // when it is cold. The route bounds its own gateway work and answers
+  // immutable, so it is both the safer and the faster first choice.
   const candidates = [
-    ...new Set([inlineSrc, mediaCacheSrc, appSrc].filter((url): url is string => !!url)),
+    ...new Set([inlineSrc, appSrc, mediaCacheSrc].filter((url): url is string => !!url)),
   ];
   const [failedSources, setFailedSources] = useState<string[]>([]);
   const safeSrc = candidates.find((candidate) => !failedSources.includes(candidate));

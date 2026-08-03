@@ -18,6 +18,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { Address, PublicClient } from "viem";
 import { useConfig } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
+import { PERSIST } from "@/lib/query-persist";
 
 type TreasuryRow = {
   chainId: JBChainId;
@@ -122,6 +123,7 @@ export function TvlDatum({ projects }: Props) {
       "treasury",
       projects.map(({ chainId, projectId }) => [chainId, projectId]),
     ],
+    meta: PERSIST,
     queryFn: () => Promise.all(projects.map((project) => readChainTreasury(config, project))),
     enabled: projects.length > 0,
     staleTime: 30_000,
