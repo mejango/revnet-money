@@ -636,29 +636,78 @@ async function rawPoolLogs(
  * failed history is rejected: silently omitting an owned position would make
  * the management surface incorrect.
  */
+/** Windows fetched concurrently per round while walking back to the pool's Initialize. */
+const SCAN_BATCH_WINDOWS = 6;
+
+/**
+ * Session cache of a pool's scanned history, keyed by chain + pool + position
+ * manager. A pool's Initialize block and the positions minted before
+ * `throughBlock` never change, so a revisit only scans forward from there
+ * instead of walking hundreds of thousands of blocks again.
+ */
+const poolHistoryCache = new Map<
+  string,
+  { initializeBlock: bigint; throughBlock: bigint; ids: Map<string, bigint> }
+>();
+
 async function poolPositionTokenIds(
   client: PublicClient,
   pool: PoolSnapshot,
   positionManager: Address,
 ): Promise<bigint[]> {
   const latest = await client.getBlockNumber();
-  const ids = new Map<string, bigint>();
-  let cursor = latest;
-  let initialized = false;
-  for (let window = 0; window < SCAN_MAX_WINDOWS && cursor >= 0n; window += 1) {
-    const fromBlock = cursor >= SCAN_WINDOW ? cursor - SCAN_WINDOW + 1n : 0n;
-    const logs = await rawPoolLogs(client, pool, fromBlock, cursor);
+  const cacheKey = `${pool.chainId}:${pool.poolId.toLowerCase()}:${positionManager.toLowerCase()}`;
+  const cached = poolHistoryCache.get(cacheKey);
+
+  const ids = new Map<string, bigint>(cached?.ids);
+  let initializeBlock = cached?.initializeBlock ?? null;
+
+  const absorb = (logs: RawPoolLog[]) => {
     for (const log of logs) {
       const topic = String(log.topics?.[0] ?? "").toLowerCase();
-      if (topic === UNISWAP_V4_INITIALIZE_TOPIC.toLowerCase()) initialized = true;
+      if (topic === UNISWAP_V4_INITIALIZE_TOPIC.toLowerCase()) {
+        const block = BigInt(log.blockNumber ?? 0);
+        if (initializeBlock == null || block < initializeBlock) initializeBlock = block;
+      }
       const tokenId = uniswapV4PositionTokenIdFromLog(log, positionManager);
       if (tokenId != null) ids.set(tokenId.toString(), tokenId);
     }
-    if (initialized) break;
-    if (fromBlock === 0n) break;
-    cursor = fromBlock - 1n;
+  };
+
+  if (cached) {
+    // Known pool: only the blocks added since the last scan are unseen. A short
+    // overlap keeps a shallow reorg from dropping a position.
+    const from = cached.throughBlock > 16n ? cached.throughBlock - 16n : 0n;
+    if (latest >= from) absorb(await rawPoolLogs(client, pool, from, latest));
+  } else {
+    // Cold pool: walk back toward Initialize, several windows per round trip.
+    // Sequential windows made this a minute-long wait on a pool a few hundred
+    // thousand blocks deep.
+    let cursor = latest;
+    let windows = 0;
+    while (initializeBlock == null && cursor >= 0n && windows < SCAN_MAX_WINDOWS) {
+      const ranges: { from: bigint; to: bigint }[] = [];
+      for (let n = 0; n < SCAN_BATCH_WINDOWS && cursor >= 0n && windows < SCAN_MAX_WINDOWS; n += 1) {
+        const from = cursor >= SCAN_WINDOW ? cursor - SCAN_WINDOW + 1n : 0n;
+        ranges.push({ from, to: cursor });
+        windows += 1;
+        if (from === 0n) {
+          cursor = -1n;
+          break;
+        }
+        cursor = from - 1n;
+      }
+      const batches = await Promise.all(
+        ranges.map((range) => rawPoolLogs(client, pool, range.from, range.to)),
+      );
+      batches.forEach(absorb);
+    }
   }
-  if (!initialized) throw new Error("Could not verify the complete LP position history.");
+
+  if (initializeBlock == null) {
+    throw new Error("Could not verify the complete LP position history.");
+  }
+  poolHistoryCache.set(cacheKey, { initializeBlock, throughBlock: latest, ids: new Map(ids) });
   return [...ids.values()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 

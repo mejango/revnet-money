@@ -2,6 +2,7 @@
 
 import type { PublicClient } from "viem";
 import { ChainLogo } from "@/components/ChainLogo";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Button } from "@/components/ui/button";
 import {
@@ -416,10 +417,9 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
             type="button"
             variant="outline"
             className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
-            aria-expanded={showLiquidity}
-            onClick={() => setShowLiquidity((current) => !current)}
+            onClick={() => setShowLiquidity(true)}
           >
-            {showLiquidity ? "Hide liquidity controls" : "Manage market liquidity"}
+            Manage market liquidity
           </Button>
         ) : null}
 
@@ -431,27 +431,29 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
       </div>
 
       {showLiquidity && pooledAmmStates.length > 0 ? (
-        <section className="mt-4 border border-zinc-200 bg-white p-4" aria-label="Market liquidity">
-          <h3 className="font-medium text-zinc-900">Market liquidity</h3>
-          <p className="mt-1 text-sm text-zinc-500">
-            Add liquidity or manage positions owned by your connected wallet.
-          </p>
-          <div className="mt-3 space-y-4">
-            {pooledAmmStates.map((state) => (
-              <div
-                key={state.chainId}
-                className="border-t border-zinc-100 pt-3 first:border-t-0 first:pt-0"
-              >
-                <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
-                  <ChainLogo chainId={state.chainId} width={16} height={16} />
-                  {chainName(state.chainId)}
+        <Dialog open onOpenChange={(next) => !next && setShowLiquidity(false)}>
+          <DialogContent className="max-w-2xl">
+            <DialogTitle className="text-base font-medium">Market liquidity</DialogTitle>
+            <p className="text-sm text-zinc-500">
+              Add liquidity or manage positions owned by your connected wallet.
+            </p>
+            <div className="space-y-4">
+              {pooledAmmStates.map((state) => (
+                <div
+                  key={state.chainId}
+                  className="border-t border-zinc-100 pt-3 first:border-t-0 first:pt-0"
+                >
+                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
+                    <ChainLogo chainId={state.chainId} width={16} height={16} />
+                    {chainName(state.chainId)}
+                  </div>
+                  <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
+                  <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
                 </div>
-                <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
-                <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
-              </div>
-            ))}
-          </div>
-        </section>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   );
