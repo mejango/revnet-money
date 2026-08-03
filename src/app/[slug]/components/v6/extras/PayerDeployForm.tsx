@@ -58,10 +58,13 @@ export function PayerDeployForm({
   rows,
   existingRows,
   onDeployed,
+  tokenSymbol,
 }: {
   rows: ChainProjectRow[];
   existingRows: PayerRow[];
   onDeployed: () => void;
+  /** The project's own token, so the field names what it actually pays out. */
+  tokenSymbol?: string;
 }) {
   const { address } = useAccount();
   const { switchChainAsync } = useSwitchChain();
@@ -267,13 +270,7 @@ export function PayerDeployForm({
 
   return (
     <div className="w-full">
-      <section className="pb-10">
-        <div>
-          <h4 className="text-md font-semibold">1. Payment behavior</h4>
-          <p className="mt-3 text-sm text-zinc-500">
-            Choose what an incoming ETH transfer does and who receives newly issued tokens.
-          </p>
-        </div>
+      <section className="pb-6">
         <div>
           <div className="mt-4">
             <label className="block text-sm font-medium mb-1">Behavior</label>
@@ -302,7 +299,9 @@ export function PayerDeployForm({
 
           {!addToBalance ? (
             <div className="mt-4">
-              <label className="block text-sm font-medium mb-1">Token beneficiary</label>
+              <label className="block text-sm font-medium mb-1">
+                {tokenSymbol || "Token"} beneficiary
+              </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -365,13 +364,7 @@ export function PayerDeployForm({
         </div>
       </section>
 
-      <section className="pb-10">
-        <div>
-          <h4 className="text-md font-semibold">2. Address control</h4>
-          <p className="mt-3 text-sm text-zinc-500">
-            Keep the payer immutable, or assign an admin and optional terminal metadata.
-          </p>
-        </div>
+      <section className="pb-6">
         <div>
           <div className="mt-4">
             <label className="flex items-center gap-2 text-sm font-medium">
@@ -451,12 +444,6 @@ export function PayerDeployForm({
       </section>
 
       <section>
-        <div>
-          <h4 className="text-md font-semibold">3. Deployment</h4>
-          <p className="mt-3 text-sm text-zinc-500">
-            Select the chains, review the configuration, then deploy the payer addresses.
-          </p>
-        </div>
         <div>
           <div className="mt-4">
             <label className="block text-sm font-medium mb-1">Deploy on</label>

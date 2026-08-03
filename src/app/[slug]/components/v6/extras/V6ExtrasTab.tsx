@@ -173,7 +173,9 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
           </p>
           <Dialog>
             <DialogTrigger asChild>
-              <Button className="mt-4">Create payer address</Button>
+              <Button variant="secondary" className="mt-4">
+                Create payer address
+              </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
@@ -186,6 +188,7 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
               <PayerDeployForm
                 rows={rows}
                 existingRows={payerRows}
+                tokenSymbol={token?.data ? formatTokenSymbol(token) : undefined}
                 onDeployed={() => payersQuery.refetch()}
               />
             </DialogContent>
