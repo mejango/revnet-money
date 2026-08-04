@@ -125,7 +125,7 @@ function MoreProjectOptions({
 
 function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect: () => void }) {
   return (
-    <li className="flex items-start xl:hidden">
+    <li className="flex items-start min-[801px]:hidden">
       <button
         type="button"
         onClick={onSelect}
