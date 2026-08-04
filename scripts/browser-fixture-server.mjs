@@ -951,9 +951,11 @@ registerCall({
       gateways.length === 1 && gateways[0] === "x-batch-gateway:true",
       `ENS gateways=${gateways.join(",")}`,
     );
-    // An empty name is the universal resolver's canonical "no verified
-    // reverse record" result as interpreted by viem.
-    return ["", zeroAddress, zeroAddress];
+    // Exercise the longest header state with a realistic viewed identity;
+    // other fixture accounts retain the canonical "no reverse record" result.
+    const name =
+      reverseName.toLowerCase() === fixtureParticipant.toLowerCase() ? "artizenendowment.eth" : "";
+    return [name, zeroAddress, zeroAddress];
   },
 });
 

@@ -28,6 +28,30 @@ test("standalone health endpoint exposes immutable build identity", async ({ req
   });
 });
 
+test("navigation keeps a standard gap beside a long viewed identity", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("revnet:view-as:v1", "0x2222222222222222222222222222222222222222");
+  });
+  const boundary = await openCreatePage(page);
+  await expect(
+    page.getByRole("button", { name: /Viewing as artizenendowment\.eth/i }),
+  ).toBeVisible();
+
+  const layout = page.locator("[data-site-nav-layout]");
+  const search = page.locator("[data-site-nav-search]");
+  const wallet = page.locator("[data-site-nav-wallet]");
+  const [searchBox, walletBox, columnGap] = await Promise.all([
+    search.boundingBox(),
+    wallet.boundingBox(),
+    layout.evaluate((element) => Number.parseFloat(getComputedStyle(element).columnGap)),
+  ]);
+
+  expect(searchBox).not.toBeNull();
+  expect(walletBox).not.toBeNull();
+  expect(walletBox!.x - (searchBox!.x + searchBox!.width)).toBeGreaterThanOrEqual(columnGap - 1);
+  await expectBoundaryToStayLocal(boundary);
+});
+
 test("production create surface stays visible and contained", async ({ page }) => {
   const boundary = await openCreatePage(page);
 
