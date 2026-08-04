@@ -20,6 +20,7 @@ export type ChartStage = RulesetIssuanceStage;
 export type ResolvedStage = ResolvedRulesetIssuanceStage;
 
 const YEAR = 365 * 86400;
+const MIN_X_TICK_INTERVAL = 112;
 
 export const CHART_RANGES: { label: string; years: number }[] = [
   { label: "1Y", years: 1 },
@@ -27,6 +28,17 @@ export const CHART_RANGES: { label: string; years: number }[] = [
   { label: "10Y", years: 10 },
   { label: "All", years: 0 },
 ];
+
+/**
+ * Keep full month/year labels from colliding as the Terms column narrows.
+ * Edge labels use start/end alignment, so each interval needs more than a
+ * single label's width. An unmeasured chart keeps the five-tick SSR layout;
+ * useLayoutEffect replaces it before paint in the browser.
+ */
+export function axisTickCountForWidth(width: number): number {
+  if (!Number.isFinite(width) || width <= 0) return 5;
+  return Math.max(2, Math.min(5, Math.floor(width / MIN_X_TICK_INTERVAL) + 1));
+}
 
 /** Human label for the ruleset weight's denomination, not its payment token. */
 export function issuanceBaseCurrencyLabel(

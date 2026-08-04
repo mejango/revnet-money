@@ -146,6 +146,31 @@ test("project terms stay contract-backed, contained, and accessible", async ({ p
     page.getByRole("img", { name: /Projected .* issuance price in USD over time/ }),
   ).toBeVisible();
   await expect(page.getByText(/USD per /)).toBeVisible();
+  const headingLeft = await page
+    .getByRole("heading", { name: "Token issuance" })
+    .evaluate((element) => element.getBoundingClientRect().left);
+  const yTickLeft = await page
+    .locator('[data-slot="issuance-y-tick"]')
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().left);
+  expect(Math.abs(yTickLeft - headingLeft)).toBeLessThanOrEqual(1);
+
+  await expect
+    .poll(async () => {
+      const boxes = await page.locator('[data-slot="issuance-x-tick"]').evaluateAll((ticks) =>
+        ticks.map((tick) => {
+          const rect = tick.getBoundingClientRect();
+          return { left: rect.left, right: rect.right };
+        }),
+      );
+      return boxes
+        .slice(1)
+        .reduce(
+          (smallestGap, box, index) => Math.min(smallestGap, box.left - boxes[index].right),
+          Number.POSITIVE_INFINITY,
+        );
+    })
+    .toBeGreaterThanOrEqual(4);
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 

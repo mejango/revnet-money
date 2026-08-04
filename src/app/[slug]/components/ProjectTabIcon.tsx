@@ -55,11 +55,6 @@ ICONS.tokens = ICONS.owners;
 ICONS.stages = ICONS.terms;
 ICONS.owner = ICONS.operator;
 
-const MORE_ICON: IconDefinition = {
-  name: "more",
-  paths: ["M10 6H14", "M10 12H14", "M10 18H14"],
-};
-
 function Icon({ definition }: { definition: IconDefinition }) {
   return (
     <svg
@@ -87,5 +82,18 @@ export function ProjectTabIcon({ label }: { label: string }) {
 }
 
 export function ProjectOverflowIcon() {
-  return <Icon definition={MORE_ICON} />;
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      data-project-tab-icon="more"
+      className="h-5 w-5 shrink-0"
+      fill="currentColor"
+    >
+      <circle cx="12" cy="6" r="1.25" />
+      <circle cx="12" cy="12" r="1.25" />
+      <circle cx="12" cy="18" r="1.25" />
+    </svg>
+  );
 }
