@@ -1,4 +1,5 @@
 import {
+  axisTickCountForWidth,
   buildStepPoints,
   formatRate,
   issuanceBaseCurrencyLabel,
@@ -35,5 +36,14 @@ describe("issuance chart projections", () => {
     expect(issuanceBaseCurrencyLabel(2, "USDC")).toBe("USD");
     expect(issuanceBaseCurrencyLabel(1, "USDC")).toBe("ETH");
     expect(issuanceBaseCurrencyLabel(7, "TOKEN")).toBe("TOKEN");
+  });
+
+  it("reduces date ticks to preserve space between labels in narrow charts", () => {
+    expect(axisTickCountForWidth(0)).toBe(5);
+    expect(axisTickCountForWidth(720)).toBe(5);
+    expect(axisTickCountForWidth(448)).toBe(5);
+    expect(axisTickCountForWidth(447)).toBe(4);
+    expect(axisTickCountForWidth(300)).toBe(3);
+    expect(axisTickCountForWidth(200)).toBe(2);
   });
 });

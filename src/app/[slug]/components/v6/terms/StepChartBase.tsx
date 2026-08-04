@@ -1,8 +1,9 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useMemo, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  axisTickCountForWidth,
   buildStepPoints,
   chartDateLabel,
   formatPrice,
@@ -97,6 +98,8 @@ export function StepChartBase({
   renderOverlay?: (geom: ChartGeom) => ReactNode;
 }) {
   const [hoverT, setHoverT] = useState<number | null>(null);
+  const plotRef = useRef<HTMLDivElement>(null);
+  const [plotWidth, setPlotWidth] = useState(0);
 
   // Price points: invert the rate steps; rate 0 → null (no mint price).
   const points = useMemo(
@@ -107,6 +110,23 @@ export function StepChartBase({
     [resolved, t0, t1],
   );
   const maxV = points.reduce((m, [, v]) => (v !== null && v > m ? v : m), 0);
+
+  useLayoutEffect(() => {
+    const element = plotRef.current;
+    if (!element) return;
+
+    const updateWidth = () => {
+      const width = element.getBoundingClientRect().width;
+      if (width > 0) setPlotWidth(width);
+    };
+
+    updateWidth();
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [maxV, resolved.length]);
 
   if (resolved.length === 0 || maxV <= 0) {
     return <p className="mt-3 text-xs text-zinc-500">No issuance to chart.</p>;
@@ -129,7 +149,11 @@ export function StepChartBase({
   const span = t1 - t0;
   const nowX = X(Math.min(now, t1));
   const geom: ChartGeom = { X, Y, nowX, maxV };
-  const axisTimes = [0, 1, 2, 3, 4].map((i) => t0 + ((t1 - t0) * i) / 4);
+  const axisTickCount = axisTickCountForWidth(plotWidth);
+  const axisTimes = Array.from(
+    { length: axisTickCount },
+    (_, i) => t0 + ((t1 - t0) * i) / (axisTickCount - 1),
+  );
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -150,9 +174,10 @@ export function StepChartBase({
               <span
                 key={i}
                 className={cn(
-                  "absolute right-2 whitespace-nowrap leading-none",
+                  "absolute left-0 whitespace-nowrap leading-none",
                   i === 0 ? "translate-y-0" : i === 4 ? "-translate-y-full" : "-translate-y-1/2",
                 )}
+                data-slot="issuance-y-tick"
                 style={{ top: `${(y / VH) * 100}%` }}
               >
                 {formatPrice(value)}
@@ -160,7 +185,7 @@ export function StepChartBase({
             );
           })}
         </div>
-        <div className="relative ml-20">
+        <div ref={plotRef} className="relative ml-20">
           <svg
             viewBox={`0 0 ${VW} ${VH}`}
             className="h-auto w-full cursor-crosshair touch-none"
@@ -285,6 +310,7 @@ export function StepChartBase({
               "absolute top-0 whitespace-nowrap",
               i === 0 ? "" : i === axisTimes.length - 1 ? "-translate-x-full" : "-translate-x-1/2",
             )}
+            data-slot="issuance-x-tick"
             style={{ left: `${(i / (axisTimes.length - 1)) * 100}%` }}
           >
             {new Date(timestamp * 1000).toLocaleDateString("en-US", {
