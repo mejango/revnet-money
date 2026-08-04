@@ -25,6 +25,8 @@ describe("ProjectMenu", () => {
     expect(terms.querySelector('[data-project-tab-icon="stages"]')).toBeInTheDocument();
     expect(owners.querySelector('[data-project-tab-icon="stack"]')).toBeInTheDocument();
     expect(shop.querySelector('[data-project-tab-icon="shop"]')).toBeInTheDocument();
+    expect(overview.querySelector("svg")).toHaveAttribute("stroke-linecap", "square");
+    expect(overview.querySelector("svg")).toHaveAttribute("stroke-linejoin", "miter");
     expect(screen.queryByRole("link", { name: "Extras" })).not.toBeInTheDocument();
 
     const more = screen.getByRole("button", { name: "More project sections" });
