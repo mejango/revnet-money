@@ -5,7 +5,7 @@ import { ActivityFeedSkeleton } from "@/components/loading/LoadingSkeletons";
 import { useCompleteActivityEvents } from "@/hooks/useCompleteBendystrawLists";
 import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
 import { useState } from "react";
-import { ActivityItem } from "./ActivityItem";
+import { ActivityItem, type ActivityEvent } from "./ActivityItem";
 import {
   isProjectFeedActivityEvent,
   mapActivityEvents,
@@ -24,8 +24,123 @@ interface Props {
 const INITIAL_ITEMS = 10;
 const LOAD_MORE_COUNT = 5;
 
+type ActivityCategory =
+  | "pay"
+  | "addToBalance"
+  | "cashOut"
+  | "tokenMint"
+  | "autoIssue"
+  | "tokenDeploy"
+  | "projectCreate"
+  | "ownershipTransfer"
+  | "ruleset"
+  | "buybackSwap"
+  | "buybackPool";
+
+const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
+  pay: "Payments",
+  addToBalance: "Add to balance",
+  cashOut: "Cash outs",
+  tokenMint: "Token mints",
+  autoIssue: "Auto-issuance",
+  tokenDeploy: "Token deploys",
+  projectCreate: "Project creation",
+  ownershipTransfer: "Ownership transfers",
+  ruleset: "Ruleset changes",
+  buybackSwap: "Buyback swaps",
+  buybackPool: "Buyback pools",
+};
+
+export function activityCategory(event: ActivityEvent): ActivityCategory | null {
+  switch (event.type) {
+    case "in":
+      return "pay";
+    case "out":
+      return "cashOut";
+    case "addToBalance":
+      return "addToBalance";
+    case "mint":
+      return "tokenMint";
+    case "autoIssue":
+      return "autoIssue";
+    case "deployErc20":
+      return "tokenDeploy";
+    case "projectCreate":
+      return "projectCreate";
+    case "projectTransfer":
+      return "ownershipTransfer";
+    case "rulesetQueued":
+      return "ruleset";
+    case "swapBuy":
+    case "swapSell":
+      return "buybackSwap";
+    case "buybackPool":
+      return "buybackPool";
+    case "operatorPermissionsSet":
+      return null;
+  }
+}
+
+function ActivityTypeFilter({
+  categories,
+  selected,
+  onChange,
+}: {
+  categories: ActivityCategory[];
+  selected: Set<ActivityCategory> | null;
+  onChange: (next: Set<ActivityCategory> | null) => void;
+}) {
+  if (categories.length < 2) return null;
+  const selectedLabel =
+    selected === null
+      ? "All"
+      : selected.size === 1
+        ? ACTIVITY_CATEGORY_LABELS[[...selected][0]]
+        : `${selected.size} events`;
+
+  const toggle = (category: ActivityCategory) => {
+    const next = selected === null ? new Set(categories) : new Set(selected);
+    if (next.has(category)) next.delete(category);
+    else next.add(category);
+    onChange(next.size === categories.length ? null : next);
+  };
+
+  return (
+    <details className="relative z-20">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 border border-teal-200 bg-teal-50 px-3 text-sm text-zinc-600 hover:border-teal-400 [&::-webkit-details-marker]:hidden">
+        {selectedLabel}
+        <span aria-hidden>⌄</span>
+      </summary>
+      <div className="absolute right-0 top-full mt-1 min-w-56 border border-teal-300 bg-teal-50 p-2 shadow-lg">
+        <label className="flex cursor-pointer items-center gap-2 border-b border-teal-200 px-1 py-2 text-sm text-zinc-600">
+          <input
+            type="checkbox"
+            checked={selected === null}
+            onChange={() => onChange(selected === null ? new Set() : null)}
+          />
+          All
+        </label>
+        {categories.map((category) => (
+          <label
+            key={category}
+            className="flex cursor-pointer items-center gap-2 px-1 py-2 text-sm text-zinc-600"
+          >
+            <input
+              type="checkbox"
+              checked={selected === null || selected.has(category)}
+              onChange={() => toggle(category)}
+            />
+            {ACTIVITY_CATEGORY_LABELS[category]}
+          </label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export function ActivityFeed({ suckerGroupId, projects }: Props) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
+  const [selectedCategories, setSelectedCategories] = useState<Set<ActivityCategory> | null>(null);
   const { data, isLoading, isError } = useCompleteActivityEvents(
     {
       orderBy: "timestamp",
@@ -44,13 +159,32 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
     projectFeedTokenContext(projects),
   );
 
-  const visibleEvents = events.slice(0, visibleCount);
-  const hasMore = events.length > visibleCount;
+  const categories: ActivityCategory[] = [];
+  events.forEach((event) => {
+    const category = activityCategory(event);
+    if (category && !categories.includes(category)) categories.push(category);
+  });
+  const filteredEvents = events.filter((event) => {
+    const category = activityCategory(event);
+    return selectedCategories === null || (!!category && selectedCategories.has(category));
+  });
+  const visibleEvents = filteredEvents.slice(0, visibleCount);
+  const hasMore = filteredEvents.length > visibleCount;
   const addresses = visibleEvents.map((e) => e.beneficiary);
 
   return (
     <div className="mt-6">
-      <h3 className="text-lg font-medium mb-2">Activity</h3>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-lg font-medium">Activity</h3>
+        <ActivityTypeFilter
+          categories={categories}
+          selected={selectedCategories}
+          onChange={(next) => {
+            setSelectedCategories(next);
+            setVisibleCount(INITIAL_ITEMS);
+          }}
+        />
+      </div>
       <ProfilesProvider addresses={addresses}>
         <div className="pr-1">
           {isError ? (
@@ -68,7 +202,9 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
               {isLoading ? (
                 <ActivityFeedSkeleton />
               ) : (
-                <p className="text-sm text-zinc-500">No activity yet</p>
+                <p className="text-sm text-zinc-500">
+                  {events.length ? "No activity matches this filter." : "No activity yet"}
+                </p>
               )}
             </div>
           )}

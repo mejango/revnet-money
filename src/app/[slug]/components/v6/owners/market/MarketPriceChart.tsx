@@ -1,11 +1,11 @@
 "use client";
 
-import { CartesianChart } from "@/components/ui/chart";
-import { cachedQuery } from "@/lib/query-persist";
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
+import { CartesianChart } from "@/components/ui/chart";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { formatClock, formatMonthDay, formatMonthYear, formatShortDateTime } from "@/lib/date";
 import { formatDecimals } from "@/lib/number";
+import { cachedQuery } from "@/lib/query-persist";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -20,6 +20,7 @@ import { fetchAmmStates, type PoolSnapshot } from "./lib";
  */
 
 const DAY = 86_400;
+const PRICE_REFRESH_MS = 15_000;
 
 const RANGES = [
   { label: "1D", seconds: DAY },
@@ -60,16 +61,18 @@ function PoolChart({
 
   const { data, isLoading } = useQuery(
     cachedQuery({
-    queryKey: ["v6MarketPriceHistory", pool.chainId, pool.poolId],
-    staleTime: 60_000,
-    retry: 1,
-    queryFn: () =>
-      getMarketPriceHistory({
-        projectId: projectId.toString(),
-        chainId: pool.chainId,
-        poolId: pool.poolId,
-        pairDecimals: pool.pair.decimals,
-      }),
+      queryKey: ["v6MarketPriceHistory", pool.chainId, pool.poolId],
+      staleTime: 60_000,
+      retry: 1,
+      refetchInterval: PRICE_REFRESH_MS,
+      refetchOnWindowFocus: true,
+      queryFn: () =>
+        getMarketPriceHistory({
+          projectId: projectId.toString(),
+          chainId: pool.chainId,
+          poolId: pool.poolId,
+          pairDecimals: pool.pair.decimals,
+        }),
     }),
   );
 
@@ -77,10 +80,7 @@ function PoolChart({
   const now = Math.floor(Date.now() / 1000);
   const observed = data ?? [];
   const first = observed[0]?.timestamp ?? now;
-  const t0 = Math.min(
-    now - 1,
-    rangeSeconds === 0 ? first : Math.max(first, now - rangeSeconds),
-  );
+  const t0 = Math.min(now - 1, rangeSeconds === 0 ? first : Math.max(first, now - rangeSeconds));
 
   // The last observation before the window opens carries the line in at its
   // true level; the live pool price closes it at Now.
@@ -198,10 +198,12 @@ export function MarketPriceChart({
   // Same key as AmmCard: the pools are read once for the whole subtab.
   const { data, isLoading } = useQuery(
     cachedQuery({
-    queryKey: ["v6AmmStates", chainProjectsKey(chains)],
-    enabled: chains.length > 0,
-    staleTime: 60_000,
-    queryFn: () => fetchAmmStates(chains),
+      queryKey: ["v6AmmStates", chainProjectsKey(chains)],
+      enabled: chains.length > 0,
+      staleTime: 60_000,
+      refetchInterval: PRICE_REFRESH_MS,
+      refetchOnWindowFocus: true,
+      queryFn: () => fetchAmmStates(chains),
     }),
   );
 
@@ -234,9 +236,7 @@ export function MarketPriceChart({
         <PoolChart
           key={state.chainId}
           pool={state.pool!}
-          projectId={
-            chains.find((chain) => chain.chainId === state.chainId)?.projectId ?? 0n
-          }
+          projectId={chains.find((chain) => chain.chainId === state.chainId)?.projectId ?? 0n}
           tokenSymbol={tokenSymbol}
           chainLabel={pooled.length > 1 ? chainName(state.chainId) : null}
         />

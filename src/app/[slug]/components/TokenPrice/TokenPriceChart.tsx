@@ -1,12 +1,12 @@
 "use client";
 
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
-import { cachedQuery } from "@/lib/query-persist";
 import { CartesianChart, type ChartReferenceLine, type ChartSeries } from "@/components/ui/chart";
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
 import { shouldShowCashOutAsymptote } from "@/lib/minimumCashOutPrice";
 import { formatDecimals } from "@/lib/number";
+import { cachedQuery } from "@/lib/query-persist";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -17,6 +17,8 @@ import { getTokenPriceChartData } from "./getTokenPriceChartData";
 import { PriceChartTooltip } from "./PriceChartTooltip";
 
 const TIME_RANGES: RangeOption<TimeRange>[] = [
+  { value: "1h", label: "1H" },
+  { value: "6h", label: "6H" },
   { value: "1d", label: "1D" },
   { value: "7d", label: "7D" },
   { value: "30d", label: "30D" },
@@ -26,6 +28,7 @@ const TIME_RANGES: RangeOption<TimeRange>[] = [
 ];
 
 const NOW_COLOR = "#EE6F3A"; // peel-400
+const PRICE_REFRESH_MS = 15_000;
 
 interface Props {
   projectId: string;
@@ -49,16 +52,18 @@ export function TokenPriceChart({
 
   const { data, isLoading } = useQuery(
     cachedQuery({
-    queryKey: ["chartData", projectId, chainId, suckerGroupId, range],
-    queryFn: () =>
-      getTokenPriceChartData({
-        projectId,
-        chainId,
-        range,
-        suckerGroupId,
-        baseToken: { address: token, symbol: tokenSymbol, decimals: tokenDecimals },
-      }),
-    placeholderData: keepPreviousData,
+      queryKey: ["chartData", projectId, chainId, suckerGroupId, range],
+      queryFn: () =>
+        getTokenPriceChartData({
+          projectId,
+          chainId,
+          range,
+          suckerGroupId,
+          baseToken: { address: token, symbol: tokenSymbol, decimals: tokenDecimals },
+        }),
+      placeholderData: keepPreviousData,
+      refetchInterval: PRICE_REFRESH_MS,
+      refetchOnWindowFocus: true,
     }),
   );
 
@@ -250,7 +255,7 @@ export function TokenPriceChart({
 
 const formatXAxis = (timestamp: number, range: TimeRange) => {
   const date = new Date(timestamp * 1000);
-  if (range === "1d" || range === "7d") {
+  if (range === "1h" || range === "6h" || range === "1d" || range === "7d") {
     return formatClock(date);
   }
   if (range === "30d" || range === "3m") {

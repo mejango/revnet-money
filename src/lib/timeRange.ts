@@ -1,8 +1,8 @@
-export type TimeRange = "1d" | "7d" | "30d" | "3m" | "1y" | "all";
+export type TimeRange = "1h" | "6h" | "1d" | "7d" | "30d" | "3m" | "1y" | "all";
 
 const SECONDS_PER_DAY = 86400;
 
-const VALID_RANGES: TimeRange[] = ["1d", "7d", "30d", "3m", "1y", "all"];
+const VALID_RANGES: TimeRange[] = ["1h", "6h", "1d", "7d", "30d", "3m", "1y", "all"];
 
 export function parseTimeRange(range?: string | null): TimeRange {
   if (range && VALID_RANGES.includes(range as TimeRange)) {
@@ -13,6 +13,10 @@ export function parseTimeRange(range?: string | null): TimeRange {
 
 export function getTimeRangeConfig(range: TimeRange): { seconds: number | null; interval: number } {
   switch (range) {
+    case "1h":
+      return { seconds: 3600, interval: 60 };
+    case "6h":
+      return { seconds: 6 * 3600, interval: 300 };
     case "1d":
       return { seconds: SECONDS_PER_DAY, interval: 3600 };
     case "7d":
@@ -31,6 +35,10 @@ export function getTimeRangeConfig(range: TimeRange): { seconds: number | null; 
 export function getStartTimeForRange(range: TimeRange): number {
   const now = Math.floor(Date.now() / 1000);
   switch (range) {
+    case "1h":
+      return now - 3600;
+    case "6h":
+      return now - 6 * 3600;
     case "1d":
       return now - SECONDS_PER_DAY;
     case "7d":
