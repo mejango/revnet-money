@@ -8,7 +8,7 @@ import { PropsWithChildren } from "react";
 /** The account page's tab bar — same route-segment idiom as ProjectMenu. */
 export function AccountMenu() {
   return (
-    <div className="overflow-x-auto">
+    <div className="touch-pan-x overflow-x-auto overflow-y-hidden overscroll-x-contain">
       <ul className="flex w-max min-w-full gap-4 border-b border-zinc-200 sm:gap-6">
         <MenuOption href="">Activity</MenuOption>
         <MenuOption href="holdings">Holdings</MenuOption>

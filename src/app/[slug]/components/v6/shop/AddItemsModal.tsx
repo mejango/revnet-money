@@ -2,6 +2,7 @@
 
 import { pinJsonMetadata, pinMediaFile } from "@/app/create/helpers/pinProjectMetaData";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,7 +19,7 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { cidFromIpfsUri } from "@/lib/ipfs";
-import { jb721TiersHookAbi, JBChainId } from "@bananapus/nana-sdk-core";
+import { jb721TiersHookAbi, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Address, Hex, isAddress, parseUnits, PublicClient, zeroAddress } from "viem";
@@ -830,6 +831,20 @@ export function AddItemsModal({
               >
                 + Add an item
               </button>
+
+              <div className="w-full border-t border-zinc-200 pt-5">
+                <Label className="text-xs">Add on</Label>
+                <div
+                  role="group"
+                  aria-label="Chains to add items on"
+                  className="mt-2 flex flex-wrap gap-2"
+                >
+                  <div className="inline-flex min-h-11 items-center gap-2 border border-teal-500 bg-teal-50 px-3 text-sm font-medium text-teal-800">
+                    <ChainLogo chainId={chainId} width={22} height={22} />
+                    <span>{JB_CHAINS[chainId].name}</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {error ? (

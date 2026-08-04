@@ -77,6 +77,7 @@ describe("revnet shop item editor", () => {
       "Reserve inventory",
       "Voting power",
       "Item rules",
+      "Add on",
       "Review items",
     ]) {
       expect(source).toContain(label);

@@ -17,7 +17,10 @@ export function ProjectMenu({
 
   return (
     <div className="flex border-b border-zinc-200">
-      <ul className="scrollbar-none flex min-w-0 flex-1 gap-4 overflow-x-auto sm:gap-6">
+      <ul
+        data-project-tab-scroll
+        className="scrollbar-none flex min-w-0 flex-1 touch-pan-x gap-4 overflow-x-auto overflow-y-hidden overscroll-x-contain sm:gap-6"
+      >
         <MobileActivityOption
           active={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(true)}
@@ -107,7 +110,7 @@ function MoreProjectOptions({
       aria-expanded={expanded}
       onClick={onToggle}
       className={cn(
-        "-mb-px ml-auto flex min-h-11 min-w-11 shrink-0 items-center justify-center border-b-2 px-3 text-2xl leading-none transition-all",
+        "-mb-px ml-auto flex min-h-11 min-w-11 shrink-0 self-start items-center justify-center border-b-2 px-3 pb-2 text-2xl leading-none transition-all",
         active && !expanded
           ? "border-teal-500 text-black"
           : "border-transparent text-zinc-500 hover:text-zinc-800",
