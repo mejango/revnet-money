@@ -20,8 +20,10 @@ import {
 import {
   BASE_CURRENCY_ETH,
   BASE_CURRENCY_USD,
+  decode721RulesetMetadata,
   effectiveTierPrice,
   getAccountingContexts,
+  getCurrentRuleset,
   getProject721Shop,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQueries, useQuery } from "@tanstack/react-query";
@@ -113,6 +115,8 @@ export interface ShopInventory {
   pricing: { currency: number; decimals: number; symbol: string };
   tiers: ShopTier[];
   configFlags: ShopConfigFlags | null;
+  /** Whether the active stage pauses tiers which opted into transfer control. */
+  transfersPaused: boolean | null;
 }
 
 const TIER_PAGE_SIZE = 200;
@@ -202,7 +206,7 @@ export async function loadShopInventory(
   });
   if (!resolved) return null;
 
-  const [rawTiers, symbol, configFlags, collectionMeta] = await Promise.all([
+  const [rawTiers, symbol, configFlags, collectionMeta, currentRuleset] = await Promise.all([
     readAllActiveTiers(client, resolved.store, resolved.hook),
     resolveShopPricingSymbol(client, chainId, projectId, resolved.pricing.currency),
     client
@@ -232,6 +236,7 @@ export async function loadShopInventory(
         .then((collectionSymbol) => String(collectionSymbol).trim())
         .catch(() => ""),
     ]),
+    getCurrentRuleset(client, { chainId, projectId }).catch(() => null),
   ]);
   const activeTiers = rawTiers.filter((tier) => tier.initialSupply > 0);
 
@@ -266,6 +271,9 @@ export async function loadShopInventory(
     collection: { name: collectionMeta[0], symbol: collectionMeta[1] },
     pricing: { ...resolved.pricing, symbol },
     configFlags,
+    transfersPaused: currentRuleset
+      ? decode721RulesetMetadata(Number(currentRuleset.metadata.metadata ?? 0)).pauseTransfers
+      : null,
     tiers: activeTiers.map((tier) => ({
       id: tier.id,
       price: tier.price,

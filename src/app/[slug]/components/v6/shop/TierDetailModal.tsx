@@ -28,7 +28,11 @@ const FLAG_DESCRIPTIONS: [keyof NonNullable<ShopTier["flags"]>, string, string][
     "Revnet operator can mint",
     "The revnet operator can mint this item for free, without a payment.",
   ],
-  ["transfersPausable", "Transfers pausable", "Transfers of this item can be paused."],
+  [
+    "transfersPausable",
+    "Stage-controlled transfers",
+    "The active precommitted stage can pause transfers of this item. Minting and burning remain available.",
+  ],
   ["cantBeRemoved", "Cannot be removed", "This item can never be removed from the shop."],
   [
     "cantIncreaseDiscountPercent",
@@ -53,6 +57,7 @@ export function TierDetailModal({
   projects,
   tier,
   media,
+  onMint,
   onClose,
 }: {
   shop: ShopInventory;
@@ -60,6 +65,7 @@ export function TierDetailModal({
   projects: ProjectItem[];
   tier: ShopTier;
   media: TierMedia | undefined;
+  onMint?: () => void;
   onClose: () => void;
 }) {
   const config = useConfig();
@@ -190,6 +196,16 @@ export function TierDetailModal({
               </span>
             </div>
 
+            {onMint ? (
+              <button
+                type="button"
+                onClick={onMint}
+                className="mt-3 text-sm font-medium text-teal-700 underline underline-offset-4 hover:text-teal-900"
+              >
+                Mint to a beneficiary without payment →
+              </button>
+            ) : null}
+
             <div className="mt-5 border-t border-zinc-200 pt-4">
               <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                 Supply by chain
@@ -224,6 +240,18 @@ export function TierDetailModal({
 
             <dl className="mt-4 space-y-1.5 border-t border-zinc-200 pt-4 text-xs">
               <Fact label="Item ID" value={`#${tier.id}`} />
+              {tier.flags?.transfersPausable ? (
+                <Fact
+                  label="Transfers"
+                  value={
+                    shop.transfersPaused == null
+                      ? "Current stage unavailable"
+                      : shop.transfersPaused
+                        ? "Paused now"
+                        : "Allowed now; stage-pausable"
+                  }
+                />
+              ) : null}
               <Fact
                 label="Category"
                 value={

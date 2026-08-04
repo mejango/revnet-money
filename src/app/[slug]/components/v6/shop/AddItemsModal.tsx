@@ -54,6 +54,7 @@ export interface DraftItem {
   cantBeRemoved: boolean;
   allowCredits: boolean;
   operatorCanEditDiscount: boolean;
+  transfersPausable?: boolean;
   moreOpen: boolean;
 }
 
@@ -77,6 +78,7 @@ export function newDraftItem(): DraftItem {
     cantBeRemoved: false,
     allowCredits: true,
     operatorCanEditDiscount: true,
+    transfersPausable: false,
     moreOpen: false,
   };
 }
@@ -238,7 +240,7 @@ export function buildTierConfigs(items: DraftItem[], decimals: number): TierConf
       flags: {
         allowOwnerMint: item.allowOwnerMint,
         useReserveBeneficiaryAsDefault: false,
-        transfersPausable: false,
+        transfersPausable: !!item.transfersPausable,
         useVotingUnits: votingUnits > 0,
         cantBeRemoved: item.cantBeRemoved,
         cantIncreaseDiscountPercent: !item.operatorCanEditDiscount,
@@ -749,6 +751,13 @@ export function AddItemsModal({
                                 description:
                                   "The revnet operator can mint this item without paying.",
                                 disabled: !!shop.configFlags?.noNewTiersWithOwnerMinting,
+                              },
+                              {
+                                key: "transfersPausable" as const,
+                                title: "Allow stages to pause transfers",
+                                description:
+                                  "The active precommitted stage can pause transfers of this item. Minting and burning remain available.",
+                                disabled: false,
                               },
                               {
                                 key: "cantBeRemoved" as const,

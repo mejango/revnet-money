@@ -26,6 +26,7 @@ import {
   ReservedPercent,
   RulesetWeight,
 } from "@bananapus/nana-sdk-core";
+import { decode721RulesetMetadata } from "@bananapus/nana-sdk-core/v6";
 import { formatUnits } from "viem";
 import { useReadContracts } from "wagmi";
 import type { Ruleset } from "../getRulesets";
@@ -91,7 +92,11 @@ export function StagesTable({ rulesets }: Props) {
     const meta = metadataResults.data?.[idx];
     const metadata =
       meta?.status === "success"
-        ? (meta.result as unknown as { reservedPercent: string; cashOutTaxRate: string }[])
+        ? (meta.result as unknown as {
+            reservedPercent: string;
+            cashOutTaxRate: string;
+            metadata: string;
+          }[])
         : null;
     const reservedPercent = metadata?.[1]
       ? new ReservedPercent(Number(metadata[1].reservedPercent))
@@ -123,6 +128,9 @@ export function StagesTable({ rulesets }: Props) {
         autoIssuanceNum.toLocaleString("en-US", { maximumFractionDigits: 0 }),
       ),
       cashOutTaxRate: cashOutTaxRate?.format() ?? "0",
+      pause721Transfers: metadata?.[1]
+        ? decode721RulesetMetadata(Number(metadata[1].metadata ?? 0)).pauseTransfers
+        : null,
       isCurrent: idx === currentIdx,
     };
   });
@@ -169,6 +177,16 @@ export function StagesTable({ rulesets }: Props) {
                   <p>
                     Tax applied when cashing out tokens
                     <br /> (0 = no tax, 1 = maximum tax)
+                  </p>
+                }
+              />
+            </TableHead>
+            <TableHead className="whitespace-nowrap font-medium px-2 last:pr-3">
+              <TooltipLabel
+                label="Item transfers"
+                tooltip={
+                  <p>
+                    Whether this stage pauses shop tiers which opted into stage-controlled transfers
                   </p>
                 }
               />
@@ -227,6 +245,13 @@ export function StagesTable({ rulesets }: Props) {
               </TableCell>
               <TableCell className="tabular-nums whitespace-nowrap px-2 py-3 last:pr-3">
                 {stage.cashOutTaxRate}
+              </TableCell>
+              <TableCell className="whitespace-nowrap px-2 py-3 last:pr-3">
+                {stage.pause721Transfers == null
+                  ? "Unavailable"
+                  : stage.pause721Transfers
+                    ? "Eligible tiers paused"
+                    : "Allowed"}
               </TableCell>
             </TableRow>
           ))}

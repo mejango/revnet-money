@@ -619,6 +619,20 @@
           1
         ],
         [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/shop/MintItemModal.tsx",
+          "MintItemModal",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/shop/MintItemModal.tsx",
+          "submit",
+          "writeContractAsync",
+          1
+        ],
+        [
           "reviewed-relayr-payment",
           "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
           "runWrites",
@@ -816,8 +830,11 @@
     {
       "id": "shop-items",
       "risk": "project-control",
-      "files": ["src/app/[slug]/components/v6/shop/AddItemsModal.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/shop/AddItemsModal.tsx",
+        "src/app/[slug]/components/v6/shop/MintItemModal.tsx"
+      ],
+      "tests": ["test/wallet-project-controls.test.ts", "test/mint-item-modal.test.ts"]
     }
   ]
 }

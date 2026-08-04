@@ -13,6 +13,7 @@ import { usePublicClient } from "wagmi";
 import { usePayShopCredits } from "../pay/usePayShop";
 import { ProjectItem } from "../shared";
 import { AddItemsModal } from "./AddItemsModal";
+import { MintItemModal } from "./MintItemModal";
 import {
   categoryLabel,
   discountLabel,
@@ -24,7 +25,7 @@ import {
   TierMedia,
   useTierCart,
 } from "./shopLib";
-import { canAdjust721Tiers } from "./shopPermissions";
+import { canAdjust721Tiers, canMint721Tiers } from "./shopPermissions";
 import { TierDetailModal } from "./TierDetailModal";
 import { TierMediaPreview } from "./TierMediaPreview";
 
@@ -64,6 +65,7 @@ export function InventorySection({
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [detailTierId, setDetailTierId] = useState<number | null>(null);
   const [addItemsOpen, setAddItemsOpen] = useState(false);
+  const [mintTierId, setMintTierId] = useState<number | null>(null);
 
   // Use both the indexed affordance and the hook's live permission semantics.
   // The latter covers indexer lag and delegates authorized specifically to
@@ -95,6 +97,21 @@ export function InventorySection({
   });
   const canAddItems =
     hasPermission("ADJUST_721_TIERS") || hasPermission("ROOT") || !!isOperator || !!canManageLive;
+  const { data: canMintLive } = useQuery({
+    queryKey: ["v6ShopMintPermission", chainId, projectId.toString(), shop.hook, address],
+    enabled: !!address && !!publicClient,
+    staleTime: 15_000,
+    retry: 1,
+    queryFn: () =>
+      canMint721Tiers(publicClient as PublicClient, {
+        chainId,
+        projectId,
+        hook: shop.hook,
+        operator: address!,
+      }),
+  });
+  const canMintItems =
+    hasPermission("MINT_721") || hasPermission("ROOT") || !!isOperator || !!canMintLive;
 
   const categories = useMemo(() => {
     const ids = [...new Set(shop.tiers.map((tier) => tier.category))].sort((a, b) => a - b);
@@ -114,6 +131,8 @@ export function InventorySection({
 
   const detailTier =
     detailTierId == null ? null : (shop.tiers.find((tier) => tier.id === detailTierId) ?? null);
+  const mintTier =
+    mintTierId == null ? null : (shop.tiers.find((tier) => tier.id === mintTierId) ?? null);
 
   return (
     <div className="space-y-5">
@@ -236,6 +255,16 @@ export function InventorySection({
             <dt className="text-zinc-500">Currency</dt>
             <dd className="font-medium text-zinc-900">{shop.pricing.symbol}</dd>
           </div>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <dt className="text-zinc-500">Item transfers</dt>
+            <dd className="text-right font-medium text-zinc-900">
+              {shop.transfersPaused == null
+                ? "Status unavailable"
+                : shop.transfersPaused
+                  ? "Paused now"
+                  : "Allowed now"}
+            </dd>
+          </div>
         </dl>
       </section>
 
@@ -248,7 +277,27 @@ export function InventorySection({
           projects={projects}
           tier={detailTier}
           media={mediaById?.[detailTier.id]}
+          onMint={
+            canMintItems && detailTier.flags?.allowOwnerMint && detailTier.remaining > 0
+              ? () => {
+                  setDetailTierId(null);
+                  setMintTierId(detailTier.id);
+                }
+              : undefined
+          }
           onClose={() => setDetailTierId(null)}
+        />
+      ) : null}
+
+      {mintTier ? (
+        <MintItemModal
+          chainId={chainId}
+          projectId={projectId}
+          hook={shop.hook}
+          tierId={mintTier.id}
+          itemName={tierDisplayName(mediaById?.[mintTier.id], mintTier.id)}
+          remaining={mintTier.remaining}
+          onClose={() => setMintTierId(null)}
         />
       ) : null}
 
@@ -341,6 +390,11 @@ function TierCard({
         {soldOut ? (
           <span className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-zinc-900">
             Sold out
+          </span>
+        ) : null}
+        {shop.transfersPaused === true && tier.flags?.transfersPausable ? (
+          <span className="absolute bottom-2 left-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+            Transfers paused
           </span>
         ) : null}
         {quantity > 0 ? (

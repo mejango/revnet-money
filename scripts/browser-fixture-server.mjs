@@ -685,6 +685,16 @@ function registerCall({ abi, functionName, address, result }) {
   });
 }
 
+// Viem implements native balance reads through Multicall3 when batching is
+// enabled. Keep that standard helper call inside the deterministic fixture
+// instead of treating it as an unknown contract surface.
+registerCall({
+  abi: multicall3Abi,
+  functionName: "getEthBalance",
+  address: addresses.multicall,
+  result: () => 0n,
+});
+
 registerCall({
   abi: jbDirectoryAbi,
   functionName: "primaryTerminalOf",

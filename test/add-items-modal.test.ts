@@ -21,6 +21,7 @@ describe("revnet shop item editor", () => {
         { percent: "30", beneficiary: beneficiaryB },
       ],
       allowOwnerMint: true,
+      transfersPausable: true,
       cantBeRemoved: true,
       allowCredits: false,
       operatorCanEditDiscount: false,
@@ -41,6 +42,7 @@ describe("revnet shop item editor", () => {
       splitPercent: 500_000_000,
       flags: {
         allowOwnerMint: true,
+        transfersPausable: true,
         useVotingUnits: true,
         cantBeRemoved: true,
         cantIncreaseDiscountPercent: true,

@@ -11,6 +11,7 @@ import {
   WeightCutPercent,
 } from "@bananapus/nana-sdk-core";
 import {
+  build721RulesetMetadata,
   buildAccountingContext,
   buildDeployRevnetTx,
   buildRevnetStageConfig,
@@ -161,7 +162,10 @@ export function parseDeployData(
       issuanceCutPercent:
         Number(WeightCutPercent.parse(stage.priceCeilingIncreasePercentage, 9).value) / 100,
       cashOutTaxRate: Number(CashOutTaxRate.parse(stage.priceFloorTaxIntensity, 4).value) / 100,
-      extraMetadata: 0,
+      extraMetadata: build721RulesetMetadata({
+        metadata: Number(stage.extraMetadata ?? 0),
+        pauseTransfers: stage.pause721Transfers,
+      }),
     });
   });
 

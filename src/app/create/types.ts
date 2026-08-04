@@ -8,6 +8,10 @@ export type StageData = {
   priceCeilingIncreasePercentage: string;
   priceCeilingIncreaseFrequency: string;
   priceFloorTaxIntensity: string;
+  /** Pause transfers for shop tiers which opted into stage-controlled pauses. */
+  pause721Transfers?: boolean;
+  /** App-specific uint14 metadata; preserved when importing a deployed stage. */
+  extraMetadata?: number;
 
   autoIssuance: {
     amount: string;
