@@ -61,10 +61,22 @@ test("fixture project renders its contract-hydrated production shape", async ({
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
   await expect(page.getByText("No activity yet")).toBeVisible();
 
-  const about = page.getByRole("heading", { name: "About", exact: true });
   const viewport = page.viewportSize();
-  if ((viewport?.width ?? 0) <= 600) {
+  const sidebarBox = await page.locator('[data-project-layout="sidebar"]').boundingBox();
+  const menuBox = await page.locator('[data-project-layout="menu"]').boundingBox();
+  expect(sidebarBox).not.toBeNull();
+  expect(menuBox).not.toBeNull();
+  if ((viewport?.width ?? 0) < 1280) {
+    expect(menuBox!.y).toBeGreaterThanOrEqual(sidebarBox!.y + sidebarBox!.height);
+    expect(Math.abs(menuBox!.x - sidebarBox!.x)).toBeLessThanOrEqual(1);
+  } else {
+    expect(menuBox!.x).toBeGreaterThanOrEqual(sidebarBox!.x + sidebarBox!.width);
+  }
+
+  const about = page.getByRole("heading", { name: "About", exact: true });
+  if ((viewport?.width ?? 0) < 1280) {
     await expect(about).toBeHidden();
+    await expect(page.getByRole("button", { name: "Activity", exact: true })).toBeVisible();
     await page.getByRole("link", { name: "Overview" }).click();
   }
   await expect(about).toBeVisible();
@@ -79,7 +91,7 @@ test("fixture project renders its contract-hydrated production shape", async ({
   await expectContained(page, [
     "nav",
     "header",
-    ...((viewport?.width ?? 0) > 600 ? ["aside"] : []),
+    ...((viewport?.width ?? 0) >= 1280 ? ["aside"] : []),
     "main",
     "h1",
     "input[aria-label='Amount']",

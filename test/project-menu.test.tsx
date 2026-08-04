@@ -21,6 +21,8 @@ describe("ProjectMenu", () => {
     const terms = screen.getByRole("link", { name: "Terms" });
     const owners = screen.getByRole("link", { name: "Owners" });
     const shop = screen.getByRole("link", { name: "Shop" });
+    const activity = screen.getByRole("button", { name: "Activity" });
+    expect(activity.querySelector('[data-project-tab-icon="activity"]')).toBeInTheDocument();
     expect(overview.querySelector('[data-project-tab-icon="globe"]')).toBeInTheDocument();
     expect(terms.querySelector('[data-project-tab-icon="stages"]')).toBeInTheDocument();
     expect(owners.querySelector('[data-project-tab-icon="stack"]')).toBeInTheDocument();
@@ -36,8 +38,10 @@ describe("ProjectMenu", () => {
     const operator = screen.getByRole("link", { name: "Operator" });
     expect(extras).toHaveAttribute("href", "/base:42/extras");
     expect(extras.querySelector('[data-project-tab-icon="extras"]')).toBeInTheDocument();
+    expect(extras.querySelector("path")?.getAttribute("d")).not.toContain("C");
     expect(operator).toHaveAttribute("href", "/base:42/operator");
     expect(operator.querySelector('[data-project-tab-icon="operator"]')).toBeInTheDocument();
+    expect(operator.querySelector("path")?.getAttribute("d")).not.toContain("C");
     expect(more.querySelector('[data-overflow-orientation="horizontal"]')).toBeInTheDocument();
 
     fireEvent.click(more);

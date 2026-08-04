@@ -16,48 +16,46 @@ export function ResponsiveProjectLayout({
   children: ReactNode;
 }) {
   const segment = useSelectedLayoutSegment();
-  const [isPhone, setIsPhone] = useState(false);
+  const [isSingleColumn, setIsSingleColumn] = useState(false);
   const [activitySelected, setActivitySelected] = useState(segment === null);
 
   useEffect(() => {
-    const phoneQuery = window.matchMedia("(max-width: 600px)");
-    const apply = () => setIsPhone(phoneQuery.matches);
+    const singleColumnQuery = window.matchMedia("(max-width: 1279px)");
+    const apply = () => setIsSingleColumn(singleColumnQuery.matches);
     apply();
-    phoneQuery.addEventListener("change", apply);
-    return () => phoneQuery.removeEventListener("change", apply);
+    singleColumnQuery.addEventListener("change", apply);
+    return () => singleColumnQuery.removeEventListener("change", apply);
   }, []);
 
   useEffect(() => {
     if (segment) setActivitySelected(false);
   }, [segment]);
 
-  const activityActive = isPhone && activitySelected;
+  const activityActive = isSingleColumn && activitySelected;
 
   return (
-    <div className="mb-10 flex w-full flex-col px-4 pb-5 min-[601px]:flex-row min-[601px]:gap-6 sm:container md:gap-10">
-      <aside className="contents min-[601px]:flex min-[601px]:w-[240px] min-[601px]:shrink-0 min-[601px]:flex-col md:w-[300px]">
-        <div className="order-1 min-[601px]:order-none">{sidebar}</div>
-        <div
-          className={`order-3 ${
-            activityActive ? "block" : "hidden"
-          } min-[601px]:order-none min-[601px]:block`}
-        >
+    <div className="mb-10 flex w-full flex-col px-4 pb-5 sm:container xl:flex-row xl:gap-10">
+      <aside className="contents xl:flex xl:w-[300px] xl:shrink-0 xl:flex-col">
+        <div data-project-layout="sidebar" className="order-1 xl:order-none">
+          {sidebar}
+        </div>
+        <div className={`order-3 ${activityActive ? "block" : "hidden"} xl:order-none xl:block`}>
           {activity}
         </div>
       </aside>
 
-      <div className="contents min-[601px]:mx-auto min-[601px]:flex min-[601px]:min-w-0 min-[601px]:max-w-4xl min-[601px]:flex-1 min-[601px]:flex-col min-[601px]:gap-6 min-[601px]:pb-10">
+      <div className="contents xl:mx-auto xl:flex xl:min-w-0 xl:max-w-4xl xl:flex-1 xl:flex-col xl:gap-6 xl:pb-10">
         {preMenu ? (
           <div
             className={`order-3 pt-6 ${
               activityActive ? "hidden" : "block"
-            } min-[601px]:order-none min-[601px]:block min-[601px]:pt-0`}
+            } xl:order-none xl:block xl:pt-0`}
           >
             {preMenu}
           </div>
         ) : null}
 
-        <div className="order-2 mt-2 min-[601px]:order-none min-[601px]:mt-0">
+        <div data-project-layout="menu" className="order-2 mt-2 xl:order-none xl:mt-0">
           <ProjectMenu
             mobileActivityActive={activityActive}
             onMobileActivityChange={setActivitySelected}
@@ -67,7 +65,7 @@ export function ResponsiveProjectLayout({
         <div
           className={`order-4 pt-6 ${
             activityActive ? "hidden" : "block"
-          } min-[601px]:order-none min-[601px]:block min-[601px]:pt-0`}
+          } xl:order-none xl:block xl:pt-0`}
         >
           {children}
         </div>

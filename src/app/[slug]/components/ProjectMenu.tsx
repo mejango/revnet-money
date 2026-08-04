@@ -125,17 +125,18 @@ function MoreProjectOptions({
 
 function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect: () => void }) {
   return (
-    <li className="flex items-start min-[601px]:hidden">
+    <li className="flex items-start xl:hidden">
       <button
         type="button"
         onClick={onSelect}
         className={cn(
-          "-mb-px flex min-h-11 items-center whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all",
+          "-mb-px flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all",
           active
             ? "border-teal-500 text-black"
             : "border-transparent text-zinc-500 hover:text-zinc-800",
         )}
       >
+        <ProjectTabIcon label="Activity" />
         Activity
       </button>
     </li>
