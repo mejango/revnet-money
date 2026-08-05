@@ -2,8 +2,8 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
+import { ProjectIdInput } from "@/components/ProjectIdInput";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -229,16 +229,16 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                   ))}
                 </SelectContent>
               </Select>
-              <Input
+              <ProjectIdInput
                 value={targetProjectId}
-                onChange={(e) => {
-                  setTargetProjectId(e.target.value);
+                onChange={(value) => {
+                  setTargetProjectId(value);
                   setError(null);
                 }}
+                chainId={Number(targetChainId) || undefined}
                 disabled={busy}
-                inputMode="numeric"
                 placeholder="Project ID on that chain"
-                aria-label="Project ID on the target chain"
+                ariaLabel="Project ID on the target chain"
               />
             </div>
             <label className="mt-3 flex items-start gap-2 border border-amber-300 bg-amber-50 rounded p-3">

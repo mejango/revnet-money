@@ -50,13 +50,7 @@ async function liveSchema(endpoint: string) {
 // Entries can be scoped to an endpoint while a schema is rolling out. The
 // contract FAILS as soon as that endpoint serves the field, so exceptions
 // cannot quietly rot after the rollout lands there.
-const PENDING_SCHEMA_FIELDS = [
-  {
-    field: "buybackPoolPositions",
-    endpoint: "https://bendystraw.xyz/graphql",
-    reason: "peripheralist/bendystraw#24 — production rollout",
-  },
-];
+const PENDING_SCHEMA_FIELDS: Array<{ field: string; endpoint: string; reason: string }> = [];
 
 describe("live Bendystraw schema contract", () => {
   it.each(ENDPOINTS)(
