@@ -34,7 +34,7 @@ const SHOP_CONFIG_ROWS: [keyof ShopConfigFlags, string][] = [
   ["noNewTiersWithReserves", "Lock reserved items after launch"],
   ["noNewTiersWithVotes", "Lock voting items after launch"],
   ["noNewTiersWithOwnerMinting", "Lock owner minting after launch"],
-  ["issueTokensForSplits", "Give split recipients project tokens"],
+  ["issueTokensForSplits", "Full token credit on split sales"],
 ];
 
 /**
