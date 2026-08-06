@@ -7,8 +7,6 @@
 import {
   accountingIsAxisUnit,
   baseIsUsd,
-} from "@/app/[slug]/components/TokenPrice/getTokenPriceChartData";
-import {
   rateAt,
   toBaseAxis,
   usdPerAccountingTokenFrom,

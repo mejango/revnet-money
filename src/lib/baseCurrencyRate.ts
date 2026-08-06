@@ -1,6 +1,12 @@
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import { PayEventRatesOperation } from "@/lib/bendystraw/operations";
-import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
+import {
+  BASE_CURRENCY_ETH,
+  BASE_CURRENCY_USD,
+  tokenCurrencyId,
+} from "@bananapus/nana-sdk-core/v6";
+import type { Address } from "viem";
 
 /**
  * PRICE-CHART AXIS — canonical semantics, shared by every webclient.
@@ -23,6 +29,37 @@ import type { JBChainId } from "@bananapus/nana-sdk-core";
  * NEVER fabricate a rate. Where none is available the series is omitted and the UI says so:
  * a missing line is honest, a wrongly denominated one is not.
  */
+
+/**
+ * NOTE: these axis predicates live here, not beside the chart loader, because that module
+ * carries "use server" — every export from a Server Actions module must be an async
+ * function, so a synchronous helper there fails `next build` (and only `next build`:
+ * tsc and vitest both accept it).
+ */
+/**
+ * Is the accounting token already the axis unit?
+ *
+ * The axis is the ruleset's `baseCurrency` (see lib/baseCurrencyRate.ts for the full
+ * contract). When the accounting token IS that currency — a token-keyed base currency, or
+ * ETH against a native terminal — the AMM and cash-out series are already on-axis and no
+ * rate is needed. `JBPrices.pricePerUnitOf` returns exactly 1e18 for that case too.
+ */
+export function accountingIsAxisUnit(
+  baseCurrency: number | undefined,
+  accountingToken: string,
+): boolean {
+  if (baseCurrency === undefined) return false;
+  if (baseCurrency === tokenCurrencyId(accountingToken as Address)) return true;
+  return (
+    baseCurrency === BASE_CURRENCY_ETH &&
+    accountingToken.toLowerCase() === NATIVE_TOKEN.toLowerCase()
+  );
+}
+
+/** Does this base currency price things in USD? Only then is the payEvent ratio the rate. */
+export function baseIsUsd(baseCurrency: number | undefined): boolean {
+  return baseCurrency === BASE_CURRENCY_USD;
+}
 
 /** A per-timestamp rate: base-currency units per ONE accounting token. */
 export type BaseRatePoint = { timestamp: number; rate: number };

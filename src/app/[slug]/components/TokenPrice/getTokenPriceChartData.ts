@@ -6,14 +6,14 @@ import { minimumCashOutPriceAtIssuancePrice } from "@/lib/minimumCashOutPrice";
 import { getStartTimeForRange, getTimeRangeConfig, TimeRange } from "@/lib/timeRange";
 import { getTokenAddress } from "@/lib/token";
 import { JBChainId, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
-import { BASE_CURRENCY_ETH, BASE_CURRENCY_USD, tokenCurrencyId } from "@bananapus/nana-sdk-core/v6";
 import {
+  accountingIsAxisUnit,
+  baseIsUsd,
   fetchPayEventRates,
   rateAt,
   toBaseAxis,
   type BaseRatePoint,
 } from "@/lib/baseCurrencyRate";
-import type { Address } from "viem";
 import { calculateIssuancePriceHistory } from "./calculateIssuancePriceHistory";
 import { getFloorPriceHistory } from "./getFloorPriceHistory";
 import { getV4AmmPriceHistory } from "./getV4AmmPriceHistory";
@@ -30,31 +30,6 @@ export type PriceDataPoint = {
   totalBalance?: string;
   cashOutTaxRate?: number;
 };
-
-/**
- * Is the accounting token already the axis unit?
- *
- * The axis is the ruleset's `baseCurrency` (see lib/baseCurrencyRate.ts for the full
- * contract). When the accounting token IS that currency — a token-keyed base currency, or
- * ETH against a native terminal — the AMM and cash-out series are already on-axis and no
- * rate is needed. `JBPrices.pricePerUnitOf` returns exactly 1e18 for that case too.
- */
-export function accountingIsAxisUnit(
-  baseCurrency: number | undefined,
-  accountingToken: string,
-): boolean {
-  if (baseCurrency === undefined) return false;
-  if (baseCurrency === tokenCurrencyId(accountingToken as Address)) return true;
-  return (
-    baseCurrency === BASE_CURRENCY_ETH &&
-    accountingToken.toLowerCase() === NATIVE_TOKEN.toLowerCase()
-  );
-}
-
-/** Does this base currency price things in USD? Only then is the payEvent ratio the rate. */
-export function baseIsUsd(baseCurrency: number | undefined): boolean {
-  return baseCurrency === BASE_CURRENCY_USD;
-}
 
 export async function getTokenPriceChartData(params: {
   projectId: string;
