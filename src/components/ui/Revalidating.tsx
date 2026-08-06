@@ -16,19 +16,21 @@ export function Revalidating({
   pending,
   children,
   className,
+  as: Component = "span",
 }: {
   pending: boolean;
   children: ReactNode;
   className?: string;
+  as?: "span" | "div";
 }) {
-  if (!pending) return <span className={className}>{children}</span>;
+  if (!pending) return <Component className={className}>{children}</Component>;
   return (
-    <span
+    <Component
       className={cn("revalidating", className)}
       aria-busy="true"
       title="Confirming against the chain…"
     >
       {children}
-    </span>
+    </Component>
   );
 }

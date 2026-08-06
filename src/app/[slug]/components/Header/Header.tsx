@@ -3,6 +3,7 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
 import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
+import { ProjectLink } from "@/components/ProjectLink";
 import { FastForward as ForwardIcon } from "@/components/ui/icons";
 import { useCompleteParticipants } from "@/hooks/useCompleteBendystrawLists";
 import type { Project } from "@/lib/bendystraw/types";
@@ -291,9 +292,13 @@ export function Header(props: Props) {
                           {suckers.map((pair) => {
                             const networkSlug = JB_CHAINS[pair.peerChainId].slug;
                             return (
-                              <Link
+                              <ProjectLink
                                 key={networkSlug}
                                 href={`/${networkSlug}:${pair.projectId}`}
+                                projectHint={{
+                                  name: projectName ?? tokenSymbol ?? `Project ${pair.projectId}`,
+                                  logoUri: logoUri ?? null,
+                                }}
                                 className="inline-flex min-h-11 items-center justify-center px-1 transition-opacity hover:opacity-70 sm:min-h-0"
                               >
                                 <ChainLogo
@@ -302,7 +307,7 @@ export function Header(props: Props) {
                                   height={18}
                                   standalone
                                 />
-                              </Link>
+                              </ProjectLink>
                             );
                           })}
                         </span>

@@ -1,5 +1,5 @@
 import { IpfsImage } from "@/components/IpfsImage";
-import Link from "next/link";
+import { ProjectLink } from "@/components/ProjectLink";
 import { getTopProjects } from "./getTopProjects";
 
 export async function TopProjectsTable() {
@@ -36,8 +36,13 @@ export async function TopProjectsTable() {
                 {project.rank}
               </td>
               <td className="min-w-0 px-2 py-3 sm:px-4">
-                <Link
+                <ProjectLink
                   href={`/${project.chainSlug}:${project.projectId}`}
+                  projectHint={{
+                    name: project.name,
+                    logoUri: project.logoUri,
+                    tagline: project.tagline,
+                  }}
                   className="group flex min-h-11 min-w-0 items-center gap-2 sm:gap-3"
                 >
                   <IpfsImage
@@ -58,7 +63,7 @@ export async function TopProjectsTable() {
                       </div>
                     )}
                   </div>
-                </Link>
+                </ProjectLink>
               </td>
               <td className="whitespace-nowrap py-3 pl-2 pr-4 text-right text-sm tabular-nums sm:pl-4 sm:pr-8 md:text-base">
                 {project.balanceUsd.toLocaleString("en-US", {

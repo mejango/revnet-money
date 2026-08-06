@@ -3,6 +3,7 @@
 import { publicClientFor } from "@/app/[slug]/components/v6/operator/operatorLib";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { ProjectLink } from "@/components/ProjectLink";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useCompleteProjectsByOwner } from "@/hooks/useCompleteBendystrawLists";
 import type { OwnedProjectRow } from "@/lib/bendystraw/types";
@@ -12,7 +13,6 @@ import { fetchSafesOwnedBy, type OwnedSafe } from "@/lib/safeOwners";
 import { slugFor } from "@/lib/slug";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { useMemo } from "react";
 import type { Address } from "viem";
 
@@ -76,10 +76,15 @@ function ProjectCard({
     </div>
   );
   if (!slug) return body;
+  const name = project.name ?? project.handle ?? `Project #${project.projectId}`;
   return (
-    <Link href={`/${slug}`} className="block hover:bg-melon-100">
+    <ProjectLink
+      href={`/${slug}`}
+      projectHint={{ name, logoUri: project.logoUri }}
+      className="block hover:bg-melon-100"
+    >
       {body}
-    </Link>
+    </ProjectLink>
   );
 }
 

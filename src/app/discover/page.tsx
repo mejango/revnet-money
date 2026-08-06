@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
+import { ProjectLink } from "@/components/ProjectLink";
 import { useEffect, useState } from "react";
 import MiniHeaderCard from "./MiniHeaderCard";
 
@@ -165,9 +166,15 @@ export default function Page() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             {displayedProjects.map((p) => (
-              <Link
+              <ProjectLink
                 key={p.suckerGroupId ?? `${p.chainId ?? 1}:${p.projectId}`}
                 href={`/${CHAIN_SLUGS[p.chainId ?? 1] ?? "eth"}:${p.projectId}`}
+                projectHint={{
+                  name: p.name ?? p.handle ?? `Project ${p.projectId}`,
+                  logoUri: p.logoUri ?? null,
+                  tagline: p.projectTagline,
+                  ticker: p.ticker,
+                }}
                 className="border border-zinc-200 rounded-lg p-4 shadow hover:shadow-md transition block"
               >
                 <MiniHeaderCard
@@ -187,7 +194,7 @@ export default function Page() {
                       .join(", ")}
                   </p>
                 )}
-              </Link>
+              </ProjectLink>
             ))}
           </div>
         )}

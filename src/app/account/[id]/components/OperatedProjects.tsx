@@ -3,13 +3,13 @@
 import { permissionInfo } from "@/app/[slug]/components/v6/operator/permissionMeta";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { ProjectLink } from "@/components/ProjectLink";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useCompleteAccountPermissions } from "@/hooks/useCompleteBendystrawLists";
 import type { AccountPermissionHolderRow } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { slugFor } from "@/lib/slug";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
-import Link from "next/link";
 import { useMemo } from "react";
 import { isAddress, type Address } from "viem";
 
@@ -85,9 +85,13 @@ export function OperatedProjects({ address }: { address: Address }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <ChainLogo chainId={project.chainId} width={16} height={16} standalone />
                   {slug ? (
-                    <Link href={`/${slug}`} className="text-sm font-medium hover:underline">
+                    <ProjectLink
+                      href={`/${slug}`}
+                      projectHint={{ name: label, logoUri: null }}
+                      className="text-sm font-medium hover:underline"
+                    >
                       {label}
-                    </Link>
+                    </ProjectLink>
                   ) : (
                     <span className="text-sm font-medium">{label}</span>
                   )}

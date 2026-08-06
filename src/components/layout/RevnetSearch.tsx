@@ -2,6 +2,7 @@
 
 import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
 import { formatEthAddress } from "@/lib/utils";
+import { rememberProjectNavigation } from "@/lib/project-navigation";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Address, isAddress } from "viem";
@@ -12,6 +13,8 @@ type SearchResult = {
   chainIds: number[];
   suckerGroupId: string | null;
   name: string | null;
+  logoUri: string | null;
+  projectTagline: string | null;
   ticker: string | null;
 };
 
@@ -148,6 +151,12 @@ export function RevnetSearch() {
   }, [hasAccountRow]);
 
   const goToResult = (result: SearchResult) => {
+    rememberProjectNavigation(resultHref(result), {
+      name: result.name ?? `Project ${result.projectId}`,
+      logoUri: result.logoUri,
+      tagline: result.projectTagline,
+      ticker: result.ticker,
+    });
     setOpen(false);
     setQuery("");
     setResults([]);

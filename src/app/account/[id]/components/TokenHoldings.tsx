@@ -1,6 +1,7 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { ProjectLink } from "@/components/ProjectLink";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import {
   useCompleteAccountTokenBalances,
@@ -13,7 +14,6 @@ import type { JBChainId } from "@/lib/nana/types";
 import { slugFor } from "@/lib/slug";
 import { formatTokenSymbol } from "@/lib/utils";
 import { formatUnits, JB_CHAINS } from "@bananapus/nana-sdk-core";
-import Link from "next/link";
 import { useMemo } from "react";
 import type { Address } from "viem";
 
@@ -129,9 +129,13 @@ export function TokenHoldings({ address }: { address: Address }) {
               <div key={group.key} className="py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   {group.slug ? (
-                    <Link href={`/${group.slug}`} className="text-sm font-medium hover:underline">
+                    <ProjectLink
+                      href={`/${group.slug}`}
+                      projectHint={{ name: group.name, logoUri: null, ticker: group.symbol }}
+                      className="text-sm font-medium hover:underline"
+                    >
                       {group.name}
-                    </Link>
+                    </ProjectLink>
                   ) : (
                     <span className="text-sm font-medium">{group.name}</span>
                   )}

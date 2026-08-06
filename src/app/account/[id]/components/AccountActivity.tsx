@@ -2,6 +2,7 @@
 
 import { ActivityItemRow } from "@/app/[slug]/components/ActivityFeed/ActivityItem";
 import { mapActivityEvents } from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
+import { ProjectLink } from "@/components/ProjectLink";
 import { ProfilesProvider } from "@/components/ProfilesContext";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useCompleteAccountActivity } from "@/hooks/useCompleteBendystrawLists";
@@ -13,7 +14,6 @@ import type { JBChainId } from "@/lib/nana/types";
 import { slugFor } from "@/lib/slug";
 import { useTransactionActivities, type TransactionActivity } from "@/lib/transaction-activity";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Address } from "viem";
 
@@ -153,12 +153,13 @@ export function AccountActivity({ address }: { address: Address }) {
               return (
                 <div key={event.id}>
                   {projectLabel && slug ? (
-                    <Link
+                    <ProjectLink
                       href={`/${slug}`}
+                      projectHint={{ name: projectLabel, logoUri: null }}
                       className="mt-3 -mb-2 block text-xs font-medium text-teal-700 hover:underline"
                     >
                       {projectLabel}
-                    </Link>
+                    </ProjectLink>
                   ) : null}
                   <ActivityItemRow event={event} />
                 </div>
