@@ -5,6 +5,7 @@ import { ChangeSplitRecipientsDialog } from "@/app/[slug]/owners/components/Chan
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFetchProjectRulesets } from "@/hooks/useFetchProjectRulesets";
 import { useJBChainId } from "@/lib/nana/project";
+import { currentStageIndex } from "@/app/[slug]/owners/components/splitsLib";
 import { useSuckers } from "@/lib/nana/suckers";
 import { ProjectItem } from "../shared";
 import { OperatorSection } from "./OperatorSection";
@@ -20,16 +21,13 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
   const { data: suckers } = useSuckers();
   const { suckerPairsWithRulesets } = useFetchProjectRulesets(suckers);
 
-  // The current stage on the page's chain, mirroring SplitsSection: the stage
-  // before the first one that hasn't started yet (lower-bounded at stage 1).
+  // The current stage on the page's chain. Shares the splits subtab's derivation rather than
+  // restating it — the previous local copy used `findIndex(start > now)`, which returns -1
+  // once the last stage begins and pinned every edit to stage 1 from then on.
   const rulesets = suckerPairsWithRulesets?.find(
     (sucker) => sucker.peerChainId === chainId,
   )?.rulesets;
-  const nextStageIdx = Math.max(
-    rulesets?.findIndex((stage) => stage.start > Date.now() / 1000) ?? -1,
-    1,
-  );
-  const currentStageIdx = nextStageIdx - 1;
+  const currentStageIdx = currentStageIndex(rulesets);
 
   return (
     <OperatorSection title="Edits">

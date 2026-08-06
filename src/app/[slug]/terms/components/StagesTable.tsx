@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useAutoIssuances } from "@/hooks/useAutoIssuances";
 import { useTokenA } from "@/hooks/useTokenA";
 import { differenceInWholeDays, formatShortDate } from "@/lib/date";
+import { issuanceBaseCurrencyLabel } from "@/app/[slug]/components/v6/terms/chartUtils";
 import { quotePayerTokensForOneUnit } from "@/lib/fixedPoint";
 import { formatAdaptivePercent } from "@/lib/formatPercent";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
@@ -87,7 +88,12 @@ export function StagesTable({ rulesets }: Props) {
       reservedPercent: new ReservedPercent(0),
     });
     const amount = Number(formatUnits(payerTokens, 18));
-    const issuanceRate = `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(amount)} ${formatTokenSymbol(token)} / ${tokenA.symbol}`;
+    // Issuance is per unit of the ruleset's BASE CURRENCY, not per unit of the accounting
+    // token: JBTerminalStore converts the payment into `ruleset.baseCurrency()` before
+    // applying the weight (`tokenCount = amount * weight / weightRatio`). The two coincide
+    // on an ETH-base/ETH-paid project and diverge everywhere else, so label the base.
+    const issuanceUnit = issuanceBaseCurrencyLabel(ruleset.baseCurrency, tokenA.symbol ?? "unit");
+    const issuanceRate = `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(amount)} ${formatTokenSymbol(token)} / ${issuanceUnit}`;
 
     const meta = metadataResults.data?.[idx];
     const metadata =

@@ -1,5 +1,7 @@
 import {
+  lpDeadline,
   prepareAddLiquidity,
+  prepareCollectLpFees,
   prepareRemoveLiquidity,
   type PoolSnapshot,
   type UserLpPosition,
@@ -43,7 +45,7 @@ const position = {
 describe("Revnet LP removal", () => {
   // wallet-action:remove-liquidity
   it("encodes a full burn and take-pair with exact 95% output floors", () => {
-    const plan = prepareRemoveLiquidity(pool, position, recipient, 100);
+    const plan = prepareRemoveLiquidity(pool, position, recipient, false, 100);
     expect(plan.pairMinimum).toBe(950n);
     expect(plan.tokenMinimum).toBe(1_900n);
     expect(plan.deadline).toBe(1_300n);
@@ -67,10 +69,25 @@ describe("Revnet LP removal", () => {
       pool,
       { ...position, pairAmount: 1n, tokenAmount: 1n },
       recipient,
+      false,
       0,
     );
     expect(plan.pairMinimum).toBe(1n);
     expect(plan.tokenMinimum).toBe(1n);
+  });
+
+  // The deadline is stamped when the transaction is PROPOSED. A Safe collects
+  // co-signatures for hours or days, so a 20-minute window guarantees the last
+  // owner signs a call that can no longer execute.
+  it("widens the deadline to 30 days for a Safe and keeps 20 minutes for an EOA", () => {
+    expect(lpDeadline(false, 100)).toBe(BigInt(100 + 20 * 60));
+    expect(lpDeadline(true, 100)).toBe(BigInt(100 + 30 * 24 * 60 * 60));
+    expect(prepareRemoveLiquidity(pool, position, recipient, true, 100).deadline).toBe(
+      BigInt(100 + 30 * 24 * 60 * 60),
+    );
+    expect(prepareCollectLpFees(pool, position, recipient, true, 100).deadline).toBe(
+      BigInt(100 + 30 * 24 * 60 * 60),
+    );
   });
 });
 

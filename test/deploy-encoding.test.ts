@@ -117,7 +117,7 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     expect(stage.issuanceCutPercent).toBe(100_000_000);
     expect(stage.cashOutTaxRate).toBe(2_000);
     expect(stage.splitPercent).toBe(2_500);
-    expect(stage.extraMetadata).toBe(0);
+    expect(stage.extraMetadata).toBe(1 << 2); // allow-sucker-deployment, always on
     expect(stage.splits).toEqual([
       {
         preferAddToBalance: false,
@@ -141,7 +141,8 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     const request = buildRequest("ETH", "ETH", true);
     const [, config] = request.args;
 
-    expect(config.stageConfigurations[0].extraMetadata).toBe(1);
+    // 721 transfer pause (bit 0) alongside the always-on sucker bit (bit 2).
+    expect(config.stageConfigurations[0].extraMetadata).toBe(1 | (1 << 2));
   });
 
   it("preserves unrelated app metadata bits while changing the 721 transfer flag", () => {
@@ -149,6 +150,19 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     const [, config] = request.args;
 
     expect(config.stageConfigurations[0].extraMetadata).toBe(5);
+  });
+
+  // REVDeployer.deploySuckersFor reverts unless bit 2 of the CURRENT stage's app
+  // metadata is set (REVDeployer.sol:646-650), and stages are immutable — a stage
+  // launched without it can never be extended to another chain, which would leave
+  // SuckerExtensionCard permanently unusable. Launch-time suckers skip the check.
+  it("sets the allow-sucker-deployment bit on every stage by default", () => {
+    const request = buildRequest("ETH");
+    const [, config] = request.args;
+
+    for (const stage of config.stageConfigurations) {
+      expect(stage.extraMetadata & (1 << 2)).toBe(1 << 2);
+    }
   });
 
   it("uses the canonical ETH accounting currency with ETH as the base currency", () => {
@@ -240,6 +254,34 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     );
 
     expect(splitWeights.reduce((sum, percent) => sum + percent, 0)).toBe(SPLITS_TOTAL_PERCENT);
+    expect(() => encodeFunctionData(request)).not.toThrow();
+  });
+
+  // `splitPercent` is a uint16 of basis points. Summing float percentages and scaling lands
+  // off an integer for ordinary inputs — 10.5 + 19.505 gives 3000.5 — and viem then throws
+  // `RangeError: ... cannot be converted to a BigInt because it is not an integer`, which
+  // surfaced as a generic "deploy failed" toast with nothing to act on.
+  it("encodes an integer split percent for fractional inputs", () => {
+    const form = validRevnetForm();
+    form.stages[0].splits = [
+      { percentage: "10.5", defaultBeneficiary: TEST_ACCOUNT },
+      { percentage: "19.505", defaultBeneficiary: TEST_BENEFICIARY },
+    ];
+    const request = parseDeployData(form, {
+      metadataCid: "bafy-metadata",
+      chainId: sepolia.id,
+      suckerDeployerConfig: EMPTY_SUCKER_CONFIG,
+      timestamp: TEST_TIMESTAMP,
+      salt: TEST_SALT,
+      creationFee: CREATION_FEE,
+    });
+    const stage = request.args[1].stageConfigurations[0];
+
+    expect(Number.isInteger(stage.splitPercent)).toBe(true);
+    expect(stage.splitPercent).toBe(3_001);
+    expect(Number.isInteger(stage.issuanceCutPercent)).toBe(true);
+    expect(Number.isInteger(stage.cashOutTaxRate)).toBe(true);
+    // The real regression: the encoder threw before reaching the wallet.
     expect(() => encodeFunctionData(request)).not.toThrow();
   });
 });

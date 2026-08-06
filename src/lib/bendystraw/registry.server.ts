@@ -25,6 +25,7 @@ import {
   ProjectOperation,
   ProjectOperatorOperation,
   ProjectPayersOperation,
+  PayEventRatesOperation,
   ProjectsByOwnerOperation,
   ProjectWithPermissionsOperation,
   ShieldGroupOperation,
@@ -888,6 +889,14 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       }
     }`,
   },
+  [PayEventRatesOperation.id]: {
+    operationName: "PayEventRates",
+    query: `query PayEventRates($where: payEventFilter!, $limit: Int!, $offset: Int!) {
+      payEvents(where: $where, limit: $limit, offset: $offset, orderBy: "timestamp", orderDirection: "asc") {
+        items { timestamp amount amountUsd }
+      }
+    }`,
+  },
   [ShieldGroupOperation.id]: {
     operationName: "ShieldGroup",
     query: `query ShieldGroup($id: String!) {
@@ -904,6 +913,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
             name
             volumeUsd
             volume
+            token
+            tokenSymbol
+            decimals
             participants {
               totalCount
               items { address chainId projectId lastPaidTimestamp balance }

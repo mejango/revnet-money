@@ -17,6 +17,25 @@ export type StageChain<TChainId extends number = number> = {
   rulesetId: bigint;
 };
 
+/**
+ * The index of the stage in force now: the LAST one whose start has passed.
+ *
+ * `findIndex(start > now)` returns -1 once every stage has started — i.e. exactly when the
+ * final stage is current — so deriving the index from it silently collapses to stage 1 for
+ * the entire rest of a revnet's life. That matters because `JBController` distributes from
+ * the CURRENT ruleset: an edit aimed at a past stage's ruleset id succeeds on-chain and
+ * changes nothing.
+ */
+export function currentStageIndex(
+  rulesets: readonly { start: number | bigint }[] | undefined | null,
+  nowSeconds: number = Date.now() / 1000,
+): number {
+  const started = (rulesets ?? []).filter(
+    (ruleset) => Number(ruleset.start) <= nowSeconds,
+  ).length;
+  return Math.max(started - 1, 0);
+}
+
 /** Each chain's own ruleset id for the stage at `stageIdx`, skipping chains that don't have one. */
 export function chainsAtStage<TChainId extends number>(
   pairs: readonly StageRulesetPair<TChainId>[] | undefined | null,

@@ -16,7 +16,7 @@ import { useJBContractContext } from "@/lib/nana/project";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useState } from "react";
-import { Address, encodeFunctionData } from "viem";
+import { Address, encodeFunctionData, zeroAddress } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { ChainFormData } from "../ChangeSplitRecipientsDialog";
@@ -187,15 +187,21 @@ export function prepareArgs(chain: ChainFormData) {
   ] as const;
 }
 
+/**
+ * `setSplitGroupsOf` replaces a group wholesale, so every field of every split
+ * has to be re-sent. Only percent and beneficiary are the form's to change —
+ * hook, projectId and lockedUntil are carried through, or a save would strip a
+ * split's routing and drop locks the chain still enforces.
+ */
 function prepareSplits(chain: ChainFormData) {
   const splitPercent = chain.splits.reduce((sum, s) => sum + Number(s.percentage), 0) * 100;
 
   return chain.splits.map((split) => ({
-    preferAddToBalance: false,
-    lockedUntil: 0,
+    preferAddToBalance: split.preferAddToBalance ?? false,
+    lockedUntil: split.lockedUntil ?? 0,
     percent: Math.round((Number(split.percentage) * 100 * SPLITS_TOTAL_PERCENT) / splitPercent),
-    projectId: 0n,
+    projectId: split.projectId ?? 0n,
     beneficiary: split.beneficiary as Address,
-    hook: "0x0000000000000000000000000000000000000000" as Address,
+    hook: split.hook ?? zeroAddress,
   }));
 }

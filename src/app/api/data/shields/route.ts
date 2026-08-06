@@ -1,5 +1,6 @@
 import { ShieldGroupOperation, ShieldProjectOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
+import { NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import { NextResponse } from "next/server";
 
 type ChainId = 1 | 10 | 8453 | 42161;
@@ -30,6 +31,10 @@ export async function GET(req: Request) {
   }
 
   let totalBalance = 0;
+  // The accounting token(s) the summed balance is denominated in. A badge may only
+  // claim ETH — or convert at an ETH rate — when every context really is native.
+  const accountingTokens = new Set<string>();
+  const accountingSymbols = new Set<string>();
   const results = [];
   let projectName = "Revnet"; // default fallback
   const visitedGroups = new Set<string>();
@@ -52,8 +57,13 @@ export async function GET(req: Request) {
 
       projectName = items[0]?.name ?? projectName;
       for (const item of items) {
-        const itemBalance = Number(item.balance ?? 0) / 1e18;
+        // `balance` is in the ACCOUNTING token's own decimals — 6 for a USDC revnet,
+        // not 18. Dividing by 1e18 unconditionally reports a USDC treasury as ~1e-12
+        // of its real size, and then prices that as ETH.
+        const itemBalance = Number(item.balance ?? 0) / 10 ** (item.decimals ?? 18);
         totalBalance += itemBalance;
+        if (item.token) accountingTokens.add(item.token.toLowerCase());
+        if (item.tokenSymbol) accountingSymbols.add(item.tokenSymbol);
 
         results.push({
           chainId: item.chainId,
@@ -69,17 +79,27 @@ export async function GET(req: Request) {
     }
   }
 
-  // Fetch ETH price
-  let ethPrice = 0;
-  try {
-    const priceRes = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
-    );
-    const priceJson = await priceRes.json();
-    ethPrice = priceJson.ethereum.usd;
-  } catch {}
+  // Only a native-token treasury may be priced with an ETH quote. A USDC (or any
+  // other ERC-20) context has no ETH rate here, and multiplying by one would invent
+  // a number; the badge reports the token amount alone in that case.
+  const isNativeTreasury =
+    accountingTokens.size === 1 &&
+    [...accountingTokens][0] === NATIVE_TOKEN.toLowerCase();
+  const denomination =
+    accountingSymbols.size === 1 ? [...accountingSymbols][0] : "tokens";
 
-  const usdTvl = totalBalance * ethPrice;
+  let ethPrice = 0;
+  if (isNativeTreasury) {
+    try {
+      const priceRes = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+      );
+      const priceJson = await priceRes.json();
+      ethPrice = priceJson.ethereum.usd;
+    } catch {}
+  }
+
+  const usdTvl = isNativeTreasury ? totalBalance * ethPrice : null;
 
   const host = req.headers.get("host");
   if (!host) {
@@ -91,11 +111,17 @@ export async function GET(req: Request) {
 
   const markdown = `[![revnet badge](${badgeUrl})](${publicBase}/base:${projectId})`;
 
+  const balanceLabel = `${totalBalance.toFixed(4)} ${denomination}`;
   return NextResponse.json({
     label: "Current value",
-    message: `${usdTvl.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD • ${totalBalance.toFixed(4)} ETH`,
+    message:
+      usdTvl !== null
+        ? `${usdTvl.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD • ${balanceLabel}`
+        : balanceLabel,
     tvlUsd: usdTvl,
-    tvlEth: totalBalance,
+    /** The treasury in its accounting token — named by `denomination`, not always ETH. */
+    tvlBalance: totalBalance,
+    denomination,
     color: totalBalance > 1 ? "green" : totalBalance > 0.1 ? "yellow" : "red",
     chains: results,
     badgeUrl,

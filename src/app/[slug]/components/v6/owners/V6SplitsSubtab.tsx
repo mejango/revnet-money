@@ -33,7 +33,10 @@ import { zeroAddress } from "viem";
 import { useReadContracts } from "wagmi";
 import { ChangeSplitRecipientsDialog } from "../../../owners/components/ChangeSplitRecipientsDialog";
 import { DistributeReservedTokensButton } from "../../../owners/components/DistributeReservedTokensButton";
-import { effectiveSplitPercent } from "../../../owners/components/splitsLib";
+import {
+  currentStageIndex,
+  effectiveSplitPercent,
+} from "../../../owners/components/splitsLib";
 import { ProjectItem } from "../shared";
 
 const BURN_SENTINEL = "0x000000000000000000000000000000000000dead";
@@ -87,11 +90,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
   });
 
   const homeRulesets = rulesetsByChain.get(Number(chainId)) ?? [];
-  const now = Date.now() / 1000;
-  const currentStageIdx = Math.max(
-    homeRulesets.filter((r) => Number(r.start) <= now).length - 1,
-    0,
-  );
+  const currentStageIdx = currentStageIndex(homeRulesets);
 
   // Reserved percent (the stage's split limit) comes from the ruleset metadata:
   // bits 4-19 hold reservedPercent out of 10_000, so 2.5% is 250. It stays in

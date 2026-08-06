@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { LazyTokenPriceChart } from "./components/TokenPrice/LazyTokenPriceChart";
 import { V6OverviewTab } from "./components/v6/overview/V6OverviewTab";
-import { getProject } from "./getProject";
+import { getProjectWithFallback } from "./getProjectFallback";
 import { getSuckerGroup } from "./getSuckerGroup";
 import { getRulesets } from "./terms/getRulesets";
 
@@ -16,8 +16,12 @@ export default async function AboutPage(props: Props) {
   const { slug } = await props.params;
   const { chainId, projectId } = parseSlug(slug);
 
-  const project = await getProject(projectId, chainId);
-  if (!project) notFound();
+  // Resolve through the on-chain fallback, exactly as the layout does. Bendystraw being
+  // down returns null from the indexed read, which is indistinguishable from a project that
+  // doesn't exist — 404-ing on it tells the owner of a live project that it was deleted.
+  const resolved = await getProjectWithFallback(projectId, chainId);
+  if (!resolved) notFound();
+  const { project } = resolved;
 
   const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId);
   if (!suckerGroup) notFound();

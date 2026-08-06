@@ -22,6 +22,15 @@ import {
 import { Address, ContractFunctionArgs, parseUnits, zeroAddress } from "viem";
 import { RevnetFormData } from "../types";
 
+/**
+ * `REVDeployer.deploySuckersFor` reads bit 2 of the CURRENT stage's app
+ * metadata and reverts without it (REVDeployer.sol:646-650). Stages are
+ * immutable, so a stage that ships without this bit can never be extended to
+ * another chain — launch-time suckers are exempt, which is why the gap only
+ * surfaces later (and makes `SuckerExtensionCard` unusable).
+ */
+const REV_METADATA_ALLOW_SUCKER_DEPLOYMENT = 1 << 2;
+
 // Standard reserves use the 4-arg `deployFor` overload. Custom reserves use the
 // 6-arg overload so the empty 721 store can inherit the ERC-20's own decimals.
 // Keep both argument shapes typed against the deployer ABI.
@@ -120,13 +129,23 @@ export function parseDeployData(
       beneficiary: autoIssuance.beneficiary as Address,
     }));
 
-    const splitPercent =
+    // The bucket's size in basis points out of 10_000. Two values, deliberately:
+    //  - `splitBucketBps` keeps the EXACT entered total, because each row's share below is
+    //    relative to what the user actually typed. Rounding first makes the shares sum to a
+    //    different total and `fillSplitPercents` rejects the drift.
+    //  - `splitPercent` is what gets encoded, and the field is a uint16. Summing float
+    //    percentages lands off an integer for ordinary inputs — 10.5 + 19.505 gives 3000.5 —
+    //    and viem then throws `RangeError: ... cannot be converted to a BigInt because it is
+    //    not an integer`, blocking the deploy behind a generic toast. A basis point is the
+    //    finest unit the field can express, so rounding loses nothing it could have carried.
+    const splitBucketBps =
       stage.splits.reduce((sum, split) => sum + (Number(split.percentage) || 0), 0) * 100;
+    const splitPercent = Math.round(splitBucketBps);
     // Scale each split to its share of the split bucket, then correct per-row rounding
     // drift so the group sums to exactly SPLITS_TOTAL_PERCENT (JBSplits reverts otherwise).
     const splitBucketPercents = fillSplitPercents(
       stage.splits.map((split) =>
-        Math.round((Number(split.percentage) * 100 * SPLITS_TOTAL_PERCENT) / splitPercent),
+        Math.round((Number(split.percentage) * 100 * SPLITS_TOTAL_PERCENT) / splitBucketBps),
       ),
     );
     const splits = stage.splits.map((split, splitIdx) => {
@@ -159,13 +178,19 @@ export function parseDeployData(
             ? parseUnits(`${stage.initialIssuance}`, 18)
             : 0n,
       issuanceCutFrequency: Math.floor(Number(stage.priceCeilingIncreaseFrequency) * 86400), // seconds
-      issuanceCutPercent:
+      // Same integer requirement as splitPercent above: these divisions can leave a fraction
+      // that the ABI encoder rejects outright.
+      issuanceCutPercent: Math.round(
         Number(WeightCutPercent.parse(stage.priceCeilingIncreasePercentage, 9).value) / 100,
-      cashOutTaxRate: Number(CashOutTaxRate.parse(stage.priceFloorTaxIntensity, 4).value) / 100,
-      extraMetadata: build721RulesetMetadata({
-        metadata: Number(stage.extraMetadata ?? 0),
-        pauseTransfers: stage.pause721Transfers,
-      }),
+      ),
+      cashOutTaxRate: Math.round(
+        Number(CashOutTaxRate.parse(stage.priceFloorTaxIntensity, 4).value) / 100,
+      ),
+      extraMetadata:
+        build721RulesetMetadata({
+          metadata: Number(stage.extraMetadata ?? 0),
+          pauseTransfers: stage.pause721Transfers,
+        }) | REV_METADATA_ALLOW_SUCKER_DEPLOYMENT,
     });
   });
 

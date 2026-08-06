@@ -79,6 +79,23 @@ export function applyRevFee(tokenAmount: bigint) {
 }
 
 /**
+ * Whether a cash-out actually pays the revnet fee.
+ *
+ * REVOwner is what charges it, so a plain project never does; and REVOwner skips it entirely
+ * when the cash-out tax is zero — "Zero-tax ordinary cash-outs do not add the revnet fee
+ * hook" (REVOwner.sol:303). Quoting the fee unconditionally under-reports every zero-tax
+ * revnet and every non-revnet by 2.5%. Undefined inputs mean "still loading": suppress the
+ * fee rather than guess, since a quote that is too HIGH is the safer error for a holder
+ * deciding whether to cash out.
+ */
+export function revFeeApplies(
+  isRevnet: boolean | undefined,
+  cashOutTaxRate: bigint | undefined,
+): boolean {
+  return isRevnet === true && cashOutTaxRate !== undefined && cashOutTaxRate !== 0n;
+}
+
+/**
  * The flat 2.5% protocol fee with the contract's floor division:
  * `amount - amount / 40`. Used where the ruleset's cash-out tax is unknown.
  */

@@ -905,6 +905,25 @@ export async function refreshUserLpPosition(
   return position;
 }
 
+/** An EOA reviews and signs in one sitting, so 20 minutes covers the round trip. */
+const LP_DEADLINE_SECONDS = 20 * 60;
+/**
+ * A Safe's co-signer collection routinely outlives 20 minutes, and the deadline
+ * is stamped when the transaction is PROPOSED — a 20-minute window means the
+ * last owner's signature lands on a call that can no longer execute. Match the
+ * 30-day Permit2 approval windows. The longer window widens MEV exposure only
+ * within the already-frozen minimum amounts.
+ */
+const SAFE_LP_DEADLINE_SECONDS = 30 * 24 * 60 * 60;
+
+/** The unix deadline for a liquidity transaction proposed now. */
+export function lpDeadline(
+  isSafe: boolean,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): bigint {
+  return BigInt(nowSeconds + (isSafe ? SAFE_LP_DEADLINE_SECONDS : LP_DEADLINE_SECONDS));
+}
+
 function retainedFloor(value: bigint): bigint {
   if (value <= 0n) return 0n;
   const floor = (value * 9_500n) / 10_000n;
@@ -915,6 +934,7 @@ export function prepareRemoveLiquidity(
   pool: PoolSnapshot,
   position: UserLpPosition,
   recipient: Address,
+  isSafe = false,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): RemoveLiquidityPlan {
   const pairMinimum = retainedFloor(position.pairAmount);
@@ -934,7 +954,7 @@ export function prepareRemoveLiquidity(
       [{ type: "bytes" }, { type: "bytes[]" }],
       ["0x0311", [burn, takePair]],
     ),
-    deadline: BigInt(nowSeconds + 1_200),
+    deadline: lpDeadline(isSafe, nowSeconds),
     pairMinimum,
     tokenMinimum,
   };
@@ -984,17 +1004,19 @@ export function prepareCollectLpFees(
   pool: PoolSnapshot,
   position: Pick<UserLpPosition, "tokenId">,
   recipient: Address,
+  isSafe = false,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): { unlockData: Hex; deadline: bigint } {
   const positionManager = POSITION_MANAGER_BY_CHAIN[Number(pool.chainId)];
   if (!positionManager) throw new Error("No position manager on this chain.");
+  const deadline = lpDeadline(isSafe, nowSeconds);
   const tx = buildCollectUniswapV4FeesTx({
     positionManager,
     tokenId: position.tokenId,
     currency0: pool.key.currency0,
     currency1: pool.key.currency1,
     recipient,
-    deadline: BigInt(nowSeconds + 1_200),
+    deadline,
   });
   // The caller sends through wagmi with the same ABI it uses for removals, so
   // hand back the arguments rather than the encoded call.
@@ -1002,7 +1024,7 @@ export function prepareCollectLpFees(
     abi: POSITION_MANAGER_ABI,
     data: tx.data,
   }).args as readonly [Hex, bigint];
-  return { unlockData, deadline: BigInt(nowSeconds + 1_200) };
+  return { unlockData, deadline };
 }
 
 // ── Add liquidity ────────────────────────────────────────────────────────────
@@ -1233,7 +1255,7 @@ export async function reverifyAddLiquidity(
 
 export function encodeAddLiquidityCall(
   plan: AddLiquidityPlan,
-  deadline = BigInt(Math.floor(Date.now() / 1000) + 1_200),
+  deadline = lpDeadline(false),
 ) {
   return {
     args: [plan.unlockData, deadline] as const,

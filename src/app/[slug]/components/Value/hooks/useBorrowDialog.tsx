@@ -555,7 +555,10 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         const newLoanCollateralCount = collateralCountToTransfer + collateralCountToAdd;
         const freshBorrowableAmount = await readFreshBorrowableAmount(publicClient, {
           chainId: Number(cashOutChainId) as JBChainId,
-          revnetId: projectId,
+          // The loan's chain carries its OWN revnet id — the page's prop is the route chain's.
+          // A mismatch quotes a different revnet's borrowable amount, which then becomes both the
+          // tx's collateral-transfer argument and its slippage floor.
+          revnetId: effectiveProjectId,
           collateralCount: newLoanCollateralCount,
           decimals: BigInt(selectedChainTokenConfig.decimals),
           currency: BigInt(selectedChainTokenConfig.currency),

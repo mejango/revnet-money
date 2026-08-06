@@ -1,7 +1,7 @@
 import { parseSlug } from "@/lib/slug";
 import { notFound } from "next/navigation";
 import { V6TermsTab } from "../components/v6/terms/V6TermsTab";
-import { getProject } from "../getProject";
+import { getProjectWithFallback } from "../getProjectFallback";
 import { getRulesets } from "./getRulesets";
 
 interface Props {
@@ -12,8 +12,11 @@ export default async function Terms({ params }: Props) {
   const { slug } = await params;
   const { chainId, projectId } = parseSlug(slug);
 
-  const project = await getProject(projectId, chainId);
-  if (!project) notFound();
+  // Resolve through the on-chain fallback, exactly as the layout does. Bendystraw being
+  // down returns null from the indexed read, which is indistinguishable from a project that
+  // doesn't exist — 404-ing on it tells the owner of a live project that it was deleted.
+  const resolved = await getProjectWithFallback(projectId, chainId);
+  if (!resolved) notFound();
 
   const rulesets = await getRulesets(projectId.toString(), chainId);
 

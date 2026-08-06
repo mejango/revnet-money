@@ -317,6 +317,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                   projectTokenDecimals={projectTokenDecimals}
                   accountingContext={accountingContextByChain.get(b.chainId)}
                   suckerGroupData={suckerGroupData}
+                  isRevnet={projectData?.project?.isRevnet ?? undefined}
                   onQuote={reportQuote}
                   ammState={ammStates?.find((state) => state.chainId === b.chainId)}
                   onManage={() => setShowLiquidity(true)}
@@ -575,6 +576,7 @@ function YouChainRow({
   projectTokenDecimals,
   accountingContext,
   suckerGroupData,
+  isRevnet,
   onQuote,
   ammState,
   onManage,
@@ -588,6 +590,8 @@ function YouChainRow({
   projectTokenDecimals: number;
   accountingContext: TokenConfig | undefined;
   suckerGroupData: any;
+  /** Only a revnet pays the revnet cash-out fee; undefined while it loads. */
+  isRevnet: boolean | undefined;
   onQuote: (chainId: number, quote: ChainQuote) => void;
   ammState: AmmChainState | undefined;
   onManage: () => void;
@@ -608,6 +612,8 @@ function YouChainRow({
     decimals: config?.decimals ?? 18,
     currencyId: config?.currency ?? 0,
     token: config?.token,
+    // Only a revnet pays the revnet cash-out fee (REVOwner is its data hook).
+    isRevnet,
   });
 
   // v6 borrowableAmountFrom returns a (borrowableNow, capacity) tuple; the hook

@@ -13,9 +13,12 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import {
+  clearExtensionSalt,
+  saltForExtension,
+} from "@/lib/suckerExtensionSalt";
 import { formatWalletError } from "@/lib/utils";
 import {
-  createSalt,
   JBChainId,
   JBCoreContracts,
   jbMultiTerminalAbi,
@@ -134,14 +137,18 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
       });
       const assets = assetsFromAccountingContexts(contexts, home.chainId);
 
-      // 3. One shared salt: the peer suckers of each edge only pair when the
-      // same operator sends the same salt on both chains.
+      // 3. One shared salt: the peer suckers of each edge only pair when the same operator
+      // sends the same salt on both chains (JBSuckerRegistry.sol:1043 derives the address
+      // from keccak256(sender, salt)). This writes to several chains in sequence and stops
+      // at the first failure — always, on the Safe path — so the salt is persisted and
+      // reused on retry. A fresh one would strand the already-deployed peers.
+      const salt = saltForExtension(address, projectId, target);
       const writes = buildSuckerExtensionWrites({
         groupRows: rows,
         targetChainId: target,
         targetProjectId: projectId,
         assets,
-        salt: createSalt(),
+        salt,
       });
 
       const done = await runSequentialWrites({
@@ -150,6 +157,8 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
         writeContractAsync,
         onProgress: setStatus,
       });
+      // Every chain landed, so the next extension should start from a new salt.
+      clearExtensionSalt(address, projectId, target);
       setStatus(`Suckers deployed on ${done} chain${done === 1 ? "" : "s"}.`);
       toast({ title: `Extended to ${chainName(target)}` });
       setOpen(false);

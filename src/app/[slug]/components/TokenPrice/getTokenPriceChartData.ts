@@ -6,6 +6,14 @@ import { minimumCashOutPriceAtIssuancePrice } from "@/lib/minimumCashOutPrice";
 import { getStartTimeForRange, getTimeRangeConfig, TimeRange } from "@/lib/timeRange";
 import { getTokenAddress } from "@/lib/token";
 import { JBChainId, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
+import { BASE_CURRENCY_ETH, BASE_CURRENCY_USD, tokenCurrencyId } from "@bananapus/nana-sdk-core/v6";
+import {
+  fetchPayEventRates,
+  rateAt,
+  toBaseAxis,
+  type BaseRatePoint,
+} from "@/lib/baseCurrencyRate";
+import type { Address } from "viem";
 import { calculateIssuancePriceHistory } from "./calculateIssuancePriceHistory";
 import { getFloorPriceHistory } from "./getFloorPriceHistory";
 import { getV4AmmPriceHistory } from "./getV4AmmPriceHistory";
@@ -23,6 +31,31 @@ export type PriceDataPoint = {
   cashOutTaxRate?: number;
 };
 
+/**
+ * Is the accounting token already the axis unit?
+ *
+ * The axis is the ruleset's `baseCurrency` (see lib/baseCurrencyRate.ts for the full
+ * contract). When the accounting token IS that currency — a token-keyed base currency, or
+ * ETH against a native terminal — the AMM and cash-out series are already on-axis and no
+ * rate is needed. `JBPrices.pricePerUnitOf` returns exactly 1e18 for that case too.
+ */
+export function accountingIsAxisUnit(
+  baseCurrency: number | undefined,
+  accountingToken: string,
+): boolean {
+  if (baseCurrency === undefined) return false;
+  if (baseCurrency === tokenCurrencyId(accountingToken as Address)) return true;
+  return (
+    baseCurrency === BASE_CURRENCY_ETH &&
+    accountingToken.toLowerCase() === NATIVE_TOKEN.toLowerCase()
+  );
+}
+
+/** Does this base currency price things in USD? Only then is the payEvent ratio the rate. */
+export function baseIsUsd(baseCurrency: number | undefined): boolean {
+  return baseCurrency === BASE_CURRENCY_USD;
+}
+
 export async function getTokenPriceChartData(params: {
   projectId: string;
   chainId: JBChainId;
@@ -35,6 +68,10 @@ export async function getTokenPriceChartData(params: {
 
   const rulesets = await getRulesets(projectId, chainId);
   const projectStart = rulesets.length > 0 ? rulesets[0].start : 0;
+  // Every stage shares the project's denomination; stage 0 decides the axis.
+  const baseCurrency = rulesets[0]?.baseCurrency;
+  // Issuance is 1/weight — ALREADY in base-currency units, and exact. It is the AMM and
+  // cash-out series (accounting-token denominated) that move onto the axis.
   const issuanceData = calculateIssuancePriceHistory(rulesets, range);
 
   const projectTokenAddress = await getTokenAddress(chainId, Number(projectId));
@@ -60,8 +97,41 @@ export async function getTokenPriceChartData(params: {
     }),
   ]);
   const v4History = v4Result.status === "fulfilled" ? v4Result.value : null;
-  const ammData = v4History?.hasPool ? v4History.data : [];
-  const floorData = floorResult.status === "fulfilled" ? floorResult.value : [];
+  const rawAmmData = v4History?.hasPool ? v4History.data : [];
+  const rawFloorData = floorResult.status === "fulfilled" ? floorResult.value : [];
+
+  // Move the accounting-denominated series onto the base-currency axis. A no-op (and no
+  // network call) whenever the accounting token already IS the axis unit, which is the
+  // common case. Otherwise every point needs the rate in force at ITS OWN timestamp;
+  // converting history at today's rate would restate the past.
+  const onAxis = accountingIsAxisUnit(baseCurrency, baseToken.address);
+  let rates: BaseRatePoint[] = [];
+  if (!onAxis && baseIsUsd(baseCurrency)) {
+    rates = await fetchPayEventRates(chainId, Number(projectId), baseToken.decimals);
+  }
+  const convertible = onAxis || rates.length > 0;
+  const rateFor = (timestamp: number) => (onAxis ? 1 : rateAt(rates, timestamp));
+
+  const ammData = onAxis
+    ? rawAmmData
+    : rawAmmData
+        .map((point) => ({
+          ...point,
+          ammPrice: toBaseAxis(point.ammPrice, rateFor(point.timestamp)),
+        }))
+        .filter((point) => point.ammPrice !== undefined);
+  const floorData = onAxis
+    ? rawFloorData
+    : rawFloorData
+        .map((point) => ({
+          ...point,
+          floorPrice: toBaseAxis(point.floorPrice, rateFor(point.timestamp)),
+          minimumCashOutPrice: toBaseAxis(
+            point.minimumCashOutPrice,
+            rateFor(point.timestamp),
+          ),
+        }))
+        .filter((point) => point.floorPrice !== undefined);
 
   const { interval } = getTimeRangeConfig(range);
   const data = mergeDataPoints(issuanceData, ammData, floorData, interval);
@@ -69,6 +139,15 @@ export async function getTokenPriceChartData(params: {
   return {
     chartData: range === "all" ? data : data.filter((d) => d.timestamp >= startTime),
     hasPool: !!v4History?.hasPool,
+    /** The axis unit: the ruleset's base currency, which issuance is denominated in. */
+    baseCurrency,
+    /**
+     * Market/cash-out lines were converted onto the axis from the accounting token using
+     * indexed pay-event valuations, so they are approximate — say so in the UI.
+     */
+    convertedToBase: !onAxis && convertible,
+    /** No rate was derivable, so the accounting-denominated lines are omitted entirely. */
+    marketSeriesUnavailable: !onAxis && !convertible,
     unavailableSources: [
       ...(v4Result.status === "rejected" ? ["pool"] : []),
       ...(floorResult.status === "rejected" ? ["cash out"] : []),

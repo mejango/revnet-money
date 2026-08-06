@@ -5,7 +5,7 @@ import { useFetchProjectRulesets } from "@/hooks/useFetchProjectRulesets";
 import { useJBContractContext } from "@/lib/nana/project";
 import { useSuckers } from "@/lib/nana/suckers";
 import { JBCoreContracts, jbSplitsAbi } from "@bananapus/nana-sdk-core";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useReadContracts } from "wagmi";
 import { chainsAtStage } from "../splitsLib";
 
@@ -51,7 +51,11 @@ export function useChainSplits(stageIdx: number) {
     [stageChains, contractAddress],
   );
 
-  const { data, isLoading } = useReadContracts({
+  const {
+    data,
+    isLoading,
+    refetch: refetchSplits,
+  } = useReadContracts({
     contracts,
     query: {
       enabled: contracts.length > 0,
@@ -84,10 +88,16 @@ export function useChainSplits(stageIdx: number) {
     return suckerPairsWithRulesets[0].rulesets;
   }, [suckerPairsWithRulesets]);
 
+  // The splits themselves are what an edit changes; refreshing only the sucker
+  // list would leave the editor showing pre-edit recipients.
+  const refetchAll = useCallback(async () => {
+    await Promise.all([refetch(), refetchSplits()]);
+  }, [refetch, refetchSplits]);
+
   return {
     chainSplits,
     allRulesets,
     isLoading,
-    refetch,
+    refetch: refetchAll,
   };
 }

@@ -14,6 +14,7 @@ import {
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
+import { repayCeilingFor } from "@/lib/loanFees";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
@@ -69,6 +70,28 @@ export function RepayDialog({
     chainId,
     args: [BigInt(loanId)],
   });
+
+  // `repayLoan` adds the accrued source fee ON TOP of the principal and reverts when the total
+  // exceeds `maxRepayBorrowAmount` (REVLoans.sol:984-987, :1004-1008), so the principal alone is
+  // not a ceiling once the prepaid window lapses — it's the one amount guaranteed to be too small.
+  const { data: accruedSourceFee } = useReadContract({
+    abi: revLoansAbi,
+    functionName: "determineSourceFeeAmount",
+    address: getRevnetLoanContract(6, chainId),
+    chainId,
+    args: loanData ? [loanData, loanData.amount] : undefined,
+    query: { enabled: !!loanData },
+  });
+
+  // The ceiling sent as `maxRepayBorrowAmount`. The fee keeps accruing between this read and
+  // inclusion, so pad it: the fee ramps linearly to 100% over the 10-year liquidation window
+  // (REVLoansSourceFees.sol), which makes 0.1% of principal worth ~3.6 days of accrual. The
+  // contract refunds whatever isn't used (REVLoans.sol:1023-1031), so overshooting is free
+  // beyond needing the balance and allowance to cover it.
+  const repayCeiling = useMemo(() => {
+    if (!loanData || accruedSourceFee === undefined) return undefined;
+    return repayCeilingFor(loanData.amount, accruedSourceFee);
+  }, [loanData, accruedSourceFee]);
 
   // Get project data to find sucker group ID using the project ID
   const { data: projectData } = useBendystrawQuery(
@@ -133,6 +156,7 @@ export function RepayDialog({
   const shouldRunSimulation =
     !isLoadingLoan &&
     loanData &&
+    repayCeiling !== undefined &&
     collateralToReturn &&
     userAddress &&
     !!chainTokenConfig &&
@@ -142,7 +166,7 @@ export function RepayDialog({
   const simulationArgs = shouldRunSimulation
     ? [
         BigInt(loanId),
-        loanData.amount, // Always use full loan amount - contract will calculate exact amount needed
+        repayCeiling, // principal + accrued source fee + buffer; the contract refunds the rest
         calculateCollateralAmount(collateralToReturn, loanData.collateral),
         userAddress as Address,
         {
@@ -182,7 +206,7 @@ export function RepayDialog({
             },
           ])
         : undefined,
-    value: isNativeBase ? loanData?.amount : 0n, // Only send native value for native-base projects
+    value: isNativeBase ? repayCeiling : 0n, // Only send native value for native-base projects
   });
 
   // Extract the exact amount from simulation result for display purposes only
@@ -223,8 +247,8 @@ export function RepayDialog({
     return undefined;
   })();
 
-  // Always use full loan amount - contract will calculate exact amount needed
-  const finalRepayAmount = loanData?.amount;
+  // The ceiling the contract is authorized to pull; it charges principal + accrued fee and refunds the rest.
+  const finalRepayAmount = repayCeiling;
 
   // ===== ALLOWANCE CHECKING =====
   // Check allowance for non-ETH base tokens
@@ -257,7 +281,7 @@ export function RepayDialog({
           args: [userAddress as Address, revLoansContractAddress as Address],
         });
 
-        if (BigInt(allowance) < loanData.amount) {
+        if (repayCeiling === undefined || BigInt(allowance) < repayCeiling) {
           setHasSufficientAllowance(false);
           setAllowanceError(
             "To calculate your repayment cost, we need permission for this loan. You will not be charged until you confirm repayment.",
@@ -275,7 +299,9 @@ export function RepayDialog({
     };
 
     checkAllowance();
-  }, [loanData, userAddress, publicClient, chainTokenConfig, chainId]);
+    // `repayCeiling` is a dependency: it resolves asynchronously with the source-fee read, and the
+    // allowance must be judged against the amount the contract will actually pull, not the principal.
+  }, [loanData, userAddress, publicClient, chainTokenConfig, chainId, repayCeiling]);
 
   // ===== EFFECTS =====
 
@@ -330,7 +356,14 @@ export function RepayDialog({
 
   // ===== EVENT HANDLERS =====
   const handleApproveAllowance = async () => {
-    if (!loanData || !userAddress || !publicClient || !walletClient || !chainTokenConfig) {
+    if (
+      !loanData ||
+      !userAddress ||
+      !publicClient ||
+      !walletClient ||
+      !chainTokenConfig ||
+      repayCeiling === undefined
+    ) {
       return;
     }
     if (isNativeToken(chainTokenConfig.token)) return;
@@ -345,7 +378,7 @@ export function RepayDialog({
         address: baseTokenAddress,
         abi: erc20Abi,
         functionName: "approve",
-        args: [revLoansContractAddress as Address, loanData.amount],
+        args: [revLoansContractAddress as Address, repayCeiling],
       });
 
       requireOnchainExecution(approveHash, "Token approval");
@@ -384,7 +417,8 @@ export function RepayDialog({
       !repayLoanAsync ||
       !publicClient ||
       !walletClient ||
-      !chainTokenConfig
+      !chainTokenConfig ||
+      repayCeiling === undefined
     ) {
       toast({
         variant: "destructive",
@@ -398,7 +432,7 @@ export function RepayDialog({
       setRepayStatus("waiting-signature");
 
       const loanIdBigInt = BigInt(loanId);
-      const maxRepayBorrowAmount = loanData.amount; // Use full loan amount as ceiling
+      const maxRepayBorrowAmount = repayCeiling;
       const collateralCountToReturn = calculateCollateralAmount(
         collateralToReturn,
         loanData.collateral,
@@ -461,10 +495,10 @@ export function RepayDialog({
               "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
           },
         ],
-        // Repay cost accrues continuously, so a quoted exact value can be
-        // stale by send time and underfund the repay. Always send the ceiling
-        // (the full loan amount); the contract refunds the excess.
-        value: isNativeToken(chainTokenConfig.token) ? loanData.amount : 0n,
+        // Repay cost accrues continuously, so a quoted exact value can be stale by send time and
+        // underfund the repay. Send the ceiling (principal + accrued source fee + buffer); the
+        // contract refunds the excess.
+        value: isNativeToken(chainTokenConfig.token) ? maxRepayBorrowAmount : 0n,
       });
 
       setRepayTxHash(txHash);

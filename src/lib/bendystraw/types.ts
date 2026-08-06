@@ -770,6 +770,22 @@ export type ShieldProjectQueryVariables = { chainId: number; projectId: number }
 export type ShieldProjectQuery = {
   project: { id: string; suckerGroupId: string } | null;
 };
+export type PayEventRatesQueryVariables = {
+  where: Record<string, unknown>;
+  limit: number;
+  offset: number;
+};
+export type PayEventRatesQuery = {
+  payEvents: {
+    items: Array<{
+      timestamp: number;
+      /** In the accounting token's own decimals. */
+      amount: string;
+      /** 18-decimal USD valuation at the time of the payment, per the indexer. */
+      amountUsd: string;
+    }>;
+  };
+};
 export type ShieldGroupQueryVariables = { id: string };
 export type ShieldGroupQuery = {
   suckerGroup: {
@@ -785,6 +801,10 @@ export type ShieldGroupQuery = {
         name: string | null;
         volumeUsd: BigNumberish;
         volume: BigNumberish;
+        /** Accounting context: what the project is paid in, and at what scale. */
+        token: string | null;
+        tokenSymbol: string | null;
+        decimals: number | null;
         participants: {
           totalCount: number;
           items: Array<{

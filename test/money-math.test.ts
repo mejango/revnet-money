@@ -1,7 +1,13 @@
 import type { Ruleset } from "@/app/[slug]/terms/getRulesets";
 import { resolveProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import { isUsd, toBaseCurrencyId } from "@/lib/currency";
-import { applyNanaFee, applyRevFee, generateFeeData, netLoanProceeds } from "@/lib/feeHelpers";
+import {
+  applyNanaFee,
+  applyRevFee,
+  generateFeeData,
+  netLoanProceeds,
+  revFeeApplies,
+} from "@/lib/feeHelpers";
 import { calculatePriceAtTimestamp } from "@/lib/issuancePrice";
 import { getUnitValue } from "@/lib/reclaimableSurplus";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
@@ -124,5 +130,29 @@ describe("contract-derived monetary display math", () => {
     expect(
       points.every((point, index) => index === 0 || point.totalCost >= points[index - 1].totalCost),
     ).toBe(true);
+  });
+});
+
+// REVOwner is what charges the revnet cash-out fee, and it skips the fee hook entirely on a
+// zero-tax cash-out: "Zero-tax ordinary cash-outs do not add the revnet fee hook"
+// (REVOwner.sol:303). Applying it unconditionally under-quoted every zero-tax revnet — and
+// every plain project, which has no REVOwner at all — by 2.5%.
+describe("revFeeApplies", () => {
+  it("charges the fee on a revnet with a nonzero cash-out tax", () => {
+    expect(revFeeApplies(true, 2_000n)).toBe(true);
+  });
+
+  it("skips the fee when the cash-out tax is zero", () => {
+    expect(revFeeApplies(true, 0n)).toBe(false);
+  });
+
+  it("skips the fee for a project that is not a revnet", () => {
+    expect(revFeeApplies(false, 2_000n)).toBe(false);
+  });
+
+  it("suppresses the fee while either input is still loading", () => {
+    // A quote that is too high is the safer error for someone deciding whether to cash out.
+    expect(revFeeApplies(undefined, 2_000n)).toBe(false);
+    expect(revFeeApplies(true, undefined)).toBe(false);
   });
 });

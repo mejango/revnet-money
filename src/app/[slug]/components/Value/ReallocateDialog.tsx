@@ -56,7 +56,6 @@ export function ReallocateDialog({
     displayMonths,
     newLoanBorrowableAmount,
     minimumBorrowAmountPreview,
-    collateralHeadroom,
     collateralCountToTransfer,
     handleOpenChange,
     handleBorrow,
@@ -113,13 +112,15 @@ export function ReallocateDialog({
     }
   }, [borrowStatus, onOpenChange]);
 
-  // Calculate the new loan simulation values
-  const headroomCollateral = Number(formatUnits(collateralHeadroom, baseTokenDecimals));
-  const additionalCollateral = Number(collateralAmount || 0);
-  const newLoanCollateral = headroomCollateral + additionalCollateral;
-
   // Get the actual collateral amount that can be transferred (in project token)
   const collateralToTransfer = Number(formatUnits(collateralCountToTransfer, projectTokenDecimals));
+
+  // Calculate the new loan simulation values. Both terms must be PROJECT-token amounts: the loan's
+  // headroom is denominated in the source token, and `collateralCountToTransfer` is its project-token
+  // equivalent (converted with exact integer math upstream). Adding the raw source-token headroom to
+  // the user's project-token input would sum two different units under one symbol.
+  const additionalCollateral = Number(collateralAmount || 0);
+  const newLoanCollateral = collateralToTransfer + additionalCollateral;
 
   return (
     <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
@@ -293,7 +294,7 @@ export function ReallocateDialog({
               collateralTokenSymbol={tokenSymbol}
               amountBorrowed={
                 newLoanBorrowableAmount
-                  ? Number(formatUnits(newLoanBorrowableAmount, NATIVE_TOKEN_DECIMALS))
+                  ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals))
                   : 0
               }
               prepaidPercent={prepaidPercent}
@@ -322,7 +323,7 @@ export function ReallocateDialog({
                   <p className="text-sm text-zinc-600 mb-4">
                     This shows the fee structure for the new loan that will be created with{" "}
                     {newLoanCollateral.toFixed(6)} {tokenSymbol} collateral (appreciation:{" "}
-                    {headroomCollateral.toFixed(6)} + additional: {additionalCollateral.toFixed(6)}
+                    {collateralToTransfer.toFixed(6)} + additional: {additionalCollateral.toFixed(6)}
                     ), allowing you to borrow{" "}
                     {newLoanBorrowableAmount
                       ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)

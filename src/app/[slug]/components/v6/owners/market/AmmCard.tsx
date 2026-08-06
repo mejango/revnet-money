@@ -20,6 +20,7 @@ import { ParticipantsPieChart } from "@/app/[slug]/owners/components/Participant
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
+  isSafeConnection,
   submittedViaSafe,
   useWaitForTransactionReceipt,
   useWriteContract,
@@ -27,7 +28,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { erc20Abi, formatUnits, parseUnits, zeroAddress, type Address, type PublicClient } from "viem";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount, useConfig, usePublicClient } from "wagmi";
 import {
   chainName,
   ChainProject,
@@ -39,6 +40,7 @@ import {
   AmmChainState,
   encodeAddLiquidityCall,
   fetchAmmStates,
+  lpDeadline,
   PERMIT2_ABI,
   PERMIT2_ADDRESS,
   permit2AllowanceCovers,
@@ -527,6 +529,7 @@ export function AddLiquidityForm({
   tokenSymbol: string;
 }) {
   const { address } = useAccount();
+  const wagmiConfig = useConfig();
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
   const { ensureAllowance, isApproving } = useAllowance(chainId);
@@ -642,7 +645,7 @@ export function AddLiquidityForm({
       }
       setStatus("Re-checking the pool price…");
       await reverifyAddLiquidity(pool, review);
-      const call = encodeAddLiquidityCall(review);
+      const call = encodeAddLiquidityCall(review, lpDeadline(isSafeConnection(wagmiConfig)));
       const hash = await writeContractAsync({
         chainId,
         address: POSITION_MANAGER_BY_CHAIN[chainId]!,
@@ -800,6 +803,7 @@ export function LiquidityManager({
   tokenSymbol: string;
 }) {
   const { address } = useAccount();
+  const wagmiConfig = useConfig();
   const pool = state.pool;
   const positionManager = POSITION_MANAGER_BY_CHAIN[Number(state.chainId)];
   const [reviewed, setReviewed] = useState<{
@@ -876,7 +880,7 @@ export function LiquidityManager({
       const fresh = await refreshUserLpPosition(pool, position.tokenId, address);
       setReviewed({
         position: fresh,
-        plan: prepareRemoveLiquidity(pool, fresh, address),
+        plan: prepareRemoveLiquidity(pool, fresh, address, isSafeConnection(wagmiConfig)),
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not refresh this position.");
@@ -893,7 +897,7 @@ export function LiquidityManager({
     setError(null);
     setClaiming(position.tokenId);
     try {
-      const plan = prepareCollectLpFees(pool, position, address);
+      const plan = prepareCollectLpFees(pool, position, address, isSafeConnection(wagmiConfig));
       await writeContractAsync({
         chainId: Number(state.chainId),
         address: positionManager,
@@ -921,7 +925,10 @@ export function LiquidityManager({
         address: positionManager,
         abi: POSITION_MANAGER_ABI,
         functionName: "modifyLiquidities",
-        args: [reviewed.plan.unlockData, reviewed.plan.deadline],
+        // The reviewed minimums live in `unlockData` and stay frozen; only the
+        // deadline is re-stamped, so a slow review can't ship an already-expired
+        // window.
+        args: [reviewed.plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not remove liquidity.");

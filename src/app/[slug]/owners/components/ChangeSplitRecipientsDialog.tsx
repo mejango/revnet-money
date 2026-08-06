@@ -18,18 +18,47 @@ import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { useEffect, useMemo, useState } from "react";
+import { Address, zeroAddress } from "viem";
 import { changeSplitsSchema } from "./changeSplitsSchema";
 import { useChainSplits } from "./hooks/useChainSplits";
 import { useSetSplitGroups } from "./hooks/useSetSplitGroups";
 import { emptySaveBlockMessage } from "./splitsLib";
 
+/**
+ * A row in the editor. `percentage` and `beneficiary` are what the form edits;
+ * the rest is carried verbatim from the on-chain `JBSplit` so a save can't
+ * silently drop a split's hook, project routing, or lock. Rows the user adds
+ * have none of it — a plain address payout.
+ */
+export type SplitFormData = {
+  percentage: string;
+  beneficiary: string;
+  projectId?: bigint;
+  hook?: Address;
+  lockedUntil?: number;
+  preferAddToBalance?: boolean;
+};
+
 export type ChainFormData = {
   chainId: JBChainId;
   projectId: bigint;
   rulesetId: bigint;
-  splits: Array<{ percentage: string; beneficiary: string }>;
+  splits: SplitFormData[];
   selected: boolean;
 };
+
+/** Splits routed by a hook or into another project aren't plain address payouts. */
+export function splitRouting(split: SplitFormData) {
+  if (split.hook && split.hook !== zeroAddress)
+    return { kind: "hook", address: split.hook } as const;
+  if (split.projectId) return { kind: "project", projectId: split.projectId } as const;
+  return null;
+}
+
+/** A lock the chain still honors — `JBSplits` rejects any save that drops or shortens it. */
+export function splitIsLocked(split: SplitFormData, nowSeconds: number) {
+  return (split.lockedUntil ?? 0) > nowSeconds;
+}
 
 type FormData = {
   chains: ChainFormData[];
@@ -72,6 +101,10 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       splits: chainData.splits.map((split) => ({
         percentage: ((Number(split.percent) / SPLITS_TOTAL_PERCENT) * 100).toFixed(2),
         beneficiary: split.beneficiary,
+        projectId: split.projectId,
+        hook: split.hook,
+        lockedUntil: split.lockedUntil,
+        preferAddToBalance: split.preferAddToBalance,
       })),
     }));
 
@@ -85,6 +118,9 @@ export function ChangeSplitRecipientsDialog(props: Props) {
     () => new Map(chainSplits.map((chain) => [chain.chainId, chain.fallbackSplitCount])),
     [chainSplits],
   );
+
+  // Read once per open: a lock expiring mid-edit shouldn't reshuffle the form.
+  const nowSeconds = useMemo(() => Math.floor(Date.now() / 1000), [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const blockMessageFor = (chains: ChainFormData[]) =>
     emptySaveBlockMessage(
@@ -194,48 +230,67 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                                           can burn them.
                                         </p>
                                       ))}
-                                    {chain.splits.map((_, splitIdx) => (
-                                      <div key={splitIdx} className="flex gap-2 items-start">
-                                        <div className="flex-1">
-                                          <label className="text-sm text-zinc-600 mb-1 block">
-                                            {splitIdx === 0 ? "Split" : "... and"}
-                                          </label>
-                                          <div className="flex gap-2 items-start">
-                                            <Field
-                                              name={`chains.${chainIdx}.splits.${splitIdx}.percentage`}
-                                              type="number"
-                                              min="0"
-                                              max="100"
-                                              step="0.01"
-                                              className="h-9"
-                                              width="w-28"
-                                              suffix="%"
-                                              required
-                                            />
-                                            <span className="flex items-center text-zinc-600 mt-2">
-                                              to
-                                            </span>
-                                            <Field
-                                              name={`chains.${chainIdx}.splits.${splitIdx}.beneficiary`}
-                                              type="text"
-                                              className="h-9 flex-1"
-                                              placeholder="0x..."
-                                              required
-                                            />
+                                    {chain.splits.map((split, splitIdx) => {
+                                      const routing = splitRouting(split);
+                                      const locked = splitIsLocked(split, nowSeconds);
+                                      return (
+                                        <div key={splitIdx} className="flex gap-2 items-start">
+                                          <div className="flex-1">
+                                            <label className="text-sm text-zinc-600 mb-1 block">
+                                              {splitIdx === 0 ? "Split" : "... and"}
+                                            </label>
+                                            <div className="flex gap-2 items-start">
+                                              <Field
+                                                name={`chains.${chainIdx}.splits.${splitIdx}.percentage`}
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="0.01"
+                                                className="h-9"
+                                                width="w-28"
+                                                suffix="%"
+                                                required
+                                              />
+                                              <span className="flex items-center text-zinc-600 mt-2">
+                                                to
+                                              </span>
+                                              {routing ? (
+                                                <div className="flex-1 mt-2 text-sm text-zinc-600 break-all">
+                                                  {routing.kind === "hook"
+                                                    ? `split hook ${routing.address}`
+                                                    : `project #${routing.projectId}`}
+                                                  {locked && " (locked)"}
+                                                </div>
+                                              ) : (
+                                                <Field
+                                                  name={`chains.${chainIdx}.splits.${splitIdx}.beneficiary`}
+                                                  type="text"
+                                                  className="h-9 flex-1"
+                                                  placeholder="0x..."
+                                                  required
+                                                />
+                                              )}
+                                            </div>
                                           </div>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => arrayHelpers.remove(splitIdx)}
+                                            className="mt-6"
+                                            aria-label="Remove split"
+                                            disabled={locked}
+                                            title={
+                                              locked
+                                                ? "Locked until this stage's lock expires"
+                                                : undefined
+                                            }
+                                          >
+                                            <TrashIcon className="size-4" />
+                                          </Button>
                                         </div>
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => arrayHelpers.remove(splitIdx)}
-                                          className="mt-6"
-                                          aria-label="Remove split"
-                                        >
-                                          <TrashIcon className="size-4" />
-                                        </Button>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
 
                                     <Button
                                       type="button"

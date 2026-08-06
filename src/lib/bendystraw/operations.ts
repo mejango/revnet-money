@@ -51,6 +51,8 @@ import type {
   ProjectsByOwnerQueryVariables,
   ProjectWithPermissionsQuery,
   ProjectWithPermissionsQueryVariables,
+  PayEventRatesQuery,
+  PayEventRatesQueryVariables,
   ShieldGroupQuery,
   ShieldGroupQueryVariables,
   ShieldProjectQuery,
@@ -277,6 +279,16 @@ export const ProjectErc20TickersOperation = operation<
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
   hasRoot("deployErc20Events", "items"),
 );
+/** Pay events carrying both the accounting amount and its USD valuation, for deriving the
+ *  historical base-currency rate a price chart needs (see lib/baseCurrencyRate.ts). */
+export const PayEventRatesOperation = operation<
+  PayEventRatesQuery,
+  PayEventRatesQueryVariables
+>(
+  "pay-event-rates.v1",
+  variablesWith({ where: filter }, { limit: positiveLimit, offset }),
+  hasRoot("payEvents", "items"),
+);
 export const AccountPermissionHoldersOperation = operation<
   AccountPermissionHoldersQuery,
   AccountPermissionHoldersQueryVariables
@@ -490,6 +502,7 @@ export const BENDYSTRAW_OPERATIONS = [
   MintNftEventsOperation,
   ShieldProjectOperation,
   ShieldGroupOperation,
+  PayEventRatesOperation,
 ] as const;
 
 /**

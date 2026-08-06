@@ -217,6 +217,19 @@ export function TokenPriceChart({
           {data!.unavailableSources.join(" and ")} price history is temporarily unavailable.
         </p>
       ) : null}
+      {data?.convertedToBase ? (
+        <p className="mt-3 text-xs text-amber-700">
+          Market and cash-out prices are converted from {tokenSymbol ?? "the accounting token"}{" "}
+          into this revnet&apos;s issuance currency using indexed payment values, so they are
+          approximate.
+        </p>
+      ) : null}
+      {data?.marketSeriesUnavailable ? (
+        <p className="mt-3 text-xs text-amber-700">
+          Market and cash-out prices can&apos;t be converted into this revnet&apos;s issuance
+          currency right now, so only issuance is shown.
+        </p>
+      ) : null}
 
       {hasData ? (
         <CartesianChart
