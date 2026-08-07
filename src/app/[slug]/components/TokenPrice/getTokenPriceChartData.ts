@@ -9,6 +9,7 @@ import { JBChainId, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import {
   accountingIsAxisUnit,
   baseIsUsd,
+  fetchLiveBasePerAccountingToken,
   fetchPayEventRates,
   rateAt,
   toBaseAxis,
@@ -77,15 +78,32 @@ export async function getTokenPriceChartData(params: {
 
   // Move the accounting-denominated series onto the base-currency axis. A no-op (and no
   // network call) whenever the accounting token already IS the axis unit, which is the
-  // common case. Otherwise every point needs the rate in force at ITS OWN timestamp;
-  // converting history at today's rate would restate the past.
+  // common case.
+  //
+  // Otherwise, two sources. Pay-event ratios give the rate in force at each point's OWN
+  // timestamp, which matters when the pair floats — converting a year of ETH-denominated
+  // history at today's rate would restate it. But they only exist where the indexer values
+  // the accounting token, and it does not value USDC (it reports `amountUsd: 0`), which left
+  // every USDC revnet with no market or cash-out line at all. `JBPrices` — the protocol's own
+  // feed, consulted on every payment — always has a rate for a pair the terminal can price,
+  // so it backs every point the pay events don't reach.
   const onAxis = accountingIsAxisUnit(baseCurrency, baseToken.address);
-  let rates: BaseRatePoint[] = [];
-  if (!onAxis && baseIsUsd(baseCurrency)) {
-    rates = await fetchPayEventRates(chainId, Number(projectId), baseToken.decimals);
-  }
-  const convertible = onAxis || rates.length > 0;
-  const rateFor = (timestamp: number) => (onAxis ? 1 : rateAt(rates, timestamp));
+  const [rates, liveRate] = onAxis
+    ? [[] as BaseRatePoint[], 1]
+    : await Promise.all([
+        baseIsUsd(baseCurrency)
+          ? fetchPayEventRates(chainId, Number(projectId), baseToken.decimals)
+          : Promise.resolve([] as BaseRatePoint[]),
+        fetchLiveBasePerAccountingToken(
+          chainId,
+          Number(projectId),
+          baseCurrency,
+          baseToken.address,
+        ),
+      ]);
+  const convertible = onAxis || rates.length > 0 || liveRate !== null;
+  const rateFor = (timestamp: number) =>
+    onAxis ? 1 : (rateAt(rates, timestamp) ?? liveRate);
 
   const ammData = onAxis
     ? rawAmmData
@@ -117,10 +135,18 @@ export async function getTokenPriceChartData(params: {
     /** The axis unit: the ruleset's base currency, which issuance is denominated in. */
     baseCurrency,
     /**
-     * Market/cash-out lines were converted onto the axis from the accounting token using
-     * indexed pay-event valuations, so they are approximate — say so in the UI.
+     * How the market/cash-out lines reached the axis, so the UI can be specific about which
+     * approximation the reader is looking at: `indexed` follows the rate at each point's own
+     * timestamp, `live` applies today's feed rate to the whole range. Null when the
+     * accounting token is already the axis unit and nothing was converted.
      */
-    convertedToBase: !onAxis && convertible,
+    conversionBasis: onAxis
+      ? null
+      : rates.length > 0
+        ? ("indexed" as const)
+        : liveRate !== null
+          ? ("live" as const)
+          : null,
     /** No rate was derivable, so the accounting-denominated lines are omitted entirely. */
     marketSeriesUnavailable: !onAxis && !convertible,
     unavailableSources: [

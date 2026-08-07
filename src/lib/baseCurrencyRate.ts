@@ -1,6 +1,13 @@
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import { PayEventRatesOperation } from "@/lib/bendystraw/operations";
-import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
+import { getViemPublicClient, type transports } from "@/lib/wagmiTransports";
+import {
+  JBCoreContracts,
+  jbContractAddress,
+  jbPricesAbi,
+  NATIVE_TOKEN,
+  type JBChainId,
+} from "@bananapus/nana-sdk-core";
 import {
   BASE_CURRENCY_ETH,
   BASE_CURRENCY_USD,
@@ -26,8 +33,16 @@ import type { Address } from "viem";
  *
  * The last two are multiplied by `basePerAccountingToken` to reach the axis.
  *
- * NEVER fabricate a rate. Where none is available the series is omitted and the UI says so:
- * a missing line is honest, a wrongly denominated one is not.
+ * Two rate sources, in preference order:
+ *  1. `JBPrices` — the protocol's OWN feed, the one the terminal consults on every payment.
+ *     Authoritative but current-only, so it restates history when the pair actually floats.
+ *  2. Pay-event ratios from the indexer — per-timestamp, so history stays history, but only
+ *     usable where the indexer values the accounting token (see below).
+ *
+ * Historical points prefer (2) and fall back to (1). NEVER fabricate a rate: if neither
+ * source has one the series is omitted and the UI says so. A missing line is honest, a
+ * wrongly denominated one is not — but a line withheld while the protocol itself has the
+ * rate on chain is just a gap, which is why (1) is consulted for every off-axis project.
  */
 
 /**
@@ -135,4 +150,58 @@ export async function fetchPayEventRates(
   } catch {
     return [];
   }
+}
+
+/**
+ * The live rate from `JBPrices`: base-currency units per ONE accounting token.
+ *
+ * `pricePerUnitOf` is documented as "the `pricingCurrency` price of one `unitCurrency`"
+ * (JBPrices.sol:217-225), so pricing in the BASE currency a unit of the ACCOUNTING currency
+ * is exactly the factor the axis needs — and it is the same feed `JBTerminalStore` uses to
+ * build `weightRatio` on every payment (JBTerminalStore.sol:1165-1172). Identical currencies
+ * short-circuit to 1e18 on chain (`:238`).
+ *
+ * Only registered PAIRS resolve; `JBPrices_PriceFeedNotFound` reverts otherwise. Deployments
+ * register legs against USD rather than a full mesh (Base has USD↔USDC and USD↔ETH but no
+ * ETH↔USDC), so a missing direct pair is retried as two legs through USD.
+ *
+ * Returns null when no leg resolves or the read fails — the caller must not invent one.
+ */
+export async function fetchLiveBasePerAccountingToken(
+  chainId: JBChainId,
+  projectId: number,
+  baseCurrency: number | undefined,
+  accountingToken: string,
+): Promise<number | null> {
+  if (baseCurrency === undefined) return null;
+  const accountingCurrency = tokenCurrencyId(accountingToken as Address);
+  if (baseCurrency === accountingCurrency) return 1;
+  const prices = jbContractAddress["6"]?.[JBCoreContracts.JBPrices]?.[chainId];
+  if (!prices) return null;
+
+  const client = getViemPublicClient(chainId as keyof typeof transports);
+  const priceOf = (pricingCurrency: number, unitCurrency: number) =>
+    client
+      .readContract({
+        address: prices,
+        abi: jbPricesAbi,
+        functionName: "pricePerUnitOf",
+        args: [BigInt(projectId), BigInt(pricingCurrency), BigInt(unitCurrency), 18n],
+      })
+      .then((price) => Number(price) / 1e18)
+      .catch(() => null);
+
+  const finite = (rate: number | null) =>
+    rate !== null && Number.isFinite(rate) && rate > 0 ? rate : null;
+
+  const direct = finite(await priceOf(baseCurrency, accountingCurrency));
+  if (direct !== null) return direct;
+
+  // Two legs through USD: (base per USD) × (USD per accounting token).
+  const [basePerUsd, usdPerAccounting] = await Promise.all([
+    priceOf(baseCurrency, BASE_CURRENCY_USD),
+    priceOf(BASE_CURRENCY_USD, accountingCurrency),
+  ]);
+  if (basePerUsd === null || usdPerAccounting === null) return null;
+  return finite(basePerUsd * usdPerAccounting);
 }

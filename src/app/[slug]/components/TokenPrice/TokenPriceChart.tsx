@@ -217,11 +217,13 @@ export function TokenPriceChart({
           {data!.unavailableSources.join(" and ")} price history is temporarily unavailable.
         </p>
       ) : null}
-      {data?.convertedToBase ? (
+      {data?.conversionBasis ? (
         <p className="mt-3 text-xs text-amber-700">
           Market and cash-out prices are converted from {tokenSymbol ?? "the accounting token"}{" "}
-          into this revnet&apos;s issuance currency using indexed payment values, so they are
-          approximate.
+          into this revnet&apos;s issuance currency
+          {data.conversionBasis === "indexed"
+            ? " using indexed payment values, so they are approximate."
+            : " at the current exchange rate, so earlier points are approximate."}
         </p>
       ) : null}
       {data?.marketSeriesUnavailable ? (
