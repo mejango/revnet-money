@@ -5,6 +5,25 @@ export type ParticipantInput = {
   volume?: string | number | bigint | null;
 } | null;
 
+/**
+ * Whether one "Paid" figure can honestly be summed across these chains.
+ *
+ * `participant.volume` is denominated in EACH CHAIN'S accounting token, so a sucker group
+ * mixing ETH (18-dec wei) and USDC (6-dec) produces a number that is neither, printed under
+ * one symbol. Balances are the project's own token and stay comparable; only volume is
+ * affected. Same policy as `projectFeedTokenContext` in the activity feed.
+ */
+export function participantVolumeIsComparable(
+  projects: ReadonlyArray<{ tokenSymbol?: string | null; decimals?: number | null }>,
+): boolean {
+  const kinds = new Set(
+    projects
+      .filter((project) => project.tokenSymbol)
+      .map((project) => `${project.tokenSymbol}:${project.decimals ?? 18}`),
+  );
+  return kinds.size <= 1;
+}
+
 export type AggregatedParticipant = {
   address: string;
   balance: bigint;

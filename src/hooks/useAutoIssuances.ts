@@ -51,7 +51,11 @@ export function useAutoIssuances() {
       matchesProjectRef(row, projectRefs),
     );
     return storedRows?.map((autoIssuance) => {
-      const rulesetIndex = rulesets?.findIndex((r) => String(r.id) === autoIssuance.stageId) || 0;
+      // `findIndex` returns -1 when nothing matches, and -1 is TRUTHY — so `|| 0` never fired
+      // and an unmatched stageId rendered as "Stage 0" with an undefined start. Mirror
+      // V6AutoIssuanceSubtab and leave both undefined instead of inventing a stage.
+      const rulesetIndex =
+        rulesets?.findIndex((r) => String(r.id) === autoIssuance.stageId) ?? -1;
 
       const distributed = issuedRows?.find((event) => {
         return (
@@ -67,8 +71,8 @@ export function useAutoIssuances() {
       }
       return {
         ...autoIssuance,
-        startsAt: rulesets?.[rulesetIndex]?.start,
-        stage: rulesetIndex + 1,
+        startsAt: rulesetIndex >= 0 ? rulesets?.[rulesetIndex]?.start : undefined,
+        stage: rulesetIndex >= 0 ? rulesetIndex + 1 : undefined,
         distributed: distributed !== undefined,
         distributedTxn,
       };

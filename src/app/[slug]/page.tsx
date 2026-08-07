@@ -1,5 +1,4 @@
 import { parseSlug } from "@/lib/slug";
-import { NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { LazyTokenPriceChart } from "./components/TokenPrice/LazyTokenPriceChart";
@@ -34,15 +33,19 @@ export default async function AboutPage(props: Props) {
 
   return (
     <div className="flex flex-col gap-6">
-      {hasStarted && (
+      {/* A missing accounting context means NOT YET INDEXED, never ETH/18 (tokenUtils.ts:44-48).
+          Defaulting here rendered a USDC project's floor history divided by 1e18 and labelled
+          ETH — off by twelve orders of magnitude under a wrong symbol. Wait for the real
+          context instead. */}
+      {hasStarted && project.token && project.decimals != null && (
         <Suspense>
           <LazyTokenPriceChart
             projectId={projectId.toString()}
             chainId={chainId}
             suckerGroupId={suckerGroup.id}
-            token={project.token ?? ""}
-            tokenSymbol={project.tokenSymbol ?? "ETH"}
-            tokenDecimals={project.decimals ?? NATIVE_TOKEN_DECIMALS}
+            token={project.token}
+            tokenSymbol={project.tokenSymbol ?? ""}
+            tokenDecimals={project.decimals}
           />
         </Suspense>
       )}

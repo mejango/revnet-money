@@ -6,11 +6,9 @@ export { netLoanProceeds } from "@bananapus/nana-sdk-core/v6/loan-math";
 export function generateFeeData({
   grossBorrowedEth,
   prepaidPercent,
-  fixedLoanFee = 0.035,
 }: {
   grossBorrowedEth: number;
   prepaidPercent: string;
-  fixedLoanFee?: number;
 }) {
   // Safety check for invalid inputs
   if (!grossBorrowedEth || grossBorrowedEth <= 0 || isNaN(grossBorrowedEth)) {
@@ -24,22 +22,20 @@ export function generateFeeData({
   const monthsToPrepay = (parseFloat(prepaidPercent) / 50) * 120;
   const prepaidDuration = monthsToPrepay / 12;
 
-  // Fixed fees (3.5%) come off the top
-  const fixedFee = grossBorrowedEth * fixedLoanFee;
-
   // Prepaid fee is applied to the gross borrowed amount
   const feeBpsBigInt = calcPrepaidFee(Math.round(monthsToPrepay));
   const feeBps = Number(feeBpsBigInt);
   const prepaidFee = (grossBorrowedEth * feeBps) / 10000;
 
-  // Amount user actually receives
-  const amountUserReceives = grossBorrowedEth - fixedFee - prepaidFee;
-
   // Amount user must repay to unlock collateral (the full borrowed amount)
   const borrowedAmount = grossBorrowedEth;
 
-  // Variable fees are calculated on the amount after fixed and prepaid fees
-  const decayingPortion = amountUserReceives;
+  // The ramp base is the BORROWED amount less the prepaid fee — not the amount the user
+  // receives. `REVLoansSourceFees.sourceFeeAmountFrom` ramps over `loan.amount - prepaid`
+  // (:43-53) and never subtracts the 3.5% fixed fee, which is taken from the payout at
+  // origination and is not part of the loan balance. Subtracting it here understated the max
+  // unlock cost by ~3.5% at the chart's right edge.
+  const decayingPortion = borrowedAmount - prepaidFee;
 
   const data = [];
 

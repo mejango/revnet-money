@@ -247,7 +247,36 @@ export function RepayDialog({
     return undefined;
   })();
 
-  // The ceiling the contract is authorized to pull; it charges principal + accrued fee and refunds the rest.
+  // The fee for THIS repayment, not for the whole loan. `repayLoan` computes
+  // `_determineSourceFeeAmount(loan, repayBorrowAmount)` and adds it on top
+  // (REVLoans.sol:984-987), so a partial repay owes a proportionally smaller fee than
+  // `accruedSourceFee` (which is quoted against the full principal).
+  const { data: feeForThisRepay } = useReadContract({
+    abi: revLoansAbi,
+    functionName: "determineSourceFeeAmount",
+    address: getRevnetLoanContract(6, chainId),
+    chainId,
+    args: loanData && exactRepayAmount !== undefined ? [loanData, exactRepayAmount] : undefined,
+    query: { enabled: !!loanData && exactRepayAmount !== undefined },
+  });
+
+  // What the wallet actually parts with: principal delta PLUS the fee charged on it. Showing
+  // the delta alone understated the cost — masked while full repays reverted, and exposed once
+  // the repay ceiling was corrected.
+  const amountToPayNow =
+    exactRepayAmount === undefined
+      ? undefined
+      : exactRepayAmount + (feeForThisRepay ?? 0n);
+
+  // The ceiling the contract is authorized to pull; it charges principal + accrued fee and
+  // refunds the rest.
+  //
+  // A partial repay still authorizes the WHOLE loan's ceiling, which is a real UX cost: to
+  // unlock 10% of the collateral the wallet must hold the entire principal. It is deliberately
+  // left that way. Scaling it to the partial amount requires `exactRepayAmount`, which comes
+  // FROM the simulation that this value feeds — so the allowance check, the simulation and the
+  // send would all have to move together or the allowance would pass below what the send
+  // pulls. The contract refunds the surplus, so this costs liquidity, never funds.
   const finalRepayAmount = repayCeiling;
 
   // ===== ALLOWANCE CHECKING =====
@@ -707,7 +736,14 @@ export function RepayDialog({
                           <tr>
                             <td className="pr-4">Amount to pay now:</td>
                             <td className="font-semibold text-right">
-                              {formatUnits(exactRepayAmount, baseTokenDecimals)} {baseTokenSymbol}
+                              {formatUnits(amountToPayNow ?? exactRepayAmount, baseTokenDecimals)}{" "}
+                              {baseTokenSymbol}
+                              {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
+                                <span className="block text-xs font-normal text-zinc-500">
+                                  includes {formatUnits(feeForThisRepay, baseTokenDecimals)}{" "}
+                                  {baseTokenSymbol} source fee
+                                </span>
+                              ) : null}
                             </td>
                           </tr>
                           <tr>
@@ -786,6 +822,9 @@ export function RepayDialog({
                   !collateralToReturn ||
                   Number(collateralToReturn) <= 0 ||
                   !!collateralError ||
+                  // The pre-send simulation is the ONLY thing standing between the user and a
+                  // known-failing transaction; without this they could click straight into it.
+                  (shouldRunSimulation && !!simulationError) ||
                   (isNativeBase === false && !hasSufficientAllowance)
                 }
               >

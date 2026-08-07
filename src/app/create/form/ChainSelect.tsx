@@ -47,29 +47,44 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
     }
   };
 
-  // If only one chain is selected, set the chainId for auto issuance to the selected chain
+  // With one chain selected, every auto-issuance row must target it — a row pointed at a chain
+  // the project will not launch on cannot be issued. The reassignment is therefore correct, but
+  // it used to happen with only a `console.debug`: the user's earlier per-chain intent
+  // disappeared silently, and re-adding chains did not bring it back. Count the rows moved so
+  // the UI can say so.
+  const [reassignedRows, setReassignedRows] = useState(0);
+
   useEffect(() => {
-    if (values.chainIds.length > 1) return;
+    if (values.chainIds.length > 1) {
+      setReassignedRows(0);
+      return;
+    }
 
     const chainId = values.chainIds[0];
     if (!chainId) return;
 
+    let moved = 0;
     values.stages.forEach((stage, stageIndex) => {
       stage.autoIssuance.forEach((issuance, index) => {
         if (issuance.chainId !== chainId && issuance.amount && issuance.beneficiary) {
-          console.debug(
-            `Setting chainId for auto issuance (${stageIndex + 1}.${index + 1}) to ${chainId}`,
-          );
-
+          moved += 1;
           setFieldValue(`stages.${stageIndex}.autoIssuance.${index}.chainId`, chainId);
         }
       });
     });
+    if (moved) setReassignedRows((previous) => previous + moved);
   }, [values.chainIds, values.stages, setFieldValue]);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="text-black-500 text-left font-semibold">Choose your chains</div>
+      {reassignedRows > 0 ? (
+        <p className="text-xs text-amber-700">
+          {reassignedRows} auto-issuance {reassignedRows === 1 ? "row was" : "rows were"} moved to
+          the only selected chain. Re-adding chains will not restore the previous targets —
+          set them again on the stage.
+        </p>
+      ) : null}
       <div className="max-w-56">
         <Select
           onValueChange={(v) => {

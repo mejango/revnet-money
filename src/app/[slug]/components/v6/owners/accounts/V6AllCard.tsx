@@ -10,7 +10,7 @@ import { formatTokenSymbol } from "@/lib/utils";
 import { formatUnits } from "@bananapus/nana-sdk-core";
 import { ParticipantsPieChart } from "../../../../owners/components/ParticipantsPieChart";
 import { ParticipantsTable } from "../../../../owners/components/ParticipantsTable";
-import { aggregateParticipants } from "./participantsAggregate";
+import { aggregateParticipants, participantVolumeIsComparable } from "./participantsAggregate";
 
 /**
  * "All" card (website/ parity: renderOwnersAll): the holder distribution pie +
@@ -42,6 +42,11 @@ export function V6AllCard() {
     ? (chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token))
     : undefined;
   const baseTokenDecimals = chainTokenConfig?.decimals;
+  // `participant.volume` is denominated in each chain's OWN accounting token, so a group mixing
+  // ETH and USDC cannot be summed into one figure under one symbol.
+  const volumeComparable = participantVolumeIsComparable(
+    suckerGroupData?.suckerGroup?.projects?.items ?? [],
+  );
 
   const participantsQuery = useCompleteParticipants(
     {
@@ -89,6 +94,7 @@ export function V6AllCard() {
               totalSupply={totalOutstandingTokens}
               baseTokenSymbol={baseTokenSymbol}
               baseTokenDecimals={baseTokenDecimals}
+              volumeComparable={volumeComparable}
               condensed
             />
           ) : null}

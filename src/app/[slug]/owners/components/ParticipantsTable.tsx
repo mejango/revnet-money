@@ -33,6 +33,7 @@ export function ParticipantsTable({
   totalSupply,
   baseTokenSymbol = "ETH",
   baseTokenDecimals = 18,
+  volumeComparable = true,
   condensed = false,
   pageSize = PARTICIPANTS_PAGE_SIZE,
 }: {
@@ -41,6 +42,9 @@ export function ParticipantsTable({
   totalSupply: bigint;
   baseTokenSymbol?: string;
   baseTokenDecimals?: number;
+  /** False when the group's chains use different accounting tokens — see
+   *  participantVolumeIsComparable. The column is suppressed rather than summed. */
+  volumeComparable?: boolean;
   condensed?: boolean;
   pageSize?: number;
 }) {
@@ -73,7 +77,7 @@ export function ParticipantsTable({
             <TableHead className="w-auto md:w-1/2">Account</TableHead>
             <TableHead>{condensed ? "Share" : "Balance"}</TableHead>
             <TableHead>Chains</TableHead>
-            <TableHead>Paid</TableHead>
+            {volumeComparable ? <TableHead>Paid</TableHead> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -143,12 +147,14 @@ export function ParticipantsTable({
                   ))}
                 </div>
               </TableCell>
-              <TableCell className="whitespace-nowrap">
-                {formatUnits(BigInt(participant.volume), baseTokenDecimals, {
-                  fractionDigits: 3,
-                })}{" "}
-                {baseTokenSymbol}
-              </TableCell>
+              {volumeComparable ? (
+                <TableCell className="whitespace-nowrap">
+                  {formatUnits(BigInt(participant.volume), baseTokenDecimals, {
+                    fractionDigits: 3,
+                  })}{" "}
+                  {baseTokenSymbol}
+                </TableCell>
+              ) : null}
             </TableRow>
           ))}
         </TableBody>

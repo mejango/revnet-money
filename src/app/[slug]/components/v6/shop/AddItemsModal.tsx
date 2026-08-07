@@ -425,7 +425,9 @@ export function AddItemsModal({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["v6Shop721", chainId, projectId.toString()] }),
         queryClient.invalidateQueries({ queryKey: ["v6PayShop", chainId, projectId.toString()] }),
-        queryClient.invalidateQueries({ queryKey: ["v6Shop721Media", chainId, shop.hook] }),
+        // shopLib keys tier media as "v6Shop721TierMedia"; this prefix matched nothing, so
+        // media never refreshed after items were added.
+        queryClient.invalidateQueries({ queryKey: ["v6Shop721TierMedia", chainId, shop.hook] }),
       ]);
       setPhase("done");
     } catch (err) {

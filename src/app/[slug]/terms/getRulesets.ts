@@ -52,7 +52,11 @@ const readRulesets = async (
  * rather than re-reading the chain every few minutes.
  */
 const cachedRulesets = unstable_cache(readRulesets, ["rulesets-with-base-currency"], {
-  revalidate: false,
+  // Ruleset LISTS are immutable only for revnets, whose stages are fixed at deploy. This app also
+  // renders ordinary projects, whose owner can queue a new ruleset at any time — caching those
+  // forever left Terms and stages permanently stale ACROSS SESSIONS. Persisted-but-revalidating
+  // is correct for both: a revnet's list simply never differs on revalidation.
+  revalidate: 60,
 });
 
 export async function getRulesets(

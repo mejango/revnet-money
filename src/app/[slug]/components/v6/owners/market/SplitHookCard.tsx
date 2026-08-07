@@ -16,7 +16,13 @@ import {
   explorerAddressUrl,
   fmtUnits,
 } from "../settlement/lib";
-import { fetchSplitHookStates, lpSplitHookAbi, SplitHookChainState } from "./lib";
+import {
+  deployPoolArity,
+  deployPoolSingleArgAbi,
+  fetchSplitHookStates,
+  lpSplitHookAbi,
+  SplitHookChainState,
+} from "./lib";
 import { PERSIST } from "@/lib/query-persist";
 
 /** Simulate-first write against the LP split hook on its chain. */
@@ -52,12 +58,24 @@ function HookActionButton({
         try {
           setBusy(true);
           if (!publicClient) throw new Error("Public client unavailable.");
+          // Two hook generations are live during the lp-split-hook rollout and their
+          // `deployPool` selectors differ. Ask the deployed bytecode which one it has rather
+          // than hard-coding one and reverting at simulate on the other.
+          let callAbi: readonly unknown[] = lpSplitHookAbi;
+          let callArgs = args;
+          if (functionName === "deployPool") {
+            const arity = await deployPoolArity(publicClient, state.hook);
+            if (arity === 1) {
+              callAbi = deployPoolSingleArgAbi;
+              callArgs = [args[0]] as unknown as typeof args;
+            }
+          }
           const sim = await publicClient?.simulateContract({
             account: address,
             address: state.hook,
-            abi: lpSplitHookAbi,
+            abi: callAbi as never,
             functionName,
-            args: args as never,
+            args: callArgs as never,
           });
           if (!sim) throw new Error("Could not simulate the transaction.");
           const hash = await writeContractAsync(sim.request);

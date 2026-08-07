@@ -499,6 +499,81 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     }
   }, []);
 
+  /**
+   * Ensure REVLoans holds BURN_TOKENS for this account+project, granting it if not.
+   *
+   * Shared by BOTH submit paths. The reallocation branch used to skip it entirely, so a
+   * reallocation that ADDS collateral hit a simulation failure with no grant step offered and
+   * no way forward from this UI — the standard borrow path had the step all along.
+   *
+   * Returns true when the caller may proceed. A false return has already set status and
+   * toasted, including the Safe-proposal-pending case.
+   */
+  const ensureBurnTokensPermission = async (): Promise<boolean> => {
+    if (!publicClient || !address || !cashOutChainId || !resolvedPermissionsAddress) {
+      setBorrowStatus("error");
+      return false;
+    }
+        // Read permission live at submission time. The indexer can lag a newly
+        // granted permission, and treating an unresolved query as `false`
+        // would prompt an unnecessary approval. Loans need BURN_TOKENS (11),
+        // never the much broader ROOT permission (1).
+        const hasBorrowPermission = await hasPermissions(publicClient, {
+          chainId: Number(cashOutChainId) as JBChainId,
+          operator: revLoansContractAddress,
+          account: address,
+          projectId: effectiveProjectId,
+          permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
+        });
+        if (!hasBorrowPermission) {
+          setBorrowStatus("granting-permission");
+          try {
+            const txHash = await permissionWriteAsync({
+              chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
+              account: address,
+              address: resolvedPermissionsAddress,
+              abi: jbPermissionsAbi,
+              functionName: "setPermissionsFor",
+              args: [
+                address,
+                {
+                  operator: revLoansContractAddress,
+                  projectId: effectiveProjectId,
+                  permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
+                },
+              ],
+            });
+            requireOnchainExecution(txHash, "Borrow permission grant");
+            const permissionReceipt = await publicClient.waitForTransactionReceipt({
+              hash: txHash,
+            });
+            if (permissionReceipt.status !== "success") {
+              throw new Error(`Permission grant ${txHash} reverted onchain.`);
+            }
+            setBorrowStatus("permission-granted");
+          } catch (err) {
+            if (isSafeProposalPendingError(err)) {
+              setBorrowStatus("pending");
+              toast({
+                title: "Safe permission proposal submitted",
+                description: err.message,
+              });
+              return false;
+            }
+            setBorrowStatus("error-permission-denied");
+            toast({
+              variant: "destructive",
+              title: "Permission Denied",
+              description: "Permission was not granted. Please approve to proceed.",
+            });
+            return false;
+          }
+        } else {
+          setBorrowStatus("permission-granted");
+        }
+    return true;
+  };
+
   const handleBorrow = useCallback(async () => {
     // Get token configuration for the selected chain
     const selectedChainTokenConfig = cashOutChainId ? tokenConfigForChain(cashOutChainId) : null;
@@ -546,6 +621,11 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         });
         return;
       }
+
+      // Adding collateral burns project tokens, exactly as the standard borrow path does, so
+      // it needs the same BURN_TOKENS grant. Skipping this left the user at a simulation
+      // failure with no grant step offered.
+      if (collateralCountToAdd > 0n && !(await ensureBurnTokensPermission())) return;
 
       try {
         if (!publicClient) {
@@ -603,63 +683,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         }
 
         const feeBasisPoints = Math.round(parseFloat(prepaidPercent) * 10);
-        // Read permission live at submission time. The indexer can lag a newly
-        // granted permission, and treating an unresolved query as `false`
-        // would prompt an unnecessary approval. Loans need BURN_TOKENS (11),
-        // never the much broader ROOT permission (1).
-        const hasBorrowPermission = await hasPermissions(publicClient, {
-          chainId: Number(cashOutChainId) as JBChainId,
-          operator: revLoansContractAddress,
-          account: address,
-          projectId: effectiveProjectId,
-          permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
-        });
-        if (!hasBorrowPermission) {
-          setBorrowStatus("granting-permission");
-          try {
-            const txHash = await permissionWriteAsync({
-              chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
-              account: address,
-              address: resolvedPermissionsAddress,
-              abi: jbPermissionsAbi,
-              functionName: "setPermissionsFor",
-              args: [
-                address,
-                {
-                  operator: revLoansContractAddress,
-                  projectId: effectiveProjectId,
-                  permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
-                },
-              ],
-            });
-            requireOnchainExecution(txHash, "Borrow permission grant");
-            const permissionReceipt = await publicClient.waitForTransactionReceipt({
-              hash: txHash,
-            });
-            if (permissionReceipt.status !== "success") {
-              throw new Error(`Permission grant ${txHash} reverted onchain.`);
-            }
-            setBorrowStatus("permission-granted");
-          } catch (err) {
-            if (isSafeProposalPendingError(err)) {
-              setBorrowStatus("pending");
-              toast({
-                title: "Safe permission proposal submitted",
-                description: err.message,
-              });
-              return;
-            }
-            setBorrowStatus("error-permission-denied");
-            toast({
-              variant: "destructive",
-              title: "Permission Denied",
-              description: "Permission was not granted. Please approve to proceed.",
-            });
-            return;
-          }
-        } else {
-          setBorrowStatus("permission-granted");
-        }
+        if (!(await ensureBurnTokensPermission())) return;
 
         // collateralBigInt should be in project token decimals, not base token decimals
         const collateralBigInt = parseUnits(collateralAmount, projectTokenDecimals);

@@ -49,6 +49,7 @@ import {
   Hex,
   parseAbiItem,
   PublicClient,
+  toFunctionSelector,
   zeroAddress,
 } from "viem";
 import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
@@ -1457,6 +1458,9 @@ export const lpSplitHookAbi = [
     ],
     outputs: [{ type: "int24" }],
   },
+  // The DEPLOYED hook's signature. `univ4-lp-split-hook-v6` HEAD (and the staged npm pin) drop
+  // the second argument, which changes the selector — see deployPoolAbiFor below, which picks
+  // the right one instead of letting the button die with an opaque simulate revert.
   {
     type: "function",
     name: "deployPool",
@@ -1730,4 +1734,57 @@ export async function fetchSplitHookStates(chains: ChainProject[]): Promise<Spli
     }),
   );
   return states.filter((s): s is SplitHookChainState => s !== null);
+}
+
+/** `deployPool(uint256)` — the next hook generation, which drops `minCashOutReturn`. */
+export const deployPoolSingleArgAbi = [
+  {
+    type: "function",
+    name: "deployPool",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "projectId", type: "uint256" }],
+    outputs: [],
+  },
+] as const;
+
+/**
+ * Which `deployPool` the hook at `hookAddress` actually exposes.
+ *
+ * Two generations are live at once during the lp-split-hook rollout:
+ * `deployPool(uint256,uint256)` (deployed today) and `deployPool(uint256)` (HEAD + the staged
+ * npm pin). Different arity means a DIFFERENT SELECTOR, so calling the wrong one reverts at
+ * simulate with nothing to explain why.
+ *
+ * Solidity emits every external selector as a PUSH4 immediate in the dispatch table, so the
+ * deployed bytecode answers this directly — one cached read, no revert-classification
+ * guesswork and no simulating a write twice. Falls back to the two-argument form (what is
+ * deployed today) when the code cannot be read.
+ */
+const deployPoolArityCache = new Map<string, 1 | 2>();
+
+export async function deployPoolArity(
+  client: { getCode: (args: { address: `0x${string}` }) => Promise<`0x${string}` | undefined> },
+  hookAddress: `0x${string}`,
+): Promise<1 | 2> {
+  const key = hookAddress.toLowerCase();
+  const cached = deployPoolArityCache.get(key);
+  if (cached) return cached;
+  let arity: 1 | 2 = 2;
+  try {
+    const code = await client.getCode({ address: hookAddress });
+    if (code && code !== "0x") {
+      const body = code.toLowerCase();
+      const singleArg = toFunctionSelector("deployPool(uint256)").slice(2);
+      const twoArg = toFunctionSelector("deployPool(uint256,uint256)").slice(2);
+      const hasSingle = body.includes(singleArg);
+      const hasTwo = body.includes(twoArg);
+      // Only decide when exactly one is present; ambiguity keeps the deployed default.
+      if (hasSingle && !hasTwo) arity = 1;
+      else if (hasTwo && !hasSingle) arity = 2;
+    }
+  } catch {
+    // Unreadable code — keep the currently deployed signature.
+  }
+  deployPoolArityCache.set(key, arity);
+  return arity;
 }

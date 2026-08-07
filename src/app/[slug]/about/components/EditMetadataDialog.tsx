@@ -446,13 +446,16 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                       autoComplete="off"
                       inputMode="url"
                     />
-                    {/* <FieldGroup
+                    {/* Restored: `metadataMerge` treats farcaster as editor-managed, so with
+                        the field commented out an existing value could not be changed or
+                        removed from ANY path in the UI. */}
+                    <FieldGroup
                       id="farcaster"
                       name="farcaster"
                       label="Farcaster"
                       placeholder="username..."
                       autoComplete="off"
-                    /> */}
+                    />
                   </div>
 
                   <FieldGroup

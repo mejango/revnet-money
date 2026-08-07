@@ -101,16 +101,17 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     (chainId: string) => {
       const selected = balances?.find((b: any) => b.chainId === Number(chainId));
       if (selected) {
-        const collateral = formatUnits(selected.balance.value, projectTokenDecimals);
         setSelectedChainId(Number(chainId));
         setCashOutChainId(chainId);
-        setCollateralAmount(collateral);
+        // Clear, not pre-fill. Pre-filling the FULL balance here contradicted the auto-select
+        // effect below, which deliberately leaves the amount empty so that picking a sensible
+        // chain does not silently opt the holder into collateralizing everything they hold.
+        setCollateralAmount("");
         setInternalSelectedLoan(null);
       }
     },
     [
       balances,
-      projectTokenDecimals,
       setSelectedChainId,
       setCashOutChainId,
       setCollateralAmount,

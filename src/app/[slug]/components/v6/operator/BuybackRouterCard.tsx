@@ -558,8 +558,25 @@ function BuybackActionForm({
         if (poolValues.tickSpacing < 1 || poolValues.tickSpacing > 0x7fffff) {
           throw new Error("Tick spacing must be a positive int24 value.");
         }
-        if (poolValues.twapWindow < 1n || poolValues.twapWindow > 0xffffffffn) {
-          throw new Error("TWAP window must be between 1 and 4,294,967,295 seconds.");
+        // The hook's own bounds, not uint32's. The old range accepted windows the hook
+        // rejects, so an operator could submit one that reverts at execution.
+        if (
+          poolValues.twapWindow < BigInt(MIN_TWAP_WINDOW) ||
+          poolValues.twapWindow > BigInt(MAX_TWAP_WINDOW)
+        ) {
+          throw new Error(
+            `The hook only accepts a TWAP window between ${MIN_TWAP_WINDOW} and ${MAX_TWAP_WINDOW} seconds.`,
+          );
+        }
+        // Registering with EXACTLY MAX_TWAP_WINDOW stores the 30-minute default instead
+        // (JBBuybackHook.sol:140-148) — immutable deployers bake MAX in as a sentinel meaning
+        // "no preference". Asking for MAX here silently gets 30 minutes, so say so rather than
+        // let the operator believe they set 2 days.
+        if (poolValues.twapWindow === BigInt(MAX_TWAP_WINDOW)) {
+          throw new Error(
+            `A pool registered with exactly ${MAX_TWAP_WINDOW}s stores the hook's 30-minute default instead (it is the "no preference" sentinel). ` +
+              `Use ${MAX_TWAP_WINDOW - 1} for the longest real window, or set 1800 deliberately.`,
+          );
         }
         if (poolValues.sqrtPriceX96 <= 0n || poolValues.sqrtPriceX96 >= 2n ** 160n) {
           throw new Error("Initial price must be a positive uint160 value.");

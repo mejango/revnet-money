@@ -118,6 +118,13 @@ describe("contract-derived monetary display math", () => {
     expect(points[0]).toEqual({ year: 0, totalCost: 100 });
     expect(points.at(-1)).toMatchObject({ year: 10 });
     expect(points.at(-1)?.totalCost).toBeGreaterThan(points[0].totalCost);
+    // Near liquidation with no prepayment the source fee approaches 100% of
+    // `loan.amount - prepaid` (REVLoansSourceFees.sol:43-53) — the full principal again. The
+    // ramp used to run over the amount NET of the 3.5% fixed fee (which is taken from the
+    // payout at origination and is not part of the loan balance), landing at ~196.3 and
+    // understating the max unlock cost.
+    expect(points.at(-1)?.totalCost).toBeGreaterThan(199);
+    expect(points.at(-1)?.totalCost).toBeLessThanOrEqual(200);
     expect(
       points.every((point, index) => index === 0 || point.totalCost >= points[index - 1].totalCost),
     ).toBe(true);
