@@ -43,3 +43,24 @@ export function currentOutstandingLoanFee({
 export function repayCeilingFor(principal: bigint, accruedSourceFee: bigint): bigint {
   return principal + accruedSourceFee + principal / 1_000n;
 }
+
+/**
+ * The principal a repay will actually pay off, mirroring `REVLoans.repayLoan`.
+ *
+ * The contract re-values the collateral being KEPT and repays the difference:
+ *   `newBorrowAmount = borrowableAmountFrom(revnetId, collateral - returned).capacity`
+ *   `repayBorrowAmount = loan.amount - newBorrowAmount`      (REVLoans.sol:951-970)
+ * Zero remaining capacity is treated as a full repay, and all collateral is returned (:957-960).
+ *
+ * Deriving this from chain views rather than from a `repayLoan` simulation is what lets the
+ * ceiling be scaled to a PARTIAL repay: the simulation takes the ceiling as an input, so
+ * reading the amount back out of it is circular.
+ */
+export function repayPrincipalFor(
+  loanAmount: bigint,
+  remainingBorrowCapacity: bigint,
+): bigint {
+  if (remainingBorrowCapacity === 0n) return loanAmount;
+  if (remainingBorrowCapacity >= loanAmount) return 0n;
+  return loanAmount - remainingBorrowCapacity;
+}

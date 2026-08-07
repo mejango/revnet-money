@@ -2,6 +2,7 @@ import {
   currentOutstandingLoanFee,
   LOAN_LIQUIDATION_DURATION,
   repayCeilingFor,
+  repayPrincipalFor,
 } from "@/lib/loanFees";
 import { describe, expect, it } from "vitest";
 
@@ -75,5 +76,39 @@ describe("repayCeilingFor", () => {
     );
     // Dust loans round the buffer to zero, but the ceiling must never fall UNDER principal + fee.
     expect(repayCeilingFor(5n, 1n)).toBeGreaterThanOrEqual(6n);
+  });
+});
+
+// `repayLoan` re-values the collateral the borrower KEEPS and repays the difference
+// (REVLoans.sol:951-970). Deriving this from chain views rather than from a `repayLoan`
+// simulation is what lets a partial repay authorize only what it will actually pull — the
+// simulation takes the ceiling as an input, so reading the amount back out of it is circular.
+describe("repayPrincipalFor", () => {
+  const loan = 1_000n;
+
+  it("repays the whole loan when the remaining collateral borrows nothing", () => {
+    // The contract treats zero remaining capacity as a full repay and returns all collateral.
+    expect(repayPrincipalFor(loan, 0n)).toBe(loan);
+  });
+
+  it("repays only the difference for a partial return", () => {
+    // Keeping collateral worth 900 leaves 900 outstanding; 100 is paid off.
+    expect(repayPrincipalFor(loan, 900n)).toBe(100n);
+  });
+
+  it("scales the ceiling with the amount repaid, not the loan", () => {
+    // The whole point: a tenth of the debt must not require authorizing the whole principal.
+    const partial = repayCeilingFor(repayPrincipalFor(loan, 900n), 1n);
+    const full = repayCeilingFor(repayPrincipalFor(loan, 0n), 10n);
+    expect(partial).toBeLessThan(full);
+    // principal 100 + fee 1 + buffer (100/1000 = 0) — the buffer scales with the amount too.
+    expect(partial).toBe(101n);
+  });
+
+  it("returns zero when the kept collateral still covers the whole loan", () => {
+    // A no-op repay; the contract reverts with REVLoans_NothingToRepay when collateral is also
+    // zero, so the UI must not present this as a payable amount.
+    expect(repayPrincipalFor(loan, loan)).toBe(0n);
+    expect(repayPrincipalFor(loan, loan + 500n)).toBe(0n);
   });
 });

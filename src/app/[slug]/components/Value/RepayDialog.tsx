@@ -14,7 +14,7 @@ import {
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
-import { repayCeilingFor } from "@/lib/loanFees";
+import { repayCeilingFor, repayPrincipalFor } from "@/lib/loanFees";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
@@ -151,12 +151,94 @@ export function RepayDialog({
     }
   };
 
+  // ===== WHAT THIS REPAYMENT ACTUALLY COSTS =====
+  //
+  // Derived from the same two views `repayLoan` uses, NOT from the simulation. The simulation
+  // takes the ceiling as an input, so deriving the ceiling from it is circular — and a
+  // half-applied version lets the allowance pass below what the send pulls.
+  //
+  //   newBorrowAmount = borrowableAmountFrom(revnetId, collateral - returned).capacity
+  //   repayPrincipal  = loan.amount - newBorrowAmount           (REVLoans.sol:951-970)
+  //   fee             = determineSourceFeeAmount(loan, repayPrincipal)   (:984)
+  //   owed            = repayPrincipal + fee                             (:987)
+  //
+  // `maxRepayBorrowAmount` must cover `owed`; the contract refunds the surplus (:1023-1031).
+  const collateralToReturnWei = loanData
+    ? calculateCollateralAmount(collateralToReturn, loanData.collateral)
+    : undefined;
+
+  // The contract reads the ECONOMIC capacity of the collateral left behind — the second
+  // tuple member, not `borrowableNow`, which nets off the live treasury balance.
+  const { data: remainingBorrowable } = useReadContract({
+    abi: revLoansAbi,
+    functionName: "borrowableAmountFrom",
+    address: getRevnetLoanContract(6, chainId),
+    chainId,
+    args:
+      loanData && collateralToReturnWei !== undefined && chainTokenConfig
+        ? [
+            projectId,
+            loanData.collateral - collateralToReturnWei,
+            BigInt(chainTokenConfig.decimals),
+            BigInt(chainTokenConfig.currency),
+          ]
+        : undefined,
+    query: {
+      enabled: !!loanData && collateralToReturnWei !== undefined && !!chainTokenConfig,
+    },
+  });
+
+  const repayPrincipal = useMemo(() => {
+    if (!loanData || remainingBorrowable === undefined) return undefined;
+    return repayPrincipalFor(loanData.amount, remainingBorrowable[1]);
+  }, [loanData, remainingBorrowable]);
+
+  // The fee for THIS repayment, not for the whole loan. `repayLoan` computes
+  // `_determineSourceFeeAmount(loan, repayBorrowAmount)` and adds it on top
+  // (REVLoans.sol:984-987), so a partial repay owes a proportionally smaller fee than
+  // `accruedSourceFee` (which is quoted against the full principal).
+  const { data: feeForThisRepay } = useReadContract({
+    abi: revLoansAbi,
+    functionName: "determineSourceFeeAmount",
+    address: getRevnetLoanContract(6, chainId),
+    chainId,
+    args: loanData && repayPrincipal !== undefined ? [loanData, repayPrincipal] : undefined,
+    query: { enabled: !!loanData && repayPrincipal !== undefined },
+  });
+
+  // What the wallet actually parts with: the principal repaid PLUS the fee charged on it.
+  // Showing the principal alone understated the cost.
+  const amountToPayNow =
+    repayPrincipal === undefined || feeForThisRepay === undefined
+      ? undefined
+      : repayPrincipal + feeForThisRepay;
+
+  // The ceiling the contract is authorized to pull, scaled to THIS repayment.
+  //
+  // Authorizing the whole loan meant that unlocking 10% of the collateral still required the
+  // wallet to hold the entire principal. Both the fee and the buffer are proportional to the
+  // amount repaid — `_determineSourceFeeAmount` charges pro-rata on `amount`
+  // (REVLoansSourceFees.sol:55), so a tenth of the debt accrues a tenth of the fee and needs a
+  // tenth of the padding — which is what makes scaling safe rather than merely smaller.
+  //
+  // Falls back to the whole-loan ceiling until both reads resolve. That is the conservative
+  // direction: over-authorizing is refunded, under-authorizing reverts.
+  //
+  // And under-authorizing FAILS CLOSED rather than costing anything: `repayLoan` reverts with
+  // `REVLoans_OverMaxRepayBorrowAmount` (REVLoans.sol:1001-1005), so a short ceiling shows up
+  // as a simulation error and the button is already disabled on that. The derivation is
+  // checked against the contract on every render, not trusted.
+  const finalRepayAmount = useMemo(() => {
+    if (repayPrincipal === undefined || feeForThisRepay === undefined) return repayCeiling;
+    return repayCeilingFor(repayPrincipal, feeForThisRepay);
+  }, [repayPrincipal, feeForThisRepay, repayCeiling]);
+
   // Simulation arguments - only run once the token config resolved and, for
   // ERC-20 base tokens, the allowance is sufficient.
   const shouldRunSimulation =
     !isLoadingLoan &&
     loanData &&
-    repayCeiling !== undefined &&
+    finalRepayAmount !== undefined &&
     collateralToReturn &&
     userAddress &&
     !!chainTokenConfig &&
@@ -166,7 +248,7 @@ export function RepayDialog({
   const simulationArgs = shouldRunSimulation
     ? [
         BigInt(loanId),
-        repayCeiling, // principal + accrued source fee + buffer; the contract refunds the rest
+        finalRepayAmount, // this repayment's principal + fee + buffer; the surplus is refunded
         calculateCollateralAmount(collateralToReturn, loanData.collateral),
         userAddress as Address,
         {
@@ -180,12 +262,13 @@ export function RepayDialog({
       ]
     : undefined;
 
-  // Always call the hook, but pass undefined args when we shouldn't simulate
-  const {
-    data: simulationResult,
-    isLoading: isSimulating,
-    error: simulationError,
-  } = useSimulateContract({
+  // Always call the hook, but pass undefined args when we shouldn't simulate.
+  //
+  // The RESULT is no longer read — displayed amounts are derived from the same views the
+  // contract uses (see above), so they match what the transaction was actually built from.
+  // What matters here is the ERROR: it is the live check that the derived ceiling covers what
+  // `repayLoan` will pull, and the button is disabled while it is set.
+  const { isLoading: isSimulating, error: simulationError } = useSimulateContract({
     abi: revLoansAbi,
     functionName: "repayLoan",
     address: getRevnetLoanContract(6, chainId),
@@ -206,78 +289,10 @@ export function RepayDialog({
             },
           ])
         : undefined,
-    value: isNativeBase ? repayCeiling : 0n, // Only send native value for native-base projects
+    value: isNativeBase ? finalRepayAmount : 0n, // Only send native value for native-base projects
   });
 
-  // Extract the exact amount from simulation result for display purposes only
-  const exactRepayAmount = (() => {
-    if (!simulationResult?.result) return undefined;
 
-    // Try to extract amount from simulation result
-    if (Array.isArray(simulationResult.result) && simulationResult.result.length >= 2) {
-      const remainingLoanAmount = simulationResult.result[1]?.amount;
-
-      if (remainingLoanAmount !== undefined && loanData) {
-        // Calculate payment amount: original loan - remaining loan
-        const paymentAmount = loanData.amount - BigInt(remainingLoanAmount);
-        return paymentAmount;
-      }
-      return undefined;
-    }
-
-    // Try direct result if it's not an array
-    if (
-      simulationResult.result &&
-      typeof simulationResult.result === "object" &&
-      "amount" in simulationResult.result
-    ) {
-      const remainingLoanAmount = simulationResult.result.amount;
-      if (
-        remainingLoanAmount !== undefined &&
-        loanData &&
-        (typeof remainingLoanAmount === "string" ||
-          typeof remainingLoanAmount === "number" ||
-          typeof remainingLoanAmount === "bigint")
-      ) {
-        const paymentAmount = loanData.amount - BigInt(remainingLoanAmount);
-        return paymentAmount;
-      }
-    }
-
-    return undefined;
-  })();
-
-  // The fee for THIS repayment, not for the whole loan. `repayLoan` computes
-  // `_determineSourceFeeAmount(loan, repayBorrowAmount)` and adds it on top
-  // (REVLoans.sol:984-987), so a partial repay owes a proportionally smaller fee than
-  // `accruedSourceFee` (which is quoted against the full principal).
-  const { data: feeForThisRepay } = useReadContract({
-    abi: revLoansAbi,
-    functionName: "determineSourceFeeAmount",
-    address: getRevnetLoanContract(6, chainId),
-    chainId,
-    args: loanData && exactRepayAmount !== undefined ? [loanData, exactRepayAmount] : undefined,
-    query: { enabled: !!loanData && exactRepayAmount !== undefined },
-  });
-
-  // What the wallet actually parts with: principal delta PLUS the fee charged on it. Showing
-  // the delta alone understated the cost — masked while full repays reverted, and exposed once
-  // the repay ceiling was corrected.
-  const amountToPayNow =
-    exactRepayAmount === undefined
-      ? undefined
-      : exactRepayAmount + (feeForThisRepay ?? 0n);
-
-  // The ceiling the contract is authorized to pull; it charges principal + accrued fee and
-  // refunds the rest.
-  //
-  // A partial repay still authorizes the WHOLE loan's ceiling, which is a real UX cost: to
-  // unlock 10% of the collateral the wallet must hold the entire principal. It is deliberately
-  // left that way. Scaling it to the partial amount requires `exactRepayAmount`, which comes
-  // FROM the simulation that this value feeds — so the allowance check, the simulation and the
-  // send would all have to move together or the allowance would pass below what the send
-  // pulls. The contract refunds the surplus, so this costs liquidity, never funds.
-  const finalRepayAmount = repayCeiling;
 
   // ===== ALLOWANCE CHECKING =====
   // Check allowance for non-ETH base tokens
@@ -310,7 +325,7 @@ export function RepayDialog({
           args: [userAddress as Address, revLoansContractAddress as Address],
         });
 
-        if (repayCeiling === undefined || BigInt(allowance) < repayCeiling) {
+        if (finalRepayAmount === undefined || BigInt(allowance) < finalRepayAmount) {
           setHasSufficientAllowance(false);
           setAllowanceError(
             "To calculate your repayment cost, we need permission for this loan. You will not be charged until you confirm repayment.",
@@ -328,9 +343,9 @@ export function RepayDialog({
     };
 
     checkAllowance();
-    // `repayCeiling` is a dependency: it resolves asynchronously with the source-fee read, and the
+    // `finalRepayAmount` is a dependency: it resolves asynchronously with the source-fee read, and the
     // allowance must be judged against the amount the contract will actually pull, not the principal.
-  }, [loanData, userAddress, publicClient, chainTokenConfig, chainId, repayCeiling]);
+  }, [loanData, userAddress, publicClient, chainTokenConfig, chainId, finalRepayAmount]);
 
   // ===== EFFECTS =====
 
@@ -391,7 +406,7 @@ export function RepayDialog({
       !publicClient ||
       !walletClient ||
       !chainTokenConfig ||
-      repayCeiling === undefined
+      finalRepayAmount === undefined
     ) {
       return;
     }
@@ -407,7 +422,8 @@ export function RepayDialog({
         address: baseTokenAddress,
         abi: erc20Abi,
         functionName: "approve",
-        args: [revLoansContractAddress as Address, repayCeiling],
+        // Approve exactly what this repayment can pull, not the whole loan.
+        args: [revLoansContractAddress as Address, finalRepayAmount],
       });
 
       requireOnchainExecution(approveHash, "Token approval");
@@ -447,7 +463,7 @@ export function RepayDialog({
       !publicClient ||
       !walletClient ||
       !chainTokenConfig ||
-      repayCeiling === undefined
+      finalRepayAmount === undefined
     ) {
       toast({
         variant: "destructive",
@@ -461,7 +477,9 @@ export function RepayDialog({
       setRepayStatus("waiting-signature");
 
       const loanIdBigInt = BigInt(loanId);
-      const maxRepayBorrowAmount = repayCeiling;
+      // Same value the simulation and the allowance check used — all three move together, or
+      // the allowance passes below what the send pulls.
+      const maxRepayBorrowAmount = finalRepayAmount;
       const collateralCountToReturn = calculateCollateralAmount(
         collateralToReturn,
         loanData.collateral,
@@ -731,12 +749,12 @@ export function RepayDialog({
                           {collateralToReturn} {tokenSymbol}
                         </td>
                       </tr>
-                      {!isSimulating && !simulationError && exactRepayAmount && (
+                      {!isSimulating && !simulationError && amountToPayNow !== undefined && repayPrincipal !== undefined && (
                         <>
                           <tr>
                             <td className="pr-4">Amount to pay now:</td>
                             <td className="font-semibold text-right">
-                              {formatUnits(amountToPayNow ?? exactRepayAmount, baseTokenDecimals)}{" "}
+                              {formatUnits(amountToPayNow, baseTokenDecimals)}{" "}
                               {baseTokenSymbol}
                               {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
                                 <span className="block text-xs font-normal text-zinc-500">
@@ -749,7 +767,7 @@ export function RepayDialog({
                           <tr>
                             <td className="pr-4">Amount rolled into new loan id:</td>
                             <td className="font-semibold text-right">
-                              {formatUnits(loanData.amount - exactRepayAmount, baseTokenDecimals)}{" "}
+                              {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
                               {baseTokenSymbol}
                             </td>
                           </tr>
@@ -766,7 +784,7 @@ export function RepayDialog({
                 )}
                 {!isSimulating &&
                   !simulationError &&
-                  !exactRepayAmount &&
+                  amountToPayNow === undefined &&
                   !hasSufficientAllowance &&
                   isNativeBase === false && (
                     <p className="text-sm text-red-500 mt-2">
@@ -775,7 +793,7 @@ export function RepayDialog({
                   )}
                 {!isSimulating &&
                   !simulationError &&
-                  !exactRepayAmount &&
+                  amountToPayNow === undefined &&
                   (hasSufficientAllowance || isNativeBase) && (
                     <p className="text-sm text-zinc-500 mt-2">
                       Contract will calculate exact amounts
