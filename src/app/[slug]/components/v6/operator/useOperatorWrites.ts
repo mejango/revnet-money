@@ -6,6 +6,8 @@ import {
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { wagmiConfig } from "@/lib/wagmiConfig";
+import { getAccount } from "wagmi/actions";
 import { Address, encodeFunctionData } from "viem";
 import { ChainWrite, chainName, publicClientFor, runSequentialWrites } from "./operatorLib";
 
@@ -92,7 +94,15 @@ export function useOperatorWrites() {
     if (!quote) throw new Error("Relayr did not return a quote.");
 
     onProgress("Confirm the Relayr payment in your wallet…");
-    const hash = await sendRelayrTx(quote.payment_info[0]);
+    // Prefer paying on the chain the wallet is already connected to, rather than whichever
+    // option Relayr happens to list first — that billed operators on an arbitrary chain and
+    // forced a network switch. (The deploy flow offers a full picker; this headless sequence
+    // has no UI to host one, so it makes the sensible choice instead of an arbitrary one.)
+    const connectedChainId = getAccount(wagmiConfig).chainId;
+    const payment =
+      quote.payment_info.find((option) => option.chain === connectedChainId) ??
+      quote.payment_info[0];
+    const hash = await sendRelayrTx(payment);
     if (submittedViaSafe(hash)) {
       return { chains: writes.length, viaRelayr: true, safeProposal: true };
     }

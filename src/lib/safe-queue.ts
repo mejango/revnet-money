@@ -183,9 +183,25 @@ export async function submitSafeConfirmation(
   }
 }
 
+/**
+ * The signature bytes for one confirmation, or null when it contributes nothing.
+ *
+ * An exact 130-hex filter accepted ONLY 65-byte ECDSA signatures, silently dropping EIP-1271
+ * contract-signer confirmations — which are variable length. A Safe owned by a smart account
+ * therefore under-counted its own threshold and "Execute" never unlocked, even though the
+ * Safe app itself executed the same transaction fine.
+ */
 function signatureBytes(confirmation: SafeConfirmation): string | null {
   const signature = confirmation.signature?.replace(/^0x/, "");
-  if (signature) return /^[0-9a-fA-F]{130}$/.test(signature) ? signature : null;
+  if (signature) {
+    // Even-length hex of at least 65 bytes. ECDSA is exactly 130 chars; a contract signature
+    // is longer and carries its own v=0 marker.
+    return /^[0-9a-fA-F]+$/.test(signature) &&
+      signature.length % 2 === 0 &&
+      signature.length >= 130
+      ? signature
+      : null;
+  }
   if (!confirmation.owner) return null;
   return (
     confirmation.owner.replace(/^0x/, "").toLowerCase().padStart(64, "0") + "0".repeat(64) + "01"
@@ -207,9 +223,14 @@ export function usableSafeConfirmations(
       byOwner.set(key, confirmation);
     }
   }
-  return [...byOwner.values()].sort((a, b) =>
-    a.owner.toLowerCase().localeCompare(b.owner.toLowerCase()),
-  );
+  // Safe requires signatures in ASCENDING NUMERIC owner order; `localeCompare` sorts them as
+  // strings, which disagrees whenever hex digits and letters interleave (e.g. 0x9… vs 0xa…)
+  // and yields GS026 at execution.
+  return [...byOwner.values()].sort((a, b) => {
+    const left = BigInt(a.owner);
+    const right = BigInt(b.owner);
+    return left === right ? 0 : left < right ? -1 : 1;
+  });
 }
 
 export function safeExecutionArgs(tx: SafeQueuedTransaction, allowedOwners?: readonly Address[]) {
