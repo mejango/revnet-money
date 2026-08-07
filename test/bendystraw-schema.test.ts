@@ -50,7 +50,15 @@ async function liveSchema(endpoint: string) {
 // Entries can be scoped to an endpoint while a schema is rolling out. The
 // contract FAILS as soon as that endpoint serves the field, so exceptions
 // cannot quietly rot after the rollout lands there.
-const PENDING_SCHEMA_FIELDS: Array<{ field: string; endpoint: string; reason: string }> = [];
+const PENDING_SCHEMA_FIELDS: Array<{ field: string; endpoint: string; reason: string }> =
+  ENDPOINTS.map((endpoint) => ({
+    endpoint,
+    field: "accountingTokenUsdRate",
+    reason:
+      "peripheralist/bendystraw#25 — per-point USD rate on suckerGroupMoment and swapEvent. " +
+      "The *-with-rate operations are tried first and fall back to their un-rated twins, so " +
+      "shipping them ahead of the indexer is safe; they start being used when it deploys.",
+  }));
 
 describe("live Bendystraw schema contract", () => {
   it.each(ENDPOINTS)(
@@ -61,9 +69,13 @@ describe("live Bendystraw schema contract", () => {
         validate(schema, parse(registered.query)).map((error) => `${id}: ${error.message}`),
       );
 
-      const live = new Set(Object.keys(schema.getQueryType()?.getFields() ?? {}));
       const pending = PENDING_SCHEMA_FIELDS.filter((entry) => entry.endpoint === endpoint);
-      const shipped = pending.filter(({ field }) => live.has(field));
+      // Shipped = the field no longer fails validation. Checking the root-query field set
+      // instead would never fire for a NESTED field, letting an entry outlive the indexer PR
+      // it names — the one thing this list must not do.
+      const shipped = pending.filter(
+        ({ field }) => !failures.some((failure) => failure.includes(`\"${field}\"`)),
+      );
       expect(
         shipped.map(({ field }) => field),
         "drop these from PENDING_SCHEMA_FIELDS — the endpoint serves them now",

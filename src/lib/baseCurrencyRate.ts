@@ -205,3 +205,43 @@ export async function fetchLiveBasePerAccountingToken(
   if (basePerUsd === null || usdPerAccounting === null) return null;
   return finite(basePerUsd * usdPerAccounting);
 }
+
+/**
+ * `accountingTokenUsdRate` is added by peripheralist/bendystraw#25 and is not on the live
+ * schema yet. GraphQL rejects the ENTIRE document for one unknown field, so the chart asks for
+ * it through a rated operation that falls back to the un-rated twin. The decision is cached
+ * for the process: the upgrade happens on its own the moment the indexer serves the field, and
+ * costs one rejected request before that.
+ */
+let ratedOperationsSupported: boolean | null = null;
+
+export async function withRatedOperation<T>(
+  run: (rated: boolean) => Promise<T>,
+): Promise<T> {
+  if (ratedOperationsSupported === false) return run(false);
+  try {
+    const result = await run(true);
+    ratedOperationsSupported = true;
+    return result;
+  } catch (reason) {
+    // Only an unknown-FIELD rejection is a downgrade, and only before the field is known to
+    // work. Treating any failure as "no rate" would let a real indexer outage pin every chart
+    // to the live rate for the life of the process.
+    const message = reason instanceof Error ? reason.message : String(reason);
+    if (ratedOperationsSupported !== null || !message.includes("accountingTokenUsdRate")) {
+      throw reason;
+    }
+    ratedOperationsSupported = false;
+    return run(false);
+  }
+}
+
+/**
+ * The indexer's 18-dec rate as a plain number, or null where the row predates the backfill or
+ * no feed bridged the pair — both meaning "use the live rate for this point".
+ */
+export function usdRateOf(raw: string | number | bigint | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
+  const rate = Number(raw) / 1e18;
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
+}

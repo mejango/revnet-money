@@ -26,6 +26,9 @@ export type PriceDataPoint = {
   floorPrice?: number;
   minimumCashOutPrice?: number;
   cashOutChangeReason?: string;
+  /** USD per accounting token at THIS point's block, when the indexer recorded it. Consumed
+   *  by the axis conversion below and never rendered. */
+  accountingTokenUsdRate?: number | null;
   // Floor price calculation inputs (for debugging)
   totalSupply?: string;
   totalBalance?: string;
@@ -102,15 +105,25 @@ export async function getTokenPriceChartData(params: {
         ),
       ]);
   const convertible = onAxis || rates.length > 0 || liveRate !== null;
-  const rateFor = (timestamp: number) =>
-    onAxis ? 1 : (rateAt(rates, timestamp) ?? liveRate);
+  // Best rate available for a point, in descending order of fidelity:
+  //  1. the rate the INDEXER recorded at that point's own block — exact, and only meaningful
+  //     when the axis is USD, since that is what it measures.
+  //  2. the pay-event ratio in force at that timestamp — the indexer's valuation, approximate.
+  //  3. the live feed — today's number applied to the past.
+  const indexedRates = baseIsUsd(baseCurrency);
+  const rateFor = (point: PriceDataPoint) =>
+    onAxis
+      ? 1
+      : ((indexedRates ? point.accountingTokenUsdRate : null) ??
+        rateAt(rates, point.timestamp) ??
+        liveRate);
 
   const ammData = onAxis
     ? rawAmmData
     : rawAmmData
         .map((point) => ({
           ...point,
-          ammPrice: toBaseAxis(point.ammPrice, rateFor(point.timestamp)),
+          ammPrice: toBaseAxis(point.ammPrice, rateFor(point)),
         }))
         .filter((point) => point.ammPrice !== undefined);
   const floorData = onAxis
@@ -118,13 +131,16 @@ export async function getTokenPriceChartData(params: {
     : rawFloorData
         .map((point) => ({
           ...point,
-          floorPrice: toBaseAxis(point.floorPrice, rateFor(point.timestamp)),
-          minimumCashOutPrice: toBaseAxis(
-            point.minimumCashOutPrice,
-            rateFor(point.timestamp),
-          ),
+          floorPrice: toBaseAxis(point.floorPrice, rateFor(point)),
+          minimumCashOutPrice: toBaseAxis(point.minimumCashOutPrice, rateFor(point)),
         }))
         .filter((point) => point.floorPrice !== undefined);
+  // Which basis actually carried the series, for the note the UI shows.
+  const usedIndexedPointRates =
+    indexedRates &&
+    [...rawAmmData, ...rawFloorData].some(
+      (point) => point.accountingTokenUsdRate != null,
+    );
 
   const { interval } = getTimeRangeConfig(range);
   const data = mergeDataPoints(issuanceData, ammData, floorData, interval);
@@ -142,7 +158,7 @@ export async function getTokenPriceChartData(params: {
      */
     conversionBasis: onAxis
       ? null
-      : rates.length > 0
+      : usedIndexedPointRates || rates.length > 0
         ? ("indexed" as const)
         : liveRate !== null
           ? ("live" as const)

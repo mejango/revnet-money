@@ -1,8 +1,10 @@
 import {
   IndexedBuybackPoolsOperation,
   IndexedPoolSwapsOperation,
+  IndexedPoolSwapsWithRateOperation,
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
+import { usdRateOf, withRatedOperation } from "@/lib/baseCurrencyRate";
 import type { IndexedBuybackPoolsQuery, IndexedPoolSwapsQuery } from "@/lib/bendystraw/types";
 import { downsampleTimeSeries, JBChainId } from "@bananapus/nana-sdk-core";
 import { uniswapV4PriceFromSqrtPriceX96 } from "@bananapus/nana-sdk-core/v6";
@@ -73,11 +75,13 @@ export async function getV4AmmPriceHistory({
   const swaps: RawSwap[] = [];
   let totalCount = 0;
   while (swaps.length < totalCount || swaps.length === 0) {
-    const page = await queryBendystraw(chainId, IndexedPoolSwapsOperation, {
-      ...variables,
-      limit: PAGE_SIZE,
-      offset: swaps.length,
-    });
+    const page = await withRatedOperation((rated) =>
+      queryBendystraw(
+        chainId,
+        rated ? IndexedPoolSwapsWithRateOperation : IndexedPoolSwapsOperation,
+        { ...variables, limit: PAGE_SIZE, offset: swaps.length },
+      ),
+    );
     const items = page.swapEvents?.items ?? [];
     totalCount = page.swapEvents?.totalCount ?? items.length;
     swaps.push(...items);
@@ -113,7 +117,11 @@ export async function getV4AmmPriceHistory({
       ammPrice = projectAmount > 0 ? terminalAmount / projectAmount : null;
     }
     if (ammPrice && Number.isFinite(ammPrice)) {
-      data.push({ timestamp: Number(swap.timestamp), ammPrice });
+      data.push({
+        timestamp: Number(swap.timestamp),
+        ammPrice,
+        accountingTokenUsdRate: usdRateOf(swap.accountingTokenUsdRate),
+      });
     }
   }
 

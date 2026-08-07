@@ -361,6 +361,20 @@ export const SuckerGroupMomentsOperation = operation<
   variablesWith({ suckerGroupId: isString }, { after: isOptionalString }),
   hasRoot("suckerGroupMoments", "items"),
 );
+/**
+ * Twins of the two chart operations above that also select `accountingTokenUsdRate`
+ * (peripheralist/bendystraw#25). GraphQL rejects a whole document for one unknown field, so
+ * these are tried FIRST and fall back to the un-rated originals until the indexer serves the
+ * field — at which point they start being used with no client release.
+ */
+export const SuckerGroupMomentsWithRateOperation = operation<
+  SuckerGroupMomentsQuery,
+  SuckerGroupMomentsQueryVariables
+>(
+  "sucker-group-moments-with-rate.v1",
+  variablesWith({ suckerGroupId: isString }, { after: isOptionalString }),
+  hasRoot("suckerGroupMoments", "items"),
+);
 export const TopSuckerGroupsOperation = operation<
   TopSuckerGroupsQuery,
   TopSuckerGroupsQueryVariables
@@ -446,6 +460,20 @@ export const IndexedPoolSwapsOperation = operation<
   }),
   hasIdentityItems("swapEvents"),
 );
+export const IndexedPoolSwapsWithRateOperation = operation<
+  IndexedPoolSwapsQuery,
+  IndexedPoolSwapsQueryVariables
+>(
+  "indexed-pool-swaps-with-rate.v1",
+  variablesWith({
+    projectId: isNumber,
+    chainId: isNumber,
+    version: isNumber,
+    limit: positiveLimit,
+    offset,
+  }),
+  hasIdentityItems("swapEvents"),
+);
 export const OwnedNftsOperation = operation<OwnedNftsQuery, OwnedNftsQueryVariables>(
   "owned-nfts.v1",
   variablesWith({ where: filter, limit: positiveLimit, offset }),
@@ -489,6 +517,7 @@ export const BENDYSTRAW_OPERATIONS = [
   LoansByAccountOperation,
   CashOutTaxSnapshotsOperation,
   SuckerGroupMomentsOperation,
+  SuckerGroupMomentsWithRateOperation,
   TopSuckerGroupsOperation,
   ProjectPayersOperation,
   PermissionHoldersOperation,
@@ -498,6 +527,7 @@ export const BENDYSTRAW_OPERATIONS = [
   IndexedBuybackPoolsOperation,
   IndexedLpPositionsOperation,
   IndexedPoolSwapsOperation,
+  IndexedPoolSwapsWithRateOperation,
   OwnedNftsOperation,
   MintNftEventsOperation,
   ShieldProjectOperation,
