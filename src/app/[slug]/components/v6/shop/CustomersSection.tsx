@@ -7,6 +7,7 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { useAllOwnedShopItems, useAllShopPurchases } from "@/lib/nana/shop";
 import { useMemo, useState } from "react";
+import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { Address } from "viem";
 import type { ProjectItem } from "../shared";
 import { ShopInventory, TierMedia, tierDisplayName } from "./shopLib";
@@ -180,7 +181,14 @@ export function CustomersSection({
                 key={`${purchase.chainId}:${purchase.txHash}:${purchase.tokenId}`}
                 className="flex items-baseline justify-between gap-3 py-1.5 text-xs"
               >
-                <EtherscanLink value={purchase.txHash} type="tx" className="shrink-0 text-teal-600">
+                <EtherscanLink
+                  value={purchase.txHash}
+                  type="tx"
+                  // Purchases are collected across the whole sucker group, so the row's own
+                  // chain — not the connected one — is the only explorer that has this tx.
+                  chain={JB_CHAINS[purchase.chainId as JBChainId]?.chain}
+                  className="shrink-0 text-teal-600"
+                >
                   <DateRelative timestamp={purchase.timestamp} />
                 </EtherscanLink>
                 <span className="min-w-0 truncate text-right text-zinc-600">
@@ -188,6 +196,7 @@ export function CustomersSection({
                   <EthereumAddress
                     address={purchase.beneficiary as Address}
                     short
+                    chain={JB_CHAINS[purchase.chainId as JBChainId]?.chain}
                     className="text-zinc-600"
                   />
                 </span>

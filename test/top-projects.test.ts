@@ -90,7 +90,9 @@ describe("top-project derivative availability", () => {
   });
 
   it("keeps rows that need no ETH price when the price feed fails", async () => {
-    mocks.fetchEthPrice.mockRejectedValue(new Error("price feed down"));
+    // fetchEthPrice reports an outage as null, not by throwing — see lib/ethPrice.ts. Mocking a
+    // rejection here would test a contract the module does not have.
+    mocks.fetchEthPrice.mockResolvedValue(null);
     mocks.request.mockResolvedValue({
       suckerGroups: {
         items: [

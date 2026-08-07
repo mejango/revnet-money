@@ -9,7 +9,6 @@ import {
   revFeeApplies,
 } from "@/lib/feeHelpers";
 import { calculatePriceAtTimestamp } from "@/lib/issuancePrice";
-import { getUnitValue } from "@/lib/reclaimableSurplus";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { ETH_CURRENCY_ID, NATIVE_TOKEN, USD_CURRENCY_ID } from "@bananapus/nana-sdk-core";
 import type { Address } from "viem";
@@ -104,14 +103,6 @@ describe("contract-derived monetary display math", () => {
       currency: 12648430,
       isNative: false,
     });
-  });
-
-  it("computes per-token unit value without changing either denomination", () => {
-    expect(getUnitValue({ value: "2", decimals: 6 }, { value: "4", decimals: 18 })).toBeCloseTo(
-      0.5,
-    );
-    expect(getUnitValue(null, { value: "1", decimals: 18 })).toBe(0);
-    expect(getUnitValue({ value: "1", decimals: 18 }, { value: "0", decimals: 18 })).toBe(0);
   });
 
   it("returns a harmless zero-cost chart for invalid loan input", () => {

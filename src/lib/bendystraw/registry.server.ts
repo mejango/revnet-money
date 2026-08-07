@@ -21,7 +21,6 @@ import {
   ParticipantsOperation,
   PermissionHoldersOperation,
   ProjectAccountingContextOperation,
-  ProjectCreateEventOperation,
   ProjectErc20TickersOperation,
   ProjectOperation,
   ProjectOperatorOperation,
@@ -512,14 +511,6 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       }
     }`,
   },
-  [ProjectCreateEventOperation.id]: {
-    operationName: "ProjectCreateEvent",
-    query: `query ProjectCreateEvent($where: projectCreateEventFilter) {
-      projectCreateEvents(where: $where, limit: 1) {
-        items { txHash timestamp }
-      }
-    }`,
-  },
   [ProjectOperatorOperation.id]: {
     operationName: "ProjectOperator",
     query: `query ProjectOperator($chainId: Int!, $projectId: Int!, $version: Int!) {
@@ -966,7 +957,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
             token
             tokenSymbol
             decimals
-            participants {
+            participants(limit: 100) {
               totalCount
               items { address chainId projectId lastPaidTimestamp balance }
             }

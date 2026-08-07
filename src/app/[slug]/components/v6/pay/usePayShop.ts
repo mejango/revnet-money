@@ -12,7 +12,12 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { BASE_CURRENCY_ETH, BASE_CURRENCY_USD } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { Address, PublicClient } from "viem";
+import {
+  Address,
+  BaseError,
+  ContractFunctionRevertedError,
+  PublicClient,
+} from "viem";
 import { usePublicClient } from "wagmi";
 import { loadShopInventory } from "../shop/shopLib";
 
@@ -49,6 +54,8 @@ export interface V6ShopPayRoute {
   /** Payment-token units per one whole shop-pricing unit. */
   pricePerUnit: bigint | null;
   reason?: string;
+  /** The feed could not be READ, as opposed to not existing. Temporary, and worth retrying. */
+  unavailable?: boolean;
 }
 
 /** The project's 721 shop (hook + tiers) on the selected chain, or null. */
@@ -172,8 +179,13 @@ export function usePayShopRoutes(
               },
             ] as const;
           }
-          const pricePerUnit = await (publicClient as PublicClient)
-            .readContract({
+          // A REVERT is JBPrices_PriceFeedNotFound: this pair genuinely has no feed, and saying
+          // so is a true statement about the protocol. A network failure is not — it used to
+          // collapse into the same `0n` and produce the same permanent-sounding verdict about
+          // a momentary outage. Both still fail closed; only the explanation differs.
+          let pricePerUnit: bigint;
+          try {
+            pricePerUnit = await (publicClient as PublicClient).readContract({
               address: prices,
               abi: jbPricesAbi,
               functionName: "pricePerUnitOf",
@@ -183,8 +195,24 @@ export function usePayShopRoutes(
                 BigInt(shop!.pricingCurrency),
                 BigInt(payToken.decimals),
               ],
-            })
-            .catch(() => 0n);
+            });
+          } catch (error) {
+            return [
+              key,
+              contractReverted(error)
+                ? {
+                    supported: false,
+                    pricePerUnit: null,
+                    reason: "No price feed converts this payment token.",
+                  }
+                : {
+                    supported: false,
+                    pricePerUnit: null,
+                    unavailable: true,
+                    reason: "Couldn't check this token's price feed. Try again in a moment.",
+                  },
+            ] as const;
+          }
           return [
             key,
             pricePerUnit > 0n
@@ -200,6 +228,15 @@ export function usePayShopRoutes(
       return Object.fromEntries(entries);
     },
   });
+}
+
+/** A revert (as opposed to a transport failure) means the chain answered — so the absence of
+ *  a feed is a fact about the protocol, not about the network. */
+function contractReverted(error: unknown): boolean {
+  return (
+    error instanceof BaseError &&
+    !!error.walk((cause) => cause instanceof ContractFunctionRevertedError)
+  );
 }
 
 export { BASE_CURRENCY_ETH, BASE_CURRENCY_USD };

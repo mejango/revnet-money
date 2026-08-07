@@ -27,14 +27,7 @@ export async function getTopProjects() {
   // The ETH price only converts ETH-denominated balances for ranking. When the
   // feed fails, drop those rows (they can't be ranked honestly) but keep the
   // rows that never needed the price instead of blanking the whole table.
-  let ethPrice: number | null = null;
-  if (needsEthPrice) {
-    try {
-      ethPrice = await fetchEthPrice();
-    } catch (error) {
-      console.error("Failed to load the ETH price for top projects:", error);
-    }
-  }
+  const ethPrice = needsEthPrice ? await fetchEthPrice() : null;
 
   return top.suckerGroups.items
     .map((group) => {

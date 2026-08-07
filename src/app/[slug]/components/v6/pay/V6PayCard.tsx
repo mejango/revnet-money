@@ -236,6 +236,14 @@ export function V6PayCard() {
 
   const selectedShopRoute = selected ? shopRoutes?.[payTokenKey(selected)] : undefined;
   const shopMatchesToken = !!selectedShopRoute?.supported;
+  // A feed the app could not READ is not a feed the protocol lacks. Both hide the route, but
+  // only one of them is permanent, and only one of them is worth retrying.
+  const shopRouteCheckFailed = useMemo(
+    () =>
+      !!shopRoutes &&
+      tokens.some((t) => shopRoutes[payTokenKey(t)]?.unavailable),
+    [shopRoutes, tokens],
+  );
   const supportedShopTokenIndexes = useMemo(
     () => tokens.flatMap((t, index) => (shopRoutes?.[payTokenKey(t)]?.supported ? [index] : [])),
     [tokens, shopRoutes],
@@ -1123,7 +1131,9 @@ export function V6PayCard() {
                 </div>
               ) : cartCount > 0 && supportedShopTokenIndexes.length === 0 ? (
                 <p className="mb-2 text-xs text-red-600">
-                  No directly accepted payment token has a verified price feed for these items.
+                  {shopRouteCheckFailed
+                    ? "Couldn't check which payment tokens have a price feed for these items. Try again in a moment."
+                    : "No directly accepted payment token has a verified price feed for these items."}
                 </p>
               ) : cartCount > 0 && !shopMatchesToken ? (
                 <p className="mb-2 text-xs text-zinc-500">

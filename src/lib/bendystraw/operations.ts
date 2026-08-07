@@ -37,8 +37,6 @@ import type {
   PermissionHoldersQueryVariables,
   ProjectAccountingContextQuery,
   ProjectAccountingContextQueryVariables,
-  ProjectCreateEventQuery,
-  ProjectCreateEventQueryVariables,
   ProjectErc20TickersQuery,
   ProjectErc20TickersQueryVariables,
   ProjectOperatorQuery,
@@ -308,14 +306,6 @@ export const HasPermissionOperation = operation<HasPermissionQuery, HasPermissio
   }),
   hasRoot("permissionHolder", "nullable-object"),
 );
-export const ProjectCreateEventOperation = operation<
-  ProjectCreateEventQuery,
-  ProjectCreateEventQueryVariables
->(
-  "project-create-event.v1",
-  variablesWith({}, { where: filter }),
-  hasRoot("projectCreateEvents", "items"),
-);
 export const ProjectOperatorOperation = operation<
   ProjectOperatorQuery,
   ProjectOperatorQueryVariables
@@ -509,7 +499,6 @@ export const BENDYSTRAW_OPERATIONS = [
   ProjectErc20TickersOperation,
   AccountPermissionHoldersOperation,
   HasPermissionOperation,
-  ProjectCreateEventOperation,
   ProjectOperatorOperation,
   ProjectWithPermissionsOperation,
   StoreAutoIssuanceAmountEventsOperation,
@@ -555,7 +544,6 @@ export const BROWSER_BENDYSTRAW_OPERATIONS = [
   ProjectErc20TickersOperation,
   AccountPermissionHoldersOperation,
   HasPermissionOperation,
-  ProjectCreateEventOperation,
   ProjectOperatorOperation,
   ProjectWithPermissionsOperation,
   StoreAutoIssuanceAmountEventsOperation,

@@ -1,5 +1,6 @@
 import { ShieldGroupOperation, ShieldProjectOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
+import { fetchEthPrice } from "@/lib/ethPrice";
 import { NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import { NextResponse } from "next/server";
 
@@ -72,6 +73,11 @@ export async function GET(req: Request) {
           name: JB_CHAINS[item.chainId as ChainId]?.name ?? "Unknown",
           metadata: item.metadata,
           participants: item.participants?.items ?? [],
+          // The list is capped; `supporters` above is the true count. Without this flag a
+          // consumer reading `participants` has no way to tell a complete list from a page of
+          // one — and this payload is public.
+          participantsTruncated:
+            (item.participants?.items?.length ?? 0) < (item.participants?.totalCount ?? 0),
         });
       }
     } catch {
@@ -88,18 +94,11 @@ export async function GET(req: Request) {
   const denomination =
     accountingSymbols.size === 1 ? [...accountingSymbols][0] : "tokens";
 
-  let ethPrice = 0;
-  if (isNativeTreasury) {
-    try {
-      const priceRes = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
-      );
-      const priceJson = await priceRes.json();
-      ethPrice = priceJson.ethereum.usd;
-    } catch {}
-  }
-
-  const usdTvl = isNativeTreasury ? totalBalance * ethPrice : null;
+  // This badge is embedded off-site, so a price outage must not publish a number. Null here
+  // falls through to the token-amount label below — the same path a non-native treasury takes
+  // — rather than reporting a $0 treasury to every README that renders it.
+  const ethPrice = isNativeTreasury ? await fetchEthPrice() : null;
+  const usdTvl = ethPrice === null ? null : totalBalance * ethPrice;
 
   const host = req.headers.get("host");
   if (!host) {
