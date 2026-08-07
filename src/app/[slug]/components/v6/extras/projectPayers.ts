@@ -47,10 +47,17 @@ export function usdFromScaled(value: unknown): number | null {
   }
 }
 
+/**
+ * USD for display. Cents matter up to $1,000 — at $340.50 they still carry meaning — and a
+ * real amount below a cent shows as `<$0.01` rather than `$0.00`, because rounding a
+ * payment to zero reads as "nothing happened". See lib/number.ts for the full policy.
+ */
 export function formatUsd(value: number): string {
+  if (value > 0 && value < 0.01) return "<$0.01";
+  if (value < 0 && value > -0.01) return ">-$0.01";
   return value.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: value >= 100 ? 0 : 2,
+    maximumFractionDigits: Math.abs(value) >= 1_000 ? 0 : 2,
   });
 }

@@ -5,6 +5,8 @@ import {
   type ActivityEventItem,
 } from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
 import { describe, expect, it } from "vitest";
+import { exactNumber, formatCompact } from "@/lib/number";
+import { formatUsd } from "@/app/[slug]/components/v6/extras/projectPayers";
 
 const EMPTY_EVENTS = {
   payEvent: null,
@@ -85,8 +87,27 @@ describe("mapActivityEvents", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0].baseTokenSymbol).toBeUndefined();
-    // Unknown decimals fall back to 18.
-    expect(events[0].baseAmount).toBe("0");
+    // Unknown decimals means the raw amount CANNOT be scaled — assuming 18 would be off by
+    // 1e12 on a 6-decimal token. The row stays (the activity happened) but carries no
+    // amount, rather than showing an invented magnitude.
+    expect(events[0].baseAmount).toBeUndefined();
+  });
+
+  it("still shows USD when the accounting context is unknown but the indexer priced it", () => {
+    // The honest denomination for a chain whose accounting context isn't known: the USD
+    // figure is scale-independent, so it survives where a token amount cannot.
+    const priced = payItem();
+    priced.payEvent = { ...priced.payEvent!, amountUsd: "1000000000000000000" };
+    const events = mapActivityEvents([priced], () => ({
+      tokenSymbol: null,
+      decimals: null,
+      denominateInUsd: true,
+    }));
+
+    expect(events).toHaveLength(1);
+    expect(events[0].baseAmount).toBe("$1.00");
+    // No decimals ⇒ no raw accounting amount to reveal on hover.
+    expect(events[0].exactAmount).toBeUndefined();
   });
 
   it("suppresses mintTokensEvent rows already covered by a pay in the same tx", () => {
@@ -233,7 +254,52 @@ describe("projectFeedTokenContext", () => {
     const events = mapActivityEvents([cashOut], projectFeedTokenContext(projects));
 
     expect(events).toHaveLength(1);
-    expect(events[0].baseAmount).toBe("$251");
+    // Cents matter up to $1,000 now — at $250.50 they still carry meaning.
+    expect(events[0].baseAmount).toBe("$250.50");
     expect(events[0].baseTokenSymbol).toBeUndefined();
+  });
+});
+
+// NUMBER PRESENTATION POLICY (lib/number.ts): abbreviate to three significant figures in
+// dense lists, never 0-decimal, and always keep the exact value one hover away.
+describe("formatCompact / exactNumber", () => {
+  it("keeps three significant figures across the ladder", () => {
+    expect(formatCompact(1_234_567_890)).toBe("1.23B");
+    expect(formatCompact(12_345_678)).toBe("12.3M");
+    expect(formatCompact(123_456)).toBe("123k");
+    expect(formatCompact(1_234)).toBe("1.23k");
+  });
+
+  it("never collapses an order of magnitude the way a 0-decimal ladder does", () => {
+    // The old formatter rendered both of these "12k".
+    expect(formatCompact(12_300)).not.toBe(formatCompact(12_900));
+  });
+
+  it("leaves sub-thousand values unsuffixed and trims trailing zeros", () => {
+    expect(formatCompact(999)).toBe("999");
+    expect(formatCompact(1.5)).toBe("1.5");
+    expect(formatCompact(0)).toBe("0");
+  });
+
+  it("handles negatives symmetrically", () => {
+    expect(formatCompact(-12_345)).toBe("-12.3k");
+  });
+
+  it("exactNumber reveals the grouped, unabbreviated value for the hover", () => {
+    expect(exactNumber(1_234_567.25)).toBe("1,234,567.25");
+    expect(exactNumber(0.5)).toBe("0.5");
+  });
+});
+
+describe("formatUsd", () => {
+  it("keeps cents below $1,000 and drops them above", () => {
+    expect(formatUsd(340.5)).toBe("$340.50");
+    expect(formatUsd(12_345.67)).toBe("$12,346");
+  });
+
+  it("floors a real sub-cent amount instead of rendering $0.00", () => {
+    // "$0.00" reads as "nothing happened" for a payment that did happen.
+    expect(formatUsd(0.004)).toBe("<$0.01");
+    expect(formatUsd(0)).toBe("$0.00");
   });
 });

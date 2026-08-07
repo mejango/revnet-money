@@ -33,6 +33,8 @@ export interface ActivityEvent {
   beneficiary: Address;
   chainId: JBChainId;
   baseAmount?: string;
+  /** The unabbreviated amount (and raw accounting amount when the headline is USD). */
+  exactAmount?: string;
   baseTokenSymbol?: string;
   tokenCount?: string;
   memo?: string;
@@ -140,7 +142,9 @@ export function ActivityItemRow({
           </EtherscanLink>
           <div className="flex items-center gap-2">
             {event.baseAmount && (
-              <span>
+              // The exact value is one hover away — `title` has no open delay, so an
+              // abbreviated or USD-denominated headline never hides the real number.
+              <span title={event.exactAmount}>
                 {event.baseTokenSymbol
                   ? `${event.baseAmount} ${event.baseTokenSymbol}`
                   : event.baseAmount}

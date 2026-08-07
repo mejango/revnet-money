@@ -3,6 +3,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals, prettyNumber } from "@/lib/number";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
 import { Address, formatUnits } from "viem";
+import { formatCompact, exactNumber } from "@/lib/number";
 import { formatUsd, usdFromScaled } from "../v6/extras/projectPayers";
 import type { ActivityEvent } from "./ActivityItem";
 
@@ -51,7 +52,12 @@ export function projectFeedTokenContext(
 
   return (event) => {
     const projectForChain = projects.find((project) => project.chainId === event.chainId);
-    if (!projectForChain?.tokenSymbol) return null;
+    // No accounting context for this chain — the project exists but has no ruleset/terminal
+    // there, or the row wasn't fetched. The activity still HAPPENED, so keep the row and let
+    // `flowAmount` decide what it can honestly show; dropping it silently denied the event.
+    if (!projectForChain?.tokenSymbol) {
+      return { tokenSymbol: undefined, decimals: undefined, denominateInUsd: true };
+    }
     return {
       tokenSymbol: projectForChain.tokenSymbol,
       decimals: projectForChain.decimals,
@@ -104,10 +110,28 @@ export function mapActivityEvents(
     // token so the row still shows a meaningful amount.
     const flowAmount = (tokenAmount: string | number, usdAmount?: string | number | null) => {
       const usd = tokenContext.denominateInUsd ? usdFromScaled(usdAmount) : null;
-      if (usd) return { baseAmount: formatUsd(usd), baseTokenSymbol: undefined };
+      if (usd) {
+        // USD is the headline; the raw accounting amount is what a hover reveals. It can
+        // only be shown when the context's decimals are known.
+        const exact =
+          tokenContext.decimals == null
+            ? undefined
+            : `${exactNumber(formatUnits(BigInt(tokenAmount), baseTokenDecimals))}${
+                baseTokenSymbol ? ` ${baseTokenSymbol}` : ""
+              }`;
+        return { baseAmount: formatUsd(usd), baseTokenSymbol: undefined, exactAmount: exact };
+      }
+      // Without the accounting context's decimals the raw amount cannot be scaled — showing
+      // it at an assumed 18 would be off by 1e12 on a 6-decimal token. Keep the row and omit
+      // the amount rather than invent a magnitude.
+      if (tokenContext.decimals == null) {
+        return { baseAmount: undefined, baseTokenSymbol: undefined, exactAmount: undefined };
+      }
+      const whole = formatUnits(BigInt(tokenAmount), baseTokenDecimals);
       return {
-        baseAmount: formatDecimals(Number(formatUnits(BigInt(tokenAmount), baseTokenDecimals))),
+        baseAmount: formatCompact(whole),
         baseTokenSymbol,
+        exactAmount: `${exactNumber(whole)}${baseTokenSymbol ? ` ${baseTokenSymbol}` : ""}`,
       };
     };
 

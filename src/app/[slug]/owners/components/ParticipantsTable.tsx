@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { JBChainId, ProjectTokenData } from "@/lib/nana/types";
-import { prettyNumber } from "@/lib/number";
+import { exactNumber, prettyNumber } from "@/lib/number";
 import { formatPortion, formatTokenSymbol } from "@/lib/utils";
 import { formatUnits } from "@bananapus/nana-sdk-core";
 import { useRef, useState, type ReactNode } from "react";
@@ -109,7 +109,13 @@ export function ParticipantsTable({
                   </span>
                 </TableCell>
               ) : token ? (
-                <TableCell className="whitespace-nowrap pr-14">
+                <TableCell
+                  className="whitespace-nowrap pr-14"
+                  // Abbreviated for the table; the exact balance is one hover away.
+                  title={`${exactNumber(
+                    formatUnits(BigInt(participant.balance), token.decimals),
+                  )} ${formatTokenSymbol(token.symbol)}`}
+                >
                   {prettyNumber(
                     formatUnits(BigInt(participant.balance), token.decimals, {
                       fractionDigits: 3,
