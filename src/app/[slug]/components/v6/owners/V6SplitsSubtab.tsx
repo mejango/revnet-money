@@ -26,6 +26,7 @@ import {
   jbControllerAbi,
   JBCoreContracts,
   jbSplitsAbi,
+  SPLITS_TOTAL_PERCENT,
 } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { twJoin } from "tailwind-merge";
@@ -112,6 +113,9 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
           address: contractAddress(JBCoreContracts.JBSplits, c.chainId),
           abi: jbSplitsAbi,
           functionName: "splitsOf" as const,
+          // NEVER `?? 0n`: ruleset 0 is the FALLBACK group, so an unloaded ruleset would
+          // silently render a different group's recipients as if they were this stage's.
+          // A missing id disables the read (below) and the row shows unavailable instead.
           args: [BigInt(c.projectId), ruleset?.id ?? 0n, RESERVED_TOKEN_SPLIT_GROUP_ID] as const,
         },
         {
@@ -259,7 +263,16 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                               </TableCell>
                               <TableCell>
                                 {pending !== undefined
-                                  ? `${Number(formatUnits(pending, 18)).toLocaleString("en-US", {
+                                  ? // THIS split's share of the chain's pending reserved
+                                    // balance — the column previously repeated the chain
+                                    // total on every row, so each looked like the whole.
+                                    `${Number(
+                                      formatUnits(
+                                        (pending * BigInt(split.percent)) /
+                                          BigInt(SPLITS_TOTAL_PERCENT),
+                                        18,
+                                      ),
+                                    ).toLocaleString("en-US", {
                                       maximumFractionDigits: 2,
                                     })} ${tokenSymbol}`
                                   : "—"}

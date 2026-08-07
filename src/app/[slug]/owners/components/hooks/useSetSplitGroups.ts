@@ -15,6 +15,7 @@ import {
 import { useJBContractContext } from "@/lib/nana/project";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
+import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
 import { Address, encodeFunctionData, zeroAddress } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
@@ -196,10 +197,19 @@ export function prepareArgs(chain: ChainFormData) {
 function prepareSplits(chain: ChainFormData) {
   const splitPercent = chain.splits.reduce((sum, s) => sum + Number(s.percentage), 0) * 100;
 
-  return chain.splits.map((split) => ({
+  // Independent Math.round per row can sum to 1e9 ± 1, which JBSplits rejects outright
+  // (`JBSplits_TotalPercentExceeds100`) — the save then fails at simulate with an opaque
+  // error. `fillSplitPercents` assigns the remainder so the group totals exactly.
+  const shares = fillSplitPercents(
+    chain.splits.map((split) =>
+      Math.round((Number(split.percentage) * 100 * SPLITS_TOTAL_PERCENT) / splitPercent),
+    ),
+  );
+
+  return chain.splits.map((split, index) => ({
     preferAddToBalance: split.preferAddToBalance ?? false,
     lockedUntil: split.lockedUntil ?? 0,
-    percent: Math.round((Number(split.percentage) * 100 * SPLITS_TOTAL_PERCENT) / splitPercent),
+    percent: shares[index],
     projectId: split.projectId ?? 0n,
     beneficiary: split.beneficiary as Address,
     hook: split.hook ?? zeroAddress,

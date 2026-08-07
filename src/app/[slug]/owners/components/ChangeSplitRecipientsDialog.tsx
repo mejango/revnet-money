@@ -48,6 +48,11 @@ export type ChainFormData = {
 };
 
 /** Splits routed by a hook or into another project aren't plain address payouts. */
+/** `33.3333333` not `33.3333333000`, and `50` not `50.0000000`. */
+function trimTrailingZeros(fixed: string): string {
+  return fixed.includes(".") ? fixed.replace(/\.?0+$/, "") : fixed;
+}
+
 export function splitRouting(split: SplitFormData) {
   if (split.hook && split.hook !== zeroAddress)
     return { kind: "hook", address: split.hook } as const;
@@ -99,7 +104,12 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       rulesetId: BigInt(chainData.rulesetId),
       selected: chainData.chainId === initialChainId,
       splits: chainData.splits.map((split) => ({
-        percentage: ((Number(split.percent) / SPLITS_TOTAL_PERCENT) * 100).toFixed(2),
+        // Seven decimals, because a share is stored out of 1e9 — two decimals turned three
+        // equal thirds into 33.33 × 3 = 99.99%, which the 100% rule then rejected, leaving a
+        // legitimate on-chain config unsaveable until hand-edited.
+        percentage: trimTrailingZeros(
+          ((Number(split.percent) / SPLITS_TOTAL_PERCENT) * 100).toFixed(7),
+        ),
         beneficiary: split.beneficiary,
         projectId: split.projectId,
         hook: split.hook,

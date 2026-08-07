@@ -19,8 +19,14 @@ export function resolveProjectBaseToken(project: {
 }): Token & { currency: number } {
   const address = project.token as `0x${string}`;
   const fromAddress = getTokenSymbolFromAddress(address);
-  // Prefer ETH/USDC labels for known reserve assets over the project ticker, and pin
-  // USDC to 6 decimals (the indexer reports the project token's 18).
+  // Prefer ETH/USDC labels for known reserve assets over the project ticker, and pin USDC to
+  // 6 decimals. The old note here claimed the indexer reports "the project token's 18" — it
+  // does not: bendystraw's `project.decimals`/`tokenSymbol` describe the ACCOUNTING context
+  // (they sit under an `accountingContext` heading in ponder.schema.ts). The pin is still
+  // right, but for a different reason: it guards a stale/absent context value, not a
+  // project-token one. Believing the old comment is how the B2 accounting-context bug
+  // (fallback filling accounting fields from the project ERC-20) got written in the first
+  // place.
   const symbol = fromAddress === "TOKEN" ? project.tokenSymbol || "TOKEN" : fromAddress;
   const decimals = fromAddress === "USDC" ? 6 : project.decimals || NATIVE_TOKEN_DECIMALS;
   const isNative = isNativeToken(project.token ?? null);
