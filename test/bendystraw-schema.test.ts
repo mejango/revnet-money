@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 const contractFetch = globalThis.fetch.bind(globalThis);
 
 const ENDPOINTS = [
-  process.env.BENDYSTRAW_SCHEMA_MAINNET_URL ?? "https://bendystraw.xyz/graphql",
+  process.env.BENDYSTRAW_SCHEMA_MAINNET_URL ?? "https://bendystraw.up.railway.app/graphql",
   process.env.BENDYSTRAW_SCHEMA_TESTNET_URL ?? "https://testnet.bendystraw.xyz/graphql",
 ];
 
@@ -44,25 +44,12 @@ async function liveSchema(endpoint: string) {
   return buildClientSchema(envelope.data!);
 }
 
-// Documents that query fields an unmerged indexer PR adds. They run behind a
-// fallback — a schema error degrades to the onchain read — so shipping them
-// ahead of the indexer is safe, but they cannot be validated until it deploys.
-// Entries can be scoped to an endpoint while a schema is rolling out. The
-// contract FAILS as soon as that endpoint serves the field, so exceptions
-// cannot quietly rot after the rollout lands there.
-const PENDING_SCHEMA_FIELDS: Array<{ field: string; endpoint: string; reason: string }> = [
-  {
-    // Rolled out testnet-first. testnet.bendystraw.xyz serves the field; bendystraw.xyz is the
-    // same indexer on an older deploy and its schema differs from the testnet one by this field
-    // alone. Scoped to mainnet so the contract fails the moment that deploy catches up.
-    endpoint: ENDPOINTS[0],
-    field: "accountingTokenUsdRate",
-    reason:
-      "peripheralist/bendystraw#25 — per-point USD rate on suckerGroupMoment and swapEvent. " +
-      "Already live on the testnet endpoint. The *-with-rate operations are tried first and " +
-      "fall back to their un-rated twins, so mainnet keeps its charts until its indexer deploys.",
-  },
-];
+// Fields an unmerged indexer PR adds. An entry is only admissible while the client
+// tolerates the field being absent from the schema, and can be scoped to one endpoint
+// while a rollout is in flight. The contract FAILS as soon as that endpoint serves the
+// field, so exceptions cannot quietly rot after the rollout lands there. Empty means
+// every registered document is validated against both live schemas.
+const PENDING_SCHEMA_FIELDS: Array<{ field: string; endpoint: string; reason: string }> = [];
 
 describe("live Bendystraw schema contract", () => {
   it.each(ENDPOINTS)(

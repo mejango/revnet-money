@@ -6,7 +6,7 @@ function graphqlEndpoint(value: string | undefined, fallback: string): string {
 
 const bendystrawUrl = graphqlEndpoint(
   process.env.NEXT_PUBLIC_BENDYSTRAW_URL,
-  "https://bendystraw.xyz/graphql",
+  "https://bendystraw.up.railway.app/graphql",
 );
 const testnetBendystrawUrl = graphqlEndpoint(
   process.env.NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL,

@@ -508,9 +508,9 @@ export type SuckerGroupMoment = {
   tokenSupply: BigNumberish;
   suckerGroupId: string;
   version: number;
-  /** 18-dec USD per one whole accounting token at THIS moment's block. Absent until the
-   *  indexer serving the request has backfilled it — see the *WithRate operations. */
-  accountingTokenUsdRate?: BigNumberish | null;
+  /** 18-dec USD per one whole accounting token at THIS moment's block. Null where the row
+   *  predates the backfill or no feed bridged the pair. */
+  accountingTokenUsdRate: BigNumberish | null;
 };
 export type SuckerGroupMomentsQueryVariables = { suckerGroupId: string; after?: string };
 export type SuckerGroupMomentsQuery = {
@@ -723,8 +723,9 @@ export type IndexedPoolSwapsQuery = {
       projectTokenAmount: string;
       sqrtPriceX96: string | null;
       projectTokenIsCurrency0: boolean | null;
-      /** 18-dec USD per one whole accounting token at THIS swap's block. */
-      accountingTokenUsdRate?: BigNumberish | null;
+      /** 18-dec USD per one whole accounting token at THIS swap's block. Null where the row
+       *  predates the backfill or no feed bridged the pair. */
+      accountingTokenUsdRate: BigNumberish | null;
     }>;
     totalCount: number;
   };

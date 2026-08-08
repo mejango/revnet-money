@@ -12,7 +12,6 @@ import {
   IndexedBuybackPoolsOperation,
   IndexedLpPositionsOperation,
   IndexedPoolSwapsOperation,
-  IndexedPoolSwapsWithRateOperation,
   IndexedProjectsOperation,
   IndexedSuckerGroupOperation,
   LoansByAccountOperation,
@@ -32,7 +31,6 @@ import {
   ShieldProjectOperation,
   StoreAutoIssuanceAmountEventsOperation,
   SuckerGroupMomentsOperation,
-  SuckerGroupMomentsWithRateOperation,
   SuckerGroupOperation,
   TopSuckerGroupsOperation,
   V6AutoIssueEventsOperation,
@@ -633,21 +631,6 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         limit: 1000
         after: $after
       ) {
-        items { timestamp balance tokenSupply suckerGroupId version }
-        pageInfo { hasNextPage endCursor }
-      }
-    }`,
-  },
-  [SuckerGroupMomentsWithRateOperation.id]: {
-    operationName: "SuckerGroupMomentsWithRate",
-    query: `query SuckerGroupMomentsWithRate($suckerGroupId: String!, $after: String) {
-      suckerGroupMoments(
-        where: { suckerGroupId: $suckerGroupId }
-        orderBy: "timestamp"
-        orderDirection: "asc"
-        limit: 1000
-        after: $after
-      ) {
         items { timestamp balance tokenSupply suckerGroupId version accountingTokenUsdRate }
         pageInfo { hasNextPage endCursor }
       }
@@ -831,38 +814,6 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   [IndexedPoolSwapsOperation.id]: {
     operationName: "IndexedPoolSwaps",
     query: `query IndexedPoolSwaps(
-      $projectId: Int!
-      $chainId: Int!
-      $version: Int!
-      $limit: Int!
-      $offset: Int!
-    ) {
-      swapEvents(
-        where: { projectId: $projectId, chainId: $chainId, version: $version }
-        orderBy: "timestamp"
-        orderDirection: "asc"
-        limit: $limit
-        offset: $offset
-      ) {
-        items {
-          chainId
-          projectId
-          version
-          timestamp
-          direction
-          poolId
-          terminalTokenAmount
-          projectTokenAmount
-          sqrtPriceX96
-          projectTokenIsCurrency0
-        }
-        totalCount
-      }
-    }`,
-  },
-  [IndexedPoolSwapsWithRateOperation.id]: {
-    operationName: "IndexedPoolSwapsWithRate",
-    query: `query IndexedPoolSwapsWithRate(
       $projectId: Int!
       $chainId: Int!
       $version: Int!

@@ -25,7 +25,7 @@ describe("Bendystraw URL configuration", () => {
 
     const { getBendystrawUrl } = await import("@/graphql/constants");
 
-    expect(getBendystrawUrl(1)).toBe("https://bendystraw.xyz/graphql");
+    expect(getBendystrawUrl(1)).toBe("https://bendystraw.up.railway.app/graphql");
     expect(getBendystrawUrl(11155111)).toBe("https://testnet.bendystraw.xyz/graphql");
   });
 

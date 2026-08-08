@@ -1,10 +1,9 @@
 import {
   CashOutTaxSnapshotsOperation,
   SuckerGroupMomentsOperation,
-  SuckerGroupMomentsWithRateOperation,
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import { usdRateOf, withRatedOperation } from "@/lib/baseCurrencyRate";
+import { usdRateOf } from "@/lib/baseCurrencyRate";
 import type { CashOutTaxSnapshot, SuckerGroupMoment } from "@/lib/bendystraw/types";
 import {
   downsampleTimeSeries,
@@ -62,13 +61,10 @@ async function fetchAllMoments(
   const seenCursors = new Set<string>();
 
   while (true) {
-    const result = await withRatedOperation((rated) =>
-      queryBendystraw(
-        chainId,
-        rated ? SuckerGroupMomentsWithRateOperation : SuckerGroupMomentsOperation,
-        { suckerGroupId, after: cursor },
-      ),
-    );
+    const result = await queryBendystraw(chainId, SuckerGroupMomentsOperation, {
+      suckerGroupId,
+      after: cursor,
+    });
 
     allItems.push(...(result.suckerGroupMoments?.items ?? []));
 
