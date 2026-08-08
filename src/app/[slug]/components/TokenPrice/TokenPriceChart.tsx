@@ -1,6 +1,7 @@
 "use client";
 
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
+import { ChartNoteTip } from "./ChartNoteTip";
 import { CartesianChart, type ChartReferenceLine, type ChartSeries } from "@/components/ui/chart";
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
@@ -181,10 +182,21 @@ export function TokenPriceChart({
     0,
   );
 
+  // An always-on methodological caveat, not a problem — so it sits behind an (!) rather than
+  // as a banner. The two notices below it stay inline on purpose: those say data is MISSING or
+  // a source is DOWN, which the reader has to see without hovering anything.
+  const conversionNote = data?.conversionBasis
+    ? `Market and cash-out prices are converted from ${tokenSymbol ?? "the accounting token"} into this revnet's issuance currency` +
+      (data.conversionBasis === "indexed"
+        ? " using indexed payment values, so they are approximate."
+        : " at the current exchange rate, so earlier points are approximate.") +
+      " The issuance ceiling is natively denominated in it and is exact."
+    : null;
+
   return (
     <div className="w-full">
       <div className="flex flex-col items-start gap-2.5">
-        <div className="flex flex-wrap gap-1.5 lg:gap-4">
+        <div className="flex w-full flex-wrap items-center gap-1.5 lg:gap-4">
           <ChartToggleButton
             label="Issuance Price"
             active={showIssuance}
@@ -207,6 +219,11 @@ export function TokenPriceChart({
             colorVar="--chart-3"
             onClick={() => setShowFloor(!showFloor)}
           />
+          {conversionNote ? (
+            <span className="ml-auto">
+              <ChartNoteTip note={conversionNote} />
+            </span>
+          ) : null}
         </div>
         <div className="flex w-full justify-start sm:justify-end">
           <RangeSelector ranges={TIME_RANGES} defaultValue="1y" />
@@ -215,15 +232,6 @@ export function TokenPriceChart({
       {(data?.unavailableSources.length ?? 0) > 0 ? (
         <p className="mt-3 text-xs text-amber-700">
           {data!.unavailableSources.join(" and ")} price history is temporarily unavailable.
-        </p>
-      ) : null}
-      {data?.conversionBasis ? (
-        <p className="mt-3 text-xs text-amber-700">
-          Market and cash-out prices are converted from {tokenSymbol ?? "the accounting token"}{" "}
-          into this revnet&apos;s issuance currency
-          {data.conversionBasis === "indexed"
-            ? " using indexed payment values, so they are approximate."
-            : " at the current exchange rate, so earlier points are approximate."}
         </p>
       ) : null}
       {data?.marketSeriesUnavailable ? (
