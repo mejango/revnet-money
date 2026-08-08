@@ -1,6 +1,6 @@
 "use client";
 
-import { InformationCircle } from "@/components/ui/icons";
+import { InformationCircle, QuestionMarkCircle } from "@/components/ui/icons";
 import {
   Tooltip,
   TooltipContent,
@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/tooltip";
 
 /**
- * A small (!) that carries a chart caveat without taking a line of the layout.
+ * A small icon that carries a caveat or a definition without taking a line of the layout.
  *
  * For notes that are ALWAYS true of a given project rather than notes about something being
  * wrong — a permanent banner reads as a warning and trains the reader to ignore it. Anything
@@ -17,7 +17,16 @@ import {
  *
  * `title` carries the same text so it survives touch, where there is no hover.
  */
-export function ChartNoteTip({ note }: { note: string }) {
+export function InfoTip({
+  note,
+  kind = "info",
+}: {
+  note: string;
+  /** `info` qualifies data already shown; `help` defines a term the reader may not know. Two
+   *  icons because they answer different questions — one icon for both teaches people that the
+   *  icon means nothing in particular. */
+  kind?: "info" | "help";
+}) {
   return (
     <TooltipProvider>
       <Tooltip>
@@ -28,7 +37,11 @@ export function ChartNoteTip({ note }: { note: string }) {
             title={note}
             className="flex items-center justify-center text-zinc-400 transition-colors hover:text-zinc-600"
           >
-            <InformationCircle className="h-[18px] w-[18px]" />
+            {kind === "help" ? (
+              <QuestionMarkCircle className="h-[18px] w-[18px]" />
+            ) : (
+              <InformationCircle className="h-[18px] w-[18px]" />
+            )}
           </button>
         </TooltipTrigger>
         <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">

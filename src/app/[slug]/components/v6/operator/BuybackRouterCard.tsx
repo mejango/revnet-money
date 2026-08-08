@@ -38,6 +38,8 @@ import {
 } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
 import { useOperatorWrites } from "./useOperatorWrites";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 
 type BuybackChainState = ChainProjectRow & {
   buybackRegistry: Address | undefined;
@@ -776,6 +778,7 @@ function BuybackActionForm({
           />
           <NumberField
             label="TWAP window (seconds)"
+            note={PROTOCOL_CONCEPTS.twapWindow}
             value={twapWindow}
             onChange={setTwapWindow}
             disabled={busy}
@@ -795,6 +798,7 @@ function BuybackActionForm({
         <div className="mt-3 sm:max-w-xs">
           <NumberField
             label="TWAP window (seconds)"
+            note={PROTOCOL_CONCEPTS.twapWindow}
             value={twapWindow}
             onChange={setTwapWindow}
             disabled={busy}
@@ -839,16 +843,22 @@ function NumberField({
   onChange,
   disabled,
   placeholder,
+  note,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
   placeholder: string;
+  /** What the field MEANS, for a term the operator may not know. */
+  note?: string;
 }) {
   return (
     <label className="block">
-      <span className="block text-sm font-medium mb-1">{label}</span>
+      <span className="mb-1 flex items-center gap-1 text-sm font-medium">
+        {label}
+        {note ? <InfoTip note={note} kind="help" /> : null}
+      </span>
       <Input
         inputMode="numeric"
         value={value}

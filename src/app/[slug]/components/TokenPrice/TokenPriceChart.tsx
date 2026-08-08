@@ -1,7 +1,7 @@
 "use client";
 
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
-import { ChartNoteTip } from "./ChartNoteTip";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { CartesianChart, type ChartReferenceLine, type ChartSeries } from "@/components/ui/chart";
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
@@ -230,7 +230,7 @@ export function TokenPriceChart({
           />
           {conversionNote ? (
             <span className="ml-auto">
-              <ChartNoteTip note={conversionNote} />
+              <InfoTip note={conversionNote} />
             </span>
           ) : null}
         </div>

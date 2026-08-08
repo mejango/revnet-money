@@ -31,6 +31,7 @@ import { decode721RulesetMetadata } from "@bananapus/nana-sdk-core/v6";
 import { formatUnits } from "viem";
 import { useReadContracts } from "wagmi";
 import type { Ruleset } from "../getRulesets";
+import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 
 interface Props {
   rulesets: Ruleset[];
@@ -180,10 +181,9 @@ export function StagesTable({ rulesets }: Props) {
               <TooltipLabel
                 label="Cash out tax"
                 tooltip={
-                  <p>
-                    Tax applied when cashing out tokens
-                    <br /> (0 = no tax, 1 = maximum tax)
-                  </p>
+                  // The dotted underline already signals this is hoverable, so no icon here —
+                  // the aim is a discoverable explanation, not a particular glyph.
+                  <p>{PROTOCOL_CONCEPTS.cashOutTax}</p>
                 }
               />
             </TableHead>
