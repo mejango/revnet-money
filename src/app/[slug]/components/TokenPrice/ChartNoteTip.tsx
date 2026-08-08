@@ -1,5 +1,6 @@
 "use client";
 
+import { InformationCircle } from "@/components/ui/icons";
 import {
   Tooltip,
   TooltipContent,
@@ -25,9 +26,9 @@ export function ChartNoteTip({ note }: { note: string }) {
             type="button"
             aria-label={note}
             title={note}
-            className="flex h-5 w-5 items-center justify-center rounded-full border border-zinc-300 text-[11px] font-semibold leading-none text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-700"
+            className="flex items-center justify-center text-zinc-400 transition-colors hover:text-zinc-600"
           >
-            !
+            <InformationCircle className="h-[18px] w-[18px]" />
           </button>
         </TooltipTrigger>
         <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
