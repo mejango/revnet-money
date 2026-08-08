@@ -154,7 +154,8 @@ export function StagesTable({ rulesets }: Props) {
                 label="Issuance"
                 tooltip={
                   <p>
-                    Amount of {formatTokenSymbol(token)} created per {tokenA.symbol} received
+                    {PROTOCOL_CONCEPTS.issuance} Here: {formatTokenSymbol(token)} created per{" "}
+                    {tokenA.symbol} received.
                   </p>
                 }
               />
@@ -162,19 +163,19 @@ export function StagesTable({ rulesets }: Props) {
             <TableHead className="whitespace-nowrap font-medium px-2">
               <TooltipLabel
                 label="Cut"
-                tooltip={<p>Percentage reduction in issuance rate applied at regular intervals</p>}
+                tooltip={<p>{PROTOCOL_CONCEPTS.issuanceCut}</p>}
               />
             </TableHead>
             <TableHead className="whitespace-nowrap font-medium px-2">
               <TooltipLabel
                 label="Split limit"
-                tooltip={<p>Percentage of issuance set aside for split recipients</p>}
+                tooltip={<p>{PROTOCOL_CONCEPTS.reservedShare}</p>}
               />
             </TableHead>
             <TableHead className="whitespace-nowrap font-medium px-2">
               <TooltipLabel
                 label="Auto issuance"
-                tooltip={<p>Tokens automatically minted when the stage starts</p>}
+                tooltip={<p>{PROTOCOL_CONCEPTS.autoIssuance}</p>}
               />
             </TableHead>
             <TableHead className="whitespace-nowrap font-medium px-2 last:pr-3">
@@ -190,11 +191,7 @@ export function StagesTable({ rulesets }: Props) {
             <TableHead className="whitespace-nowrap font-medium px-2 last:pr-3">
               <TooltipLabel
                 label="Item transfers"
-                tooltip={
-                  <p>
-                    Whether this stage pauses shop tiers which opted into stage-controlled transfers
-                  </p>
-                }
+                tooltip={<p>{PROTOCOL_CONCEPTS.itemTransfers}</p>}
               />
             </TableHead>
           </TableRow>
