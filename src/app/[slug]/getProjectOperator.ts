@@ -17,25 +17,25 @@ export const getProjectOperator = unstable_cache(
   },
 );
 
+/**
+ * The revnet's operator address, or null when the indexer answered and nobody
+ * holds the role. A read failure throws: an outage is a different claim than
+ * "no operator", and callers render it as unavailable rather than as absent.
+ */
 async function getProjectOperatorAddress(projectId: number, chainId: number) {
-  try {
-    const items: Array<{ operator: string; permissions: number[] | null }> = [];
-    let totalCount = 0;
-    do {
-      const result = await queryBendystraw(chainId, PermissionHoldersOperation, {
-        where: { chainId, projectId, version: 6, isRevnetOperator: true },
-        limit: 250,
-        offset: items.length,
-      });
-      const page = result.permissionHolders?.items ?? [];
-      totalCount = result.permissionHolders?.totalCount ?? page.length;
-      items.push(...page);
-      if (!page.length) break;
-    } while (items.length < totalCount);
+  const items: Array<{ operator: string; permissions: number[] | null }> = [];
+  let totalCount = 0;
+  do {
+    const result = await queryBendystraw(chainId, PermissionHoldersOperation, {
+      where: { chainId, projectId, version: 6, isRevnetOperator: true },
+      limit: 250,
+      offset: items.length,
+    });
+    const page = result.permissionHolders?.items ?? [];
+    totalCount = result.permissionHolders?.totalCount ?? page.length;
+    items.push(...page);
+    if (!page.length) break;
+  } while (items.length < totalCount);
 
-    return pickRevnetOperator(items);
-  } catch (err) {
-    console.error((err as Error).message);
-    return null;
-  }
+  return pickRevnetOperator(items);
 }

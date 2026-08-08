@@ -1,4 +1,4 @@
-import { chainSortOrder } from "@/app/constants";
+import { chainSortIndex } from "@/app/constants";
 import { requireOnchainExecution } from "@/hooks/useReviewedWriteContract";
 import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import type { PermissionHolder, PermissionHolderFilter } from "@/lib/bendystraw/types";
@@ -16,7 +16,7 @@ export function chainProjectRows(projects: ProjectItem[]): ChainProjectRow[] {
   return projects
     .filter((p) => Boolean(JB_CHAINS[p.chainId as JBChainId]))
     .map((p) => ({ chainId: p.chainId as JBChainId, projectId: p.projectId }))
-    .sort((a, b) => (chainSortOrder.get(a.chainId) ?? 0) - (chainSortOrder.get(b.chainId) ?? 0));
+    .sort((a, b) => chainSortIndex(a.chainId) - chainSortIndex(b.chainId));
 }
 
 export function chainName(chainId: number): string {

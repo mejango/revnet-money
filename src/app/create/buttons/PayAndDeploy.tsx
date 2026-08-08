@@ -20,11 +20,14 @@ import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { twMerge } from "tailwind-merge";
 import { Hash } from "viem";
+import { ensureFreshQuote, type QuotedStageStart } from "../helpers/staleQuote";
 import { GoToProjectButton } from "./GoToProjectButton";
 
 interface PaymentAndDeploySectionProps {
   relayrResponse: RelayrPostBundleResponse;
   revnetTokenSymbol: string;
+  quotedStageStart?: QuotedStageStart;
+  rebuildStaleQuote?: () => Promise<RelayrPostBundleResponse>;
 }
 
 const statusToIcon = (status: string) => {
@@ -38,7 +41,12 @@ const statusToIcon = (status: string) => {
   return <CircleXIcon className="w-5 h-5 text-red-500 fade-in-50" />;
 };
 
-export function PayAndDeploy({ relayrResponse, revnetTokenSymbol }: PaymentAndDeploySectionProps) {
+export function PayAndDeploy({
+  relayrResponse,
+  revnetTokenSymbol,
+  quotedStageStart,
+  rebuildStaleQuote,
+}: PaymentAndDeploySectionProps) {
   const [selectedPayment, selectPayment] = useState<ChainPayment | null>(null);
   const [payIsProcessing, setPayIsProcessing] = useState(false);
   const { sendRelayrTx } = useSendRelayrTx();
@@ -65,17 +73,30 @@ export function PayAndDeploy({ relayrResponse, revnetTokenSymbol }: PaymentAndDe
             setPayIsProcessing(true);
             try {
               if (!selectedPayment || !sendRelayrTx) throw new Error("No payment selected");
-              const hash = await sendRelayrTx(selectedPayment);
+              const { bundle, payment } = await ensureFreshQuote({
+                bundle: relayrResponse,
+                payment: selectedPayment,
+                quotedStageStart,
+                rebuildStaleQuote,
+                onRebuild: () =>
+                  toast({
+                    title: "Refreshing stale quote",
+                    description:
+                      "This quote's encoded start time has passed. Sign the refreshed deploy requests to keep cash-outs and loans open at launch.",
+                  }),
+              });
+              if (payment !== selectedPayment) selectPayment(payment);
+              const hash = await sendRelayrTx(payment);
               if (submittedViaSafe(hash)) {
                 setPayIsProcessing(false);
                 toast({
                   title: "Safe payment proposal submitted",
                   description:
-                    "The Relayr bundle is not paid yet. Approve and execute the payment in Safe, then check this bundle; do not propose another payment.",
+                    "The Relayr bundle is not paid yet. Approve and execute the payment in Safe, then check this bundle; do not propose another payment. Execute it before the quoted start time — about 10 minutes after the quote was created — or cash-outs and loans will be locked for 7 days from execution.",
                 });
                 return;
               }
-              startPolling(relayrResponse.bundle_uuid);
+              startPolling(bundle.bundle_uuid);
             } catch (e: any) {
               setPayIsProcessing(false);
               toast({

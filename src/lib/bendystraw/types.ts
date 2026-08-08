@@ -400,10 +400,6 @@ export type HasPermissionQuery = {
   permissionHolder: { permissions: number[] | null } | null;
 };
 
-export type ProjectCreateEventQueryVariables = { where?: BendystrawFilter };
-export type ProjectCreateEventQuery = {
-  projectCreateEvents: { items: Array<{ txHash: string; timestamp: number }> };
-};
 
 export type ProjectOperatorQueryVariables = {
   chainId: number;
@@ -482,8 +478,13 @@ type LoanRow = {
   id: BigNumberish;
   project: { version: number } | null;
 };
-export type LoansByAccountQueryVariables = { owner: string; version: number };
-export type LoansByAccountQuery = { loans: { items: LoanRow[] } };
+export type LoansByAccountQueryVariables = {
+  owner: string;
+  version: number;
+  limit?: number;
+  offset?: number;
+};
+export type LoansByAccountQuery = { loans: { items: LoanRow[]; totalCount?: number } };
 
 export type CashOutTaxSnapshot = {
   cashOutTax: number;

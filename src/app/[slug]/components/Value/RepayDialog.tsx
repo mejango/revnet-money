@@ -32,12 +32,19 @@ export function RepayDialog({
   loanId,
   chainId,
   projectId,
+  loanProjectId,
   open,
   onOpenChange,
 }: {
   loanId: string;
   chainId: JBChainId;
+  /** The route chain's project id — only for the sucker-group lookup. */
   projectId: bigint;
+  /**
+   * The loan's own chain-local project id. V6 project ids are a per-chain namespace, so
+   * quotes on the loan's chain must use this, never the route chain's id.
+   */
+  loanProjectId: bigint;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -177,7 +184,7 @@ export function RepayDialog({
     args:
       loanData && collateralToReturnWei !== undefined && chainTokenConfig
         ? [
-            projectId,
+            loanProjectId,
             loanData.collateral - collateralToReturnWei,
             BigInt(chainTokenConfig.decimals),
             BigInt(chainTokenConfig.currency),

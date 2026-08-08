@@ -11,6 +11,7 @@ import {
   JBOmnichainDeployerContracts,
   jbPricesAbi,
   jbSplitsAbi,
+  jbUniswapV4LpSplitHookAbi,
   NATIVE_TOKEN,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
@@ -1279,7 +1280,7 @@ export interface AmmChainState {
   reference: MarketReferencePrices;
 }
 
-export interface MarketReferencePrices {
+interface MarketReferencePrices {
   /** Issuance ceiling, in pair tokens per project token. */
   issuance: number | null;
   /** Cash-out floor, in pair tokens per project token. */
@@ -1333,7 +1334,7 @@ async function issuanceCeilingOf(
  * path. It is taken in the accounting context's own terms, so no price-feed
  * conversion is involved.
  */
-export async function readMarketReferencePrices(
+async function readMarketReferencePrices(
   pool: PoolSnapshot,
   projectId: bigint,
   providedClient?: PublicClient,
@@ -1399,167 +1400,12 @@ export async function fetchAmmStates(chains: ChainProject[]): Promise<AmmChainSt
 
 // ── LP split hook (JBP6FeeLPSplitHook / JBUniswapV4LPSplitHook) ───────────────
 
-export const lpSplitHookAbi = [
-  {
-    type: "function",
-    name: "initialWeightOf",
-    stateMutability: "view",
-    inputs: [{ name: "projectId", type: "uint256" }],
-    outputs: [{ type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "accumulatedProjectTokens",
-    stateMutability: "view",
-    inputs: [{ name: "projectId", type: "uint256" }],
-    outputs: [{ type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "hasDeployedPool",
-    stateMutability: "view",
-    inputs: [{ name: "projectId", type: "uint256" }],
-    outputs: [{ type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "claimableFeeTokens",
-    stateMutability: "view",
-    inputs: [{ name: "projectId", type: "uint256" }],
-    outputs: [{ type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "tokenIdOf",
-    stateMutability: "view",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "terminalToken", type: "address" },
-    ],
-    outputs: [{ type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "activeTickLowerOf",
-    stateMutability: "view",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "terminalToken", type: "address" },
-    ],
-    outputs: [{ type: "int24" }],
-  },
-  {
-    type: "function",
-    name: "activeTickUpperOf",
-    stateMutability: "view",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "terminalToken", type: "address" },
-    ],
-    outputs: [{ type: "int24" }],
-  },
-  // The DEPLOYED hook's signature. `univ4-lp-split-hook-v6` HEAD (and the staged npm pin) drop
-  // the second argument, which changes the selector — see deployPoolAbiFor below, which picks
-  // the right one instead of letting the button die with an opaque simulate revert.
-  {
-    type: "function",
-    name: "deployPool",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "minCashOutReturn", type: "uint256" },
-    ],
-    outputs: [],
-  },
-  {
-    type: "function",
-    name: "collectAndRouteLPFees",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "terminalToken", type: "address" },
-    ],
-    outputs: [],
-  },
-  // Custom errors so a reverting simulate decodes to the real reason.
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_ZeroLiquidity",
-    inputs: [
-      { name: "amount0", type: "uint256" },
-      { name: "amount1", type: "uint256" },
-    ],
-  },
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_InsufficientLiquidity",
-    inputs: [{ name: "liquidity", type: "uint128" }],
-  },
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_InsufficientBalance",
-    inputs: [
-      { name: "available", type: "uint256" },
-      { name: "required", type: "uint256" },
-    ],
-  },
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_NoTokensAccumulated",
-    inputs: [{ name: "projectId", type: "uint256" }],
-  },
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_PoolAlreadyDeployed",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "terminalToken", type: "address" },
-      { name: "tokenId", type: "uint256" },
-    ],
-  },
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_OnlyOneTerminalTokenSupported",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "terminalToken", type: "address" },
-    ],
-  },
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_InvalidStageForAction",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "terminalToken", type: "address" },
-      { name: "tokenId", type: "uint256" },
-    ],
-  },
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_TwapUnavailable",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "terminalToken", type: "address" },
-    ],
-  },
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_PriceDeviationTooHigh",
-    inputs: [
-      { name: "spotTick", type: "int24" },
-      { name: "twapTick", type: "int24" },
-      { name: "maxDeviationTicks", type: "int24" },
-    ],
-  },
-  {
-    type: "error",
-    name: "JBUniswapV4LPSplitHook_InvalidTerminalToken",
-    inputs: [
-      { name: "projectId", type: "uint256" },
-      { name: "terminalToken", type: "address" },
-    ],
-  },
-] as const;
+/**
+ * Generated from the deployment artifacts, so the shape tracks the deployed
+ * bytecode instead of a hand-copied fragment. `JBP6FeeLPSplitHook` shares this
+ * surface; only the fee-project wiring differs.
+ */
+export const lpSplitHookAbi = jbUniswapV4LpSplitHookAbi;
 
 /** Reserved-token split group id (JBSplitGroupIds.RESERVED_TOKENS). */
 const RESERVED_SPLIT_GROUP = 1n;
@@ -1750,10 +1596,10 @@ export const deployPoolSingleArgAbi = [
 /**
  * Which `deployPool` the hook at `hookAddress` actually exposes.
  *
- * Two generations are live at once during the lp-split-hook rollout:
- * `deployPool(uint256,uint256)` (deployed today) and `deployPool(uint256)` (HEAD + the staged
- * npm pin). Different arity means a DIFFERENT SELECTOR, so calling the wrong one reverts at
- * simulate with nothing to explain why.
+ * Two generations exist during the lp-split-hook rollout: `deployPool(uint256,uint256)` (what
+ * is deployed, and what the SDK's artifact-generated ABI carries) and `deployPool(uint256)`
+ * (univ4-lp-split-hook-v6 HEAD, deployed nowhere yet). Different arity means a DIFFERENT
+ * SELECTOR, so calling the wrong one reverts at simulate with nothing to explain why.
  *
  * Solidity emits every external selector as a PUSH4 immediate in the dispatch table, so the
  * deployed bytecode answers this directly — one cached read, no revert-classification

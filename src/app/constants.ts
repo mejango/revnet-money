@@ -9,18 +9,71 @@ import {
   sepolia,
 } from "@/lib/chains";
 import type { JBChainId } from "@/lib/nana/types";
+import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 
 export const RESERVED_TOKEN_SPLIT_GROUP_ID = 1n;
 /** JBSplits.FALLBACK_RULESET_ID — the default group `splitsOf` serves when a ruleset's group is empty. */
 export const FALLBACK_RULESET_ID = 0n;
 export const REVNET_CASHOUT_FEE_PERCENT = 0.025;
 
+/**
+ * Display order for chain lists. Production chains first, then their testnets, so every
+ * list on the site orders the same way. Must cover EVERY supported chain: a partial map
+ * makes the comparator return 0 for the missing ones, and their order then depends on
+ * whatever the data source happened to emit.
+ */
 export const chainSortOrder = new Map<JBChainId, number>([
-  [sepolia.id, 0],
-  [optimismSepolia.id, 1],
-  [baseSepolia.id, 2],
-  [arbitrumSepolia.id, 3],
+  [mainnet.id, 0],
+  [optimism.id, 1],
+  [base.id, 2],
+  [arbitrum.id, 3],
+  [sepolia.id, 4],
+  [optimismSepolia.id, 5],
+  [baseSepolia.id, 6],
+  [arbitrumSepolia.id, 7],
 ]);
+
+/**
+ * Sort key for a chain id. Unlisted chains sort after every known one, by chain id, so
+ * ordering stays deterministic instead of collapsing to a 0-vs-0 comparison.
+ */
+export function chainSortIndex(chainId: number): number {
+  return chainSortOrder.get(chainId as JBChainId) ?? 1_000_000 + chainId;
+}
+
+/**
+ * Every chain the app supports, in display order.
+ *
+ * MEMBERSHIP is derived from the SDK's `JB_CHAINS` — never from a literal — so a chain
+ * added there can only ever be appended, not silently dropped from a picker or
+ * misclassified. `chainSortOrder` supplies ORDER only; an unlisted chain sorts last
+ * rather than disappearing.
+ */
+export const SUPPORTED_CHAIN_IDS: readonly JBChainId[] = Object.values(JB_CHAINS)
+  .map((metadata) => metadata.chain.id as JBChainId)
+  .sort((a, b) => chainSortIndex(a) - chainSortIndex(b));
+
+export function isSupportedChainId(chainId: number): chainId is JBChainId {
+  return chainId in JB_CHAINS;
+}
+
+/**
+ * Whether a chain is a testnet, read off the chain definition itself.
+ *
+ * Load-bearing beyond display: the testnet split routes Bendystraw to the right host, so
+ * a chain missing from a hand-kept list produces a hard wrong-network read, not an empty
+ * one — and suckers never bridge across the split.
+ */
+export function isTestnetChain(chainId: number): boolean {
+  return Boolean(JB_CHAINS[chainId as JBChainId]?.chain.testnet);
+}
+
+export const MAINNET_CHAIN_IDS: readonly JBChainId[] = SUPPORTED_CHAIN_IDS.filter(
+  (chainId) => !isTestnetChain(chainId),
+);
+export const TESTNET_CHAIN_IDS: readonly JBChainId[] = SUPPORTED_CHAIN_IDS.filter((chainId) =>
+  isTestnetChain(chainId),
+);
 
 export const chainIdToLogo = {
   [sepolia.id]: "/assets/img/logo/mainnet.svg",
@@ -33,15 +86,5 @@ export const chainIdToLogo = {
   [arbitrum.id]: "/assets/img/logo/arbitrum.svg",
 };
 
-export const USDC_ADDRESSES: Record<number, `0x${string}`> = {
-  42161: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // Arbitrum
-  8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // Base
-  1: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // Ethereum
-  10: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", // Optimism
-  421614: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d", // Arbitrum sepolia
-  84532: "0x036cbd53842c5426634e7929541ec2318f3dcf7e", // Base Sepolia
-  11155111: "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238", // Ethereum sepolia
-  11155420: "0x5fd84259d66Cd46123540766Be93DFE6D43130D7", // Optimism sepolia
-};
-
+/** USDC is 6-decimal on every chain the SDK's `USDC_ADDRESSES` covers. */
 export const USDC_DECIMALS = 6;

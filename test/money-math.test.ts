@@ -118,16 +118,30 @@ describe("contract-derived monetary display math", () => {
     expect(points[0]).toEqual({ year: 0, totalCost: 100 });
     expect(points.at(-1)).toMatchObject({ year: 10 });
     expect(points.at(-1)?.totalCost).toBeGreaterThan(points[0].totalCost);
-    // Near liquidation with no prepayment the source fee approaches 100% of
-    // `loan.amount - prepaid` (REVLoansSourceFees.sol:43-53) — the full principal again. The
-    // ramp used to run over the amount NET of the 3.5% fixed fee (which is taken from the
-    // payout at origination and is not part of the loan balance), landing at ~196.3 and
-    // understating the max unlock cost.
-    expect(points.at(-1)?.totalCost).toBeGreaterThan(199);
-    expect(points.at(-1)?.totalCost).toBeLessThanOrEqual(200);
+    // The contract rejects prepaid fee percents below MIN_PREPAID_FEE_PERCENT = 25 permil
+    // (REVLoans.sol:1339-1343), so "0" carries the 2.5% minimum: prepaid = 2.5 and the ramp
+    // (REVLoansSourceFees.sol:43-53) reaches 100% of `loan.amount - prepaid` = 97.5 at
+    // liquidation. Max unlock cost = 100 + 97.5 = 197.5.
+    expect(points.at(-1)?.totalCost).toBeCloseTo(197.5, 10);
     expect(
       points.every((point, index) => index === 0 || point.totalCost >= points[index - 1].totalCost),
     ).toBe(true);
+  });
+
+  it("prices the prepaid fee in permil of the borrowed amount, per the contract's linear map", () => {
+    // 50% prepaid = MAX_PREPAID_FEE_PERCENT = 500 permil: prepaid = 50, so the decaying
+    // portion is `loan.amount - prepaid` = 50 and the max unlock cost is 150 — not the
+    // 195 that a basis-point denominator would produce.
+    const maxed = generateFeeData({ grossBorrowedEth: 100, prepaidPercent: "50" });
+    expect(maxed.at(-1)?.totalCost).toBeCloseTo(150, 10);
+
+    // The default 2.5% is exactly the contract minimum: 25 permil buys a 6-month window
+    // (REVLoans.sol:1367-1368 — 25/500 of the 120-month liquidation duration), inside which
+    // the unlock cost stays flat at the borrowed amount.
+    const min = generateFeeData({ grossBorrowedEth: 100, prepaidPercent: "2.5" });
+    expect(min.find((point) => point.year === 0.5)?.totalCost).toBe(100);
+    expect(min.find((point) => point.year === 0.75)?.totalCost).toBeGreaterThan(100);
+    expect(min.at(-1)?.totalCost).toBeCloseTo(197.5, 10);
   });
 });
 

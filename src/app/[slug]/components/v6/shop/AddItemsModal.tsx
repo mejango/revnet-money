@@ -20,6 +20,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { cidFromIpfsUri } from "@/lib/ipfs";
 import { jb721TiersHookAbi, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Address, Hex, isAddress, parseUnits, PublicClient, zeroAddress } from "viem";
@@ -202,10 +203,22 @@ export function buildTierConfigs(items: DraftItem[], decimals: number): TierConf
     }
     const totalSplitPct = splitValues.reduce((total, value) => total + value, 0);
     if (totalSplitPct > 100) return `${label}sales splits cannot add up to more than 100%.`;
-    const splitPercents = splitValues.map((value) => Math.round((value / totalSplitPct) * 1e9));
-    if (splitPercents.length > 0) {
-      splitPercents[splitPercents.length - 1] =
-        1e9 - splitPercents.slice(0, -1).reduce((total, value) => total + value, 0);
+    // Each row's share of the sales bucket, out of SPLITS_TOTAL_PERCENT (1e9). A row so
+    // small it rounds to zero would be encoded as a split that can never pay anything, so
+    // it is rejected here rather than written into the tier.
+    const roundedShares = splitValues.map((value) => Math.round((value / totalSplitPct) * 1e9));
+    const tooSmall = roundedShares.findIndex((share) => share < 1);
+    if (tooSmall !== -1) {
+      return `${label}split ${tooSmall + 1} is too small a share of the other splits to encode.`;
+    }
+    // `fillSplitPercents` assigns the rounding remainder to the LARGEST row, so the group
+    // sums to exactly 1e9 (JBSplits reverts otherwise) and no row can be driven to zero or
+    // negative — which absorbing the remainder into the last-entered row could do.
+    let splitPercents: number[];
+    try {
+      splitPercents = fillSplitPercents(roundedShares);
+    } catch {
+      return `${label}the sales splits could not be encoded — check each split's percentage.`;
     }
     const splits = validSplits.map((split, splitIndex) => ({
       percent: splitPercents[splitIndex],

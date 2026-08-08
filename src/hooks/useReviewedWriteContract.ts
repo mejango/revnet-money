@@ -106,9 +106,12 @@ export function resumeSafeProposalTracking(): void {
     .forEach((activity) => void watchSafeProposal(activity.id, activity.hash!, activity.chainId!));
 }
 
-export function isSafeConnection(config: ReturnType<typeof useConfig>): boolean {
-  const connector = getAccount(config).connector;
+export function isSafeConnector(connector: { id?: string; name?: string } | undefined): boolean {
   return `${connector?.id ?? ""} ${connector?.name ?? ""}`.toLowerCase().includes("safe");
+}
+
+export function isSafeConnection(config: ReturnType<typeof useConfig>): boolean {
+  return isSafeConnector(getAccount(config).connector);
 }
 
 function followSubmission(

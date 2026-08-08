@@ -274,8 +274,9 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
               ? selectedLoanReallocAmount - BigInt(internalSelectedLoan.borrowAmount)
               : estimatedBorrowFromInputOnly;
 
-          // Use correct decimals for the selected chain
-          const tokenDecimals = selectedChainTokenConfig?.decimals || NATIVE_TOKEN_DECIMALS;
+          // Use correct decimals for the selected chain. `??`, not `||`: a legitimate
+          // 0-decimal accounting token must not be read as 18.
+          const tokenDecimals = selectedChainTokenConfig?.decimals ?? NATIVE_TOKEN_DECIMALS;
           const simulatedAmountBorrowed = effectiveBorrowableAmount
             ? Number(formatUnits(effectiveBorrowableAmount, tokenDecimals))
             : 0;

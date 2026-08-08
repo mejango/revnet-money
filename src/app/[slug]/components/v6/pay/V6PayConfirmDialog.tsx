@@ -19,6 +19,7 @@ import {
   buildTransactionReviewPrompt,
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
+import { etherscanLink } from "@/lib/utils";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
@@ -177,9 +178,9 @@ export function V6PayConfirmDialog({
                       ? "Your payment went through."
                       : "The balance grew — no tokens were minted."}
                   </p>
-                  {txHash && chainMeta ? (
+                  {txHash && etherscanLink(txHash, { type: "tx", chainId }) ? (
                     <a
-                      href={`https://${chainMeta.etherscanHostname}/tx/${txHash}`}
+                      href={etherscanLink(txHash, { type: "tx", chainId })}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mt-2 inline-block text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-900"

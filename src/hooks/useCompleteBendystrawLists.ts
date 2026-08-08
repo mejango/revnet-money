@@ -6,6 +6,7 @@ import {
   AccountTokenBalancesOperation,
   ActivityEventsOperation,
   AllLoansOperation,
+  LoansByAccountOperation,
   OwnedNftsOperation,
   ParticipantsOperation,
   PermissionHoldersOperation,
@@ -29,6 +30,7 @@ import type {
   ActivityEventsQueryVariables,
   AllLoansQuery,
   BendystrawFilter,
+  LoansByAccountQuery,
   OwnedNftsQuery,
   OwnedProjectRow,
   ParticipantsQuery,
@@ -246,6 +248,33 @@ export async function fetchCompleteLoans(refs: readonly VersionedProjectRef[]) {
   return pages.flat().sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/**
+ * Every loan an account owns, paged to completion.
+ *
+ * The unpaginated form silently returned only the indexer's default page, so an account
+ * past that many loans lost rows with no signal — and which rows survived depended on the
+ * server's default ordering.
+ */
+export async function fetchLoansByAccount(owner: string, version: number, chainId?: number) {
+  const items: LoansByAccountQuery["loans"]["items"] = [];
+  let totalCount = 0;
+  do {
+    const data = await queryBendystrawFromBrowser(
+      LoansByAccountOperation,
+      { owner, version, limit: PAGE_SIZE, offset: items.length },
+      chainId,
+    );
+    const page = data.loans?.items ?? [];
+    totalCount = data.loans?.totalCount ?? page.length;
+    items.push(...page);
+    if (!page.length && items.length < totalCount) {
+      throw new Error("Indexed loan data ended before its reported total.");
+    }
+    if (!page.length) break;
+  } while (items.length < totalCount);
+  return items;
+}
+
 async function completeParticipants(where: BendystrawFilter, chainId: number) {
   const items: ParticipantsQuery["participants"]["items"] = [];
   let totalCount = 0;
@@ -397,6 +426,20 @@ export function useCompleteLoans(refs: readonly VersionedProjectRef[], enabled =
     queryKey: ["complete-loans", refs],
     queryFn: () => fetchCompleteLoans(refs),
     enabled: enabled && refs.length > 0,
+  });
+}
+
+export function useCompleteLoansByAccount(
+  owner: string | undefined,
+  version: number,
+  chainId?: number,
+  pollInterval = 3_000,
+) {
+  return useQuery({
+    queryKey: ["complete-loans-by-account", owner ?? null, version, chainId ?? null],
+    queryFn: () => fetchLoansByAccount(owner!, version, chainId),
+    enabled: !!owner,
+    refetchInterval: pollInterval,
   });
 }
 

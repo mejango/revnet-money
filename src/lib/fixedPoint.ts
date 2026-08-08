@@ -24,9 +24,3 @@ export function quotePayerTokensForOneUnit({
   return totalTokens - reservedTokens;
 }
 
-/** Divide two already-scaled integer values while bounding the Number conversion. */
-export function ratioOfScaledIntegers(numerator: bigint, denominator: bigint): number {
-  if (denominator === 0n) return 0;
-  const precision = 1_000_000_000n;
-  return Number((numerator * precision) / denominator) / Number(precision);
-}

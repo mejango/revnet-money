@@ -1,10 +1,5 @@
 import { getViemPublicClient } from "@/lib/wagmiTransports";
-import {
-  JBChainId,
-  jbSuckerRegistryAbi,
-  NATIVE_TOKEN,
-  USDC_ADDRESSES,
-} from "@bananapus/nana-sdk-core";
+import { JBChainId, jbSuckerRegistryAbi } from "@bananapus/nana-sdk-core";
 import {
   assertSuckerTransportValue,
   buildBridgeClaimTx,
@@ -16,6 +11,7 @@ import {
   getAllV6SuckerPairs,
   getSuckerMovements,
   SUCKER_MERKLE_DEPTH,
+  suckerAccountingContextKey,
   suckerBytes32ToAddress,
   v6Address,
   type JBLeafProof,
@@ -51,13 +47,6 @@ export interface V6BridgeRow {
   remoteToken: Address;
   tokenDecimals: number;
   infra: JBSuckerTransport;
-}
-
-function contextKey(token: Address, chainId: JBChainId, decimals: number): string {
-  const normalized = token.toLowerCase();
-  if (normalized === NATIVE_TOKEN.toLowerCase()) return `native@${decimals}`;
-  if (normalized === USDC_ADDRESSES[chainId].toLowerCase()) return `usdc@${decimals}`;
-  return `${normalized}@${decimals}`;
 }
 
 /**
@@ -106,8 +95,11 @@ export async function fetchV6BridgeRows(
               const candidates = peerContexts.filter(
                 (candidate) =>
                   candidate.decimals === accountingContext.decimals &&
-                  contextKey(candidate.token as Address, peerChainId, candidate.decimals) ===
-                    contextKey(token, chainId, accountingContext.decimals),
+                  suckerAccountingContextKey(
+                    candidate.token as Address,
+                    peerChainId,
+                    candidate.decimals,
+                  ) === suckerAccountingContextKey(token, chainId, accountingContext.decimals),
               );
               const historicalRemoteToken =
                 candidates.length === 1 ? (candidates[0].token as Address) : undefined;

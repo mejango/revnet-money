@@ -4,11 +4,10 @@ import {
   JBCoreContracts,
   jbMultiTerminalAbi,
 } from "@bananapus/nana-sdk-core";
-import { buildBridgePrepareTx } from "@bananapus/nana-sdk-core/v6";
+import { buildBridgePrepareTx, cashOutProtocolFee } from "@bananapus/nana-sdk-core/v6";
 import { Address, getAddress, isAddressEqual, PublicClient } from "viem";
 
 const BASIS_POINTS = 10_000n;
-const STANDARD_PROTOCOL_FEE_DENOMINATOR = 40n;
 
 const feelessAddressesAbi = [
   {
@@ -32,35 +31,11 @@ export interface BridgePrepareQuote {
 }
 
 /**
- * Mirror `JBMultiTerminal._cashOutTokensOf`: the standard 2.5% fee is taken
+ * `JBMultiTerminal._cashOutTokensOf`'s standard 2.5% fee, from the SDK: taken
  * from the whole reclaim when the cash-out tax is nonzero, and only from the
- * fee-free-surplus portion otherwise. Solidity integer division rounds down.
+ * fee-free-surplus portion otherwise.
  */
-export function cashOutProtocolFee({
-  reclaimAmount,
-  cashOutTaxRate,
-  beneficiaryIsFeeless,
-  feeFreeSurplus,
-}: {
-  reclaimAmount: bigint;
-  cashOutTaxRate: bigint;
-  beneficiaryIsFeeless: boolean;
-  feeFreeSurplus: bigint;
-}) {
-  if (reclaimAmount < 0n || cashOutTaxRate < 0n || feeFreeSurplus < 0n) {
-    throw new Error("Bridge quote values cannot be negative.");
-  }
-  if (beneficiaryIsFeeless || reclaimAmount === 0n) return 0n;
-
-  const feeableAmount =
-    cashOutTaxRate !== 0n
-      ? reclaimAmount
-      : reclaimAmount < feeFreeSurplus
-        ? reclaimAmount
-        : feeFreeSurplus;
-
-  return feeableAmount / STANDARD_PROTOCOL_FEE_DENOMINATOR;
-}
+export { cashOutProtocolFee };
 
 /** Derive a minimum output using floor rounding, and refuse a zero floor. */
 export function protectedOutputFloor(amount: bigint, slippageBps: bigint) {

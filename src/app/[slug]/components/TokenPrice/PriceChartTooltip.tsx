@@ -1,6 +1,6 @@
 import type { ChartTooltipSeries } from "@/components/ui/chart";
 import { formatClock, formatShortDate } from "@/lib/date";
-import { formatDecimals } from "@/lib/number";
+import { formatCompact, formatDecimals } from "@/lib/number";
 import { TimeRange } from "@/lib/timeRange";
 import { JB_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { formatUnits } from "viem";
@@ -79,12 +79,4 @@ export function PriceChartTooltip({
       ) : null}
     </div>
   );
-}
-
-function formatCompact(value: string): string {
-  const num = parseFloat(value);
-  if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(2) + "B";
-  if (num >= 1_000_000) return (num / 1_000_000).toFixed(2) + "M";
-  if (num >= 1_000) return (num / 1_000).toFixed(2) + "K";
-  return num.toFixed(2);
 }

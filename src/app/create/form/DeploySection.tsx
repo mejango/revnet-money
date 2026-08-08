@@ -1,4 +1,7 @@
 import { toast } from "@/components/ui/use-toast";
+import { isSafeConnector } from "@/hooks/useReviewedWriteContract";
+import { wagmiConfig } from "@/lib/wagmiConfig";
+import { useAccount } from "wagmi";
 import { QuoteButton } from "../buttons/QuoteButton";
 import { formatFormErrors } from "../helpers/formatFormErrors";
 import { ChainOperator } from "./ChainOperator";
@@ -13,10 +16,17 @@ export function DeploySection({
   validBundle?: boolean;
 }) {
   const { revnetTokenSymbol, values, submitForm, isSubmitting, isValid, errors } = useCreateForm();
+  // The explicit config keeps this section renderable outside a WagmiProvider.
+  const { connector } = useAccount({ config: wagmiConfig });
 
   // The operator is normally set inline in the first stage's terms. When no
   // stage collected one, ask for it here before deploying.
   const needsOperator = values.chainIds.length > 0 && !values.stages[0]?.initialOperator;
+
+  // A Safe proposal executes arbitrarily later, but the request encodes stage
+  // 1's start time now. REVDeployer locks cash-outs and loans for 7 days when
+  // that start is already past at execution, so warn before proposing.
+  const deploysViaSafe = isSafeConnector(connector) && values.chainIds.length === 1;
 
   return (
     <>
@@ -37,6 +47,14 @@ export function DeploySection({
             <ChainOperator disabled={validBundle} />
             <Divider />
           </>
+        )}
+        {deploysViaSafe && (
+          <p className="mb-4 border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800">
+            This deployment encodes stage 1&apos;s start time when it is proposed — about 10 minutes
+            ahead unless you set one. If your Safe executes the proposal after that time, cash-outs
+            and loans are locked for 7 days from execution. To avoid the lock, set stage 1 to start
+            in the future, later than the Safe will execute.
+          </p>
         )}
         <QuoteButton
           isLoading={isSubmitting}

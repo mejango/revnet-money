@@ -1,8 +1,8 @@
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { isNativeToken, Token } from "@/lib/token";
-import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
-import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
+import { accountingDecimalsOf, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useMemo } from "react";
 
 type ReturnData = Token & {
@@ -28,7 +28,7 @@ export function resolveProjectBaseToken(project: {
   // (fallback filling accounting fields from the project ERC-20) got written in the first
   // place.
   const symbol = fromAddress === "TOKEN" ? project.tokenSymbol || "TOKEN" : fromAddress;
-  const decimals = fromAddress === "USDC" ? 6 : project.decimals || NATIVE_TOKEN_DECIMALS;
+  const decimals = accountingDecimalsOf(project);
   const isNative = isNativeToken(project.token ?? null);
 
   return {

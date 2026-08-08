@@ -5,16 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  arbitrum,
-  arbitrumSepolia,
-  base,
-  baseSepolia,
-  mainnet,
-  optimism,
-  optimismSepolia,
-  sepolia,
-} from "@/lib/chains";
+import { MAINNET_CHAIN_IDS, TESTNET_CHAIN_IDS } from "@/app/constants";
 import { FormField } from "@/lib/forms";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
@@ -23,10 +14,6 @@ import {
   pruneHiddenEnvironmentChains,
 } from "../helpers/pruneDeselectedChain";
 import { useCreateForm } from "./useCreateForm";
-
-const TESTNETS: JBChainId[] = [sepolia.id, arbitrumSepolia.id, optimismSepolia.id, baseSepolia.id];
-
-const MAINNETS: JBChainId[] = [mainnet.id, optimism.id, base.id, arbitrum.id];
 
 export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
   const [environment, setEnvironment] = useState("production");
@@ -94,7 +81,7 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
             // part of the deployment.
             const pruned = pruneHiddenEnvironmentChains(
               values,
-              v === "production" ? MAINNETS : TESTNETS,
+              v === "production" ? MAINNET_CHAIN_IDS : TESTNET_CHAIN_IDS,
             );
             setFieldValue("chainIds", pruned.chainIds);
             setFieldValue("operator", pruned.operator);
@@ -122,7 +109,9 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
       <div className="mt-4 flex flex-wrap gap-6">
         {Object.values(JB_CHAINS)
           .filter(({ chain }) =>
-            (environment === "production" ? MAINNETS : TESTNETS).includes(chain.id as JBChainId),
+            (environment === "production" ? MAINNET_CHAIN_IDS : TESTNET_CHAIN_IDS).includes(
+              chain.id as JBChainId,
+            ),
           )
           .map(({ chain, name }) => (
             <label key={chain.id} className="flex items-center gap-2">

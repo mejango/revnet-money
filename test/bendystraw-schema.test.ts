@@ -50,15 +50,19 @@ async function liveSchema(endpoint: string) {
 // Entries can be scoped to an endpoint while a schema is rolling out. The
 // contract FAILS as soon as that endpoint serves the field, so exceptions
 // cannot quietly rot after the rollout lands there.
-const PENDING_SCHEMA_FIELDS: Array<{ field: string; endpoint: string; reason: string }> =
-  ENDPOINTS.map((endpoint) => ({
-    endpoint,
+const PENDING_SCHEMA_FIELDS: Array<{ field: string; endpoint: string; reason: string }> = [
+  {
+    // Rolled out testnet-first. testnet.bendystraw.xyz serves the field; bendystraw.xyz is the
+    // same indexer on an older deploy and its schema differs from the testnet one by this field
+    // alone. Scoped to mainnet so the contract fails the moment that deploy catches up.
+    endpoint: ENDPOINTS[0],
     field: "accountingTokenUsdRate",
     reason:
       "peripheralist/bendystraw#25 — per-point USD rate on suckerGroupMoment and swapEvent. " +
-      "The *-with-rate operations are tried first and fall back to their un-rated twins, so " +
-      "shipping them ahead of the indexer is safe; they start being used when it deploys.",
-  }));
+      "Already live on the testnet endpoint. The *-with-rate operations are tried first and " +
+      "fall back to their un-rated twins, so mainnet keeps its charts until its indexer deploys.",
+  },
+];
 
 describe("live Bendystraw schema contract", () => {
   it.each(ENDPOINTS)(

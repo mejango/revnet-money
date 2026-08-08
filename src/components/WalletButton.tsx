@@ -1,6 +1,6 @@
 "use client";
 
-import { USDC_ADDRESSES, USDC_DECIMALS } from "@/app/constants";
+import { USDC_DECIMALS } from "@/app/constants";
 import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { useEnsName } from "@/hooks/ens/useEnsName";
 import { useMobileWallet } from "@/hooks/useMobileWallet";
@@ -16,7 +16,7 @@ import {
   ParaSessionLogoutError,
 } from "@/providers/para-logout";
 import { useParaAuth } from "@/providers/ParaAuthContext";
-import { JBProjectToken } from "@bananapus/nana-sdk-core";
+import { JBProjectToken, USDC_ADDRESSES, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
@@ -434,7 +434,7 @@ export function WalletButton() {
   const { viewAs, clearViewAs } = useViewAs();
   const balanceAddress = viewAs ?? address;
   const { data: balance } = useBalance({ address: balanceAddress });
-  const usdcAddress = chain?.id ? USDC_ADDRESSES[chain.id] : undefined;
+  const usdcAddress = chain?.id ? USDC_ADDRESSES[chain.id as JBChainId] : undefined;
   const { data: usdcBalance } = useReadContract({
     abi: erc20Abi,
     address: usdcAddress,

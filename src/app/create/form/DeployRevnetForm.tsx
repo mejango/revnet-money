@@ -4,6 +4,7 @@ import { parseRevnetDraft } from "@/lib/revnet-draft";
 import Image from "next/image";
 import { useRef, useState } from "react";
 import { GoToProjectButton } from "../buttons/GoToProjectButton";
+import type { QuotedStageStart } from "../helpers/staleQuote";
 import { useTestData } from "../helpers/useTestData";
 import type { RevnetFormData } from "../types";
 import { DeploySection } from "./DeploySection";
@@ -19,11 +20,17 @@ export function DeployRevnetForm({
   relayrResponse,
   resetRelayrResponse,
   directDeployment,
+  quotedStageStart,
+  rebuildStaleQuote,
 }: {
   relayrResponse?: RelayrPostBundleResponse;
   resetRelayrResponse: () => void;
   /** The submitted transaction when a single-chain deploy went straight to the wallet. */
   directDeployment?: DirectDeployment | null;
+  /** The stage 1 start time encoded in the current quote. */
+  quotedStageStart?: QuotedStageStart;
+  /** Rebuilds the deploy request and quote with a fresh shared timestamp. */
+  rebuildStaleQuote?: () => Promise<RelayrPostBundleResponse>;
 }) {
   // Type `testdata` into the console to fill the form (development builds only).
   useTestData();
@@ -63,7 +70,12 @@ export function DeployRevnetForm({
       <Divider />
       <DeploySection validBundle={validBundle} disabled={disabled} />
       {relayrResponse && (
-        <QuoteResponse relayrResponse={relayrResponse} reset={resetRelayrResponse} />
+        <QuoteResponse
+          relayrResponse={relayrResponse}
+          reset={resetRelayrResponse}
+          quotedStageStart={quotedStageStart}
+          rebuildStaleQuote={rebuildStaleQuote}
+        />
       )}
       {directDeployment && (
         <div className="flex flex-col items-start md:col-span-2 md:col-start-2">

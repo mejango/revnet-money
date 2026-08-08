@@ -1,4 +1,4 @@
-import { USDC_ADDRESSES } from "@/app/constants";
+import { isTestnetChain, MAINNET_CHAIN_IDS, TESTNET_CHAIN_IDS } from "@/app/constants";
 import { isNativeToken } from "@/lib/tokenUtils";
 import {
   JBChainId,
@@ -6,12 +6,11 @@ import {
   parseSuckerDeployerConfig,
   revDeployerAbi,
   RevnetCoreContracts,
+  USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
 import { Abi } from "viem";
 import { ChainProjectRow, ChainWrite, v6ContractAddress } from "./operatorLib";
 
-const MAINNETS: JBChainId[] = [1, 10, 8453, 42161];
-const TESTNETS: JBChainId[] = [11155111, 11155420, 84532, 421614];
 
 /**
  * The chains a sucker group could extend to: the group's own environment
@@ -20,7 +19,9 @@ const TESTNETS: JBChainId[] = [11155111, 11155420, 84532, 421614];
  */
 export function extensionCandidateChains(groupRows: readonly ChainProjectRow[]): JBChainId[] {
   const member = new Set(groupRows.map((row) => Number(row.chainId)));
-  const environment = groupRows.some((row) => TESTNETS.includes(row.chainId)) ? TESTNETS : MAINNETS;
+  const environment = groupRows.some((row) => isTestnetChain(row.chainId))
+    ? TESTNET_CHAIN_IDS
+    : MAINNET_CHAIN_IDS;
   return environment.filter((chainId) => !member.has(chainId));
 }
 
@@ -36,7 +37,7 @@ export function assetsFromAccountingContexts(
   chainId: number,
 ): MappableAsset[] {
   const assets: MappableAsset[] = [];
-  const usdc = USDC_ADDRESSES[chainId]?.toLowerCase();
+  const usdc = USDC_ADDRESSES[chainId as JBChainId]?.toLowerCase();
   for (const context of contexts) {
     if (isNativeToken(context.token)) {
       if (!assets.includes(MappableAsset.NATIVE)) assets.push(MappableAsset.NATIVE);

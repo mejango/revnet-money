@@ -3,15 +3,18 @@ import { Button } from "@/components/ui/button";
 import { formatClockWithSeconds } from "@/lib/date";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PayAndDeploy } from "../buttons/PayAndDeploy";
+import type { QuotedStageStart } from "../helpers/staleQuote";
 import { useCreateForm } from "./useCreateForm";
 
 interface Props {
   relayrResponse: RelayrPostBundleResponse;
   reset: () => void;
+  quotedStageStart?: QuotedStageStart;
+  rebuildStaleQuote?: () => Promise<RelayrPostBundleResponse>;
 }
 
 export function QuoteResponse(props: Props) {
-  const { relayrResponse, reset } = props;
+  const { relayrResponse, reset, quotedStageStart, rebuildStaleQuote } = props;
   const { revnetTokenSymbol, isSubmitting } = useCreateForm();
 
   return (
@@ -29,7 +32,12 @@ export function QuoteResponse(props: Props) {
         </Button>
       </div>
       <div className="mt-4">
-        <PayAndDeploy relayrResponse={relayrResponse} revnetTokenSymbol={revnetTokenSymbol} />
+        <PayAndDeploy
+          relayrResponse={relayrResponse}
+          revnetTokenSymbol={revnetTokenSymbol}
+          quotedStageStart={quotedStageStart}
+          rebuildStaleQuote={rebuildStaleQuote}
+        />
       </div>
     </div>
   );

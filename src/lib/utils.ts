@@ -1,4 +1,4 @@
-import { chainSortOrder } from "@/app/constants";
+import { chainSortIndex } from "@/app/constants";
 import { mainnet } from "@/lib/chains";
 import type { JBChainId, JBTokenContextData } from "@/lib/nana/types";
 import { CashOutTaxRate, JB_CHAINS, ReservedPercent } from "@bananapus/nana-sdk-core";
@@ -56,25 +56,39 @@ export function formatSeconds(seconds: number, precision = 2, compact = false) {
   return parts.join(compact ? "" : ", ");
 }
 
+/**
+ * The single source for block-explorer origins (e.g. "https://basescan.org").
+ *
+ * Hostnames come from the SDK's chain definitions. Returns undefined for chains
+ * the SDK doesn't know, so callers fail closed instead of linking to
+ * `https://undefined/...`.
+ */
+export function explorerBaseUrl(chainId: number): string | undefined {
+  const chainMeta = JB_CHAINS[chainId as JBChainId];
+  if (!chainMeta) return undefined;
+  return `https://${chainMeta.etherscanHostname}`;
+}
+
 export function etherscanLink(
   addressOrTxHash: string,
   opts: {
     type: "address" | "tx" | "token";
     chain?: Chain;
+    chainId?: number;
   },
 ) {
-  const { type, chain = mainnet } = opts;
+  const { type, chain = mainnet, chainId = chain.id } = opts;
 
-  const chainId = chain.id as JBChainId;
-  const baseUrl = chainId === 10 ? "optimistic.etherscan.io" : JB_CHAINS[chainId].etherscanHostname;
+  const baseUrl = explorerBaseUrl(chainId);
+  if (!baseUrl) return undefined;
 
   switch (type) {
     case "address":
-      return `https://${baseUrl}/address/${addressOrTxHash}`;
+      return `${baseUrl}/address/${addressOrTxHash}`;
     case "tx":
-      return `https://${baseUrl}/tx/${addressOrTxHash}`;
+      return `${baseUrl}/tx/${addressOrTxHash}`;
     case "token":
-      return `https://${baseUrl}/token/${addressOrTxHash}`;
+      return `${baseUrl}/token/${addressOrTxHash}`;
   }
 }
 
@@ -120,9 +134,7 @@ export const formatHexEther = (hexWei: `0x${string}` | undefined, fixed = 8) => 
 
 export function sortChains(chainIds: JBChainId[]): JBChainId[] {
   return [...chainIds].sort((a, b) => {
-    const aOrder = chainSortOrder.get(a) ?? 0;
-    const bOrder = chainSortOrder.get(b) ?? 0;
-    return aOrder - bOrder;
+    return chainSortIndex(a) - chainSortIndex(b);
   });
 }
 

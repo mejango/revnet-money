@@ -67,7 +67,10 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
   if (!resolved) notFound();
   const { project } = resolved;
 
-  const operatorPromise = getProjectOperator(Number(projectId), chainId);
+  // `undefined` = the operator could not be read, which is not the same claim
+  // as `null` ("nobody holds the role"). The header says so instead of quietly
+  // dropping the operator line.
+  const operatorPromise = getProjectOperator(Number(projectId), chainId).catch(() => undefined);
   const suckerGroupPromise = project.suckerGroupId
     ? getSuckerGroup(project.suckerGroupId, chainId)
     : Promise.resolve(null);

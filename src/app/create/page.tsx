@@ -6,10 +6,11 @@ import { useGetRelayrTxQuote } from "@/hooks/useReviewedRelayr";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { withSchema } from "@/lib/formValidation";
 import { FormProvider } from "@/lib/forms";
+import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { encodeFunctionData, PublicClient } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
@@ -17,9 +18,11 @@ import { DEFAULT_FORM_DATA } from "./constants";
 import { DeployRevnetForm, type DirectDeployment } from "./form/DeployRevnetForm";
 import { createSchema } from "./helpers/createSchema";
 import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
+import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
 import { parseDeployData } from "./helpers/parseDeployData";
 import { pinProjectMetadata } from "./helpers/pinProjectMetaData";
 import { calculateFinalStageStarts } from "./helpers/recalculateStageStarts";
+import { quotedStageStartOf, type QuotedStageStart } from "./helpers/staleQuote";
 import { RevnetFormData } from "./types";
 
 export default function Page() {
@@ -30,8 +33,12 @@ export default function Page() {
 
   const { getRelayrTxQuote, data, reset } = useGetRelayrTxQuote();
   const [directDeployment, setDirectDeployment] = useState<DirectDeployment | null>(null);
+  const [quotedStageStart, setQuotedStageStart] = useState<QuotedStageStart>();
+  const quotedFormData = useRef<RevnetFormData | null>(null);
 
-  async function deployProject(formData: RevnetFormData) {
+  async function deployProject(
+    formData: RevnetFormData,
+  ): Promise<RelayrPostBundleResponse | undefined> {
     if (!isConnected || !address) {
       throw new Error("Please connect your wallet to deploy");
     }
@@ -67,6 +74,7 @@ export default function Page() {
 
     const relayrTransactions = [];
     let directRequest: ReturnType<typeof parseDeployData> | null = null;
+    let firstRequest: ReturnType<typeof parseDeployData> | null = null;
 
     for (const chainId of deploymentFormData.chainIds) {
       const suckerDeployerConfig = parseSuckerDeployerConfig(
@@ -95,7 +103,21 @@ export default function Page() {
         salt,
         creationFee,
       });
+
+      // Fail-closed: block the launch when any JBPrices pair the terminal
+      // will need at runtime (context <-> base for pays, context <-> context
+      // for cash-outs) has no reachable feed on this chain. Probed on-chain,
+      // so registering the missing default feed unblocks the combination
+      // without a client release.
+      await assertLaunchFeedsReachable({
+        chainId,
+        publicClient: publicClient as PublicClient,
+        contexts: request.args[2],
+        baseCurrency: request.args[1].baseCurrency,
+      });
+
       if (deploymentFormData.chainIds.length === 1) directRequest = request;
+      if (!firstRequest) firstRequest = request;
 
       const encodedData = encodeFunctionData({
         abi: request.abi,
@@ -166,7 +188,31 @@ export default function Page() {
       return;
     }
 
-    await getRelayrTxQuote(relayrTransactions);
+    if (firstRequest) {
+      quotedFormData.current = deploymentFormData;
+      setQuotedStageStart(quotedStageStartOf(firstRequest, deploymentFormData));
+    }
+    return await getRelayrTxQuote(relayrTransactions);
+  }
+
+  // REVDeployer locks cash-outs and loans for 7 days when the first stage's
+  // start time is already past at execution, and the quote freezes stage
+  // starts. Paying a stale quote therefore rebuilds the whole request from the
+  // same form data: `deployProject` captures one fresh timestamp shared by
+  // every chain, keeping the encoded configuration byte-identical across
+  // chains so suckers still pair.
+  async function rebuildStaleQuote(): Promise<RelayrPostBundleResponse> {
+    const formData = quotedFormData.current;
+    if (!formData) {
+      throw new Error(
+        "The original deploy request is unavailable. Clear the quote and get a new one.",
+      );
+    }
+    const quote = await deployProject(formData);
+    if (!quote) {
+      throw new Error("Rebuilding the deploy request did not produce a new quote.");
+    }
+    return quote;
   }
 
   return (
@@ -199,6 +245,8 @@ export default function Page() {
           relayrResponse={data}
           resetRelayrResponse={reset}
           directDeployment={directDeployment}
+          quotedStageStart={quotedStageStart}
+          rebuildStaleQuote={rebuildStaleQuote}
         />
       </FormProvider>
     </>

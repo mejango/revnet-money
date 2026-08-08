@@ -11,13 +11,17 @@ const PUBLIC_IPFS_GATEWAY_HOSTNAME = "gateway.pinata.cloud";
 const IPFS_MEDIA_CACHE_HOSTNAME = "eth.sucks";
 
 /**
- * Return a URL to our open IPFS gateway for the given cid USING INFURA.
+ * Return a URL to our open IPFS gateway for the given cid (optionally with a
+ * path). The 'open' gateway returns any content that is available on IPFS, not
+ * just the content we have pinned.
  *
- * The 'open' gateway returns any content that is available on IPFS,
- * not just the content we have pinned.
+ * Kept local rather than using the SDK's `ipfsGatewayUrl`: the SDK only checks
+ * that the leading segment looks like a CID, while these URLs also reach the
+ * same-origin `/api/ipfs` proxy and the Next image optimizer, so every segment
+ * has to clear `isSafeIpfsPath` (no traversal, bounded length and depth).
  */
-const ipfsGatewayUrl = (cid: string | undefined): string => {
-  if (!cid || !isSafeIpfsPath(cid)) throw new Error("Invalid IPFS CID or path");
+const ipfsGatewayUrl = (cid: string): string => {
+  if (!isSafeIpfsPath(cid)) throw new Error("Invalid IPFS CID or path");
   return `https://${OPEN_IPFS_GATEWAY_HOSTNAME}/ipfs/${cid}`;
 };
 

@@ -1,4 +1,3 @@
-import { USDC_ADDRESSES } from "@/app/constants";
 import { parseDeployData } from "@/app/create/helpers/parseDeployData";
 import {
   ETH_CURRENCY_ID,
@@ -6,8 +5,9 @@ import {
   NATIVE_TOKEN_DECIMALS,
   SPLITS_TOTAL_PERCENT,
   USD_CURRENCY_ID,
+  USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
-import { tokenCurrencyId } from "@bananapus/nana-sdk-core/v6";
+import { NATIVE_TOKEN_CURRENCY_ID, tokenCurrencyId } from "@bananapus/nana-sdk-core/v6";
 import {
   decodeFunctionData,
   encodeAbiParameters,
@@ -165,7 +165,11 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     }
   });
 
-  it("uses the canonical ETH accounting currency with ETH as the base currency", () => {
+  // Accounting-context currencies are ALWAYS token-keyed (uint32(uint160(token)),
+  // native = 61166); the well-known ETH/USD ids (1/2) are for baseCurrency only.
+  // These assertions previously pinned the standard-id convention ({ETH:1, USDC:2})
+  // — the INV-1 violation — as the expected encoding.
+  it("token-keys the native accounting currency (61166) with ETH as the base currency", () => {
     const request = buildRequest("ETH");
     const [, config, accountingContexts] = request.args;
 
@@ -174,25 +178,27 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
       {
         token: NATIVE_TOKEN,
         decimals: NATIVE_TOKEN_DECIMALS,
-        currency: ETH_CURRENCY_ID,
+        currency: NATIVE_TOKEN_CURRENCY_ID,
       },
     ]);
-    expect(accountingContexts[0].currency).toBe(config.baseCurrency);
+    expect(accountingContexts[0].currency).toBe(61_166);
   });
 
-  it("encodes USDC with six decimals and USD as the issuance base currency", () => {
+  it("token-keys the USDC accounting currency with USD as the issuance base currency", () => {
     const request = buildRequest("USDC", "USD");
     const [, config, accountingContexts, suckerConfig] = request.args;
     const usdc = USDC_ADDRESSES[sepolia.id];
 
     expect(config.baseCurrency).toBe(USD_CURRENCY_ID(6));
     expect(accountingContexts).toEqual([
-      { token: usdc, decimals: 6, currency: USD_CURRENCY_ID(6) },
+      { token: usdc, decimals: 6, currency: tokenCurrencyId(usdc) },
     ]);
+    // uint32(uint160(token)): the low 4 bytes of the token address.
+    expect(accountingContexts[0].currency).toBe(Number(BigInt(usdc) & 0xffffffffn));
     expect(suckerConfig).toEqual(EMPTY_SUCKER_CONFIG);
   });
 
-  it("accepts ETH and USDC together while pricing issuance in either currency", () => {
+  it("accepts ETH and USDC together with token-keyed contexts and a standard-id base", () => {
     const request = buildRequest("ETH_USDC", "ETH");
     const [, config, accountingContexts] = request.args;
     const usdc = USDC_ADDRESSES[sepolia.id];
@@ -202,15 +208,19 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
       {
         token: NATIVE_TOKEN,
         decimals: NATIVE_TOKEN_DECIMALS,
-        currency: ETH_CURRENCY_ID,
+        currency: NATIVE_TOKEN_CURRENCY_ID,
       },
-      { token: usdc, decimals: 6, currency: USD_CURRENCY_ID(6) },
+      { token: usdc, decimals: 6, currency: tokenCurrencyId(usdc) },
     ]);
     expect(request.args).toHaveLength(4);
     expect(() => encodeFunctionData(request)).not.toThrow();
 
     const usdRequest = buildRequest("ETH_USDC", "USD");
     expect(usdRequest.args[1].baseCurrency).toBe(USD_CURRENCY_ID(6));
+    expect(usdRequest.args[2].map((context) => context.currency)).toEqual([
+      NATIVE_TOKEN_CURRENCY_ID,
+      tokenCurrencyId(usdc),
+    ]);
     expect(() => encodeFunctionData(usdRequest)).not.toThrow();
   });
 

@@ -1,4 +1,7 @@
-const MAX_FEE = 1_000n;
+// `JBConstants.MAX_FEE` (1000), the permil denominator REVLoans fees use — NOT
+// the root export's `MAX_FEE_PER_BILLION`.
+import { MAX_FEE } from "@bananapus/nana-sdk-core/v6";
+
 export const LOAN_LIQUIDATION_DURATION = 3_650 * 24 * 60 * 60;
 
 /**

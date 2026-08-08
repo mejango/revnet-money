@@ -23,7 +23,9 @@ export default async function OperatorPage(props: Props) {
   const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId);
   if (!suckerGroup) notFound();
 
-  const operator = await getProjectOperator(Number(projectId), chainId);
+  // Only a fallback for the client-side permission-holder query below, which
+  // carries its own error state — a failed read must not take the page down.
+  const operator = await getProjectOperator(Number(projectId), chainId).catch(() => undefined);
 
   return (
     <V6OperatorTab

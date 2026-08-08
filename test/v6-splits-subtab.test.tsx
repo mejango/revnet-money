@@ -8,6 +8,9 @@ const reads = vi.hoisted(() => ({
   splits: [] as Array<{ percent: number; beneficiary: string; hook: string }>,
   // reservedPercent lives in ruleset metadata bits 4-19, out of 10_000.
   reservedPercentBps: [250n, 40n],
+  /** Extra chains in the rulesets map, keyed by chain id → number of stages. */
+  extraChainStages: {} as Record<number, number>,
+  splitsContracts: [] as Array<{ functionName: string; args: readonly unknown[] }>,
 }));
 
 vi.mock("@/lib/nana/project", () => ({
@@ -25,8 +28,8 @@ vi.mock("@/lib/bendystraw", () => ({
 }));
 
 vi.mock("@/hooks/useAllRulesetsByChain", () => ({
-  useAllRulesetsByChain: () => ({
-    data: new Map([
+  useAllRulesetsByChain: () => {
+    const data = new Map<number, Array<{ id: number; start: number; metadata: bigint }>>([
       [
         8453,
         [
@@ -42,9 +45,19 @@ vi.mock("@/hooks/useAllRulesetsByChain", () => ({
           },
         ],
       ],
-    ]),
-    isLoading: false,
-  }),
+    ]);
+    for (const [chainId, stages] of Object.entries(reads.extraChainStages)) {
+      data.set(
+        Number(chainId),
+        Array.from({ length: stages }, (_, index) => ({
+          id: 1_800_000_001 + index,
+          start: 1_800_000_001 + index,
+          metadata: reads.reservedPercentBps[0] << 4n,
+        })),
+      );
+    }
+    return { data, isLoading: false };
+  },
 }));
 
 vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
@@ -66,8 +79,15 @@ vi.mock("@/app/[slug]/owners/components/ChangeSplitRecipientsDialog", () => ({
 }));
 
 vi.mock("wagmi", () => ({
-  useReadContracts: ({ contracts }: { contracts: Array<{ functionName: string }> }) => {
+  useReadContracts: ({
+    contracts,
+  }: {
+    contracts: Array<{ functionName: string; args: readonly unknown[] }>;
+  }) => {
     if (contracts.length === 0) return { data: undefined, isLoading: false };
+    if (contracts[0].functionName === "splitsOf") {
+      reads.splitsContracts = contracts.filter((c) => c.functionName === "splitsOf");
+    }
     if (contracts[0].functionName === "allOf") {
       // JBRulesets.allOf returns newest-first; the component reverses it.
       return {
@@ -92,10 +112,10 @@ vi.mock("wagmi", () => ({
       };
     }
     return {
-      data: [
-        { status: "success", result: reads.splits },
-        { status: "success", result: 0n },
-      ],
+      data: contracts.map((contract) => ({
+        status: "success",
+        result: contract.functionName === "splitsOf" ? reads.splits : 0n,
+      })),
       isLoading: false,
     };
   },
@@ -105,6 +125,8 @@ const projects = [{ chainId: 8453, projectId: 3, token: null }] as unknown as Pr
 
 beforeEach(() => {
   dialogProps.last = undefined;
+  reads.extraChainStages = {};
+  reads.splitsContracts = [];
   reads.splits = [
     {
       percent: 1_000_000_000,
@@ -142,5 +164,39 @@ describe("V6SplitsSubtab split percentages", () => {
 
     expect(screen.getByText(/The split limit for this stage is/)).toHaveTextContent("0.4%");
     expect(screen.getAllByRole("cell")[1]).toHaveTextContent("0.4%");
+  });
+});
+
+describe("V6SplitsSubtab per-chain stage resolution", () => {
+  const twoChains = [
+    { chainId: 8453, projectId: 3, token: null },
+    { chainId: 10, projectId: 12, token: null },
+  ] as unknown as ProjectItem[];
+
+  it("never reads the FALLBACK group for a chain with no ruleset at the selected index", () => {
+    // Optimism has only one stage; the home chain has two. `splitsOf(pid, 0, …)` serves the
+    // FALLBACK group, so a `?? 0n` id would render another group's recipients as stage 2's.
+    reads.extraChainStages = { 10: 1 };
+
+    render(<V6SplitsSubtab projects={twoChains} />);
+    expect(reads.splitsContracts).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Stage 2/ }));
+
+    expect(reads.splitsContracts).toHaveLength(1);
+    expect(reads.splitsContracts[0].args[0]).toBe(3n);
+    for (const contract of reads.splitsContracts) {
+      expect(contract.args[1]).not.toBe(0n);
+    }
+    expect(screen.getByText("This chain has no stage 2.")).toBeTruthy();
+  });
+
+  it("skips a chain whose ruleset list came back empty", () => {
+    reads.extraChainStages = { 10: 0 };
+
+    render(<V6SplitsSubtab projects={twoChains} />);
+
+    expect(reads.splitsContracts).toHaveLength(1);
+    expect(screen.getByText("This chain has no stage 1.")).toBeTruthy();
   });
 });

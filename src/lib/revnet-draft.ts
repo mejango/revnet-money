@@ -1,4 +1,4 @@
-import { RESERVED_TOKEN_SPLIT_GROUP_ID, USDC_ADDRESSES } from "@/app/constants";
+import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { DEFAULT_FORM_DATA } from "@/app/create/constants";
 import type { RevnetFormData, StageData } from "@/app/create/types";
 import { readAllProjectRulesets } from "@/lib/nana/rulesets";
@@ -6,6 +6,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import {
   JBCoreContracts,
   NATIVE_TOKEN,
+  USDC_ADDRESSES,
   getJBContractAddress,
   jbControllerAbi,
   jbSplitsAbi,

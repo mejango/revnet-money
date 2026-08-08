@@ -94,7 +94,8 @@ export function ReallocateDialog({
   const loanChainTokenConfig = selectedLoan?.chainId
     ? tokenConfigForChain(selectedLoan.chainId)
     : null;
-  const baseTokenDecimals = loanChainTokenConfig?.decimals || NATIVE_TOKEN_DECIMALS;
+  // `??`, not `||`: a legitimate 0-decimal accounting token must not be read as 18.
+  const baseTokenDecimals = loanChainTokenConfig?.decimals ?? NATIVE_TOKEN_DECIMALS;
   const existingBorrowed = selectedLoan
     ? Number(formatUnits(BigInt(selectedLoan.borrowAmount), baseTokenDecimals))
     : 0;
@@ -103,14 +104,9 @@ export function ReallocateDialog({
   const dialogOpen = open !== undefined ? open : isDialogOpen;
   const handleDialogOpenChange = onOpenChange || handleOpenChange;
 
-  // Close dialog on successful reallocation
-  useEffect(() => {
-    if (borrowStatus === "success" && onOpenChange) {
-      setTimeout(() => {
-        onOpenChange(false);
-      }, 3000); // Same delay as in useBorrowDialog
-    }
-  }, [borrowStatus, onOpenChange]);
+  // No timed close on success: terminal loan statuses persist until the user closes the
+  // dialog (the convention `useBorrowDialog` states and implements), so the reallocation
+  // result and its explorer link stay readable.
 
   // Get the actual collateral amount that can be transferred (in project token)
   const collateralToTransfer = Number(formatUnits(collateralCountToTransfer, projectTokenDecimals));

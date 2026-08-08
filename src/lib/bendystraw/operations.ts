@@ -331,8 +331,8 @@ export const AutoIssueEventsOperation = operation<
   hasIdentityItems("autoIssueEvents"),
 );
 export const LoansByAccountOperation = operation<LoansByAccountQuery, LoansByAccountQueryVariables>(
-  "loans-by-account.v1",
-  variablesWith({ owner: isString, version: isNumber }),
+  "loans-by-account.v2",
+  variablesWith({ owner: isString, version: isNumber }, { limit: positiveLimit, offset }),
   hasRoot("loans", "items"),
 );
 export const CashOutTaxSnapshotsOperation = operation<

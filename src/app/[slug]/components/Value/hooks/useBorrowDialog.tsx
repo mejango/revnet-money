@@ -8,7 +8,6 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
-import { toBaseCurrencyId } from "@/lib/currency";
 import { generateFeeData } from "@/lib/feeHelpers";
 import {
   buildProtectedBorrowTx,
@@ -48,7 +47,6 @@ type BorrowState =
   | "error"
   | "reallocation-pending";
 
-type RepayState = "idle" | "waiting-signature" | "pending" | "success" | "error";
 
 /**
  * A loan row as the loan tables select it (a superset of Bendystraw's LoanRow;
@@ -97,11 +95,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     selectedLoan ?? null,
   );
 
-  // Repay-related state
-  const [repayStatus, setRepayStatus] = useState<RepayState>("idle");
-  const [repayAmount, setRepayAmount] = useState("");
-  const [collateralToReturn, setCollateralToReturn] = useState("");
-  const [repayTxHash, setRepayTxHash] = useState<`0x${string}` | undefined>();
 
   const { toast } = useToast();
 
@@ -146,10 +139,9 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     [suckerGroupData],
   );
 
-  const revLoansContractAddress = getRevnetLoanContract(
-    6,
-    cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
-  );
+  const revLoansContractAddress = cashOutChainId
+    ? getRevnetLoanContract(6, Number(cashOutChainId) as JBChainId)
+    : undefined;
 
   // Data hooks
   const { data: balances } = useSuckersUserTokenBalance();
@@ -186,6 +178,14 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     ? BigInt(selectedBalance.projectId)
     : projectId;
 
+  // V6 project ids are a per-chain namespace: the page's prop is the ROUTE chain's id, and
+  // quoting it on the loan's chain prices a different revnet. Per-loan reads key on the
+  // loan row's own id, falling back to the sucker-pair id for the selected chain.
+  const loanProjectId =
+    internalSelectedLoan?.projectId != null
+      ? BigInt(internalSelectedLoan.projectId)
+      : effectiveProjectId;
+
   // Calculate total fixed fees from contract values (in basis points)
   const totalFixedFees =
     (minPrepaidFeePercent ? Number(minPrepaidFeePercent) : 0) +
@@ -198,22 +198,12 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       ? BigInt(internalSelectedLoan.collateral) + parseUnits(collateralAmount, projectTokenDecimals)
       : undefined;
 
-  // Collateral to return logic for repay tab
-  const remainingCollateral =
-    internalSelectedLoan && collateralToReturn
-      ? BigInt(internalSelectedLoan.collateral) -
-        parseUnits(collateralToReturn, projectTokenDecimals)
-      : undefined;
 
   // ===== PHASE 2: UPDATE CONTRACT CALLS =====
 
   // Get token configuration for the selected chain
   const selectedChainTokenConfig = cashOutChainId
     ? tokenConfigForChain(Number(cashOutChainId))
-    : null;
-
-  const internalSelectedLoanChainTokenConfig = internalSelectedLoan?.chainId
-    ? tokenConfigForChain(Number(internalSelectedLoan.chainId))
     : null;
 
   // Borrow-related hooks
@@ -252,8 +242,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     args:
       totalReallocationCollateral && selectedChainTokenConfig
         ? [
-            // Use the same project ID as the loan table for consistency
-            projectId,
+            loanProjectId,
             totalReallocationCollateral,
             BigInt(selectedChainTokenConfig.decimals),
             BigInt(selectedChainTokenConfig.currency),
@@ -261,14 +250,16 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         : undefined,
   });
 
-  const { data: currentBorrowableOnSelectedCollateral } = useBorrowableAmountFrom({
+  // The existing collateral is valued at the ECONOMIC ceiling (`capacity`): the contract's
+  // reallocation solvency check ignores the live treasury surplus, and `borrowableNow`
+  // collapses toward zero whenever the treasury is drawn down.
+  const { capacity: currentBorrowableOnSelectedCollateral } = useBorrowableAmountFrom({
     address: revLoansContractAddress,
     chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
     args:
       internalSelectedLoan && selectedChainTokenConfig
         ? [
-            // Use the same project ID as the loan table for consistency
-            projectId,
+            loanProjectId,
             BigInt(internalSelectedLoan.collateral),
             BigInt(selectedChainTokenConfig.decimals),
             BigInt(selectedChainTokenConfig.currency),
@@ -276,49 +267,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         : undefined,
   });
 
-  // Repay-related hooks
-  // const { data: estimatedRepayAmountForCollateral, isLoading: isEstimatingRepayment } =
-  //   useReadContract({
-  //     abi: revLoansAbi,
-  //     functionName: "borrowableAmountFrom",
-  //     address: getRevnetLoanContract(
-  //       version,
-  //       internalSelectedLoan?.chainId
-  //         ? (Number(internalSelectedLoan.chainId) as JBChainId)
-  //         : undefined,
-  //     ),
-  //     chainId: internalSelectedLoan?.chainId,
-  //     args: internalSelectedLoan
-  //       ? [
-  //           effectiveProjectId,
-  //           BigInt(internalSelectedLoan.collateral),
-  //           BigInt(JB_TOKEN_DECIMALS), // TODO confirm this is correct
-  //           BigInt(ETH_CURRENCY_ID), // TODO: This should also be dynamic
-  //         ]
-  //       : undefined,
-  //   });
-
-  const { data: estimatedNewBorrowableAmount } = useBorrowableAmountFrom({
-    address: getRevnetLoanContract(
-      6,
-      internalSelectedLoan?.chainId
-        ? (Number(internalSelectedLoan.chainId) as JBChainId)
-        : undefined,
-    ),
-    chainId: internalSelectedLoan?.chainId as JBChainId | undefined,
-    args:
-      // A null token config is LOADING — never quote with ETH/18 defaults.
-      internalSelectedLoan &&
-      remainingCollateral !== undefined &&
-      internalSelectedLoanChainTokenConfig
-        ? [
-            effectiveProjectId,
-            remainingCollateral,
-            BigInt(internalSelectedLoanChainTokenConfig.decimals),
-            BigInt(toBaseCurrencyId(internalSelectedLoanChainTokenConfig.currency)),
-          ]
-        : undefined,
-  });
 
   // Transaction hooks
   const { writeContractAsync, isPending: isWriteLoading, data: txHash } = useWriteContract();
@@ -339,10 +287,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     useWaitForTransactionReceipt({
       hash: reallocationTxHash,
     });
-
-  const { isLoading: isRepayTxLoading, isSuccess: isRepaySuccess } = useWaitForTransactionReceipt({
-    hash: repayTxHash,
-  });
 
   // Additional derived values in native tokens
   const netAvailableToBorrow =
@@ -387,8 +331,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     args:
       newLoanCollateral > 0n && selectedChainTokenConfig
         ? [
-            // Use the same project ID as the loan table for consistency
-            projectId,
+            loanProjectId,
             newLoanCollateral,
             BigInt(selectedChainTokenConfig.decimals),
             BigInt(selectedChainTokenConfig.currency),
@@ -455,10 +398,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
         // Clear all status states
         setBorrowStatus("idle");
-        setRepayStatus("idle");
-        setRepayAmount("");
-        setCollateralToReturn("");
-        setRepayTxHash(undefined);
 
         // Clear chain selection and loan data
         setCashOutChainId(undefined);
@@ -510,7 +449,13 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
    * toasted, including the Safe-proposal-pending case.
    */
   const ensureBurnTokensPermission = async (): Promise<boolean> => {
-    if (!publicClient || !address || !cashOutChainId || !resolvedPermissionsAddress) {
+    if (
+      !publicClient ||
+      !address ||
+      !cashOutChainId ||
+      !revLoansContractAddress ||
+      !resolvedPermissionsAddress
+    ) {
       setBorrowStatus("error");
       return false;
     }
@@ -522,7 +467,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           chainId: Number(cashOutChainId) as JBChainId,
           operator: revLoansContractAddress,
           account: address,
-          projectId: effectiveProjectId,
+          projectId: loanProjectId,
           permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
         });
         if (!hasBorrowPermission) {
@@ -538,7 +483,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
                 address,
                 {
                   operator: revLoansContractAddress,
-                  projectId: effectiveProjectId,
+                  projectId: loanProjectId,
                   permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
                 },
               ],
@@ -638,7 +583,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           // The loan's chain carries its OWN revnet id — the page's prop is the route chain's.
           // A mismatch quotes a different revnet's borrowable amount, which then becomes both the
           // tx's collateral-transfer argument and its slippage floor.
-          revnetId: effectiveProjectId,
+          revnetId: loanProjectId,
           collateralCount: newLoanCollateralCount,
           decimals: BigInt(selectedChainTokenConfig.decimals),
           currency: BigInt(selectedChainTokenConfig.currency),
@@ -747,6 +692,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     resolvedPermissionsAddress,
     writeContractAsync,
     effectiveProjectId,
+    loanProjectId,
     publicClient,
     projectTokenDecimals,
     revLoansContractAddress,
@@ -810,7 +756,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     isSuccess,
     isReallocationSuccess,
     toast,
-    handleOpenChange,
   ]);
 
   // Calculate gross borrowed
@@ -847,16 +792,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     tokenConfigForChain,
   ]);
 
-  // Repay status effects
-  useEffect(() => {
-    if (isRepayTxLoading) {
-      setRepayStatus("pending");
-    } else if (isRepaySuccess) {
-      setRepayStatus("success");
-    }
-  }, [isRepayTxLoading, isRepaySuccess]);
-
-  // Terminal repay/borrow statuses persist until the user closes the dialog
+  // Terminal borrow statuses persist until the user closes the dialog
   // (handleOpenChange resets them) — timers must never clear an error state.
 
   // Borrow status effects
@@ -873,23 +809,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   useEffect(() => {
     setShowLoanDetailsTable(selectedTab === "repay");
   }, [selectedTab]);
-
-  // Recalculate repayAmount when collateralToReturn, estimatedNewBorrowableAmount, or selectedLoan changes
-  useEffect(() => {
-    if (!internalSelectedLoan || !collateralToReturn || estimatedNewBorrowableAmount === undefined)
-      return;
-
-    // Get token configuration for the loan's chain. Null is LOADING — leave
-    // the repay amount unset instead of formatting with ETH/18 defaults.
-    const loanChainTokenConfig = internalSelectedLoan?.chainId
-      ? tokenConfigForChain(internalSelectedLoan.chainId)
-      : null;
-    if (!loanChainTokenConfig) return;
-
-    const correctedBorrowAmount = BigInt(internalSelectedLoan.borrowAmount);
-    const repayAmountWei = correctedBorrowAmount - estimatedNewBorrowableAmount;
-    setRepayAmount(formatUnits(repayAmountWei, loanChainTokenConfig.decimals));
-  }, [collateralToReturn, estimatedNewBorrowableAmount, internalSelectedLoan, tokenConfigForChain]);
 
   // ===== RETURN VALUES =====
   return {
@@ -909,10 +828,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     prepaidPercent,
     grossBorrowedNative,
     internalSelectedLoan,
-    repayStatus,
-    repayAmount,
-    collateralToReturn,
-    repayTxHash,
     loading,
 
     // Derived values
@@ -921,7 +836,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     selectedBalance,
     totalFixedFees,
     totalReallocationCollateral,
-    remainingCollateral,
     netAvailableToBorrow,
     isOvercollateralized,
     extraCollateralBuffer,
@@ -934,9 +848,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     estimatedBorrowFromInputOnly,
     selectedLoanReallocAmount,
     currentBorrowableOnSelectedCollateral,
-    // estimatedRepayAmountForCollateral,
-    // isEstimatingRepayment,
-    estimatedNewBorrowableAmount,
     newLoanBorrowableAmount,
     minimumBorrowAmountPreview,
     borrowableAmountRaw,
@@ -951,7 +862,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     setShowChart,
     setShowInfo,
     setShowOtherCollateral,
-    setCollateralToReturn,
     setInternalSelectedLoan,
 
     // Additional exports needed by component

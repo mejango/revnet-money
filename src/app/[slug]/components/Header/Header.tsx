@@ -29,7 +29,8 @@ import { Revalidating } from "@/components/ui/Revalidating";
 interface Props {
   isRevnet: boolean;
   createdAt: number;
-  operatorPromise: Promise<Profile | null>;
+  /** `null` = no operator holds the role; `undefined` = the read failed. */
+  operatorPromise: Promise<Profile | null | undefined>;
   projects: Array<
     Pick<
       Project,
@@ -95,7 +96,8 @@ export function Header(props: Props) {
     created: false,
     chains: false,
   });
-  const hasOperator = operator != null;
+  const operatorUnavailable = operator === undefined;
+  const hasOperator = operator != null || operatorUnavailable;
   const hasWebsite = website != null;
   const hasCreated = Number(createdAt) > 0;
   const hasSuckers = Boolean(suckers?.length);
@@ -230,20 +232,29 @@ export function Header(props: Props) {
             </div> */}
               </div>
               <Suspense>
-                {(operator || website || hasCreated || suckers?.length) && (
+                {(hasOperator || website || hasCreated || suckers?.length) && (
                   <div
                     ref={metadataRef}
                     className="mt-1.5 flex flex-wrap items-center gap-x-5 text-[15px] text-zinc-700"
                   >
-                    {operator && (
+                    {hasOperator && (
                       <span ref={operatorRef} className="inline-flex items-center">
                         <span className="text-zinc-500">Operator:</span>
-                        <EtherscanLink
-                          value={operator.address}
-                          className="ml-1 inline-flex min-h-11 items-center font-medium text-zinc-900 sm:min-h-0"
-                        >
-                          {operator.displayName}
-                        </EtherscanLink>
+                        {operator ? (
+                          <EtherscanLink
+                            value={operator.address}
+                            className="ml-1 inline-flex min-h-11 items-center font-medium text-zinc-900 sm:min-h-0"
+                          >
+                            {operator.displayName}
+                          </EtherscanLink>
+                        ) : (
+                          <span
+                            className="ml-1 font-medium text-zinc-500"
+                            title="The operator could not be read. This does not mean the revnet has no operator."
+                          >
+                            unavailable
+                          </span>
+                        )}
                       </span>
                     )}
                     {website && (

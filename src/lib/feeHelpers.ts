@@ -1,7 +1,16 @@
 import { REVNET_CASHOUT_FEE_PERCENT } from "@/app/constants";
 import { cashOutProtocolFee } from "@/lib/bridgePrepare";
-import { calcPrepaidFee } from "@bananapus/nana-sdk-core";
 export { netLoanProceeds } from "@bananapus/nana-sdk-core/v6/loan-math";
+
+// REVLoans.sol:1339-1343 rejects prepaid fee percents outside this range. Both are permil:
+// the denominator is JBConstants.MAX_FEE = 1000 (REVLoansSourceFees.sol:47-53), not basis
+// points.
+const MIN_PREPAID_FEE_PERMIL = 25; // REVLoans.MIN_PREPAID_FEE_PERCENT, 2.5%
+const MAX_PREPAID_FEE_PERMIL = 500; // REVLoans.MAX_PREPAID_FEE_PERCENT, 50%
+// `JBConstants.MAX_FEE`. Kept as a number because this chart is float math; the
+// SDK exports the same value as a bigint (`v6/fees.MAX_FEE`).
+const MAX_FEE = 1000;
+const MAX_PREPAYMENT_MONTHS = 120;
 
 export function generateFeeData({
   grossBorrowedEth,
@@ -19,13 +28,22 @@ export function generateFeeData({
   }
 
   const MAX_YEARS = 10;
-  const monthsToPrepay = (parseFloat(prepaidPercent) / 50) * 120;
+
+  // The tx path sends `round(prepaidPercent * 10)` permil (useBorrowDialog.tsx), and the
+  // contract clamps the legal range, so the chart models the same value the loan will carry.
+  const feePermil = Math.min(
+    Math.max(Math.round(parseFloat(prepaidPercent) * 10), MIN_PREPAID_FEE_PERMIL),
+    MAX_PREPAID_FEE_PERMIL,
+  );
+
+  // REVLoans.sol:1367-1368 — the prepaid window is the fee's share of the max, scaled over
+  // the 10-year liquidation duration.
+  const monthsToPrepay = (feePermil / MAX_PREPAID_FEE_PERMIL) * MAX_PREPAYMENT_MONTHS;
   const prepaidDuration = monthsToPrepay / 12;
 
-  // Prepaid fee is applied to the gross borrowed amount
-  const feeBpsBigInt = calcPrepaidFee(Math.round(monthsToPrepay));
-  const feeBps = Number(feeBpsBigInt);
-  const prepaidFee = (grossBorrowedEth * feeBps) / 10000;
+  // Prepaid fee is applied to the gross borrowed amount, out of MAX_FEE = 1000
+  // (JBFees.feeAmountFrom).
+  const prepaidFee = (grossBorrowedEth * feePermil) / MAX_FEE;
 
   // Amount user must repay to unlock collateral (the full borrowed amount)
   const borrowedAmount = grossBorrowedEth;

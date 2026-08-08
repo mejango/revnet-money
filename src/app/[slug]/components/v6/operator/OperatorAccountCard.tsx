@@ -134,7 +134,12 @@ export function OperatorAccountCard({
           if (!operator) return { ...row, operator, accountType: "Unknown", safe: null };
           try {
             const client = publicClientFor(row.chainId);
-            const code = await client.getCode({ address: operator }).catch(() => undefined);
+            // No `.catch` here: an RPC failure must reach the outer catch and render
+            // "Unknown". Swallowing it makes a failed read indistinguishable from
+            // "no bytecode", and this card would then assert that a Safe-controlled
+            // revnet is operated by a plain EOA — a materially different trust
+            // statement presented as fact.
+            const code = await client.getCode({ address: operator });
             if (!code || code === "0x") {
               return { ...row, operator, accountType: "EOA", safe: null };
             }

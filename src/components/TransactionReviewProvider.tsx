@@ -1,6 +1,5 @@
 "use client";
 
-import { USDC_ADDRESSES } from "@/app/constants";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { resumePendingRelayrBundles, waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
@@ -17,7 +16,13 @@ import {
   type TransactionReviewCall,
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
-import { JB_CHAINS, jbContractAddress, type JBChainId } from "@bananapus/nana-sdk-core";
+import { explorerBaseUrl } from "@/lib/utils";
+import {
+  JB_CHAINS,
+  jbContractAddress,
+  USDC_ADDRESSES,
+  type JBChainId,
+} from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from "react";
 import { formatEther, toFunctionSelector, type AbiFunction, type Address } from "viem";
 import { useAccount } from "wagmi";
@@ -28,16 +33,6 @@ type PendingReview = {
   resolve: (approved: boolean) => void;
 };
 
-const TX_EXPLORER: Record<number, string> = {
-  1: "https://etherscan.io",
-  10: "https://optimistic.etherscan.io",
-  8453: "https://basescan.org",
-  42161: "https://arbiscan.io",
-  11155111: "https://sepolia.etherscan.io",
-  11155420: "https://sepolia-optimism.etherscan.io",
-  84532: "https://sepolia.basescan.org",
-  421614: "https://sepolia.arbiscan.io",
-};
 const SAFE_PREFIX: Partial<Record<number, string>> = {
   1: "eth",
   10: "oeth",
@@ -55,7 +50,7 @@ function knownAddress(chainId: number, address: unknown): string | null {
   if (UNIVERSAL_ROUTER_BY_CHAIN[chainId as JBChainId]?.toLowerCase() === address.toLowerCase()) {
     return "Uniswap Universal Router";
   }
-  if (USDC_ADDRESSES[chainId]?.toLowerCase() === address.toLowerCase()) return "USDC";
+  if (USDC_ADDRESSES[chainId as JBChainId]?.toLowerCase() === address.toLowerCase()) return "USDC";
   const contracts = jbContractAddress["6"] as unknown as Record<
     string,
     Partial<Record<number, Address>>
@@ -360,24 +355,24 @@ function TransactionStatusCenter() {
           ) : activity.kind !== "safe" &&
             activity.hash &&
             activity.chainId &&
-            TX_EXPLORER[activity.chainId] ? (
+            explorerBaseUrl(activity.chainId) ? (
             <a
               className="mt-2 block break-all font-mono text-[10px] underline"
               target="_blank"
               rel="noreferrer"
-              href={`${TX_EXPLORER[activity.chainId]}/tx/${activity.hash}`}
+              href={`${explorerBaseUrl(activity.chainId)}/tx/${activity.hash}`}
             >
               View transaction · {activity.hash}
             </a>
           ) : activity.kind !== "safe" && activity.hash ? (
             <p className="mt-2 break-all font-mono text-[10px]">{activity.hash}</p>
           ) : null}
-          {activity.executionHash && activity.chainId && TX_EXPLORER[activity.chainId] ? (
+          {activity.executionHash && activity.chainId && explorerBaseUrl(activity.chainId) ? (
             <a
               className="mt-1 block break-all font-mono text-[10px] underline"
               target="_blank"
               rel="noreferrer"
-              href={`${TX_EXPLORER[activity.chainId]}/tx/${activity.executionHash}`}
+              href={`${explorerBaseUrl(activity.chainId)}/tx/${activity.executionHash}`}
             >
               Safe execution · {activity.executionHash}
             </a>
@@ -410,9 +405,9 @@ function TransactionStatusCenter() {
                     {JB_CHAINS[state.chainId as JBChainId]?.name ?? `Chain ${state.chainId}`}:{" "}
                     {state.status}
                   </span>
-                  {state.hash && TX_EXPLORER[state.chainId] ? (
+                  {state.hash && explorerBaseUrl(state.chainId) ? (
                     <a
-                      href={`${TX_EXPLORER[state.chainId]}/tx/${state.hash}`}
+                      href={`${explorerBaseUrl(state.chainId)}/tx/${state.hash}`}
                       target="_blank"
                       rel="noreferrer"
                       className="font-mono underline"

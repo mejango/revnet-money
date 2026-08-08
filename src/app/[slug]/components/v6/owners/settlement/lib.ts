@@ -8,6 +8,7 @@ import {
   optimismSepolia,
   sepolia,
 } from "@/lib/chains";
+import { etherscanLink } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   JB_CHAINS,
@@ -86,9 +87,7 @@ export function chainName(chainId: JBChainId): string {
 }
 
 export function explorerAddressUrl(chainId: JBChainId, address: string): string | null {
-  const chain = viemChainOf(chainId);
-  const base = chain?.blockExplorers?.default?.url;
-  return base ? `${base.replace(/\/$/, "")}/address/${address}` : null;
+  return etherscanLink(address, { type: "address", chainId: Number(chainId) }) ?? null;
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -282,6 +281,9 @@ export async function fetchAcrossChains(chains: ChainProject[]): Promise<AcrossC
 
         // Unit value: what a 1M-token cash out reclaims, scaled back down — a
         // single-token probe floors to 0 against big supplies on 6-dec tokens.
+        // The column claims the whole chain's surplus, so the terminal and
+        // token filters stay empty; the primary context only sets the currency
+        // and decimals the answer is denominated in.
         const primary = contexts[0];
         try {
           const supplyNow = supply ?? 0n;
@@ -292,14 +294,7 @@ export async function fetchAcrossChains(chains: ChainProject[]): Promise<AcrossC
               address: store,
               abi: jbTerminalStoreAbi,
               functionName: "currentReclaimableSurplusOf",
-              args: [
-                projectId,
-                probe,
-                [],
-                [primary.token],
-                BigInt(primary.decimals),
-                BigInt(primary.currency),
-              ],
+              args: [projectId, probe, [], [], BigInt(primary.decimals), BigInt(primary.currency)],
             });
             unitValue = {
               value: (reclaim * 10n ** 18n) / probe,

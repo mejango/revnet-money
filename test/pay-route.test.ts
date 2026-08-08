@@ -1,4 +1,3 @@
-import { USDC_ADDRESSES } from "@/app/constants";
 import { minReturnedTokens } from "@/lib/quote";
 import {
   formatPayAmount,
@@ -16,6 +15,7 @@ import {
   jbContractAddress,
   JBRouterTerminalContracts,
   NATIVE_TOKEN,
+  USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
 import type { PayPreview } from "@bananapus/nana-sdk-core/v6";
 import type { Address, PublicClient } from "viem";

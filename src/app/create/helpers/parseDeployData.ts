@@ -1,5 +1,5 @@
 // https://github.com/rev-net/revnet-core/blob/main/script/Deploy.s.sol
-import { USDC_ADDRESSES, USDC_DECIMALS } from "@/app/constants";
+import { USDC_DECIMALS } from "@/app/constants";
 import {
   CashOutTaxRate,
   ETH_CURRENCY_ID,
@@ -8,6 +8,7 @@ import {
   NATIVE_TOKEN_DECIMALS,
   SPLITS_TOTAL_PERCENT,
   USD_CURRENCY_ID,
+  USDC_ADDRESSES,
   WeightCutPercent,
 } from "@bananapus/nana-sdk-core";
 import {
@@ -16,20 +17,12 @@ import {
   buildDeployRevnetTx,
   buildRevnetStageConfig,
   fillSplitPercents,
+  REV_METADATA_ALLOW_SUCKER_DEPLOYMENT,
   RULESET_WEIGHT_INHERIT,
   tokenCurrencyId,
 } from "@bananapus/nana-sdk-core/v6";
 import { Address, ContractFunctionArgs, parseUnits, zeroAddress } from "viem";
 import { RevnetFormData } from "../types";
-
-/**
- * `REVDeployer.deploySuckersFor` reads bit 2 of the CURRENT stage's app
- * metadata and reverts without it (REVDeployer.sol:646-650). Stages are
- * immutable, so a stage that ships without this bit can never be extended to
- * another chain — launch-time suckers are exempt, which is why the gap only
- * surfaces later (and makes `SuckerExtensionCard` unusable).
- */
-const REV_METADATA_ALLOW_SUCKER_DEPLOYMENT = 1 << 2;
 
 // Standard reserves use the 4-arg `deployFor` overload. Custom reserves use the
 // 6-arg overload so the empty 721 store can inherit the ERC-20's own decimals.
@@ -70,9 +63,11 @@ export function parseDeployData(
     formData?.operator.find((c) => Number(c.chainId) === Number(extra.chainId))?.address ||
     formData.stages[0].initialOperator;
 
-  // Custom reserves use their token-keyed currency. Canonical ETH and USDC
-  // contexts use the protocol's well-known ETH/USD currency IDs so either can
-  // be the shared issuance and shop denomination.
+  // Accounting-context currencies are ALWAYS token-keyed:
+  // `uint32(uint160(token))`, native = 61166. The well-known ETH/USD ids
+  // (1/2) are base-currency denominations only — encoding them as context
+  // currencies is the convention violation this file used to carry.
+  // `buildAccountingContext` defaults to `tokenCurrencyId(token)`.
   let baseCurrency: number;
   let tokenAddress: Address;
   let tokenDecimals: number;
@@ -88,16 +83,11 @@ export function parseDeployData(
     baseCurrency = formData.issuanceBaseCurrency === "USD" ? USD_CURRENCY_ID(6) : ETH_CURRENCY_ID;
   }
 
-  const nativeAccountingContext = {
-    token: NATIVE_TOKEN,
-    decimals: NATIVE_TOKEN_DECIMALS,
-    currency: ETH_CURRENCY_ID,
-  };
-  const usdcAccountingContext = {
-    token: USDC_ADDRESSES[extra.chainId],
-    decimals: USDC_DECIMALS,
-    currency: USD_CURRENCY_ID(6),
-  };
+  const nativeAccountingContext = buildAccountingContext(NATIVE_TOKEN, NATIVE_TOKEN_DECIMALS);
+  const usdcAccountingContext = buildAccountingContext(
+    USDC_ADDRESSES[extra.chainId],
+    USDC_DECIMALS,
+  );
   const accountingContextsToAccept =
     formData.reserveAsset === "CUSTOM"
       ? [buildAccountingContext(tokenAddress, tokenDecimals)]
@@ -186,6 +176,11 @@ export function parseDeployData(
       cashOutTaxRate: Math.round(
         Number(CashOutTaxRate.parse(stage.priceFloorTaxIntensity, 4).value) / 100,
       ),
+      // `REVDeployer.deploySuckersFor` reads bit 2 of the CURRENT stage's app
+      // metadata and reverts without it (REVDeployer.sol:646-650). Stages are
+      // immutable, so a stage that ships without the bit can never be extended
+      // to another chain. `buildRevnetStageConfig` sets it by default, but the
+      // 721 metadata is composed here, so it is re-applied explicitly.
       extraMetadata:
         build721RulesetMetadata({
           metadata: Number(stage.extraMetadata ?? 0),

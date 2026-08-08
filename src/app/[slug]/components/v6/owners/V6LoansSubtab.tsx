@@ -17,7 +17,7 @@ import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { currentOutstandingLoanFee } from "@/lib/loanFees";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { commaNumber } from "@/lib/number";
-import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import { accountingDecimalsOf, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
@@ -76,8 +76,10 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
                     knownSymbol === "TOKEN"
                       ? project?.tokenSymbol || "TOKEN"
                       : knownSymbol;
-                  const sourceDecimals =
-                    knownSymbol === "USDC" ? 6 : (project?.decimals ?? 18);
+                  const sourceDecimals = accountingDecimalsOf({
+                    token: loan.token,
+                    decimals: project?.decimals,
+                  });
                   const fee = currentOutstandingLoanFee({
                     amount: BigInt(loan.borrowAmount),
                     prepaidFeePercent: loan.prepaidFeePercent,
@@ -142,6 +144,7 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
 
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
   const [selectedChainId, setSelectedChainId] = useState<JBChainId | null>(null);
+  const [selectedLoanProjectId, setSelectedLoanProjectId] = useState<number | null>(null);
   const [showRepayDialog, setShowRepayDialog] = useState(false);
   const [reallocateLoan, setReallocateLoan] = useState<SelectedLoan | null>(null);
   const [showReallocateDialog, setShowReallocateDialog] = useState(false);
@@ -173,9 +176,10 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
         address={address}
         tokenSymbol={tokenSymbol}
         projects={projects}
-        onSelectLoan={(loanId, chainId) => {
+        onSelectLoan={(loanId, chainId, loanProjectId) => {
           setSelectedLoanId(loanId);
           setSelectedChainId(chainId as JBChainId);
+          setSelectedLoanProjectId(loanProjectId);
           setShowRepayDialog(true);
         }}
         onReallocateLoan={(loan) => {
@@ -184,11 +188,12 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
         }}
       />
 
-      {selectedLoanId && selectedChainId && (
+      {selectedLoanId && selectedChainId && selectedLoanProjectId !== null && (
         <RepayDialog
           loanId={selectedLoanId}
           chainId={selectedChainId}
           projectId={projectId}
+          loanProjectId={BigInt(selectedLoanProjectId)}
           open={showRepayDialog}
           onOpenChange={setShowRepayDialog}
         />

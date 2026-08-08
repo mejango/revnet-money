@@ -425,6 +425,12 @@ export function useSendRelayrTx() {
       if (!accountBeforeSend || accountBeforeSend.toLowerCase() !== address.toLowerCase()) {
         throw new Error("Connected account changed. Review the Relayr payment again.");
       }
+      // The review is open-ended, so the quote can expire while it sits there.
+      // Re-check right before the send, not only before the review, so an
+      // expired bundle is never paid for.
+      if (deadline <= Math.floor(Date.now() / 1_000) + 15) {
+        throw new Error("This Relayr quote expired. Review the action again for a new quote.");
+      }
       const remembered = quotes.get(paymentKey(payment));
       const callKey = `${address.toLowerCase()}:relayr-payment:${paymentKey(payment)}`;
       const duplicate = transactionActivitySnapshot().find(

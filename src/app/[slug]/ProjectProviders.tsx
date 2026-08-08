@@ -1,12 +1,12 @@
 "use client";
 
+import { isSupportedChainId } from "@/app/constants";
 import { OPEN_IPFS_GATEWAY_HOSTNAME } from "@/lib/ipfs";
 import { ProjectProvider } from "@/lib/nana/project";
 import type { InitialProjectData, SuckerPair } from "@/lib/nana/types";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { PropsWithChildren } from "react";
 
-const SUPPORTED_CHAIN_IDS = new Set([1, 10, 42161, 8453, 11155111, 11155420, 84532, 421614]);
 
 export function ProjectProviders(
   props: PropsWithChildren<{
@@ -31,7 +31,7 @@ export function ProjectProviders(
   const initialSuckers = props.projects
     .filter(
       (project): project is { chainId: JBChainId; projectId: number } =>
-        SUPPORTED_CHAIN_IDS.has(project.chainId) &&
+        isSupportedChainId(project.chainId) &&
         Number.isSafeInteger(project.projectId) &&
         project.projectId >= 0,
     )

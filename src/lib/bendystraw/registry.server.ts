@@ -579,8 +579,19 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   },
   [LoansByAccountOperation.id]: {
     operationName: "LoansByAccount",
-    query: `query LoansByAccount($owner: String!, $version: Int!) {
-      loans(where: { owner: $owner, version: $version }) {
+    query: `query LoansByAccount(
+      $owner: String!
+      $version: Int!
+      $limit: Int
+      $offset: Int
+    ) {
+      loans(
+        where: { owner: $owner, version: $version }
+        orderBy: "createdAt"
+        orderDirection: "desc"
+        limit: $limit
+        offset: $offset
+      ) {
         items {
           borrowAmount
           collateral
@@ -593,6 +604,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           id
           project { version }
         }
+        totalCount
       }
     }`,
   },

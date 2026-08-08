@@ -1,5 +1,5 @@
-import { USDC_ADDRESSES } from "@/app/constants";
-import { NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
+import { USDC_DECIMALS } from "@/app/constants";
+import { NATIVE_TOKEN, NATIVE_TOKEN_DECIMALS, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
 
 /**
  * Get token symbol from token address
@@ -20,6 +20,22 @@ export function getTokenSymbolFromAddress(tokenAddress: string) {
   if (isUsdc) return "USDC";
 
   return "TOKEN";
+}
+
+/**
+ * Decimals for an accounting token, from its address and whatever the indexer reported.
+ *
+ * USDC is pinned to 6 on every chain `USDC_ADDRESSES` covers, because an indexed value
+ * can be stale or absent. Everything else is taken as indexed, nullish-coalesced and
+ * never `||`: a legitimate 0-decimal token is a real thing, and coercing it to 18 would
+ * mis-scale every amount by 1e18.
+ */
+export function accountingDecimalsOf(context: {
+  token?: string | null;
+  decimals?: number | null;
+}): number {
+  if (getTokenSymbolFromAddress(context.token ?? "") === "USDC") return USDC_DECIMALS;
+  return context.decimals ?? NATIVE_TOKEN_DECIMALS;
 }
 
 /**
@@ -58,7 +74,7 @@ export function getTokenConfigForChain(
   return {
     token: projectForChain.token as `0x${string}`,
     currency: Number(projectForChain.currency),
-    decimals: projectForChain.decimals || 18,
+    decimals: accountingDecimalsOf(projectForChain),
     symbol:
       projectForChain.tokenSymbol ||
       getTokenSymbolFromAddress(projectForChain.token as `0x${string}`),

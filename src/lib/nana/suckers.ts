@@ -19,25 +19,33 @@ const CHAIN_ORDER: readonly JBChainId[] = [1, 8453, 10, 42161, 11155111, 84532, 
 
 /**
  * Ensure the active project is represented exactly once and keep chain order
- * deterministic. Bendystraw's sucker-group response historically provided
- * this shape; doing it here preserves every existing caller's assumptions.
+ * deterministic.
+ *
+ * Identity is the whole `(chainId, projectId)` pair, matching `resolveSuckers`:
+ * a chain id alone is not an identity, and two members of a group can sit on
+ * the same chain under different project ids. This only has to add `current`
+ * for the Bendystraw-seeded initial data — `resolveSuckers` already includes
+ * the local pair itself — but doing it unconditionally is idempotent.
  */
 export function normalizeSuckerPairs(
   pairs: readonly SuckerPair[],
   current: SuckerPair,
 ): SuckerPair[] {
-  const byChain = new Map<JBChainId, SuckerPair>();
-  byChain.set(current.peerChainId, current);
-  for (const pair of pairs) {
-    if (!byChain.has(pair.peerChainId)) byChain.set(pair.peerChainId, pair);
+  const byPair = new Map<string, SuckerPair>();
+  for (const pair of [current, ...pairs]) {
+    const key = `${pair.peerChainId}:${pair.projectId}`;
+    if (!byPair.has(key)) byPair.set(key, pair);
   }
-  return [...byChain.values()].sort((a, b) => {
+  return [...byPair.values()].sort((a, b) => {
     const aIndex = CHAIN_ORDER.indexOf(a.peerChainId);
     const bIndex = CHAIN_ORDER.indexOf(b.peerChainId);
-    if (aIndex === -1 && bIndex === -1) return a.peerChainId - b.peerChainId;
-    if (aIndex === -1) return 1;
-    if (bIndex === -1) return -1;
-    return aIndex - bIndex;
+    if (aIndex !== bIndex) {
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    }
+    if (a.peerChainId !== b.peerChainId) return a.peerChainId - b.peerChainId;
+    return a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0;
   });
 }
 
@@ -45,6 +53,12 @@ export function normalizeSuckerPairs(
  * Resolve the V6 sucker group on-chain. Server-provided peers seed the cache,
  * removing the duplicate client indexer waterfall on initial render. Manual
  * `refetch` still resolves the live registry after cross-chain edits.
+ *
+ * `resolveSuckers` rejects rather than returning a truncated group when a
+ * registry read fails — a partial group under-counts supply, surplus, and
+ * balances. React Query keeps the Bendystraw-seeded pairs as `data` and raises
+ * `isError`, so the page renders what the indexer knew instead of silently
+ * treating an incomplete group as complete.
  */
 export function useSuckers({ enabled = true }: { enabled?: boolean } = {}) {
   const config = useConfig();
@@ -121,7 +135,11 @@ export function useSuckersUserTokenBalance() {
     queryFn: async () => {
       if (!address || !chainId) return [];
       const pairs = suckers.data ?? [];
-      const remotePairs = pairs.filter((pair) => pair.peerChainId !== chainId);
+      // Identity is the whole pair: a group member sharing the active chain
+      // under a different project id still needs its own balance read.
+      const remotePairs = pairs.filter(
+        (pair) => !(pair.peerChainId === chainId && pair.projectId === projectId),
+      );
       const remote = await Promise.all(
         remotePairs.map(async (pair) => {
           const tokenStore = getContract({

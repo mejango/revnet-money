@@ -307,6 +307,18 @@ describe("reviewed Relayr payment hook", () => {
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
+  it("rejects a quote that expires while the review sits open", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => {
+      vi.setSystemTime(new Date((NOW + 700) * 1_000));
+      return true;
+    });
+    const { result } = renderHook(() => hooks.useSendRelayrTx());
+
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(/expired/i);
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
   it("records Safe payments as proposals and never waits for an onchain receipt", async () => {
     mocks.account = {
       address: ACCOUNT,

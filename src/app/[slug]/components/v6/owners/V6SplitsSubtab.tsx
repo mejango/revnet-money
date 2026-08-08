@@ -103,20 +103,28 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
   })();
   const splitLimitLabel = splitLimitBps === undefined ? undefined : formatUnits(splitLimitBps, 2);
 
+  // Only chains that actually HAVE a ruleset at the selected index can be read.
+  // `useReadContracts` cannot disable an individual entry, so a `?? 0n` id would not
+  // "disable the read" — it would execute `splitsOf(pid, 0, …)`, and ruleset 0 is the
+  // FALLBACK group. Stage tabs index off the home chain's list, and another chain's list
+  // can be shorter (or empty), so building the batch from the resolved ids is the only
+  // way to keep a different group's recipients from rendering as this stage's splits.
+  const readableChains = chains.filter(
+    (c) => rulesetsByChain.get(Number(c.chainId))?.[selectedStageIdx] !== undefined,
+  );
+  const readIndexByChain = new Map(readableChains.map((c, index) => [Number(c.chainId), index]));
+
   // Per-chain splits + pending balances for the selected stage.
   const splitReads = useReadContracts({
-    contracts: chains.flatMap((c) => {
-      const ruleset = rulesetsByChain.get(Number(c.chainId))?.[selectedStageIdx];
+    contracts: readableChains.flatMap((c) => {
+      const ruleset = rulesetsByChain.get(Number(c.chainId))![selectedStageIdx];
       return [
         {
           chainId: c.chainId,
           address: contractAddress(JBCoreContracts.JBSplits, c.chainId),
           abi: jbSplitsAbi,
           functionName: "splitsOf" as const,
-          // NEVER `?? 0n`: ruleset 0 is the FALLBACK group, so an unloaded ruleset would
-          // silently render a different group's recipients as if they were this stage's.
-          // A missing id disables the read (below) and the row shows unavailable instead.
-          args: [BigInt(c.projectId), ruleset?.id ?? 0n, RESERVED_TOKEN_SPLIT_GROUP_ID] as const,
+          args: [BigInt(c.projectId), BigInt(ruleset.id), RESERVED_TOKEN_SPLIT_GROUP_ID] as const,
         },
         {
           chainId: c.chainId,
@@ -127,7 +135,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
         },
       ];
     }),
-    query: { enabled: chains.length > 0 && rulesetsByChain.size > 0 },
+    query: { enabled: readableChains.length > 0 },
   });
 
   if (rulesetReads.isLoading) return <TableSkeleton rows={4} columns={3} />;
@@ -176,9 +184,11 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
       )}
 
       <div className="flex flex-col gap-6">
-        {chains.map((c, chainIdx) => {
-          const splitsResult = splitReads.data?.[chainIdx * 2];
-          const pendingResult = splitReads.data?.[chainIdx * 2 + 1];
+        {chains.map((c) => {
+          const readIdx = readIndexByChain.get(Number(c.chainId));
+          const hasStage = readIdx !== undefined;
+          const splitsResult = hasStage ? splitReads.data?.[readIdx * 2] : undefined;
+          const pendingResult = hasStage ? splitReads.data?.[readIdx * 2 + 1] : undefined;
           const splits =
             splitsResult?.status === "success" ? (splitsResult.result as readonly Split[]) : null;
           const pending =
@@ -201,7 +211,13 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {splitReads.isLoading ? (
+                      {!hasStage ? (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-center text-zinc-400">
+                            This chain has no stage {selectedStageIdx + 1}.
+                          </TableCell>
+                        </TableRow>
+                      ) : splitReads.isLoading ? (
                         Array.from({ length: 3 }, (_, index) => (
                           <TableRow key={index}>
                             <TableCell>

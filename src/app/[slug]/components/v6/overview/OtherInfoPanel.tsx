@@ -1,6 +1,6 @@
 "use client";
 
-import { chainSortOrder } from "@/app/constants";
+import { chainSortIndex } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,11 +30,7 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
     .filter((p): p is ProjectItem & { chainId: JBChainId } =>
       Boolean(JB_CHAINS[p.chainId as JBChainId]),
     )
-    .sort(
-      (a, b) =>
-        (chainSortOrder.get(a.chainId as JBChainId) ?? 0) -
-        (chainSortOrder.get(b.chainId as JBChainId) ?? 0),
-    );
+    .sort((a, b) => chainSortIndex(a.chainId) - chainSortIndex(b.chainId));
 
   if (rows.length === 0) return null;
 

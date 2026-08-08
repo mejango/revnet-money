@@ -1,4 +1,4 @@
-import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
+import { accountingDecimalsOf, getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import { describe, expect, it } from "vitest";
 
@@ -33,6 +33,37 @@ describe("getTokenConfigForChain", () => {
       decimals: 6,
       symbol: "USDC",
     });
+  });
+
+  it("pins USDC to 6 decimals even when the indexed value disagrees", () => {
+    const data = groupWith([
+      { chainId: 8453, token: USDC_BASE, currency: 3, decimals: 18, tokenSymbol: "USDC" },
+    ]);
+    expect(getTokenConfigForChain(data, 8453)?.decimals).toBe(6);
+  });
+
+  it("keeps a 0-decimal accounting token at 0", () => {
+    const token = "0x3333333333333333333333333333333333333333";
+    const data = groupWith([{ chainId: 8453, token, currency: 5, decimals: 0, tokenSymbol: "PT" }]);
+    expect(getTokenConfigForChain(data, 8453)?.decimals).toBe(0);
+  });
+});
+
+describe("accountingDecimalsOf", () => {
+  it("pins USDC to 6 on every chain the SDK covers", () => {
+    expect(accountingDecimalsOf({ token: USDC_BASE, decimals: 18 })).toBe(6);
+    expect(accountingDecimalsOf({ token: USDC_BASE.toLowerCase(), decimals: null })).toBe(6);
+  });
+
+  it("takes the indexed decimals as given, including a legitimate 0", () => {
+    const token = "0x3333333333333333333333333333333333333333";
+    expect(accountingDecimalsOf({ token, decimals: 0 })).toBe(0);
+    expect(accountingDecimalsOf({ token, decimals: 6 })).toBe(6);
+  });
+
+  it("falls back to the native token's decimals only when none is reported", () => {
+    expect(accountingDecimalsOf({ token: NATIVE_TOKEN, decimals: null })).toBe(18);
+    expect(accountingDecimalsOf({})).toBe(18);
   });
 });
 

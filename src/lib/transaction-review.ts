@@ -1,5 +1,6 @@
 "use client";
 
+import { explorerBaseUrl } from "@/lib/utils";
 import { encodeFunctionData, type Abi, type Address, type Hex } from "viem";
 
 export type TransactionReviewCall = {
@@ -127,17 +128,6 @@ export function transactionReviewJson(request: TransactionReviewRequest): string
   );
 }
 
-const EXPLORER: Record<number, string> = {
-  1: "https://etherscan.io",
-  10: "https://optimistic.etherscan.io",
-  8453: "https://basescan.org",
-  42161: "https://arbiscan.io",
-  11155111: "https://sepolia.etherscan.io",
-  11155420: "https://sepolia-optimism.etherscan.io",
-  84532: "https://sepolia.basescan.org",
-  421614: "https://sepolia.arbiscan.io",
-};
-
 export function buildTransactionReviewPrompt(request: TransactionReviewRequest): string {
   const lines = [
     "I am about to authorize a blockchain action in revnet.money using Juicebox V6 contracts. Act as a careful transaction security reviewer. Trust the exact payload and verified V6 source over the page, independently decode it, compare it with my intent, and give a go/no-go.",
@@ -153,8 +143,8 @@ export function buildTransactionReviewPrompt(request: TransactionReviewRequest):
     lines.push(`Audit the app page/build: ${window.location.href}`);
   request.calls.forEach((call, index) => {
     lines.push(
-      EXPLORER[call.chainId]
-        ? `${request.calls.length > 1 ? `Target ${index + 1}` : "Target"}: ${EXPLORER[call.chainId]}/address/${call.to}`
+      explorerBaseUrl(call.chainId)
+        ? `${request.calls.length > 1 ? `Target ${index + 1}` : "Target"}: ${explorerBaseUrl(call.chainId)}/address/${call.to}`
         : `Target ${index + 1}: chain ${call.chainId}, ${call.to}`,
     );
   });

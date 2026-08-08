@@ -66,8 +66,17 @@ describe("server-only profile modules", () => {
     });
   });
 
-  it("fails closed when the indexed operator lookup is unavailable", async () => {
+  it("throws instead of claiming no operator when the indexed lookup is unavailable", async () => {
     mocks.request.mockRejectedValue(new Error("index unavailable"));
+
+    await expect(getProjectOperator(7, 8453)).rejects.toThrow("index unavailable");
+    expect(mocks.fetchProfile).not.toHaveBeenCalled();
+  });
+
+  it("resolves to null when the indexer answers with no operator", async () => {
+    mocks.request.mockResolvedValue({
+      permissionHolders: { items: [], totalCount: 0 },
+    });
 
     await expect(getProjectOperator(7, 8453)).resolves.toBeNull();
     expect(mocks.fetchProfile).not.toHaveBeenCalled();

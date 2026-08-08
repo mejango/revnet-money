@@ -51,10 +51,14 @@ describe("local Nana V6 parity", () => {
       }),
     ).toBe(direct);
 
+    // A group member's identity is the whole (chain, project) pair, matching
+    // `resolveSuckers`. Re-listing the active pair collapses; a DIFFERENT
+    // project on the active chain is a distinct member and must survive.
     const current = { peerChainId: 10, projectId: 7n } satisfies SuckerPair;
     const pairs = normalizeSuckerPairs(
       [
         { peerChainId: 8453, projectId: 9n },
+        { peerChainId: 10, projectId: 7n },
         { peerChainId: 10, projectId: 999n },
         { peerChainId: 1, projectId: 5n },
       ],
@@ -64,6 +68,7 @@ describe("local Nana V6 parity", () => {
       { peerChainId: 1, projectId: 5n },
       { peerChainId: 8453, projectId: 9n },
       current,
+      { peerChainId: 10, projectId: 999n },
     ]);
   });
 });
