@@ -1,5 +1,6 @@
 "use client";
 
+import { QuestionMarkCircle } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -8,15 +9,19 @@ interface Props {
   disabled?: boolean;
   colorVar: `--chart-${number}`;
   onClick: () => void;
+  /** What this price MEANS. Carried by the button itself so the whole target reveals it; the
+   *  (?) beside the label is the affordance saying so. */
+  note?: string;
 }
 
-export function ChartToggleButton({ label, active, disabled = false, colorVar, onClick }: Props) {
+export function ChartToggleButton({ label, active, disabled = false, colorVar, onClick, note }: Props) {
   const isActive = active && !disabled;
 
   return (
     <button
       onClick={onClick}
       disabled={disabled}
+      title={note}
       className={cn(
         "flex min-h-11 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
         disabled && "cursor-not-allowed",
@@ -39,6 +44,7 @@ export function ChartToggleButton({ label, active, disabled = false, colorVar, o
         style={isActive ? { backgroundColor: `var(${colorVar})` } : undefined}
       />
       {label}
+      {note ? <QuestionMarkCircle className="h-4 w-4 shrink-0 opacity-50" /> : null}
     </button>
   );
 }

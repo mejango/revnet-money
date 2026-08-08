@@ -14,6 +14,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ChartToggleButton } from "./ChartToggleButton";
+import { priceConcept } from "./priceConcepts";
 import { getTokenPriceChartData } from "./getTokenPriceChartData";
 import { PriceChartTooltip } from "./PriceChartTooltip";
 
@@ -182,6 +183,11 @@ export function TokenPriceChart({
     0,
   );
 
+  // The axis unit: 1 → native, 2 → USD, otherwise a token-keyed base currency, which IS the
+  // accounting token. Same rule the other clients use.
+  const axisSymbol =
+    data?.baseCurrency === 2 ? "USD" : data?.baseCurrency === 1 ? "ETH" : (tokenSymbol ?? "the base currency");
+
   // An always-on methodological caveat, not a problem — so it sits behind an (!) rather than
   // as a banner. The two notices below it stay inline on purpose: those say data is MISSING or
   // a source is DOWN, which the reader has to see without hovering anything.
@@ -201,6 +207,7 @@ export function TokenPriceChart({
             label="Issuance Price"
             active={showIssuance}
             colorVar="--chart-2"
+            note={priceConcept("issuance", { baseSymbol: axisSymbol })}
             onClick={() => setShowIssuance(!showIssuance)}
           />
           {hasPool && (
@@ -209,6 +216,7 @@ export function TokenPriceChart({
               active={showAmm}
               disabled={!hasAmmData}
               colorVar="--chart-4"
+              note={priceConcept("pool", { baseSymbol: axisSymbol })}
               onClick={() => setShowAmm(!showAmm)}
             />
           )}
@@ -217,6 +225,7 @@ export function TokenPriceChart({
             active={showFloor}
             disabled={!hasFloorData}
             colorVar="--chart-3"
+            note={priceConcept("cashOut", { baseSymbol: axisSymbol })}
             onClick={() => setShowFloor(!showFloor)}
           />
           {conversionNote ? (
