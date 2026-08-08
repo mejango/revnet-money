@@ -1,6 +1,6 @@
 "use client";
 
-import { QuestionMarkCircle } from "@/components/ui/icons";
+import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -21,7 +21,6 @@ export function ChartToggleButton({ label, active, disabled = false, colorVar, o
     <button
       onClick={onClick}
       disabled={disabled}
-      title={note}
       className={cn(
         "flex min-h-11 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
         disabled && "cursor-not-allowed",
@@ -43,8 +42,7 @@ export function ChartToggleButton({ label, active, disabled = false, colorVar, o
         className={cn("w-2.5 h-2.5 rounded-full", !isActive && "bg-zinc-300")}
         style={isActive ? { backgroundColor: `var(${colorVar})` } : undefined}
       />
-      {label}
-      {note ? <QuestionMarkCircle className="h-4 w-4 shrink-0 opacity-50" /> : null}
+      {note ? <ConceptTerm note={note}>{label}</ConceptTerm> : label}
     </button>
   );
 }

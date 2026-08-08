@@ -38,7 +38,7 @@ import {
 } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
 import { useOperatorWrites } from "./useOperatorWrites";
-import { InfoTip } from "@/components/ui/InfoTip";
+import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 
 type BuybackChainState = ChainProjectRow & {
@@ -855,9 +855,8 @@ function NumberField({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 flex items-center gap-1 text-sm font-medium">
-        {label}
-        {note ? <InfoTip note={note} kind="help" /> : null}
+      <span className="mb-1 block text-sm font-medium">
+        {note ? <ConceptTerm note={note}>{label}</ConceptTerm> : label}
       </span>
       <Input
         inputMode="numeric"

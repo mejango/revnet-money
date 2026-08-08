@@ -27,7 +27,7 @@ import { LoanDetailsTable } from "../../Value/LoansDetailsTable";
 import { ReallocateDialog } from "../../Value/ReallocateDialog";
 import { RepayDialog } from "../../Value/RepayDialog";
 import { ProjectItem } from "../shared";
-import { InfoTip } from "@/components/ui/InfoTip";
+import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 
 function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; tokenSymbol: string }) {
@@ -62,10 +62,7 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
                   <TableHead className="whitespace-nowrap">Borrowed</TableHead>
                   <TableHead className="whitespace-nowrap">Collateral</TableHead>
                   <TableHead className="whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1">
-                      Prepaid fee
-                      <InfoTip note={PROTOCOL_CONCEPTS.prepaidFee} kind="help" />
-                    </span>
+                    <ConceptTerm note={PROTOCOL_CONCEPTS.prepaidFee}>Prepaid fee</ConceptTerm>
                   </TableHead>
                   <TableHead className="whitespace-nowrap">Current fee outstanding</TableHead>
                   <TableHead className="whitespace-nowrap">Opened</TableHead>
