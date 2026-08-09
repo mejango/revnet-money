@@ -1,11 +1,13 @@
 import Link from "next/link";
 
+type RevnetGuidePoint = string | { key: string; text: string };
+
 export type RevnetGuideSection = {
   id: string;
   title: string;
   summary: string;
   paragraphs?: readonly string[];
-  points?: readonly string[];
+  points?: readonly RevnetGuidePoint[];
   note?: string;
   links?: readonly { href: string; label: string }[];
 };
@@ -102,8 +104,15 @@ export function RevnetGuide({
                 {section.points?.length ? (
                   <ul className="ml-6 list-outside list-square space-y-3 marker:text-melon-600">
                     {section.points.map((point) => (
-                      <li key={point} className="pl-1">
-                        {point}
+                      <li key={typeof point === "string" ? point : point.key} className="pl-1">
+                        {typeof point === "string" ? (
+                          point
+                        ) : (
+                          <>
+                            <strong className="font-semibold text-zinc-900">{point.key}:</strong>{" "}
+                            {point.text}
+                          </>
+                        )}
                       </li>
                     ))}
                   </ul>
