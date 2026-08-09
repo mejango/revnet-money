@@ -8,10 +8,13 @@ export function Nav() {
     <nav className="text-zinc-50 border-b border-zinc-100">
       <div
         data-site-nav-layout
-        className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-4 py-3 sm:container"
+        className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-4 py-3 sm:container md:grid-cols-[auto_minmax(6rem,1fr)_minmax(12rem,32rem)_auto]"
       >
-        <div className="flex items-center gap-3 justify-self-start">
-          <Link href="/" className="inline-flex min-h-11 min-w-11 items-center italic">
+        <div className="flex items-center gap-3 justify-self-start md:contents">
+          <Link
+            href="/"
+            className="inline-flex min-h-11 min-w-11 items-center italic md:col-start-1 md:justify-self-start"
+          >
             <Image
               src="/assets/img/small-bw.svg"
               width={288}
@@ -22,7 +25,7 @@ export function Nav() {
           </Link>
           <div
             aria-label="Revnet guides"
-            className="flex items-center gap-2 whitespace-nowrap text-sm text-zinc-600"
+            className="flex items-center gap-2 whitespace-nowrap text-sm text-zinc-600 md:col-start-2 md:justify-self-center"
           >
             <Link href="/learn" className="underline-offset-4 hover:underline hover:text-zinc-900">
               Learn
@@ -35,12 +38,15 @@ export function Nav() {
             </Link>
           </div>
         </div>
-        <div data-site-nav-search className="w-full min-w-0 max-w-lg justify-self-center">
+        <div
+          data-site-nav-search
+          className="w-full min-w-0 max-w-lg justify-self-center md:col-start-3"
+        >
           <RevnetSearch />
         </div>
         <div
           data-site-nav-wallet
-          className="flex min-w-0 max-w-[55vw] items-stretch justify-self-end sm:max-w-none [&>*]:min-w-0 [&>*]:max-w-full [&_button]:max-w-full [&>button]:min-h-11"
+          className="flex min-w-0 max-w-[55vw] items-stretch justify-self-end sm:max-w-none md:col-start-4 [&>*]:min-w-0 [&>*]:max-w-full [&_button]:max-w-full [&>button]:min-h-11"
         >
           <WalletButton />
         </div>
