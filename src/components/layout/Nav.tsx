@@ -10,7 +10,7 @@ export function Nav() {
         data-site-nav-layout
         className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-4 py-3 sm:container"
       >
-        <div className="flex items-center gap-2 justify-self-start">
+        <div className="flex items-center gap-3 justify-self-start">
           <Link href="/" className="inline-flex min-h-11 min-w-11 items-center italic">
             <Image
               src="/assets/img/small-bw.svg"
@@ -20,6 +20,20 @@ export function Nav() {
               alt="Revnet logo"
             />
           </Link>
+          <div
+            aria-label="Revnet guides"
+            className="flex items-center gap-2 whitespace-nowrap text-sm text-zinc-600"
+          >
+            <Link href="/learn" className="underline-offset-4 hover:underline hover:text-zinc-900">
+              Learn
+            </Link>
+            <span aria-hidden className="text-zinc-400">
+              |
+            </span>
+            <Link href="/build" className="underline-offset-4 hover:underline hover:text-zinc-900">
+              Build
+            </Link>
+          </div>
         </div>
         <div data-site-nav-search className="w-full min-w-0 max-w-lg justify-self-center">
           <RevnetSearch />
