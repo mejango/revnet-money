@@ -1,11 +1,6 @@
 "use server";
 
 import { getRulesets } from "@/app/[slug]/terms/getRulesets";
-import { getCurrentCashOutTax } from "@/lib/cashOutTax";
-import { minimumCashOutPriceAtIssuancePrice } from "@/lib/minimumCashOutPrice";
-import { getStartTimeForRange, getTimeRangeConfig, TimeRange } from "@/lib/timeRange";
-import { getTokenAddress } from "@/lib/token";
-import { JBChainId, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import {
   accountingIsAxisUnit,
   baseIsUsd,
@@ -15,6 +10,12 @@ import {
   toBaseAxis,
   type BaseRatePoint,
 } from "@/lib/baseCurrencyRate";
+import { getCurrentCashOutTax } from "@/lib/cashOutTax";
+import { minimumCashOutPriceAtIssuancePrice } from "@/lib/minimumCashOutPrice";
+import { smoothPriceSeries } from "@/lib/priceSeries";
+import { getStartTimeForRange, getTimeRangeConfig, TimeRange } from "@/lib/timeRange";
+import { getTokenAddress } from "@/lib/token";
+import { JBChainId, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import { calculateIssuancePriceHistory } from "./calculateIssuancePriceHistory";
 import { getFloorPriceHistory } from "./getFloorPriceHistory";
 import { getV4AmmPriceHistory } from "./getV4AmmPriceHistory";
@@ -138,15 +139,32 @@ export async function getTokenPriceChartData(params: {
   // Which basis actually carried the series, for the note the UI shows.
   const usedIndexedPointRates =
     indexedRates &&
-    [...rawAmmData, ...rawFloorData].some(
-      (point) => point.accountingTokenUsdRate != null,
-    );
+    [...rawAmmData, ...rawFloorData].some((point) => point.accountingTokenUsdRate != null);
 
   const { interval } = getTimeRangeConfig(range);
-  const data = mergeDataPoints(issuanceData, ammData, floorData, interval);
+  const now = Math.floor(Date.now() / 1000);
+  const firstAmmTimestamp = ammData[0]?.timestamp ?? now;
+  const chartStart =
+    range === "all"
+      ? Math.min(...[projectStart, firstAmmTimestamp].filter((timestamp) => timestamp > 0))
+      : startTime;
+  const exactAmmData = visibleAmmSeries(ammData, chartStart, now);
+  const smoothedAmmData = smoothPriceSeries(
+    exactAmmData.flatMap((point) =>
+      point.ammPrice === undefined ? [] : [{ timestamp: point.timestamp, value: point.ammPrice }],
+    ),
+  ).map((point) => ({ timestamp: point.timestamp, ammPrice: point.value }));
+  // Pool observations keep their own timestamps. The other protocol-defined
+  // series retain the range's normal interval; collapsing pool points into
+  // that interval would make "Every trade" silently omit trades.
+  const data = mergeDataPoints(issuanceData, smoothedAmmData, floorData, interval, null);
+  const tradeData = mergeDataPoints(issuanceData, exactAmmData, floorData, interval, null);
+  const inSelectedRange = (point: PriceDataPoint) =>
+    range === "all" || point.timestamp >= startTime;
 
   return {
-    chartData: range === "all" ? data : data.filter((d) => d.timestamp >= startTime),
+    chartData: data.filter(inSelectedRange),
+    tradeChartData: tradeData.filter(inSelectedRange),
     hasPool: !!v4History?.hasPool,
     /** The axis unit: the ruleset's base currency, which issuance is denominated in. */
     baseCurrency,
@@ -182,6 +200,7 @@ function mergeDataPoints(
   ammData: PriceDataPoint[],
   floorData: PriceDataPoint[],
   interval: number,
+  ammInterval: number | null = interval,
 ): PriceDataPoint[] {
   const merged = new Map<number, PriceDataPoint>();
 
@@ -196,7 +215,8 @@ function mergeDataPoints(
   }
 
   for (const point of ammData) {
-    const dayTs = normalizeToInterval(point.timestamp, interval);
+    const dayTs =
+      ammInterval === null ? point.timestamp : normalizeToInterval(point.timestamp, ammInterval);
     const existing = merged.get(dayTs);
     if (existing) {
       existing.ammPrice = point.ammPrice;
@@ -271,6 +291,26 @@ function mergeDataPoints(
   }
 
   return sorted;
+}
+
+function visibleAmmSeries(points: PriceDataPoint[], start: number, end: number): PriceDataPoint[] {
+  const sorted = points
+    .filter(
+      (point) =>
+        point.ammPrice !== undefined &&
+        Number.isFinite(point.ammPrice) &&
+        point.ammPrice > 0 &&
+        point.timestamp <= end,
+    )
+    .sort((a, b) => a.timestamp - b.timestamp);
+  const before = sorted.filter((point) => point.timestamp < start).at(-1);
+  const visible = sorted.filter((point) => point.timestamp >= start);
+  const output = before ? [{ ...before, timestamp: start }, ...visible] : visible.slice();
+  const latest = output.at(-1);
+  if (latest && latest.timestamp < end) {
+    output.push({ timestamp: end, ammPrice: latest.ammPrice });
+  }
+  return output;
 }
 
 function normalizeToInterval(timestamp: number, interval: number): number {

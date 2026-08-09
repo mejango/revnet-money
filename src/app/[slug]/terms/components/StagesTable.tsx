@@ -1,5 +1,6 @@
 "use client";
 
+import { issuanceBaseCurrencyLabel } from "@/app/[slug]/components/v6/terms/chartUtils";
 import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import {
   Table,
@@ -13,11 +14,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useAutoIssuances } from "@/hooks/useAutoIssuances";
 import { useTokenA } from "@/hooks/useTokenA";
 import { differenceInWholeDays, formatShortDate } from "@/lib/date";
-import { issuanceBaseCurrencyLabel } from "@/app/[slug]/components/v6/terms/chartUtils";
 import { quotePayerTokensForOneUnit } from "@/lib/fixedPoint";
 import { formatAdaptivePercent } from "@/lib/formatPercent";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { commaNumber } from "@/lib/number";
+import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
   CashOutTaxRate,
@@ -27,11 +28,9 @@ import {
   ReservedPercent,
   RulesetWeight,
 } from "@bananapus/nana-sdk-core";
-import { decode721RulesetMetadata } from "@bananapus/nana-sdk-core/v6";
 import { formatUnits } from "viem";
 import { useReadContracts } from "wagmi";
 import type { Ruleset } from "../getRulesets";
-import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 
 interface Props {
   rulesets: Ruleset[];
@@ -135,9 +134,6 @@ export function StagesTable({ rulesets }: Props) {
         autoIssuanceNum.toLocaleString("en-US", { maximumFractionDigits: 0 }),
       ),
       cashOutTaxRate: cashOutTaxRate?.format() ?? "0",
-      pause721Transfers: metadata?.[1]
-        ? decode721RulesetMetadata(Number(metadata[1].metadata ?? 0)).pauseTransfers
-        : null,
       isCurrent: idx === currentIdx,
     };
   });
@@ -161,10 +157,7 @@ export function StagesTable({ rulesets }: Props) {
               />
             </TableHead>
             <TableHead className="whitespace-nowrap font-medium px-2">
-              <TooltipLabel
-                label="Cut"
-                tooltip={<p>{PROTOCOL_CONCEPTS.issuanceCut}</p>}
-              />
+              <TooltipLabel label="Cut" tooltip={<p>{PROTOCOL_CONCEPTS.issuanceCut}</p>} />
             </TableHead>
             <TableHead className="whitespace-nowrap font-medium px-2">
               <TooltipLabel
@@ -186,12 +179,6 @@ export function StagesTable({ rulesets }: Props) {
                   // the aim is a discoverable explanation, not a particular glyph.
                   <p>{PROTOCOL_CONCEPTS.cashOutTax}</p>
                 }
-              />
-            </TableHead>
-            <TableHead className="whitespace-nowrap font-medium px-2 last:pr-3">
-              <TooltipLabel
-                label="Item transfers"
-                tooltip={<p>{PROTOCOL_CONCEPTS.itemTransfers}</p>}
               />
             </TableHead>
           </TableRow>
@@ -248,13 +235,6 @@ export function StagesTable({ rulesets }: Props) {
               </TableCell>
               <TableCell className="tabular-nums whitespace-nowrap px-2 py-3 last:pr-3">
                 {stage.cashOutTaxRate}
-              </TableCell>
-              <TableCell className="whitespace-nowrap px-2 py-3 last:pr-3">
-                {stage.pause721Transfers == null
-                  ? "Unavailable"
-                  : stage.pause721Transfers
-                    ? "Eligible tiers paused"
-                    : "Allowed"}
               </TableCell>
             </TableRow>
           ))}

@@ -1,6 +1,8 @@
 "use client";
 
 import { cidFromIpfsUri, ipfsUriToAppUrl } from "@/lib/ipfs";
+import { readAllProjectRulesets } from "@/lib/nana/rulesets";
+import { decodeRulesetMetadata } from "@/lib/utils";
 import {
   formatPayAmount,
   parseTierMetadataJson,
@@ -11,10 +13,12 @@ import {
 import {
   decodeEncodedIpfsUriCandidates,
   encodeIpfsUri,
+  getJBContractAddress,
   jb721TiersHookAbi,
   jb721TiersHookStoreAbi,
   JB_CHAINS,
   JBChainId,
+  JBCoreContracts,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
 import {
@@ -115,6 +119,8 @@ export interface ShopInventory {
   pricing: { currency: number; decimals: number; symbol: string };
   tiers: ShopTier[];
   configFlags: ShopConfigFlags | null;
+  /** True when every precommitted stage keeps tier-level non-transferability enforced. */
+  fixedTierTransferability: boolean | null;
   /** Whether the active stage pauses tiers which opted into transfer control. */
   transfersPaused: boolean | null;
 }
@@ -206,38 +212,44 @@ export async function loadShopInventory(
   });
   if (!resolved) return null;
 
-  const [rawTiers, symbol, configFlags, collectionMeta, currentRuleset] = await Promise.all([
-    readAllActiveTiers(client, resolved.store, resolved.hook),
-    resolveShopPricingSymbol(client, chainId, projectId, resolved.pricing.currency),
-    client
-      .readContract({
-        address: resolved.store,
-        abi: jb721TiersHookStoreAbi,
-        functionName: "flagsOf",
-        args: [resolved.hook],
-      })
-      .then((flags) => ({ ...flags }))
-      .catch(() => null),
-    Promise.all([
+  const [rawTiers, symbol, configFlags, collectionMeta, currentRuleset, allRulesets] =
+    await Promise.all([
+      readAllActiveTiers(client, resolved.store, resolved.hook),
+      resolveShopPricingSymbol(client, chainId, projectId, resolved.pricing.currency),
       client
         .readContract({
-          address: resolved.hook,
-          abi: jb721TiersHookAbi,
-          functionName: "name",
+          address: resolved.store,
+          abi: jb721TiersHookStoreAbi,
+          functionName: "flagsOf",
+          args: [resolved.hook],
         })
-        .then((name) => String(name).trim())
-        .catch(() => ""),
-      client
-        .readContract({
-          address: resolved.hook,
-          abi: jb721TiersHookAbi,
-          functionName: "symbol",
-        })
-        .then((collectionSymbol) => String(collectionSymbol).trim())
-        .catch(() => ""),
-    ]),
-    getCurrentRuleset(client, { chainId, projectId }).catch(() => null),
-  ]);
+        .then((flags) => ({ ...flags }))
+        .catch(() => null),
+      Promise.all([
+        client
+          .readContract({
+            address: resolved.hook,
+            abi: jb721TiersHookAbi,
+            functionName: "name",
+          })
+          .then((name) => String(name).trim())
+          .catch(() => ""),
+        client
+          .readContract({
+            address: resolved.hook,
+            abi: jb721TiersHookAbi,
+            functionName: "symbol",
+          })
+          .then((collectionSymbol) => String(collectionSymbol).trim())
+          .catch(() => ""),
+      ]),
+      getCurrentRuleset(client, { chainId, projectId }).catch(() => null),
+      readAllProjectRulesets(
+        client,
+        getJBContractAddress(JBCoreContracts.JBRulesets, 6, chainId),
+        projectId,
+      ).catch(() => null),
+    ]);
   const activeTiers = rawTiers.filter((tier) => tier.initialSupply > 0);
 
   // Resolve one representative tier per category so its metadata can provide
@@ -271,6 +283,14 @@ export async function loadShopInventory(
     collection: { name: collectionMeta[0], symbol: collectionMeta[1] },
     pricing: { ...resolved.pricing, symbol },
     configFlags,
+    fixedTierTransferability:
+      allRulesets === null || allRulesets.length === 0
+        ? null
+        : allRulesets.every(
+            (ruleset) =>
+              decode721RulesetMetadata(decodeRulesetMetadata(ruleset.metadata).metadata)
+                .pauseTransfers,
+          ),
     transfersPaused: currentRuleset
       ? decode721RulesetMetadata(Number(currentRuleset.metadata.metadata ?? 0)).pauseTransfers
       : null,

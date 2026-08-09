@@ -21,6 +21,7 @@ describe("Revnet .jb drafts", () => {
               priceCeilingIncreasePercentage: "10",
               priceCeilingIncreaseFrequency: "30",
               priceFloorTaxIntensity: "20",
+              pause721Transfers: false,
               stageStart: "0",
               splits: [],
               autoIssuance: [],
@@ -42,6 +43,7 @@ describe("Revnet .jb drafts", () => {
       operator: [{ chainId: "1", address: "0x1111111111111111111111111111111111111111" }],
     });
     expect(parsed.stages).toHaveLength(1);
+    expect(parsed.stages[0]).not.toHaveProperty("pause721Transfers");
     expect(parsed.stages[0]).not.toHaveProperty("ignored");
     expect(parsed).not.toHaveProperty("ignored");
   });

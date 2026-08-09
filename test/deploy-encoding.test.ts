@@ -34,13 +34,11 @@ const CUSTOM_TOKEN = "0x000000000000000000000000000000000000d00d";
 function buildRequest(
   reserveAsset: "ETH" | "USDC" | "ETH_USDC" | "CUSTOM" = "ETH",
   issuanceBaseCurrency: "ETH" | "USD" = "ETH",
-  pause721Transfers = false,
   extraMetadata = 0,
 ) {
   const form = validRevnetForm();
   form.reserveAsset = reserveAsset;
   form.issuanceBaseCurrency = issuanceBaseCurrency;
-  form.stages[0].pause721Transfers = pause721Transfers;
   form.stages[0].extraMetadata = extraMetadata;
   if (reserveAsset === "CUSTOM") {
     form.customReserveAsset = {
@@ -117,7 +115,8 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     expect(stage.issuanceCutPercent).toBe(100_000_000);
     expect(stage.cashOutTaxRate).toBe(2_000);
     expect(stage.splitPercent).toBe(2_500);
-    expect(stage.extraMetadata).toBe(1 << 2); // allow-sucker-deployment, always on
+    // Fixed item-level transferability + allow-sucker-deployment are always on.
+    expect(stage.extraMetadata).toBe(1 | (1 << 2));
     expect(stage.splits).toEqual([
       {
         preferAddToBalance: false,
@@ -137,19 +136,20 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     ]);
   });
 
-  it("encodes the immutable 721 transfer pause in stage metadata", () => {
-    const request = buildRequest("ETH", "ETH", true);
+  it("keeps every stage's 721 transfer gate closed for fixed per-item transferability", () => {
+    const request = buildRequest();
     const [, config] = request.args;
 
-    // 721 transfer pause (bit 0) alongside the always-on sucker bit (bit 2).
-    expect(config.stageConfigurations[0].extraMetadata).toBe(1 | (1 << 2));
+    for (const stage of config.stageConfigurations) {
+      expect(stage.extraMetadata & 1).toBe(1);
+    }
   });
 
-  it("preserves unrelated app metadata bits while changing the 721 transfer flag", () => {
-    const request = buildRequest("ETH", "ETH", true, 1 << 2);
+  it("preserves unrelated app metadata bits while enforcing fixed transferability", () => {
+    const request = buildRequest("ETH", "ETH", 1 << 1);
     const [, config] = request.args;
 
-    expect(config.stageConfigurations[0].extraMetadata).toBe(5);
+    expect(config.stageConfigurations[0].extraMetadata).toBe(7);
   });
 
   // REVDeployer.deploySuckersFor reverts unless bit 2 of the CURRENT stage's app

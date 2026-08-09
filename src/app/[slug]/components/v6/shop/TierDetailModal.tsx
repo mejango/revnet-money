@@ -28,11 +28,6 @@ const FLAG_DESCRIPTIONS: [keyof NonNullable<ShopTier["flags"]>, string, string][
     "Revnet operator can mint",
     "The revnet operator can mint this item for free, without a payment.",
   ],
-  [
-    "transfersPausable",
-    "Stage-controlled transfers",
-    "The active precommitted stage can pause transfers of this item. Minting and burning remain available.",
-  ],
   ["cantBeRemoved", "Cannot be removed", "This item can never be removed from the shop."],
   [
     "cantIncreaseDiscountPercent",
@@ -134,6 +129,19 @@ export function TierDetailModal({
   });
 
   const setFlags = tier.flags ? FLAG_DESCRIPTIONS.filter(([flag]) => tier.flags![flag]) : [];
+  const transferability = !tier.flags
+    ? "Unavailable"
+    : !tier.flags.transfersPausable
+      ? "Transferable"
+      : shop.fixedTierTransferability === true
+        ? "Non-transferable"
+        : shop.fixedTierTransferability === null
+          ? "Transfer policy unavailable"
+          : shop.transfersPaused == null
+            ? "Legacy stage-controlled; current status unavailable"
+            : shop.transfersPaused
+              ? "Paused by the current legacy stage"
+              : "Transferable in the current legacy stage";
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -240,18 +248,7 @@ export function TierDetailModal({
 
             <dl className="mt-4 space-y-1.5 border-t border-zinc-200 pt-4 text-xs">
               <Fact label="Item ID" value={`#${tier.id}`} />
-              {tier.flags?.transfersPausable ? (
-                <Fact
-                  label="Transfers"
-                  value={
-                    shop.transfersPaused == null
-                      ? "Current stage unavailable"
-                      : shop.transfersPaused
-                        ? "Paused now"
-                        : "Allowed now; stage-pausable"
-                  }
-                />
-              ) : null}
+              <Fact label="Transfers" value={transferability} />
               <Fact
                 label="Category"
                 value={

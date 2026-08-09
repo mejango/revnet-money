@@ -766,7 +766,8 @@ export function AddStageDialog({
                       rewarding {revnetTokenSymbol} holders who stick around as others cash out.
                     </p>
                     <p className="text-md text-zinc-500 mt-3">
-                      A light tax is recommended to add an incentive while maintaining liquidity.
+                      A light tax is recommended to add an incentive while maintaining liquidity for{" "}
+                      {revnetTokenSymbol} holders.
                     </p>
                     <div className="space-y-2 mt-6">
                       <div className="flex justify-between relative w-full">
@@ -840,34 +841,6 @@ export function AddStageDialog({
                         </ul>
                       </div>
                     </NotesSection>
-                  </div>
-                  <div className="pb-10">
-                    <div className="block text-md font-semibold leading-6">
-                      3. Shop item transfers
-                    </div>
-                    <p className="mt-3 text-md text-zinc-500">
-                      Each item decides whether its transfers may follow the active stage. Because
-                      revnet stages are precommitted, this setting cannot be changed after deploy.
-                    </p>
-                    <label className="mt-5 flex items-start gap-3 border border-zinc-200 bg-white p-4">
-                      <input
-                        type="checkbox"
-                        checked={values.pause721Transfers}
-                        onChange={(event) =>
-                          setFieldValue("pause721Transfers", event.target.checked)
-                        }
-                        className="mt-0.5 h-4 w-4"
-                      />
-                      <span>
-                        <span className="block text-sm font-medium text-zinc-800">
-                          Pause eligible shop item transfers
-                        </span>
-                        <span className="mt-1 block text-xs leading-relaxed text-zinc-500">
-                          Items created with “Allow stages to pause transfers” can’t move between
-                          wallets during this stage. Minting and burning remain available.
-                        </span>
-                      </span>
-                    </label>
                   </div>
                   <StartTimeField stageIdx={stageIdx} stages={stages} />
 

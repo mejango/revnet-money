@@ -256,13 +256,15 @@ export function InventorySection({
             <dd className="font-medium text-zinc-900">{shop.pricing.symbol}</dd>
           </div>
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <dt className="text-zinc-500">Item transfers</dt>
+            <dt className="text-zinc-500">Item transfer policy</dt>
             <dd className="text-right font-medium text-zinc-900">
-              {shop.transfersPaused == null
-                ? "Status unavailable"
-                : shop.transfersPaused
-                  ? "Paused now"
-                  : "Allowed now"}
+              {shop.fixedTierTransferability === true
+                ? "Fixed per item"
+                : shop.fixedTierTransferability === false
+                  ? shop.transfersPaused == null
+                    ? "Stage-controlled (legacy)"
+                    : `Stage-controlled (legacy) — ${shop.transfersPaused ? "paused" : "allowed"} now`
+                  : "Status unavailable"}
             </dd>
           </div>
         </dl>
@@ -392,9 +394,15 @@ function TierCard({
             Sold out
           </span>
         ) : null}
-        {shop.transfersPaused === true && tier.flags?.transfersPausable ? (
+        {shop.fixedTierTransferability === true && tier.flags?.transfersPausable ? (
           <span className="absolute bottom-2 left-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-            Transfers paused
+            Non-transferable
+          </span>
+        ) : shop.fixedTierTransferability === false &&
+          shop.transfersPaused === true &&
+          tier.flags?.transfersPausable ? (
+          <span className="absolute bottom-2 left-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+            Transfers paused (legacy)
           </span>
         ) : null}
         {quantity > 0 ? (

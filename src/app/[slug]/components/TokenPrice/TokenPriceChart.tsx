@@ -1,8 +1,12 @@
 "use client";
 
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
-import { InfoTip } from "@/components/ui/InfoTip";
 import { CartesianChart, type ChartReferenceLine, type ChartSeries } from "@/components/ui/chart";
+import { InfoTip } from "@/components/ui/InfoTip";
+import {
+  MarketPriceViewToggle,
+  type MarketPriceView,
+} from "@/components/ui/market-price-view-toggle";
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
 import { shouldShowCashOutAsymptote } from "@/lib/minimumCashOutPrice";
@@ -14,9 +18,9 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ChartToggleButton } from "./ChartToggleButton";
-import { priceConcept } from "./priceConcepts";
 import { getTokenPriceChartData } from "./getTokenPriceChartData";
 import { PriceChartTooltip } from "./PriceChartTooltip";
+import { priceConcept } from "./priceConcepts";
 
 const TIME_RANGES: RangeOption<TimeRange>[] = [
   { value: "1h", label: "1H" },
@@ -72,8 +76,10 @@ export function TokenPriceChart({
   const [showIssuance, setShowIssuance] = useState(true);
   const [showAmm, setShowAmm] = useState(true);
   const [showFloor, setShowFloor] = useState(true);
+  const [marketPriceView, setMarketPriceView] = useState<MarketPriceView>("smooth");
 
-  const chartData = data?.chartData ?? [];
+  const chartData =
+    marketPriceView === "trades" ? (data?.tradeChartData ?? []) : (data?.chartData ?? []);
   const hasData = chartData.length > 0;
 
   const hasPool = data?.hasPool ?? false;
@@ -128,6 +134,7 @@ export function TokenPriceChart({
       label: "Pool",
       color: "var(--chart-4)",
       value: (point) => point.ammPrice,
+      curve: marketPriceView === "trades" ? "linear" : "monotone",
     });
   }
   if (showFloor && hasFloorData) {
@@ -186,7 +193,11 @@ export function TokenPriceChart({
   // The axis unit: 1 → native, 2 → USD, otherwise a token-keyed base currency, which IS the
   // accounting token. Same rule the other clients use.
   const axisSymbol =
-    data?.baseCurrency === 2 ? "USD" : data?.baseCurrency === 1 ? "ETH" : (tokenSymbol ?? "the base currency");
+    data?.baseCurrency === 2
+      ? "USD"
+      : data?.baseCurrency === 1
+        ? "ETH"
+        : (tokenSymbol ?? "the base currency");
 
   // An always-on methodological caveat, not a problem — so it sits behind an (!) rather than
   // as a banner. The two notices below it stay inline on purpose: those say data is MISSING or
@@ -234,7 +245,10 @@ export function TokenPriceChart({
             </span>
           ) : null}
         </div>
-        <div className="flex w-full justify-start sm:justify-end">
+        <div className="flex w-full flex-wrap justify-start gap-2 sm:justify-end">
+          {hasPool && hasAmmData ? (
+            <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
+          ) : null}
           <RangeSelector ranges={TIME_RANGES} defaultValue="1y" />
         </div>
       </div>
@@ -256,7 +270,7 @@ export function TokenPriceChart({
           xValue={(point) => point.timestamp}
           series={visibleSeries}
           ariaLabel={`${tokenSymbol} price history`}
-          description={`Issuance, pool, and cash out prices for ${tokenSymbol} over the selected ${range} range.${showCashOutAsymptote ? " The dotted line is the cash-out asymptote." : ""}`}
+          description={`Issuance, ${marketPriceView === "smooth" ? "time-weighted pool" : "every post-trade pool"}, and cash out prices for ${tokenSymbol} over the selected ${range} range.${showCashOutAsymptote ? " The dotted line is the cash-out asymptote." : ""}`}
           className="mt-6 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
           margin={{ left: 84, right: 20, top: 24, bottom: 36 }}
           xDomain={[firstTimestamp ?? 0, lastTimestamp ?? 1]}

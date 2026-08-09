@@ -1,3 +1,5 @@
+import { AuditPromptLink } from "@/components/AuditPromptLink";
+
 export function Footer() {
   return (
     <footer className="text-zinc-900">
@@ -12,6 +14,30 @@ export function Footer() {
               Thanks to the ETH, JBX, REV, and UNI communities for crafting the infrastructure that
               makes revnets possible.
             </p>
+          </div>
+          <div className="mt-8 border-t border-zinc-200 pt-6 text-center text-sm text-zinc-600">
+            <p>
+              Review the{" "}
+              <a
+                href="https://github.com/Bananapus/version-6"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-zinc-900"
+              >
+                protocol code
+              </a>{" "}
+              and the{" "}
+              <a
+                href="https://github.com/mejango/revnet-money"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-zinc-900"
+              >
+                website code
+              </a>
+              .
+            </p>
+            <AuditPromptLink className="mt-1" />
           </div>
         </div>
       </div>

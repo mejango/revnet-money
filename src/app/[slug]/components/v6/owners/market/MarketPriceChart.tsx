@@ -2,9 +2,14 @@
 
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
 import { CartesianChart } from "@/components/ui/chart";
+import {
+  MarketPriceViewToggle,
+  type MarketPriceView,
+} from "@/components/ui/market-price-view-toggle";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { formatClock, formatMonthDay, formatMonthYear, formatShortDateTime } from "@/lib/date";
 import { formatDecimals } from "@/lib/number";
+import { smoothPriceSeries } from "@/lib/priceSeries";
 import { cachedQuery } from "@/lib/query-persist";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -58,6 +63,7 @@ function PoolChart({
   chainLabel: string | null;
 }) {
   const [rangeSeconds, setRangeSeconds] = useState<number>(30 * DAY);
+  const [marketPriceView, setMarketPriceView] = useState<MarketPriceView>("smooth");
 
   const { data, isLoading } = useQuery(
     cachedQuery({
@@ -85,13 +91,19 @@ function PoolChart({
   // The last observation before the window opens carries the line in at its
   // true level; the live pool price closes it at Now.
   const before = observed.filter((point) => point.timestamp < t0).at(-1);
-  const points = [
+  const exactPoints = [
     ...(before ? [{ timestamp: t0, price: before.price }] : []),
     ...observed.filter((point) => point.timestamp >= t0),
   ];
-  if (live > 0) points.push({ timestamp: now, price: live });
+  if (live > 0) exactPoints.push({ timestamp: now, price: live });
+  const points =
+    marketPriceView === "trades"
+      ? exactPoints
+      : smoothPriceSeries(
+          exactPoints.map((point) => ({ timestamp: point.timestamp, value: point.price })),
+        ).map((point) => ({ timestamp: point.timestamp, price: point.value }));
 
-  const opening = points[0]?.price ?? live;
+  const opening = exactPoints[0]?.price ?? live;
   const change = opening > 0 ? (live - opening) / opening : 0;
   const low = points.reduce((min, point) => Math.min(min, point.price), live || Infinity);
   const high = points.reduce((max, point) => Math.max(max, point.price), live);
@@ -125,23 +137,28 @@ function PoolChart({
             </p>
           ) : null}
         </div>
-        <div className="flex shrink-0 gap-1 rounded-lg bg-teal-50 p-1">
-          {RANGES.map((range) => (
-            <button
-              key={range.label}
-              type="button"
-              aria-pressed={rangeSeconds === range.seconds}
-              onClick={() => setRangeSeconds(range.seconds)}
-              className={cn(
-                "inline-flex min-h-11 items-center rounded-md px-3 py-1.5 text-sm font-medium transition-all",
-                rangeSeconds === range.seconds
-                  ? "bg-teal-100 text-zinc-900"
-                  : "text-zinc-600 hover:bg-teal-100/60 hover:text-zinc-900",
-              )}
-            >
-              {range.label}
-            </button>
-          ))}
+        <div className="flex flex-col items-end gap-2">
+          {exactPoints.length > 1 ? (
+            <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
+          ) : null}
+          <div className="flex shrink-0 gap-1 rounded-lg bg-teal-50 p-1">
+            {RANGES.map((range) => (
+              <button
+                key={range.label}
+                type="button"
+                aria-pressed={rangeSeconds === range.seconds}
+                onClick={() => setRangeSeconds(range.seconds)}
+                className={cn(
+                  "inline-flex min-h-11 items-center rounded-md px-3 py-1.5 text-sm font-medium transition-all",
+                  rangeSeconds === range.seconds
+                    ? "bg-teal-100 text-zinc-900"
+                    : "text-zinc-600 hover:bg-teal-100/60 hover:text-zinc-900",
+                )}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -161,11 +178,12 @@ function PoolChart({
               label: "Pool price",
               color: LINE,
               value: (point) => point.price,
+              curve: marketPriceView === "trades" ? "linear" : "monotone",
               area: { opacityFrom: 0.22, opacityTo: 0 },
             },
           ]}
           ariaLabel={`${tokenSymbol} market price in ${pool.pair.symbol}`}
-          description={`Post-trade pool price for ${tokenSymbol} over the selected range.`}
+          description={`${marketPriceView === "smooth" ? "Time-weighted" : "Post-trade"} pool price for ${tokenSymbol} over the selected range.`}
           className="mt-4 aspect-[4/3] w-full sm:aspect-[2/1] lg:aspect-[5/2]"
           margin={{ left: 84, right: 20, top: 24, bottom: 36 }}
           xDomain={[t0, now]}

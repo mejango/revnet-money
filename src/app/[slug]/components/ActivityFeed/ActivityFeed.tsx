@@ -2,6 +2,7 @@
 
 import { ProfilesProvider } from "@/components/ProfilesContext";
 import { ActivityFeedSkeleton } from "@/components/loading/LoadingSkeletons";
+import { ChevronDown } from "@/components/ui/icons";
 import { useCompleteActivityEvents } from "@/hooks/useCompleteBendystrawLists";
 import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
 import { useState } from "react";
@@ -106,10 +107,13 @@ function ActivityTypeFilter({
   };
 
   return (
-    <details className="relative z-20">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 border border-teal-200 bg-teal-50 px-3 text-sm text-zinc-600 hover:border-teal-400 [&::-webkit-details-marker]:hidden">
-        {selectedLabel}
-        <span aria-hidden>⌄</span>
+    <details className="group relative z-20">
+      <summary className="flex min-h-11 cursor-pointer list-none select-none items-center justify-between gap-2 border border-teal-200 bg-teal-50 px-3 text-sm text-zinc-600 transition-colors hover:border-teal-400 focus-visible:border-teal-500 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+        <span>{selectedLabel}</span>
+        <ChevronDown
+          aria-hidden="true"
+          className="h-4 w-4 shrink-0 opacity-60 transition-transform group-open:rotate-180"
+        />
       </summary>
       <div className="absolute right-0 top-full mt-1 min-w-56 border border-teal-300 bg-teal-50 p-2 shadow-lg">
         <label className="flex cursor-pointer items-center gap-2 border-b border-teal-200 px-1 py-2 text-sm text-zinc-600">

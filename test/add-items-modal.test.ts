@@ -6,6 +6,14 @@ const beneficiaryA = "0x1111111111111111111111111111111111111111";
 const beneficiaryB = "0x2222222222222222222222222222222222222222";
 
 describe("revnet shop item editor", () => {
+  it("makes new items permanently transferable by default", () => {
+    const result = buildTierConfigs([{ ...newDraftItem(), price: "1" }], 6);
+    expect(typeof result).not.toBe("string");
+    if (typeof result === "string") return;
+
+    expect(result[0].flags.transfersPausable).toBe(false);
+  });
+
   it("encodes every advanced item setting into adjustTiers", () => {
     const item = {
       ...newDraftItem(),
@@ -21,7 +29,7 @@ describe("revnet shop item editor", () => {
         { percent: "30", beneficiary: beneficiaryB },
       ],
       allowOwnerMint: true,
-      transfersPausable: true,
+      nonTransferable: true,
       cantBeRemoved: true,
       allowCredits: false,
       operatorCanEditDiscount: false,

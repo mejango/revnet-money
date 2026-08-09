@@ -55,7 +55,7 @@ export interface DraftItem {
   cantBeRemoved: boolean;
   allowCredits: boolean;
   operatorCanEditDiscount: boolean;
-  transfersPausable?: boolean;
+  nonTransferable: boolean;
   moreOpen: boolean;
 }
 
@@ -79,7 +79,7 @@ export function newDraftItem(): DraftItem {
     cantBeRemoved: false,
     allowCredits: true,
     operatorCanEditDiscount: true,
-    transfersPausable: false,
+    nonTransferable: false,
     moreOpen: false,
   };
 }
@@ -253,7 +253,10 @@ export function buildTierConfigs(items: DraftItem[], decimals: number): TierConf
       flags: {
         allowOwnerMint: item.allowOwnerMint,
         useReserveBeneficiaryAsDefault: false,
-        transfersPausable: !!item.transfersPausable,
+        // Every stage in a newly deployed revnet keeps the collection-level
+        // transfer gate closed. This immutable tier flag therefore means
+        // exactly "non-transferable", never "possibly paused later".
+        transfersPausable: item.nonTransferable,
         useVotingUnits: votingUnits > 0,
         cantBeRemoved: item.cantBeRemoved,
         cantIncreaseDiscountPercent: !item.operatorCanEditDiscount,
@@ -757,6 +760,10 @@ export function AddItemsModal({
 
                       <div>
                         <Label className="text-xs">Item rules</Label>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Transferability is chosen once when the item is added and cannot change
+                          later.
+                        </p>
                         <div className="mt-2 space-y-2">
                           {(
                             [
@@ -768,11 +775,15 @@ export function AddItemsModal({
                                 disabled: !!shop.configFlags?.noNewTiersWithOwnerMinting,
                               },
                               {
-                                key: "transfersPausable" as const,
-                                title: "Allow stages to pause transfers",
+                                key: "nonTransferable" as const,
+                                title: "Non-transferable",
                                 description:
-                                  "The active precommitted stage can pause transfers of this item. Minting and burning remain available.",
-                                disabled: false,
+                                  shop.fixedTierTransferability === true
+                                    ? "This item can never move between wallets. Minting and burning remain available."
+                                    : shop.fixedTierTransferability === false
+                                      ? "This legacy revnet has stage-controlled transfers, so it cannot guarantee a permanently non-transferable item."
+                                      : "The revnet's fixed transfer policy could not be verified, so non-transferable items are unavailable right now.",
+                                disabled: shop.fixedTierTransferability !== true,
                               },
                               {
                                 key: "cantBeRemoved" as const,

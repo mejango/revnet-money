@@ -95,7 +95,10 @@ export default function Page() {
               better.
             </li>
             <li>Payers receive the tokens, with some optionally split to builders and others.</li>
-            <li>Funds used to issue tokens stay in the treasury, backing their value.</li>
+            <li>
+              Funds used to issue tokens stay in the revnet&apos;s balance, adding to the total
+              value backing all the network&apos;s tokens.
+            </li>
             <li>
               Holders can cash out tokens for their share of the balance, or borrow against their
               tokens to keep options open.

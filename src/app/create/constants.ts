@@ -7,7 +7,6 @@ export const defaultStageData: StageData = {
   priceCeilingIncreasePercentage: "10",
   priceCeilingIncreaseFrequency: "30",
   priceFloorTaxIntensity: "20",
-  pause721Transfers: false,
   extraMetadata: 0,
 
   autoIssuance: [],

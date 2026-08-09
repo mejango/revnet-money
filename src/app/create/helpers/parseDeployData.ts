@@ -184,7 +184,11 @@ export function parseDeployData(
       extraMetadata:
         build721RulesetMetadata({
           metadata: Number(stage.extraMetadata ?? 0),
-          pauseTransfers: stage.pause721Transfers,
+          // Keep the collection-level gate permanently closed. Each tier's
+          // immutable `transfersPausable` flag is then a fixed policy:
+          // false = transferable, true = non-transferable. No later stage can
+          // switch an item from one behavior to the other.
+          pauseTransfers: true,
         }) | REV_METADATA_ALLOW_SUCKER_DEPLOYMENT,
     });
   });

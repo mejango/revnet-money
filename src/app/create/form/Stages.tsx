@@ -131,8 +131,6 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
                         </dd>
                         <dt className="font-medium">Cash out tax</dt>
                         <dd>{Number(stage.priceFloorTaxIntensity) / 100 || 0}</dd>
-                        <dt className="font-medium">Shop item transfers</dt>
-                        <dd>{stage.pause721Transfers ? "Eligible tiers paused" : "Allowed"}</dd>
                       </dl>
                     </div>
                   );

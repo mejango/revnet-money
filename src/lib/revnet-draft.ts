@@ -11,11 +11,7 @@ import {
   jbControllerAbi,
   jbSplitsAbi,
 } from "@bananapus/nana-sdk-core";
-import {
-  RULESET_WEIGHT_INHERIT,
-  decode721RulesetMetadata,
-  getAccountingContexts,
-} from "@bananapus/nana-sdk-core/v6";
+import { RULESET_WEIGHT_INHERIT, getAccountingContexts } from "@bananapus/nana-sdk-core/v6";
 import { formatUnits, zeroAddress, type Address, type PublicClient } from "viem";
 
 const MAX_DRAFT_BYTES = 2_000_000;
@@ -65,7 +61,6 @@ function sanitizeStage(value: unknown): StageData {
     priceCeilingIncreasePercentage: numericText(stage.priceCeilingIncreasePercentage),
     priceCeilingIncreaseFrequency: numericText(stage.priceCeilingIncreaseFrequency),
     priceFloorTaxIntensity: numericText(stage.priceFloorTaxIntensity),
-    pause721Transfers: stage.pause721Transfers === true,
     extraMetadata:
       Number.isInteger(Number(stage.extraMetadata)) &&
       Number(stage.extraMetadata) >= 0 &&
@@ -340,8 +335,6 @@ export async function buildRevnetDraft({
       priceFloorTaxIntensity: String(
         Number((Number(entry.metadata.cashOutTaxRate) / 100).toFixed(2)),
       ),
-      pause721Transfers: decode721RulesetMetadata(Number(entry.metadata.metadata ?? 0))
-        .pauseTransfers,
       extraMetadata: Number(entry.metadata.metadata ?? 0),
       autoIssuance: stored,
       splits,
