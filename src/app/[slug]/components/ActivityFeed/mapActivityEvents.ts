@@ -1,9 +1,8 @@
 import type { ActivityEventsQuery } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
-import { formatDecimals, prettyNumber } from "@/lib/number";
+import { exactNumber, formatCompact, formatDecimals, prettyNumber } from "@/lib/number";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
 import { Address, formatUnits } from "viem";
-import { formatCompact, exactNumber } from "@/lib/number";
 import { formatUsd, usdFromScaled } from "../v6/extras/projectPayers";
 import type { ActivityEvent } from "./ActivityItem";
 
@@ -293,6 +292,17 @@ export function mapActivityEvents(
         timestamp: e.timestamp,
         beneficiary: e.from as Address,
         chainId,
+      });
+    } else if (event.sendPayoutsEvent) {
+      const e = event.sendPayoutsEvent;
+      events.push({
+        id: event.id,
+        type: "payout",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        beneficiary: e.from as Address,
+        chainId,
+        ...flowAmount(e.amountPaidOut, e.amountPaidOutUsd),
       });
     }
   }

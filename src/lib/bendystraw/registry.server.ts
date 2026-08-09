@@ -18,13 +18,13 @@ import {
   MintNftEventsOperation,
   OwnedNftsOperation,
   ParticipantsOperation,
+  PayEventRatesOperation,
   PermissionHoldersOperation,
   ProjectAccountingContextOperation,
   ProjectErc20TickersOperation,
   ProjectOperation,
   ProjectOperatorOperation,
   ProjectPayersOperation,
-  PayEventRatesOperation,
   ProjectsByOwnerOperation,
   ProjectWithPermissionsOperation,
   ShieldGroupOperation,
@@ -90,6 +90,9 @@ const ACTIVITY_EVENT_FIELDS = `
     txHash timestamp from caller direction terminalTokenAmount projectTokenAmount
   }
   buybackPoolEvent { txHash timestamp from caller }
+  sendPayoutsEvent {
+    txHash timestamp from caller amount amountPaidOut amountPaidOutUsd
+  }
 `;
 
 const PROJECT_FIELDS = `
@@ -255,6 +258,10 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           chainId
           timestamp
           txHash
+          project {
+            id projectId chainId handle version name logoUri projectTagline
+            tokenSymbol decimals isRevnet suckerGroupId
+          }
           ${ACTIVITY_EVENT_FIELDS}
         }
       }

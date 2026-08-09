@@ -127,9 +127,10 @@ const SECTIONS: readonly RevnetGuideSection[] = [
   {
     id: "shops",
     title: "Shops",
-    summary: "Shop items can be created as transferable or non-transferable.",
+    summary:
+      "Each revnet has a shop where it can sell items from. Shops can contain any number of items organized by any number of categories.",
     paragraphs: [
-      "That policy is fixed per item: revnet stages keep the collection-level pause gate closed, so an item cannot later switch between those behaviors. Minting and burning remain governed by the item's hook and permissions.",
+      "Shops are represented digitally and can include many customizable distribution rules. The items play no role in the revnet's economics apart from their sales contributing to revenue with shoppers receiving resulting tokens — just like any other payment.",
     ],
   },
   {
@@ -140,16 +141,16 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     paragraphs: [
       "An operator's limited permissions can cover metadata, redirecting the already-precommitted split share, permitted shop management, buyback configuration, or extending the revnet to new chains if allowed by the deployment. The operator cannot rewrite staged issuance or cash-out rules.",
     ],
-    note: "A revnet can permanently retain no operator by using 0xdead000000000000000000000000000000000000. Verify the actual permission IDs on every chain; the title “operator” is not a substitute for reading them.",
+    note: "A revnet can permanently retain no operator by using 0xdead000000000000000000000000000000000000, and a revnet may have different operators on each chain it exists on.",
   },
   {
     id: "verify-before-trusting",
     title: "Verify before trusting",
     summary:
-      "The interface is a lens on public contracts, not a guarantee that a revnet, market, token, operator, or integration is safe.",
+      "Revnets follow a fixed set of well-known rules, though this is not a guarantee that a revnet, market, token, operator, or integration is safe.",
     paragraphs: [
-      "Review the complete stage schedule, accepted tokens, chain deployments, balances, supply, split recipients, auto-issuance, operator permissions, hooks, pools, loans, and recent activity. Check that the website's proposed transaction matches the contract call you expect.",
-      "Revnets and their surrounding protocols are open source. That makes inspection possible; it does not remove contract, economic, liquidity, bridge, token, oracle, interface, or key-management risk. Risks are borne entirely by users of the open-source code.",
+      "Review each revnet's complete stage schedule, reserve tokens, chain deployments, balances, token supply, split recipients, auto-issuance, operator permissions, hooks, pools, loans, and recent activity for full context. Check that the website's proposed transaction matches the contract call you expect.",
+      "Revnets and their surrounding protocols are open source, making full inspection encouraged; this does not remove contract, economic, liquidity, bridge, token, oracle, interface, or key-management risk. Risks are borne entirely by users of the open-source code.",
     ],
     links: [
       { href: "https://github.com/rev-net/revnet-core-v6", label: "Revnet V6 source" },

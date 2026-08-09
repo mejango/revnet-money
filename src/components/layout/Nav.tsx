@@ -25,7 +25,7 @@ export function Nav() {
           </Link>
           <div
             aria-label="Revnet guides"
-            className="flex items-center gap-2 whitespace-nowrap text-sm text-zinc-600 md:col-start-2 md:justify-self-center"
+            className="flex items-center gap-1 whitespace-nowrap text-xs text-zinc-600 sm:gap-2 sm:text-sm md:col-start-2 md:justify-self-center"
           >
             <Link href="/learn" className="underline-offset-4 hover:underline hover:text-zinc-900">
               Learn
@@ -35,6 +35,12 @@ export function Nav() {
             </span>
             <Link href="/build" className="underline-offset-4 hover:underline hover:text-zinc-900">
               Build
+            </Link>
+            <span aria-hidden className="text-zinc-400">
+              |
+            </span>
+            <Link href="/audit" className="underline-offset-4 hover:underline hover:text-zinc-900">
+              Audit
             </Link>
           </div>
         </div>

@@ -23,7 +23,8 @@ type ActivityEventType =
   | "rulesetQueued"
   | "swapBuy"
   | "swapSell"
-  | "buybackPool";
+  | "buybackPool"
+  | "payout";
 
 export interface ActivityEvent {
   id: string;
@@ -70,6 +71,8 @@ function eventDescription(event: ActivityEvent, projectTokenSymbol: string): str
       return `sold ${event.tokenCount} ${projectTokenSymbol} via the buyback pool`;
     case "buybackPool":
       return "set the buyback pool";
+    case "payout":
+      return "sent payouts";
   }
 }
 

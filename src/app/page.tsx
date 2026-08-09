@@ -1,11 +1,8 @@
-import { AuditPromptLink } from "@/components/AuditPromptLink";
 import { Nav } from "@/components/layout/Nav";
-import { TopProjectsTableSkeleton } from "@/components/loading/LoadingSkeletons";
-import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
-import { TopProjectsTable } from "./TopProjectsTable";
+import { HomepageDiscovery } from "./HomepageDiscovery";
 
 const WHY_REVNET_POINTS = [
   "Let builders, investors, customers, and communities share in the same growth by turning fundraises and revenue into tokens that align their interests.",
@@ -28,44 +25,10 @@ export default function Page() {
   return (
     <>
       <Nav />
-      <div className="container mt-16 pr-[1.5rem] pl-[1.5rem] sm:mt-24 sm:pr-[2rem] sm:pl-[2rem] sm:px-8">
-        <div className="flex flex-col justify-center items-center">
-          <Image
-            src="/assets/img/hovercar-cutout.webp"
-            width={1619}
-            height={971}
-            className="aspect-[3.2/1] w-full max-w-[600px] object-cover"
-            priority
-            alt="Hovercar"
-          />
-          <Image
-            src="/assets/img/revnet-full-bw.svg"
-            width={1509}
-            height={140}
-            className="mt-6 h-auto w-[630px] max-w-full"
-            loading="eager"
-            alt="Revnet logo"
-          />
-          <span className="sr-only">Revnet</span>
-
-          <div className="mt-8 text-center text-xl font-medium md:text-2xl">
-            <span className="block sm:inline">An investible business model</span>{" "}
-            <span className="block sm:inline">for the open web.</span>
-          </div>
-
-          <div className="flex gap-4 mt-8">
-            <Link href="/create">
-              <Button className="md:h-12 h-16 text-xl md:text-xl px-4 flex gap-2 bg-teal-500 text-melon-950 hover:bg-teal-600">
-                Create yours
-              </Button>
-            </Link>
-          </div>
-          <AuditPromptLink className="mt-5 text-center text-sm text-zinc-600" />
-
-          <Suspense fallback={<TopProjectsTableSkeleton />}>
-            <TopProjectsTable />
-          </Suspense>
-        </div>
+      <div className="mx-auto mt-12 max-w-[1800px] px-6 sm:mt-16 sm:px-8">
+        <Suspense fallback={<div className="min-h-[520px] animate-pulse" />}>
+          <HomepageDiscovery />
+        </Suspense>
 
         <div className="border border-zinc-100 mt-20"></div>
 

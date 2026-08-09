@@ -195,7 +195,17 @@ export type ParticipantsQuery = {
   };
 };
 
-type ActivityProject = Pick<Project, "projectId" | "handle" | "version"> & { id: string };
+type ActivityProject = Pick<Project, "projectId" | "handle" | "version"> & {
+  id?: string;
+  chainId?: number;
+  name?: string | null;
+  logoUri?: string | null;
+  projectTagline?: string | null;
+  tokenSymbol?: string | null;
+  decimals?: number | null;
+  isRevnet?: boolean | null;
+  suckerGroupId?: string;
+};
 type ActivityPayment = {
   id: string;
   amount: BigNumberish;
@@ -241,6 +251,7 @@ export type ActivityEventsQuery = {
       chainId: number;
       timestamp: number;
       txHash: string;
+      project?: ActivityProject | null;
       payEvent: ActivityPayment | null;
       cashOutTokensEvent: ActivityCashOut | null;
       addToBalanceEvent: (ActivityBase & { amount: BigNumberish; memo: string | null }) | null;
@@ -279,6 +290,14 @@ export type ActivityEventsQuery = {
           })
         | null;
       buybackPoolEvent: (ActivityBase & { caller: string }) | null;
+      sendPayoutsEvent?:
+        | (ActivityBase & {
+            caller: string;
+            amount: BigNumberish;
+            amountPaidOut: BigNumberish;
+            amountPaidOutUsd: BigNumberish;
+          })
+        | null;
     }>;
   };
 };
@@ -399,7 +418,6 @@ export type HasPermissionQueryVariables = {
 export type HasPermissionQuery = {
   permissionHolder: { permissions: number[] | null } | null;
 };
-
 
 export type ProjectOperatorQueryVariables = {
   chainId: number;

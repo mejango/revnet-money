@@ -35,6 +35,7 @@ type ActivityCategory =
   | "projectCreate"
   | "ownershipTransfer"
   | "ruleset"
+  | "payout"
   | "buybackSwap"
   | "buybackPool";
 
@@ -48,6 +49,7 @@ const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
   projectCreate: "Project creation",
   ownershipTransfer: "Ownership transfers",
   ruleset: "Ruleset changes",
+  payout: "Payouts",
   buybackSwap: "Buyback swaps",
   buybackPool: "Buyback pools",
 };
@@ -72,6 +74,8 @@ export function activityCategory(event: ActivityEvent): ActivityCategory | null 
       return "ownershipTransfer";
     case "rulesetQueued":
       return "ruleset";
+    case "payout":
+      return "payout";
     case "swapBuy":
     case "swapSell":
       return "buybackSwap";

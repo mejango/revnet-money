@@ -10,20 +10,18 @@ export async function TopProjectsTable() {
   }
 
   return (
-    <div className="mt-12 min-w-0">
-      <table className="w-full max-w-xl table-fixed text-left">
+    <div className="min-w-0">
+      <table className="w-full table-fixed text-left">
         <colgroup>
-          <col className="w-10 sm:w-16" />
+          <col className="w-9" />
           <col />
-          <col className="w-20 sm:w-32" />
+          <col className="w-20" />
         </colgroup>
         <thead>
           <tr className="h-12 border-b border-zinc-100 text-sm text-zinc-500">
-            <th className="py-0 pl-4 pr-2 align-middle font-normal sm:pl-8 sm:pr-4" />
-            <th className="px-2 align-middle font-normal sm:px-4">Project</th>
-            <th className="py-0 pl-2 pr-4 text-right align-middle font-normal sm:pl-4 sm:pr-8">
-              Balance
-            </th>
+            <th className="py-0 pl-3 pr-1 align-middle font-normal" />
+            <th className="px-1 align-middle font-normal">Project</th>
+            <th className="py-0 pl-1 pr-3 text-right align-middle font-normal">Balance</th>
           </tr>
         </thead>
         <tbody>
@@ -32,10 +30,8 @@ export async function TopProjectsTable() {
               key={`${project.chainId}-${project.projectId}`}
               className="border-b border-zinc-100 last:border-b-0"
             >
-              <td className="py-3 pl-4 pr-2 text-zinc-400 tabular-nums sm:pl-8 sm:pr-4">
-                {project.rank}
-              </td>
-              <td className="min-w-0 px-2 py-3 sm:px-4">
+              <td className="py-3 pl-3 pr-1 text-xs text-zinc-400 tabular-nums">{project.rank}</td>
+              <td className="min-w-0 px-1 py-3">
                 <ProjectLink
                   href={`/${project.chainSlug}:${project.projectId}`}
                   projectHint={{
@@ -43,29 +39,24 @@ export async function TopProjectsTable() {
                     logoUri: project.logoUri,
                     tagline: project.tagline,
                   }}
-                  className="group flex min-h-11 min-w-0 items-center gap-2 sm:gap-3"
+                  className="group flex min-h-10 min-w-0 items-center gap-2"
                 >
                   <IpfsImage
                     src={project.logoUri}
                     alt={project.name}
-                    width={32}
-                    height={32}
-                    className="size-8 shrink-0 rounded-full object-cover transition-opacity group-hover:opacity-70"
-                    fallback={<div className="size-8 shrink-0 rounded-full bg-zinc-100" />}
+                    width={40}
+                    height={40}
+                    className="size-10 shrink-0 rounded-full object-cover transition-opacity group-hover:opacity-70"
+                    fallback={<div className="size-10 shrink-0 rounded-full bg-zinc-100" />}
                   />
                   <div className="min-w-0">
-                    <div className="max-sm:text-sm font-medium truncate group-hover:text-teal-600 transition-colors">
+                    <div className="truncate text-sm font-medium transition-colors group-hover:text-teal-600">
                       {project.name}
                     </div>
-                    {project.tagline && (
-                      <div className="text-xs md:text-sm text-zinc-500 line-clamp-1">
-                        {project.tagline}
-                      </div>
-                    )}
                   </div>
                 </ProjectLink>
               </td>
-              <td className="whitespace-nowrap py-3 pl-2 pr-4 text-right text-sm tabular-nums sm:pl-4 sm:pr-8 md:text-base">
+              <td className="whitespace-nowrap py-3 pl-1 pr-3 text-right text-xs tabular-nums">
                 {project.balanceUsd.toLocaleString("en-US", {
                   style: "currency",
                   currency: "USD",

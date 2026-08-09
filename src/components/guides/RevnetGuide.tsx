@@ -2,12 +2,21 @@ import Link from "next/link";
 
 type RevnetGuidePoint = string | { key: string; text: string };
 
+type RevnetGuideCodePoint = {
+  title: string;
+  description?: string;
+  code?: string;
+  details?: readonly { key: string; value: string }[];
+  links?: readonly { href: string; label: string }[];
+};
+
 export type RevnetGuideSection = {
   id: string;
   title: string;
   summary: string;
   paragraphs?: readonly string[];
   points?: readonly RevnetGuidePoint[];
+  codePoints?: readonly RevnetGuideCodePoint[];
   note?: string;
   links?: readonly { href: string; label: string }[];
 };
@@ -116,6 +125,61 @@ export function RevnetGuide({
                       </li>
                     ))}
                   </ul>
+                ) : null}
+
+                {section.codePoints?.length ? (
+                  <div className="space-y-5">
+                    {section.codePoints.map((codePoint) => (
+                      <article
+                        key={codePoint.title}
+                        className="border border-melon-300 bg-melon-50 p-4 sm:p-5"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
+                          Code point
+                        </p>
+                        <h3 className="mt-2 text-lg font-semibold text-zinc-900 sm:text-xl">
+                          {codePoint.title}
+                        </h3>
+                        {codePoint.description ? (
+                          <p className="mt-2 text-base leading-relaxed text-zinc-700">
+                            {codePoint.description}
+                          </p>
+                        ) : null}
+
+                        {codePoint.details?.length ? (
+                          <dl className="mt-4 grid border border-melon-200 bg-white text-sm sm:grid-cols-[9rem_minmax(0,1fr)] sm:text-base">
+                            {codePoint.details.map((detail) => (
+                              <div key={detail.key} className="contents">
+                                <dt className="border-b border-melon-200 px-3 py-2 font-semibold text-zinc-900 last:border-b-0 sm:border-r">
+                                  {detail.key}
+                                </dt>
+                                <dd className="break-words border-b border-melon-200 px-3 py-2 font-mono text-sm text-zinc-700 last:border-b-0">
+                                  {detail.value}
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        ) : null}
+
+                        {codePoint.code ? (
+                          <pre
+                            className="mt-4 overflow-x-auto border border-black bg-zinc-900 p-4 text-sm leading-6 text-melon-100"
+                            tabIndex={0}
+                          >
+                            <code>{codePoint.code}</code>
+                          </pre>
+                        ) : null}
+
+                        {codePoint.links?.length ? (
+                          <p className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                            {codePoint.links.map((link) => (
+                              <SectionLink key={link.href} href={link.href} label={link.label} />
+                            ))}
+                          </p>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
                 ) : null}
 
                 {section.note ? (

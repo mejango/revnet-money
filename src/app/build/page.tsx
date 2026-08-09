@@ -5,178 +5,505 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Build with revnets",
+  title: "Build with Revnet V6",
   description:
-    "Design and implement a safe Revnet V6 product, from immutable stages and issuance through transactions, testing, and launch.",
+    "Implement Revnet V6 reads and operations with exact SDK builders, contract calls, safety bounds, and reference source code.",
 };
+
+const REFERENCE_ROOT = "https://github.com/mejango/revnet-money/blob/main";
 
 const SECTIONS: readonly RevnetGuideSection[] = [
   {
-    id: "choose-the-model",
-    title: "Choose the model deliberately",
+    id: "wire-the-v6-surface",
+    title: "Wire the V6 surface",
     summary:
-      "Use a revnet when your product benefits from permanent financial commitments more than it benefits from owner-managed rules.",
+      "Start from the current SDK, generated ABIs, and deployed-address registry; do not hand-maintain selectors or addresses in product code.",
     paragraphs: [
-      "Start with the user promise. Name who pays, what they receive, why the token should have durable backing, how holders exit, and which contributors share in issuance. Then decide whether those terms should be locked from launch or remain configurable in a regular Juicebox project.",
-      "Your interface can be a marketplace, game, social product, protocol, community, or business. Users do not need to see every underlying contract, but they must be able to understand the financial deal and review every transaction their wallet signs.",
+      "A revnet is a Juicebox V6 project on each chain plus Revnet contracts for deployment, immutable stage ownership, loans, and operator controls. Model its local identity as chain ID plus project ID. A sucker group can connect those local projects, but it does not make their addresses, balances, stage IDs, or writes interchangeable.",
+      "Use the V6 SDK builders as pure transaction constructors. Keep reads on a chain-specific public client, writes on a wallet client connected to that same chain, and amounts as bigint atomic units until the display boundary.",
+    ],
+    codePoints: [
+      {
+        title: "Import builders and generated contract surfaces",
+        details: [
+          { key: "SDK", value: "@bananapus/nana-sdk-core/v6" },
+          { key: "ABIs + addresses", value: "@bananapus/nana-sdk-core" },
+          { key: "Local identity", value: "{ chainId: JBChainId, projectId: bigint }" },
+          { key: "Amounts", value: "bigint in the token or protocol field's declared decimals" },
+        ],
+        code: [
+          "import {",
+          "  build721RulesetMetadata,",
+          "  buildAutoIssueTx,",
+          "  buildBorrowTx,",
+          "  buildBridgeClaimTx,",
+          "  buildBridgePrepareTx,",
+          "  buildBurnTokensTx,",
+          "  buildCashOutTx,",
+          "  buildClaimTokensTx,",
+          "  buildDeployRevnetTx,",
+          "  buildPayTx,",
+          "  buildRepayLoanTx,",
+          "  buildRevnetStageConfig,",
+          "  buildSyncAccountingDataTx,",
+          "  buildToRemoteTx,",
+          "  getBorrowableAmount,",
+          "  prepareHookAwareCashOut,",
+          "  previewPay,",
+          "  REV_METADATA_ALLOW_SUCKER_DEPLOYMENT,",
+          "  slippageFloor,",
+          '} from "@bananapus/nana-sdk-core/v6";',
+          "",
+          "import {",
+          "  jbControllerAbi,",
+          "  jbMultiTerminalAbi,",
+          "  revLoansAbi,",
+          "  type JBChainId,",
+          '} from "@bananapus/nana-sdk-core";',
+        ].join("\n"),
+        links: [
+          {
+            href: "https://www.npmjs.com/package/@bananapus/nana-sdk-core",
+            label: "V6 SDK package",
+          },
+          { href: "https://github.com/Bananapus/version-6", label: "Juicebox V6 source" },
+          { href: "https://github.com/rev-net/revnet-core-v6", label: "Revnet V6 source" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "read-the-revnet",
+    title: "Read the revnet before operating it",
+    summary:
+      "Discovery data can come from an indexer; anything used to construct a signature must be refreshed from the target chain.",
+    paragraphs: [
+      "Resolve the controller, terminals, accounting contexts, token, current stage, full committed stage schedule, splits, sucker peers, operator, and relevant permission IDs. Cache successful reads by chain and contract identity, then invalidate the affected keys after a confirmed write.",
+      "Render previously known names, logos, and project facts while RPC reads refresh. Treat missing onchain state as unknown—not zero, empty, or permissionless.",
+    ],
+    codePoints: [
+      {
+        title: "Signing-critical read map",
+        details: [
+          { key: "Directory", value: "JBDirectory.controllerOf / terminalsOf / primaryTerminalOf" },
+          { key: "Stage", value: "JBController.currentRulesetOf / JBRulesets.getRulesetOf" },
+          { key: "Accepted tokens", value: "JBMultiTerminal.accountingContextsOf" },
+          { key: "Supply", value: "JBTokens.totalSupplyOf / totalBalanceOf / creditBalanceOf" },
+          { key: "Splits", value: "JBSplits.splitsOf(projectId, rulesetId, groupId)" },
+          { key: "Cash out", value: "JBMultiTerminal.previewCashOutFrom" },
+          { key: "Loans", value: "REVLoans.borrowableAmountFrom / loanOf" },
+          { key: "Peers", value: "JBSuckerRegistry.suckerPairsOf" },
+        ],
+        code: [
+          "const [controller, terminals, contexts, stage] = await publicClient.multicall({",
+          "  allowFailure: false,",
+          "  contracts: [",
+          "    controllerOf(projectId),",
+          "    terminalsOf(projectId),",
+          "    accountingContextsOf(projectId),",
+          "    currentRulesetOf(projectId),",
+          "  ],",
+          "});",
+          "",
+          "// Re-run the reads used by a quote immediately before simulateContract.",
+        ].join("\n"),
+        links: [
+          { href: `${REFERENCE_ROOT}/src/lib/nana/project.tsx`, label: "Reference project reads" },
+          {
+            href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/terms/getRulesets.ts`,
+            label: "Stage reads",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "deploy-a-revnet",
+    title: "Deploy the immutable schedule",
+    summary:
+      "Encode every stage and every chain deliberately, then simulate the exact REVDeployer.deployFor overload shown in review.",
+    paragraphs: [
+      "Build accounting contexts with token-keyed currency IDs. Build each stage with its absolute start, issuance, issuance cut, cash-out tax, split bucket, recipients, auto-issuance, and metadata flags. The full auto-issuance list participates in the cross-chain encoded configuration even though each chain only mints its local rows.",
+      "Use the explicit tiered-721 overload when a custom reserve token needs non-18 shop-price decimals. Filter overloaded tuple-heavy ABIs to the selected argument count before encoding, simulation, review, and submission so each boundary uses the same selector.",
+    ],
+    codePoints: [
+      {
+        title: "REVDeployer.deployFor",
+        details: [
+          { key: "Builder", value: "buildRevnetStageConfig → buildDeployRevnetTx" },
+          { key: "Contract", value: "REVDeployer" },
+          { key: "Function", value: "deployFor" },
+          { key: "Value", value: "project creation fee returned on the request" },
+          { key: "No operator", value: "0xdead000000000000000000000000000000000000" },
+        ],
+        code: [
+          "const stage = buildRevnetStageConfig({",
+          "  startsAtOrAfter,",
+          "  initialIssuance,              // 18-decimal project-token weight",
+          "  issuanceCutFrequency,         // seconds",
+          "  issuanceCutPercent,           // protocol units",
+          "  cashOutTaxRate,               // protocol units",
+          "  splitPercent,                 // basis points",
+          "  splits: encodedSplits,          // row percents sum to SPLITS_TOTAL_PERCENT",
+          "  autoIssuances,",
+          "  extraMetadata:",
+          "    build721RulesetMetadata({ pauseTransfers: true }) |",
+          "    REV_METADATA_ALLOW_SUCKER_DEPLOYMENT,",
+          "});",
+          "",
+          "const tx = buildDeployRevnetTx({",
+          "  chainId,",
+          "  config: {",
+          "    description: { name, ticker, uri, salt },",
+          "    baseCurrency,",
+          "    operator,",
+          "    scopeCashOutsToLocalBalances: false,",
+          "    stageConfigurations: [stage],",
+          "  },",
+          "  accountingContexts,",
+          "  suckerConfig: { deployerConfigurations, salt },",
+          "  creationFee,",
+          "});",
+        ].join("\n"),
+        links: [
+          {
+            href: `${REFERENCE_ROOT}/src/app/create/helpers/parseDeployData.ts`,
+            label: "Complete deploy builder",
+          },
+          { href: `${REFERENCE_ROOT}/src/app/create/page.tsx`, label: "Deploy execution boundary" },
+        ],
+      },
+    ],
+    note: "Discard and rebuild a deployment quote whose first-stage start has passed. A stale first stage can activate REVDeployer's seven-day cash-out and loan lock.",
+  },
+  {
+    id: "accept-payments",
+    title: "Quote and execute payments",
+    summary:
+      "Preview the live terminal path, compare any executable market route, then bind the chosen route with a minimum project-token output.",
+    paragraphs: [
+      "A terminal payment may issue new tokens or route through the configured buyback hook. A direct market swap is a different transaction and bypasses the stage split. Compare executable, slippage-protected minimums—not optimistic chart prices—and explain which route the wallet will sign.",
+      "For ERC-20 payments, approve only the request's actual spender and only the required amount. Native-token requests carry the amount in value. Shop purchases are still payments; build tier metadata and include every NFT plus the fungible-token result in the confirmation.",
+    ],
+    codePoints: [
+      {
+        title: "JBMultiTerminal.pay",
+        details: [
+          { key: "Quote", value: "previewPay(publicClient, …) → previewPayFor" },
+          { key: "Builder", value: "buildPayTx" },
+          { key: "Function", value: "JBMultiTerminal.pay" },
+          { key: "Bound", value: "minReturnedTokens" },
+          { key: "Shop metadata", value: "build721PayMetadata" },
+        ],
+        code: [
+          "const quote = await previewPay(publicClient, {",
+          "  chainId, terminal, projectId, token, amount, beneficiary, metadata,",
+          "});",
+          "",
+          "const tx = buildPayTx({",
+          "  chainId, terminal, projectId, token, amount, beneficiary, metadata,",
+          "  minReturnedTokens: slippageFloor(quote.beneficiaryTokenCount, 100n),",
+          "  memo,",
+          "});",
+          "",
+          "// ERC-20: approve tx.address. Native: tx.value === amount.",
+        ].join("\n"),
+        links: [
+          {
+            href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/v6/pay/V6PayCard.tsx`,
+            label: "Payment route and approval flow",
+          },
+          { href: `${REFERENCE_ROOT}/src/lib/v6/pay.ts`, label: "Route preview helpers" },
+        ],
+      },
+      {
+        title: "Add funds without issuing tokens",
+        details: [
+          { key: "Contract", value: "JBMultiTerminal" },
+          { key: "Function", value: "addToBalanceOf" },
+          { key: "Constraint", value: "only a token accepted directly by that terminal" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "cash-out",
+    title: "Cash out through the live route",
+    summary:
+      "Use the hook-aware terminal preview; a surplus-only calculation can disagree with the transaction that will actually execute.",
+    paragraphs: [
+      "JBMultiTerminal.previewCashOutFrom runs the real data-hook and buyback decision. Its route determines where the minimum belongs: minTokensReclaimed on the treasury path, or buyback metadata on the AMM path. Re-quote after any stage, supply, balance, pool, hook, or fee change.",
+      "Internal credits and claimed ERC-20 tokens have different direct-market capabilities. Only compare a direct swap for the claimed balance that the router can actually spend.",
+    ],
+    codePoints: [
+      {
+        title: "JBMultiTerminal.cashOutTokensOf",
+        details: [
+          {
+            key: "Prepare",
+            value: "prepareHookAwareCashOut → previewCashOutFrom + buildCashOutTx",
+          },
+          { key: "Treasury bound", value: "route.terminalMinimum" },
+          { key: "AMM bound", value: "route.metadata" },
+          { key: "Token count", value: "18-decimal revnet-token bigint" },
+        ],
+        code: [
+          "const prepared = await prepareHookAwareCashOut(publicClient, {",
+          "  chainId, terminal, holder, projectId, cashOutCount, tokenToReclaim,",
+          "  beneficiary,",
+          "});",
+          "",
+          "const { route, transaction: tx } = prepared;",
+          "// AMM routes are re-previewed with their slippage metadata before return.",
+        ].join("\n"),
+        links: [
+          {
+            href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/Value/RedeemDialog.tsx`,
+            label: "Cash-out implementation",
+          },
+          { href: `${REFERENCE_ROOT}/src/hooks/useCashOutRoute.ts`, label: "Hook-aware quote" },
+        ],
+      },
+      {
+        title: "Token-account operations",
+        details: [
+          { key: "Claim credits", value: "buildClaimTokensTx → JBController.claimTokensFor" },
+          { key: "Burn", value: "buildBurnTokensTx → JBController.burnTokensOf" },
+          { key: "Auto-issue", value: "buildAutoIssueTx → REVOwner.autoIssueFor" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "operate-loans",
+    title: "Open, repay, and reallocate loans",
+    summary:
+      "Loan UI must derive its bounds from current collateral capacity, fees, source token, and permission state—not from a cached cash-out estimate.",
+    paragraphs: [
+      "Before borrowing, read borrowableAmountFrom in the selected accounting context and apply a non-zero minimum. Grant REVLoans only BURN_TOKENS permission ID 11; never grant ROOT. The collateral and source token are chain-local.",
+      "Before repayment, re-read loanOf and the source fee, compute a conservative maximum, approve or permit the source token if necessary, and simulate the exact collateral amount being returned. Native-token repayment sends the ceiling as value; excess is refunded.",
+    ],
+    codePoints: [
+      {
+        title: "REVLoans.borrowFrom",
+        details: [
+          { key: "Quote", value: "getBorrowableAmount / borrowableAmountFrom" },
+          { key: "Builder", value: "buildBorrowTx" },
+          { key: "Permission", value: "JBPermissions BURN_TOKENS = 11" },
+          { key: "Bound", value: "minBorrowAmount" },
+        ],
+        code: [
+          "const { borrowableNow } = await getBorrowableAmount(publicClient, {",
+          "  chainId, revnetId, collateralCount, decimals, currency,",
+          "});",
+          "",
+          "const tx = buildBorrowTx({",
+          "  chainId, revnetId, token, collateralCount, beneficiary, holder,",
+          "  prepaidFeePercent,",
+          "  minBorrowAmount: slippageFloor(borrowableNow, 100n),",
+          "});",
+        ].join("\n"),
+        links: [
+          {
+            href: `${REFERENCE_ROOT}/src/lib/loanTransactions.ts`,
+            label: "Protected loan builders",
+          },
+          {
+            href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/Value/hooks/useBorrowDialog.tsx`,
+            label: "Borrow operation",
+          },
+        ],
+      },
+      {
+        title: "REVLoans.repayLoan",
+        details: [
+          { key: "Builder", value: "buildRepayLoanTx" },
+          { key: "Bound", value: "maxRepayBorrowAmount; excess is refunded" },
+          {
+            key: "Partial repay",
+            value: "collateralCountToReturn; may mint a replacement loan NFT",
+          },
+          { key: "ERC-20", value: "Permit2 allowance or prior approval" },
+        ],
+        links: [
+          {
+            href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/Value/RepayDialog.tsx`,
+            label: "Repayment implementation",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "operator-operations",
+    title: "Implement the limited operator surface",
+    summary:
+      "Resolve permission per chain and expose only the operations the immutable deployment granted; an operator is never a revnet owner.",
+    paragraphs: [
+      "Build each operator write from freshly resolved contracts, operator address, permission IDs, and project state. Simulate each chain independently. A multisig proposal is pending until its Safe transaction executes onchain; do not invalidate state or show success at proposal creation.",
+      "Shop tiers are separate from stage economics. Tier transferability is fixed at creation, while operator ability to add tiers, update metadata, change discounts, or mint depends on the deployed hook flags and permissions.",
+    ],
+    codePoints: [
+      {
+        title: "Operator write map",
+        details: [
+          { key: "Metadata", value: "JBController.setUriOf" },
+          { key: "Split redirect", value: "JBController.setSplitGroupsOf" },
+          { key: "Transfer role", value: "REVOwner.setOperatorOf" },
+          { key: "Add shop tiers", value: "JB721TiersHook.adjustTiers" },
+          { key: "Operator mint", value: "JB721TiersHook.mintFor" },
+          { key: "Buyback hook", value: "JBBuybackHookRegistry.setHookFor" },
+          { key: "Router terminal", value: "JBRouterTerminalRegistry.setTerminalFor" },
+          { key: "TWAP", value: "JBBuybackHook.setTwapWindowOf" },
+          { key: "Initialize pool", value: "JBBuybackHookRegistry.initializePoolFor" },
+          { key: "Add chains", value: "REVDeployer.deploySuckersFor" },
+        ],
+        code: [
+          "const { request } = await publicClient.simulateContract({",
+          "  account: operator,",
+          "  address: hook,",
+          "  abi: jb721TiersHookAbi,",
+          '  functionName: "adjustTiers",',
+          "  args: [tierConfigurations, tiersToRemove],",
+          "});",
+          "",
+          "const hash = await walletClient.writeContract(request);",
+        ].join("\n"),
+        links: [
+          {
+            href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/v6/operator/OperatorAccountCard.tsx`,
+            label: "Operator transfer implementation",
+          },
+          {
+            href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/v6/shop/AddItemsModal.tsx`,
+            label: "Shop tier writes",
+          },
+        ],
+      },
+    ],
+    note: "For a permanently authority-free revnet, deploy the operator as 0xdead000000000000000000000000000000000000. The zero address and an empty UI field are not equivalent.",
+  },
+  {
+    id: "move-across-chains",
+    title: "Move tokens and settle accounting across chains",
+    summary:
+      "Treat sucker movement as a multi-transaction state machine: prepare, send, prove, claim, and separately sync accounting snapshots.",
+    paragraphs: [
+      "A prepared movement is not delivered value. Track its source sucker, peer sucker, token mapping, leaf index, beneficiary bytes32, proof, transport, fees, and status. CCIP and native bridge families have different value requirements and delivery times; discover payable value by simulating the exact call rather than guessing.",
+      "Accounting gossip can change displayed group backing without moving the local terminal balance. Keep queued, in-transit, claimable, claimed, failed, and retriable states distinct.",
+    ],
+    codePoints: [
+      {
+        title: "Sucker transaction sequence",
+        details: [
+          { key: "1. Prepare", value: "buildBridgePrepareTx → sucker.prepare" },
+          { key: "2. Send", value: "buildToRemoteTx → sucker.toRemote" },
+          { key: "3. Claim", value: "buildBridgeClaimTx → peerSucker.claim" },
+          { key: "Accounting", value: "buildSyncAccountingDataTx → sucker.syncAccountingData" },
+          { key: "Peer discovery", value: "getV6SuckerPairs" },
+        ],
+        code: [
+          "const prepare = buildBridgePrepareTx({",
+          "  chainId, sucker, projectTokenCount, beneficiary,",
+          "  minTokensReclaimed, token, metadata,",
+          "});",
+          "",
+          "const send = buildToRemoteTx({ chainId, sucker, token, value: bridgeFee });",
+          "const claim = buildBridgeClaimTx({ chainId: peerChainId, sucker: peer, claim: proof });",
+          "const sync = buildSyncAccountingDataTx({ chainId, sucker, value: syncFee });",
+        ].join("\n"),
+        links: [
+          {
+            href: `${REFERENCE_ROOT}/src/lib/bridgePrepare.ts`,
+            label: "Protected prepare builder",
+          },
+          { href: `${REFERENCE_ROOT}/src/lib/v6/suckerProofs.ts`, label: "Proof and claim flow" },
+          {
+            href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/v6/owners/settlement/lib.ts`,
+            label: "Settlement state machine",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "transaction-boundary",
+    title: "Use one reviewed transaction boundary",
+    summary:
+      "The request you quote, simulate, decode, review, and submit must be the same request—not five similar reconstructions.",
+    paragraphs: [
+      "Make every operation builder pure: validated input in; chain ID, address, ABI, function name, arguments, and value out. Immediately before signing, refresh the reads that establish bounds and permissions, rebuild, simulate with the actual account, ABI-encode and decode the calldata, then present it for review.",
+      "After submission, distinguish wallet rejection, Safe proposal, onchain inclusion, reverted execution, and confirmed success. Only confirmed execution should invalidate reads and move the UI to its final state.",
+    ],
+    codePoints: [
+      {
+        title: "Build → simulate → decode → write → confirm",
+        code: [
+          "const tx = buildOperation(freshState, userInput);",
+          "",
+          "const { request } = await publicClient.simulateContract({",
+          "  ...tx,",
+          "  account,",
+          "});",
+          "",
+          "const calldata = encodeFunctionData(tx);",
+          "const decoded = decodeFunctionData({ abi: tx.abi, data: calldata });",
+          "await review({ ...tx, calldata, decoded });",
+          "",
+          "const hash = await walletClient.writeContract(request);",
+          "const receipt = await publicClient.waitForTransactionReceipt({ hash });",
+          'if (receipt.status !== "success") throw new Error("Transaction reverted");',
+        ].join("\n"),
+        links: [
+          { href: `${REFERENCE_ROOT}/src/lib/transaction-review.ts`, label: "Review decoder" },
+          {
+            href: `${REFERENCE_ROOT}/scripts/check-wallet-write-sites.mjs`,
+            label: "Write-site inventory check",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "test-and-verify",
+    title: "Test the contract-facing invariants",
+    summary:
+      "Test the same builders your product ships, at the boundaries where immutable economics, route changes, permissions, and asynchronous settlement can surprise it.",
+    paragraphs: [
+      "Round-trip every builder through its ABI and fork-test it against current deployments. Cover stale stage starts, exact stage boundaries, split rounding, custom decimals, changed allowance, changed route, empty pool, changed cash-out hook, zero fee-free surplus, partial loan repayment, Safe proposal without execution, partial multichain deployment, and delayed claims.",
+      "Publish the contract addresses, source repositories, transaction map, and human-readable stage schedule users need to independently verify your implementation.",
     ],
     points: [
-      "Use a revnet for staged, precommitted issuance and cash-out economics with no owner.",
-      "Use a regular Juicebox project when an accountable owner must revise payouts or rules.",
-      "Combine them only when the boundary is explicit: which value belongs to immutable backing, and which remains owner-managed.",
+      {
+        key: "Deployment",
+        text: "the encoded configuration is byte-consistent where required and every overload round-trips",
+      },
+      {
+        key: "Payments",
+        text: "the chosen route's executable minimum is no worse than the alternatives shown",
+      },
+      {
+        key: "Cash outs",
+        text: "the terminal or hook enforces the same minimum the confirmation displays",
+      },
+      {
+        key: "Loans",
+        text: "only permission ID 11 is granted and repayment ceilings cannot underpay the live obligation",
+      },
+      {
+        key: "Operator",
+        text: "no exposed call can rewrite committed stage issuance or cash-out economics",
+      },
+      {
+        key: "Multichain",
+        text: "one chain's project, token, decimals, operator, or proof is never reused on another",
+      },
     ],
     links: [
-      { href: "/learn#what-is-a-revnet", label: "Learn the revnet model" },
-      { href: "https://juicebox.money/build", label: "Compare the broader Juicebox toolkit" },
-    ],
-  },
-  {
-    id: "design-stages",
-    title: "Design the complete stage schedule",
-    summary:
-      "Treat every stage as production code: once the revnet launches, its core economics cannot be edited away.",
-    paragraphs: [
-      "Write the schedule in human terms before encoding it. For each stage, specify its start, duration, issuance rate, issuance-cut frequency and percent, cash-out tax, reserved split share, recipients, and auto-issuance. Model the resulting supply and backing under slow, expected, and adversarial adoption.",
-      "Later stages are not governance proposals. They are already committed transitions. Display them alongside the current stage and make boundaries, inherited values, and forever stages unmistakable.",
-    ],
-    points: [
-      "Use an explicit future start with enough time to quote, review, fund, and execute every chain deployment.",
-      "Keep cross-chain stage configurations byte-consistent where the deployer requires them to match.",
-      "Check rounding at protocol precision, not only in human-readable percentages.",
-      "Test stage transitions at the exact boundary timestamp and long after the final stage begins.",
-    ],
-    note: "If a quoted start time has passed, discard the quote and build it again. REVDeployer can lock cash outs and loans for seven days when the first stage timing is stale.",
-  },
-  {
-    id: "model-token-economics",
-    title: "Model issuance, backing, and exit together",
-    summary:
-      "Issuance, splits, cash-out tax, market routing, supply, and balance form one system; tuning any field in isolation is unsafe.",
-    paragraphs: [
-      "Calculate the payer's net issuance after the reserved share, the tokens issued to recipients, and any auto-issuance at stage start. Then simulate full and partial cash outs across plausible balances and supply. Show values in both atomic contract units and human units.",
-      "If the issuance rate is quoted in ETH or USD while the revnet accepts a different accounting token, use the protocol's current currency conversion. Never infer decimals from a symbol, and never encode a base-currency ID as though it were the accounting token's currency ID.",
-    ],
-    points: [
-      "Make the minimum token output explicit on payment.",
-      "Make the minimum reclaim amount explicit on cash out.",
-      "Include protocol and source fees in previews and confirmations.",
-      "Re-read supply, balance, stage, rates, and route immediately before signing.",
-    ],
-  },
-  {
-    id: "configure-value-paths",
-    title: "Configure value paths",
-    summary:
-      "Choose accepted accounting tokens, buyback routing, loans, and settlement paths with their failure modes in view.",
-    paragraphs: [
-      "Each accounting context identifies an actual token and decimals on a specific chain. Decide whether the revnet accepts native currency, USDC, both, or a verified custom token. If you offer broad payment-token acceptance through a router, disclose that the incoming asset will be swapped into an accounting token.",
-      "A buyback hook compares issuance with the configured market route. Validate the hook, pool, pair, liquidity, TWAP window, and slippage bounds. Loans need separate collateral, permission, fee, repayment, and liquidation-state handling. None of these paths should silently fall back to a different economic action.",
-    ],
-    note: "A smooth chart can be the default presentation, but preserve an every-trade view and always quote transactions from live state rather than chart data.",
-  },
-  {
-    id: "configure-multichain",
-    title: "Design multichain as a state machine",
-    summary:
-      "A multichain revnet is a group of local projects connected by asynchronous value movement, not one magically synchronous contract.",
-    paragraphs: [
-      "Choose supported chains, source and destination sucker deployers, peers, token mappings, gas assumptions, and failure recovery. The deployment salt and encoded configuration must preserve the intended relationship across chains.",
-      "Store identity as chain ID plus project ID, and use the sucker-group identity only for grouping. Track each movement through queued, sent, received, failed, and retriable states. Keep chain-specific operators, recipients, balances, stage IDs, tokens, and transaction hashes visible.",
-    ],
-    points: [
-      "Never reuse one chain's project ID, stage ID, address, or decimals on another.",
-      "Do not count in-flight value as settled local liquidity.",
-      "Make the wallet switch to the target chain before constructing a write.",
-      "Test partial deployment and partial settlement, not only the all-chains-success path.",
-    ],
-  },
-  {
-    id: "choose-authority",
-    title: "Choose the smallest authority surface",
-    summary:
-      "A revnet has no owner. Give its operator only the permissions the product genuinely needs, or permanently retain no operator.",
-    paragraphs: [
-      "Useful limited controls can include metadata updates, redirecting the fixed split share, permitted shop operations, buyback configuration, and adding matching chains when the original deployment supports it. These permissions do not allow the operator to rewrite staged issuance or cash-out economics.",
-      "Model the operator per chain. Display the exact granted permission IDs and whether the account is an EOA, contract, or multisig. Support transferring the role without describing the operator as an owner.",
-    ],
-    note: "For no retained authority, encode 0xdead000000000000000000000000000000000000 in the transaction. Do not use an empty field, the zero address, or UI-only wording as a substitute.",
-  },
-  {
-    id: "design-shops",
-    title: "Make shop-item policy permanent",
-    summary:
-      "Revnet products can sell ERC-721 shop items while keeping each item's transfer behavior fixed from creation.",
-    paragraphs: [
-      "Create each item as transferable or non-transferable according to its product meaning. Keep the collection-level pause mechanism unavailable so later stages cannot switch an item between those policies. Treat prices, supply, reserves, metadata, mint allowances, and operator minting as separate choices.",
-      "Quote shop purchases together with any fungible tokens the payment receives. Place optional notes after the complete “you get” summary so the economic result stays coherent.",
-    ],
-    points: [
-      "Simulate tier creation and minting before presenting a signature.",
-      "Re-read the live hook, tier supply, price, permissions, and flags before a write.",
-      "Do not promise metadata permanence unless the URI and storage policy actually provide it.",
-    ],
-  },
-  {
-    id: "map-product-actions",
-    title: "Map product actions to exact protocol calls",
-    summary:
-      "Keep the interface product-native, but make its reads, writes, units, and contracts explicit in the implementation.",
-    paragraphs: [
-      "Use current V6 ABIs and audited SDK builders where available. A deployment can be built with buildRevnetStageConfig and buildDeployRevnetTx, then sent through the correct REVDeployer.deployFor overload. Keep overloaded tuple shapes unambiguous and ABI-encode the exact request you show in review.",
-      "For pay, cash out, borrow, repay, shops, operator actions, market configuration, and settlement, define a pure transaction builder. The builder should accept already-validated state and return the chain, target, function, arguments, and value. Round-trip every request through the ABI in tests.",
-    ],
-    points: [
-      "List every prerequisite read and the block or timestamp assumptions behind it.",
-      "Use atomic integers internally and format only at the display boundary.",
-      "Keep approvals narrowly scoped and separate from the action they authorize.",
-      "Decode the final calldata in the review screen before asking the wallet to sign.",
-    ],
-    links: [
-      { href: "https://github.com/rev-net/revnet-core-v6", label: "Revnet V6 contracts" },
-      { href: "https://github.com/Bananapus/version-6", label: "Juicebox V6 contracts" },
-      { href: "https://github.com/mejango/revnet-money", label: "Reference client" },
-    ],
-  },
-  {
-    id: "load-and-cache",
-    title: "Make the client feel immediate without lying",
-    summary:
-      "Carry known project data across navigation, cache successful reads, and distinguish stale-known values from genuinely unknown values.",
-    paragraphs: [
-      "When a list or activity row already knows a revnet's name, logo, tagline, chain, and project ID, pass that snapshot into the destination immediately. Render it while authoritative reads refresh. Use a subtle stale-but-loading shimmer on the value, not a ghost card that erases information the user just saw.",
-      "Reserve skeletons for shapes and values that have not been determined at all. Key caches by chain and contract identity, invalidate them after confirmed writes, and never let optimistic UI masquerade as final settlement.",
-    ],
-  },
-  {
-    id: "test-the-invariants",
-    title: "Test invariants and adversarial states",
-    summary:
-      "The happy path proves the UI works; invariants prove it does not misrepresent or weaken the revnet deal.",
-    paragraphs: [
-      "Test math against the contracts at boundary values, maximum precision, empty liquidity, extreme supply, stage transitions, stale quotes, changed allowances, changed permissions, and reverted calls. Fork-test the same transaction builders used by the client.",
-      "Threat-model malicious tokens, compromised RPCs, lagging indexers, spoofed metadata, MEV, pool manipulation, bridge delay, partial multichain execution, hostile operator accounts, and wallet-chain mismatch. Show recoverable errors beside the action that caused them.",
-    ],
-    points: [
-      "A UI preview must match simulated and executed calldata.",
-      "The operator can never alter immutable stage economics.",
-      "Cash-out and loan bounds can only become safer between preview and signature.",
-      "One chain's state can never be silently applied to another.",
-      "Unknown state remains unknown; it is never coerced to zero, empty, or safe.",
-    ],
-  },
-  {
-    id: "launch-checklist",
-    title: "Review, launch, and keep proving it",
-    summary:
-      "A launch is complete only when users can independently verify the deployment, not merely when a transaction succeeds.",
-    paragraphs: [
-      "Before funding deployment, publish a human-readable summary and the full encoded schedule. Review every chain, token, decimal, start time, split, beneficiary, auto-issuance, operator, permission, hook, pool parameter, sucker mapping, salt, creation fee, and transaction value.",
-      "After confirmation, derive project IDs from receipts, verify code and configuration on every chain, pin metadata redundantly, exercise small pay and cash-out paths, and monitor indexer and settlement lag. Keep source, audits, contract addresses, and a transaction-to-contract map linked from the product.",
-    ],
-    note: "Do not ask a user to connect a wallet until the configuration is understandable without one. Do not ask for a signature until the app has refreshed live state and explained exactly what will change.",
-    links: [
-      { href: "/create", label: "Create a revnet" },
-      { href: "/learn#verify-before-trusting", label: "Verification guide" },
+      { href: "https://github.com/rev-net/revnet-core-v6", label: "Revnet contracts" },
+      { href: "https://github.com/Bananapus/version-6", label: "Juicebox contracts" },
+      { href: "https://github.com/mejango/revnet-money", label: "Reference web client" },
+      { href: "/learn#verify-before-trusting", label: "User-facing verification model" },
     ],
   },
 ];
@@ -187,8 +514,8 @@ export default function BuildPage() {
       <Nav />
       <RevnetGuide
         eyebrow="Build"
-        title="Put an open deal beneath your product."
-        introduction="Start with the experience you want to create. Then use Revnet V6 to make its issuance, backing, cash outs, incentives, and authority boundary understandable and enforceable from day one."
+        title="Implement Revnet V6 operations"
+        introduction="Connect your product to revnet deployment, payments, cash outs, loans, shops, operator controls, and multichain settlement with the same code paths users can inspect and verify."
         sections={SECTIONS}
         afterIntroduction={
           <p className="text-base text-zinc-600">
@@ -197,9 +524,9 @@ export default function BuildPage() {
         }
         afterSections={
           <p className="leading-relaxed text-zinc-700">
-            Want a head start? <CopyRevnetBuildPrompt />, then give your agent the product you are
-            building and the constraints your users must be able to verify. You can also inspect
-            this site&apos;s implementation in the{" "}
+            Start from the smallest operation your product needs, copy its reference pattern, and
+            keep the live read, pure builder, simulation, review, and confirmation boundaries
+            intact. The complete working implementation is in the{" "}
             <Link
               href="https://github.com/mejango/revnet-money"
               target="_blank"
@@ -213,9 +540,9 @@ export default function BuildPage() {
         }
         companion={{
           href: "/learn",
-          label: "Learn how revnets work",
+          label: "Learn the behavior behind each call",
           description:
-            "Review the user-facing model, especially the difference between immutable economics and limited operator permissions.",
+            "Review stages, issuance, backing, loans, shops, operator limits, and multichain settlement before turning them into product actions.",
         }}
       />
     </>
