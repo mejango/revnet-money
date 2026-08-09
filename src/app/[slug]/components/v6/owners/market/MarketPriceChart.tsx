@@ -138,9 +138,6 @@ function PoolChart({
           ) : null}
         </div>
         <div className="flex flex-col items-end gap-2">
-          {exactPoints.length > 1 ? (
-            <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
-          ) : null}
           <div className="flex shrink-0 gap-1 rounded-lg bg-teal-50 p-1">
             {RANGES.map((range) => (
               <button
@@ -161,6 +158,12 @@ function PoolChart({
           </div>
         </div>
       </div>
+
+      {exactPoints.length > 1 ? (
+        <div className="mt-2 flex justify-end">
+          <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
+        </div>
+      ) : null}
 
       {isLoading && points.length < 2 ? (
         <ChartSkeleton className="mt-4 aspect-[4/3] w-full sm:aspect-[2/1] lg:aspect-[5/2]" />
@@ -184,7 +187,7 @@ function PoolChart({
           ]}
           ariaLabel={`${tokenSymbol} market price in ${pool.pair.symbol}`}
           description={`${marketPriceView === "smooth" ? "Time-weighted" : "Post-trade"} pool price for ${tokenSymbol} over the selected range.`}
-          className="mt-4 aspect-[4/3] w-full sm:aspect-[2/1] lg:aspect-[5/2]"
+          className="mt-2 aspect-[4/3] w-full sm:aspect-[2/1] lg:aspect-[5/2]"
           margin={{ left: 84, right: 20, top: 24, bottom: 36 }}
           xDomain={[t0, now]}
           yDomain={[Math.max(0, low - pad), high + pad]}

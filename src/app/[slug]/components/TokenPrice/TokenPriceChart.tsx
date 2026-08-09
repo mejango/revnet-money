@@ -246,9 +246,6 @@ export function TokenPriceChart({
           ) : null}
         </div>
         <div className="flex w-full flex-wrap justify-start gap-2 sm:justify-end">
-          {hasPool && hasAmmData ? (
-            <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
-          ) : null}
           <RangeSelector ranges={TIME_RANGES} defaultValue="1y" />
         </div>
       </div>
@@ -264,6 +261,12 @@ export function TokenPriceChart({
         </p>
       ) : null}
 
+      {hasPool && hasAmmData ? (
+        <div className="mt-2 flex justify-end">
+          <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
+        </div>
+      ) : null}
+
       {hasData ? (
         <CartesianChart
           data={filteredData}
@@ -271,7 +274,7 @@ export function TokenPriceChart({
           series={visibleSeries}
           ariaLabel={`${tokenSymbol} price history`}
           description={`Issuance, ${marketPriceView === "smooth" ? "time-weighted pool" : "every post-trade pool"}, and cash out prices for ${tokenSymbol} over the selected ${range} range.${showCashOutAsymptote ? " The dotted line is the cash-out asymptote." : ""}`}
-          className="mt-6 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
+          className="mt-2 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
           margin={{ left: 84, right: 20, top: 24, bottom: 36 }}
           xDomain={[firstTimestamp ?? 0, lastTimestamp ?? 1]}
           yDomain={[0, maxVisiblePrice > 0 ? maxVisiblePrice * 1.1 : 1]}
