@@ -10,11 +10,15 @@ import {
 } from "@/components/ui/toast";
 import { useToast } from "@/components/ui/use-toast";
 import { subscribeToTopLayer, topLayerHost } from "@/lib/topLayer";
+import { wagmiConfig } from "@/lib/wagmiConfig";
+import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import { useAccount } from "wagmi";
 
 export function Toaster() {
-  const { toasts } = useToast();
+  const { hasOverflow, toasts } = useToast();
+  const { address } = useAccount({ config: wagmiConfig });
   // Toasts are raised from inside dialogs (validation, upload failures), and a
   // dialog in the top layer paints its backdrop over every body-level element.
   // The viewport follows the topmost open dialog so those toasts stay visible.
@@ -44,6 +48,14 @@ export function Toaster() {
             </Toast>
           );
         })}
+        {hasOverflow && address ? (
+          <Link
+            href={`/account/${address}`}
+            className="pointer-events-auto self-end border-b border-melon-700 px-1 py-1 font-mono text-sm text-melon-800 hover:border-teal-600 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+          >
+            See more in your account
+          </Link>
+        ) : null}
       </ToastViewport>
     </ToastProvider>,
     host,

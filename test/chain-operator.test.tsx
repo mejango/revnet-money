@@ -1,4 +1,5 @@
 import { ChainOperator } from "@/app/create/form/ChainOperator";
+import { PERMANENTLY_DISABLED_OPERATOR } from "@/app/create/constants";
 import { createSchema } from "@/app/create/helpers/createSchema";
 import { parseDeployData } from "@/app/create/helpers/parseDeployData";
 import type { RevnetFormData } from "@/app/create/types";
@@ -69,6 +70,22 @@ function deployOperatorFor(form: RevnetFormData, chainId: number) {
 }
 
 describe("ChainOperator per-chain binding", () => {
+  it("encodes 0xdead on every chain when limited controls are disabled", () => {
+    render(<Harness initialValues={operatorForm()} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /enable limited operator controls/i }));
+
+    expect(screen.queryByLabelText("Sepolia operator address")).not.toBeInTheDocument();
+    expect(operatorState()).toEqual([
+      { chainId: String(sepolia.id), address: PERMANENTLY_DISABLED_OPERATOR },
+      { chainId: String(baseSepolia.id), address: PERMANENTLY_DISABLED_OPERATOR },
+    ]);
+
+    const form = { ...operatorForm(), operator: operatorState() };
+    expect(deployOperatorFor(form, sepolia.id)).toBe(PERMANENTLY_DISABLED_OPERATOR);
+    expect(deployOperatorFor(form, baseSepolia.id)).toBe(PERMANENTLY_DISABLED_OPERATOR);
+  });
+
   it("binds each typed address to the chain it is rendered beside, not the selection index", () => {
     render(<Harness initialValues={operatorForm()} />);
 

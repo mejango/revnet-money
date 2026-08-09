@@ -1,4 +1,6 @@
+import { DateTimeField } from "@/components/ui/DateTimeField";
 import { useFormContext } from "@/lib/forms";
+import { timestampToLocalDateTimeInput } from "@/lib/time-zone";
 import { useState } from "react";
 import { StageData } from "../types";
 import { NotesSection } from "./AddStageDialog";
@@ -36,22 +38,20 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
         </label>
         {useFutureStart && (
           <div className="mt-3">
-            <input
-              type="datetime-local"
-              min={new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16)}
-              value={formatTimestampForInput(values.futureStartTimestamp)}
-              onChange={(e) => {
-                const timestamp = Math.floor(new Date(e.target.value).getTime() / 1000);
+            <DateTimeField
+              min={timestampToLocalDateTimeInput(Date.now() + 60 * 60 * 1000)}
+              value={
+                values.futureStartTimestamp
+                  ? timestampToLocalDateTimeInput(values.futureStartTimestamp * 1000)
+                  : ""
+              }
+              onChange={(value) => {
+                const timestamp = Math.floor(new Date(value).getTime() / 1000);
                 setFieldValue("futureStartTimestamp", timestamp);
               }}
-              className="h-9 border-2 border-melon-300 bg-melon-25 px-3 text-md hover:border-melon-400 focus:border-melon-600 focus:ring-0"
+              ariaLabel="Revnet start date and time"
+              inputClassName="h-11 w-full border-2 border-melon-300 bg-melon-25 px-3 text-md hover:border-melon-400 focus:border-melon-600 focus:ring-0"
             />
-            {values.futureStartTimestamp && (
-              <p className="text-sm text-zinc-500 mt-2">
-                Starts at {new Date(values.futureStartTimestamp * 1000).toLocaleString()} (your
-                local time)
-              </p>
-            )}
           </div>
         )}
       </div>
@@ -137,9 +137,4 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
       </NotesSection>
     </div>
   );
-}
-
-function formatTimestampForInput(timestamp: number | undefined): string {
-  if (!timestamp) return "";
-  return new Date(timestamp * 1000).toISOString().slice(0, 16);
 }

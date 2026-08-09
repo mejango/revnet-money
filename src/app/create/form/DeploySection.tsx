@@ -1,4 +1,3 @@
-import { toast } from "@/components/ui/use-toast";
 import { isSafeConnector } from "@/hooks/useReviewedWriteContract";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { useAccount } from "wagmi";
@@ -15,7 +14,8 @@ export function DeploySection({
   disabled?: boolean;
   validBundle?: boolean;
 }) {
-  const { revnetTokenSymbol, values, submitForm, isSubmitting, isValid, errors } = useCreateForm();
+  const { revnetTokenSymbol, values, submitForm, isSubmitting, isValid, errors, submitCount } =
+    useCreateForm();
   // The explicit config keeps this section renderable outside a WagmiProvider.
   const { connector } = useAccount({ config: wagmiConfig });
 
@@ -37,8 +37,8 @@ export function DeploySection({
           {revnetTokenSymbol} right away.
         </p>
         <p className="mt-2 text-lg text-zinc-600">
-          The revnet operator you set in your revnet&apos;s terms will also be able to add new
-          chains to the revnet later.
+          If you enabled a revnet operator in your terms, that operator will also be able to add
+          new chains to the revnet later using the matching deployment configuration.
         </p>
       </div>
       <div className="mt-6 md:col-span-2 md:mt-0">
@@ -61,18 +61,17 @@ export function DeploySection({
           validBundle={validBundle}
           disabled={disabled}
           onSubmit={() => {
-            submitForm();
-
-            if (!isValid) {
-              toast({
-                variant: "destructive",
-                title: "Please fix the errors and try again.",
-                description: formatFormErrors(errors),
-              });
-              console.debug(errors);
-            }
+            void submitForm();
           }}
         />
+        {submitCount > 0 && !isValid ? (
+          <div className="mt-3 max-w-xl border-l-2 border-red-500 pl-3" role="alert">
+            <p className="text-sm font-semibold text-red-700">Please fix these details:</p>
+            <p className="mt-1 whitespace-pre-line text-sm text-red-700">
+              {formatFormErrors(errors)}
+            </p>
+          </div>
+        ) : null}
       </div>
     </>
   );

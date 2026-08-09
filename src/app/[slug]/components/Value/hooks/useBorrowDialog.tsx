@@ -448,7 +448,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
    * Returns true when the caller may proceed. A false return has already set status and
    * toasted, including the Safe-proposal-pending case.
    */
-  const ensureBurnTokensPermission = async (): Promise<boolean> => {
+  const ensureBurnTokensPermission = useCallback(async (): Promise<boolean> => {
     if (
       !publicClient ||
       !address ||
@@ -459,65 +459,75 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       setBorrowStatus("error");
       return false;
     }
-        // Read permission live at submission time. The indexer can lag a newly
-        // granted permission, and treating an unresolved query as `false`
-        // would prompt an unnecessary approval. Loans need BURN_TOKENS (11),
-        // never the much broader ROOT permission (1).
-        const hasBorrowPermission = await hasPermissions(publicClient, {
-          chainId: Number(cashOutChainId) as JBChainId,
-          operator: revLoansContractAddress,
+
+    // Read permission live at submission time. The indexer can lag a newly
+    // granted permission, and treating an unresolved query as `false`
+    // would prompt an unnecessary approval. Loans need BURN_TOKENS (11),
+    // never the much broader ROOT permission (1).
+    const hasBorrowPermission = await hasPermissions(publicClient, {
+      chainId: Number(cashOutChainId) as JBChainId,
+      operator: revLoansContractAddress,
+      account: address,
+      projectId: loanProjectId,
+      permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
+    });
+    if (!hasBorrowPermission) {
+      setBorrowStatus("granting-permission");
+      try {
+        const txHash = await permissionWriteAsync({
+          chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
           account: address,
-          projectId: loanProjectId,
-          permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
+          address: resolvedPermissionsAddress,
+          abi: jbPermissionsAbi,
+          functionName: "setPermissionsFor",
+          args: [
+            address,
+            {
+              operator: revLoansContractAddress,
+              projectId: loanProjectId,
+              permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
+            },
+          ],
         });
-        if (!hasBorrowPermission) {
-          setBorrowStatus("granting-permission");
-          try {
-            const txHash = await permissionWriteAsync({
-              chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
-              account: address,
-              address: resolvedPermissionsAddress,
-              abi: jbPermissionsAbi,
-              functionName: "setPermissionsFor",
-              args: [
-                address,
-                {
-                  operator: revLoansContractAddress,
-                  projectId: loanProjectId,
-                  permissionIds: [JBPermissionIdsV6.BURN_TOKENS],
-                },
-              ],
-            });
-            requireOnchainExecution(txHash, "Borrow permission grant");
-            const permissionReceipt = await publicClient.waitForTransactionReceipt({
-              hash: txHash,
-            });
-            if (permissionReceipt.status !== "success") {
-              throw new Error(`Permission grant ${txHash} reverted onchain.`);
-            }
-            setBorrowStatus("permission-granted");
-          } catch (err) {
-            if (isSafeProposalPendingError(err)) {
-              setBorrowStatus("pending");
-              toast({
-                title: "Safe permission proposal submitted",
-                description: err.message,
-              });
-              return false;
-            }
-            setBorrowStatus("error-permission-denied");
-            toast({
-              variant: "destructive",
-              title: "Permission Denied",
-              description: "Permission was not granted. Please approve to proceed.",
-            });
-            return false;
-          }
-        } else {
-          setBorrowStatus("permission-granted");
+        requireOnchainExecution(txHash, "Borrow permission grant");
+        const permissionReceipt = await publicClient.waitForTransactionReceipt({
+          hash: txHash,
+        });
+        if (permissionReceipt.status !== "success") {
+          throw new Error(`Permission grant ${txHash} reverted onchain.`);
         }
+        setBorrowStatus("permission-granted");
+      } catch (err) {
+        if (isSafeProposalPendingError(err)) {
+          setBorrowStatus("pending");
+          toast({
+            title: "Safe permission proposal submitted",
+            description: err.message,
+          });
+          return false;
+        }
+        setBorrowStatus("error-permission-denied");
+        toast({
+          variant: "destructive",
+          title: "Permission Denied",
+          description: "Permission was not granted. Please approve to proceed.",
+        });
+        return false;
+      }
+    } else {
+      setBorrowStatus("permission-granted");
+    }
     return true;
-  };
+  }, [
+    address,
+    cashOutChainId,
+    loanProjectId,
+    permissionWriteAsync,
+    publicClient,
+    resolvedPermissionsAddress,
+    revLoansContractAddress,
+    toast,
+  ]);
 
   const handleBorrow = useCallback(async () => {
     // Get token configuration for the selected chain
@@ -687,7 +697,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     selectedLoanReallocAmount,
     prepaidPercent,
     reallocateCollateralAsync,
-    permissionWriteAsync,
     toast,
     resolvedPermissionsAddress,
     writeContractAsync,
@@ -695,10 +704,9 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     loanProjectId,
     publicClient,
     projectTokenDecimals,
-    revLoansContractAddress,
     tokenConfigForChain,
-    projectId,
     collateralCountToTransfer,
+    ensureBurnTokensPermission,
   ]);
 
   // ===== EFFECTS =====

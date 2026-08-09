@@ -3,8 +3,10 @@ import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
-const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 1000000;
+// Three visible notices keep the page calm. Any additional notice is folded
+// into the account activity link instead of becoming another card.
+const TOAST_LIMIT = 3;
+const TOAST_REMOVE_DELAY = 250;
 
 type ToasterToast = ToastProps & {
   id: string;
@@ -48,6 +50,7 @@ type Action =
     };
 
 interface State {
+  hasOverflow: boolean;
   toasts: ToasterToast[];
 }
 
@@ -74,6 +77,7 @@ const reducer = (state: State, action: Action): State => {
     case "ADD_TOAST":
       return {
         ...state,
+        hasOverflow: state.hasOverflow || state.toasts.length >= TOAST_LIMIT,
         toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT),
       };
 
@@ -112,19 +116,22 @@ const reducer = (state: State, action: Action): State => {
       if (action.toastId === undefined) {
         return {
           ...state,
+          hasOverflow: false,
           toasts: [],
         };
       }
+      const toasts = state.toasts.filter((t) => t.id !== action.toastId);
       return {
         ...state,
-        toasts: state.toasts.filter((t) => t.id !== action.toastId),
+        hasOverflow: toasts.length > 0 && state.hasOverflow,
+        toasts,
       };
   }
 };
 
 const listeners: Array<(state: State) => void> = [];
 
-let memoryState: State = { toasts: [] };
+let memoryState: State = { hasOverflow: false, toasts: [] };
 
 function dispatch(action: Action) {
   memoryState = reducer(memoryState, action);

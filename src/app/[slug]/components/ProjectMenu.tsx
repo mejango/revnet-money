@@ -77,12 +77,14 @@ export function ProjectMenu({
             </MenuOption>
           </>
         ) : null}
+        <li className="flex shrink-0 items-start">
+          <MoreProjectOptions
+            forceInactive={mobileActivityActive}
+            expanded={overflowExpanded}
+            onToggle={() => setOverflowExpanded((current) => !current)}
+          />
+        </li>
       </ul>
-      <MoreProjectOptions
-        forceInactive={mobileActivityActive}
-        expanded={overflowExpanded}
-        onToggle={() => setOverflowExpanded((current) => !current)}
-      />
     </div>
   );
 }
@@ -110,7 +112,7 @@ function MoreProjectOptions({
       aria-expanded={expanded}
       onClick={onToggle}
       className={cn(
-        "-mb-px ml-auto flex min-h-11 min-w-11 shrink-0 self-start items-center justify-center border-b-2 px-3 pb-2 text-2xl leading-none transition-all",
+        "-mb-px flex min-h-11 min-w-11 shrink-0 items-center justify-center border-b-2 px-3 pb-2 text-2xl leading-none transition-all",
         active && !expanded
           ? "border-teal-500 text-black"
           : "border-transparent text-zinc-500 hover:text-zinc-800",

@@ -38,6 +38,17 @@ export function Footer() {
               .
             </p>
             <AuditPromptLink className="mt-1" />
+            <p className="mt-1">
+              <a
+                href="https://docs.juicebox.money/tos"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-zinc-900"
+              >
+                Terms of Service
+              </a>
+              : Risks are borne entirely by the users of the open source code.
+            </p>
           </div>
         </div>
       </div>

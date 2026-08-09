@@ -1,7 +1,10 @@
 import { RevnetFormData, StageData } from "./types";
 
+export const PERMANENTLY_DISABLED_OPERATOR =
+  "0xdead000000000000000000000000000000000000";
+
 export const defaultStageData: StageData = {
-  initialOperator: "",
+  initialOperator: PERMANENTLY_DISABLED_OPERATOR,
   initialIssuance: "10000",
 
   priceCeilingIncreasePercentage: "10",

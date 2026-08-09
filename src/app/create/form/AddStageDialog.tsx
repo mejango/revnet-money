@@ -10,7 +10,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Trash2 as TrashIcon } from "@/components/ui/icons";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
 import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
@@ -18,7 +17,7 @@ import { commaNumber } from "@/lib/number";
 import { cn, sortChains } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
-import { defaultStageData } from "../constants";
+import { defaultStageData, PERMANENTLY_DISABLED_OPERATOR } from "../constants";
 import { getResolvedIssuance } from "../helpers/calculatePickupIssuance";
 import { formatFormErrors } from "../helpers/formatFormErrors";
 import { stageSchema } from "../helpers/stageSchema";
@@ -187,7 +186,7 @@ export function AddStageDialog({
               }
             }}
           >
-            {({ values, isValid, errors, setFieldValue }) => {
+            {({ values, isValid, errors, setFieldValue, submitCount }) => {
               // Handler for checkbox toggle
               const handleCutToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
                 const checked = e.target.checked;
@@ -231,6 +230,10 @@ export function AddStageDialog({
                   setFieldValue(`splits.${index}.beneficiary.${entryIndex}.address`, address);
                 }
               };
+
+              const operatorControlsEnabled =
+                values.initialOperator?.trim().toLowerCase() !==
+                PERMANENTLY_DISABLED_OPERATOR;
 
               return (
                 <Form>
@@ -516,92 +519,121 @@ export function AddStageDialog({
                             Without splits, the payer always receives 100% of issuance.
                           </div>
                         )}
-                        {values.splits.length > 0 && (
-                          <>
-                            <div className="mt-4 flex gap-2 items-center text-md text-zinc-600 whitespace-nowrap">
-                              <label
-                                className="whitespace-nowrap"
-                                htmlFor="priceCeilingIncreasePercentage"
-                              >
-                                ... operated by
-                              </label>
-                              <Field
-                                id="initialOperator"
-                                name="initialOperator"
-                                className=""
-                                placeholder={stageIdx > 0 ? stages[0].initialOperator : "0x"}
-                                disabled={stageIdx > 0}
+                        {stageIdx === 0 && (
+                          <div className="mt-6 border-t border-zinc-200 pt-5">
+                            <label className="flex cursor-pointer items-start gap-3 border border-melon-300 bg-melon-25 p-4">
+                              <input
+                                type="checkbox"
+                                className="mt-1 h-4 w-4 accent-green-600"
+                                checked={operatorControlsEnabled}
+                                onChange={(event) => {
+                                  setFieldValue(
+                                    "initialOperator",
+                                    event.target.checked ? "" : PERMANENTLY_DISABLED_OPERATOR,
+                                  );
+                                  setDraftOperators([]);
+                                }}
                               />
-                              {stageIdx > 0 && (
-                                <Tooltip>
-                                  <TooltipTrigger>[ ? ]</TooltipTrigger>
-                                  <TooltipContent side="left">
-                                    Set the revnet operator in the first stage
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                            </div>
-                            {stageIdx === 0 && chainIds.length > 1 && (
-                              <div className="mt-2">
+                              <span>
+                                <span className="block text-md font-semibold text-zinc-800">
+                                  Enable limited operator controls
+                                </span>
+                                <span className="mt-1 block text-sm leading-relaxed text-zinc-500">
+                                  An operator can update the revnet&apos;s name, logo, and description;
+                                  redirect only the precommitted split share; manage shop items only
+                                  where those permissions were enabled; and add matching chains when
+                                  the original deployer is the operator. It cannot rewrite staged
+                                  issuance or cash-out rules.
+                                </span>
+                              </span>
+                            </label>
+                            {operatorControlsEnabled ? (
+                              <div className="mt-4">
                                 <label
-                                  className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
-                                  htmlFor="perChainOperator"
+                                  className="mb-1 block text-md text-zinc-600"
+                                  htmlFor="initialOperator"
                                 >
-                                  set operator per chain?
-                                  <input
-                                    type="checkbox"
-                                    id="perChainOperator"
-                                    checked={draftOperators.length > 0}
-                                    onChange={(e) =>
-                                      setDraftOperators(
-                                        e.target.checked
-                                          ? sortedChainIds.map((chainId) => ({
-                                              chainId: String(chainId),
-                                              address: values.initialOperator || "",
-                                            }))
-                                          : [],
-                                      )
-                                    }
-                                  />
+                                  Revnet operator
                                 </label>
-                                {draftOperators.length > 0 && (
-                                  <div className="mt-2 space-y-2">
-                                    {draftOperators.map((operator, operatorIndex) => {
-                                      const chainId = Number(operator.chainId) as JBChainId;
-                                      return (
-                                        <div
-                                          key={operator.chainId}
-                                          className="flex items-center gap-2 text-md text-zinc-600"
-                                        >
-                                          <div className="flex w-40 shrink-0 items-center gap-2 text-sm">
-                                            <ChainLogo chainId={chainId} width={20} height={20} />
-                                            <span className="text-zinc-400">
-                                              {JB_CHAINS[chainId].name}
-                                            </span>
-                                          </div>
-                                          <input
-                                            aria-label={`${JB_CHAINS[chainId].name} operator`}
-                                            className={perChainInputClassName}
-                                            placeholder="0x"
-                                            value={operator.address}
-                                            onChange={(e) =>
-                                              setDraftOperators((previous) =>
-                                                previous.map((entry, index) =>
-                                                  index === operatorIndex
-                                                    ? { ...entry, address: e.target.value }
-                                                    : entry,
-                                                ),
-                                              )
-                                            }
-                                          />
-                                        </div>
-                                      );
-                                    })}
+                                <Field id="initialOperator" name="initialOperator" placeholder="0x" />
+                                <p className="mt-1 text-sm text-zinc-500">
+                                  Leave empty here to confirm an address for each chain before
+                                  deploying.
+                                </p>
+                                {chainIds.length > 1 && (
+                                  <div className="mt-2">
+                                    <label
+                                      className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
+                                      htmlFor="perChainOperator"
+                                    >
+                                      set operator per chain?
+                                      <input
+                                        type="checkbox"
+                                        id="perChainOperator"
+                                        checked={draftOperators.length > 0}
+                                        onChange={(event) =>
+                                          setDraftOperators(
+                                            event.target.checked
+                                              ? sortedChainIds.map((chainId) => ({
+                                                  chainId: String(chainId),
+                                                  address: values.initialOperator || "",
+                                                }))
+                                              : [],
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    {draftOperators.length > 0 && (
+                                      <div className="mt-2 space-y-2">
+                                        {draftOperators.map((operator, operatorIndex) => {
+                                          const chainId = Number(operator.chainId) as JBChainId;
+                                          return (
+                                            <div
+                                              key={operator.chainId}
+                                              className="flex items-center gap-2 text-md text-zinc-600"
+                                            >
+                                              <div className="flex w-40 shrink-0 items-center gap-2 text-sm">
+                                                <ChainLogo
+                                                  chainId={chainId}
+                                                  width={20}
+                                                  height={20}
+                                                />
+                                                <span className="text-zinc-400">
+                                                  {JB_CHAINS[chainId].name}
+                                                </span>
+                                              </div>
+                                              <input
+                                                aria-label={`${JB_CHAINS[chainId].name} operator`}
+                                                className={perChainInputClassName}
+                                                placeholder="0x"
+                                                value={operator.address}
+                                                onChange={(event) =>
+                                                  setDraftOperators((previous) =>
+                                                    previous.map((entry, index) =>
+                                                      index === operatorIndex
+                                                        ? {
+                                                            ...entry,
+                                                            address: event.target.value,
+                                                          }
+                                                        : entry,
+                                                    ),
+                                                  )
+                                                }
+                                              />
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
+                            ) : (
+                              <p className="mt-3 text-sm text-zinc-500">
+                                No operator address will retain these limited controls.
+                              </p>
                             )}
-                          </>
+                          </div>
                         )}
                       </div>
                       <NotesSection>
@@ -845,22 +877,27 @@ export function AddStageDialog({
                   <StartTimeField stageIdx={stageIdx} stages={stages} />
 
                   <DialogFooter>
-                    <Button
-                      type="submit"
-                      className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-                      onClick={() => {
-                        if (!isValid) {
-                          toast({
-                            variant: "destructive",
-                            title: "Please fix the errors and try again.",
-                            description: formatFormErrors(errors),
-                          });
-                          console.error(errors);
-                        }
-                      }}
-                    >
-                      Save stage
-                    </Button>
+                    <div className="flex w-full flex-col items-end gap-3">
+                      <Button
+                        type="submit"
+                        className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+                      >
+                        Save stage
+                      </Button>
+                      {submitCount > 0 && !isValid ? (
+                        <div
+                          className="w-full border-l-2 border-red-500 pl-3 text-left"
+                          role="alert"
+                        >
+                          <p className="text-sm font-semibold text-red-700">
+                            Please fix these stage details:
+                          </p>
+                          <p className="mt-1 whitespace-pre-line text-sm text-red-700">
+                            {formatFormErrors(errors)}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
                   </DialogFooter>
                 </Form>
               );

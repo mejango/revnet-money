@@ -105,6 +105,25 @@ describe("create form section order", () => {
     const copy = screen.getByText(/able to add new chains to the revnet later/i);
     expect(copy.closest("div")?.querySelector("h2")?.textContent).toBe("4. Deploy");
   });
+
+  it("shows create validation beside the button that requested the quote", () => {
+    const invalid = validRevnetForm();
+    invalid.name = "";
+    invalid.description = "";
+    invalid.chainIds = [];
+    invalid.stages = [];
+    renderCreateForm(invalid);
+
+    fireEvent.click(screen.getByRole("button", { name: /get quote/i }));
+
+    const message = screen.getByText("Please fix these details:");
+    expect(message.closest('[role="alert"]')).toHaveTextContent("Name is required");
+    expect(message.closest('[role="alert"]')).toHaveTextContent("Description is required");
+    expect(message.closest('[role="alert"]')).toHaveTextContent("At least one stage is required");
+    expect(message.closest('[role="alert"]')).toHaveTextContent(
+      "At least one chain must be selected",
+    );
+  });
 });
 
 describe("inline per-chain inputs driven by the up-front chain selection", () => {

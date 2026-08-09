@@ -49,7 +49,7 @@ export default function Page() {
           <span className="sr-only">Revnet</span>
 
           <div className="mt-8 text-center text-xl font-medium md:text-2xl">
-            <span className="block sm:inline">An autonomous business model</span>{" "}
+            <span className="block sm:inline">An investible business model</span>{" "}
             <span className="block sm:inline">for the open web.</span>
           </div>
 
