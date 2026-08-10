@@ -19,6 +19,9 @@ function usd(value: number) {
 }
 
 function compactUsd(value: number) {
+  // Node and browser ICU disagree on compact-formatting zero ("$0.0" vs "$0"),
+  // which breaks hydration of the axis labels.
+  if (value === 0) return "$0";
   return value.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
@@ -35,7 +38,13 @@ function date(timestamp: number, short = false) {
   });
 }
 
-export function SecuredReserveChart({ points }: { points: HomepageReserves["points"] }) {
+export function SecuredReserveChart({
+  points,
+  ariaLabel = "Cumulative secured reserve value over time, shown as bars. Focus and use arrow keys to inspect total and per-chain values.",
+}: {
+  points: HomepageReserves["points"];
+  ariaLabel?: string;
+}) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const chart = useMemo(() => {
     if (!points.length) return null;
@@ -130,7 +139,7 @@ export function SecuredReserveChart({ points }: { points: HomepageReserves["poin
             onFocus={() => setHoveredIndex(chart.plotted.length - 1)}
             onBlur={() => setHoveredIndex(null)}
             onKeyDown={moveSelection}
-            aria-label="Cumulative secured reserve value over time, shown as bars. Focus and use arrow keys to inspect total and per-chain values."
+            aria-label={ariaLabel}
           >
             <line
               x1="0"

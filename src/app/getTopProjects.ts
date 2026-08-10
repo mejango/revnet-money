@@ -87,7 +87,7 @@ const fetchTopProjects = unstable_cache(
     } while (items.length < totalCount);
     return { suckerGroups: { items, totalCount } };
   },
-  ["top-projects-v2"],
+  ["top-projects-v3"],
   { revalidate: 600 }, // 10 minutes
 );
 

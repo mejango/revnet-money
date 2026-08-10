@@ -644,7 +644,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         limit: 1000
         after: $after
       ) {
-        items { timestamp balance tokenSupply suckerGroupId version accountingTokenUsdRate }
+        items { timestamp balance volume tokenSupply suckerGroupId version accountingTokenUsdRate }
         pageInfo { hasNextPage endCursor }
       }
     }`,
@@ -681,7 +681,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       ) {
         totalCount
         items {
-          id balance
+          id balance volume
           projects(limit: 8, orderBy: "chainId", orderDirection: "asc") {
             items {
               balance

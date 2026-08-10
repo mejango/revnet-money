@@ -530,6 +530,7 @@ export type CashOutTaxSnapshotsQuery = {
 export type SuckerGroupMoment = {
   timestamp: number;
   balance: BigNumberish;
+  volume: BigNumberish;
   tokenSupply: BigNumberish;
   suckerGroupId: string;
   version: number;
@@ -572,6 +573,7 @@ export type TopSuckerGroupsQuery = {
     items: Array<{
       id: string;
       balance: BigNumberish;
+      volume: BigNumberish;
       projects: {
         items: Array<
           Pick<
