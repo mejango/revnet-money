@@ -6,8 +6,8 @@ type Feed = "activity" | "trending" | "top";
 
 const FEEDS: readonly { id: Feed; label: string }[] = [
   { id: "activity", label: "Fresh activity" },
-  { id: "trending", label: "Trending projects" },
-  { id: "top", label: "Top projects" },
+  { id: "trending", label: "Trending" },
+  { id: "top", label: "Top revnets" },
 ];
 
 export function HomepageDiscoveryLayout({

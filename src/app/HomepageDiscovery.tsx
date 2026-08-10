@@ -85,12 +85,12 @@ export async function HomepageDiscovery() {
         </DashboardColumn>
       }
       trending={
-        <DashboardColumn title="Trending projects">
+        <DashboardColumn title="Trending">
           <ProjectRows projects={trending} />
         </DashboardColumn>
       }
       top={
-        <DashboardColumn title="Top projects">
+        <DashboardColumn title="Top revnets">
           <TopProjectsTable />
         </DashboardColumn>
       }
@@ -150,13 +150,11 @@ function ProjectRows({ projects }: { projects: IndexedProjectSummary[] }) {
                 <span className="block truncate text-sm font-medium group-hover:text-teal-600">
                   {name}
                 </span>
-                <span
-                  className="mt-0.5 block truncate text-xs text-zinc-500"
-                  title={`${project.trendingPaymentsCount ?? 0} recent payments; ${formatRecentVolume(project)} recent volume`}
-                >
-                  {(project.trendingPaymentsCount ?? 0).toLocaleString("en-US")} recent payments
-                  {" · "}
-                  {formatRecentVolume(project)} recent volume
+                <span className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-zinc-500">
+                  <span>
+                    {(project.trendingPaymentsCount ?? 0).toLocaleString("en-US")} recent payments
+                  </span>
+                  <span>{formatRecentVolume(project)} recent volume</span>
                 </span>
               </span>
               <ChainLogo chainId={chainId} width={16} height={16} />
