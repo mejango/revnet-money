@@ -97,14 +97,14 @@ function DashboardColumn({
 }) {
   const id = `home-${title.replaceAll(" ", "-").toLowerCase()}`;
   return (
-    <section className="min-w-0" aria-labelledby={id}>
+    <section className="flex min-w-0 flex-col lg:h-full" aria-labelledby={id}>
       <h2
         id={id}
         className={`mb-4 min-h-11 items-center text-xl font-semibold md:text-2xl ${headingClassName}`}
       >
         {title}
       </h2>
-      <div className="max-h-[70svh] min-h-[420px] overflow-y-auto border border-teal-100 bg-teal-50 md:h-[calc(100svh-12rem)] md:max-h-none md:min-h-[520px]">
+      <div className="max-h-[70svh] min-h-[420px] overflow-y-auto border border-teal-100 bg-teal-50 md:h-[calc(100svh-12rem)] md:max-h-none md:min-h-[520px] lg:h-auto lg:flex-1">
         {children}
       </div>
     </section>
