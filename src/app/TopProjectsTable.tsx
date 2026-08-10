@@ -20,7 +20,7 @@ export async function TopProjectsTable() {
               logoUri: project.logoUri,
               tagline: project.tagline,
             }}
-            className="group flex min-w-0 items-center gap-3 px-4 py-4"
+            className="group flex h-28 min-w-0 items-center gap-3 px-4 py-3"
           >
             <span className="w-5 shrink-0 text-xs tabular-nums text-zinc-400">{project.rank}</span>
             <IpfsImage

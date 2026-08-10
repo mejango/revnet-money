@@ -133,7 +133,7 @@ function ProjectRows({ projects }: { projects: IndexedProjectSummary[] }) {
             <ProjectLink
               href={href}
               projectHint={{ name, logoUri: project.logoUri, tagline: project.projectTagline }}
-              className="group flex items-center gap-3 px-4 py-4"
+              className="group flex h-28 items-center gap-3 px-4 py-3"
             >
               <span className="w-5 shrink-0 text-xs tabular-nums text-zinc-400">{index + 1}</span>
               <IpfsImage
@@ -232,7 +232,7 @@ function ActivityRows({ events }: { events: RawActivity[] }) {
         const isOutflow = activity.type === "out" || activity.type === "swapSell";
         const tokenSymbol = project.tokenSymbol?.replace(/^\$+/, "") ?? "tokens";
         return (
-          <li key={event.id} className="px-4 py-4">
+          <li key={event.id} className="h-28 overflow-hidden px-4 py-3">
             <div className="flex items-start gap-3">
               <ProjectLink
                 href={href}
@@ -288,7 +288,7 @@ function ActivityRows({ events }: { events: RawActivity[] }) {
                 >
                   {name}
                 </ProjectLink>
-                <div className="mt-1 text-sm">
+                <div className="mt-1 line-clamp-2 text-sm">
                   {explorerUrl ? (
                     <a
                       href={`${explorerUrl}/address/${activity.beneficiary}`}
