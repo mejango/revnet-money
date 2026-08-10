@@ -41,7 +41,7 @@ export function SecuredReserves({ data }: { data: HomepageReserves }) {
           </span>
         </span>
         <span className="text-xs text-teal-500 sm:text-sm">
-          Secured by Juicebox
+          Secured by revnets
         </span>
       </div>
       <SecuredReserveChart points={data.points} />
