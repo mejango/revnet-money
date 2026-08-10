@@ -1,29 +1,29 @@
-import {
-  mapActivityEvents,
-  type ActivityEventItem,
-} from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
 import { AuditPromptLink } from "@/components/AuditPromptLink";
 import { ChainLogo } from "@/components/ChainLogo";
-import { DateRelative } from "@/components/DateRelative";
 import { IpfsImage } from "@/components/IpfsImage";
+import { IssuanceFingerprint } from "@/components/IssuanceFingerprint";
 import { ProjectLink } from "@/components/ProjectLink";
-import { ActivityEventsOperation, IndexedProjectsOperation } from "@/lib/bendystraw/operations";
+import { IndexedProjectsOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import type { ActivityEventsQuery, IndexedProjectSummary } from "@/lib/bendystraw/types";
+import type { IndexedProjectSummary } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
+import { getIssuanceFingerprint } from "@/lib/issuanceFingerprint.server";
 import { formatCompact } from "@/lib/number";
-import { formatEthAddress } from "@/lib/utils";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { formatUnits } from "viem";
+import { getHomepageActivityPage } from "./getHomepageActivity";
+import { getHomepageReserves } from "./getHomepageReserves";
+import { HomepageActivityFeed } from "./HomepageActivityFeed";
 import { HomepageDiscoveryLayout } from "./HomepageDiscoveryLayout";
+import { SecuredReserves } from "./SecuredReserves";
 import { TopProjectsTable } from "./TopProjectsTable";
 
-type RawActivity = ActivityEventsQuery["activityEvents"]["items"][number];
+type HomepageProject = IndexedProjectSummary & { issuanceFingerprint: number[] };
 
-async function getHomepageProjects() {
+async function getHomepageProjects(): Promise<HomepageProject[]> {
   try {
     const data = await queryBendystraw(mainnet.id, IndexedProjectsOperation, {
       where: { version: 6, isRevnet: true },
@@ -33,68 +33,58 @@ async function getHomepageProjects() {
       offset: 0,
     });
     const groups = new Set<string>();
-    return data.projects.items
+    const projects = data.projects.items
       .filter((project) => {
         if (!project.isRevnet || groups.has(project.suckerGroupId)) return false;
         groups.add(project.suckerGroupId);
         return true;
       })
       .slice(0, 8);
-  } catch {
-    return [];
-  }
-}
-
-function isHomepageEvent(event: RawActivity) {
-  return !!(
-    event.payEvent ||
-    event.cashOutTokensEvent ||
-    event.swapEvent ||
-    event.sendPayoutsEvent ||
-    event.rulesetQueuedEvent ||
-    event.projectCreateEvent ||
-    event.addToBalanceEvent
-  );
-}
-
-async function getHomepageActivity() {
-  try {
-    const data = await queryBendystraw(mainnet.id, ActivityEventsOperation, {
-      where: { version: 6 },
-      orderBy: "timestamp",
-      orderDirection: "desc",
-      limit: 120,
-      offset: 0,
-    });
-    return data.activityEvents.items
-      .filter((event) => event.project?.isRevnet && isHomepageEvent(event))
-      .slice(0, 8);
+    return Promise.all(
+      projects.map(async (project) => ({
+        ...project,
+        issuanceFingerprint: await getIssuanceFingerprint(
+          project.projectId,
+          project.chainId as JBChainId,
+        ),
+      })),
+    );
   } catch {
     return [];
   }
 }
 
 export async function HomepageDiscovery() {
-  const [activity, trending] = await Promise.all([getHomepageActivity(), getHomepageProjects()]);
+  const [activity, trending, reserves] = await Promise.all([
+    getHomepageActivityPage(9),
+    getHomepageProjects(),
+    getHomepageReserves(),
+  ]);
   return (
-    <HomepageDiscoveryLayout
-      hero={<HeroColumn />}
-      activity={
-        <DashboardColumn title="Fresh activity">
-          <ActivityRows events={activity} />
-        </DashboardColumn>
-      }
-      trending={
-        <DashboardColumn title="Trending">
-          <ProjectRows projects={trending} />
-        </DashboardColumn>
-      }
-      top={
-        <DashboardColumn title="Top revnets">
-          <TopProjectsTable />
-        </DashboardColumn>
-      }
-    />
+    <>
+      <SecuredReserves data={reserves} />
+      <HomepageDiscoveryLayout
+        hero={<HeroColumn />}
+        activity={
+          <DashboardColumn title="Fresh activity">
+            <HomepageActivityFeed
+              initialEvents={activity.slice(0, 8)}
+              initialHasMore={activity.length > 8}
+            />
+          </DashboardColumn>
+        }
+        trending={
+          <DashboardColumn title="Trending">
+            <ProjectRows projects={trending} />
+          </DashboardColumn>
+        }
+        top={
+          <DashboardColumn title="Top revnets">
+            <TopProjectsTable />
+          </DashboardColumn>
+        }
+      />
+    </>
   );
 }
 
@@ -112,16 +102,13 @@ function DashboardColumn({ title, children }: { title: string; children: ReactNo
   );
 }
 
-function EmptyRows() {
-  return (
-    <p className="flex min-h-[420px] items-center justify-center px-6 text-center text-sm text-zinc-500">
-      Projects are temporarily unavailable.
-    </p>
-  );
-}
-
-function ProjectRows({ projects }: { projects: IndexedProjectSummary[] }) {
-  if (!projects.length) return <EmptyRows />;
+function ProjectRows({ projects }: { projects: HomepageProject[] }) {
+  if (!projects.length)
+    return (
+      <p className="flex min-h-[420px] items-center justify-center px-6 text-center text-sm text-zinc-500">
+        Projects are temporarily unavailable.
+      </p>
+    );
   return (
     <ol className="divide-y divide-teal-100">
       {projects.map((project, index) => {
@@ -129,11 +116,12 @@ function ProjectRows({ projects }: { projects: IndexedProjectSummary[] }) {
         const href = `/${JB_CHAINS[chainId]?.slug ?? "eth"}:${project.projectId}`;
         const name = project.name ?? `Project #${project.projectId}`;
         return (
-          <li key={`${project.chainId}-${project.projectId}`}>
+          <li key={`${project.chainId}-${project.projectId}`} className="relative overflow-hidden">
+            <IssuanceFingerprint values={project.issuanceFingerprint} />
             <ProjectLink
               href={href}
               projectHint={{ name, logoUri: project.logoUri, tagline: project.projectTagline }}
-              className="group flex h-28 items-center gap-3 px-4 py-3"
+              className="group relative z-10 flex h-28 items-center gap-3 px-4 py-3"
             >
               <span className="w-5 shrink-0 text-xs tabular-nums text-zinc-400">{index + 1}</span>
               <IpfsImage
@@ -179,148 +167,6 @@ function formatRecentVolume(project: IndexedProjectSummary) {
   const amount = formatUnits(BigInt(integer), project.decimals ?? 18);
   const symbol = project.tokenSymbol?.replace(/^\$+/, "");
   return `${formatCompact(amount)}${symbol ? ` ${symbol}` : ""}`;
-}
-
-type HomepageActivity = ReturnType<typeof mapActivityEvents>[number];
-
-function activityDescription(event: HomepageActivity, projectTokenSymbol: string) {
-  switch (event.type) {
-    case "in":
-      return `got ${event.tokenCount} ${projectTokenSymbol}`;
-    case "out":
-      return `cashed out ${event.tokenCount} ${projectTokenSymbol}`;
-    case "addToBalance":
-      return "added to balance";
-    case "swapBuy":
-      return `bought ${event.tokenCount} ${projectTokenSymbol} through the market`;
-    case "swapSell":
-      return `sold ${event.tokenCount} ${projectTokenSymbol} through the market`;
-    case "payout":
-      return "sent payouts";
-    case "rulesetQueued":
-      return "reconfigured the revnet";
-    case "projectCreate":
-      return "created the revnet";
-    case "buybackPool":
-      return "set the buyback pool";
-    default:
-      return event.type === "autoIssue"
-        ? `auto-issued ${event.tokenCount} ${projectTokenSymbol}`
-        : "updated the revnet";
-  }
-}
-
-function ActivityRows({ events }: { events: RawActivity[] }) {
-  if (!events.length)
-    return (
-      <p className="flex min-h-[420px] items-center justify-center px-6 text-center text-sm text-zinc-500">
-        No recent activity yet.
-      </p>
-    );
-  const mappedById = new Map(
-    mapActivityEvents(events as ActivityEventItem[], (event) => ({
-      tokenSymbol: event.project?.tokenSymbol,
-      decimals: event.project?.decimals,
-      denominateInUsd: false,
-    })).map((event) => [event.id, event]),
-  );
-
-  return (
-    <ol className="divide-y divide-teal-100">
-      {events.map((event, index) => {
-        const project = event.project!;
-        const chainId = event.chainId as JBChainId;
-        const name = project.name ?? `Project #${project.projectId}`;
-        const href = `/${JB_CHAINS[chainId]?.slug ?? "eth"}:${project.projectId}`;
-        const activity = mappedById.get(event.id);
-        if (!activity) return null;
-        const explorerUrl = JB_CHAINS[chainId]?.chain.blockExplorers?.default.url;
-        const isInflow =
-          activity.type === "in" || activity.type === "addToBalance" || activity.type === "swapBuy";
-        const isOutflow = activity.type === "out" || activity.type === "swapSell";
-        const tokenSymbol = project.tokenSymbol?.replace(/^\$+/, "") ?? "tokens";
-        return (
-          <li key={event.id} className="h-28 overflow-hidden px-4 py-3">
-            <div className="flex items-start gap-3">
-              <ProjectLink
-                href={href}
-                projectHint={{
-                  name,
-                  logoUri: project.logoUri ?? null,
-                  tagline: project.projectTagline ?? null,
-                }}
-                className="shrink-0"
-              >
-                <IpfsImage
-                  src={project.logoUri ?? null}
-                  alt=""
-                  width={46}
-                  height={46}
-                  loading={index < 4 ? "eager" : "lazy"}
-                  fetchPriority={index < 4 ? "high" : "auto"}
-                  className="size-[46px] object-cover"
-                  fallback={<div className="size-[46px] bg-teal-100" />}
-                />
-              </ProjectLink>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
-                  <DateRelative timestamp={event.timestamp} />
-                  <div className="flex items-center gap-2">
-                    {activity.baseAmount && (
-                      <span title={activity.exactAmount}>
-                        {activity.baseAmount}
-                        {activity.baseTokenSymbol ? ` ${activity.baseTokenSymbol}` : ""}
-                      </span>
-                    )}
-                    {isInflow && (
-                      <span className="border border-teal-600 px-1 py-0.5 text-[10px] text-teal-600">
-                        in
-                      </span>
-                    )}
-                    {isOutflow && (
-                      <span className="border border-orange-500 px-1 py-0.5 text-[10px] text-orange-500">
-                        out
-                      </span>
-                    )}
-                    <ChainLogo chainId={chainId} width={14} height={14} />
-                  </div>
-                </div>
-                <ProjectLink
-                  href={href}
-                  projectHint={{
-                    name,
-                    logoUri: project.logoUri ?? null,
-                    tagline: project.projectTagline ?? null,
-                  }}
-                  className="mt-1 block truncate text-sm font-medium text-teal-700 hover:underline"
-                >
-                  {name}
-                </ProjectLink>
-                <div className="mt-1 line-clamp-2 text-sm">
-                  {explorerUrl ? (
-                    <a
-                      href={`${explorerUrl}/address/${activity.beneficiary}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline decoration-zinc-400 underline-offset-2 hover:text-teal-700"
-                    >
-                      {formatEthAddress(activity.beneficiary)}
-                    </a>
-                  ) : (
-                    <span>{formatEthAddress(activity.beneficiary)}</span>
-                  )}
-                  <span className="text-zinc-700">
-                    {" "}
-                    {activityDescription(activity, tokenSymbol)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </li>
-        );
-      })}
-    </ol>
-  );
 }
 
 function HeroColumn() {

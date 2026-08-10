@@ -660,7 +660,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       ) {
         totalCount
         items {
-          balance
+          id balance
           projects(limit: 1, orderBy: "chainId", orderDirection: "asc") {
             items {
               decimals

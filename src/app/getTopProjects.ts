@@ -4,11 +4,12 @@ import type { TopSuckerGroupsQuery } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
 import { fetchEthPrice } from "@/lib/ethPrice";
 import { ipfsUriToAppUrl } from "@/lib/ipfs";
+import { getIssuanceFingerprint } from "@/lib/issuanceFingerprint.server";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
 
-export async function getTopProjects() {
+export async function getTopProjects(limit = 8, offset = 0) {
   let top: TopSuckerGroupsQuery;
   try {
     top = await fetchTopProjects();
@@ -29,7 +30,7 @@ export async function getTopProjects() {
   // rows that never needed the price instead of blanking the whole table.
   const ethPrice = needsEthPrice ? await fetchEthPrice() : null;
 
-  return top.suckerGroups.items
+  const ranked = top.suckerGroups.items
     .map((group) => {
       const project = group.projects?.items[0];
       if (!project || !project.isRevnet) return null;
@@ -45,22 +46,29 @@ export async function getTopProjects() {
     })
     .filter((item) => item !== null)
     .sort((a, b) => b.balanceUsd - a.balanceUsd)
-    .slice(0, 10)
+    .slice(offset, offset + limit)
     .map((item, index) => {
       const { project, balanceUsd } = item;
       const chainId = project.chainId as JBChainId;
 
       return {
-        rank: index + 1,
+        rank: offset + index + 1,
         projectId: project.projectId,
         chainId: chainId,
         chainSlug: JB_CHAINS[chainId]?.slug ?? "eth",
         name: project.name ?? `Project #${project.projectId}`,
-        tagline: project.projectTagline,
+        tagline: project.projectTagline ?? null,
         logoUri: ipfsUriToAppUrl(project.logoUri) ? project.logoUri : null,
         balanceUsd,
       };
     });
+
+  return Promise.all(
+    ranked.map(async (project) => ({
+      ...project,
+      issuanceFingerprint: await getIssuanceFingerprint(project.projectId, project.chainId),
+    })),
+  );
 }
 
 const fetchTopProjects = unstable_cache(
@@ -82,3 +90,15 @@ const fetchTopProjects = unstable_cache(
   ["top-projects-v2"],
   { revalidate: 600 }, // 10 minutes
 );
+
+export async function getHomepageSuckerGroups() {
+  try {
+    return (await fetchTopProjects()).suckerGroups.items;
+  } catch {
+    return [];
+  }
+}
+
+export async function getHomepageEthPrice() {
+  return fetchEthPrice();
+}

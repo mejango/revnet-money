@@ -550,6 +550,7 @@ export type TopSuckerGroupsQuery = {
   suckerGroups: {
     totalCount?: number;
     items: Array<{
+      id: string;
       balance: BigNumberish;
       projects: {
         items: Array<
