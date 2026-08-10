@@ -1,3 +1,5 @@
+import { ChainLogo } from "@/components/ChainLogo";
+import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import type { HomepageReserves } from "./getHomepageReserves";
 import { SecuredReserveChart } from "./SecuredReserveChart";
 
@@ -29,19 +31,48 @@ export function SecuredReserves({ data }: { data: HomepageReserves }) {
           <span
             id="secured-reserves-breakdown"
             role="tooltip"
-            className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden min-w-max border border-teal-100 bg-white px-3 py-2 text-left text-xs font-normal leading-relaxed text-zinc-600 shadow-lg group-hover:block group-focus-within:block"
+            className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-64 border border-teal-100 bg-white px-3 py-2 text-left text-xs font-normal leading-relaxed text-zinc-600 shadow-lg group-hover:block group-focus-within:block"
           >
-            <span className="block tabular-nums">ETH: {amount(data.eth, 3)}</span>
-            <span className="block tabular-nums">USDC: {amount(data.usdc, 0)}</span>
-            {data.otherAssets > 0 ? (
-              <span className="block tabular-nums">
-                Other reserve asset types: {data.otherAssets}
-              </span>
-            ) : null}
+            {data.chains.map((chain, index) => {
+              const hasReserves = chain.eth > 0 || chain.usdc > 0 || chain.otherAssets.length > 0;
+              return (
+                <span
+                  key={chain.chainId}
+                  className={`block py-1.5 ${index ? "border-t border-teal-100" : ""}`}
+                >
+                  <span className="block font-medium text-zinc-900">
+                    {JB_CHAINS[chain.chainId as JBChainId]?.name ?? `Chain ${chain.chainId}`}
+                  </span>
+                  {hasReserves ? (
+                    <>
+                      {chain.eth > 0 ? (
+                        <span className="block tabular-nums">ETH: {amount(chain.eth, 3)}</span>
+                      ) : null}
+                      {chain.usdc > 0 ? (
+                        <span className="block tabular-nums">USDC: {amount(chain.usdc, 2)}</span>
+                      ) : null}
+                      {chain.otherAssets.length ? (
+                        <span className="block">Other: {chain.otherAssets.join(", ")}</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="block text-zinc-400">No reserves</span>
+                  )}
+                </span>
+              );
+            })}
           </span>
         </span>
-        <span className="text-xs text-teal-500 sm:text-sm">
-          Secured by revnets
+        <span className="flex items-center gap-2 text-xs text-teal-500 sm:text-sm">
+          <span>Secured by revnets</span>
+          <span
+            className="inline-flex items-center gap-1"
+            aria-label="Ethereum, Arbitrum, Base, and Optimism"
+          >
+            {([1, 42161, 8453, 10] as const).map((chainId) => (
+              <ChainLogo key={chainId} chainId={chainId as JBChainId} width={14} height={14} />
+            ))}
+          </span>
         </span>
       </div>
       <SecuredReserveChart points={data.points} />

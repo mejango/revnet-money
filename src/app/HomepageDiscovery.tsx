@@ -198,9 +198,9 @@ function HeroColumn() {
         alt=""
         width={1619}
         height={971}
-        className="mb-3 h-auto max-h-[260px] min-w-0 max-w-full object-contain"
+        className="mb-3 h-auto max-h-[260px] min-w-0 max-w-full translate-y-12 object-contain"
       />
-      <div className="min-w-0 max-w-full">
+      <div className="w-full min-w-0 max-w-full">
         <Image
           src="/assets/img/revnet-full-bw.svg"
           alt="Revnet"
@@ -217,7 +217,7 @@ function HeroColumn() {
         >
           Create yours
         </Link>
-        <AuditPromptLink className="mt-5 block text-sm text-zinc-600" />
+        <AuditPromptLink className="mt-4 whitespace-nowrap text-xs text-zinc-600 2xl:text-sm" />
       </div>
     </section>
   );

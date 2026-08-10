@@ -556,6 +556,7 @@ export type TopSuckerGroupsQuery = {
         items: Array<
           Pick<
             Project,
+            | "balance"
             | "decimals"
             | "currency"
             | "chainId"

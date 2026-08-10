@@ -661,8 +661,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         totalCount
         items {
           id balance
-          projects(limit: 1, orderBy: "chainId", orderDirection: "asc") {
+          projects(limit: 8, orderBy: "chainId", orderDirection: "asc") {
             items {
+              balance
               decimals
               currency
               chainId

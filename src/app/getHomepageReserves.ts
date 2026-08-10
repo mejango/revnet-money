@@ -13,8 +13,16 @@ export type HomepageReserves = {
   usdc: number;
   totalUsd: number;
   otherAssets: number;
+  chains: Array<{
+    chainId: number;
+    eth: number;
+    usdc: number;
+    otherAssets: string[];
+  }>;
   points: { timestamp: number; valueUsd: number }[];
 };
+
+const RESERVE_CHAIN_IDS = [1, 42161, 8453, 10] as const;
 
 async function momentsFor(suckerGroupId: string): Promise<SuckerGroupMoment[]> {
   const items: SuckerGroupMoment[] = [];
@@ -54,11 +62,25 @@ const cachedReserves = unstable_cache(
     let eth = 0;
     let usdc = 0;
     const other = new Set<string>();
+    const perChain = new Map<number, { eth: number; usdc: number; otherAssets: Set<string> }>(
+      RESERVE_CHAIN_IDS.map(
+        (chainId) => [chainId, { eth: 0, usdc: 0, otherAssets: new Set<string>() }] as const,
+      ),
+    );
     for (const item of supported) {
       const value = Number(formatUnits(BigInt(item.group.balance), item.decimals));
       if (item.symbol === "ETH") eth += value;
       else if (item.symbol === "USDC") usdc += value;
       else other.add(item.symbol);
+
+      for (const project of item.group.projects?.items ?? []) {
+        const chain = perChain.get(project.chainId);
+        if (!chain) continue;
+        const chainValue = Number(formatUnits(BigInt(project.balance), item.decimals));
+        if (item.symbol === "ETH") chain.eth += chainValue;
+        else if (item.symbol === "USDC") chain.usdc += chainValue;
+        else chain.otherAssets.add(item.symbol);
+      }
     }
     const histories = await Promise.all(
       supported.map(async (item) => ({
@@ -94,10 +116,19 @@ const cachedReserves = unstable_cache(
       usdc,
       totalUsd: eth * (ethPrice ?? 0) + usdc,
       otherAssets: other.size,
+      chains: RESERVE_CHAIN_IDS.map((chainId) => {
+        const chain = perChain.get(chainId)!;
+        return {
+          chainId,
+          eth: chain.eth,
+          usdc: chain.usdc,
+          otherAssets: [...chain.otherAssets].sort(),
+        };
+      }),
       points: raw.filter((_, index) => index % stride === 0 || index === raw.length - 1),
     };
   },
-  ["revnet-homepage-reserves-v2"],
+  ["revnet-homepage-reserves-v3"],
   { revalidate: 600 },
 );
 
@@ -105,6 +136,18 @@ export async function getHomepageReserves(): Promise<HomepageReserves> {
   try {
     return await cachedReserves();
   } catch {
-    return { eth: 0, usdc: 0, totalUsd: 0, otherAssets: 0, points: [] };
+    return {
+      eth: 0,
+      usdc: 0,
+      totalUsd: 0,
+      otherAssets: 0,
+      chains: RESERVE_CHAIN_IDS.map((chainId) => ({
+        chainId,
+        eth: 0,
+        usdc: 0,
+        otherAssets: [],
+      })),
+      points: [],
+    };
   }
 }
