@@ -65,7 +65,7 @@ export async function HomepageDiscovery() {
       hero={<HeroColumn />}
       summary={<SecuredReserves data={reserves} />}
       activity={
-        <DashboardColumn title="Fresh activity">
+        <DashboardColumn title="Fresh activity" headingClassName="hidden md:flex">
           <HomepageActivityFeed
             initialEvents={activity.slice(0, 8)}
             initialHasMore={activity.length > 8}
@@ -73,12 +73,12 @@ export async function HomepageDiscovery() {
         </DashboardColumn>
       }
       trending={
-        <DashboardColumn title="Trending">
+        <DashboardColumn title="Trending" headingClassName="hidden 2xl:flex">
           <ProjectRows projects={trending} />
         </DashboardColumn>
       }
       top={
-        <DashboardColumn title="Top revnets">
+        <DashboardColumn title="Top revnets" headingClassName="hidden 2xl:flex">
           <TopProjectsTable />
         </DashboardColumn>
       }
@@ -86,14 +86,25 @@ export async function HomepageDiscovery() {
   );
 }
 
-function DashboardColumn({ title, children }: { title: string; children: ReactNode }) {
+function DashboardColumn({
+  title,
+  children,
+  headingClassName,
+}: {
+  title: string;
+  children: ReactNode;
+  headingClassName: string;
+}) {
   const id = `home-${title.replaceAll(" ", "-").toLowerCase()}`;
   return (
     <section className="min-w-0" aria-labelledby={id}>
-      <h2 id={id} className="mb-4 hidden text-xl font-semibold md:text-2xl xl:block">
+      <h2
+        id={id}
+        className={`mb-4 min-h-11 items-center text-xl font-semibold md:text-2xl ${headingClassName}`}
+      >
         {title}
       </h2>
-      <div className="min-h-[420px] overflow-hidden border border-teal-100 bg-teal-50 xl:h-[calc(100svh-12rem)] xl:min-h-[520px] xl:overflow-y-auto">
+      <div className="max-h-[70svh] min-h-[420px] overflow-y-auto border border-teal-100 bg-teal-50 md:h-[calc(100svh-12rem)] md:max-h-none md:min-h-[520px]">
         {children}
       </div>
     </section>

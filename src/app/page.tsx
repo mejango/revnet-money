@@ -46,11 +46,8 @@ export default function Page() {
             alt="A classical draped figure"
           />
           <h2 id="how-revnets-work" className="text-2xl font-semibold md:text-3xl">
-            How a revnet works
+            Guarantees that stand the test of time.
           </h2>
-          <p className="mt-4">
-            Revnets trade flexibility for guarantees that stand the test of time.
-          </p>
           <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 sm:ml-10">
             <li>Money enters through fundraises and revenues.</li>
             <li>
@@ -85,11 +82,9 @@ export default function Page() {
             alt="A broad fig tree bearing fruit"
           />
           <h2 id="why-revnets" className="text-2xl font-semibold md:text-3xl">
-            Why revnets?
+            <span className="block">Simple enough for startups.</span>
+            <span className="block">Powerful enough for global organizations.</span>
           </h2>
-          <p className="mt-4">
-            Simple enough for startups. Powerful enough for global organizations.
-          </p>
 
           <ol className="mt-8 ml-8 list-outside list-decimal space-y-5 marker:font-semibold marker:text-teal-700 sm:ml-10">
             {WHY_REVNET_POINTS.map((point) => (

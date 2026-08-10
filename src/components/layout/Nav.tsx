@@ -18,7 +18,7 @@ export function Nav() {
           isHomepage ? "max-w-[1800px]" : "max-w-[1536px]"
         }`}
       >
-        <div className="col-start-1 row-start-1 flex flex-col items-start justify-self-start gap-y-1 min-[900px]:flex-row min-[900px]:items-center min-[900px]:gap-x-4">
+        <div className="col-start-1 row-start-1 flex flex-col items-start justify-self-start gap-y-1 md:flex-row md:items-center md:gap-x-4">
           <Link href="/" className="inline-flex min-h-11 min-w-11 items-center italic">
             <Image
               src="/assets/img/small-bw.svg"
@@ -30,7 +30,7 @@ export function Nav() {
           </Link>
           <div
             aria-label="Revnet guides"
-            className="flex items-center gap-1 whitespace-nowrap text-xs text-zinc-600 sm:gap-2 sm:text-sm"
+            className="flex min-h-11 items-center gap-1 whitespace-nowrap text-xs leading-normal text-zinc-600 sm:gap-2 sm:text-sm"
           >
             <Link href="/learn" className="underline-offset-4 hover:underline hover:text-zinc-900">
               Learn

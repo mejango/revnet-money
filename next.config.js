@@ -62,6 +62,9 @@ module.exports = {
     return config;
   },
   images: {
+    // Content-addressed project media and hashed app artwork can safely retain
+    // optimized variants for a year.
+    minimumCacheTTL: 60 * 60 * 24 * 365,
     remotePatterns: [
       {
         protocol: "https",

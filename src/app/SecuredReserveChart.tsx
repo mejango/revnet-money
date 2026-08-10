@@ -3,7 +3,7 @@
 import { useMemo, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { HomepageReserves } from "./getHomepageReserves";
 
-const HEIGHT = 48;
+const HEIGHT = 72;
 const TOP = 4;
 const BOTTOM = 4;
 
@@ -91,20 +91,19 @@ export function SecuredReserveChart({ points }: { points: HomepageReserves["poin
               Value: <span className="tabular-nums text-zinc-900">{usd(hovered.valueUsd)}</span>
             </span>
           </>
-        ) : (
-          <span>Hover the chart for date and value</span>
-        )}
+        ) : null}
       </div>
       <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2">
-        <div className="flex h-14 flex-col justify-between text-[10px] tabular-nums text-zinc-400 sm:h-16">
+        <div className="flex h-24 flex-col justify-between text-[10px] tabular-nums text-zinc-400 sm:h-28">
           <span>{compactUsd(chart.maxValue)}</span>
           <span>{compactUsd(chart.minValue)}</span>
         </div>
         <div className="min-w-0">
-          <svg
+          <div className="relative">
+            <svg
             viewBox={`0 0 100 ${HEIGHT}`}
             preserveAspectRatio="none"
-            className="h-14 w-full overflow-visible text-teal-600 outline-none focus-visible:ring-2 focus-visible:ring-teal-500 sm:h-16"
+            className="h-24 w-full overflow-visible text-teal-600 outline-none focus-visible:ring-2 focus-visible:ring-teal-500 sm:h-28"
             role="img"
             tabIndex={0}
             onFocus={() => setHoveredIndex(chart.plotted.length - 1)}
@@ -112,15 +111,6 @@ export function SecuredReserveChart({ points }: { points: HomepageReserves["poin
             onKeyDown={moveSelection}
             aria-label="Secured reserve value over time. Focus and use arrow keys to inspect values."
           >
-            <line
-              x1="0"
-              y1={TOP}
-              x2="100"
-              y2={TOP}
-              stroke="currentColor"
-              className="text-teal-100"
-              vectorEffect="non-scaling-stroke"
-            />
             <line
               x1="0"
               y1={HEIGHT - BOTTOM}
@@ -148,13 +138,6 @@ export function SecuredReserveChart({ points }: { points: HomepageReserves["poin
                   strokeDasharray="3 3"
                   vectorEffect="non-scaling-stroke"
                 />
-                <circle
-                  cx={hovered.x}
-                  cy={hovered.y}
-                  r="2.25"
-                  fill="currentColor"
-                  vectorEffect="non-scaling-stroke"
-                />
               </>
             ) : null}
             <rect
@@ -166,7 +149,15 @@ export function SecuredReserveChart({ points }: { points: HomepageReserves["poin
               onPointerMove={selectNearest}
               onPointerLeave={() => setHoveredIndex(null)}
             />
-          </svg>
+            </svg>
+            {hovered ? (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-600"
+                style={{ left: `${hovered.x}%`, top: `${(hovered.y / HEIGHT) * 100}%` }}
+              />
+            ) : null}
+          </div>
           <div className="mt-1 flex justify-between text-[10px] tabular-nums text-zinc-400">
             <span>{date(chart.minTime, true)}</span>
             <span>{date(chart.maxTime, true)}</span>

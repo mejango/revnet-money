@@ -318,7 +318,9 @@ describe("IPFS media proxy boundary", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("max-age=31536000");
     expect(response.headers.get("cache-control")).toContain("immutable");
+    expect(response.headers.get("etag")).toBe(`"ipfs:${CID}/asset.png"`);
     expect(response.headers.get("content-security-policy")).toContain("sandbox");
     expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
@@ -327,6 +329,23 @@ describe("IPFS media proxy boundary", () => {
       expect.stringMatching(/^https:\/\/(?:[^/]+\.eth\.sucks\/|[^/]+\/ipfs\/)/u),
       expect.objectContaining({ cache: "no-store" }),
     );
+  });
+
+  it("revalidates immutable assets from the ETag without fetching a gateway", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await proxyIpfs(
+      new NextRequest(`${SITE}/api/ipfs/${CID}/asset.png`, {
+        headers: { "if-none-match": `"ipfs:${CID}/asset.png"` },
+      }),
+      { params: Promise.resolve({ path: [CID, "asset.png"] }) },
+    );
+
+    expect(response.status).toBe(304);
+    expect(response.headers.get("cache-control")).toContain("immutable");
+    expect(response.headers.get("etag")).toBe(`"ipfs:${CID}/asset.png"`);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

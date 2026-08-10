@@ -22,6 +22,7 @@ export function ImageWithFallback({ alt, fallback, src, ...props }: Props) {
       {...props}
       src={src}
       alt={alt}
+      decoding={props.decoding ?? (props.loading === "eager" ? "sync" : "async")}
       referrerPolicy="no-referrer"
       onError={() => setFailedSrc(src)}
     />
@@ -57,6 +58,7 @@ export function IpfsImage({ alt, fallback, src, ...props }: Props) {
       {...props}
       src={safeSrc}
       alt={alt}
+      decoding={props.decoding ?? (props.loading === "eager" ? "sync" : "async")}
       referrerPolicy="no-referrer"
       onError={() => setFailedSources((failed) => [...failed, safeSrc])}
     />

@@ -7,6 +7,8 @@ const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 const PRIMARY_GATEWAY_TIMEOUT_MS = 6_000;
 const FALLBACK_GATEWAY_TIMEOUT_MS = 12_000;
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]{1,128}$/u;
+const IMMUTABLE_CACHE_CONTROL =
+  "public, max-age=31536000, s-maxage=31536000, immutable";
 
 function supportedMediaType(value: string | null) {
   const type = value?.split(";", 1)[0].trim().toLowerCase() ?? "";
@@ -24,7 +26,7 @@ function supportedMediaType(value: string | null) {
  * so browsers and a bounded edge cache may retain the validated response. The
  * attacker-selected CID must not enter Next's persistent server data cache.
  */
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path: segments } = await params;
   if (
     !segments.length ||
@@ -38,6 +40,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pat
     return Response.json({ error: "invalid IPFS path" }, { status: 400 });
   }
   const path = segments.map(encodeURIComponent).join("/");
+  const etag = `"ipfs:${path}"`;
+  const cacheHeaders = {
+    "cache-control": IMMUTABLE_CACHE_CONTROL,
+    "cdn-cache-control": IMMUTABLE_CACHE_CONTROL,
+    etag,
+  };
+  if (
+    req.headers
+      .get("if-none-match")
+      ?.split(",")
+      .map((value) => value.trim())
+      .includes(etag)
+  ) {
+    return new Response(null, { status: 304, headers: cacheHeaders });
+  }
   const gatewayUrls = ipfsMediaGatewayUrls(`ipfs://${path}`);
   let upstream: Response | undefined;
   let lastStatus: number | undefined;
@@ -97,7 +114,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pat
     headers: {
       "content-type": contentType ?? "application/octet-stream",
       "content-length": String(body.byteLength),
-      "cache-control": "public, max-age=31536000, immutable",
+      ...cacheHeaders,
       "content-security-policy":
         "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'unsafe-inline'",
       "cross-origin-resource-policy": "same-origin",
