@@ -65,7 +65,7 @@ export async function HomepageDiscovery() {
       hero={<HeroColumn />}
       summary={<SecuredReserves data={reserves} />}
       activity={
-        <DashboardColumn title="Fresh activity" headingClassName="hidden sm:flex">
+        <DashboardColumn title="Latest" headingClassName="hidden sm:flex">
           <HomepageActivityFeed
             initialEvents={activity.slice(0, 8)}
             initialHasMore={activity.length > 8}
@@ -82,7 +82,7 @@ export async function HomepageDiscovery() {
         </DashboardColumn>
       }
       top={
-        <DashboardColumn title="Top revnets" headingClassName="hidden lg:flex">
+        <DashboardColumn title="Top" headingClassName="hidden lg:flex">
           <TopProjectsTable />
         </DashboardColumn>
       }
@@ -157,14 +157,17 @@ function ProjectRows({ projects }: { projects: HomepageProject[] }) {
                   {name}
                 </span>
                 <span className="mt-0.5 block text-xs leading-snug text-zinc-500">
+                  <span className="block text-[10px] uppercase tracking-wide text-zinc-400">
+                    Recent
+                  </span>
                   <span className="block">
-                    Recent payments:{" "}
+                    Payments:{" "}
                     <span className="tabular-nums text-zinc-600">
                       {(project.trendingPaymentsCount ?? 0).toLocaleString("en-US")}
                     </span>
                   </span>
                   <span className="block">
-                    Recent volume:{" "}
+                    Volume:{" "}
                     <span className="tabular-nums text-zinc-600">
                       {formatRecentVolume(project)}
                     </span>
@@ -195,7 +198,7 @@ function HeroColumn() {
         alt=""
         width={1619}
         height={971}
-        className="mb-10 h-auto max-h-[260px] min-w-0 max-w-full object-contain"
+        className="mb-3 h-auto max-h-[260px] min-w-0 max-w-full object-contain"
       />
       <div className="min-w-0 max-w-full">
         <Image

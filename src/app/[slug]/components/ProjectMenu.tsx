@@ -142,7 +142,7 @@ function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect:
         )}
       >
         <ProjectTabIcon label="Activity" />
-        Activity
+        Latest
       </button>
     </li>
   );

@@ -183,7 +183,7 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
   return (
     <div className="mt-6">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-lg font-medium">Activity</h3>
+        <h3 className="text-lg font-medium">Latest</h3>
         <ActivityTypeFilter
           categories={categories}
           selected={selectedCategories}
