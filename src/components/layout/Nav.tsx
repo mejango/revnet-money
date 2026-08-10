@@ -14,7 +14,7 @@ export function Nav() {
     <nav className="text-zinc-50 border-b border-zinc-100">
       <div
         data-site-nav-layout
-        className={`mx-auto grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3 2xl:grid-cols-[auto_minmax(6rem,1fr)_minmax(12rem,32rem)_auto] ${
+        className={`mx-auto grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-[clamp(0.5rem,1.5vw,2rem)] gap-y-1 px-4 py-3 lg:grid-cols-[auto_minmax(max-content,1fr)_minmax(12rem,32rem)_auto] ${
           isHomepage ? "max-w-[1800px]" : "max-w-[1536px]"
         }`}
       >
@@ -32,7 +32,7 @@ export function Nav() {
         </Link>
         <div
           aria-label="Revnet guides"
-          className="col-start-1 row-start-2 flex items-center gap-1 whitespace-nowrap text-xs text-zinc-600 sm:gap-2 sm:text-sm 2xl:col-start-2 2xl:row-start-1 2xl:justify-self-center"
+          className="col-start-1 row-start-2 flex items-center gap-1 whitespace-nowrap text-xs text-zinc-600 sm:gap-2 sm:text-sm lg:col-start-2 lg:row-start-1 lg:justify-self-center"
         >
           <Link href="/learn" className="underline-offset-4 hover:underline hover:text-zinc-900">
             Learn
@@ -52,13 +52,13 @@ export function Nav() {
         </div>
         <div
           data-site-nav-search
-          className="col-start-2 row-start-1 w-full min-w-0 max-w-lg justify-self-center 2xl:col-start-3"
+          className="col-start-2 row-start-1 w-full min-w-0 max-w-lg justify-self-center lg:col-start-3"
         >
           <RevnetSearch />
         </div>
         <div
           data-site-nav-wallet
-          className="col-start-3 row-start-1 flex min-w-0 max-w-[55vw] items-stretch justify-self-end sm:max-w-none 2xl:col-start-4 [&>*]:min-w-0 [&>*]:max-w-full [&_button]:max-w-full [&>button]:min-h-11"
+          className="col-start-3 row-start-1 flex min-w-0 max-w-[55vw] items-stretch justify-self-end sm:max-w-none lg:col-start-4 [&>*]:min-w-0 [&>*]:max-w-full [&_button]:max-w-full [&>button]:min-h-11"
         >
           <WalletButton />
         </div>
