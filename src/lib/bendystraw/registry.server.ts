@@ -121,9 +121,14 @@ const INDEXED_PROJECT_FIELDS = `
   logoUri
   projectTagline
   tokenSymbol
+  decimals
+  currency
   isRevnet
   createdAt
   volume
+  trendingScore
+  trendingVolume
+  trendingPaymentsCount
 `;
 
 export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>> = {

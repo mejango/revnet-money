@@ -139,7 +139,14 @@ export type IndexedProjectSummary = Pick<
   | "suckerGroupId"
   | "tokenSymbol"
   | "version"
-> & { volume: BigNumberish };
+> & {
+  volume: BigNumberish;
+  currency?: BigNumberish | null;
+  decimals?: number | null;
+  trendingPaymentsCount?: number;
+  trendingScore?: BigNumberish;
+  trendingVolume?: BigNumberish;
+};
 export type IndexedProjectsQueryVariables = {
   where: BendystrawFilter;
   orderBy?: string;
