@@ -6,6 +6,7 @@ import {
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { gasWithHeadroom } from "@/lib/gas";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { getAccount } from "wagmi/actions";
 import { Address, encodeFunctionData } from "viem";
@@ -71,7 +72,7 @@ export function useOperatorWrites() {
             from: account,
             to: write.address,
             value: 0n,
-            gas: gas + 50_000n,
+            gas: gasWithHeadroom(gas),
             data: encodeFunctionData({
               abi: write.abi,
               functionName: write.functionName,

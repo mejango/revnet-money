@@ -14,6 +14,7 @@ import {
 } from "@/lib/transaction-activity";
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
+import { gasWithHeadroom } from "@/lib/gas";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData, isAddress, type Abi, type Address, type Hex } from "viem";
@@ -415,12 +416,12 @@ export function useSendRelayrTx() {
       }
       const publicClient = getPublicClient(config, { chainId: payment.chain });
       if (!publicClient) throw new Error("Relayr payment network is unavailable.");
-      await publicClient.estimateGas({
+      const gas = gasWithHeadroom(await publicClient.estimateGas({
         account: address,
         to: payment.target,
         value,
         data: payment.calldata,
-      });
+      }));
       const accountBeforeSend = getAccount(config).address;
       if (!accountBeforeSend || accountBeforeSend.toLowerCase() !== address.toLowerCase()) {
         throw new Error("Connected account changed. Review the Relayr payment again.");
@@ -450,6 +451,7 @@ export function useSendRelayrTx() {
         to: payment.target,
         value,
         data: payment.calldata,
+        gas,
       });
       const safe = safeConnection(config);
       const activityId = remembered

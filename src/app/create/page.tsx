@@ -5,6 +5,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxQuote } from "@/hooks/useReviewedRelayr";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { withSchema } from "@/lib/formValidation";
+import { gasWithHeadroom } from "@/lib/gas";
 import { FormProvider } from "@/lib/forms";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { wagmiConfig } from "@/lib/wagmiConfig";
@@ -144,8 +145,7 @@ export default function Page() {
           from: address,
           to: request.address,
           value: request.value,
-          // Use the estimated gas but add a buffer for the trustedForwarder.
-          gas: gasEstimate + BigInt(120_000n),
+          gas: gasWithHeadroom(gasEstimate),
           data: encodedData,
         },
         chainId,

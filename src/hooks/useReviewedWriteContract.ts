@@ -26,7 +26,13 @@ import {
   useWaitForTransactionReceipt as useWagmiWaitForTransactionReceipt,
   useWriteContract as useWagmiWriteContract,
 } from "wagmi";
-import { getAccount, simulateContract, waitForTransactionReceipt } from "wagmi/actions";
+import {
+  getAccount,
+  getPublicClient,
+  simulateContract,
+  waitForTransactionReceipt,
+} from "wagmi/actions";
+import { gasWithHeadroom } from "@/lib/gas";
 
 const SAFE_PREFIX: Partial<Record<number, string>> = {
   1: "eth",
@@ -258,12 +264,25 @@ export function useWriteContract(
         chainId,
         account: reviewedAccount,
       } as Parameters<typeof simulateContract>[1]);
+      const publicClient = getPublicClient(config, { chainId });
+      if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
+      const estimateRequest = {
+        ...variables,
+        gas: undefined,
+        account: reviewedAccount,
+      };
+      const estimate = await publicClient.estimateContractGas(
+        estimateRequest as Parameters<typeof publicClient.estimateContractGas>[0],
+      );
       const liveAccount = getAccount(config).address;
       if (!liveAccount || liveAccount.toLowerCase() !== reviewedAccount.toLowerCase()) {
         throw new Error("Connected account changed. Review the transaction again.");
       }
       const hash = await mutation.writeContractAsync(
-        simulation.request as Parameters<typeof mutation.writeContractAsync>[0],
+        {
+          ...simulation.request,
+          gas: gasWithHeadroom(estimate),
+        } as Parameters<typeof mutation.writeContractAsync>[0],
       );
       followSubmission(config, hash, chainId, functionName, reviewedAccount, callKey);
       return hash;

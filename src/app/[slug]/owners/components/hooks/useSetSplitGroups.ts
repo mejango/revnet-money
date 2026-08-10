@@ -13,6 +13,7 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useJBContractContext } from "@/lib/nana/project";
+import { gasWithHeadroom } from "@/lib/gas";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
@@ -108,7 +109,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
               from: userAddress,
               to: controller,
               value: 0n,
-              gas: gasEstimate + 50_000n,
+              gas: gasWithHeadroom(gasEstimate),
               data: encodeFunctionData({
                 abi: jbControllerAbi,
                 functionName: "setSplitGroupsOf",

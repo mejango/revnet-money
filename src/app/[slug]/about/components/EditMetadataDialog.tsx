@@ -26,6 +26,7 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useTokenA } from "@/hooks/useTokenA";
+import { gasWithHeadroom } from "@/lib/gas";
 import type { Project } from "@/lib/bendystraw/types";
 import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
 import { FormProvider, type FormHelpers } from "@/lib/forms";
@@ -281,7 +282,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             from: address,
             to: controller,
             value: 0n,
-            gas: gasEstimate + 50_000n,
+            gas: gasWithHeadroom(gasEstimate),
             data: encodeFunctionData({ abi: jbControllerAbi, functionName: "setUriOf", args }),
           },
           chainId,

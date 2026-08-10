@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     connector: { id: "injected", name: "Injected" } as { id: string; name: string } | undefined,
   },
   getAccount: vi.fn(),
+  estimateContractGas: vi.fn(),
   simulateContract: vi.fn(),
   waitForTransactionReceipt: vi.fn(),
   submit: vi.fn(),
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
+  getPublicClient: () => ({ estimateContractGas: mocks.estimateContractGas }),
   simulateContract: mocks.simulateContract,
   waitForTransactionReceipt: mocks.waitForTransactionReceipt,
 }));
@@ -78,6 +80,7 @@ beforeEach(() => {
   };
   mocks.getAccount.mockImplementation(() => mocks.account);
   mocks.simulateContract.mockImplementation(async (_config, request) => ({ request }));
+  mocks.estimateContractGas.mockResolvedValue(50_000n);
   mocks.submit.mockResolvedValue(HASH);
   mocks.waitForTransactionReceipt.mockImplementation(() => new Promise(() => undefined));
   mocks.wagmiReceipt.mockReturnValue({
@@ -113,7 +116,7 @@ describe("reviewed write hook", () => {
       expect(request).toMatchObject({
         address: TARGET,
         account: ACCOUNT,
-        gas: 45_000n,
+        gas: 100_000n,
       });
       return HASH;
     });

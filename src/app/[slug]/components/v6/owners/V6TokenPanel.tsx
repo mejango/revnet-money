@@ -27,6 +27,7 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
+import { gasWithHeadroom } from "@/lib/gas";
 import {
   useJBContractContext,
   useJBProjectMetadataContext,
@@ -416,7 +417,7 @@ function TokenEditDialog({
               from: address,
               to: state.controller,
               value: 0n,
-              gas: gas + (state.token ? 50_000n : 150_000n),
+              gas: gasWithHeadroom(gas),
               data: call.data,
             },
             version: 6 as const,
