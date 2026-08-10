@@ -16,7 +16,7 @@ function usd(value: number) {
 
 export function SecuredReserves({ data }: { data: HomepageReserves }) {
   return (
-    <section className="flex flex-col gap-3 border-y border-teal-100 py-4 sm:gap-4">
+    <section className="flex flex-col gap-3 border-b border-teal-100 pb-4 sm:gap-4">
       <p className="text-base font-medium leading-snug sm:text-lg">
         Revnets currently secure{" "}
         <span className="group relative inline-flex">

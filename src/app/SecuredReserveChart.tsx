@@ -124,7 +124,7 @@ export function SecuredReserveChart({ points }: { points: HomepageReserves["poin
               points={path}
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.25"
+              strokeWidth="2"
               vectorEffect="non-scaling-stroke"
             />
             {hovered ? (
