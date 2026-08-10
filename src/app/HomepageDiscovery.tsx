@@ -61,30 +61,28 @@ export async function HomepageDiscovery() {
     getHomepageReserves(),
   ]);
   return (
-    <>
-      <SecuredReserves data={reserves} />
-      <HomepageDiscoveryLayout
-        hero={<HeroColumn />}
-        activity={
-          <DashboardColumn title="Fresh activity">
-            <HomepageActivityFeed
-              initialEvents={activity.slice(0, 8)}
-              initialHasMore={activity.length > 8}
-            />
-          </DashboardColumn>
-        }
-        trending={
-          <DashboardColumn title="Trending">
-            <ProjectRows projects={trending} />
-          </DashboardColumn>
-        }
-        top={
-          <DashboardColumn title="Top revnets">
-            <TopProjectsTable />
-          </DashboardColumn>
-        }
-      />
-    </>
+    <HomepageDiscoveryLayout
+      hero={<HeroColumn />}
+      summary={<SecuredReserves data={reserves} />}
+      activity={
+        <DashboardColumn title="Fresh activity">
+          <HomepageActivityFeed
+            initialEvents={activity.slice(0, 8)}
+            initialHasMore={activity.length > 8}
+          />
+        </DashboardColumn>
+      }
+      trending={
+        <DashboardColumn title="Trending">
+          <ProjectRows projects={trending} />
+        </DashboardColumn>
+      }
+      top={
+        <DashboardColumn title="Top revnets">
+          <TopProjectsTable />
+        </DashboardColumn>
+      }
+    />
   );
 }
 

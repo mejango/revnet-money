@@ -11,6 +11,7 @@ import { getHomepageEthPrice, getHomepageSuckerGroups } from "./getTopProjects";
 export type HomepageReserves = {
   eth: number;
   usdc: number;
+  totalUsd: number;
   otherAssets: number;
   points: { timestamp: number; valueUsd: number }[];
 };
@@ -91,11 +92,12 @@ const cachedReserves = unstable_cache(
     return {
       eth,
       usdc,
+      totalUsd: eth * (ethPrice ?? 0) + usdc,
       otherAssets: other.size,
       points: raw.filter((_, index) => index % stride === 0 || index === raw.length - 1),
     };
   },
-  ["revnet-homepage-reserves-v1"],
+  ["revnet-homepage-reserves-v2"],
   { revalidate: 600 },
 );
 
@@ -103,6 +105,6 @@ export async function getHomepageReserves(): Promise<HomepageReserves> {
   try {
     return await cachedReserves();
   } catch {
-    return { eth: 0, usdc: 0, otherAssets: 0, points: [] };
+    return { eth: 0, usdc: 0, totalUsd: 0, otherAssets: 0, points: [] };
   }
 }
