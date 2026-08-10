@@ -6,13 +6,13 @@ import { AuditPromptLink } from "@/components/AuditPromptLink";
 import { ChainLogo } from "@/components/ChainLogo";
 import { DateRelative } from "@/components/DateRelative";
 import { IpfsImage } from "@/components/IpfsImage";
-import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { ProjectLink } from "@/components/ProjectLink";
 import { ActivityEventsOperation, IndexedProjectsOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { ActivityEventsQuery, IndexedProjectSummary } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
 import { formatCompact } from "@/lib/number";
+import { formatEthAddress } from "@/lib/utils";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import Image from "next/image";
 import Link from "next/link";
@@ -228,7 +228,7 @@ function ActivityRows({ events }: { events: RawActivity[] }) {
         const href = `/${JB_CHAINS[chainId]?.slug ?? "eth"}:${project.projectId}`;
         const activity = mappedById.get(event.id);
         if (!activity) return null;
-        const chain = JB_CHAINS[chainId].chain;
+        const explorerUrl = JB_CHAINS[chainId]?.chain.blockExplorers?.default.url;
         const isInflow =
           activity.type === "in" || activity.type === "addToBalance" || activity.type === "swapBuy";
         const isOutflow = activity.type === "out" || activity.type === "swapSell";
@@ -291,7 +291,18 @@ function ActivityRows({ events }: { events: RawActivity[] }) {
                   {name}
                 </ProjectLink>
                 <div className="mt-1 text-sm">
-                  <ProfileAvatar address={activity.beneficiary} short chain={chain} />
+                  {explorerUrl ? (
+                    <a
+                      href={`${explorerUrl}/address/${activity.beneficiary}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline decoration-zinc-400 underline-offset-2 hover:text-teal-700"
+                    >
+                      {formatEthAddress(activity.beneficiary)}
+                    </a>
+                  ) : (
+                    <span>{formatEthAddress(activity.beneficiary)}</span>
+                  )}
                   <span className="text-zinc-700">
                     {" "}
                     {activityDescription(activity, tokenSymbol)}
