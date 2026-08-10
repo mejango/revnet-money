@@ -24,6 +24,7 @@ import {
   ProjectErc20TickersOperation,
   ProjectOperation,
   ProjectOperatorOperation,
+  ProjectMomentsOperation,
   ProjectPayersOperation,
   ProjectsByOwnerOperation,
   ProjectWithPermissionsOperation,
@@ -648,6 +649,26 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       }
     }`,
   },
+  [ProjectMomentsOperation.id]: {
+    operationName: "ProjectMoments",
+    query: `query ProjectMoments(
+      $projectId: Int!
+      $chainId: Int!
+      $version: Int!
+      $after: String
+    ) {
+      projectMoments(
+        where: { projectId: $projectId, chainId: $chainId, version: $version }
+        orderBy: "timestamp"
+        orderDirection: "asc"
+        limit: 1000
+        after: $after
+      ) {
+        items { projectId chainId version timestamp balance }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`,
+  },
   [TopSuckerGroupsOperation.id]: {
     operationName: "TopSuckerGroups",
     query: `query TopSuckerGroups($limit: Int, $offset: Int) {
@@ -672,6 +693,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
               tokenSymbol
               logoUri
               projectId
+              version
               isRevnet
             }
           }

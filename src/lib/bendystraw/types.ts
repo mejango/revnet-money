@@ -545,6 +545,26 @@ export type SuckerGroupMomentsQuery = {
   };
 };
 
+export type ProjectMoment = {
+  projectId: number;
+  chainId: number;
+  version: number;
+  timestamp: number;
+  balance: BigNumberish;
+};
+export type ProjectMomentsQueryVariables = {
+  projectId: number;
+  chainId: number;
+  version: number;
+  after?: string;
+};
+export type ProjectMomentsQuery = {
+  projectMoments: {
+    items: ProjectMoment[];
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  };
+};
+
 export type TopSuckerGroupsQueryVariables = { limit?: number; offset?: number };
 export type TopSuckerGroupsQuery = {
   suckerGroups: {
@@ -565,6 +585,7 @@ export type TopSuckerGroupsQuery = {
             | "tokenSymbol"
             | "logoUri"
             | "projectId"
+            | "version"
             | "isRevnet"
           >
         >;

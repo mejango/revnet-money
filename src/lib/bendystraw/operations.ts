@@ -41,6 +41,8 @@ import type {
   ProjectErc20TickersQueryVariables,
   ProjectOperatorQuery,
   ProjectOperatorQueryVariables,
+  ProjectMomentsQuery,
+  ProjectMomentsQueryVariables,
   ProjectPayersQuery,
   ProjectPayersQueryVariables,
   ProjectQuery,
@@ -351,6 +353,17 @@ export const SuckerGroupMomentsOperation = operation<
   variablesWith({ suckerGroupId: isString }, { after: isOptionalString }),
   hasRoot("suckerGroupMoments", "items"),
 );
+export const ProjectMomentsOperation = operation<
+  ProjectMomentsQuery,
+  ProjectMomentsQueryVariables
+>(
+  "project-moments.v1",
+  variablesWith(
+    { projectId: isNumber, chainId: isNumber, version: isNumber },
+    { after: isOptionalString },
+  ),
+  hasRoot("projectMoments", "items"),
+);
 export const TopSuckerGroupsOperation = operation<
   TopSuckerGroupsQuery,
   TopSuckerGroupsQueryVariables
@@ -478,6 +491,7 @@ export const BENDYSTRAW_OPERATIONS = [
   LoansByAccountOperation,
   CashOutTaxSnapshotsOperation,
   SuckerGroupMomentsOperation,
+  ProjectMomentsOperation,
   TopSuckerGroupsOperation,
   ProjectPayersOperation,
   PermissionHoldersOperation,

@@ -1,5 +1,7 @@
 "use client";
 
+import { ChainLogo } from "@/components/ChainLogo";
+import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useMemo, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { HomepageReserves } from "./getHomepageReserves";
 
@@ -83,15 +85,32 @@ export function SecuredReserveChart({ points }: { points: HomepageReserves["poin
 
   return (
     <div>
-      <div className="mb-1 flex min-h-5 items-center justify-end gap-4 text-[11px] text-zinc-500">
+      <div className="mb-1 flex min-h-10 flex-col items-end justify-end gap-1 text-[11px] text-zinc-500">
         {hovered ? (
           <>
-            <span>
-              Date: <span className="tabular-nums text-zinc-900">{date(hovered.timestamp)}</span>
+            <span className="flex flex-wrap justify-end gap-x-4">
+              <span>
+                Date: <span className="tabular-nums text-zinc-900">{date(hovered.timestamp)}</span>
+              </span>
+              <span>
+                Value: <span className="tabular-nums text-zinc-900">{usd(hovered.valueUsd)}</span>
+              </span>
             </span>
-            <span>
-              Value: <span className="tabular-nums text-zinc-900">{usd(hovered.valueUsd)}</span>
-            </span>
+            {hovered.chains.length ? (
+              <span className="flex flex-wrap justify-end gap-x-3 gap-y-1">
+                {hovered.chains.map((chain) => (
+                  <span key={chain.chainId} className="inline-flex items-center gap-1 tabular-nums">
+                    <ChainLogo chainId={chain.chainId as JBChainId} width={11} height={11} />
+                    <span className="sr-only">
+                      {JB_CHAINS[chain.chainId as JBChainId]?.name ?? "Chain " + chain.chainId}: {" "}
+                    </span>
+                    <span className="text-zinc-700">{usd(chain.valueUsd)}</span>
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span className="text-zinc-400">Per-chain history unavailable</span>
+            )}
           </>
         ) : null}
       </div>
@@ -111,7 +130,7 @@ export function SecuredReserveChart({ points }: { points: HomepageReserves["poin
             onFocus={() => setHoveredIndex(chart.plotted.length - 1)}
             onBlur={() => setHoveredIndex(null)}
             onKeyDown={moveSelection}
-            aria-label="Cumulative secured reserve value over time, shown as bars. Focus and use arrow keys to inspect values."
+            aria-label="Cumulative secured reserve value over time, shown as bars. Focus and use arrow keys to inspect total and per-chain values."
           >
             <line
               x1="0"

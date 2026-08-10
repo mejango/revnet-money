@@ -1,8 +1,11 @@
 import "server-only";
 
-import { SuckerGroupMomentsOperation } from "@/lib/bendystraw/operations";
+import {
+  ProjectMomentsOperation,
+  SuckerGroupMomentsOperation,
+} from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import type { SuckerGroupMoment } from "@/lib/bendystraw/types";
+import type { ProjectMoment, SuckerGroupMoment } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
@@ -19,7 +22,11 @@ export type HomepageReserves = {
     usdc: number;
     otherAssets: string[];
   }>;
-  points: { timestamp: number; valueUsd: number }[];
+  points: Array<{
+    timestamp: number;
+    valueUsd: number;
+    chains: Array<{ chainId: number; valueUsd: number }>;
+  }>;
 };
 
 const RESERVE_CHAIN_IDS = [1, 42161, 8453, 10] as const;
@@ -35,6 +42,34 @@ async function momentsFor(suckerGroupId: string): Promise<SuckerGroupMoment[]> {
     });
     items.push(...result.suckerGroupMoments.items);
     const page = result.suckerGroupMoments.pageInfo;
+    after = page.hasNextPage ? (page.endCursor ?? undefined) : undefined;
+    if (!after || cursors.has(after)) break;
+    cursors.add(after);
+  }
+  return items;
+}
+
+async function projectMomentsFor({
+  projectId,
+  chainId,
+  version,
+}: {
+  projectId: number;
+  chainId: number;
+  version: number;
+}): Promise<ProjectMoment[]> {
+  const items: ProjectMoment[] = [];
+  let after: string | undefined;
+  const cursors = new Set<string>();
+  for (;;) {
+    const result = await queryBendystraw(mainnet.id, ProjectMomentsOperation, {
+      projectId,
+      chainId,
+      version,
+      after,
+    });
+    items.push(...result.projectMoments.items);
+    const page = result.projectMoments.pageInfo;
     after = page.hasNextPage ? (page.endCursor ?? undefined) : undefined;
     if (!after || cursors.has(after)) break;
     cursors.add(after);
@@ -98,9 +133,70 @@ const cachedReserves = unstable_cache(
         })),
       )
       .sort((a, b) => a.timestamp - b.timestamp);
+
+    const historicalProjects = supported.flatMap((item) =>
+      (item.group.projects?.items ?? []).map((project) => ({
+        key: `${project.chainId}:${project.version}:${project.projectId}:${item.symbol}`,
+        chainId: project.chainId,
+        projectId: project.projectId,
+        version: project.version,
+        symbol: item.symbol,
+        decimals: item.decimals,
+        currentAmount: Number(formatUnits(BigInt(project.balance), item.decimals)),
+      })),
+    );
+    const projectHistories = await Promise.all(
+      historicalProjects.map(async (project) => ({
+        ...project,
+        moments: await projectMomentsFor(project).catch(() => []),
+      })),
+    );
+    const latestAggregateTimestamp = events.at(-1)?.timestamp;
+    const projectEvents = projectHistories
+      .flatMap((project) =>
+        [
+          ...project.moments.map((moment) => ({
+            key: project.key,
+            chainId: project.chainId,
+            symbol: project.symbol,
+            timestamp: moment.timestamp,
+            amount: Number(formatUnits(BigInt(moment.balance), project.decimals)),
+          })),
+          ...(latestAggregateTimestamp == null
+            ? []
+            : [
+                {
+                  key: project.key,
+                  chainId: project.chainId,
+                  symbol: project.symbol,
+                  timestamp: latestAggregateTimestamp,
+                  amount: project.currentAmount,
+                },
+              ]),
+        ],
+      )
+      .sort((a, b) => a.timestamp - b.timestamp);
+
     const latest = new Map<string, number>();
+    const latestProjects = new Map<
+      string,
+      { chainId: number; symbol: string; amount: number }
+    >();
+    let projectEventIndex = 0;
     const raw = events.map((event) => {
       latest.set(event.groupId, event.amount);
+      while (
+        projectEventIndex < projectEvents.length &&
+        projectEvents[projectEventIndex].timestamp <= event.timestamp
+      ) {
+        const projectEvent = projectEvents[projectEventIndex];
+        latestProjects.set(projectEvent.key, {
+          chainId: projectEvent.chainId,
+          symbol: projectEvent.symbol,
+          amount: projectEvent.amount,
+        });
+        projectEventIndex += 1;
+      }
       const valueUsd = supported.reduce((sum, item) => {
         const amount = latest.get(item.group.id) ?? 0;
         return (
@@ -108,7 +204,19 @@ const cachedReserves = unstable_cache(
           (item.symbol === "ETH" ? amount * (ethPrice ?? 0) : item.symbol === "USDC" ? amount : 0)
         );
       }, 0);
-      return { timestamp: event.timestamp, valueUsd };
+      const chains =
+        latestProjects.size === historicalProjects.length
+          ? RESERVE_CHAIN_IDS.map((chainId) => ({
+              chainId,
+              valueUsd: [...latestProjects.values()].reduce((sum, project) => {
+                if (project.chainId !== chainId) return sum;
+                if (project.symbol === "ETH") return sum + project.amount * (ethPrice ?? 0);
+                if (project.symbol === "USDC") return sum + project.amount;
+                return sum;
+              }, 0),
+            }))
+          : [];
+      return { timestamp: event.timestamp, valueUsd, chains };
     });
     const stride = Math.max(1, Math.ceil(raw.length / 48));
     return {
@@ -128,7 +236,7 @@ const cachedReserves = unstable_cache(
       points: raw.filter((_, index) => index % stride === 0 || index === raw.length - 1),
     };
   },
-  ["revnet-homepage-reserves-v3"],
+  ["revnet-homepage-reserves-v4"],
   { revalidate: 600 },
 );
 
