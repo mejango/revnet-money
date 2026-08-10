@@ -150,11 +150,19 @@ function ProjectRows({ projects }: { projects: IndexedProjectSummary[] }) {
                 <span className="block truncate text-sm font-medium group-hover:text-teal-600">
                   {name}
                 </span>
-                <span className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-zinc-500">
-                  <span>
-                    {(project.trendingPaymentsCount ?? 0).toLocaleString("en-US")} recent payments
+                <span className="mt-0.5 block text-xs leading-snug text-zinc-500">
+                  <span className="block">
+                    Recent payments:{" "}
+                    <span className="tabular-nums text-zinc-600">
+                      {(project.trendingPaymentsCount ?? 0).toLocaleString("en-US")}
+                    </span>
                   </span>
-                  <span>{formatRecentVolume(project)} recent volume</span>
+                  <span className="block">
+                    Recent volume:{" "}
+                    <span className="tabular-nums text-zinc-600">
+                      {formatRecentVolume(project)}
+                    </span>
+                  </span>
                 </span>
               </span>
               <ChainLogo chainId={chainId} width={16} height={16} />
