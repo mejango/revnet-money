@@ -19,13 +19,13 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { cidFromIpfsUri } from "@/lib/ipfs";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { jb721TiersHookAbi, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Address, Hex, isAddress, parseUnits, PublicClient, zeroAddress } from "viem";
-import { useAccount, useConfig, usePublicClient } from "wagmi";
-import { waitForTransactionReceipt } from "wagmi/actions";
+import { useAccount, usePublicClient } from "wagmi";
 import { encodeIpfsCid, ShopInventory, TIER_UNLIMITED_SUPPLY } from "./shopLib";
 import { canAdjust721Tiers } from "./shopPermissions";
 
@@ -288,7 +288,6 @@ export function AddItemsModal({
   categories: { id: number; name: string }[];
   onClose: () => void;
 }) {
-  const config = useConfig();
   const queryClient = useQueryClient();
   const publicClient = usePublicClient({ chainId });
   const { address } = useAccount();
@@ -435,7 +434,7 @@ export function AddItemsModal({
         return;
       }
       requireOnchainExecution(hash, "Shop item update");
-      const receipt = await waitForTransactionReceipt(config, { chainId, hash });
+      const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
       if (receipt.status !== "success") throw new Error("The transaction failed.");
 
       await Promise.all([

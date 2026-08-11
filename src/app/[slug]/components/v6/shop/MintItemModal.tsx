@@ -17,12 +17,12 @@ import {
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { jb721TiersHookAbi, JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { isAddress, zeroAddress, type PublicClient } from "viem";
-import { useAccount, useConfig, usePublicClient } from "wagmi";
-import { waitForTransactionReceipt } from "wagmi/actions";
+import { useAccount, usePublicClient } from "wagmi";
 import { assertCanMint721Tier } from "./shopPermissions";
 
 export function buildOwnerMintTierIds(tierId: number, quantity: number): number[] {
@@ -52,7 +52,6 @@ export function MintItemModal({
   remaining: number;
   onClose: () => void;
 }) {
-  const config = useConfig();
   const queryClient = useQueryClient();
   const publicClient = usePublicClient({ chainId });
   const { address } = useAccount();
@@ -135,7 +134,7 @@ export function MintItemModal({
         return;
       }
       requireOnchainExecution(hash, "Free shop item mint");
-      const receipt = await waitForTransactionReceipt(config, { chainId, hash });
+      const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
       if (receipt.status !== "success") throw new Error("The mint failed.");
 
       await Promise.all([

@@ -7,6 +7,7 @@ import {
 import { ChainLogo } from "@/components/ChainLogo";
 import { Revalidating } from "@/components/ui/Revalidating";
 import { cachedQuery } from "@/lib/query-persist";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import {
   Table,
@@ -637,7 +638,7 @@ export function AddLiquidityForm({
             setReviewed(null);
             return;
           }
-          const receipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+          const receipt = await waitForReceiptWithRetry(publicClient, approvalHash);
           if (receipt.status !== "success") {
             throw new Error(`Permit2 authorization ${approvalHash} reverted.`);
           }
@@ -659,7 +660,7 @@ export function AddLiquidityForm({
         setReviewed(null);
         return;
       }
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await waitForReceiptWithRetry(publicClient, hash);
       if (receipt.status !== "success") throw new Error(`Liquidity mint ${hash} reverted.`);
       setStatus("Liquidity added successfully.");
       setReviewed(null);

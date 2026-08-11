@@ -36,7 +36,10 @@ import {
   payTokenKey,
   V6PayMode,
 } from "@/lib/v6/pay";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import {
+  isTransactionReceiptUnavailableError,
+  waitForReceiptWithRetry,
+} from "@/lib/waitForReceipt";
 import {
   JB_CHAINS,
   JBChainId,
@@ -943,11 +946,6 @@ export function V6PayCard() {
           publicClient as PublicClient,
           approvalHash,
         );
-        if (!approvalReceipt) {
-          throw new Error(
-            `Swap authorization ${approvalHash} was submitted, but confirmation is unavailable.`,
-          );
-        }
         if (approvalReceipt.status !== "success") {
           throw new Error(`Swap authorization ${approvalHash} reverted onchain.`);
         }
@@ -1004,14 +1002,6 @@ export function V6PayCard() {
       }
       requireOnchainExecution(hash, prepared.mode === "pay" ? "Payment" : "Balance addition");
       const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
-      if (!receipt) {
-        // The wallet already broadcast the transaction. A lagging or
-        // load-balanced RPC can fail to track its receipt; keep the honest
-        // submitted state instead of claiming the payment failed or inviting
-        // a duplicate submission.
-        setPhase("pending");
-        return;
-      }
       if (receipt.status !== "success") {
         throw new Error(`Transaction ${hash} reverted onchain.`);
       }
@@ -1020,6 +1010,12 @@ export function V6PayCard() {
       if (isSafeProposalPendingError(err)) {
         setPhase("safe-proposed");
         setTxHash(err.hash);
+        return;
+      }
+      if (isTransactionReceiptUnavailableError(err)) {
+        setPhase("pending");
+        setTxHash(err.hash);
+        setTxError(err.message);
         return;
       }
       setPhase("ready");

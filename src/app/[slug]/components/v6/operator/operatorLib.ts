@@ -3,6 +3,7 @@ import { requireOnchainExecution } from "@/hooks/useReviewedWriteContract";
 import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import type { PermissionHolder, PermissionHolderFilter } from "@/lib/bendystraw/types";
 import { wagmiConfig } from "@/lib/wagmiConfig";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { JB_CHAINS, JBChainId, jbContractAddress } from "@bananapus/nana-sdk-core";
 import { Abi, Address, PublicClient } from "viem";
 import { getAccount, getPublicClient, switchChain } from "wagmi/actions";
@@ -112,7 +113,7 @@ export async function runSequentialWrites({
     });
     onProgress(`Waiting for confirmation on ${name}…`);
     requireOnchainExecution(hash, `${write.functionName} on ${name}`);
-    const receipt = await client.waitForTransactionReceipt({ hash });
+    const receipt = await waitForReceiptWithRetry(client, hash);
     if (receipt.status !== "success") {
       throw new Error(`${write.functionName} reverted on ${name} (${hash}).`);
     }

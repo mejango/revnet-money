@@ -14,15 +14,20 @@ const mocks = vi.hoisted(() => ({
   estimateContractGas: vi.fn(),
   simulateContract: vi.fn(),
   waitForTransactionReceipt: vi.fn(),
+  getTransactionReceipt: vi.fn(),
   submit: vi.fn(),
   wagmiReceipt: vi.fn(),
 }));
 
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
-  getPublicClient: () => ({ estimateContractGas: mocks.estimateContractGas }),
+  getPublicClient: () => ({
+    chain: { id: 11155111 },
+    estimateContractGas: mocks.estimateContractGas,
+    waitForTransactionReceipt: mocks.waitForTransactionReceipt,
+    getTransactionReceipt: mocks.getTransactionReceipt,
+  }),
   simulateContract: mocks.simulateContract,
-  waitForTransactionReceipt: mocks.waitForTransactionReceipt,
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -83,6 +88,7 @@ beforeEach(() => {
   mocks.estimateContractGas.mockResolvedValue(50_000n);
   mocks.submit.mockResolvedValue(HASH);
   mocks.waitForTransactionReceipt.mockImplementation(() => new Promise(() => undefined));
+  mocks.getTransactionReceipt.mockRejectedValue(new Error("Receipt not found"));
   mocks.wagmiReceipt.mockReturnValue({
     data: undefined,
     error: null,
@@ -288,6 +294,23 @@ describe("reviewed write hook", () => {
     expect(reviewer).toHaveBeenCalledOnce();
     expect(mocks.simulateContract).toHaveBeenCalledOnce();
     expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("tracks success through a direct receipt read when the watcher rejects", async () => {
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    mocks.waitForTransactionReceipt.mockRejectedValue(new Error("Invalid RPC parameters"));
+    mocks.getTransactionReceipt.mockResolvedValue({ status: "success" });
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    await waitFor(() =>
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({ status: "success" }),
+    );
+    expect(mocks.getTransactionReceipt).toHaveBeenCalledWith({ hash: HASH });
   });
 
   it("records Safe proposal hashes as asynchronous and blocks duplicate execution", async () => {

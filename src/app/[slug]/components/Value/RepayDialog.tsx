@@ -17,6 +17,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import { repayCeilingFor, repayPrincipalFor } from "@/lib/loanFees";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
@@ -434,7 +435,7 @@ export function RepayDialog({
       });
 
       requireOnchainExecution(approveHash, "Token approval");
-      const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      const approvalReceipt = await waitForReceiptWithRetry(publicClient, approveHash);
       if (approvalReceipt.status !== "success") {
         throw new Error(`Token approval ${approveHash} reverted onchain.`);
       }
@@ -520,9 +521,7 @@ export function RepayDialog({
           });
 
           requireOnchainExecution(approveHash, "Token approval");
-          const approvalReceipt = await publicClient.waitForTransactionReceipt({
-            hash: approveHash,
-          });
+          const approvalReceipt = await waitForReceiptWithRetry(publicClient, approveHash);
           if (approvalReceipt.status !== "success") {
             throw new Error(`Token approval ${approveHash} reverted onchain.`);
           }

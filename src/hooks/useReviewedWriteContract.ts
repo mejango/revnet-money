@@ -30,9 +30,9 @@ import {
   getAccount,
   getPublicClient,
   simulateContract,
-  waitForTransactionReceipt,
 } from "wagmi/actions";
 import { gasWithHeadroom } from "@/lib/gas";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 
 const SAFE_PREFIX: Partial<Record<number, string>> = {
   1: "eth",
@@ -149,7 +149,9 @@ function followSubmission(
     return;
   }
   updateTransactionActivity(id, { status: "pending", message: "Pending onchain confirmation." });
-  void waitForTransactionReceipt(config, { chainId, hash })
+  const publicClient = getPublicClient(config, { chainId });
+  if (!publicClient) return;
+  void waitForReceiptWithRetry(publicClient, hash)
     .then((receipt) => {
       updateTransactionActivity(id, {
         status: receipt.status === "success" ? "success" : "failed",
@@ -330,6 +332,8 @@ export function useWaitForTransactionReceipt(
   );
   const isSafeSubmission = tracked?.kind === "safe";
   const isSafeProposal = tracked?.status === "safe-proposed";
+  const trackedDirectSuccess = tracked?.kind === "direct" && tracked.status === "success";
+  const trackedDirectFailure = tracked?.kind === "direct" && tracked.status === "failed";
   const query = useWagmiWaitForTransactionReceipt({
     ...parameters,
     query: {
@@ -344,14 +348,20 @@ export function useWaitForTransactionReceipt(
     isLoading: isSafeSubmission ? isSafeProposal : query.isLoading,
     isSuccess: isSafeSubmission
       ? tracked?.status === "success"
-      : query.isSuccess && receipt?.status === "success",
-    isError: isSafeSubmission ? tracked?.status === "failed" : query.isError || reverted,
+      : trackedDirectSuccess || (query.isSuccess && receipt?.status === "success"),
+    isError: isSafeSubmission
+      ? tracked?.status === "failed"
+      : trackedDirectFailure || reverted || (!tracked && query.isError),
     error:
       isSafeSubmission && tracked?.status === "failed"
         ? new Error(tracked.message)
-        : reverted
-          ? new Error(`Transaction ${hash} reverted onchain.`)
-          : query.error,
+        : trackedDirectFailure
+          ? new Error(tracked.message)
+          : reverted
+            ? new Error(`Transaction ${hash} reverted onchain.`)
+            : !tracked
+              ? query.error
+              : undefined,
     isSafeProposal,
     statusMessage: tracked?.message,
   };

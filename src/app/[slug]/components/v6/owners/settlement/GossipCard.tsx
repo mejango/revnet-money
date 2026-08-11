@@ -6,6 +6,7 @@ import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { toast } from "@/components/ui/use-toast";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { formatWalletError } from "@/lib/utils";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { buildSyncAccountingDataTx } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
@@ -100,7 +101,7 @@ function SyncButton({
             return;
           }
           if (!publicClient) throw new Error("Public client unavailable.");
-          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          const receipt = await waitForReceiptWithRetry(publicClient, hash);
           if (receipt.status !== "success") {
             throw new Error(`Accounting sync ${hash} reverted onchain.`);
           }

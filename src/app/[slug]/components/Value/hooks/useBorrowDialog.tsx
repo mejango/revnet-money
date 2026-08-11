@@ -20,6 +20,7 @@ import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
   getRevnetLoanContract,
   JB_TOKEN_DECIMALS,
@@ -490,9 +491,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           ],
         });
         requireOnchainExecution(txHash, "Borrow permission grant");
-        const permissionReceipt = await publicClient.waitForTransactionReceipt({
-          hash: txHash,
-        });
+        const permissionReceipt = await waitForReceiptWithRetry(publicClient, txHash);
         if (permissionReceipt.status !== "success") {
           throw new Error(`Permission grant ${txHash} reverted onchain.`);
         }

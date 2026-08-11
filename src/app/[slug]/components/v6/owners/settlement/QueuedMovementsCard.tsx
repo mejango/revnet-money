@@ -13,6 +13,7 @@ import {
   findToRemoteValue,
   V6BridgeRow,
 } from "@/lib/v6/suckerProofs";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { jbSuckerV6Abi } from "@bananapus/nana-sdk-core/v6";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -78,7 +79,7 @@ function ClaimButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }) 
             return;
           }
           if (!publicClient) throw new Error("Public client unavailable.");
-          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          const receipt = await waitForReceiptWithRetry(publicClient, hash);
           if (receipt.status !== "success") {
             throw new Error(`Claim ${hash} reverted onchain.`);
           }
@@ -169,7 +170,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
             return;
           }
           if (!publicClient) throw new Error("Public client unavailable.");
-          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          const receipt = await waitForReceiptWithRetry(publicClient, hash);
           if (receipt.status !== "success") {
             throw new Error(`Bridge transaction ${hash} reverted onchain.`);
           }

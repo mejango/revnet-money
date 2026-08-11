@@ -36,6 +36,7 @@ import {
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { formatEthAddress, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
   JB_CHAINS,
   jbControllerAbi,
@@ -384,7 +385,7 @@ function TokenEditDialog({
           return;
         }
         requireOnchainExecution(hash, deployed ? "Token metadata update" : "Token deployment");
-        const receipt = await clientFor(state.chainId).waitForTransactionReceipt({ hash });
+        const receipt = await waitForReceiptWithRetry(clientFor(state.chainId), hash);
         if (receipt.status !== "success") {
           throw new Error(`Token transaction ${hash} reverted onchain.`);
         }

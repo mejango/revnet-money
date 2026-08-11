@@ -19,6 +19,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { buildDeployProjectPayerTx, projectPayerFromDeployLogs } from "@bananapus/nana-sdk-core/v6";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -219,7 +220,7 @@ export function PayerDeployForm({
           return;
         }
         requireOnchainExecution(txHash, `Payer deployment on ${chainName}`);
-        const receipt = await client.waitForTransactionReceipt({ hash: txHash });
+        const receipt = await waitForReceiptWithRetry(client, txHash);
         if (receipt.status !== "success") {
           throw new Error(`Payer deployment ${txHash} reverted on ${chainName}.`);
         }

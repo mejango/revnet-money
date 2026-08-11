@@ -6,6 +6,7 @@ import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
 import { toast } from "@/components/ui/use-toast";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { formatWalletError } from "@/lib/utils";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
@@ -86,7 +87,7 @@ function HookActionButton({
             });
             return;
           }
-          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          const receipt = await waitForReceiptWithRetry(publicClient, hash);
           if (receipt.status !== "success") {
             throw new Error(`${label} ${hash} reverted onchain.`);
           }
