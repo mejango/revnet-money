@@ -75,14 +75,14 @@ export async function HomepageDiscovery() {
       trending={
         <DashboardColumn
           title="Trending"
-          headingClassName="hidden lg:flex"
-          panelClassName="lg:h-auto lg:flex-1"
+          headingClassName="hidden xl:flex"
+          panelClassName="xl:h-auto xl:flex-1"
         >
           <ProjectRows projects={trending} />
         </DashboardColumn>
       }
       top={
-        <DashboardColumn title="Top" headingClassName="hidden lg:flex">
+        <DashboardColumn title="Top" headingClassName="hidden xl:flex">
           <TopProjectsTable />
         </DashboardColumn>
       }
@@ -103,7 +103,7 @@ function DashboardColumn({
 }) {
   const id = `home-${title.replaceAll(" ", "-").toLowerCase()}`;
   return (
-    <section className="flex min-w-0 flex-col lg:h-full" aria-labelledby={id}>
+    <section className="flex min-w-0 flex-col xl:h-full" aria-labelledby={id}>
       <h2
         id={id}
         className={`mb-4 min-h-11 items-center text-xl font-semibold md:text-2xl ${headingClassName}`}
