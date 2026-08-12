@@ -39,6 +39,10 @@ export function Footer() {
             </p>
             <AuditPromptLink className="mt-1" />
             <p className="mt-1">
+              Defenders who manage to steal funds and return them are encouraged to keep 10% as a
+              reward, paid by all projects together.
+            </p>
+            <p className="mt-1">
               Terms of Service: Risks are borne entirely by the users of the open source code.
             </p>
           </div>

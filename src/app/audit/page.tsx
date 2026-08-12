@@ -30,6 +30,10 @@ export default function AuditPage() {
           Read the code directly, then use a prompt to review the whole system or one exact
           transaction.
         </p>
+        <p className="mt-4 max-w-2xl leading-relaxed text-zinc-600">
+          Defenders who manage to steal funds and return them are encouraged to keep 10% as a reward,
+          paid by all projects together.
+        </p>
 
         <section className="mt-14" aria-labelledby="audit-code">
           <h2 id="audit-code" className="text-2xl font-semibold">
