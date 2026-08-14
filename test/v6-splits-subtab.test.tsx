@@ -29,32 +29,26 @@ vi.mock("@/lib/bendystraw", () => ({
 
 vi.mock("@/hooks/useAllRulesetsByChain", () => ({
   useAllRulesetsByChain: () => {
-    const data = new Map<number, Array<{ id: number; start: number; metadata: bigint }>>([
-      [
-        8453,
-        [
-          {
-            id: 1_700_000_001,
-            start: 1_700_000_001,
-            metadata: reads.reservedPercentBps[0] << 4n,
-          },
-          {
-            id: 1_700_000_002,
-            start: 1_700_000_002,
-            metadata: reads.reservedPercentBps[1] << 4n,
-          },
-        ],
-      ],
-    ]);
-    for (const [chainId, stages] of Object.entries(reads.extraChainStages)) {
-      data.set(
-        Number(chainId),
-        Array.from({ length: stages }, (_, index) => ({
-          id: 1_800_000_001 + index,
-          start: 1_800_000_001 + index,
+    const data: Record<number, Array<{ id: number; start: number; metadata: bigint }>> = {
+      8453: [
+        {
+          id: 1_700_000_001,
+          start: 1_700_000_001,
           metadata: reads.reservedPercentBps[0] << 4n,
-        })),
-      );
+        },
+        {
+          id: 1_700_000_002,
+          start: 1_700_000_002,
+          metadata: reads.reservedPercentBps[1] << 4n,
+        },
+      ],
+    };
+    for (const [chainId, stages] of Object.entries(reads.extraChainStages)) {
+      data[Number(chainId)] = Array.from({ length: stages }, (_, index) => ({
+        id: 1_800_000_001 + index,
+        start: 1_800_000_001 + index,
+        metadata: reads.reservedPercentBps[0] << 4n,
+      }));
     }
     return { data, isLoading: false };
   },

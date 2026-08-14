@@ -1,7 +1,15 @@
 import { JB_CHAIN_SLUGS, JBChainId } from "@bananapus/nana-sdk-core";
 
-export function parseSlug(slug: string) {
-  const parts = decodeURIComponent(slug.trim()).split(":");
+export function decodeProjectRouteSlug(slug: string): string | null {
+  try {
+    return decodeURIComponent(slug.trim());
+  } catch {
+    return null;
+  }
+}
+
+export function parseDecodedSlug(slug: string) {
+  const parts = slug.trim().split(":");
   if (parts.length !== 2) throw new Error("Invalid project route");
 
   const [chainSlug, rawProjectId] = parts;
@@ -20,6 +28,12 @@ export function parseSlug(slug: string) {
     chainId: chain.chain.id as JBChainId,
     projectId,
   };
+}
+
+export function parseSlug(slug: string) {
+  const decoded = decodeProjectRouteSlug(slug);
+  if (decoded === null) throw new Error("Invalid project route");
+  return parseDecodedSlug(decoded);
 }
 
 /** The route slug (e.g. "eth:3") for a project, or undefined for unknown chains. */

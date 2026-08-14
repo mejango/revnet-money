@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { parseAbi, type Address, type Hex } from "viem";
+import { encodeFunctionData, parseAbi, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -78,6 +78,7 @@ async function freshHarness() {
 
 beforeEach(() => {
   window.localStorage.clear();
+  Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
   mocks.account = {
     address: ACCOUNT,
     chainId: 11155111,
@@ -165,6 +166,50 @@ describe("reviewed write hook", () => {
     expect(reverify).toHaveBeenCalledOnce();
     expect(mocks.simulateContract).toHaveBeenCalledOnce();
     expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("supports a raw preflight without running Viem's CCIP-aware simulation", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const preflightSimulation = vi.fn().mockResolvedValue({ gas: 500_000n });
+    const { result } = renderHook(() => hooks.useWriteContract({ preflightSimulation }));
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    expect(preflightSimulation).toHaveBeenCalledWith(CALL, ACCOUNT);
+    expect(mocks.simulateContract).not.toHaveBeenCalled();
+    expect(mocks.estimateContractGas).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ gas: 500_000n }));
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a Safe raw preflight bounded while signing a zero Safe gas envelope", async () => {
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: { id: "safe", name: "Safe" },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => undefined)),
+    );
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async (request) => {
+      expect(request.calls[0].safeTxGas).toBe(0n);
+      return true;
+    });
+    const preflightSimulation = vi.fn().mockResolvedValue({ gas: 500_000n });
+    const { result } = renderHook(() => hooks.useWriteContract({ preflightSimulation }));
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    expect(preflightSimulation).toHaveBeenCalledWith(CALL, ACCOUNT);
+    expect(mocks.estimateContractGas).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ gas: 0n }));
   });
 
   it("fails closed before simulation when reviewed state changes", async () => {
@@ -296,6 +341,107 @@ describe("reviewed write hook", () => {
     expect(mocks.submit).toHaveBeenCalledOnce();
   });
 
+  it("refreshes a sibling tab's persisted pending lock before opening review", async () => {
+    const { review, activity, hooks } = await freshHarness();
+    activity.transactionActivitySnapshot();
+    const reviewer = vi.fn().mockResolvedValue(true);
+    review.registerTransactionReviewHandler(reviewer);
+    const callKey = `${ACCOUNT.toLowerCase()}:11155111:${TARGET.toLowerCase()}:0:${encodeFunctionData(
+      {
+        abi: ABI,
+        functionName: "transfer",
+        args: [RECIPIENT, 7n],
+      },
+    )}`;
+    window.localStorage.setItem(
+      "revnet:transaction-activities:v1",
+      JSON.stringify([
+        {
+          id: "other-tab:safe-proposal",
+          kind: "safe",
+          title: "Publish project handle",
+          status: "safe-proposed",
+          message: "Awaiting Safe execution",
+          chainId: 11155111,
+          account: ACCOUNT,
+          hash: HASH,
+          safeProposalHash: HASH,
+          callKey,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]),
+    );
+
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toBeInstanceOf(
+      hooks.SafeProposalPendingError,
+    );
+    expect(reviewer).not.toHaveBeenCalled();
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it("serializes simultaneous identical submissions before either wallet prompt", async () => {
+    let tail = Promise.resolve();
+    const lockRequest = vi.fn(async (_name: string, callback: () => Promise<Hex>) => {
+      const previous = tail;
+      let release: () => void = () => {};
+      tail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        return await callback();
+      } finally {
+        release();
+      }
+    });
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: { request: lockRequest },
+    });
+    const { review, hooks } = await freshHarness();
+    const reviewer = vi.fn().mockResolvedValue(true);
+    review.registerTransactionReviewHandler(reviewer);
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    let outcomes: PromiseSettledResult<Hex>[] = [];
+    await act(async () => {
+      outcomes = await Promise.allSettled([
+        result.current.writeContractAsync(CALL as never),
+        result.current.writeContractAsync(CALL as never),
+      ]);
+    });
+
+    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(lockRequest).toHaveBeenCalledTimes(2);
+    expect(reviewer).toHaveBeenCalledOnce();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the connector changes across Safe review", async () => {
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: { id: "safe", name: "Safe" },
+    };
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => {
+      mocks.account = {
+        address: ACCOUNT,
+        chainId: 11155111,
+        connector: { id: "injected", name: "Injected" },
+      };
+      return true;
+    });
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      "Wallet connection changed",
+    );
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
   it("tracks success through a direct receipt read when the watcher rejects", async () => {
     const { review, activity, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
@@ -313,7 +459,7 @@ describe("reviewed write hook", () => {
     expect(mocks.getTransactionReceipt).toHaveBeenCalledWith({ hash: HASH });
   });
 
-  it("records Safe proposal hashes as asynchronous and blocks duplicate execution", async () => {
+  it("persists Safe proposal locks through terminal-history churn and blocks duplicate execution", async () => {
     mocks.account = {
       address: ACCOUNT,
       chainId: 11155111,
@@ -326,6 +472,7 @@ describe("reviewed write hook", () => {
     const { review, activity, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async (request) => {
       expect(request.confirmLabel).toMatch(/propose to Safe/i);
+      expect(request.calls[0].safeTxGas).toBe(0n);
       return true;
     });
     const { result } = renderHook(() => hooks.useWriteContract());
@@ -338,9 +485,22 @@ describe("reviewed write hook", () => {
       status: "safe-proposed",
       safeProposalHash: HASH,
     });
-    await expect(result.current.writeContractAsync(CALL as never)).rejects.toBeInstanceOf(
-      hooks.SafeProposalPendingError,
-    );
+    expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ gas: 0n }));
+    for (let index = 0; index < 25; index += 1) {
+      activity.recordTransactionActivity({
+        id: `completed:${index}`,
+        kind: "direct",
+        title: `Completed ${index}`,
+        status: "success",
+        message: "Confirmed",
+      });
+    }
+
+    const reloaded = await freshHarness();
+    const reloadedHook = renderHook(() => reloaded.hooks.useWriteContract());
+    await expect(
+      reloadedHook.result.current.writeContractAsync(CALL as never),
+    ).rejects.toBeInstanceOf(reloaded.hooks.SafeProposalPendingError);
     expect(mocks.waitForTransactionReceipt).not.toHaveBeenCalled();
   });
 

@@ -8,6 +8,7 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { useCompleteProjectsByOwner } from "@/hooks/useCompleteBendystrawLists";
 import type { OwnedProjectRow } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
+import { readAuthorityIdentity } from "@/lib/cross-chain-authority";
 import type { JBChainId } from "@/lib/nana/types";
 import { fetchSafesOwnedBy, type OwnedSafe } from "@/lib/safeOwners";
 import { slugFor } from "@/lib/slug";
@@ -15,23 +16,6 @@ import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Address } from "viem";
-
-const safeThresholdAbi = [
-  {
-    type: "function",
-    name: "getOwners",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "address[]" }],
-  },
-  {
-    type: "function",
-    name: "getThreshold",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint256" }],
-  },
-] as const;
 
 type SafePolicy = { threshold: number; ownerCount: number };
 
@@ -110,8 +94,8 @@ export function OwnedProjects({ address }: { address: Address }) {
     safeAddresses.length > 0,
   );
 
-  // Threshold badge data via the same onchain getOwners/getThreshold probe the
-  // operator account card uses.
+  // Safe-service addresses are untrusted input. Authenticate the proxy and
+  // bound every dynamic policy response before showing threshold metadata.
   const safePoliciesQuery = useQuery({
     queryKey: ["safe-policies", safeAddresses],
     enabled: safes.length > 0,
@@ -122,21 +106,11 @@ export function OwnedProjects({ address }: { address: Address }) {
           if (!JB_CHAINS[safe.chainId as JBChainId]) return null;
           try {
             const client = publicClientFor(safe.chainId as JBChainId);
-            const [owners, threshold] = await Promise.all([
-              client.readContract({
-                address: safe.safe,
-                abi: safeThresholdAbi,
-                functionName: "getOwners",
-              }),
-              client.readContract({
-                address: safe.safe,
-                abi: safeThresholdAbi,
-                functionName: "getThreshold",
-              }),
-            ]);
+            const identity = await readAuthorityIdentity(client, safe.safe);
+            if (identity?.kind !== "safe") return null;
             return [
               `${safe.chainId}:${safe.safe.toLowerCase()}`,
-              { threshold: Number(threshold), ownerCount: owners.length },
+              { threshold: identity.threshold, ownerCount: identity.owners.length },
             ];
           } catch {
             return null;

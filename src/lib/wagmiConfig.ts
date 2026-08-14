@@ -3,6 +3,7 @@
 import { lazyParaConnector } from "@/providers/lazy-para-connector";
 import { createConfig } from "wagmi";
 import { injected } from "wagmi/connectors/injected";
+import { safe } from "wagmi/connectors/safe";
 import { IS_DETERMINISTIC_BROWSER, PARA_EMBEDDED_WALLET_ENABLED } from "./browserEnvironment";
 import { SUPPORTED_CHAINS, transports } from "./wagmiTransports";
 
@@ -15,8 +16,8 @@ export const wagmiConfig = createConfig({
   connectors: IS_DETERMINISTIC_BROWSER
     ? []
     : PARA_EMBEDDED_WALLET_ENABLED
-      ? [injected({ shimDisconnect: true }), lazyParaConnector()]
-      : [injected({ shimDisconnect: true })],
+      ? [safe(), injected({ shimDisconnect: true }), lazyParaConnector()]
+      : [safe(), injected({ shimDisconnect: true })],
   multiInjectedProviderDiscovery: !IS_DETERMINISTIC_BROWSER,
   ssr: true,
   transports,

@@ -29,34 +29,80 @@ export type TransactionActivity = {
 };
 
 const STORAGE_KEY = "revnet:transaction-activities:v1";
+const MAX_TERMINAL_ACTIVITIES = 20;
 const EMPTY: TransactionActivity[] = [];
 let snapshot: TransactionActivity[] = EMPTY;
 let hydrated = false;
+let persistedValue: string | null | undefined;
+let storageWriteFailed = false;
 const listeners = new Set<() => void>();
+
+function isInFlight(status: TransactionActivityStatus): boolean {
+  return status === "submitted" || status === "pending" || status === "safe-proposed";
+}
+
+/**
+ * Keep every unresolved activity so its persisted call key continues to block
+ * an identical submission after a reload. Only completed history is cosmetic
+ * and may be capped.
+ */
+function retainActivities(activities: TransactionActivity[]): TransactionActivity[] {
+  let terminalCount = 0;
+  return activities.filter((activity) => {
+    if (isInFlight(activity.status)) return true;
+    terminalCount += 1;
+    return terminalCount <= MAX_TERMINAL_ACTIVITIES;
+  });
+}
 
 function hydrate(): void {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
   try {
-    const parsed = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEY) ?? "[]",
-    ) as TransactionActivity[];
-    if (Array.isArray(parsed)) snapshot = parsed.slice(0, 20);
+    persistedValue = window.localStorage.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(persistedValue ?? "[]") as TransactionActivity[];
+    if (Array.isArray(parsed)) snapshot = retainActivities(parsed);
   } catch {
     snapshot = EMPTY;
   }
 }
 
 function emit(next: TransactionActivity[]): void {
-  snapshot = next.slice(0, 20);
+  snapshot = retainActivities(next);
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+      const serialized = JSON.stringify(snapshot);
+      window.localStorage.setItem(STORAGE_KEY, serialized);
+      persistedValue = serialized;
+      storageWriteFailed = false;
     } catch {
       // Status remains available for this session when storage is unavailable.
+      storageWriteFailed = true;
     }
   }
   listeners.forEach((listener) => listener());
+}
+
+/**
+ * Re-read the persisted lock set before a write. Storage events are not sent
+ * to the tab which made a change, and an already-open sibling tab may have
+ * hydrated before another tab proposed a Safe transaction.
+ */
+export function refreshTransactionActivities(): TransactionActivity[] {
+  hydrate();
+  if (typeof window === "undefined" || storageWriteFailed) return snapshot;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw === persistedValue) return snapshot;
+    persistedValue = raw;
+    const parsed = JSON.parse(raw ?? "[]") as TransactionActivity[];
+    snapshot = Array.isArray(parsed) ? retainActivities(parsed) : EMPTY;
+    listeners.forEach((listener) => listener());
+  } catch {
+    // A malformed or inaccessible sibling-tab value is not trusted.
+    snapshot = EMPTY;
+  }
+  return snapshot;
 }
 
 export function transactionActivitySnapshot(): TransactionActivity[] {
@@ -81,7 +127,7 @@ export function recordTransactionActivity(
   activity: Omit<TransactionActivity, "createdAt" | "updatedAt"> &
     Partial<Pick<TransactionActivity, "createdAt" | "updatedAt">>,
 ): TransactionActivity {
-  hydrate();
+  refreshTransactionActivities();
   const now = Date.now();
   const current = snapshot.find((row) => row.id === activity.id);
   const next: TransactionActivity = {
@@ -98,7 +144,7 @@ export function updateTransactionActivity(
   id: string,
   patch: Partial<Omit<TransactionActivity, "id" | "createdAt">>,
 ): void {
-  hydrate();
+  refreshTransactionActivities();
   const current = snapshot.find((row) => row.id === id);
   if (!current) return;
   emit([
@@ -108,7 +154,7 @@ export function updateTransactionActivity(
 }
 
 export function dismissTransactionActivity(id: string): void {
-  hydrate();
+  refreshTransactionActivities();
   emit(snapshot.filter((row) => row.id !== id));
 }
 

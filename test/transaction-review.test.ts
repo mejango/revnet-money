@@ -85,6 +85,20 @@ describe("transaction review fail-closed boundary", () => {
     ]);
   });
 
+  it("serializes the exact zero Safe transaction gas envelope", async () => {
+    let reviewed: TransactionReviewRequest | undefined;
+    unregister = registerTransactionReviewHandler(async (request) => {
+      reviewed = request;
+      return true;
+    });
+    const call = { ...transferCall(), safeTxGas: 0n };
+
+    await requireContractTransactionReview(call);
+
+    expect(reviewed?.calls[0].safeTxGas).toBe(0n);
+    expect(JSON.parse(transactionReviewJson(reviewed!)).safeTxGas).toBe("0x0");
+  });
+
   it("detects any calldata mutation which occurs while the review is open", async () => {
     const call = transferCall();
     unregister = registerTransactionReviewHandler(async () => {

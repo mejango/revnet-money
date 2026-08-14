@@ -5,20 +5,65 @@ import { Suspense } from "react";
 import { HomepageDiscovery } from "./HomepageDiscovery";
 
 const WHY_REVNET_POINTS = [
-  "Let builders, investors, customers, and communities share in the same growth by turning fundraises and revenue into tokens that align their interests.",
-  "Welcome support and revenue from anywhere, anytime by accepting money instantly, beyond borders and banking hours.",
-  "Give holders confidence their backing will remain intact by locking incoming funds for cash-outs and loans only.",
-  "Make lasting contribution more valuable than short-term participation by rewarding those who join earlier and stay longer.",
-  "Give builders and contributors predictable funding by allocating a fixed share of new tokens to incentives over time.",
-  "Make future terms predictable from day one by automating issuance, splits, and cash-out terms through predefined stages.",
-  "Protect the original deal from governance capture and insider overreach by preventing votes or administrators from rewriting its core terms.",
-  "Keep tokens liquid without permanent subsidies by making and taking liquidity in open markets.",
-  "Give users consistent economics across supported Ethereum chains through one programmable financial network.",
-  "Own your distribution, customer relationships, and integrations by building your own website or app around payment, cash-out, and loan functions.",
-  "Keep network costs transparent and predictable with a clearly defined fee that sustains the public payment network.",
-  "Access liquidity without selling future upside by borrowing against revenue-backed tokens directly from the revnet.",
-  "Verify the system instead of trusting an operator by making every rule, balance, and transaction openly inspectable.",
-  "Make every revnet easier to trust, integrate, and extend through a shared standard that grows more useful with the network.",
+  {
+    lead: "Share the upside.",
+    detail:
+      "Fundraises and revenue issue tokens to builders, investors, customers, and communities, aligning everyone around the same growth.",
+  },
+  {
+    lead: "Accept money from anyone, anywhere, at any time.",
+    detail: "Payments arrive instantly, beyond borders and banking hours.",
+  },
+  {
+    lead: "Protect token backing.",
+    detail: "Incoming funds stay locked in the revnet for holder cash-outs and loans.",
+  },
+  {
+    lead: "Reward long-term participation.",
+    detail: "Joining earlier and staying longer is more valuable than short-term participation.",
+  },
+  {
+    lead: "Fund builders predictably.",
+    detail:
+      "A fixed share of newly issued tokens can support builders and contributors over time.",
+  },
+  {
+    lead: "Lock in future terms from day one.",
+    detail: "Predefined stages automate issuance, splits, and cash-out terms.",
+  },
+  {
+    lead: "Keep the original deal intact.",
+    detail: "Neither voters nor administrators can rewrite its core terms.",
+  },
+  {
+    lead: "Keep tokens liquid without permanent subsidies.",
+    detail: "Anyone can make or take liquidity in open markets.",
+  },
+  {
+    lead: "Use consistent economics across chains.",
+    detail: "One programmable financial network connects every supported Ethereum chain.",
+  },
+  {
+    lead: "Own your distribution and customer relationships.",
+    detail: "Build any website or app around revnet payments, cash-outs, and loans.",
+  },
+  {
+    lead: "Know the network fee upfront.",
+    detail: "One clearly defined fee keeps costs predictable and sustains the public network.",
+  },
+  {
+    lead: "Borrow without selling future upside.",
+    detail: "Revenue-backed tokens can secure loans directly from the revnet.",
+  },
+  {
+    lead: "Verify instead of trust.",
+    detail: "Every rule, balance, and transaction is openly inspectable.",
+  },
+  {
+    lead: "Build on a shared standard.",
+    detail:
+      "Every revnet becomes easier to trust, integrate, and extend as the network grows.",
+  },
 ];
 
 export default function Page() {
@@ -87,9 +132,9 @@ export default function Page() {
           </h2>
 
           <ol className="mt-8 ml-8 list-outside list-decimal space-y-5 marker:font-semibold marker:text-teal-700 sm:ml-10">
-            {WHY_REVNET_POINTS.map((point) => (
-              <li key={point} className="pl-2">
-                {point}
+            {WHY_REVNET_POINTS.map(({ lead, detail }) => (
+              <li key={lead} className="pl-2">
+                <strong>{lead}</strong> {detail}
               </li>
             ))}
           </ol>

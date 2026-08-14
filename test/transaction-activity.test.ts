@@ -51,7 +51,7 @@ describe("transaction activity persistence", () => {
     unsubscribe();
   });
 
-  it("deduplicates by id, keeps the newest activity first, and caps storage at 20", async () => {
+  it("deduplicates by id, keeps the newest activity first, and never evicts in-flight locks", async () => {
     const activity = await freshActivityModule();
     for (let index = 0; index < 25; index += 1) {
       activity.recordTransactionActivity({
@@ -63,9 +63,9 @@ describe("transaction activity persistence", () => {
       });
     }
 
-    expect(activity.transactionActivitySnapshot()).toHaveLength(20);
+    expect(activity.transactionActivitySnapshot()).toHaveLength(25);
     expect(activity.transactionActivitySnapshot()[0].id).toBe("tx:24");
-    expect(activity.transactionActivitySnapshot().at(-1)?.id).toBe("tx:5");
+    expect(activity.transactionActivitySnapshot().at(-1)?.id).toBe("tx:0");
 
     activity.recordTransactionActivity({
       id: "tx:10",
@@ -74,12 +74,84 @@ describe("transaction activity persistence", () => {
       status: "failed",
       message: "Reverted",
     });
-    expect(activity.transactionActivitySnapshot()).toHaveLength(20);
+    expect(activity.transactionActivitySnapshot()).toHaveLength(25);
     expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
       id: "tx:10",
       title: "Updated transaction",
       status: "failed",
     });
+  });
+
+  it("caps terminal history without evicting an older pending Safe proposal", async () => {
+    const activity = await freshActivityModule();
+    activity.recordTransactionActivity({
+      id: "handle:safe",
+      kind: "safe",
+      title: "Publish project handle",
+      status: "safe-proposed",
+      message: "Awaiting Safe execution",
+      callKey: "operator:1:handles:calldata",
+    });
+    for (let index = 0; index < 25; index += 1) {
+      activity.recordTransactionActivity({
+        id: `terminal:${index}`,
+        kind: "direct",
+        title: `Completed transaction ${index}`,
+        status: "success",
+        message: "Confirmed",
+      });
+    }
+
+    const rows = activity.transactionActivitySnapshot();
+    expect(rows).toHaveLength(21);
+    expect(rows.filter((row) => row.status === "success")).toHaveLength(20);
+    expect(rows.find((row) => row.id === "handle:safe")).toMatchObject({
+      status: "safe-proposed",
+      callKey: "operator:1:handles:calldata",
+    });
+
+    const hydrated = await freshActivityModule();
+    expect(
+      hydrated.transactionActivitySnapshot().find((row) => row.id === "handle:safe"),
+    ).toMatchObject({ status: "safe-proposed" });
+  });
+
+  it("merges a sibling tab's pending lock before recording local activity", async () => {
+    const activity = await freshActivityModule();
+    activity.transactionActivitySnapshot();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: "sibling:handle",
+          kind: "safe",
+          title: "Publish project handle",
+          status: "safe-proposed",
+          message: "Awaiting Safe execution",
+          callKey: "operator:1:handles:calldata",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]),
+    );
+
+    activity.recordTransactionActivity({
+      id: "local:complete",
+      kind: "direct",
+      title: "Other transaction",
+      status: "success",
+      message: "Confirmed",
+    });
+
+    expect(activity.transactionActivitySnapshot().map((row) => row.id)).toEqual([
+      "local:complete",
+      "sibling:handle",
+    ]);
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "sibling:handle", status: "safe-proposed" }),
+      ]),
+    );
   });
 
   it("hydrates persisted state and fails safely on malformed storage", async () => {
@@ -95,7 +167,7 @@ describe("transaction activity persistence", () => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
 
     const hydrated = await freshActivityModule();
-    expect(hydrated.transactionActivitySnapshot()).toHaveLength(20);
+    expect(hydrated.transactionActivitySnapshot()).toHaveLength(25);
 
     window.localStorage.setItem(STORAGE_KEY, "not json");
     const malformed = await freshActivityModule();

@@ -1,7 +1,9 @@
 "use client";
 
+import { gasWithHeadroom } from "@/lib/gas";
 import {
   recordTransactionActivity,
+  refreshTransactionActivities,
   transactionActivityForHash,
   transactionActivitySnapshot,
   updateTransactionActivity,
@@ -12,10 +14,13 @@ import {
   type TransactionReviewOptions,
 } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import {
   encodeFunctionData,
+  keccak256,
+  stringToHex,
   type Abi,
   type Address,
   type Hex,
@@ -26,13 +31,7 @@ import {
   useWaitForTransactionReceipt as useWagmiWaitForTransactionReceipt,
   useWriteContract as useWagmiWriteContract,
 } from "wagmi";
-import {
-  getAccount,
-  getPublicClient,
-  simulateContract,
-} from "wagmi/actions";
-import { gasWithHeadroom } from "@/lib/gas";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { getAccount, getPublicClient, simulateContract } from "wagmi/actions";
 
 const SAFE_PREFIX: Partial<Record<number, string>> = {
   1: "eth",
@@ -127,9 +126,9 @@ function followSubmission(
   title: string,
   account: Address,
   callKey: string,
+  safe: boolean,
 ): void {
   const id = `tx:${chainId}:${hash.toLowerCase()}`;
-  const safe = isSafeConnection(config);
   recordTransactionActivity({
     id,
     kind: safe ? "safe" : "direct",
@@ -183,6 +182,14 @@ type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] 
     variables: Parameters<ReturnType<typeof useWagmiWriteContract>["writeContractAsync"]>[0],
     account: Address,
   ) => Promise<void>;
+  /**
+   * Optional exact raw preflight for calls where Viem's generic simulation
+   * semantics are not equivalent to a real transaction (notably ENS CCIP).
+   */
+  preflightSimulation?: (
+    variables: Parameters<ReturnType<typeof useWagmiWriteContract>["writeContractAsync"]>[0],
+    account: Address,
+  ) => Promise<{ gas: bigint } | void>;
 };
 
 export function useWriteContract(
@@ -190,7 +197,8 @@ export function useWriteContract(
 ): ReturnType<typeof useWagmiWriteContract> {
   const config = useConfig();
   const queryClient = useQueryClient();
-  const { transactionReview, reviewedInParent, reverify, ...wagmiOptions } = options ?? {};
+  const { transactionReview, reviewedInParent, reverify, preflightSimulation, ...wagmiOptions } =
+    options ?? {};
   const mutation = useWagmiWriteContract(wagmiOptions);
 
   const writeContractAsync = useCallback(
@@ -198,98 +206,125 @@ export function useWriteContract(
       requireNoViewAs();
       const before = getAccount(config);
       if (!before.address) throw new Error("Connect a wallet first.");
+      const initialAddress = before.address;
       const chainId = Number(variables.chainId ?? before.chainId);
       if (!chainId) throw new Error("Select a network before continuing.");
       const functionName = String(variables.functionName);
-      const callKey = `${before.address.toLowerCase()}:${chainId}:${variables.address.toLowerCase()}:${variables.value ?? 0n}:${encodeFunctionData(
+      const callKey = `${initialAddress.toLowerCase()}:${chainId}:${variables.address.toLowerCase()}:${variables.value ?? 0n}:${encodeFunctionData(
         {
           abi: variables.abi as Abi,
           functionName,
           args: variables.args,
         },
       )}`;
-      const duplicate = transactionActivitySnapshot().find(
-        (activity) =>
-          activity.callKey === callKey &&
-          (activity.status === "submitted" ||
-            activity.status === "pending" ||
-            activity.status === "safe-proposed"),
-      );
-      if (duplicate?.hash) {
-        if (duplicate.status === "safe-proposed") {
-          throw new SafeProposalPendingError(duplicate.hash, functionName);
+      const submitReviewedCall = async () => {
+        const duplicate = refreshTransactionActivities().find(
+          (activity) =>
+            activity.callKey === callKey &&
+            (activity.status === "submitted" ||
+              activity.status === "pending" ||
+              activity.status === "safe-proposed"),
+        );
+        if (duplicate?.hash) {
+          if (duplicate.status === "safe-proposed") {
+            throw new SafeProposalPendingError(duplicate.hash, functionName);
+          }
+          throw new Error(
+            `An identical ${functionName} transaction is already pending as ${duplicate.hash}. Check it before submitting again.`,
+          );
         }
-        throw new Error(
-          `An identical ${functionName} transaction is already pending as ${duplicate.hash}. Check it before submitting again.`,
-        );
-      }
 
-      const safe = isSafeConnection(config);
-      if (!reviewedInParent) {
-        await requireContractTransactionReview(
-          {
-            chainId,
-            address: variables.address,
-            abi: variables.abi as Abi,
-            functionName,
-            args: variables.args,
-            value: variables.value,
-            account: before.address,
-          },
-          {
-            title: `Review ${functionName}`,
-            label: functionName,
-            ...transactionReview,
-            confirmLabel: safe
-              ? "Agree & propose to Safe"
-              : (transactionReview?.confirmLabel ?? "Agree & continue"),
-            description:
-              [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
-                .filter(Boolean)
-                .join("\n\n") || undefined,
-          },
-        );
-      }
+        const safe = isSafeConnection(config);
+        if (!reviewedInParent) {
+          await requireContractTransactionReview(
+            {
+              chainId,
+              address: variables.address,
+              abi: variables.abi as Abi,
+              functionName,
+              args: variables.args,
+              value: variables.value,
+              account: initialAddress,
+              safeTxGas: safe ? 0n : undefined,
+            },
+            {
+              title: `Review ${functionName}`,
+              label: functionName,
+              ...transactionReview,
+              confirmLabel: safe
+                ? "Agree & propose to Safe"
+                : (transactionReview?.confirmLabel ?? "Agree & continue"),
+              description:
+                [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
+                  .filter(Boolean)
+                  .join("\n\n") || undefined,
+            },
+          );
+        }
 
-      const reviewedAccount = getAccount(config).address;
-      if (!reviewedAccount || reviewedAccount.toLowerCase() !== before.address.toLowerCase()) {
-        throw new Error("Connected account changed. Review the transaction again.");
-      }
-      await reverify?.(variables, reviewedAccount);
-      const reverifiedAccount = getAccount(config).address;
-      if (!reverifiedAccount || reverifiedAccount.toLowerCase() !== reviewedAccount.toLowerCase()) {
-        throw new Error("Connected account changed. Review the transaction again.");
-      }
+        const reviewedAccount = getAccount(config).address;
+        if (!reviewedAccount || reviewedAccount.toLowerCase() !== initialAddress.toLowerCase()) {
+          throw new Error("Connected account changed. Review the transaction again.");
+        }
+        await reverify?.(variables, reviewedAccount);
+        const reverifiedAccount = getAccount(config).address;
+        if (
+          !reverifiedAccount ||
+          reverifiedAccount.toLowerCase() !== reviewedAccount.toLowerCase()
+        ) {
+          throw new Error("Connected account changed. Review the transaction again.");
+        }
 
-      const simulation = await simulateContract(config, {
-        ...variables,
-        chainId,
-        account: reviewedAccount,
-      } as Parameters<typeof simulateContract>[1]);
-      const publicClient = getPublicClient(config, { chainId });
-      if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
-      const estimateRequest = {
-        ...variables,
-        gas: undefined,
-        account: reviewedAccount,
-      };
-      const estimate = await publicClient.estimateContractGas(
-        estimateRequest as Parameters<typeof publicClient.estimateContractGas>[0],
-      );
-      const liveAccount = getAccount(config).address;
-      if (!liveAccount || liveAccount.toLowerCase() !== reviewedAccount.toLowerCase()) {
-        throw new Error("Connected account changed. Review the transaction again.");
-      }
-      const hash = await mutation.writeContractAsync(
-        {
+        const boundedPreflight = preflightSimulation
+          ? await preflightSimulation(variables, reviewedAccount)
+          : undefined;
+        const simulation = preflightSimulation
+          ? { request: { ...variables, chainId, account: reviewedAccount } }
+          : await simulateContract(config, {
+              ...variables,
+              chainId,
+              account: reviewedAccount,
+            } as Parameters<typeof simulateContract>[1]);
+        const publicClient = getPublicClient(config, { chainId });
+        if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
+        const estimateRequest = {
+          ...variables,
+          gas: undefined,
+          account: reviewedAccount,
+        };
+        const estimate = boundedPreflight?.gas
+          ? boundedPreflight.gas
+          : await publicClient.estimateContractGas(
+              estimateRequest as Parameters<typeof publicClient.estimateContractGas>[0],
+            );
+        const liveAccount = getAccount(config).address;
+        if (!liveAccount || liveAccount.toLowerCase() !== reviewedAccount.toLowerCase()) {
+          throw new Error("Connected account changed. Review the transaction again.");
+        }
+        if (isSafeConnection(config) !== safe) {
+          throw new Error("Wallet connection changed. Review the transaction again.");
+        }
+        const hash = await mutation.writeContractAsync({
           ...simulation.request,
-          gas: gasWithHeadroom(estimate),
-        } as Parameters<typeof mutation.writeContractAsync>[0],
-      );
-      followSubmission(config, hash, chainId, functionName, reviewedAccount, callKey);
-      return hash;
+          // Safe Apps maps the Ethereum gas field directly to Safe's signed
+          // safeTxGas. Keep its canonical envelope at zero and let Safe estimate
+          // execution gas; the bounded preflight above remains mandatory.
+          gas: safe ? 0n : (boundedPreflight?.gas ?? gasWithHeadroom(estimate)),
+        } as Parameters<typeof mutation.writeContractAsync>[0]);
+        followSubmission(config, hash, chainId, functionName, reviewedAccount, callKey, safe);
+        return hash;
+      };
+
+      // Serialize identical submissions across same-origin tabs. The duplicate
+      // check runs after the lock is acquired and refreshes persisted activity,
+      // so a second tab cannot open another wallet prompt while the first is in
+      // review or waiting for its Safe proposal hash.
+      const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+      return locks
+        ? locks.request(`revnet:transaction:${keccak256(stringToHex(callKey))}`, submitReviewedCall)
+        : submitReviewedCall();
     },
-    [config, mutation, reviewedInParent, reverify, transactionReview],
+    [config, mutation, preflightSimulation, reviewedInParent, reverify, transactionReview],
   );
 
   const writeContract = useCallback(

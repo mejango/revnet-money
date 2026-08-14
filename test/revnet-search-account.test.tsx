@@ -122,4 +122,36 @@ describe("search:account — RevnetSearch account routing", () => {
     fireEvent.click(row);
     expect(mocks.push).toHaveBeenCalledWith("/eth:3");
   });
+
+  it("opens canonical @handle routes without treating them as account ENS names", async () => {
+    render(<RevnetSearch />);
+    await typeQuery("@DESIGN.JUICEBOX");
+
+    const row = screen.getByRole("link", { name: /Open revnet handle/i });
+    expect(row).toHaveTextContent("@design.juicebox");
+    expect(row).toHaveAttribute("href", "/@design.juicebox");
+    expect(row).toHaveAttribute("data-project-navigation", "document");
+    expect(mocks.useEnsAddress).toHaveBeenLastCalledWith(undefined, { enabled: false });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+
+    fireEvent.click(row);
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it("submits a valid @handle directly and rejects malformed handle input", async () => {
+    render(<RevnetSearch />);
+    await typeQuery("@design.juicebox");
+    const form = screen.getByRole("search");
+    expect(form).toHaveAttribute("action", "/@design.juicebox");
+    const submit = new Event("submit", { bubbles: true, cancelable: true });
+    // The controlled form clears itself, so the handler captures the target,
+    // prevents the default submit, and forces a document navigation itself.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(form.dispatchEvent(submit)).toBe(false);
+    consoleError.mockRestore();
+    expect(mocks.push).not.toHaveBeenCalled();
+
+    await typeQuery("@bad..handle");
+    expect(screen.getByText("Enter a valid @handle.")).toBeInTheDocument();
+  });
 });

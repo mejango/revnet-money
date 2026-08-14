@@ -62,7 +62,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
   const rulesetReads = useAllRulesetsByChain(chains);
   const rulesetsByChain = new Map<number, { id: number; start: number }[]>();
   chains.forEach((c) => {
-    const result = rulesetReads.data?.get(Number(c.chainId));
+    const result = rulesetReads.data?.[Number(c.chainId)];
     if (result) {
       rulesetsByChain.set(Number(c.chainId), result as unknown as { id: number; start: number }[]);
     }

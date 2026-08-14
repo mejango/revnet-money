@@ -46,8 +46,8 @@ export function expectBoundaryToStayLocal(boundary: BrowserBoundary): void {
   expect(boundary.pageErrors, "production page raised uncaught browser errors").toEqual([]);
 }
 
-export function expectSecurityHeaders(response: Response | null): void {
-  expect(response?.status()).toBe(200);
+export function expectSecurityHeaders(response: Response | null, expectedStatus = 200): void {
+  expect(response?.status()).toBe(expectedStatus);
   const headers = response?.headers() ?? {};
   expect(headers["content-security-policy"]).toContain("frame-ancestors 'none'");
   expect(headers["x-frame-options"]).toBe("DENY");

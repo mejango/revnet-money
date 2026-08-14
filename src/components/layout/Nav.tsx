@@ -6,16 +6,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { RevnetSearch } from "./RevnetSearch";
 
-export function Nav() {
+export function Nav({ wide = false }: { wide?: boolean }) {
   const pathname = usePathname();
-  const isHomepage = pathname === "/";
+  const isWide = wide || pathname === "/";
 
   return (
     <nav className="text-zinc-50 border-b border-zinc-100">
       <div
         data-site-nav-layout
         className={`mx-auto grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-[clamp(0.5rem,1.5vw,2rem)] px-4 py-3 md:grid-cols-[minmax(max-content,1fr)_minmax(12rem,32rem)_minmax(max-content,1fr)] ${
-          isHomepage ? "max-w-[1800px]" : "max-w-[1536px]"
+          isWide ? "max-w-[1800px]" : "max-w-[1536px]"
         }`}
       >
         <div className="col-start-1 row-start-1 flex flex-col items-start justify-self-start gap-y-1 md:flex-row md:items-center md:gap-x-4">

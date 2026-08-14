@@ -1,6 +1,6 @@
 import { Nav } from "@/components/layout/Nav";
-import { parseSlug } from "@/lib/slug";
 import { projectPreviewSlogan } from "@/lib/project-link-preview";
+import { decodeProjectRouteSlug } from "@/lib/slug";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PropsWithChildren } from "react";
@@ -15,6 +15,7 @@ import { getProjectWithFallback } from "./getProjectFallback";
 import { getProjectOperator } from "./getProjectOperator";
 import { getSuckerGroup } from "./getSuckerGroup";
 import { ProjectProviders } from "./ProjectProviders";
+import { resolveProjectRoute } from "./resolveProjectRoute.server";
 import { getRulesets } from "./terms/getRulesets";
 
 export const revalidate = 300;
@@ -29,11 +30,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const assetOrigin =
     railwayDomain && /^[a-z0-9.-]+$/iu.test(railwayDomain) ? `https://${railwayDomain}` : origin;
   const { slug: encodedSlug } = await params;
-  const slug = decodeURIComponent(encodedSlug ?? "");
+  const slug = decodeProjectRouteSlug(encodedSlug ?? "") ?? "";
 
   const url = new URL(`/${slug}`, origin);
 
-  if (!slug.includes(":")) {
+  const route = await resolveProjectRoute(encodedSlug ?? "");
+  if (!route) {
     const title = "Revnet";
     const description = "An autonomous business model for the open web. 100% open source.";
     const imageUrl = new URL("/assets/img/revnet-social.png", assetOrigin).href;
@@ -45,7 +47,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     });
   }
 
-  const { projectId, chainId } = parseSlug(slug);
+  const { projectId, chainId } = route;
   const project = projectId ? await getProject(projectId, chainId) : null;
   const imageUrl =
     project && projectId
@@ -64,7 +66,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function SlugLayout({ children, params }: PropsWithChildren<Props>) {
   const { slug } = await params;
-  const { chainId, projectId } = parseSlug(slug);
+  const route = await resolveProjectRoute(slug);
+  if (!route) notFound();
+  const { chainId, projectId } = route;
 
   const resolved = await getProjectWithFallback(projectId, chainId);
   if (!resolved) notFound();
@@ -73,7 +77,9 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
   // `undefined` = the operator could not be read, which is not the same claim
   // as `null` ("nobody holds the role"). The header says so instead of quietly
   // dropping the operator line.
-  const operatorPromise = getProjectOperator(Number(projectId), chainId).catch(() => undefined);
+  const operatorPromise = route.verifiedOperator
+    ? Promise.resolve({ address: route.verifiedOperator })
+    : getProjectOperator(Number(projectId), chainId).catch(() => undefined);
   const suckerGroupPromise = project.suckerGroupId
     ? getSuckerGroup(project.suckerGroupId, chainId)
     : Promise.resolve(null);
@@ -118,7 +124,7 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
     <ProjectProviders chainId={chainId} projectId={projectId} project={project} projects={projects}>
       <ShopCartProvider>
         <div id="project-top">
-          <Nav />
+          <Nav wide />
         </div>
 
         {degraded && (

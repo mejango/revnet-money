@@ -29,7 +29,7 @@
         [
           "raw-wallet-call",
           "src/hooks/useReviewedWriteContract.ts",
-          "writeContractAsync",
+          "submitReviewedCall",
           "writeContractAsync",
           1
         ]
@@ -210,9 +210,16 @@
         [
           "reviewed-write",
           "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
+          "ensureBurnTokensPermission",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
           "handleBorrow",
           "writeContractAsync",
-          3
+          2
         ],
         [
           "reviewed-write-hook",
@@ -514,6 +521,34 @@
           1
         ],
         [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
+          "deploySafeOnMainnet",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
+          "ProjectHandleEditor",
+          "useWriteContract",
+          3
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
+          "publish",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
+          "setEnsRecord",
+          "writeContractAsync",
+          1
+        ],
+        [
           "reviewed-write-hook",
           "src/app/[slug]/components/v6/operator/OperatorAccountCard.tsx",
           "TransferOperatorFlow",
@@ -796,6 +831,12 @@
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/extras/PayerDeployForm.tsx"],
       "tests": ["test/wallet-project-controls.test.ts"]
+    },
+    {
+      "id": "project-handle",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"],
+      "tests": ["test/wallet-project-controls.test.ts", "test/project-handles.test.ts"]
     },
     {
       "id": "operator-writes",

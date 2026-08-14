@@ -1,5 +1,6 @@
 "use client";
 
+import { decodeProjectRouteSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useSelectedLayoutSegment } from "next/navigation";
@@ -129,21 +130,35 @@ function MoreProjectOptions({
 }
 
 function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect: () => void }) {
+  const params = useParams<{ slug: string }>();
+  const slug = decodeProjectRouteSlug(params.slug) ?? params.slug;
+  const className = cn(
+    "-mb-px flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all",
+    active ? "border-teal-500 text-black" : "border-transparent text-zinc-500 hover:text-zinc-800",
+  );
+  const contents = (
+    <>
+      <ProjectTabIcon label="Activity" />
+      Latest
+    </>
+  );
+
   return (
     <li className="flex items-start min-[801px]:hidden">
-      <button
-        type="button"
-        onClick={onSelect}
-        className={cn(
-          "-mb-px flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all",
-          active
-            ? "border-teal-500 text-black"
-            : "border-transparent text-zinc-500 hover:text-zinc-800",
-        )}
-      >
-        <ProjectTabIcon label="Activity" />
-        Latest
-      </button>
+      {slug.startsWith("@") ? (
+        <a
+          href={`/${slug}`}
+          onClick={onSelect}
+          className={className}
+          data-project-navigation="document"
+        >
+          {contents}
+        </a>
+      ) : (
+        <button type="button" onClick={onSelect} className={className}>
+          {contents}
+        </button>
+      )}
     </li>
   );
 }
@@ -163,23 +178,40 @@ function MenuOption({
   const params = useParams<{ slug: string }>();
   const segment = useSelectedLayoutSegment();
   const isSelected = !forceInactive && (segment || "") === href;
-
+  const slug = decodeProjectRouteSlug(params.slug) ?? params.slug;
+  const isMutableHandle = slug.startsWith("@");
+  const route = isMutableHandle && !href ? `/${slug}?view=overview` : `/${slug}/${href}`;
+  const linkClassName = cn(
+    // -mb-px drops the active border onto the row's persistent baseline.
+    "-mb-px flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all sm:text-lg",
+    {
+      "text-black border-teal-500": isSelected,
+      "text-zinc-500 hover:text-zinc-800 border-transparent": !isSelected,
+    },
+  );
   return (
     <li className="flex shrink-0 items-start gap-2">
-      <Link
-        href={`/${decodeURIComponent(params.slug)}/${href}`}
-        onClick={onSelect}
-        className={cn(
-          // -mb-px drops the active border onto the row's persistent baseline.
-          "-mb-px flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all sm:text-lg",
-          {
-            "text-black border-teal-500": isSelected,
-            "text-zinc-500 hover:text-zinc-800 border-transparent": !isSelected,
-          },
-        )}
-      >
-        {children}
-      </Link>
+      {isMutableHandle ? (
+        // A handle can be rebound while this layout is mounted. Native
+        // navigation forces the server to rebuild providers for its new pair.
+        <a
+          href={route}
+          onClick={onSelect}
+          className={linkClassName}
+          data-project-navigation="document"
+        >
+          {children}
+        </a>
+      ) : (
+        <Link
+          href={route}
+          onClick={onSelect}
+          className={linkClassName}
+          data-project-navigation="client"
+        >
+          {children}
+        </Link>
+      )}
       {badge && (
         <span className="rounded-xl border border-teal-400 text-teal-500 font-medium text-[13px] px-2 py-1">
           {badge}

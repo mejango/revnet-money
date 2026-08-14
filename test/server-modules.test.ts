@@ -1,3 +1,8 @@
+import {
+  getJBContractAddress,
+  RevnetCoreContracts,
+  type JBChainId,
+} from "@bananapus/nana-sdk-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -20,7 +25,10 @@ vi.mock("@/lib/bendystraw/query.server", () => ({
   queryBendystraw: mocks.request,
 }));
 
-import { getProjectOperator } from "@/app/[slug]/getProjectOperator";
+import {
+  getIndexedProjectOperatorAddresses,
+  getProjectOperator,
+} from "@/app/[slug]/getProjectOperator";
 import { Profile } from "@/components/Profile";
 
 describe("server-only profile modules", () => {
@@ -59,9 +67,9 @@ describe("server-only profile modules", () => {
         chainId: 8453,
         projectId: 7,
         version: 6,
-        isRevnetOperator: true,
+        account: getJBContractAddress(RevnetCoreContracts.REVOwner, 6, 8453 as JBChainId),
       },
-      limit: 250,
+      limit: 64,
       offset: 0,
     });
   });
@@ -80,5 +88,32 @@ describe("server-only profile modules", () => {
 
     await expect(getProjectOperator(7, 8453)).resolves.toBeNull();
     expect(mocks.fetchProfile).not.toHaveBeenCalled();
+  });
+
+  it("returns every deduplicated REVOwner-account candidate", async () => {
+    const stale = "0x2222222222222222222222222222222222222222";
+    const current = "0x1111111111111111111111111111111111111111";
+    mocks.request.mockResolvedValue({
+      permissionHolders: {
+        items: [
+          { operator: stale, permissions: [1], isRevnetOperator: true },
+          { operator: stale, permissions: [], isRevnetOperator: true },
+          { operator: current, permissions: [], isRevnetOperator: true },
+        ],
+        totalCount: 3,
+      },
+    });
+
+    await expect(getIndexedProjectOperatorAddresses(7, 8453)).resolves.toEqual([stale, current]);
+    expect(mocks.request).toHaveBeenCalledWith(8453, expect.anything(), {
+      where: {
+        chainId: 8453,
+        projectId: 7,
+        version: 6,
+        account: getJBContractAddress(RevnetCoreContracts.REVOwner, 6, 8453 as JBChainId),
+      },
+      limit: 64,
+      offset: 0,
+    });
   });
 });

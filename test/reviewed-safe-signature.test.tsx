@@ -115,4 +115,74 @@ describe("reviewed Safe signature boundary", () => {
     expect(mocks.switchChain).not.toHaveBeenCalled();
     expect(mocks.signTypedData).not.toHaveBeenCalled();
   });
+
+  it("reverifies Safe authority before and after the wallet signs", async () => {
+    const events: string[] = [];
+    const review = await import("@/lib/transaction-review");
+    const dispose = review.registerTransactionReviewHandler(async () => {
+      events.push("review");
+      return true;
+    });
+    mocks.signTypedData.mockImplementation(async () => {
+      events.push("sign");
+      return SIGNATURE;
+    });
+    const reverify = vi.fn(async () => {
+      events.push("reverify");
+    });
+    const { result } = renderHook(() => useReviewedSafeSignature());
+
+    await act(async () => {
+      await result.current.signSafeTransactionAsync({
+        chainId: 1,
+        safe: SAFE,
+        tx,
+        reverify,
+      });
+    });
+
+    expect(reverify).toHaveBeenCalledTimes(2);
+    expect(reverify).toHaveBeenNthCalledWith(1, ACCOUNT);
+    expect(reverify).toHaveBeenNthCalledWith(2, ACCOUNT);
+    expect(events).toEqual(["review", "reverify", "sign", "reverify"]);
+    dispose();
+  });
+
+  it("withholds a wallet-produced signature when Safe authority rotates during the prompt", async () => {
+    const review = await import("@/lib/transaction-review");
+    const dispose = review.registerTransactionReviewHandler(async () => true);
+    const reverify = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("The Safe policy changed during signing."));
+    const { result } = renderHook(() => useReviewedSafeSignature());
+
+    await expect(
+      result.current.signSafeTransactionAsync({
+        chainId: 1,
+        safe: SAFE,
+        tx,
+        reverify,
+      }),
+    ).rejects.toThrow("policy changed");
+    expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    expect(reverify).toHaveBeenCalledTimes(2);
+    dispose();
+  });
+
+  it("rejects a queued payload that changes while the wallet prompt is open", async () => {
+    const review = await import("@/lib/transaction-review");
+    const dispose = review.registerTransactionReviewHandler(async () => true);
+    const mutableTx = { ...tx };
+    mocks.signTypedData.mockImplementationOnce(async () => {
+      mutableTx.nonce += 1;
+      return SIGNATURE;
+    });
+    const { result } = renderHook(() => useReviewedSafeSignature());
+
+    await expect(
+      result.current.signSafeTransactionAsync({ chainId: 1, safe: SAFE, tx: mutableTx }),
+    ).rejects.toThrow("changed while the wallet signature was pending");
+    dispose();
+  });
 });

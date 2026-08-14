@@ -8,6 +8,7 @@ import { OperatorEditsCard } from "./OperatorEditsCard";
 import { PermissionsCard } from "./PermissionsCard";
 import { SafeQueueCard } from "./SafeQueueCard";
 import { SuckerExtensionCard } from "./SuckerExtensionCard";
+import type { ChainProjectRow } from "./operatorLib";
 import { chainProjectRows } from "./operatorLib";
 
 /**
@@ -22,9 +23,11 @@ import { chainProjectRows } from "./operatorLib";
 export function V6OperatorTab({
   projects,
   operator,
+  handleProject,
 }: {
   projects: ProjectItem[];
   operator?: string;
+  handleProject: ChainProjectRow;
 }) {
   const rows = useMemo(() => chainProjectRows(projects), [projects]);
 
@@ -34,9 +37,17 @@ export function V6OperatorTab({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <OperatorAccountCard rows={rows} fallbackOperator={operator} />
-      <SafeQueueCard rows={rows} fallbackOperator={operator} />
-      <OperatorEditsCard projects={projects} />
+      <OperatorAccountCard
+        rows={rows}
+        fallbackOperator={operator}
+        fallbackProject={handleProject}
+      />
+      <SafeQueueCard rows={rows} fallbackOperator={operator} fallbackProject={handleProject} />
+      <OperatorEditsCard
+        projects={projects}
+        handleProject={handleProject}
+        fallbackOperator={operator}
+      />
       <SuckerExtensionCard rows={rows} />
       <BuybackRouterCard rows={rows} />
       <PermissionsCard rows={rows} />

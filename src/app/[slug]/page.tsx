@@ -1,10 +1,11 @@
-import { parseSlug } from "@/lib/slug";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { LazyTokenPriceChart } from "./components/TokenPrice/LazyTokenPriceChart";
 import { V6OverviewTab } from "./components/v6/overview/V6OverviewTab";
+import { projectItemsWithFallback } from "./components/v6/shared";
 import { getProjectWithFallback } from "./getProjectFallback";
 import { getSuckerGroup } from "./getSuckerGroup";
+import { resolveProjectRoute } from "./resolveProjectRoute.server";
 import { getRulesets } from "./terms/getRulesets";
 
 interface Props {
@@ -13,7 +14,9 @@ interface Props {
 
 export default async function AboutPage(props: Props) {
   const { slug } = await props.params;
-  const { chainId, projectId } = parseSlug(slug);
+  const route = await resolveProjectRoute(slug);
+  if (!route) notFound();
+  const { chainId, projectId } = route;
 
   // Resolve through the on-chain fallback, exactly as the layout does. Bendystraw being
   // down returns null from the indexed read, which is indistinguishable from a project that
@@ -23,9 +26,12 @@ export default async function AboutPage(props: Props) {
   const { project } = resolved;
 
   const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId);
-  if (!suckerGroup) notFound();
-
-  const projects = suckerGroup.projects?.items ?? [];
+  const projects = projectItemsWithFallback(
+    suckerGroup?.projects?.items,
+    project,
+    chainId,
+    projectId,
+  );
 
   const rulesets = await getRulesets(projectId.toString(), chainId);
   const startDate = rulesets[0]?.start;
@@ -37,7 +43,7 @@ export default async function AboutPage(props: Props) {
           Defaulting here rendered a USDC project's floor history divided by 1e18 and labelled
           ETH — off by twelve orders of magnitude under a wrong symbol. Wait for the real
           context instead. */}
-      {hasStarted && project.token && project.decimals != null && (
+      {hasStarted && suckerGroup && project.token && project.decimals != null && (
         <Suspense>
           <LazyTokenPriceChart
             projectId={projectId.toString()}

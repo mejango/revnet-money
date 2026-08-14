@@ -8,6 +8,8 @@ export type TransactionReviewCall = {
   to: Address;
   data: Hex;
   value?: bigint;
+  /** Safe connector only: the exact signed Safe transaction gas envelope. */
+  safeTxGas?: bigint;
   from?: Address;
   abi?: Abi;
   functionName?: string;
@@ -33,6 +35,8 @@ export type ContractTransactionReviewCall = {
   args?: readonly unknown[];
   value?: bigint;
   account?: Address;
+  /** Safe connector only: the exact signed Safe transaction gas envelope. */
+  safeTxGas?: bigint;
 };
 
 export type TransactionReviewOptions = Omit<TransactionReviewRequest, "calls"> & {
@@ -70,6 +74,7 @@ function encodedCall(
     to: call.address,
     from: call.account,
     value: call.value,
+    safeTxGas: call.safeTxGas,
     data: encodeFunctionData({
       abi: call.abi,
       functionName: call.functionName,
@@ -102,6 +107,7 @@ export async function requireContractTransactionReview(
     before.chainId !== after.chainId ||
     before.to.toLowerCase() !== after.to.toLowerCase() ||
     (before.value ?? 0n) !== (after.value ?? 0n) ||
+    before.safeTxGas !== after.safeTxGas ||
     before.data !== after.data
   ) {
     throw new Error("Transaction data changed after review. Nothing was sent; review it again.");
@@ -114,6 +120,7 @@ export function transactionReviewJson(request: TransactionReviewRequest): string
     from: call.from,
     to: call.to,
     value: `0x${(call.value ?? 0n).toString(16)}`,
+    ...(call.safeTxGas === undefined ? {} : { safeTxGas: `0x${call.safeTxGas.toString(16)}` }),
     data: call.data,
   }));
   const resultingCall = transactions.length === 1 ? transactions[0] : { transactions };

@@ -4,7 +4,16 @@ import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import type { PermissionHolder, PermissionHolderFilter } from "@/lib/bendystraw/types";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { JB_CHAINS, JBChainId, jbContractAddress } from "@bananapus/nana-sdk-core";
+import {
+  getJBContractAddress,
+  JB_CHAINS,
+  JBChainId,
+  jbContractAddress,
+  JBCoreContracts,
+  jbProjectsAbi,
+  RevnetCoreContracts,
+  revOwnerAbi,
+} from "@bananapus/nana-sdk-core";
 import { Abi, Address, PublicClient } from "viem";
 import { getAccount, getPublicClient, switchChain } from "wagmi/actions";
 import { ProjectItem } from "../shared";
@@ -37,6 +46,30 @@ export function v6ContractAddress(
 // simulateContract's generics explode past TS's union-size limit (TS2590).
 export function publicClientFor(chainId: JBChainId): PublicClient {
   return getPublicClient(wagmiConfig, { chainId }) as unknown as PublicClient;
+}
+
+/** Require both canonical revnet ownership and the live REVOwner permission set. */
+export async function isLiveRevnetOperator(
+  client: PublicClient,
+  row: ChainProjectRow,
+  candidate: Address,
+): Promise<boolean> {
+  const revOwner = getJBContractAddress(RevnetCoreContracts.REVOwner, 6, row.chainId);
+  const [owner, isOperator] = await Promise.all([
+    client.readContract({
+      address: getJBContractAddress(JBCoreContracts.JBProjects, 6, row.chainId),
+      abi: jbProjectsAbi,
+      functionName: "ownerOf",
+      args: [BigInt(row.projectId)],
+    }),
+    client.readContract({
+      address: revOwner,
+      abi: revOwnerAbi,
+      functionName: "isOperatorOf",
+      args: [BigInt(row.projectId), candidate],
+    }),
+  ]);
+  return owner.toLowerCase() === revOwner.toLowerCase() && isOperator;
 }
 
 // ---------------------------------------------------------------------------

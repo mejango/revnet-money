@@ -1,8 +1,9 @@
 "use client";
 
 import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
+import { decodeProjectRouteSlug } from "@/lib/slug";
 import dynamic from "next/dynamic";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { twJoin } from "tailwind-merge";
 import { ProjectItem } from "../shared";
@@ -41,6 +42,15 @@ const SUBTABS = [
 
 type SubtabKey = (typeof SUBTABS)[number]["key"];
 
+export function ownersSubtabNavigation(slug: string, currentHref: string, key: SubtabKey) {
+  const url = new URL(currentHref);
+  url.searchParams.set("subtab", key);
+  return {
+    href: url.href,
+    mode: decodeProjectRouteSlug(slug)?.startsWith("@") ? "document" : "client",
+  } as const;
+}
+
 /**
  * The website/-parity Owners tab for V6 projects: a caps-label subtab row over
  * Accounts | Market | Settlement | Splits | Auto issuance | Loans. Subtabs are
@@ -57,6 +67,7 @@ export function V6OwnersTab({ projects }: { projects: ProjectItem[] }) {
 }
 
 function OwnersTabInner({ projects }: { projects: ProjectItem[] }) {
+  const params = useParams<{ slug: string }>();
   const searchParams = useSearchParams();
   const requested = searchParams.get("subtab");
   const initial: SubtabKey = SUBTABS.some((t) => t.key === requested)
@@ -67,13 +78,16 @@ function OwnersTabInner({ projects }: { projects: ProjectItem[] }) {
   const [mounted, setMounted] = useState<ReadonlySet<SubtabKey>>(() => new Set([initial]));
 
   const show = (key: SubtabKey) => {
+    const navigation = ownersSubtabNavigation(params.slug, window.location.href, key);
+    if (navigation.mode === "document") {
+      // The alias may have rebound since this layout mounted. Do not reveal
+      // another cached subtab under a freshly shareable @handle URL.
+      window.location.assign(navigation.href);
+      return;
+    }
     setActive(key);
     setMounted((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
-    // Reflect the subtab in the URL without a server round-trip, so a refresh
-    // or shared link restores it.
-    const url = new URL(window.location.href);
-    url.searchParams.set("subtab", key);
-    window.history.replaceState(null, "", url);
+    window.history.replaceState(null, "", navigation.href);
   };
 
   const panel = (key: SubtabKey, node: React.ReactNode) =>

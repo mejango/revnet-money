@@ -2,13 +2,15 @@
 
 import { EditMetadataDialog } from "@/app/[slug]/about/components/EditMetadataDialog";
 import { ChangeSplitRecipientsDialog } from "@/app/[slug]/owners/components/ChangeSplitRecipientsDialog";
+import { currentStageIndex } from "@/app/[slug]/owners/components/splitsLib";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFetchProjectRulesets } from "@/hooks/useFetchProjectRulesets";
 import { useJBChainId } from "@/lib/nana/project";
-import { currentStageIndex } from "@/app/[slug]/owners/components/splitsLib";
 import { useSuckers } from "@/lib/nana/suckers";
 import { ProjectItem } from "../shared";
 import { OperatorSection } from "./OperatorSection";
+import { ProjectHandleEditor } from "./ProjectHandleEditor";
+import type { ChainProjectRow } from "./operatorLib";
 
 /**
  * website/-parity renderEditsCard: the operator's edit actions, each reusing
@@ -16,7 +18,15 @@ import { OperatorSection } from "./OperatorSection";
  * Token identity edits live in the Owners Token panel, immediately above the
  * Owners subtabs, where their omnichain state is visible in context.
  */
-export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
+export function OperatorEditsCard({
+  projects,
+  handleProject,
+  fallbackOperator,
+}: {
+  projects: ProjectItem[];
+  handleProject: ChainProjectRow;
+  fallbackOperator?: string;
+}) {
   const chainId = useJBChainId();
   const { data: suckers } = useSuckers();
   const { suckerPairsWithRulesets } = useFetchProjectRulesets(suckers);
@@ -40,6 +50,7 @@ export function OperatorEditsCard({ projects }: { projects: ProjectItem[] }) {
           </p>
           <EditMetadataDialog projects={projects} triggerVariant="secondary" />
         </div>
+        <ProjectHandleEditor project={handleProject} fallbackOperator={fallbackOperator} />
         <div className="bg-melon-50 p-4">
           <p className="text-sm font-medium">Set splits</p>
           <p className="text-xs text-zinc-500 mt-1 mb-3">

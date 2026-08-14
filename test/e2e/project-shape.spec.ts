@@ -250,6 +250,12 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
   await expect(page.getByText("Set project uri")).toBeVisible();
+ await expect(page.getByText("Set project handle")).toBeVisible();
+  await expect(
+    page.getByText("Use any .eth name you control or are authorized to update.", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Your .eth name")).toHaveAttribute("placeholder", "banny.eth");
+ await expect(page.getByRole("link", { name: "/@fixture-revnet" })).toBeVisible();
   const secondaryActions = [
     "Transfer revnet operator",
     "Edit metadata",
@@ -264,18 +270,130 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
     await expect(button).toHaveClass(/border-melon-300/u);
     await expect(button).toHaveClass(/bg-melon-25/u);
   }
+
+  const handleResponse = await page.goto("/@fixture-revnet/operator", {
+    waitUntil: "domcontentloaded",
+  });
+  expectSecurityHeaders(handleResponse);
+  await expect(page).toHaveURL(/\/@fixture-revnet\/operator$/u);
+  await expect(page.getByText("Set project handle")).toBeVisible();
+  await expect(page.getByRole("link", { name: "/@fixture-revnet" })).toBeVisible();
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
+
+  const handleOwnersResponse = await page.goto("/@fixture-revnet/owners", {
+    waitUntil: "domcontentloaded",
+  });
+  expectSecurityHeaders(handleOwnersResponse);
+  const refreshedSubtab = page.waitForResponse(
+    (response) =>
+      response.request().resourceType() === "document" &&
+      new URL(response.url()).pathname === "/@fixture-revnet/owners" &&
+      new URL(response.url()).searchParams.get("subtab") === "splits",
+  );
+  await page.getByRole("button", { name: "Splits", exact: true }).click();
+  expectSecurityHeaders(await refreshedSubtab);
+  await expect(page).toHaveURL(/\/@fixture-revnet\/owners\?subtab=splits$/u);
+  await expect(page.getByText("No splits on this chain.")).toBeVisible();
 
   const status = await fixtureStatus(request);
   expect(status.unknownRequests).toEqual([]);
   expect(status.graphqlOperations.V6ProjectPayers).toBeGreaterThan(0);
   expect(status.graphqlOperations.V6PermissionHolders).toBeGreaterThan(0);
+  expect(status.rpcMethods.eth_getLogs).toBeGreaterThan(0);
   expect(status.graphqlOperations.V6StoredAutoIssuances).toBeGreaterThan(0);
   expect(status.graphqlOperations.V6AutoIssueEvents).toBeGreaterThan(0);
   expect(status.graphqlOperations.V6AllLoans).toBeGreaterThan(0);
   expect(status.contractFunctions.ownerOf).toBeGreaterThan(0);
   await page.waitForTimeout(250);
+  expectBoundaryToStayLocal(boundary);
+});
+
+test("verified handle routes decode exactly once", async ({ page, request }) => {
+  const boundary = await installBrowserBoundary(page);
+
+  const projectResponse = await page.goto("/eth:1/operator", {
+    waitUntil: "domcontentloaded",
+  });
+  expectSecurityHeaders(projectResponse);
+  const search = page.getByRole("searchbox", { name: /Search revnets/u });
+  await search.fill("@fixture-revnet");
+  const searchNavigation = page.waitForResponse(
+    (response) =>
+      response.request().resourceType() === "document" &&
+      new URL(response.url()).pathname === "/@fixture-revnet",
+  );
+  await search.press("Enter");
+  expectSecurityHeaders(await searchNavigation);
+  await expect(page).toHaveURL(/\/@fixture-revnet$/u);
+
+  const handleResponse = await page.goto("/@fixture-revnet/operator", {
+    waitUntil: "domcontentloaded",
+  });
+  expectSecurityHeaders(handleResponse);
+  expect(handleResponse?.status()).toBe(200);
+  await expect(page.getByText("Set project handle")).toBeVisible();
+
+  // On a mutable alias, mobile Latest/Overview changes must survive the
+  // document navigation which revalidates the alias.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileHandleResponse = await page.goto("/@fixture-revnet", {
+    waitUntil: "domcontentloaded",
+  });
+  expectSecurityHeaders(mobileHandleResponse);
+  await expect(page.locator("[data-mobile-project-activity]")).toBeVisible();
+  await expect(page.locator("[data-mobile-project-content]")).toBeHidden();
+  const overviewNavigation = page.waitForResponse(
+    (response) =>
+      response.request().resourceType() === "document" &&
+      new URL(response.url()).pathname === "/@fixture-revnet" &&
+      new URL(response.url()).searchParams.get("view") === "overview",
+  );
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  expectSecurityHeaders(await overviewNavigation);
+  await expect(page).toHaveURL(/\/@fixture-revnet\?view=overview$/u);
+  await expect(page.locator("[data-mobile-project-content]")).toBeVisible();
+  await expect(page.locator("[data-mobile-project-activity]")).toBeHidden();
+  const latestNavigation = page.waitForResponse(
+    (response) =>
+      response.request().resourceType() === "document" &&
+      new URL(response.url()).pathname === "/@fixture-revnet" &&
+      !new URL(response.url()).search,
+  );
+  await page.getByRole("link", { name: "Latest", exact: true }).click();
+  expectSecurityHeaders(await latestNavigation);
+  await expect(page.locator("[data-mobile-project-activity]")).toBeVisible();
+
+  // Returning to a cached alias through browser history also gets a fresh
+  // document request instead of reviving an old ProjectProviders layout.
+  const aliasBeforeHistory = await page.goto("/@fixture-revnet/operator", {
+    waitUntil: "domcontentloaded",
+  });
+  expectSecurityHeaders(aliasBeforeHistory);
+  await page.getByRole("link", { name: "Learn", exact: true }).click();
+  await expect(page).toHaveURL(/\/learn$/u);
+  const backNavigation = page.waitForResponse(
+    (response) =>
+      response.request().resourceType() === "document" &&
+      new URL(response.url()).pathname === "/@fixture-revnet/operator",
+  );
+  // The alias guard intentionally starts a second document reload from the
+  // popstate handler. Waiting for the first navigation's load event races that
+  // replacement; commit proves history moved, while backNavigation below
+  // proves the fresh alias document was actually requested.
+  await page.goBack({ waitUntil: "commit" });
+  expectSecurityHeaders(await backNavigation);
+  await expect(page.getByText("Set project handle")).toBeVisible();
+
+  const doubleEncodedResponse = await page.goto("/%2540fixture-revnet/operator", {
+    waitUntil: "domcontentloaded",
+  });
+  expectSecurityHeaders(doubleEncodedResponse, 404);
+  expect(doubleEncodedResponse?.status()).toBe(404);
+  await expect(page.getByText("Set project handle")).toHaveCount(0);
+
+  const status = await fixtureStatus(request);
+  expect(status.unknownRequests).toEqual([]);
   expectBoundaryToStayLocal(boundary);
 });
 

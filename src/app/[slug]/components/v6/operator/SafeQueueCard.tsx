@@ -1,12 +1,24 @@
 "use client";
 
-import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import { useWriteContract } from "@/hooks/useReviewedWriteContract";
-import { pickRevnetOperator } from "@/lib/revnetOperator";
+import {
+  readAuthorityIdentity,
+  readBoundedSafeNonce,
+  readCrossChainHandleAuthority,
+  type SafeAuthorityIdentity,
+} from "@/lib/cross-chain-authority";
+import { PROJECT_HANDLE_CHAIN_ID } from "@/lib/projectHandles";
+import {
+  bindingMatchesProject,
+  classifyQueuedProjectHandleTransaction,
+  projectSafeQueueTargets,
+  verifyQueuedProjectHandleBinding,
+  type ProjectSafeQueueTarget,
+  type QueuedProjectHandleBinding,
+} from "@/lib/queuedProjectHandle";
 import {
   SAFE_EXEC_ABI,
-  SAFE_VIEW_ABI,
   listPendingSafeTransactions,
   safeExecutionArgs,
   safeQueueLink,
@@ -18,100 +30,273 @@ import {
 } from "@/lib/safe-queue";
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { encodeFunctionData, isAddress, type Address } from "viem";
+import { useRef, useState } from "react";
+import { encodeFunctionData, isAddressEqual } from "viem";
 import { useAccount } from "wagmi";
 import {
   chainName,
-  permissionHoldersWhere,
+  isLiveRevnetOperator,
   publicClientFor,
   type ChainProjectRow,
 } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
+import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
 
-type QueueRow = {
-  chainId: ChainProjectRow["chainId"];
-  safe: Address;
+type DisplayQueuedTransaction = {
+  transaction: SafeQueuedTransaction;
+  handleBinding: QueuedProjectHandleBinding | null;
+  handleError?: string;
+};
+
+type QueueRow = ProjectSafeQueueTarget & {
   policy: SafePolicy;
-  transactions: SafeQueuedTransaction[];
+  transactions: DisplayQueuedTransaction[];
   queueError?: string;
 };
+
+type LiveSafePolicy = SafePolicy & { identity: SafeAuthorityIdentity };
+
+type ReviewedExecution = {
+  policy: LiveSafePolicy;
+  target: ProjectSafeQueueTarget;
+  transaction: SafeQueuedTransaction;
+};
+
+async function readLiveSafePolicy(
+  row: Pick<QueueRow, "chainId" | "safe" | "authorityRows" | "handleOnly">,
+): Promise<LiveSafePolicy> {
+  const mainnetClient = publicClientFor(PROJECT_HANDLE_CHAIN_ID);
+  let hasLiveAuthority = false;
+  for (const authorityRow of row.authorityRows) {
+    const sourceClient = publicClientFor(authorityRow.chainId);
+    if (!(await isLiveRevnetOperator(sourceClient, authorityRow, row.safe))) continue;
+    if (!row.handleOnly) {
+      hasLiveAuthority = true;
+      break;
+    }
+    const authority = await readCrossChainHandleAuthority({
+      sourceChainId: authorityRow.chainId,
+      sourceClient,
+      mainnetClient,
+      authority: row.safe,
+    });
+    if (authority.status === "valid-safe") {
+      hasLiveAuthority = true;
+      break;
+    }
+  }
+  if (!hasLiveAuthority) {
+    throw new Error("This Safe is no longer the live revnet operator.");
+  }
+  const client = publicClientFor(row.chainId);
+  const identity = await readAuthorityIdentity(client, row.safe);
+  if (identity?.kind !== "safe") {
+    throw new Error("The operator no longer has a supported canonical Safe identity.");
+  }
+  const nonce = await readBoundedSafeNonce(client, row.safe);
+  if (nonce === null || nonce > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("The Safe nonce could not be verified.");
+  }
+  return {
+    identity,
+    owners: identity.owners,
+    threshold: identity.threshold,
+    nonce: Number(nonce),
+  };
+}
+
+function sameSafePolicy(left: LiveSafePolicy, right: LiveSafePolicy): boolean {
+  const leftOwners = left.identity.owners.map((owner) => owner.toLowerCase()).sort();
+  const rightOwners = right.identity.owners.map((owner) => owner.toLowerCase()).sort();
+  return (
+    left.nonce === right.nonce &&
+    left.identity.proxyCodeHash.toLowerCase() === right.identity.proxyCodeHash.toLowerCase() &&
+    isAddressEqual(left.identity.singleton, right.identity.singleton) &&
+    left.identity.singletonCodeHash.toLowerCase() ===
+      right.identity.singletonCodeHash.toLowerCase() &&
+    left.identity.version === right.identity.version &&
+    left.identity.threshold === right.identity.threshold &&
+    isAddressEqual(left.identity.fallbackHandler, right.identity.fallbackHandler) &&
+    left.identity.fallbackHandlerCodeHash?.toLowerCase() ===
+      right.identity.fallbackHandlerCodeHash?.toLowerCase() &&
+    isAddressEqual(left.identity.guard, right.identity.guard) &&
+    left.identity.hasModules === right.identity.hasModules &&
+    left.identity.ownersAreEoas === right.identity.ownersAreEoas &&
+    leftOwners.length === rightOwners.length &&
+    leftOwners.every((owner, index) => owner === rightOwners[index])
+  );
+}
+
+async function verifyLiveQueuedTransaction(
+  target: ProjectSafeQueueTarget,
+  transaction: SafeQueuedTransaction,
+): Promise<QueuedProjectHandleBinding | null> {
+  const binding = classifyQueuedProjectHandleTransaction(target.chainId, transaction);
+  if (target.handleOnly) {
+    if (!binding || !target.handleSource || !bindingMatchesProject(binding, target.handleSource)) {
+      throw new Error("This Ethereum queue only accepts handle writes for the viewed revnet.");
+    }
+  }
+  if (!binding) return null;
+  await verifyQueuedProjectHandleBinding({
+    binding,
+    safe: target.safe,
+    transaction,
+    clientFor: publicClientFor,
+  });
+  return binding;
+}
 
 export function SafeQueueCard({
   rows,
   fallbackOperator,
+  fallbackProject,
 }: {
   rows: ChainProjectRow[];
   fallbackOperator?: string;
+  fallbackProject: ChainProjectRow;
 }) {
   const { address } = useAccount();
   const { signSafeTransactionAsync } = useReviewedSafeSignature();
-  const { writeContractAsync } = useWriteContract();
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const holders = useCompleteProjectPermissions(
-    permissionHoldersWhere(rows, { isRevnetOperator: true }),
-    rows.length > 0,
+  const reviewedExecution = useRef<ReviewedExecution | null>(null);
+  const operators = useLiveRevnetOperators(rows, {
+    ...fallbackProject,
+    address: fallbackOperator,
+  });
+  const { operatorByChain } = operators;
+  const operatorKey = `${rows
+    .map((row) => `${row.chainId}:${row.projectId}:${operatorByChain.get(row.chainId) ?? ""}`)
+    .join(",")}|handle:${fallbackProject.chainId}:${fallbackProject.projectId}`;
+  const queueTargets = projectSafeQueueTargets(
+    rows.flatMap((row) => {
+      const safe = operatorByChain.get(row.chainId);
+      return safe ? [{ ...row, safe }] : [];
+    }),
+    fallbackProject,
   );
-  const operatorByChain = useMemo(() => {
-    const map = new Map<number, Address>();
-    for (const row of rows) {
-      const indexed = pickRevnetOperator(
-        (holders.data ?? []).filter(
-          (item) => item.chainId === row.chainId && item.projectId === row.projectId,
-        ),
-      );
-      if (indexed) map.set(row.chainId, indexed);
-      else if (fallbackOperator && isAddress(fallbackOperator)) {
-        map.set(row.chainId, fallbackOperator as Address);
+  const { writeContractAsync } = useWriteContract({
+    reviewedInParent: true,
+    reverify: async (variables) => {
+      const reviewed = reviewedExecution.current;
+      if (!reviewed) {
+        throw new Error("The reviewed Safe execution is no longer available.");
       }
-    }
-    return map;
-  }, [fallbackOperator, holders.data, rows]);
-  const operatorKey = rows
-    .map((row) => `${row.chainId}:${operatorByChain.get(row.chainId) ?? ""}`)
-    .join(",");
+      if (
+        Number(variables.chainId) !== reviewed.target.chainId ||
+        !isAddressEqual(reviewed.target.safe, variables.address)
+      ) {
+        throw new Error("The reviewed Safe execution target changed before submission.");
+      }
+      if (
+        variables.functionName !== "execTransaction" ||
+        !variables.args ||
+        (variables.value !== undefined && BigInt(variables.value) !== 0n)
+      ) {
+        throw new Error("The reviewed Safe execution call changed before submission.");
+      }
+      const submittedData = encodeFunctionData({
+        abi: SAFE_EXEC_ABI,
+        functionName: "execTransaction",
+        args: variables.args as ReturnType<typeof safeExecutionArgs>,
+      });
+      const expectedData = encodeFunctionData({
+        abi: SAFE_EXEC_ABI,
+        functionName: "execTransaction",
+        args: safeExecutionArgs(reviewed.transaction, reviewed.policy.owners),
+      });
+      if (submittedData.toLowerCase() !== expectedData.toLowerCase()) {
+        throw new Error("The reviewed queued transaction changed before submission.");
+      }
+      const confirmed = await readLiveSafePolicy(reviewed.target);
+      if (!sameSafePolicy(reviewed.policy, confirmed)) {
+        throw new Error("The Safe policy changed during review. Inspect the transaction again.");
+      }
+      await verifyLiveQueuedTransaction(reviewed.target, reviewed.transaction);
+    },
+  });
 
   const queue = useQuery({
     queryKey: ["revnet-safe-queues", operatorKey],
-    enabled: !holders.isLoading && operatorByChain.size > 0,
+    enabled: !operators.isLoading && queueTargets.length > 0,
     staleTime: 15_000,
     queryFn: async (): Promise<QueueRow[]> => {
       const results = await Promise.all(
-        rows.map(async (row): Promise<QueueRow | null> => {
-          const safe = operatorByChain.get(row.chainId);
-          if (!safe) return null;
-          const client = publicClientFor(row.chainId);
+        queueTargets.map(async (target): Promise<QueueRow | null> => {
           try {
-            const code = await client.getCode({ address: safe });
-            if (!code || code === "0x") return null;
-            const [owners, threshold, nonce] = await Promise.all([
-              client.readContract({ address: safe, abi: SAFE_VIEW_ABI, functionName: "getOwners" }),
-              client.readContract({
-                address: safe,
-                abi: SAFE_VIEW_ABI,
-                functionName: "getThreshold",
-              }),
-              client.readContract({ address: safe, abi: SAFE_VIEW_ABI, functionName: "nonce" }),
-            ]);
-            if (!owners.length || threshold <= 0n) return null;
+            const livePolicy = await readLiveSafePolicy(target);
             const policy = {
-              owners: owners as Address[],
-              threshold: Number(threshold),
-              nonce: Number(nonce),
+              owners: livePolicy.owners,
+              threshold: livePolicy.threshold,
+              nonce: livePolicy.nonce,
             };
-            let transactions: SafeQueuedTransaction[] = [];
+            let transactions: DisplayQueuedTransaction[] = [];
             let queueError: string | undefined;
             try {
-              transactions = await listPendingSafeTransactions(row.chainId, safe, policy.nonce);
+              const pending = await listPendingSafeTransactions(
+                target.chainId,
+                target.safe,
+                policy.nonce,
+              );
+              const inspected = await Promise.all(
+                pending.map(async (transaction): Promise<DisplayQueuedTransaction | null> => {
+                  let handleBinding: QueuedProjectHandleBinding | null = null;
+                  try {
+                    handleBinding = classifyQueuedProjectHandleTransaction(
+                      target.chainId,
+                      transaction,
+                    );
+                  } catch (cause) {
+                    if (target.handleOnly) return null;
+                    return {
+                      transaction,
+                      handleBinding: null,
+                      handleError:
+                        cause instanceof Error
+                          ? cause.message
+                          : "This queued handle transaction could not be decoded safely.",
+                    };
+                  }
+                  if (
+                    target.handleOnly &&
+                    (!handleBinding ||
+                      !target.handleSource ||
+                      !bindingMatchesProject(handleBinding, target.handleSource))
+                  ) {
+                    return null;
+                  }
+                  if (!handleBinding) return { transaction, handleBinding };
+                  try {
+                    await verifyQueuedProjectHandleBinding({
+                      binding: handleBinding,
+                      safe: target.safe,
+                      transaction,
+                      clientFor: publicClientFor,
+                    });
+                    return { transaction, handleBinding };
+                  } catch (cause) {
+                    return {
+                      transaction,
+                      handleBinding,
+                      handleError:
+                        cause instanceof Error
+                          ? cause.message
+                          : "This queued handle transaction is no longer authorized.",
+                    };
+                  }
+                }),
+              );
+              transactions = inspected.filter(
+                (transaction): transaction is DisplayQueuedTransaction => transaction !== null,
+              );
             } catch (cause) {
               queueError =
                 cause instanceof Error ? cause.message : "Safe queue service is unavailable.";
             }
             return {
-              chainId: row.chainId,
-              safe,
+              ...target,
               policy,
               transactions,
               queueError,
@@ -134,14 +319,31 @@ export function SafeQueueCard({
     setError(null);
     setNotice(null);
     try {
-      if (!row.policy.owners.some((owner) => owner.toLowerCase() === address.toLowerCase())) {
+      await verifyLiveQueuedTransaction(row, tx);
+      const policy = await readLiveSafePolicy(row);
+      if (!policy.owners.some((owner) => owner.toLowerCase() === address.toLowerCase())) {
         throw new Error("The connected account is not an owner of this Safe.");
       }
       const signature = await signSafeTransactionAsync({
         chainId: row.chainId,
         safe: row.safe,
         tx,
+        reverify: async (liveAccount) => {
+          await verifyLiveQueuedTransaction(row, tx);
+          const confirmed = await readLiveSafePolicy(row);
+          if (!sameSafePolicy(policy, confirmed)) {
+            throw new Error(
+              "The Safe policy changed during review. Inspect the transaction again.",
+            );
+          }
+          if (
+            !confirmed.owners.some((owner) => owner.toLowerCase() === liveAccount.toLowerCase())
+          ) {
+            throw new Error("The connected account is no longer an owner of this Safe.");
+          }
+        },
       });
+      await verifyLiveQueuedTransaction(row, tx);
       await submitSafeConfirmation(row.chainId, tx, signature);
       setNotice(`Signed Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`);
       await queue.refetch();
@@ -158,7 +360,15 @@ export function SafeQueueCard({
     setError(null);
     setNotice(null);
     try {
-      const args = safeExecutionArgs(tx, row.policy.owners);
+      await verifyLiveQueuedTransaction(row, tx);
+      const policy = await readLiveSafePolicy(row);
+      if (policy.nonce !== Number(tx.nonce)) {
+        throw new Error(`Safe nonce ${policy.nonce} must execute first.`);
+      }
+      if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold) {
+        throw new Error("The transaction no longer has enough current-owner confirmations.");
+      }
+      const args = safeExecutionArgs(tx, policy.owners);
       const data = encodeFunctionData({
         abi: SAFE_EXEC_ABI,
         functionName: "execTransaction",
@@ -194,13 +404,28 @@ export function SafeQueueCard({
           },
         ],
       });
-      await writeContractAsync({
-        chainId: row.chainId,
-        address: row.safe,
-        abi: SAFE_EXEC_ABI,
-        functionName: "execTransaction",
-        args,
-      });
+      await verifyLiveQueuedTransaction(row, tx);
+      const confirmedPolicy = await readLiveSafePolicy(row);
+      if (!sameSafePolicy(policy, confirmedPolicy)) {
+        throw new Error("The Safe policy changed during review. Inspect the transaction again.");
+      }
+      reviewedExecution.current = {
+        policy: confirmedPolicy,
+        target: row,
+        transaction: tx,
+      };
+      try {
+        await writeContractAsync({
+          chainId: row.chainId,
+          address: row.safe,
+          abi: SAFE_EXEC_ABI,
+          functionName: "execTransaction",
+          args,
+        });
+        await verifyLiveQueuedTransaction(row, tx);
+      } finally {
+        reviewedExecution.current = null;
+      }
       setNotice(`Submitted Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`);
       await queue.refetch();
     } catch (cause) {
@@ -220,7 +445,8 @@ export function SafeQueueCard({
           <div key={`${row.chainId}:${row.safe}`} className="border border-melon-200 bg-white p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-bold">
-                {chainName(row.chainId)} · nonce {row.policy.nonce}
+                {row.handleOnly ? "Ethereum handles" : chainName(row.chainId)} · nonce{" "}
+                {row.policy.nonce}
               </span>
               {safeQueueLink(row.chainId, row.safe) ? (
                 <a
@@ -241,10 +467,12 @@ export function SafeQueueCard({
                   : " Inspect this Safe in a client that supports this chain."}
               </p>
             ) : row.transactions.length === 0 ? (
-              <p className="mt-2 text-sm text-zinc-500">No pending transactions.</p>
+              <p className="mt-2 text-sm text-zinc-500">
+                {row.handleOnly ? "No pending handle transactions." : "No pending transactions."}
+              </p>
             ) : (
               <ul className="mt-2 divide-y divide-melon-100">
-                {row.transactions.map((tx) => {
+                {row.transactions.map(({ transaction: tx, handleBinding, handleError }) => {
                   const confirmations = usableSafeConfirmations(tx, row.policy.owners);
                   const signed = confirmations.some(
                     (confirmation) =>
@@ -259,14 +487,26 @@ export function SafeQueueCard({
                           #{tx.nonce} · {tx.data?.slice(0, 10) ?? "0x"} · {confirmations.length}/
                           {row.policy.threshold} signatures
                         </summary>
+                        {handleBinding ? (
+                          <p className="mt-2 font-medium text-melon-800">
+                            {handleBinding.kind === "ens-text"
+                              ? `ENS juicebox record → ${handleBinding.value}`
+                              : `Publish @${handleBinding.handle.handle} → ${handleBinding.source.chainId}:${handleBinding.source.projectId}`}
+                          </p>
+                        ) : null}
                         <div className="mt-2 break-all bg-melon-50 p-2 font-mono">
                           <p>To: {tx.to}</p>
                           <p>Value: {String(tx.value ?? 0)} wei</p>
                           <p>Data: {tx.data ?? "0x"}</p>
                         </div>
                       </details>
+                      {handleError ? (
+                        <p className="mt-2 text-red-700" role="alert">
+                          Handle transaction blocked: {handleError}
+                        </p>
+                      ) : null}
                       <div className="mt-2 flex gap-2">
-                        {!signed && !ready ? (
+                        {!handleError && !signed && !ready ? (
                           <button
                             type="button"
                             className="border border-melon-500 px-3 py-1 disabled:opacity-50"
@@ -276,7 +516,7 @@ export function SafeQueueCard({
                             {busy === `sign:${row.chainId}:${tx.nonce}` ? "Signing…" : "Sign"}
                           </button>
                         ) : null}
-                        {ready ? (
+                        {!handleError && ready ? (
                           <button
                             type="button"
                             className="bg-melon-700 px-3 py-1 text-white disabled:opacity-50"

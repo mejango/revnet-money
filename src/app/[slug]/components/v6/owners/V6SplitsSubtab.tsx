@@ -34,10 +34,7 @@ import { zeroAddress } from "viem";
 import { useReadContracts } from "wagmi";
 import { ChangeSplitRecipientsDialog } from "../../../owners/components/ChangeSplitRecipientsDialog";
 import { DistributeReservedTokensButton } from "../../../owners/components/DistributeReservedTokensButton";
-import {
-  currentStageIndex,
-  effectiveSplitPercent,
-} from "../../../owners/components/splitsLib";
+import { currentStageIndex, effectiveSplitPercent } from "../../../owners/components/splitsLib";
 import { ProjectItem } from "../shared";
 
 const BURN_SENTINEL = "0x000000000000000000000000000000000000dead";
@@ -84,7 +81,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
   type RulesetRow = { id: number; start: number; metadata: bigint };
   const rulesetsByChain = new Map<number, RulesetRow[]>();
   chains.forEach((c) => {
-    const result = rulesetReads.data?.get(Number(c.chainId));
+    const result = rulesetReads.data?.[Number(c.chainId)];
     if (result) {
       rulesetsByChain.set(Number(c.chainId), result as unknown as RulesetRow[]);
     }

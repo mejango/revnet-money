@@ -17,23 +17,38 @@ export type ReviewedSafeSignatureRequest = {
   chainId: number;
   safe: Address;
   tx: SafeQueuedTransaction;
+  /** Re-authenticate the Safe/owner after review and chain switching. */
+  reverify?: (account: Address) => Promise<void>;
 };
+
+function exactSafeDigest(
+  chainId: number,
+  safe: Address,
+  tx: SafeQueuedTransaction,
+  expected?: Hex,
+): Hex {
+  const digest = safeTransactionHash(chainId, safe, tx);
+  const serviceHash = tx.safeTxHash ?? tx.contractTransactionHash;
+  if (serviceHash && serviceHash.toLowerCase() !== digest.toLowerCase()) {
+    throw new Error("Safe service transaction data does not match its signed hash.");
+  }
+  if (expected && expected.toLowerCase() !== digest.toLowerCase()) {
+    throw new Error("The Safe transaction changed while the wallet signature was pending.");
+  }
+  return digest;
+}
 
 export function useReviewedSafeSignature() {
   const config = useConfig();
   const { switchChainAsync } = useSwitchChain();
 
   const signSafeTransactionAsync = useCallback(
-    async ({ chainId, safe, tx }: ReviewedSafeSignatureRequest): Promise<Hex> => {
+    async ({ chainId, safe, tx, reverify }: ReviewedSafeSignatureRequest): Promise<Hex> => {
       requireNoViewAs();
       const before = getAccount(config);
       if (!before.address) throw new Error("Connect a wallet first.");
 
-      const digest = safeTransactionHash(chainId, safe, tx);
-      const serviceHash = tx.safeTxHash ?? tx.contractTransactionHash;
-      if (serviceHash && serviceHash.toLowerCase() !== digest.toLowerCase()) {
-        throw new Error("Safe service transaction data does not match its signed hash.");
-      }
+      const digest = exactSafeDigest(chainId, safe, tx);
 
       await requireTransactionReview({
         kind: "authorization",
@@ -69,6 +84,15 @@ export function useReviewedSafeSignature() {
       ) {
         throw new Error("Connected account or network changed. Review the Safe transaction again.");
       }
+      await reverify?.(after.address);
+      const reverified = getAccount(config);
+      if (
+        !reverified.address ||
+        reverified.address.toLowerCase() !== after.address.toLowerCase() ||
+        reverified.chainId !== chainId
+      ) {
+        throw new Error("Connected account or network changed. Review the Safe transaction again.");
+      }
       const wallet = await getWalletClient(config, { chainId, account: after.address });
       if (
         !wallet.account ||
@@ -76,13 +100,35 @@ export function useReviewedSafeSignature() {
       ) {
         throw new Error("Connected account changed. Review the Safe transaction again.");
       }
-      return wallet.signTypedData({
+      const signature = await wallet.signTypedData({
         account: wallet.account,
         domain: { chainId, verifyingContract: safe },
         types: SAFE_TX_TYPES,
         primaryType: "SafeTx",
         message: safeMessage(tx),
       });
+      const signedAccount = getAccount(config);
+      if (
+        !signedAccount.address ||
+        signedAccount.address.toLowerCase() !== before.address.toLowerCase() ||
+        signedAccount.chainId !== chainId
+      ) {
+        throw new Error("Connected account or network changed. Review the Safe transaction again.");
+      }
+      // A wallet prompt has no time bound. Re-authenticate the live project
+      // Safe after it closes, before the caller can POST this signature to the
+      // transaction service, and prove the signed payload stayed exact.
+      await reverify?.(signedAccount.address);
+      exactSafeDigest(chainId, safe, tx, digest);
+      const postverified = getAccount(config);
+      if (
+        !postverified.address ||
+        postverified.address.toLowerCase() !== signedAccount.address.toLowerCase() ||
+        postverified.chainId !== chainId
+      ) {
+        throw new Error("Connected account or network changed. Review the Safe transaction again.");
+      }
+      return signature;
     },
     [config, switchChainAsync],
   );

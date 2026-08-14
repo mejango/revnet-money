@@ -1,8 +1,9 @@
 "use client";
 
 import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
-import { formatEthAddress } from "@/lib/utils";
 import { rememberProjectNavigation } from "@/lib/project-navigation";
+import { parseProjectHandleInput } from "@/lib/projectHandles";
+import { formatEthAddress } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Address, isAddress } from "viem";
@@ -75,9 +76,19 @@ export function RevnetSearch() {
   const [open, setOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const trimmedQuery = query.trim();
+  const isHandleQuery = trimmedQuery.startsWith("@");
+  const handleRoute = (() => {
+    if (!isHandleQuery) return null;
+    try {
+      return `/@${parseProjectHandleInput(trimmedQuery).handle}`;
+    } catch {
+      return null;
+    }
+  })();
 
   const isAddressQuery = isAddress(trimmedQuery);
-  const ensCandidate = !isAddressQuery && looksLikeEnsName(trimmedQuery) ? trimmedQuery : undefined;
+  const ensCandidate =
+    !isHandleQuery && !isAddressQuery && looksLikeEnsName(trimmedQuery) ? trimmedQuery : undefined;
   const [debouncedEnsName, setDebouncedEnsName] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -101,6 +112,12 @@ export function RevnetSearch() {
   const hasAccountRow = accountResult !== null || ensResolving;
 
   useEffect(() => {
+    if (isHandleQuery) {
+      setResults([]);
+      setOpen(true);
+      setSearching(false);
+      return;
+    }
     const normalizedQuery = trimmedQuery.replace(/^\$/u, "");
     if (!normalizedQuery || (normalizedQuery.length < 2 && !/^\d+$/u.test(normalizedQuery))) {
       setResults([]);
@@ -136,7 +153,7 @@ export function RevnetSearch() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [trimmedQuery]);
+  }, [isHandleQuery, trimmedQuery]);
 
   useEffect(() => {
     const closeOnOutsidePointer = (event: PointerEvent) => {
@@ -147,8 +164,8 @@ export function RevnetSearch() {
   }, []);
 
   useEffect(() => {
-    if (hasAccountRow) setOpen(true);
-  }, [hasAccountRow]);
+    if (hasAccountRow || isHandleQuery) setOpen(true);
+  }, [hasAccountRow, isHandleQuery]);
 
   const goToResult = (result: SearchResult) => {
     rememberProjectNavigation(resultHref(result), {
@@ -170,11 +187,28 @@ export function RevnetSearch() {
     router.push(`/account/${account.id}`);
   };
 
+  const clearSearch = () => {
+    setOpen(false);
+    setQuery("");
+    setResults([]);
+  };
+
   return (
     <div ref={containerRef} className="relative min-w-0 w-full">
       <form
         role="search"
+        action={handleRoute ?? undefined}
         onSubmit={(event) => {
+          if (handleRoute) {
+            // Capture the route before clearing controlled state, then force a
+            // full navigation. A React rerender must not be able to remove the
+            // form action before the browser submits it, and the same alias may
+            // now resolve to a different tuple than the mounted layout.
+            event.preventDefault();
+            clearSearch();
+            window.location.assign(handleRoute);
+            return;
+          }
           event.preventDefault();
           if (accountResult) goToAccount(accountResult);
           else if (results[0]) goToResult(results[0]);
@@ -182,7 +216,8 @@ export function RevnetSearch() {
       >
         <label className="relative block">
           <span className="sr-only">
-            Search revnets by name, ticker, or project ID, or an account by address or ENS name
+            Search revnets by name, handle, ticker, or project ID, or an account by address or ENS
+            name
           </span>
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">
             <Magnifier />
@@ -192,7 +227,7 @@ export function RevnetSearch() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onFocus={() => {
-              if (results.length > 0 || searching || hasAccountRow) setOpen(true);
+              if (results.length > 0 || searching || hasAccountRow || isHandleQuery) setOpen(true);
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") setOpen(false);
@@ -205,7 +240,19 @@ export function RevnetSearch() {
 
       {open ? (
         <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-96 overflow-y-auto border border-zinc-200 bg-white py-1 shadow-lg">
-          {accountResult ? (
+          {handleRoute ? (
+            <a
+              href={handleRoute}
+              onClick={clearSearch}
+              data-project-navigation="document"
+              className="block w-full px-4 py-3 text-left hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+            >
+              <span className="block truncate font-medium">{handleRoute.slice(1)}</span>
+              <span className="block truncate text-xs text-zinc-600">
+                Open revnet handle · verified on load
+              </span>
+            </a>
+          ) : accountResult ? (
             <button
               type="button"
               onClick={() => goToAccount(accountResult)}
@@ -222,7 +269,11 @@ export function RevnetSearch() {
           ) : ensResolving ? (
             <p className="px-4 py-3 text-xs text-zinc-400">Resolving name…</p>
           ) : null}
-          {searching ? (
+          {isHandleQuery ? (
+            handleRoute ? null : (
+              <p className="px-4 py-3 text-sm text-zinc-600">Enter a valid @handle.</p>
+            )
+          ) : searching ? (
             <p className="px-4 py-3 text-sm text-zinc-600">Searching…</p>
           ) : results.length === 0 ? (
             hasAccountRow ? null : (

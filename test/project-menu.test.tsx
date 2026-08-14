@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   segment: null as string | null,
+  slug: "base:42",
 }));
 
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ slug: "base:42" }),
+  useParams: () => ({ slug: mocks.slug }),
   useSelectedLayoutSegment: () => mocks.segment,
 }));
 
@@ -15,6 +16,7 @@ import { ProjectMenu } from "@/app/[slug]/components/ProjectMenu";
 describe("ProjectMenu", () => {
   it("reveals and collapses privileged sections inline from More", () => {
     mocks.segment = null;
+    mocks.slug = "base:42";
     render(<ProjectMenu />);
 
     const overview = screen.getByRole("link", { name: "Overview" });
@@ -51,6 +53,7 @@ describe("ProjectMenu", () => {
 
   it("names the active overflow section from the current route", () => {
     mocks.segment = "operator";
+    mocks.slug = "base:42";
     render(<ProjectMenu />);
 
     expect(
@@ -58,5 +61,38 @@ describe("ProjectMenu", () => {
         name: "More project sections, current: Operator",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the pretty @handle URL while navigating between project tabs", () => {
+    mocks.segment = null;
+    mocks.slug = "@design.juicebox";
+    render(<ProjectMenu />);
+
+    const terms = screen.getByRole("link", { name: "Terms" });
+    expect(terms).toHaveAttribute("href", "/@design.juicebox/terms");
+    expect(terms).toHaveAttribute("data-project-navigation", "document");
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
+      "href",
+      "/@design.juicebox?view=overview",
+    );
+    expect(screen.getByRole("link", { name: "Latest" })).toHaveAttribute(
+      "href",
+      "/@design.juicebox",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More project sections" }));
+    const operator = screen.getByRole("link", { name: "Operator" });
+    expect(operator).toHaveAttribute("href", "/@design.juicebox/operator");
+    expect(operator).toHaveAttribute("data-project-navigation", "document");
+  });
+
+  it("retains client navigation only for immutable numeric project slugs", () => {
+    mocks.segment = null;
+    mocks.slug = "base:42";
+    render(<ProjectMenu />);
+
+    expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute(
+      "data-project-navigation",
+      "client",
+    );
   });
 });

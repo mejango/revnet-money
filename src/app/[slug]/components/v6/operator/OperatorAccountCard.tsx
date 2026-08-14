@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
-import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { isSafeProposalPendingError, useWriteContract } from "@/hooks/useReviewedWriteContract";
-import { pickRevnetOperator } from "@/lib/revnetOperator";
+import { readAuthorityIdentity } from "@/lib/cross-chain-authority";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
@@ -20,31 +19,12 @@ import {
   ChainProjectRow,
   ChainWrite,
   chainName,
-  permissionHoldersWhere,
   publicClientFor,
   runSequentialWrites,
   v6ContractAddress,
 } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
-
-// Onchain Safe probe — no Safe transaction-service dependency, just bytecode +
-// the two view calls every Safe exposes.
-const safeProbeAbi = [
-  {
-    type: "function",
-    name: "getOwners",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "address[]" }],
-  },
-  {
-    type: "function",
-    name: "getThreshold",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint256" }],
-  },
-] as const;
+import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
 
 type AccountRow = ChainProjectRow & {
   operator: Address | null;
@@ -93,31 +73,18 @@ function groupRows(rows: AccountRow[]): AccountGroup[] {
 export function OperatorAccountCard({
   rows,
   fallbackOperator,
+  fallbackProject,
 }: {
   rows: ChainProjectRow[];
-  /** Server-resolved operator for the page chain (bendystraw fallback). */
+  /** Server-resolved candidate for the page chain; always live-checked here. */
   fallbackOperator?: string;
+  fallbackProject: ChainProjectRow;
 }) {
-  const holdersQuery = useCompleteProjectPermissions(
-    permissionHoldersWhere(rows, { isRevnetOperator: true }),
-    rows.length > 0,
-  );
-
-  const operatorByChain = useMemo(() => {
-    const map = new Map<number, Address>();
-    for (const row of rows) {
-      const indexed = pickRevnetOperator(
-        (holdersQuery.data ?? []).filter(
-          (item) => item.chainId === row.chainId && item.projectId === row.projectId,
-        ),
-      );
-      if (indexed) map.set(row.chainId, indexed);
-      else if (fallbackOperator && isAddress(fallbackOperator)) {
-        map.set(row.chainId, fallbackOperator as Address);
-      }
-    }
-    return map;
-  }, [holdersQuery.data, fallbackOperator, rows]);
+  const operators = useLiveRevnetOperators(rows, {
+    ...fallbackProject,
+    address: fallbackOperator,
+  });
+  const { operatorByChain } = operators;
 
   const operatorKey = rows
     .map((row) => `${row.chainId}:${operatorByChain.get(row.chainId) ?? ""}`)
@@ -125,7 +92,7 @@ export function OperatorAccountCard({
 
   const accountQuery = useQuery({
     queryKey: ["v6-operator-account-types", operatorKey],
-    enabled: !holdersQuery.isLoading,
+    enabled: !operators.isLoading,
     staleTime: 30_000,
     queryFn: async (): Promise<AccountRow[]> =>
       Promise.all(
@@ -134,37 +101,25 @@ export function OperatorAccountCard({
           if (!operator) return { ...row, operator, accountType: "Unknown", safe: null };
           try {
             const client = publicClientFor(row.chainId);
-            // No `.catch` here: an RPC failure must reach the outer catch and render
-            // "Unknown". Swallowing it makes a failed read indistinguishable from
-            // "no bytecode", and this card would then assert that a Safe-controlled
-            // revnet is operated by a plain EOA — a materially different trust
-            // statement presented as fact.
-            const code = await client.getCode({ address: operator });
-            if (!code || code === "0x") {
+            // The shared identity probe uses raw, gas-capped, return-bounded
+            // calls for every proxy policy read. Never decode getOwners from an
+            // arbitrary live operator contract in this display surface.
+            const identity = await readAuthorityIdentity(client, operator);
+            if (!identity) {
+              return { ...row, operator, accountType: "Unknown", safe: null };
+            }
+            if (identity.kind === "eoa") {
               return { ...row, operator, accountType: "EOA", safe: null };
             }
-            try {
-              const [owners, threshold] = await Promise.all([
-                client.readContract({
-                  address: operator,
-                  abi: safeProbeAbi,
-                  functionName: "getOwners",
-                }),
-                client.readContract({
-                  address: operator,
-                  abi: safeProbeAbi,
-                  functionName: "getThreshold",
-                }),
-              ]);
+            if (identity.kind === "safe") {
               return {
                 ...row,
                 operator,
                 accountType: "Safe multisig",
-                safe: { owners, threshold: Number(threshold) },
+                safe: { owners: identity.owners, threshold: identity.threshold },
               };
-            } catch {
-              return { ...row, operator, accountType: "Contract", safe: null };
             }
+            return { ...row, operator, accountType: "Contract", safe: null };
           } catch {
             return { ...row, operator, accountType: "Unknown", safe: null };
           }
@@ -186,7 +141,7 @@ export function OperatorAccountCard({
           Revnets have no owner. The revnet operator holds only the permissions granted at launch,
           and can pass the role on.
         </p>
-        {holdersQuery.isLoading || accountQuery.isLoading ? (
+        {operators.isLoading || accountQuery.isLoading ? (
           <SkeletonLines lines={4} className="mt-3" />
         ) : (
           <div className="mt-3 space-y-3">
@@ -250,7 +205,7 @@ export function OperatorAccountCard({
                   <TransferOperatorFlow
                     group={group}
                     onDone={() => {
-                      holdersQuery.refetch();
+                      operators.refetch();
                       accountQuery.refetch();
                     }}
                   />

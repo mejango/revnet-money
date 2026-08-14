@@ -125,6 +125,12 @@ function PrettyCall({
             {formatEther(call.value ?? 0n)} native · {(call.value ?? 0n).toString()} wei
           </dd>
         </div>
+        {call.safeTxGas !== undefined ? (
+          <div>
+            <dt className="text-melon-700">Safe transaction gas</dt>
+            <dd className="mt-1 font-mono">{call.safeTxGas.toString()} (signed envelope)</dd>
+          </div>
+        ) : null}
       </dl>
       {fn ? (
         <div className="mt-4 border-t border-melon-200 pt-3">

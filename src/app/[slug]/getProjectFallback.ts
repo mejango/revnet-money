@@ -145,11 +145,11 @@ const getOnchainProjectFallback = cache(
               .catch(() => null),
     ]);
 
-    let revDeployer: string | null = null;
+    let revOwner: string | null = null;
     try {
-      revDeployer = getJBContractAddress(RevnetCoreContracts.REVDeployer, 6, chainId);
+      revOwner = getJBContractAddress(RevnetCoreContracts.REVOwner, 6, chainId);
     } catch {
-      // No REVDeployer deployment known for this chain.
+      // No REVOwner deployment known for this chain.
     }
 
     return {
@@ -165,7 +165,7 @@ const getOnchainProjectFallback = cache(
       decimals: context?.decimals ?? null,
       currency: context ? Number(context.currency) : null,
       tokenSymbol: typeof tokenSymbol === "string" ? tokenSymbol : null,
-      isRevnet: revDeployer ? owner.toLowerCase() === revDeployer.toLowerCase() : null,
+      isRevnet: revOwner ? owner.toLowerCase() === revOwner.toLowerCase() : null,
     };
   },
 );

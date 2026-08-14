@@ -89,7 +89,7 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
         metadata: (metadata?.data ?? {}) as Record<string, unknown>,
         tokenSymbol: token?.data ? formatTokenSymbol(token) : "TOKEN",
         autoIssuances: (autoIssuancesQuery.data ?? []).flatMap((row) => {
-          const rulesets = rulesetsQuery.data?.get(Number(row.chainId)) ?? [];
+          const rulesets = rulesetsQuery.data?.[Number(row.chainId)] ?? [];
           const stageIndex = rulesets.findIndex(
             (ruleset) => String(ruleset.id) === String(row.stageId),
           );

@@ -238,12 +238,15 @@ export function Header(props: Props) {
                     className="mt-1.5 flex flex-wrap items-center gap-x-5 text-[15px] text-zinc-700"
                   >
                     {hasOperator && (
-                      <span ref={operatorRef} className="inline-flex items-center">
+                      <span
+                        ref={operatorRef}
+                        className="inline-flex max-w-full min-w-0 items-center"
+                      >
                         <span className="text-zinc-500">Operator:</span>
                         {operator ? (
                           <EtherscanLink
                             value={operator.address}
-                            className="ml-1 inline-flex min-h-11 items-center font-medium text-zinc-900 sm:min-h-0"
+                            className="ml-1 inline-block min-h-11 min-w-0 break-all font-medium text-zinc-900 sm:min-h-0"
                           >
                             {operator.displayName}
                           </EtherscanLink>

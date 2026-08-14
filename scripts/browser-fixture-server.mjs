@@ -21,10 +21,13 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import {
   decodeFunctionData,
+  encodeAbiParameters,
+  encodeEventTopics,
   encodeFunctionResult,
   erc20Abi,
   getAddress,
   multicall3Abi,
+  namehash,
   toFunctionSelector,
   zeroAddress,
 } from "viem";
@@ -62,6 +65,71 @@ const ensReverseAbi = [
     ],
   },
 ];
+const ensRegistryAbi = [
+  {
+    name: "resolver",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "node", type: "bytes32" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    name: "owner",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "node", type: "bytes32" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+];
+const ensTextResolverAbi = [
+  {
+    name: "text",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "node", type: "bytes32" },
+      { name: "key", type: "string" },
+    ],
+    outputs: [{ name: "", type: "string" }],
+  },
+];
+const projectHandlesAbi = [
+  {
+    name: "ensNamePartsOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "chainId", type: "uint256" },
+      { name: "projectId", type: "uint256" },
+      { name: "setter", type: "address" },
+    ],
+    outputs: [{ name: "", type: "string[]" }],
+  },
+  {
+    name: "handleOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "chainId", type: "uint256" },
+      { name: "projectId", type: "uint256" },
+      { name: "setter", type: "address" },
+    ],
+    outputs: [{ name: "", type: "string" }],
+  },
+];
+const operatorPermissionsSetEvent = {
+  type: "event",
+  name: "OperatorPermissionsSet",
+  anonymous: false,
+  inputs: [
+    { name: "operator", type: "address", indexed: true },
+    { name: "account", type: "address", indexed: true },
+    { name: "projectId", type: "uint256", indexed: true },
+    { name: "permissionIds", type: "uint8[]", indexed: false },
+    { name: "packed", type: "uint256", indexed: false },
+    { name: "caller", type: "address", indexed: false },
+  ],
+};
 const allowedEnsReverseAddresses = new Set(fixtureOwners.map((address) => address.toLowerCase()));
 
 function base32(bytes) {
@@ -96,11 +164,15 @@ const addresses = {
   buybackRegistry: addressOf(JBBuybackHookContracts.JBBuybackHookRegistry),
   controller: addressOf(JBCoreContracts.JBController),
   directory: addressOf(JBCoreContracts.JBDirectory),
+  ensRegistry: getAddress("0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e"),
+  ensTextResolver: getAddress("0x3333333333333333333333333333333333333333"),
   ensUniversalResolver: getAddress(mainnet.contracts.ensUniversalResolver.address),
   fundAccessLimits: addressOf(JBCoreContracts.JBFundAccessLimits),
   multicall: getAddress(mainnet.contracts.multicall3.address),
+  permissions: addressOf(JBCoreContracts.JBPermissions),
   projects: addressOf(JBCoreContracts.JBProjects),
   prices: addressOf(JBCoreContracts.JBPrices),
+  projectHandles: getAddress("0x726f4a3dfd2fb8297f8ab98d215b42a92d8eefe8"),
   rulesets: addressOf(JBCoreContracts.JBRulesets),
   splits: addressOf(JBCoreContracts.JBSplits),
   terminal: addressOf(JBCoreContracts.JBMultiTerminal),
@@ -150,6 +222,7 @@ const fixtureProject = {
   metadataUri: `ipfs://${fixtureCid}`,
   handle: "fixture-revnet",
   createdAt: 1_740_000_000,
+  description: null,
   suckerGroupId,
   logoUri: null,
   name: "Fixture Revnet",
@@ -161,7 +234,7 @@ const fixtureProject = {
   tokenSymbol: "USDC",
   isRevnet: true,
   volume: "1250000000",
-  owner: fixtureOwner,
+  owner: addresses.revOwner,
   permissionHolders: { items: [] },
   suckerGroup: {
     projects: {
@@ -231,6 +304,7 @@ const allowedGraphqlOperations = new Set([
   "MintNftEvents",
   "OwnedNfts",
   "Participants",
+  "PayEventRates",
   "Project",
   "ProjectAccountingContext",
   "ProjectCreateEvent",
@@ -366,6 +440,14 @@ const graphqlHandlers = {
         ],
       },
     };
+  },
+  PayEventRates(variables) {
+    requireExactVariables("PayEventRates", variables, {
+      where: { chainId, projectId, version: 6 },
+      limit: 500,
+      offset: 0,
+    });
+    return { payEvents: { items: [] } };
   },
   ActivityEvents(variables) {
     requireExactVariables("ActivityEvents", variables, {
@@ -510,15 +592,20 @@ const graphqlHandlers = {
   },
   V6PermissionHolders(variables) {
     const expectedBase = { chainId, projectId, version: 6 };
+    const revOwnerAccount = addresses.revOwner.toLowerCase();
     const exactProjects = {
       OR: [{ AND: [{ chainId }, { projectId }, { version: 6 }] }],
     };
     const exactOperator = {
       AND: [exactProjects, { isRevnetOperator: true }],
     };
+    const exactRevOwnerAccount = {
+      AND: [exactProjects, { account: revOwnerAccount }],
+    };
     const expected = [
       { where: exactProjects },
       { where: exactOperator },
+      { where: exactRevOwnerAccount },
       {
         where: exactProjects,
         limit: 250,
@@ -530,8 +617,18 @@ const graphqlHandlers = {
         offset: 0,
       },
       {
+        where: exactRevOwnerAccount,
+        limit: 250,
+        offset: 0,
+      },
+      {
         where: { ...expectedBase, isRevnetOperator: true },
         limit: 250,
+        offset: 0,
+      },
+      {
+        where: { ...expectedBase, account: revOwnerAccount },
+        limit: 64,
         offset: 0,
       },
     ];
@@ -539,6 +636,18 @@ const graphqlHandlers = {
       expected.some((candidate) => stableJson(candidate) === stableJson(variables)),
       `V6PermissionHolders variables=${JSON.stringify(variables)}`,
     );
+    // Server-side route discovery must exercise its onchain event fallback;
+    // the client-side AND-shaped request still receives the indexed operator.
+    if (
+      stableJson(variables) ===
+      stableJson({
+        where: { ...expectedBase, account: revOwnerAccount },
+        limit: 64,
+        offset: 0,
+      })
+    ) {
+      return { permissionHolders: { items: [], totalCount: 0 } };
+    }
     return {
       permissionHolders: {
         items: [
@@ -546,7 +655,7 @@ const graphqlHandlers = {
             chainId,
             projectId,
             version: 6,
-            account: fixtureOwner,
+            account: revOwnerAccount,
             operator: fixtureOwner,
             permissions: [7, 19, 30],
             isRevnetOperator: true,
@@ -795,6 +904,18 @@ registerCall({
   },
 });
 registerCall({
+  abi: jbControllerAbi,
+  functionName: "pendingReservedTokenBalanceOf",
+  address: addresses.controller,
+  result: ([requestedProjectId]) => {
+    requireFixture(
+      requestedProjectId === 1n,
+      `pendingReservedTokenBalanceOf projectId=${requestedProjectId}`,
+    );
+    return 0n;
+  },
+});
+registerCall({
   abi: jbRulesetsAbi,
   functionName: "allOf",
   address: addresses.rulesets,
@@ -855,6 +976,19 @@ registerCall({
 });
 registerCall({
   abi: revOwnerAbi,
+  functionName: "isOperatorOf",
+  address: addresses.revOwner,
+  result: ([requestedProjectId, operator]) => {
+    requireFixture(requestedProjectId === 1n, `isOperatorOf projectId=${requestedProjectId}`);
+    requireFixture(
+      operator.toLowerCase() === fixtureOwner.toLowerCase(),
+      `isOperatorOf operator=${operator}`,
+    );
+    return true;
+  },
+});
+registerCall({
+  abi: revOwnerAbi,
   functionName: "tiered721HookOf",
   address: addresses.revOwner,
   result: ([requestedProjectId]) => {
@@ -889,7 +1023,7 @@ registerCall({
   result: ([requestedProjectId, pricingCurrency, unitCurrency, decimals]) => {
     requireFixture(requestedProjectId === 1n, `pricePerUnitOf projectId=${requestedProjectId}`);
     requireFixture(
-      pricingCurrency === 2n && unitCurrency === 2n && decimals === 18n,
+      pricingCurrency === 2n && [2n, 906_423_112n].includes(unitCurrency) && decimals === 18n,
       `pricePerUnitOf quote=${pricingCurrency}:${unitCurrency}:${decimals}`,
     );
     return 1_000_000_000_000_000_000n;
@@ -969,6 +1103,49 @@ registerCall({
   },
 });
 
+const fixtureHandle = "fixture-revnet";
+const fixtureHandleNode = namehash(`${fixtureHandle}.eth`);
+for (const functionName of ["resolver", "owner"]) {
+  registerCall({
+    abi: ensRegistryAbi,
+    functionName,
+    address: addresses.ensRegistry,
+    result: ([node]) => {
+      requireFixture(node === fixtureHandleNode, `ENS ${functionName} node=${node}`);
+      return functionName === "resolver" ? addresses.ensTextResolver : fixtureOwner;
+    },
+  });
+}
+registerCall({
+  abi: ensTextResolverAbi,
+  functionName: "text",
+  address: addresses.ensTextResolver,
+  result: ([node, key]) => {
+    requireFixture(node === fixtureHandleNode, `ENS text node=${node}`);
+    requireFixture(key === "juicebox", `ENS text key=${key}`);
+    return `${chainId}:${projectId}`;
+  },
+});
+for (const [functionName, result] of [
+  ["ensNamePartsOf", [fixtureHandle]],
+  ["handleOf", fixtureHandle],
+]) {
+  registerCall({
+    abi: projectHandlesAbi,
+    functionName,
+    address: addresses.projectHandles,
+    result: ([requestedChainId, requestedProjectId, setter]) => {
+      requireFixture(requestedChainId === 1n, `${functionName} chainId=${requestedChainId}`);
+      requireFixture(requestedProjectId === 1n, `${functionName} projectId=${requestedProjectId}`);
+      requireFixture(
+        setter.toLowerCase() === fixtureOwner.toLowerCase(),
+        `${functionName} setter=${setter}`,
+      );
+      return result;
+    },
+  });
+}
+
 function executeContractCall(to, data) {
   const address = getAddress(to);
   if (address === addresses.multicall && data.startsWith(toFunctionSelector(multicall3Abi[0]))) {
@@ -1036,10 +1213,10 @@ function handleRpc(request) {
     result = "1";
   } else if (method === "eth_blockNumber") {
     requireFixture(params.length === 0, `eth_blockNumber params=${JSON.stringify(params)}`);
-    result = "0x12d687";
+    result = "0x18281d2";
   } else if (method === "eth_call") {
     requireFixture(
-      params.length === 2 && params[1] === "latest",
+      params.length === 2 && ["latest", "0x18281d2"].includes(params[1]),
       `eth_call params=${params.length}`,
     );
     const call = params[0];
@@ -1049,10 +1226,57 @@ function handleRpc(request) {
         !Array.isArray(call) &&
         typeof call.to === "string" &&
         typeof call.data === "string" &&
-        Object.keys(call).every((key) => ["to", "data"].includes(key)),
+        Object.keys(call).every((key) => ["from", "to", "data", "gas"].includes(key)),
       "invalid eth_call",
     );
+    const exactEnsTextRead = getAddress(call.to) === addresses.ensTextResolver;
+    const exactProjectHandleRead = getAddress(call.to) === addresses.projectHandles;
+    requireFixture(
+      exactEnsTextRead
+        ? call.gas === "0x1e848" && getAddress(call.from) === addresses.projectHandles
+        : exactProjectHandleRead
+          ? call.gas === "0x493e0" && call.from === undefined
+          : call.gas === undefined && call.from === undefined,
+      `eth_call gas=${String(call.gas)}`,
+    );
     result = executeContractCall(call.to, call.data);
+  } else if (method === "eth_getLogs") {
+    requireFixture(params.length === 1, `eth_getLogs params=${JSON.stringify(params)}`);
+    const filter = params[0];
+    const filterTopics = encodeEventTopics({
+      abi: [operatorPermissionsSetEvent],
+      eventName: "OperatorPermissionsSet",
+      args: { account: addresses.revOwner, projectId: 1n },
+    });
+    const eventTopics = encodeEventTopics({
+      abi: [operatorPermissionsSetEvent],
+      eventName: "OperatorPermissionsSet",
+      args: { operator: fixtureOwner, account: addresses.revOwner, projectId: 1n },
+    });
+    requireFixture(
+      filter &&
+        getAddress(filter.address) === addresses.permissions &&
+        stableJson(filter.topics) === stableJson(filterTopics) &&
+        filter.fromBlock === "0x182793b" &&
+        filter.toBlock === "0x18281d2",
+      `eth_getLogs filter=${JSON.stringify(filter)}`,
+    );
+    result = [
+      {
+        address: addresses.permissions,
+        blockHash: `0x${"44".repeat(32)}`,
+        blockNumber: "0x18281d1",
+        data: encodeAbiParameters(
+          [{ type: "uint8[]" }, { type: "uint256" }, { type: "address" }],
+          [[7, 19, 30], 1n, addresses.revOwner],
+        ),
+        logIndex: "0x0",
+        removed: false,
+        topics: eventTopics,
+        transactionHash: `0x${"55".repeat(32)}`,
+        transactionIndex: "0x0",
+      },
+    ];
   } else if (method === "eth_getCode") {
     requireFixture(
       params.length === 2 && params[1] === "latest",

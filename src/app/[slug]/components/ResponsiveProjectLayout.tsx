@@ -28,7 +28,9 @@ export function ResponsiveProjectLayout({
   }, []);
 
   useEffect(() => {
-    if (segment) setActivitySelected(false);
+    if (segment || new URL(window.location.href).searchParams.get("view") === "overview") {
+      setActivitySelected(false);
+    }
   }, [segment]);
 
   const activityActive = isSingleColumn && activitySelected;
@@ -40,6 +42,7 @@ export function ResponsiveProjectLayout({
           {sidebar}
         </div>
         <div
+          data-mobile-project-activity
           className={`order-3 ${
             activityActive ? "block" : "hidden"
           } min-[801px]:order-none min-[801px]:block`}
@@ -70,6 +73,7 @@ export function ResponsiveProjectLayout({
         </div>
 
         <div
+          data-mobile-project-content
           className={`order-4 pt-6 ${
             activityActive ? "hidden" : "block"
           } min-[801px]:order-none min-[801px]:block min-[801px]:pt-0`}

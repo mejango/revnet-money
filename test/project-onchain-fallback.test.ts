@@ -25,7 +25,7 @@ import { getProjectWithFallback } from "@/app/[slug]/getProjectFallback";
 const CHAIN_ID = sepolia.id;
 const PROJECT_ID = 123;
 
-const REV_DEPLOYER = getJBContractAddress(RevnetCoreContracts.REVDeployer, 6, CHAIN_ID);
+const REV_OWNER = getJBContractAddress(RevnetCoreContracts.REVOwner, 6, CHAIN_ID);
 const JB_PROJECTS = getJBContractAddress(JBCoreContracts.JBProjects, 6, CHAIN_ID).toLowerCase();
 const JB_DIRECTORY = getJBContractAddress(JBCoreContracts.JBDirectory, 6, CHAIN_ID).toLowerCase();
 
@@ -60,7 +60,7 @@ const indexedRow = () => ({
  * them from the terminal — never from the project's own ERC-20.
  */
 function mockOnchainProject({
-  owner = REV_DEPLOYER,
+  owner = REV_OWNER,
   context = NATIVE_CONTEXT as { token: string; decimals: number; currency: number } | null,
   uri = "",
 } = {}) {

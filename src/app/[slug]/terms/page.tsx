@@ -1,7 +1,7 @@
-import { parseSlug } from "@/lib/slug";
 import { notFound } from "next/navigation";
 import { V6TermsTab } from "../components/v6/terms/V6TermsTab";
 import { getProjectWithFallback } from "../getProjectFallback";
+import { resolveProjectRoute } from "../resolveProjectRoute.server";
 import { getRulesets } from "./getRulesets";
 
 interface Props {
@@ -10,7 +10,9 @@ interface Props {
 
 export default async function Terms({ params }: Props) {
   const { slug } = await params;
-  const { chainId, projectId } = parseSlug(slug);
+  const route = await resolveProjectRoute(slug);
+  if (!route) notFound();
+  const { chainId, projectId } = route;
 
   // Resolve through the on-chain fallback, exactly as the layout does. Bendystraw being
   // down returns null from the indexed read, which is indistinguishable from a project that
