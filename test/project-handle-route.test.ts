@@ -15,6 +15,7 @@ const OPERATOR = "0x1111111111111111111111111111111111111111";
 const STALE_OPERATOR = "0x3333333333333333333333333333333333333333";
 const RESOLVER = "0x2222222222222222222222222222222222222222";
 const REV_OWNER = getJBContractAddress(RevnetCoreContracts.REVOwner, 6, 8453);
+const DELEGATED_EOA_CODE = "0xef01002222222222222222222222222222222222222222";
 
 const mocks = vi.hoisted(() => ({
   ensRecord: "8453:42",
@@ -156,6 +157,19 @@ describe("project handle routes", () => {
       projectId: 42n,
       verifiedOperator: OPERATOR,
     });
+  });
+
+  it("routes exact delegated EOAs but rejects contracts which only share the EIP-7702 prefix", async () => {
+    mocks.projectBytecode.mockResolvedValue(DELEGATED_EOA_CODE);
+    mocks.mainnetBytecode.mockResolvedValue("0x");
+    await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toMatchObject({
+      chainId: 8453,
+      projectId: 42n,
+      verifiedOperator: OPERATOR,
+    });
+
+    mocks.projectBytecode.mockResolvedValue(`${DELEGATED_EOA_CODE}00`);
+    await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toBeNull();
   });
 
   it("self-serves an arbitrary root .eth name from its text tuple and live publisher", async () => {

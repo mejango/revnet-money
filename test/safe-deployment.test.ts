@@ -35,6 +35,8 @@ const PROXY_RUNTIME =
 const SINGLETON_CODE = "0x60006000" as Hex;
 const FALLBACK_CODE = "0x60016000" as Hex;
 const FACTORY_CODE = "0x60026000" as Hex;
+const DELEGATED_EOA_CODE = `0xef0100${OTHER.slice(2)}` as Hex;
+const PREFIXED_CONTRACT_CODE = `${DELEGATED_EOA_CODE}00` as Hex;
 
 function initializer({
   owners = [OWNER_A, OWNER_B],
@@ -256,6 +258,61 @@ describe("same-address Safe deployment calls", () => {
     expect(simulatedSafeAddressMatchesExpected(OTHER, SAFE)).toBe(false);
   });
 
+  it("accepts only exact EIP-7702 Safe owners at the destination", async () => {
+    const clientWithOwnerCode = (ownerCode: Hex) =>
+      ({
+        getBytecode: vi.fn(async ({ address }: { address: Address }) => {
+          if (address === FACTORY) return FACTORY_CODE;
+          if (address === SINGLETON) return SINGLETON_CODE;
+          if (address === FALLBACK) return FALLBACK_CODE;
+          if (address === OWNER_A) return ownerCode;
+          return undefined;
+        }),
+        simulateContract: vi.fn().mockResolvedValue({ result: SAFE }),
+      }) as unknown as PublicClient;
+
+    await expect(
+      simulateSafeProxyDeployment({
+        client: clientWithOwnerCode(DELEGATED_EOA_CODE),
+        creation: creation(),
+        expectedSafe: SAFE,
+        currentSafe: currentSafe(),
+      }),
+    ).resolves.toMatchObject({ valid: true });
+    await expect(
+      simulateSafeProxyDeployment({
+        client: clientWithOwnerCode(PREFIXED_CONTRACT_CODE),
+        creation: creation(),
+        expectedSafe: SAFE,
+        currentSafe: currentSafe(),
+      }),
+    ).resolves.toEqual({ valid: false, reason: "contract-owner" });
+  });
+
+  it("rejects an exact EIP-7702 destination fallback handler even when its hash matches", async () => {
+    const client = {
+      getBytecode: vi.fn(async ({ address }: { address: Address }) => {
+        if (address === FACTORY) return FACTORY_CODE;
+        if (address === SINGLETON) return SINGLETON_CODE;
+        if (address === FALLBACK) return DELEGATED_EOA_CODE;
+        return undefined;
+      }),
+      simulateContract: vi.fn().mockResolvedValue({ result: SAFE }),
+    } as unknown as PublicClient;
+
+    await expect(
+      simulateSafeProxyDeployment({
+        client,
+        creation: creation(),
+        expectedSafe: SAFE,
+        currentSafe: currentSafe({
+          fallbackHandlerCodeHash: keccak256(DELEGATED_EOA_CODE),
+        }),
+      }),
+    ).resolves.toEqual({ valid: false, reason: "delegated-fallback-handler" });
+    expect(client.simulateContract).not.toHaveBeenCalled();
+  });
+
   it("rejects occupied addresses and destination implementation drift", async () => {
     const occupied = {
       getBytecode: vi.fn().mockResolvedValue(PROXY_RUNTIME),
@@ -269,6 +326,32 @@ describe("same-address Safe deployment calls", () => {
         currentSafe: currentSafe(),
       }),
     ).resolves.toEqual({ valid: false, reason: "address-occupied" });
+
+    const delegatedDestination = {
+      getBytecode: vi.fn().mockResolvedValue(DELEGATED_EOA_CODE),
+      simulateContract: vi.fn(),
+    } as unknown as PublicClient;
+    await expect(
+      simulateSafeProxyDeployment({
+        client: delegatedDestination,
+        creation: creation(),
+        expectedSafe: SAFE,
+        currentSafe: currentSafe(),
+      }),
+    ).resolves.toEqual({ valid: false, reason: "address-occupied" });
+
+    const malformedRpc = {
+      getBytecode: vi.fn().mockResolvedValue("not-hex"),
+      simulateContract: vi.fn(),
+    } as unknown as PublicClient;
+    await expect(
+      simulateSafeProxyDeployment({
+        client: malformedRpc,
+        creation: creation(),
+        expectedSafe: SAFE,
+        currentSafe: currentSafe(),
+      }),
+    ).resolves.toEqual({ valid: false, reason: "rpc-error" });
 
     const drifted = {
       getBytecode: vi.fn(async ({ address }: { address: Address }) => {

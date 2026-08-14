@@ -18,6 +18,8 @@ export type TransactionActivity = {
   safeProposalHash?: Hex;
   executionHash?: Hex;
   bundleUuid?: string;
+  /** A caller-specific receipt/postcondition check must pass before success is trusted. */
+  manualVerificationRequired?: boolean;
   chainStates?: Array<{
     chainId: number;
     status: string;
@@ -37,8 +39,13 @@ let persistedValue: string | null | undefined;
 let storageWriteFailed = false;
 const listeners = new Set<() => void>();
 
-function isInFlight(status: TransactionActivityStatus): boolean {
-  return status === "submitted" || status === "pending" || status === "safe-proposed";
+function isInFlight(activity: TransactionActivity): boolean {
+  return (
+    activity.manualVerificationRequired === true ||
+    activity.status === "submitted" ||
+    activity.status === "pending" ||
+    activity.status === "safe-proposed"
+  );
 }
 
 /**
@@ -49,7 +56,7 @@ function isInFlight(status: TransactionActivityStatus): boolean {
 function retainActivities(activities: TransactionActivity[]): TransactionActivity[] {
   let terminalCount = 0;
   return activities.filter((activity) => {
-    if (isInFlight(activity.status)) return true;
+    if (isInFlight(activity)) return true;
     terminalCount += 1;
     return terminalCount <= MAX_TERMINAL_ACTIVITIES;
   });
@@ -147,10 +154,51 @@ export function updateTransactionActivity(
   refreshTransactionActivities();
   const current = snapshot.find((row) => row.id === id);
   if (!current) return;
+  const guardedPatch =
+    current.manualVerificationRequired &&
+    patch.status === "success" &&
+    patch.manualVerificationRequired !== false
+      ? { ...patch, status: current.status, message: current.message }
+      : patch;
   emit([
-    { ...current, ...patch, updatedAt: Date.now() },
+    { ...current, ...guardedPatch, updatedAt: Date.now() },
     ...snapshot.filter((row) => row.id !== id),
   ]);
+}
+
+/**
+ * Quarantine a mined write whose action-specific verification did not finish.
+ * The hash remains an in-flight dedupe lock, and the generic receipt watcher
+ * cannot overwrite it with a false-success message later.
+ */
+export function holdTransactionActivityForVerification(hash: Hex, message: string): void {
+  const current = transactionActivityForHash(hash);
+  if (!current) return;
+  updateTransactionActivity(current.id, {
+    status: "pending",
+    message,
+    manualVerificationRequired: true,
+  });
+}
+
+export function failTransactionActivityVerification(hash: Hex, message: string): void {
+  const current = transactionActivityForHash(hash);
+  if (!current) return;
+  updateTransactionActivity(current.id, {
+    status: "failed",
+    message,
+    manualVerificationRequired: true,
+  });
+}
+
+export function releaseTransactionActivityVerification(hash: Hex, message: string): void {
+  const current = transactionActivityForHash(hash);
+  if (!current) return;
+  updateTransactionActivity(current.id, {
+    status: "success",
+    message,
+    manualVerificationRequired: false,
+  });
 }
 
 export function dismissTransactionActivity(id: string): void {

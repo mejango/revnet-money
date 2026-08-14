@@ -179,4 +179,49 @@ describe("transaction activity persistence", () => {
     activity.updateTransactionActivity("missing", { status: "failed" });
     expect(activity.transactionActivitySnapshot()).toEqual([]);
   });
+
+  it("keeps an action-specific verification hold from being overwritten by generic success", async () => {
+    const activity = await freshActivityModule();
+    activity.recordTransactionActivity({
+      id: `tx:1:${HASH}`,
+      kind: "direct",
+      title: "execTransaction",
+      status: "pending",
+      message: "Pending onchain confirmation.",
+      hash: HASH,
+    });
+
+    activity.holdTransactionActivityForVerification(
+      HASH,
+      "Mined, but the exact Safe event or handle result could not be verified.",
+    );
+    activity.updateTransactionActivity(`tx:1:${HASH}`, {
+      status: "success",
+      message: "Confirmed onchain.",
+    });
+
+    expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+      status: "pending",
+      manualVerificationRequired: true,
+      message: "Mined, but the exact Safe event or handle result could not be verified.",
+    });
+
+    activity.releaseTransactionActivityVerification(HASH, "Exact handle result confirmed.");
+    expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+      status: "success",
+      manualVerificationRequired: false,
+      message: "Exact handle result confirmed.",
+    });
+
+    activity.failTransactionActivityVerification(HASH, "Exact handle verification failed.");
+    activity.updateTransactionActivity(`tx:1:${HASH}`, {
+      status: "success",
+      message: "Confirmed onchain.",
+    });
+    expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+      status: "failed",
+      manualVerificationRequired: true,
+      message: "Exact handle verification failed.",
+    });
+  });
 });

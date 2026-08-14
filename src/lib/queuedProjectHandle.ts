@@ -35,6 +35,7 @@ import {
   parseProjectHandleRecord,
   projectHandleRecord,
   readExactEnsText,
+  readExactProjectHandle,
   simulateExactEnsTextTransaction,
   type ProjectHandle,
   type ProjectHandleRecord,
@@ -321,21 +322,19 @@ async function assertCurrentProjectAuthority({
   }
 }
 
-/** Recheck one already-classified handle write against current pinned state. */
-export async function verifyQueuedProjectHandleBinding({
-  binding,
+async function assertLiveProjectHandleAuthority({
+  source,
   safe,
-  transaction,
   clientFor,
+  mainnetClient,
+  mainnetBlockNumber,
 }: {
-  binding: QueuedProjectHandleBinding;
+  source: ProjectHandleRecord;
   safe: Address;
-  transaction: SafeQueuedTransaction;
   clientFor: ProjectHandleClientFor;
+  mainnetClient: PublicClient;
+  mainnetBlockNumber: bigint;
 }): Promise<void> {
-  const mainnetClient = clientFor(PROJECT_HANDLE_CHAIN_ID as JBChainId);
-  const mainnetBlockNumber = await mainnetClient.getBlockNumber();
-  const source = binding.kind === "ens-text" ? binding.record : binding.source;
   const sourceClient = clientFor(source.chainId);
   const sourceBlockNumber =
     source.chainId === PROJECT_HANDLE_CHAIN_ID
@@ -361,6 +360,30 @@ export async function verifyQueuedProjectHandleBinding({
       `The queued handle's cross-chain authority is no longer valid (${authority.status}).`,
     );
   }
+}
+
+/** Recheck one already-classified handle write against current pinned state. */
+export async function verifyQueuedProjectHandleBinding({
+  binding,
+  safe,
+  transaction,
+  clientFor,
+}: {
+  binding: QueuedProjectHandleBinding;
+  safe: Address;
+  transaction: SafeQueuedTransaction;
+  clientFor: ProjectHandleClientFor;
+}): Promise<void> {
+  const mainnetClient = clientFor(PROJECT_HANDLE_CHAIN_ID as JBChainId);
+  const mainnetBlockNumber = await mainnetClient.getBlockNumber();
+  const source = binding.kind === "ens-text" ? binding.record : binding.source;
+  await assertLiveProjectHandleAuthority({
+    source,
+    safe,
+    clientFor,
+    mainnetClient,
+    mainnetBlockNumber,
+  });
 
   if (binding.kind === "ens-text") {
     let resolver: Address;
@@ -412,6 +435,106 @@ export async function verifyQueuedProjectHandleBinding({
   const record = await readExactEnsText(mainnetClient, resolver, node, mainnetBlockNumber);
   if (record !== projectHandleRecord(binding.source.chainId, binding.source.projectId)) {
     throw new Error("The queued handle's exact ENS juicebox record no longer matches its project.");
+  }
+}
+
+/**
+ * Receipt-time semantic check for one mined handle-scoped Safe execution.
+ * This is deliberately separate from the preflight simulation: success means
+ * the exact reviewed state change is now observable, not merely that the
+ * outer execTransaction call was accepted by the wallet.
+ */
+export async function verifyQueuedProjectHandlePostcondition({
+  binding,
+  safe,
+  transaction,
+  clientFor,
+  executionBlockNumber,
+}: {
+  binding: QueuedProjectHandleBinding;
+  safe: Address;
+  transaction: SafeQueuedTransaction;
+  clientFor: ProjectHandleClientFor;
+  /** Ethereum block which mined the outer Safe execTransaction. */
+  executionBlockNumber: bigint;
+}): Promise<void> {
+  const mainnetClient = clientFor(PROJECT_HANDLE_CHAIN_ID as JBChainId);
+
+  if (binding.kind === "ens-text") {
+    let resolver: Address;
+    try {
+      resolver = await mainnetClient.readContract({
+        address: ENS_REGISTRY_ADDRESS,
+        abi: ensRegistryAbi,
+        functionName: "resolver",
+        args: [binding.node],
+        blockNumber: executionBlockNumber,
+      });
+    } catch {
+      throw new Error("The executed ENS record's resolver could not be confirmed.");
+    }
+    if (!isAddressEqual(resolver, getAddress(transaction.to))) {
+      throw new Error("The executed ENS name no longer uses the reviewed resolver.");
+    }
+    const value = await readExactEnsText(
+      mainnetClient,
+      resolver,
+      binding.node,
+      executionBlockNumber,
+    );
+    if (value !== binding.value) {
+      throw new Error("The executed ENS juicebox record does not match the reviewed value.");
+    }
+    return;
+  }
+
+  const latestMainnetBlockNumber = await mainnetClient.getBlockNumber();
+  // A lagging load-balanced RPC must never move the authority snapshot behind
+  // the block whose handle effect is being proved.
+  const authorityMainnetBlockNumber =
+    latestMainnetBlockNumber < executionBlockNumber
+      ? executionBlockNumber
+      : latestMainnetBlockNumber;
+  await assertLiveProjectHandleAuthority({
+    source: binding.source,
+    safe,
+    clientFor,
+    mainnetClient,
+    mainnetBlockNumber: authorityMainnetBlockNumber,
+  });
+
+  // Keep the forward record and reverse claim bound at the same pinned
+  // Ethereum block so a stale/replaced ENS record cannot validate a claim.
+  const node = namehash(binding.handle.ensName);
+  let resolver: Address;
+  try {
+    resolver = await mainnetClient.readContract({
+      address: ENS_REGISTRY_ADDRESS,
+      abi: ensRegistryAbi,
+      functionName: "resolver",
+      args: [node],
+      blockNumber: executionBlockNumber,
+    });
+  } catch {
+    throw new Error("The executed handle's ENS resolver could not be confirmed.");
+  }
+  if (isAddressEqual(resolver, zeroAddress)) {
+    throw new Error("The executed handle's ENS name no longer has a resolver.");
+  }
+  const record = await readExactEnsText(mainnetClient, resolver, node, executionBlockNumber);
+  if (record !== projectHandleRecord(binding.source.chainId, binding.source.projectId)) {
+    throw new Error("The executed handle's exact ENS juicebox record no longer matches.");
+  }
+
+  const handle = await readExactProjectHandle(
+    mainnetClient,
+    binding.source.chainId,
+    binding.source.projectId,
+    safe,
+    executionBlockNumber,
+  );
+  if (handle !== binding.handle.handle) {
+    throw new Error("JBProjectHandles did not publish the exact reviewed handle.");
   }
 }
 

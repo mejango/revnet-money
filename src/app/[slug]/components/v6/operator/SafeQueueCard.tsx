@@ -1,7 +1,7 @@
 "use client";
 
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
-import { useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import {
   readAuthorityIdentity,
   readBoundedSafeNonce,
@@ -14,12 +14,14 @@ import {
   classifyQueuedProjectHandleTransaction,
   projectSafeQueueTargets,
   verifyQueuedProjectHandleBinding,
+  verifyQueuedProjectHandlePostcondition,
   type ProjectSafeQueueTarget,
   type QueuedProjectHandleBinding,
 } from "@/lib/queuedProjectHandle";
 import {
   SAFE_EXEC_ABI,
   listPendingSafeTransactions,
+  requireSafeExecutionSuccess,
   safeExecutionArgs,
   safeQueueLink,
   safeTransactionHash,
@@ -28,10 +30,16 @@ import {
   type SafePolicy,
   type SafeQueuedTransaction,
 } from "@/lib/safe-queue";
+import {
+  failTransactionActivityVerification,
+  holdTransactionActivityForVerification,
+  releaseTransactionActivityVerification,
+} from "@/lib/transaction-activity";
 import { requireTransactionReview } from "@/lib/transaction-review";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { encodeFunctionData, isAddressEqual } from "viem";
+import { encodeFunctionData, isAddressEqual, type Hex } from "viem";
 import { useAccount } from "wagmi";
 import {
   chainName,
@@ -60,6 +68,7 @@ type ReviewedExecution = {
   policy: LiveSafePolicy;
   target: ProjectSafeQueueTarget;
   transaction: SafeQueuedTransaction;
+  handleBinding: QueuedProjectHandleBinding | null;
 };
 
 async function readLiveSafePolicy(
@@ -179,6 +188,7 @@ export function SafeQueueCard({
   );
   const { writeContractAsync } = useWriteContract({
     reviewedInParent: true,
+    manualReceiptVerification: () => Boolean(reviewedExecution.current?.handleBinding),
     reverify: async (variables) => {
       const reviewed = reviewedExecution.current;
       if (!reviewed) {
@@ -356,11 +366,12 @@ export function SafeQueueCard({
 
   const execute = async (row: QueueRow, tx: SafeQueuedTransaction) => {
     const key = `execute:${row.chainId}:${tx.nonce}`;
+    let handleExecutionHash: Hex | undefined;
     setBusy(key);
     setError(null);
     setNotice(null);
     try {
-      await verifyLiveQueuedTransaction(row, tx);
+      const handleBinding = await verifyLiveQueuedTransaction(row, tx);
       const policy = await readLiveSafePolicy(row);
       if (policy.nonce !== Number(tx.nonce)) {
         throw new Error(`Safe nonce ${policy.nonce} must execute first.`);
@@ -368,6 +379,7 @@ export function SafeQueueCard({
       if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold) {
         throw new Error("The transaction no longer has enough current-owner confirmations.");
       }
+      const expectedSafeTxHash = safeTransactionHash(row.chainId, row.safe, tx);
       const args = safeExecutionArgs(tx, policy.owners);
       const data = encodeFunctionData({
         abi: SAFE_EXEC_ABI,
@@ -382,7 +394,7 @@ export function SafeQueueCard({
         authorization: {
           safe: row.safe,
           nonce: tx.nonce,
-          safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
+          safeTxHash: expectedSafeTxHash,
           destinationCall: {
             to: tx.to,
             value: tx.value,
@@ -413,22 +425,52 @@ export function SafeQueueCard({
         policy: confirmedPolicy,
         target: row,
         transaction: tx,
+        handleBinding,
       };
       try {
-        await writeContractAsync({
+        const hash = await writeContractAsync({
           chainId: row.chainId,
           address: row.safe,
           abi: SAFE_EXEC_ABI,
           functionName: "execTransaction",
           args,
         });
-        await verifyLiveQueuedTransaction(row, tx);
+        if (handleBinding) {
+          requireOnchainExecution(hash, "Execute queued project-handle transaction");
+          handleExecutionHash = hash;
+          holdTransactionActivityForVerification(
+            hash,
+            "Confirming the exact Safe event and project-handle result.",
+          );
+          const receipt = await waitForReceiptWithRetry(publicClientFor(row.chainId), hash);
+          requireSafeExecutionSuccess(receipt, row.safe, expectedSafeTxHash);
+          await verifyQueuedProjectHandlePostcondition({
+            binding: handleBinding,
+            safe: row.safe,
+            transaction: tx,
+            clientFor: publicClientFor,
+            executionBlockNumber: receipt.blockNumber,
+          });
+          releaseTransactionActivityVerification(
+            hash,
+            "Safe execution and the exact project-handle result were confirmed onchain.",
+          );
+          handleExecutionHash = undefined;
+        }
       } finally {
         reviewedExecution.current = null;
       }
-      setNotice(`Submitted Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`);
+      setNotice(
+        `${handleBinding ? "Executed" : "Submitted"} Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`,
+      );
       await queue.refetch();
     } catch (cause) {
+      if (handleExecutionHash) {
+        failTransactionActivityVerification(
+          handleExecutionHash,
+          "The Safe transaction was submitted, but its exact event or handle result failed verification. Inspect it and do not submit it again yet.",
+        );
+      }
       setError(cause instanceof Error ? cause.message : "Could not execute the Safe transaction.");
     } finally {
       setBusy(null);

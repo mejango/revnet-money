@@ -251,26 +251,39 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   }
   await expect(page.getByText("Set project uri")).toBeVisible();
   await expect(page.getByText("Set project handle")).toBeVisible();
+  await page.getByRole("button", { name: "Set project handle", exact: true }).click();
+  const projectHandleDialog = page.getByRole("dialog");
   await expect(
-    page.getByText("You’ll be able to find your project at", { exact: false }),
+    projectHandleDialog.getByRole("heading", { name: "Set project handle" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Your .eth name")).toHaveAttribute("placeholder", "banny.eth");
+  await expect(
+    projectHandleDialog.getByText("You’ll be able to find your project at", { exact: false }),
+  ).toBeVisible();
+  await expect(projectHandleDialog.getByLabel("Your .eth name")).toHaveAttribute(
+    "placeholder",
+    "banny.eth",
+  );
   const projectOrigin = new URL(page.url()).origin;
   const projectUrl = `${projectOrigin}/@fixture-revnet`;
-  const projectUrlPreview = page.getByText("You’ll be able to find your project at", {
-    exact: false,
-  });
-  await expect(page.getByRole("link", { name: projectUrl })).toBeVisible();
+  const projectUrlPreview = projectHandleDialog.getByText(
+    "You’ll be able to find your project at",
+    {
+      exact: false,
+    },
+  );
+  await expect(projectHandleDialog.getByRole("link", { name: projectUrl })).toBeVisible();
   await expect(projectUrlPreview).toHaveText(
     `You’ll be able to find your project at ${projectUrl}`,
   );
-  await page.getByLabel("Your .eth name").fill("FIXTURE-REVNET.ETH");
-  await expect(page.getByRole("link", { name: projectUrl })).toBeVisible();
-  await page.getByLabel("Your .eth name").fill("");
+  await projectHandleDialog.getByLabel("Your .eth name").fill("FIXTURE-REVNET.ETH");
+  await expect(projectHandleDialog.getByRole("link", { name: projectUrl })).toBeVisible();
+  await projectHandleDialog.getByLabel("Your .eth name").fill("");
   await expect(projectUrlPreview).toHaveText(
     `You’ll be able to find your project at ${projectOrigin}/@<handle>`,
   );
-  await expect(page.getByRole("link", { name: projectUrl })).toHaveCount(0);
+  await expect(projectHandleDialog.getByRole("link", { name: projectUrl })).toHaveCount(0);
+  await projectHandleDialog.getByRole("button", { name: "Close" }).click();
+  await expect(projectHandleDialog).toBeHidden();
   const secondaryActions = [
     "Transfer revnet operator",
     "Edit metadata",
@@ -292,7 +305,8 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   expectSecurityHeaders(handleResponse);
   await expect(page).toHaveURL(/\/@fixture-revnet\/operator$/u);
   await expect(page.getByText("Set project handle")).toBeVisible();
-  await expect(page.getByRole("link", { name: projectUrl })).toBeVisible();
+  await page.getByRole("button", { name: "Set project handle", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("link", { name: projectUrl })).toBeVisible();
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 

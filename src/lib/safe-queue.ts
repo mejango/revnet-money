@@ -1,6 +1,16 @@
 "use client";
 
-import { getAddress, hashTypedData, zeroAddress, type Address, type Hex } from "viem";
+import {
+  getAddress,
+  hashTypedData,
+  isAddressEqual,
+  keccak256,
+  stringToHex,
+  zeroAddress,
+  type Address,
+  type Hex,
+  type TransactionReceipt,
+} from "viem";
 
 export type SafeConfirmation = { owner: Address; signature?: Hex | null };
 
@@ -51,6 +61,41 @@ export const SAFE_VIEW_ABI = [
   },
 ] as const;
 
+const SAFE_EXECUTION_SUCCESS_TOPIC = keccak256(stringToHex("ExecutionSuccess(bytes32,uint256)"));
+const SAFE_EXECUTION_FAILURE_TOPIC = keccak256(stringToHex("ExecutionFailure(bytes32,uint256)"));
+const ZERO_WORD = "0".repeat(64);
+
+function exactSafeExecutionEvent(
+  log: TransactionReceipt["logs"][number],
+): { eventName: "ExecutionSuccess" | "ExecutionFailure"; txHash: Hex } | null | "malformed" {
+  const selector = log.topics[0]?.toLowerCase();
+  const eventName =
+    selector === SAFE_EXECUTION_SUCCESS_TOPIC.toLowerCase()
+      ? "ExecutionSuccess"
+      : selector === SAFE_EXECUTION_FAILURE_TOPIC.toLowerCase()
+        ? "ExecutionFailure"
+        : null;
+  if (!eventName) return null;
+
+  // Safe 1.4 indexes txHash; Safe 1.3 places it in the first data word.
+  // Accept exactly those two canonical layouts and require zero payment for
+  // the zero-reimbursement project-handle envelope.
+  if (log.topics.length === 2) {
+    const txHash = log.topics[1];
+    if (!txHash || !/^0x[\da-fA-F]{64}$/.test(txHash) || log.data !== `0x${ZERO_WORD}`) {
+      return "malformed";
+    }
+    return { eventName, txHash };
+  }
+  if (log.topics.length === 1) {
+    if (!/^0x[\da-fA-F]{128}$/.test(log.data) || log.data.slice(66) !== ZERO_WORD) {
+      return "malformed";
+    }
+    return { eventName, txHash: log.data.slice(0, 66) as Hex };
+  }
+  return "malformed";
+}
+
 export const SAFE_EXEC_ABI = [
   {
     type: "function",
@@ -70,7 +115,57 @@ export const SAFE_EXEC_ABI = [
     ],
     outputs: [{ type: "bool" }],
   },
+  {
+    type: "event",
+    name: "ExecutionSuccess",
+    anonymous: false,
+    inputs: [
+      { name: "txHash", type: "bytes32", indexed: true },
+      { name: "payment", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "ExecutionFailure",
+    anonymous: false,
+    inputs: [
+      { name: "txHash", type: "bytes32", indexed: true },
+      { name: "payment", type: "uint256", indexed: false },
+    ],
+  },
 ] as const;
+
+/**
+ * A successful outer transaction is not enough for Safe: execTransaction can
+ * return false while the outer call remains mined successfully. Require the
+ * canonical Safe event for the exact EIP-712 hash which was reviewed.
+ */
+export function requireSafeExecutionSuccess(
+  receipt: Pick<TransactionReceipt, "status" | "logs">,
+  safe: Address,
+  expectedSafeTxHash: Hex,
+): void {
+  if (receipt.status !== "success") {
+    throw new Error("The Safe execution transaction reverted.");
+  }
+
+  let matchedSuccess = false;
+  for (const log of receipt.logs) {
+    if (!isAddressEqual(log.address, safe)) continue;
+    const event = exactSafeExecutionEvent(log);
+    if (event === "malformed") {
+      throw new Error("Safe emitted a malformed execution result event.");
+    }
+    if (!event || event.txHash.toLowerCase() !== expectedSafeTxHash.toLowerCase()) continue;
+    if (event.eventName === "ExecutionFailure") {
+      throw new Error("Safe reported ExecutionFailure for the reviewed transaction.");
+    }
+    matchedSuccess = true;
+  }
+  if (!matchedSuccess) {
+    throw new Error("The receipt has no Safe ExecutionSuccess for the reviewed transaction.");
+  }
+}
 
 export const SAFE_TX_TYPES = {
   SafeTx: [
@@ -196,9 +291,7 @@ function signatureBytes(confirmation: SafeConfirmation): string | null {
   if (signature) {
     // Even-length hex of at least 65 bytes. ECDSA is exactly 130 chars; a contract signature
     // is longer and carries its own v=0 marker.
-    return /^[0-9a-fA-F]+$/.test(signature) &&
-      signature.length % 2 === 0 &&
-      signature.length >= 130
+    return /^[0-9a-fA-F]+$/.test(signature) && signature.length % 2 === 0 && signature.length >= 130
       ? signature
       : null;
   }

@@ -194,9 +194,29 @@ describe("project handle ENS authorization", () => {
     expect(source).toContain("Publishing is blocked until the");
     expect(source).toContain("The current revnet operator could not be verified.");
     expect(source).toContain('placeholder="banny.eth"');
-    expect(source).toContain("onClick={textMatches ? publish : setEnsRecord}");
+    expect(source).toContain('title="ENS juicebox text record"');
+    expect(source).toContain('title="JBProjectHandles reverse claim"');
+    expect(source).toContain("Step {number} of 2");
+    expect(source).toContain('handleProgress.nextAction === "publish" ? publish : setEnsRecord');
     expect(source).toContain("`Set ${parsed.handle.ensName} record`");
     expect(source).toContain("`Publish /@${parsed.handle.handle}`");
+  });
+
+  it("hosts the resumable two-step flow in a scroll-safe native dialog", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("<Dialog");
+    expect(source).toContain("<DialogContent");
+    expect(source).toContain(
+      'className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl overflow-y-auto p-4 sm:p-6"',
+    );
+    expect(source).toContain("if (!next && busyAction) return");
+    expect(source).toContain("showCloseButton={!busyAction}");
+    expect(source).toContain("if (busyAction) event.preventDefault()");
+    expect(source).toContain('className="break-all underline"');
+    expect(source).toContain("void setupQuery.refetch()");
   });
 
   it("pins the exact resolver while leaving owner and delegate authorization to simulation", () => {
@@ -242,6 +262,25 @@ describe("project handle ENS authorization", () => {
     expect(source).toContain("const confirmedRecord = await readExactEnsText");
     expect(source).toContain("const confirmedAuthority = await readCrossChainHandleAuthority");
     expect(source).toContain("const confirmed = await readHandleSetup");
+    expect(source.match(/readCrossChainHandleAuthority/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
+  });
+
+  it("mines and semantically confirms handle-scoped Safe executions only", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("const handleBinding = await verifyLiveQueuedTransaction(row, tx)");
+    expect(source).toContain("manualReceiptVerification:");
+    expect(source).toContain("if (handleBinding) {");
+    expect(source).toContain("waitForReceiptWithRetry(publicClientFor(row.chainId), hash)");
+    expect(source).toContain("requireSafeExecutionSuccess(receipt, row.safe, expectedSafeTxHash)");
+    expect(source).toContain("verifyQueuedProjectHandlePostcondition");
+    expect(source).toContain("executionBlockNumber: receipt.blockNumber");
+    expect(source).toContain("releaseTransactionActivityVerification");
+    expect(source).toContain("failTransactionActivityVerification");
+    expect(source).toContain("handleExecutionHash = undefined");
+    expect(source).toContain('handleBinding ? "Executed" : "Submitted"');
   });
 
   it("binds project-handle publish inputs and the exact ENS record after review", () => {

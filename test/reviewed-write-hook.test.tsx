@@ -152,6 +152,64 @@ describe("reviewed write hook", () => {
     );
   });
 
+  it("defers generic receipt success until an action-specific verifier releases it", async () => {
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    mocks.waitForTransactionReceipt.mockResolvedValue({ status: "success" });
+    const manualReceiptVerification = vi.fn().mockReturnValue(true);
+    const { result } = renderHook(() => hooks.useWriteContract({ manualReceiptVerification }));
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    await waitFor(() =>
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+        status: "pending",
+        manualVerificationRequired: true,
+      }),
+    );
+    expect(mocks.waitForTransactionReceipt).not.toHaveBeenCalled();
+
+    activity.failTransactionActivityVerification(HASH, "Exact postcondition failed.");
+    expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+      status: "failed",
+      manualVerificationRequired: true,
+      message: "Exact postcondition failed.",
+    });
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      "already pending",
+    );
+
+    activity.releaseTransactionActivityVerification(HASH, "Exact postcondition confirmed.");
+    expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+      status: "success",
+      manualVerificationRequired: false,
+      message: "Exact postcondition confirmed.",
+    });
+    expect(manualReceiptVerification).toHaveBeenCalledWith(CALL);
+  });
+
+  it("rejects a manual-verification write through a Safe connector before submission", async () => {
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: { id: "safe", name: "Safe" },
+    };
+    const { activity, hooks } = await freshHarness();
+    const { result } = renderHook(() =>
+      hooks.useWriteContract({
+        reviewedInParent: true,
+        manualReceiptVerification: () => true,
+      }),
+    );
+
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      "cannot be proposed through a Safe connector",
+    );
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(activity.transactionActivityForHash(HASH)).toBeUndefined();
+  });
+
   it("skips only the duplicate app review when a parent already showed the exact call", async () => {
     const { hooks } = await freshHarness();
     const reverify = vi.fn().mockResolvedValue(undefined);

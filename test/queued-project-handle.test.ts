@@ -8,6 +8,7 @@ import {
   bindingMatchesProject,
   classifyQueuedProjectHandleTransaction,
   projectSafeQueueTargets,
+  verifyQueuedProjectHandlePostcondition,
   verifyQueuedProjectHandleTransaction,
 } from "@/lib/queuedProjectHandle";
 import type { SafeQueuedTransaction } from "@/lib/safe-queue";
@@ -73,11 +74,13 @@ function setHandleTx(
 }
 
 function mainnetClient({
+  blockNumber = 100n,
   projectId = 7n,
   operator = true,
   owner = getJBContractAddress(RevnetCoreContracts.REVOwner, 6, 1),
   request = vi.fn().mockResolvedValue("0x"),
 }: {
+  blockNumber?: bigint;
   projectId?: bigint;
   operator?: boolean;
   owner?: Address;
@@ -94,7 +97,7 @@ function mainnetClient({
   });
   return {
     client: {
-      getBlockNumber: vi.fn().mockResolvedValue(100n),
+      getBlockNumber: vi.fn().mockResolvedValue(blockNumber),
       readContract,
       request,
     } as unknown as PublicClient,
@@ -344,6 +347,164 @@ describe("queued project-handle live verification", () => {
         clientFor: () => client,
       }),
     ).rejects.toThrow("exact ENS juicebox record no longer matches");
+  });
+
+  it("confirms the exact ENS resolver text after a mined setText execution", async () => {
+    const transaction = setTextTx();
+    const binding = classifyQueuedProjectHandleTransaction(1, transaction);
+    expect(binding).toMatchObject({ kind: "ens-text" });
+    if (!binding) throw new Error("Expected an ENS binding.");
+    const request = vi.fn().mockResolvedValue(
+      encodeFunctionResult({
+        abi: ensTextResolverAbi,
+        functionName: "text",
+        result: "1:7",
+      }),
+    );
+    const { client } = mainnetClient({ blockNumber: 99n, request });
+
+    await expect(
+      verifyQueuedProjectHandlePostcondition({
+        binding,
+        safe: SAFE,
+        transaction,
+        clientFor: () => client,
+        executionBlockNumber: 100n,
+      }),
+    ).resolves.toBeUndefined();
+    expect(client.getBlockNumber).not.toHaveBeenCalled();
+
+    request.mockResolvedValue(
+      encodeFunctionResult({
+        abi: ensTextResolverAbi,
+        functionName: "text",
+        result: "1:8",
+      }),
+    );
+    await expect(
+      verifyQueuedProjectHandlePostcondition({
+        binding,
+        safe: SAFE,
+        transaction,
+        clientFor: () => client,
+        executionBlockNumber: 100n,
+      }),
+    ).rejects.toThrow("does not match the reviewed value");
+
+    const exactRequest = vi.fn().mockResolvedValue(
+      encodeFunctionResult({
+        abi: ensTextResolverAbi,
+        functionName: "text",
+        result: "1:7",
+      }),
+    );
+    const { client: rotated } = mainnetClient({ operator: false, request: exactRequest });
+    await expect(
+      verifyQueuedProjectHandlePostcondition({
+        binding,
+        safe: SAFE,
+        transaction,
+        clientFor: () => rotated,
+        executionBlockNumber: 100n,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("confirms the exact reverse claim under live source and cross-chain authority", async () => {
+    const transaction = setHandleTx();
+    const binding = classifyQueuedProjectHandleTransaction(1, transaction);
+    expect(binding).toMatchObject({ kind: "project-handle" });
+    if (!binding) throw new Error("Expected a reverse-handle binding.");
+
+    const clients = ({
+      handle = "design.juicebox",
+      latestMainnetBlock = 100n,
+      mainnetCode,
+      operator = true,
+      record = "8453:42",
+    }: {
+      handle?: string;
+      latestMainnetBlock?: bigint;
+      mainnetCode?: Hex;
+      operator?: boolean;
+      record?: string;
+    } = {}) => {
+      const mainnetRequest = vi.fn(async ({ params }: { params: [{ to: Address }] }) => {
+        const to = params[0].to.toLowerCase();
+        return encodeFunctionResult({
+          abi:
+            to === JB_PROJECT_HANDLES_ADDRESS.toLowerCase()
+              ? jbProjectHandlesAbi
+              : ensTextResolverAbi,
+          functionName: to === JB_PROJECT_HANDLES_ADDRESS.toLowerCase() ? "handleOf" : "text",
+          result: to === JB_PROJECT_HANDLES_ADDRESS.toLowerCase() ? handle : record,
+        } as never);
+      });
+      const mainnetGetBytecode = vi.fn().mockResolvedValue(mainnetCode);
+      const mainnet = {
+        getBlockNumber: vi.fn().mockResolvedValue(latestMainnetBlock),
+        getBytecode: mainnetGetBytecode,
+        readContract: vi.fn().mockResolvedValue(RESOLVER),
+        request: mainnetRequest,
+      } as unknown as PublicClient;
+      const source = {
+        getBlockNumber: vi.fn().mockResolvedValue(200n),
+        getBytecode: vi.fn().mockResolvedValue(undefined),
+        readContract: vi.fn(async ({ functionName }: { functionName: string }) => {
+          if (functionName === "ownerOf") {
+            return getJBContractAddress(RevnetCoreContracts.REVOwner, 6, 8453);
+          }
+          if (functionName === "isOperatorOf") return operator;
+          throw new Error(`Unexpected read ${functionName}`);
+        }),
+      } as unknown as PublicClient;
+      return {
+        mainnetGetBytecode,
+        mainnetRequest,
+        clientFor: (chainId: JBChainId) => (chainId === 1 ? mainnet : source),
+      };
+    };
+
+    const lagging = clients({ latestMainnetBlock: 99n });
+    await expect(
+      verifyQueuedProjectHandlePostcondition({
+        binding,
+        safe: SAFE,
+        transaction,
+        clientFor: lagging.clientFor,
+        executionBlockNumber: 100n,
+      }),
+    ).resolves.toBeUndefined();
+    expect(lagging.mainnetGetBytecode).toHaveBeenCalledWith(
+      expect.objectContaining({ blockNumber: 100n }),
+    );
+    await expect(
+      verifyQueuedProjectHandlePostcondition({
+        binding,
+        safe: SAFE,
+        transaction,
+        clientFor: clients({ handle: "other.juicebox" }).clientFor,
+        executionBlockNumber: 100n,
+      }),
+    ).rejects.toThrow("exact reviewed handle");
+    await expect(
+      verifyQueuedProjectHandlePostcondition({
+        binding,
+        safe: SAFE,
+        transaction,
+        clientFor: clients({ mainnetCode: "0x6000" }).clientFor,
+        executionBlockNumber: 100n,
+      }),
+    ).rejects.toThrow("cross-chain authority is no longer valid (mainnet-contract)");
+    await expect(
+      verifyQueuedProjectHandlePostcondition({
+        binding,
+        safe: SAFE,
+        transaction,
+        clientFor: clients({ operator: false }).clientFor,
+        executionBlockNumber: 100n,
+      }),
+    ).rejects.toThrow("no longer the encoded revnet's live operator");
   });
 });
 

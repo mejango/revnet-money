@@ -6,6 +6,7 @@ import {
   jbProjectHandlesAbi,
   parseProjectHandleInput,
   parseProjectHandleRecord,
+  projectHandleProgress,
   projectHandleRecord,
   readExactEnsText,
   readExactProjectHandle,
@@ -28,6 +29,28 @@ const NODE = `0x${"11".repeat(32)}` as const;
 
 describe("project handles", () => {
   // wallet-action:project-handle
+  it("resumes the two-step flow without duplicating either completed record", () => {
+    expect(projectHandleProgress(false, false)).toEqual({
+      ensRecordComplete: false,
+      reverseClaimComplete: false,
+      complete: false,
+      nextAction: "ens",
+    });
+    expect(projectHandleProgress(true, false)).toMatchObject({
+      complete: false,
+      nextAction: "publish",
+    });
+    expect(projectHandleProgress(false, true)).toMatchObject({
+      reverseClaimComplete: true,
+      complete: false,
+      nextAction: "ens",
+    });
+    expect(projectHandleProgress(true, true)).toMatchObject({
+      complete: true,
+      nextAction: null,
+    });
+  });
+
   it("normalizes the public syntax and reverses ENS labels for the contract", () => {
     expect(parseProjectHandleInput("banny.eth")).toEqual({
       handle: "banny",

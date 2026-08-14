@@ -33,6 +33,9 @@ const PROXY_CODE =
   "0x608060405273ffffffffffffffffffffffffffffffffffffffff600054167fa619486e0000000000000000000000000000000000000000000000000000000060003514156050578060005260206000f35b3660008037600080366000845af43d6000803e60008114156070573d6000fd5b3d6000f3fea2646970667358221220d1429297349653a4918076d650332de1a1068c5f3e07c5c82360c277770b955264736f6c63430007060033" as Hex;
 const CONTRACT_CODE = "0x60006000" as Hex;
 const FALLBACK_CODE = "0x60016000" as Hex;
+const DELEGATED_EOA_CODE = `0xef0100${FALLBACK.slice(2)}` as Hex;
+const OTHER_DELEGATED_EOA_CODE = `0xef0100${OTHER_FALLBACK.slice(2)}` as Hex;
+const PREFIXED_CONTRACT_CODE = `${DELEGATED_EOA_CODE}00` as Hex;
 
 function storageWord(address: Address): Hex {
   return padHex(address, { size: 32 });
@@ -62,18 +65,24 @@ function mockedSafeClient({
   owners = [OWNER_A, OWNER_B],
   threshold = 2n,
   fallbackHandler = FALLBACK,
+  fallbackHandlerCode = FALLBACK_CODE,
   guard = zeroAddress,
   modules = [] as Address[],
   contractOwners = [] as Address[],
+  delegatedOwners = [] as Address[],
+  prefixedContractOwners = [] as Address[],
 }: {
   singleton?: Address;
   version?: string;
   owners?: Address[];
   threshold?: bigint;
   fallbackHandler?: Address;
+  fallbackHandlerCode?: Hex;
   guard?: Address;
   modules?: Address[];
   contractOwners?: Address[];
+  delegatedOwners?: Address[];
+  prefixedContractOwners?: Address[];
 } = {}): PublicClient {
   const getBytecode = vi.fn(async ({ address }: { address: Address }) => {
     if (address.toLowerCase() === AUTHORITY.toLowerCase()) return PROXY_CODE;
@@ -82,10 +91,16 @@ function mockedSafeClient({
       address.toLowerCase() === fallbackHandler.toLowerCase() &&
       fallbackHandler.toLowerCase() !== zeroAddress.toLowerCase()
     ) {
-      return FALLBACK_CODE;
+      return fallbackHandlerCode;
     }
     if (contractOwners.some((owner) => owner.toLowerCase() === address.toLowerCase())) {
       return CONTRACT_CODE;
+    }
+    if (delegatedOwners.some((owner) => owner.toLowerCase() === address.toLowerCase())) {
+      return DELEGATED_EOA_CODE;
+    }
+    if (prefixedContractOwners.some((owner) => owner.toLowerCase() === address.toLowerCase())) {
+      return PREFIXED_CONTRACT_CODE;
     }
     return undefined;
   });
@@ -138,19 +153,30 @@ function replaceOwnersResponse(client: PublicClient, response: Hex) {
   });
 }
 
-function eoaClient(contractAddresses: readonly Address[] = []): PublicClient {
+function eoaClient(
+  contractAddresses: readonly Address[] = [],
+  code: Hex | undefined = undefined,
+): PublicClient {
   return {
     getBytecode: vi.fn(async ({ address }: { address: Address }) =>
       contractAddresses.some((candidate) => candidate.toLowerCase() === address.toLowerCase())
-        ? CONTRACT_CODE
-        : undefined,
+        ? (code ?? CONTRACT_CODE)
+        : code,
     ),
   } as unknown as PublicClient;
 }
 
 describe("cross-chain authority policy", () => {
   it("matches only EOAs or exact hardened Safe policies", () => {
-    expect(authorityIdentitiesMatch({ kind: "eoa" }, { kind: "eoa" })).toBe(true);
+    expect(authorityIdentitiesMatch({ kind: "eoa" }, { kind: "eoa", delegation: FALLBACK })).toBe(
+      true,
+    );
+    expect(
+      authorityIdentitiesMatch(
+        { kind: "eoa", delegation: FALLBACK },
+        { kind: "eoa", delegation: OTHER_FALLBACK },
+      ),
+    ).toBe(true);
     expect(authorityIdentitiesMatch({ kind: "eoa" }, { kind: "contract" })).toBe(false);
     expect(
       authorityIdentitiesMatch(safeIdentity(), safeIdentity({ owners: [OWNER_B, OWNER_A] })),
@@ -186,6 +212,25 @@ describe("cross-chain authority policy", () => {
       expect.objectContaining({ functionName: "getOwners" }),
     );
     expect(client.readContract).not.toHaveBeenCalled();
+  });
+
+  it("accepts exact delegated owners but rejects an exact delegated fallback handler", async () => {
+    await expect(
+      readAuthorityIdentity(mockedSafeClient({ delegatedOwners: [OWNER_A] }), AUTHORITY),
+    ).resolves.toMatchObject({ kind: "safe", ownersAreEoas: true });
+
+    const delegatedFallback = mockedSafeClient({ fallbackHandlerCode: DELEGATED_EOA_CODE });
+    await expect(readAuthorityIdentity(delegatedFallback, AUTHORITY)).resolves.toEqual({
+      kind: "contract",
+    });
+    await expect(
+      readCrossChainHandleAuthority({
+        sourceChainId: 8453,
+        sourceClient: delegatedFallback,
+        mainnetClient: mockedSafeClient(),
+        authority: AUTHORITY,
+      }),
+    ).resolves.toMatchObject({ status: "source-contract", allowed: false });
   });
 
   it("rejects oversized or malformed owner returndata before ABI decoding", async () => {
@@ -236,6 +281,45 @@ describe("cross-chain authority policy", () => {
     await expect(
       readAuthorityIdentity(mockedSafeClient({ version: "9.9.9" }), AUTHORITY),
     ).resolves.toEqual({ kind: "contract" });
+  });
+
+  it("recognizes only the exact 23-byte EIP-7702 delegation designator as an EOA", async () => {
+    const delegated = {
+      getBytecode: vi.fn().mockResolvedValue(DELEGATED_EOA_CODE),
+    } as unknown as PublicClient;
+    await expect(readAuthorityIdentity(delegated, AUTHORITY)).resolves.toEqual({
+      kind: "eoa",
+      delegation: FALLBACK,
+    });
+
+    const mixedCaseDelegation = {
+      getBytecode: vi.fn().mockResolvedValue("0xEF0100aAbBcCdDeEfF0011223344556677889900112233"),
+    } as unknown as PublicClient;
+    await expect(readAuthorityIdentity(mixedCaseDelegation, AUTHORITY)).resolves.toMatchObject({
+      kind: "eoa",
+    });
+
+    for (const malformed of [
+      "0xef0100",
+      PREFIXED_CONTRACT_CODE,
+      `0xef0101${DELEGATED_EOA_CODE.slice(8)}`,
+      `0xef0100${"zz".repeat(20)}`,
+      `0Xef0100${FALLBACK.slice(2)}`,
+    ] as Hex[]) {
+      const client = {
+        getBytecode: vi.fn().mockResolvedValue(malformed),
+      } as unknown as PublicClient;
+      await expect(readAuthorityIdentity(client, AUTHORITY)).resolves.toEqual({
+        kind: "contract",
+      });
+    }
+
+    const nonHex = {
+      getBytecode: vi.fn().mockResolvedValue(null),
+    } as unknown as PublicClient;
+    await expect(readAuthorityIdentity(nonHex, AUTHORITY)).resolves.toEqual({
+      kind: "contract",
+    });
   });
 
   it("keeps failed live reads unknown instead of treating them as EOAs", async () => {
@@ -304,7 +388,7 @@ describe("cross-chain authority policy", () => {
     ).resolves.toMatchObject({ status: "unsafe-safe-policy", allowed: false });
   });
 
-  it("requires every Safe owner to be code-free on both chains", async () => {
+  it("requires every Safe owner to be a plain or exact delegated EOA on both chains", async () => {
     await expect(
       readCrossChainHandleAuthority({
         sourceChainId: 8453,
@@ -318,6 +402,24 @@ describe("cross-chain authority policy", () => {
       readCrossChainHandleAuthority({
         sourceChainId: 8453,
         sourceClient: mockedSafeClient({ contractOwners: [OWNER_A] }),
+        mainnetClient: mockedSafeClient(),
+        authority: AUTHORITY,
+      }),
+    ).resolves.toMatchObject({ status: "contract-owner", allowed: false });
+
+    await expect(
+      readCrossChainHandleAuthority({
+        sourceChainId: 8453,
+        sourceClient: mockedSafeClient({ delegatedOwners: [OWNER_A] }),
+        mainnetClient: mockedSafeClient({ delegatedOwners: [OWNER_B] }),
+        authority: AUTHORITY,
+      }),
+    ).resolves.toMatchObject({ status: "valid-safe", allowed: true });
+
+    await expect(
+      readCrossChainHandleAuthority({
+        sourceChainId: 8453,
+        sourceClient: mockedSafeClient({ prefixedContractOwners: [OWNER_A] }),
         mainnetClient: mockedSafeClient(),
         authority: AUTHORITY,
       }),
@@ -342,5 +444,38 @@ describe("cross-chain authority policy", () => {
         authority: AUTHORITY,
       }),
     ).resolves.toMatchObject({ status: "valid-eoa", allowed: true });
+
+    for (const [sourceCode, mainnetCode] of [
+      [DELEGATED_EOA_CODE, undefined],
+      [undefined, DELEGATED_EOA_CODE],
+      [DELEGATED_EOA_CODE, OTHER_DELEGATED_EOA_CODE],
+    ] as const) {
+      await expect(
+        readCrossChainHandleAuthority({
+          sourceChainId: 10,
+          sourceClient: eoaClient([], sourceCode),
+          mainnetClient: eoaClient([], mainnetCode),
+          authority: AUTHORITY,
+        }),
+      ).resolves.toMatchObject({ status: "valid-eoa", allowed: true });
+    }
+
+    await expect(
+      readCrossChainHandleAuthority({
+        sourceChainId: 10,
+        sourceClient: eoaClient([], PREFIXED_CONTRACT_CODE),
+        mainnetClient: eoaClient(),
+        authority: AUTHORITY,
+      }),
+    ).resolves.toMatchObject({ status: "source-contract", allowed: false });
+
+    await expect(
+      readCrossChainHandleAuthority({
+        sourceChainId: 8453,
+        sourceClient: mockedSafeClient(),
+        mainnetClient: eoaClient([], DELEGATED_EOA_CODE),
+        authority: AUTHORITY,
+      }),
+    ).resolves.toMatchObject({ status: "authority-mismatch", allowed: false });
   });
 });

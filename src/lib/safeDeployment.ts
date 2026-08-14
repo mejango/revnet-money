@@ -13,8 +13,11 @@ import {
   type PublicClient,
 } from "viem";
 import {
+  isEip7702DelegatedEoaRuntime,
+  isEoaAuthorityRuntime,
   isRecognizedSafeDeployment,
   isRecognizedSafeProxyCodeHash,
+  isRuntimeBytecode,
   readCrossChainHandleAuthority,
   recognizedSafeVersionForSingleton,
   type CrossChainHandleAuthority,
@@ -296,6 +299,7 @@ export type SafeDeploymentSimulation =
         | "singleton-unavailable"
         | "singleton-mismatch"
         | "fallback-handler-unavailable"
+        | "delegated-fallback-handler"
         | "fallback-handler-mismatch"
         | "contract-owner"
         | "address-occupied"
@@ -362,6 +366,9 @@ export async function simulateSafeProxyDeployment({
       addresses.push(destinationFallbackHandler);
     }
     const code = await Promise.all(addresses.map((address) => client.getBytecode({ address })));
+    if (code.some((runtime) => runtime !== undefined && !isRuntimeBytecode(runtime))) {
+      return { valid: false, reason: "rpc-error" };
+    }
     [expectedCode, factoryCode, singletonCode] = code;
     ownerCode = code.slice(3, 3 + destinationOwners.length);
     fallbackHandlerCode = isAddressEqual(destinationFallbackHandler, zeroAddress)
@@ -376,10 +383,15 @@ export async function simulateSafeProxyDeployment({
   if (keccak256(singletonCode!) !== currentSafe.singletonCodeHash) {
     return { valid: false, reason: "singleton-mismatch" };
   }
-  if (ownerCode.some(hasBytecode)) return { valid: false, reason: "contract-owner" };
+  if (ownerCode.some((code) => !isEoaAuthorityRuntime(code))) {
+    return { valid: false, reason: "contract-owner" };
+  }
   if (!isAddressEqual(destinationFallbackHandler, zeroAddress)) {
     if (!hasBytecode(fallbackHandlerCode)) {
       return { valid: false, reason: "fallback-handler-unavailable" };
+    }
+    if (isEip7702DelegatedEoaRuntime(fallbackHandlerCode)) {
+      return { valid: false, reason: "delegated-fallback-handler" };
     }
     if (
       !currentSafe.fallbackHandlerCodeHash ||

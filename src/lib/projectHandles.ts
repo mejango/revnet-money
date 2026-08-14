@@ -285,6 +285,30 @@ export type ProjectHandle = {
   parts: string[];
 };
 
+export type ProjectHandleProgress = {
+  ensRecordComplete: boolean;
+  reverseClaimComplete: boolean;
+  complete: boolean;
+  nextAction: "ens" | "publish" | null;
+};
+
+/**
+ * Derive the resumable two-write flow from live records. The checks are kept
+ * independent so forward-record recovery never duplicates an already-published
+ * reverse claim, and a returning user resumes at the first incomplete step.
+ */
+export function projectHandleProgress(
+  ensRecordComplete: boolean,
+  reverseClaimComplete: boolean,
+): ProjectHandleProgress {
+  return {
+    ensRecordComplete,
+    reverseClaimComplete,
+    complete: ensRecordComplete && reverseClaimComplete,
+    nextAction: !ensRecordComplete ? "ens" : !reverseClaimComplete ? "publish" : null,
+  };
+}
+
 /** Normalize a user-facing `@handle` into the exact ENS and contract forms. */
 export function parseProjectHandleInput(input: string): ProjectHandle {
   let candidate = input.trim();

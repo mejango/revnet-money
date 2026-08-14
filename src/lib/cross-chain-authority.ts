@@ -162,11 +162,17 @@ export type SafeAuthorityIdentity = {
   fallbackHandlerCodeHash: Hex | null;
   guard: Address;
   hasModules: boolean;
-  /** All owners have no bytecode on the chain where this identity was read. */
+  /** All owners are plain or exact EIP-7702-delegated EOAs on this chain. */
   ownersAreEoas: boolean;
 };
 
-export type AuthorityIdentity = { kind: "eoa" } | { kind: "contract" } | SafeAuthorityIdentity;
+export type EoaAuthorityIdentity = {
+  kind: "eoa";
+  /** Present only when the account has an exact EIP-7702 delegation designator. */
+  delegation?: Address;
+};
+
+export type AuthorityIdentity = EoaAuthorityIdentity | { kind: "contract" } | SafeAuthorityIdentity;
 
 function safeReleaseForSingleton(singleton: Address) {
   return RECOGNIZED_SAFE_RELEASES.find((release) =>
@@ -213,6 +219,25 @@ function normalizedOwnerSet(owners: readonly Address[]): string[] | null {
 
 function hasBytecode(code: Hex | undefined): boolean {
   return Boolean(code && code !== "0x");
+}
+
+/** Validate the byte-aligned hex shape an eth_getCode response must have. */
+export function isRuntimeBytecode(code: unknown): code is Hex {
+  return typeof code === "string" && /^0x(?:[\dA-Fa-f]{2})*$/.test(code);
+}
+
+/**
+ * EIP-7702's complete delegation designator is exactly 0xef0100 followed by
+ * one 20-byte implementation address. A normal contract which merely shares
+ * that prefix must remain contract code and fail the EOA authority policy.
+ */
+export function isEip7702DelegatedEoaRuntime(code: unknown): code is Hex {
+  return typeof code === "string" && /^0x[eE][fF]0100[\dA-Fa-f]{40}$/.test(code);
+}
+
+/** True only for a code-free EOA or an exact EIP-7702 delegation designator. */
+export function isEoaAuthorityRuntime(code: unknown): boolean {
+  return code === undefined || code === "0x" || isEip7702DelegatedEoaRuntime(code);
 }
 
 /**
@@ -398,7 +423,14 @@ export async function readAuthorityIdentity(
   } catch {
     return null;
   }
+  if (proxyCode !== undefined && !isRuntimeBytecode(proxyCode)) return { kind: "contract" };
   if (!hasBytecode(proxyCode)) return { kind: "eoa" };
+  if (isEip7702DelegatedEoaRuntime(proxyCode)) {
+    return {
+      kind: "eoa",
+      delegation: getAddress(`0x${proxyCode.slice(8).toLowerCase()}`),
+    };
+  }
 
   const proxyCodeHash = keccak256(proxyCode!);
   if (!isRecognizedSafeProxyCodeHash(proxyCodeHash)) {
@@ -485,7 +517,13 @@ export async function readAuthorityIdentity(
     const fallbackHandlerCode = isAddressEqual(fallbackHandler, zeroAddress)
       ? undefined
       : relatedCode.at(-1);
-    if (!isAddressEqual(fallbackHandler, zeroAddress) && !hasBytecode(fallbackHandlerCode)) {
+    if (
+      !isAddressEqual(fallbackHandler, zeroAddress) &&
+      (!hasBytecode(fallbackHandlerCode) || isEip7702DelegatedEoaRuntime(fallbackHandlerCode))
+    ) {
+      // A Safe fallback handler is invoked as contract code. An EIP-7702
+      // delegation designator identifies an EOA authority, not the immutable
+      // handler runtime whose hash is allowed to participate in Safe parity.
       return { kind: "contract" };
     }
     return {
@@ -500,7 +538,7 @@ export async function readAuthorityIdentity(
       fallbackHandlerCodeHash: fallbackHandlerCode ? keccak256(fallbackHandlerCode) : null,
       guard,
       hasModules: modules.length > 0 || !isAddressEqual(getAddress(nextRaw), SAFE_MODULES_SENTINEL),
-      ownersAreEoas: ownerCode.every((code) => !hasBytecode(code)),
+      ownersAreEoas: ownerCode.every(isEoaAuthorityRuntime),
     };
   } catch {
     return null;
@@ -564,7 +602,7 @@ export type CrossChainHandleAuthority = {
   mainnet: AuthorityIdentity | null;
 };
 
-async function addressesHaveNoCode(
+async function addressesAreEoaAuthorities(
   client: PublicClient,
   addresses: readonly Address[],
   blockNumber?: bigint,
@@ -573,7 +611,7 @@ async function addressesHaveNoCode(
     const code = await Promise.all(
       addresses.map((address) => client.getBytecode({ address, blockNumber })),
     );
-    return code.every((value) => !hasBytecode(value));
+    return code.every(isEoaAuthorityRuntime);
   } catch {
     return null;
   }
@@ -596,8 +634,9 @@ function verdict(
  * Decide whether an authority may publish an Ethereum-canonical handle.
  *
  * Ethereum projects use their already-established live local authority without
- * a cross-chain restriction. L2 projects require the same no-code EOA on Ethereum, or an exact,
- * module-free/guard-free Safe policy at the same address. An undeployed
+ * a cross-chain restriction. L2 projects require the same plain or exact
+ * EIP-7702-delegated EOA on Ethereum, or an exact module-free/guard-free Safe
+ * policy at the same address. An undeployed
  * Ethereum Safe is its own UI-actionable state; every other uncertainty is
  * denied without guessing.
  */
@@ -641,7 +680,11 @@ export async function readCrossChainHandleAuthority({
     return verdict("unsafe-safe-policy", source, mainnet);
   }
   if (mainnet.kind === "eoa") {
-    const ownersAreMainnetEoas = await addressesHaveNoCode(
+    // An exact EIP-7702 marker occupies the address and cannot be treated as a
+    // counterfactual Safe deployment target, even though it remains an EOA for
+    // ECDSA authority matching.
+    if (mainnet.delegation) return verdict("authority-mismatch", source, mainnet);
+    const ownersAreMainnetEoas = await addressesAreEoaAuthorities(
       mainnetClient,
       source.owners,
       mainnetBlockNumber,

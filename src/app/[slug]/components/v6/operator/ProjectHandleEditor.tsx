@@ -2,6 +2,14 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ExternalLink } from "@/components/ExternalLink";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
@@ -28,6 +36,7 @@ import {
   ensTextResolverAbi,
   jbProjectHandlesAbi,
   parseProjectHandleInput,
+  projectHandleProgress,
   projectHandleRecord,
   readExactEnsText,
   readExactProjectHandle,
@@ -79,6 +88,50 @@ type HandleSetup = {
   verifiedHandle: string;
 };
 
+function HandleProgressStep({
+  number,
+  title,
+  complete,
+  active,
+  children,
+}: {
+  number: 1 | 2;
+  title: string;
+  complete: boolean;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <li className="flex items-start gap-3" aria-current={active ? "step" : undefined}>
+      <span
+        aria-hidden="true"
+        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${
+          complete
+            ? "border-teal-500 bg-teal-500 text-white"
+            : active
+              ? "border-teal-600 bg-teal-50 text-teal-700"
+              : "border-zinc-300 text-zinc-400"
+        }`}
+      >
+        {complete ? "✓" : number}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p
+          className={`text-[11px] uppercase tracking-wide ${
+            complete || active ? "text-teal-700" : "text-zinc-400"
+          }`}
+        >
+          Step {number} of 2
+        </p>
+        <p className={`font-medium ${complete || active ? "text-zinc-900" : "text-zinc-500"}`}>
+          {title}
+        </p>
+        {children}
+      </div>
+    </li>
+  );
+}
+
 function subscribeToSiteOrigin(): () => void {
   return () => undefined;
 }
@@ -103,7 +156,7 @@ function authorityStatusMessage(status: CrossChainHandleAuthorityStatus): string
     case "unsafe-safe-policy":
       return "The operator Safe uses a guard or module policy which cannot publish a verified project handle.";
     case "contract-owner":
-      return "Every operator Safe owner must be the same no-code EOA on both chains.";
+      return "Every operator Safe owner must be the same EOA (plain or exactly EIP-7702 delegated) on both chains.";
     default:
       return "The operator's Ethereum control could not be verified.";
   }
@@ -199,6 +252,7 @@ export function ProjectHandleEditor({
 }) {
   const { address } = useAccount();
   const { toast } = useToast();
+  const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [inputWasEdited, setInputWasEdited] = useState(false);
   const [busyAction, setBusyAction] = useState<"ens" | "deploy-safe" | "publish" | null>(null);
@@ -364,9 +418,11 @@ export function ProjectHandleEditor({
 
   const expectedRecord = projectHandleRecord(project.chainId, project.projectId);
   const textMatches = setupQuery.data?.textRecord === expectedRecord;
-  const fullyVerified = Boolean(
-    authorityAllowed && parsed.handle && setupQuery.data?.verifiedHandle === parsed.handle.handle,
+  const reverseClaimMatches = Boolean(
+    parsed.handle && setupQuery.data?.verifiedHandle === parsed.handle.handle,
   );
+  const handleProgress = projectHandleProgress(textMatches, reverseClaimMatches);
+  const fullyVerified = authorityAllowed && handleProgress.complete;
   const connectedIsOperator = Boolean(
     address && operator && address.toLowerCase() === operator.toLowerCase(),
   );
@@ -630,7 +686,7 @@ export function ProjectHandleEditor({
     if (!address || !parsed.handle || busyAction) return;
     setBusyAction("ens");
     setError(null);
-    setStatus("Checking the ENS resolver on Ethereum…");
+    setStatus("Step 1 of 2: checking the ENS resolver on Ethereum…");
     try {
       const client = publicClientFor(PROJECT_HANDLE_CHAIN_ID as JBChainId);
       const fresh = await readHandleSetup(client, parsed.handle, project, operator);
@@ -640,12 +696,16 @@ export function ProjectHandleEditor({
         );
       }
       if (fresh.textRecord === expectedRecord) {
-        setStatus("ENS already has the correct juicebox record.");
+        setStatus(
+          fresh.verifiedHandle === parsed.handle.handle
+            ? "Both steps are already complete."
+            : "Step 1 of 2 is already complete: ENS has the correct juicebox record.",
+        );
         await setupQuery.refetch();
         return;
       }
 
-      setStatus("Confirm the ENS text-record transaction in your wallet…");
+      setStatus("Step 1 of 2: confirm the ENS juicebox text-record transaction in your wallet…");
       // wallet-action:project-handle
       const hash = await writeEnsText({
         chainId: PROJECT_HANDLE_CHAIN_ID,
@@ -655,7 +715,7 @@ export function ProjectHandleEditor({
         args: [namehash(parsed.handle.ensName), PROJECT_HANDLE_TEXT_KEY, expectedRecord],
       });
       requireOnchainExecution(hash, "Set ENS project record");
-      setStatus("Waiting for the ENS record to confirm…");
+      setStatus("Step 1 of 2: waiting for the ENS juicebox text record to confirm…");
       const receipt = await waitForReceiptWithRetry(client, hash);
       if (receipt.status !== "success")
         throw new Error("The ENS text-record transaction reverted.");
@@ -681,9 +741,13 @@ export function ProjectHandleEditor({
           "The ENS transaction confirmed, but the exact resolver record is unchanged.",
         );
       }
-      setStatus("ENS now points to this project. The revnet operator can publish the handle.");
       toast({ title: "ENS project record set" });
-      await setupQuery.refetch();
+      const refreshed = await setupQuery.refetch();
+      setStatus(
+        refreshed.data?.verifiedHandle === parsed.handle.handle
+          ? "Both steps are complete. The existing JBProjectHandles reverse claim was preserved."
+          : "Step 1 of 2 complete: ENS points to this project. Continue with the JBProjectHandles reverse claim.",
+      );
     } catch (cause) {
       const message = formatWalletError(cause, "Could not set the ENS project record.");
       setError(message);
@@ -701,7 +765,7 @@ export function ProjectHandleEditor({
     if (!address || !parsed.handle || busyAction) return;
     setBusyAction("publish");
     setError(null);
-    setStatus("Confirming the current revnet operator…");
+    setStatus("Step 2 of 2: confirming the current revnet operator…");
     try {
       const liveProjectClient = publicClientFor(project.chainId);
       const addressIsCurrent = await isLiveRevnetOperator(liveProjectClient, project, address);
@@ -724,12 +788,12 @@ export function ProjectHandleEditor({
         throw new Error(`Set the ENS juicebox record to ${expectedRecord} before publishing.`);
       }
       if (fresh.verifiedHandle === parsed.handle.handle) {
-        setStatus("This handle is already published and verified.");
+        setStatus("Step 2 of 2 is already complete: the reverse claim is published.");
         await setupQuery.refetch();
         return;
       }
 
-      setStatus("Confirm the JBProjectHandles transaction in your wallet…");
+      setStatus("Step 2 of 2: confirm the JBProjectHandles transaction in your wallet…");
       // wallet-action:project-handle
       const hash = await publishHandle({
         chainId: PROJECT_HANDLE_CHAIN_ID,
@@ -739,7 +803,7 @@ export function ProjectHandleEditor({
         args: [BigInt(project.chainId), BigInt(project.projectId), parsed.handle.parts],
       });
       requireOnchainExecution(hash, "Publish project handle");
-      setStatus("Waiting for the project handle to confirm…");
+      setStatus("Step 2 of 2: waiting for the JBProjectHandles reverse claim to confirm…");
       const receipt = await waitForReceiptWithRetry(client, hash);
       if (receipt.status !== "success") throw new Error("The project-handle transaction reverted.");
 
@@ -769,7 +833,7 @@ export function ProjectHandleEditor({
       if (confirmed.verifiedHandle !== parsed.handle.handle) {
         throw new Error("The transactions confirmed, but the two-way handle check did not verify.");
       }
-      setStatus(`@${confirmed.verifiedHandle} is published and verified.`);
+      setStatus(`Both steps are complete. @${confirmed.verifiedHandle} is published and verified.`);
       toast({ title: "Project handle published" });
       await Promise.all([setupQuery.refetch(), currentHandleQuery.refetch()]);
     } catch (cause) {
@@ -785,206 +849,276 @@ export function ProjectHandleEditor({
     }
   };
 
+  const openEditor = () => {
+    setOpen(true);
+    // A dismissed Safe proposal may have executed since the last visit. Always
+    // resume from fresh live records so reopening advances without submitting
+    // either completed step again.
+    void operatorQuery.refetch();
+    if (operator) void authorityQuery.refetch();
+    if (parsed.handle) void setupQuery.refetch();
+    if (operator && authorityAllowed) void currentHandleQuery.refetch();
+  };
+
   return (
     <div className="bg-melon-50 p-4">
-      <p className="text-sm font-medium">Set project handle</p>
-      {siteOrigin ? (
-        <p className="mt-1 text-xs text-zinc-500">
-          You’ll be able to find your project at{" "}
-          {routeHandle ? (
-            <a className="underline" href={projectRoute}>
-              {siteOrigin}
-              {projectRoute}
-            </a>
-          ) : (
-            <span>
-              {siteOrigin}
-              {projectRoute}
-            </span>
-          )}
-        </p>
-      ) : null}
+      <p className="text-sm font-medium">Project handle</p>
+      <p className="mt-1 text-xs text-zinc-500">
+        Create or resume the verified ENS route in two explicit Ethereum steps.
+      </p>
+      <Button variant="secondary" size="sm" className="mt-3" onClick={openEditor}>
+        Set project handle
+      </Button>
 
-      {operatorQuery.isLoading || holdersQuery.isLoading ? (
-        <SkeletonLines lines={2} className="mt-3" />
-      ) : operatorQuery.isError || !operator ? (
-        <p className="mt-3 text-xs text-amber-700">
-          The current revnet operator could not be verified. ENS can be prepared, but the handle
-          cannot be published until this live authority check succeeds.
-        </p>
-      ) : null}
-
-      {operator && authorityQuery.isLoading ? (
-        <SkeletonLines lines={1} className="mt-3" />
-      ) : operator && authorityQuery.data && !authorityAllowed ? (
-        <p className="mt-3 text-xs text-amber-700">
-          {authorityStatusMessage(authorityQuery.data.status)} Publishing is blocked until the
-          current operator can originate the Ethereum claim.
-        </p>
-      ) : operator && authorityQuery.isError ? (
-        <p className="mt-3 text-xs text-amber-700">
-          The operator's cross-chain authority could not be checked. Publishing remains disabled.
-        </p>
-      ) : null}
-
-      {operator && sourceSafe && mainnetSafeMissing ? (
-        <div className="mt-3 border border-amber-200 bg-amber-50 p-3 text-xs text-zinc-700">
-          <p className="font-medium">Prepare the operator Safe on Ethereum</p>
-          <p className="mt-1">
-            This replays the Safe's original deterministic deployment only when its initializer,
-            current owners, threshold, singleton, fallback handler, guard, modules, and EOA-owner
-            policy all remain safe and consistent.
-          </p>
-          {safeCreationQuery.isLoading ? (
-            <SkeletonLines lines={1} className="mt-2" />
-          ) : !safeCreationQuery.data ? (
-            <p className="mt-2 text-amber-700">
-              The Safe creation record could not be recovered from its source-chain service.
-            </p>
-          ) : safeCreationValidation && !safeCreationValidation.valid ? (
-            <p className="mt-2 text-amber-700">
-              The original Safe initializer does not reproduce its current hardened policy (
-              {safeCreationValidation.reason}).
-            </p>
-          ) : (
-            <>
-              {address && !connectedIsSafeOwner ? (
-                <p className="mt-2 text-amber-700">
-                  Connect a current EOA owner of the operator Safe to deploy it.
-                </p>
-              ) : null}
-              <ButtonWithWallet
-                targetChainId={PROJECT_HANDLE_CHAIN_ID as JBChainId}
-                variant="secondary"
-                size="sm"
-                className="mt-2"
-                loading={busyAction === "deploy-safe"}
-                disabled={
-                  Boolean(busyAction) ||
-                  !safeCreationValidation?.valid ||
-                  Boolean(address && !connectedIsSafeOwner)
-                }
-                onClick={deploySafeOnMainnet}
-              >
-                Deploy operator Safe on Ethereum
-              </ButtonWithWallet>
-            </>
-          )}
-        </div>
-      ) : null}
-
-      <label className="mt-3 block text-xs font-medium text-zinc-700" htmlFor="project-handle">
-        Your .eth name
-      </label>
-      <Input
-        id="project-handle"
-        value={input}
-        onChange={(event) => {
-          setInput(event.target.value);
-          setInputWasEdited(true);
-          setStatus(null);
-          setError(null);
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && busyAction) return;
+          setOpen(next);
         }}
-        disabled={Boolean(busyAction)}
-        placeholder="banny.eth"
-        autoCapitalize="none"
-        autoCorrect="off"
-        spellCheck={false}
-        className="mt-1"
-      />
-      {parsed.error ? <p className="mt-1 text-xs text-red-600">{parsed.error}</p> : null}
-
-      {parsed.handle ? (
-        <div className="mt-3 space-y-3 text-xs">
-          <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[8rem_1fr]">
-            <dt className="text-zinc-500">ENS name</dt>
-            <dd>{parsed.handle.ensName}</dd>
-            <dt className="text-zinc-500">Required record</dt>
-            <dd className="font-mono">
-              {PROJECT_HANDLE_TEXT_KEY}={expectedRecord}
-            </dd>
-            <dt className="text-zinc-500">ENS controller</dt>
-            <dd className="break-all font-mono">{setupQuery.data?.ensController ?? "Unknown"}</dd>
-          </dl>
-
-          {setupQuery.isLoading ? (
-            <SkeletonLines lines={2} />
-          ) : setupQuery.isError ? (
-            <p className="text-red-600">The ENS and project-handle records could not be read.</p>
-          ) : !setupQuery.data?.resolver ? (
-            <p className="text-amber-700">
-              This name has no explicit ENS resolver. Set one in{" "}
-              <ExternalLink href={`https://app.ens.domains/${parsed.handle.ensName}`}>
-                ENS Manager
-              </ExternalLink>{" "}
-              first; this app will not install or replace one.
-            </p>
-          ) : (
-            <>
-              <ol className="list-decimal space-y-3 pl-4">
-                <li>
-                  <span className={textMatches ? "text-green-700" : "text-zinc-700"}>
-                    {textMatches
-                      ? "ENS has the correct juicebox record."
-                      : `Set ENS ${PROJECT_HANDLE_TEXT_KEY} to ${expectedRecord}.`}
+      >
+        <DialogContent
+          className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl overflow-y-auto p-4 sm:p-6"
+          showCloseButton={!busyAction}
+          onEscapeKeyDown={(event) => {
+            if (busyAction) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Set project handle</DialogTitle>
+            <DialogDescription>
+              First confirm the ENS juicebox text record, then publish the matching JBProjectHandles
+              reverse claim.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-w-0">
+            {siteOrigin ? (
+              <p className="min-w-0 break-words text-xs text-zinc-500">
+                You’ll be able to find your project at{" "}
+                {routeHandle ? (
+                  <a className="break-all underline" href={projectRoute}>
+                    {siteOrigin}
+                    {projectRoute}
+                  </a>
+                ) : (
+                  <span className="break-all">
+                    {siteOrigin}
+                    {projectRoute}
                   </span>
-                  {!textMatches ? (
-                    <p className="mt-1 text-zinc-500">
-                      Connect an account or Safe authorized by this resolver; it can differ from the
-                      revnet operator. The registered controller is
-                      {setupQuery.data.ensController
-                        ? ` (${setupQuery.data.ensController})`
-                        : " unknown"}
-                      ; approved delegates can also submit.
-                    </p>
-                  ) : null}
-                </li>
-                <li>
-                  <span className={fullyVerified ? "text-green-700" : "text-zinc-700"}>
-                    {fullyVerified
-                      ? "JBProjectHandles verifies the operator's reverse claim."
-                      : "Publish the reverse claim from the current revnet operator."}
-                  </span>
-                  {!fullyVerified ? (
-                    textMatches ? (
-                      !connectedIsOperator && address ? (
-                        <p className="mt-1 text-amber-700">
-                          Connect the current operator{operator ? ` (${operator})` : ""} to publish.
-                        </p>
-                      ) : null
-                    ) : (
-                      <p className="mt-1 text-zinc-500">
-                        This step unlocks after the exact ENS record is confirmed.
+                )}
+              </p>
+            ) : null}
+
+            {operatorQuery.isLoading || holdersQuery.isLoading ? (
+              <SkeletonLines lines={2} className="mt-3" />
+            ) : operatorQuery.isError || !operator ? (
+              <p className="mt-3 text-xs text-amber-700">
+                The current revnet operator could not be verified. ENS can be prepared, but the
+                handle cannot be published until this live authority check succeeds.
+              </p>
+            ) : null}
+
+            {operator && authorityQuery.isLoading ? (
+              <SkeletonLines lines={1} className="mt-3" />
+            ) : operator && authorityQuery.data && !authorityAllowed ? (
+              <p className="mt-3 text-xs text-amber-700">
+                {authorityStatusMessage(authorityQuery.data.status)} Publishing is blocked until the
+                current operator can originate the Ethereum claim.
+              </p>
+            ) : operator && authorityQuery.isError ? (
+              <p className="mt-3 text-xs text-amber-700">
+                The operator's cross-chain authority could not be checked. Publishing remains
+                disabled.
+              </p>
+            ) : null}
+
+            {operator && sourceSafe && mainnetSafeMissing ? (
+              <div className="mt-3 border border-amber-200 bg-amber-50 p-3 text-xs text-zinc-700">
+                <p className="font-medium">Prepare the operator Safe on Ethereum</p>
+                <p className="mt-1">
+                  This replays the Safe's original deterministic deployment only when its
+                  initializer, current owners, threshold, singleton, fallback handler, guard,
+                  modules, and EOA-owner policy all remain safe and consistent.
+                </p>
+                {safeCreationQuery.isLoading ? (
+                  <SkeletonLines lines={1} className="mt-2" />
+                ) : !safeCreationQuery.data ? (
+                  <p className="mt-2 text-amber-700">
+                    The Safe creation record could not be recovered from its source-chain service.
+                  </p>
+                ) : safeCreationValidation && !safeCreationValidation.valid ? (
+                  <p className="mt-2 text-amber-700">
+                    The original Safe initializer does not reproduce its current hardened policy (
+                    {safeCreationValidation.reason}).
+                  </p>
+                ) : (
+                  <>
+                    {address && !connectedIsSafeOwner ? (
+                      <p className="mt-2 text-amber-700">
+                        Connect a current EOA owner of the operator Safe to deploy it.
                       </p>
-                    )
-                  ) : null}
-                </li>
-              </ol>
-              {!fullyVerified ? (
-                <ButtonWithWallet
-                  targetChainId={PROJECT_HANDLE_CHAIN_ID as JBChainId}
-                  variant="secondary"
-                  size="sm"
-                  loading={busyAction === (textMatches ? "publish" : "ens")}
-                  disabled={
-                    Boolean(busyAction) ||
-                    (textMatches &&
-                      (!operator || !authorityAllowed || Boolean(address && !connectedIsOperator)))
-                  }
-                  onClick={textMatches ? publish : setEnsRecord}
-                >
-                  {textMatches
-                    ? `Publish /@${parsed.handle.handle}`
-                    : `Set ${parsed.handle.ensName} record`}
-                </ButtonWithWallet>
-              ) : null}
-            </>
-          )}
-        </div>
-      ) : null}
+                    ) : null}
+                    <ButtonWithWallet
+                      targetChainId={PROJECT_HANDLE_CHAIN_ID as JBChainId}
+                      variant="secondary"
+                      size="sm"
+                      className="mt-2"
+                      loading={busyAction === "deploy-safe"}
+                      disabled={
+                        Boolean(busyAction) ||
+                        !safeCreationValidation?.valid ||
+                        Boolean(address && !connectedIsSafeOwner)
+                      }
+                      onClick={deploySafeOnMainnet}
+                    >
+                      Deploy operator Safe on Ethereum
+                    </ButtonWithWallet>
+                  </>
+                )}
+              </div>
+            ) : null}
 
-      {status ? <p className="mt-3 text-xs text-green-700">{status}</p> : null}
-      {error ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
+            <label
+              className="mt-3 block text-xs font-medium text-zinc-700"
+              htmlFor="project-handle"
+            >
+              Your .eth name
+            </label>
+            <Input
+              id="project-handle"
+              value={input}
+              onChange={(event) => {
+                setInput(event.target.value);
+                setInputWasEdited(true);
+                setStatus(null);
+                setError(null);
+              }}
+              disabled={Boolean(busyAction)}
+              placeholder="banny.eth"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="mt-1"
+            />
+            {parsed.error ? <p className="mt-1 text-xs text-red-600">{parsed.error}</p> : null}
+
+            {parsed.handle ? (
+              <div className="mt-3 space-y-3 text-xs">
+                <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[8rem_1fr]">
+                  <dt className="text-zinc-500">ENS name</dt>
+                  <dd>{parsed.handle.ensName}</dd>
+                  <dt className="text-zinc-500">Required record</dt>
+                  <dd className="font-mono">
+                    {PROJECT_HANDLE_TEXT_KEY}={expectedRecord}
+                  </dd>
+                  <dt className="text-zinc-500">ENS controller</dt>
+                  <dd className="break-all font-mono">
+                    {setupQuery.data?.ensController ?? "Unknown"}
+                  </dd>
+                </dl>
+
+                {setupQuery.isLoading ? (
+                  <SkeletonLines lines={2} />
+                ) : setupQuery.isError ? (
+                  <p className="text-red-600">
+                    The ENS and project-handle records could not be read.
+                  </p>
+                ) : (
+                  <>
+                    {!setupQuery.data?.resolver ? (
+                      <p className="text-amber-700">
+                        This name has no explicit ENS resolver. Set one in{" "}
+                        <ExternalLink href={`https://app.ens.domains/${parsed.handle.ensName}`}>
+                          ENS Manager
+                        </ExternalLink>{" "}
+                        first; this app will not install or replace one.
+                      </p>
+                    ) : null}
+                    <ol className="space-y-3 rounded border border-melon-200 bg-melon-50 p-3">
+                      <HandleProgressStep
+                        number={1}
+                        title="ENS juicebox text record"
+                        complete={handleProgress.ensRecordComplete}
+                        active={handleProgress.nextAction === "ens"}
+                      >
+                        <p className="mt-1 text-zinc-500">
+                          {handleProgress.ensRecordComplete
+                            ? `${PROJECT_HANDLE_TEXT_KEY}=${expectedRecord} is confirmed on ${parsed.handle.ensName}.`
+                            : `Set ${PROJECT_HANDLE_TEXT_KEY}=${expectedRecord} on ${parsed.handle.ensName}.`}
+                        </p>
+                        {!handleProgress.ensRecordComplete ? (
+                          <p className="mt-1 text-zinc-500">
+                            Connect an account or Safe authorized by this resolver; it can differ
+                            from the revnet operator. The registered controller is
+                            {setupQuery.data?.ensController
+                              ? ` (${setupQuery.data.ensController})`
+                              : " unknown"}
+                            ; approved delegates can also submit.
+                          </p>
+                        ) : null}
+                      </HandleProgressStep>
+                      <HandleProgressStep
+                        number={2}
+                        title="JBProjectHandles reverse claim"
+                        complete={handleProgress.reverseClaimComplete}
+                        active={handleProgress.nextAction === "publish"}
+                      >
+                        <p className="mt-1 text-zinc-500">
+                          {handleProgress.reverseClaimComplete
+                            ? "The current operator's reverse claim is confirmed."
+                            : "Publish the matching reverse claim from the current revnet operator."}
+                        </p>
+                        {!handleProgress.reverseClaimComplete ? (
+                          handleProgress.ensRecordComplete ? (
+                            !connectedIsOperator && address ? (
+                              <p className="mt-1 text-amber-700">
+                                Connect the current operator{operator ? ` (${operator})` : ""} to
+                                publish.
+                              </p>
+                            ) : null
+                          ) : (
+                            <p className="mt-1 text-zinc-500">
+                              This step unlocks after the exact ENS record is confirmed.
+                            </p>
+                          )
+                        ) : null}
+                      </HandleProgressStep>
+                    </ol>
+                    {fullyVerified ? (
+                      <p className="text-green-700">
+                        Both steps are complete and the project route is verified.
+                      </p>
+                    ) : null}
+                    {setupQuery.data?.resolver && handleProgress.nextAction ? (
+                      <ButtonWithWallet
+                        targetChainId={PROJECT_HANDLE_CHAIN_ID as JBChainId}
+                        variant="secondary"
+                        size="sm"
+                        loading={busyAction === handleProgress.nextAction}
+                        disabled={
+                          Boolean(busyAction) ||
+                          (handleProgress.nextAction === "publish" &&
+                            (!operator ||
+                              !authorityAllowed ||
+                              Boolean(address && !connectedIsOperator)))
+                        }
+                        onClick={handleProgress.nextAction === "publish" ? publish : setEnsRecord}
+                      >
+                        {handleProgress.nextAction === "publish"
+                          ? `Publish /@${parsed.handle.handle}`
+                          : `Set ${parsed.handle.ensName} record`}
+                      </ButtonWithWallet>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            {status ? <p className="mt-3 text-xs text-green-700">{status}</p> : null}
+            {error ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -127,6 +127,7 @@ function followSubmission(
   account: Address,
   callKey: string,
   safe: boolean,
+  manualReceiptVerification: boolean,
 ): void {
   const id = `tx:${chainId}:${hash.toLowerCase()}`;
   recordTransactionActivity({
@@ -142,7 +143,15 @@ function followSubmission(
     hash,
     safeProposalHash: safe ? hash : undefined,
     callKey,
+    manualVerificationRequired: manualReceiptVerification || undefined,
   });
+  if (manualReceiptVerification) {
+    updateTransactionActivity(id, {
+      status: "pending",
+      message: "Pending action-specific receipt verification.",
+    });
+    return;
+  }
   if (safe) {
     void watchSafeProposal(id, hash, chainId);
     return;
@@ -190,6 +199,10 @@ type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] 
     variables: Parameters<ReturnType<typeof useWagmiWriteContract>["writeContractAsync"]>[0],
     account: Address,
   ) => Promise<{ gas: bigint } | void>;
+  /** Keep generic receipt success pending until the caller releases its exact postcondition. */
+  manualReceiptVerification?: (
+    variables: Parameters<ReturnType<typeof useWagmiWriteContract>["writeContractAsync"]>[0],
+  ) => boolean;
 };
 
 export function useWriteContract(
@@ -197,8 +210,14 @@ export function useWriteContract(
 ): ReturnType<typeof useWagmiWriteContract> {
   const config = useConfig();
   const queryClient = useQueryClient();
-  const { transactionReview, reviewedInParent, reverify, preflightSimulation, ...wagmiOptions } =
-    options ?? {};
+  const {
+    transactionReview,
+    reviewedInParent,
+    reverify,
+    preflightSimulation,
+    manualReceiptVerification,
+    ...wagmiOptions
+  } = options ?? {};
   const mutation = useWagmiWriteContract(wagmiOptions);
 
   const writeContractAsync = useCallback(
@@ -221,7 +240,8 @@ export function useWriteContract(
         const duplicate = refreshTransactionActivities().find(
           (activity) =>
             activity.callKey === callKey &&
-            (activity.status === "submitted" ||
+            (activity.manualVerificationRequired === true ||
+              activity.status === "submitted" ||
               activity.status === "pending" ||
               activity.status === "safe-proposed"),
         );
@@ -235,6 +255,12 @@ export function useWriteContract(
         }
 
         const safe = isSafeConnection(config);
+        const ownsReceiptLifecycle = manualReceiptVerification?.(variables) === true;
+        if (safe && ownsReceiptLifecycle) {
+          throw new Error(
+            "This execution requires exact onchain result verification and cannot be proposed through a Safe connector. Connect an EOA owner of the executing Safe.",
+          );
+        }
         if (!reviewedInParent) {
           await requireContractTransactionReview(
             {
@@ -311,7 +337,16 @@ export function useWriteContract(
           // execution gas; the bounded preflight above remains mandatory.
           gas: safe ? 0n : (boundedPreflight?.gas ?? gasWithHeadroom(estimate)),
         } as Parameters<typeof mutation.writeContractAsync>[0]);
-        followSubmission(config, hash, chainId, functionName, reviewedAccount, callKey, safe);
+        followSubmission(
+          config,
+          hash,
+          chainId,
+          functionName,
+          reviewedAccount,
+          callKey,
+          safe,
+          ownsReceiptLifecycle,
+        );
         return hash;
       };
 
@@ -324,7 +359,15 @@ export function useWriteContract(
         ? locks.request(`revnet:transaction:${keccak256(stringToHex(callKey))}`, submitReviewedCall)
         : submitReviewedCall();
     },
-    [config, mutation, preflightSimulation, reviewedInParent, reverify, transactionReview],
+    [
+      config,
+      manualReceiptVerification,
+      mutation,
+      preflightSimulation,
+      reviewedInParent,
+      reverify,
+      transactionReview,
+    ],
   );
 
   const writeContract = useCallback(
