@@ -75,5 +75,21 @@ export async function GET(
 
   const appPath = ipfsUriToAppUrl(source);
   if (appPath) return Response.redirect(new URL(appPath, request.url), 307);
-  return new Response(null, { status: 404 });
+
+  // Keep the Open Graph image renderable even when a project has no logo or
+  // its metadata uses an unsupported external URL. The preview route can then
+  // show an honest identity fallback instead of failing the whole card.
+  const initial = (project.name?.trim().charAt(0).toUpperCase() || "R").replace(
+    /[^A-Z0-9]/u,
+    "R",
+  );
+  const fallback = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360"><rect width="360" height="360" rx="48" fill="#d7e9df"/><text x="180" y="238" text-anchor="middle" font-family="Arial,sans-serif" font-size="180" font-weight="700" fill="#15281f">${initial}</text></svg>`;
+  return new Response(fallback, {
+    headers: {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "cache-control": "public, max-age=300, s-maxage=300",
+      "content-security-policy": "sandbox; default-src 'none'",
+      "x-content-type-options": "nosniff",
+    },
+  });
 }

@@ -1,5 +1,6 @@
 import { Nav } from "@/components/layout/Nav";
 import { parseSlug } from "@/lib/slug";
+import { projectPreviewSlogan } from "@/lib/project-link-preview";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PropsWithChildren } from "react";
@@ -53,7 +54,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   return buildMetadata({
     title: project?.name ? `${project.name} | REVNET` : "Revnet",
-    description: "An autonomous business model for the open web. 100% open source.",
+    description:
+      projectPreviewSlogan(project?.projectTagline, project?.description) ||
+      "An autonomous business model for the open web. 100% open source.",
     imageUrl,
     url: url.href,
   });

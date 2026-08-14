@@ -101,9 +101,11 @@ const PROJECT_FIELDS = `
   metadataUri
   handle
   createdAt
+  description
   suckerGroupId
   logoUri
   name
+  projectTagline
   version
   token
   decimals

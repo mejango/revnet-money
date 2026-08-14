@@ -7,6 +7,7 @@ export type Project = {
   createdAt: number;
   currency: BigNumberish | null;
   decimals: number | null;
+  description?: string | null;
   handle: string | null;
   isRevnet: boolean | null;
   logoUri: string | null;
@@ -85,9 +86,11 @@ export type ProjectQuery = {
     | "metadataUri"
     | "handle"
     | "createdAt"
+    | "description"
     | "suckerGroupId"
     | "logoUri"
     | "name"
+    | "projectTagline"
     | "version"
     | "token"
     | "decimals"

@@ -1,4 +1,9 @@
 import { getProject } from "@/app/[slug]/getProject";
+import { getSuckerGroup } from "@/app/[slug]/getSuckerGroup";
+import {
+  formatProjectPreviewBalance,
+  projectPreviewSlogan,
+} from "@/lib/project-link-preview";
 import { ImageResponse } from "next/og";
 import type { NextRequest } from "next/server";
 
@@ -22,37 +27,111 @@ export async function GET(
   const project = await getProject(projectId, chainId);
   if (!project) return new Response(null, { status: 404 });
 
+  const suckerGroup = project.suckerGroupId
+    ? await getSuckerGroup(project.suckerGroupId, chainId)
+    : null;
+  const deployments = suckerGroup?.projects?.items ?? [];
+  const balance = formatProjectPreviewBalance(deployments);
+  const paymentsCount = suckerGroup?.paymentsCount ?? 0;
+  const name = project.name ?? `Project ${projectId}`;
+  const tagline =
+    projectPreviewSlogan(project.projectTagline, project.description) ||
+    "An autonomous business model for the open web.";
+
   const imageUrl = new URL(`/api/project-image/${chainId}/${projectId}`, request.nextUrl.origin)
     .href;
 
   return new ImageResponse(
     <div
       style={{
-        alignItems: "center",
         background: "#f5fcf8",
         color: "#15281f",
         display: "flex",
         height: "100%",
-        justifyContent: "center",
-        padding: "56px 72px",
+        padding: "64px 72px",
         width: "100%",
       }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={imageUrl} alt="" width="440" height="440" style={{ objectFit: "contain" }} />
+      <div
+        style={{
+          alignItems: "center",
+          display: "flex",
+          height: 360,
+          justifyContent: "center",
+          overflow: "hidden",
+          width: 360,
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={imageUrl} alt="" width="360" height="360" style={{ objectFit: "contain" }} />
+      </div>
       <div
         style={{
           display: "flex",
           flex: 1,
           flexDirection: "column",
-          marginLeft: "56px",
+          marginLeft: "64px",
+          minWidth: 0,
         }}
       >
-        <div style={{ display: "flex", fontSize: 56, fontWeight: 700 }}>
-          {project.name ?? `Project ${projectId}`}
+        <div
+          style={{
+            display: "flex",
+            fontSize: name.length > 28 ? 48 : 58,
+            fontWeight: 700,
+            lineHeight: 1.05,
+          }}
+        >
+          {name}
         </div>
-        <div style={{ display: "flex", fontSize: 26, marginTop: "24px" }}>
-          An autonomous business model for the open web.
+        <div
+          style={{
+            color: "#476357",
+            display: "flex",
+            fontSize: 27,
+            lineHeight: 1.3,
+            marginTop: "22px",
+          }}
+        >
+          {tagline}
+        </div>
+
+        <div style={{ display: "flex", gap: 22, marginTop: "auto" }}>
+          <div
+            style={{
+              background: "#ffffff",
+              border: "2px solid #d7e9df",
+              borderRadius: 18,
+              display: "flex",
+              flex: 1,
+              flexDirection: "column",
+              padding: "18px 22px",
+            }}
+          >
+            <div style={{ color: "#668075", display: "flex", fontSize: 19 }}>Balance</div>
+            <div style={{ display: "flex", fontSize: 29, fontWeight: 700, marginTop: 7 }}>
+              {balance}
+            </div>
+          </div>
+          <div
+            style={{
+              background: "#ffffff",
+              border: "2px solid #d7e9df",
+              borderRadius: 18,
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 190,
+              padding: "18px 22px",
+            }}
+          >
+            <div style={{ color: "#668075", display: "flex", fontSize: 19 }}>Payments</div>
+            <div style={{ display: "flex", fontSize: 29, fontWeight: 700, marginTop: 7 }}>
+              {paymentsCount.toLocaleString("en-US")}
+            </div>
+          </div>
+        </div>
+        <div style={{ color: "#668075", display: "flex", fontSize: 18, marginTop: 18 }}>
+          REVNET · autonomous, open-source businesses
         </div>
       </div>
     </div>,
