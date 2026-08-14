@@ -55,7 +55,7 @@ import {
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   isAddress,
   isAddressEqual,
@@ -66,7 +66,6 @@ import {
 } from "viem";
 import { useAccount } from "wagmi";
 import {
-  chainName,
   isLiveRevnetOperator,
   permissionHoldersWhere,
   publicClientFor,
@@ -79,6 +78,18 @@ type HandleSetup = {
   textRecord: string | null;
   verifiedHandle: string;
 };
+
+function subscribeToSiteOrigin(): () => void {
+  return () => undefined;
+}
+
+function siteOriginSnapshot(): string | null {
+  return window.location.origin;
+}
+
+function serverSiteOriginSnapshot(): string | null {
+  return null;
+}
 
 function authorityStatusMessage(status: CrossChainHandleAuthorityStatus): string {
   switch (status) {
@@ -193,6 +204,11 @@ export function ProjectHandleEditor({
   const [busyAction, setBusyAction] = useState<"ens" | "deploy-safe" | "publish" | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const siteOrigin = useSyncExternalStore(
+    subscribeToSiteOrigin,
+    siteOriginSnapshot,
+    serverSiteOriginSnapshot,
+  );
 
   const holdersQuery = useCompleteProjectPermissions(
     permissionHoldersWhere([project], {
@@ -324,6 +340,8 @@ export function ProjectHandleEditor({
       };
     }
   }, [input]);
+  const routeHandle = parsed.handle?.handle ?? (inputWasEdited ? null : currentHandle?.handle);
+  const projectRoute = `/@${routeHandle ?? "<handle>"}`;
 
   const setupQuery = useQuery({
     queryKey: [
@@ -770,18 +788,22 @@ export function ProjectHandleEditor({
   return (
     <div className="bg-melon-50 p-4">
       <p className="text-sm font-medium">Set project handle</p>
-      <p className="mt-1 text-xs text-zinc-500">
-        Use any .eth name you control or are authorized to update. This resumable flow sets its{" "}
-        <span className="font-mono">
-          {PROJECT_HANDLE_TEXT_KEY}={expectedRecord}
-        </span>{" "}
-        record for this viewed {chainName(project.chainId)} deployment only, then has the current
-        revnet operator publish the matching claim on Ethereum.
-      </p>
-      <p className="mt-1 text-xs text-zinc-500">
-        Completed steps are detected when you return. One ENS name points to one exact project
-        deployment, and its readable URL works across every tab.
-      </p>
+      {siteOrigin ? (
+        <p className="mt-1 text-xs text-zinc-500">
+          You’ll be able to find your project at{" "}
+          {routeHandle ? (
+            <a className="underline" href={projectRoute}>
+              {siteOrigin}
+              {projectRoute}
+            </a>
+          ) : (
+            <span>
+              {siteOrigin}
+              {projectRoute}
+            </span>
+          )}
+        </p>
+      ) : null}
 
       {operatorQuery.isLoading || holdersQuery.isLoading ? (
         <SkeletonLines lines={2} className="mt-3" />
@@ -789,13 +811,6 @@ export function ProjectHandleEditor({
         <p className="mt-3 text-xs text-amber-700">
           The current revnet operator could not be verified. ENS can be prepared, but the handle
           cannot be published until this live authority check succeeds.
-        </p>
-      ) : currentHandle ? (
-        <p className="mt-3 text-xs text-zinc-600">
-          Current verified URL:{" "}
-          <a className="underline" href={`/@${currentHandle.handle}`}>
-            /@{currentHandle.handle}
-          </a>
         </p>
       ) : null}
 
@@ -890,8 +905,6 @@ export function ProjectHandleEditor({
             </dd>
             <dt className="text-zinc-500">ENS controller</dt>
             <dd className="break-all font-mono">{setupQuery.data?.ensController ?? "Unknown"}</dd>
-            <dt className="text-zinc-500">Project route</dt>
-            <dd className="font-mono">/@{parsed.handle.handle}</dd>
           </dl>
 
           {setupQuery.isLoading ? (

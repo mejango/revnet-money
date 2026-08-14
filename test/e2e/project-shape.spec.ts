@@ -250,12 +250,27 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
   await expect(page.getByText("Set project uri")).toBeVisible();
- await expect(page.getByText("Set project handle")).toBeVisible();
+  await expect(page.getByText("Set project handle")).toBeVisible();
   await expect(
-    page.getByText("Use any .eth name you control or are authorized to update.", { exact: false }),
+    page.getByText("You’ll be able to find your project at", { exact: false }),
   ).toBeVisible();
   await expect(page.getByLabel("Your .eth name")).toHaveAttribute("placeholder", "banny.eth");
- await expect(page.getByRole("link", { name: "/@fixture-revnet" })).toBeVisible();
+  const projectOrigin = new URL(page.url()).origin;
+  const projectUrl = `${projectOrigin}/@fixture-revnet`;
+  const projectUrlPreview = page.getByText("You’ll be able to find your project at", {
+    exact: false,
+  });
+  await expect(page.getByRole("link", { name: projectUrl })).toBeVisible();
+  await expect(projectUrlPreview).toHaveText(
+    `You’ll be able to find your project at ${projectUrl}`,
+  );
+  await page.getByLabel("Your .eth name").fill("FIXTURE-REVNET.ETH");
+  await expect(page.getByRole("link", { name: projectUrl })).toBeVisible();
+  await page.getByLabel("Your .eth name").fill("");
+  await expect(projectUrlPreview).toHaveText(
+    `You’ll be able to find your project at ${projectOrigin}/@<handle>`,
+  );
+  await expect(page.getByRole("link", { name: projectUrl })).toHaveCount(0);
   const secondaryActions = [
     "Transfer revnet operator",
     "Edit metadata",
@@ -277,7 +292,7 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   expectSecurityHeaders(handleResponse);
   await expect(page).toHaveURL(/\/@fixture-revnet\/operator$/u);
   await expect(page.getByText("Set project handle")).toBeVisible();
-  await expect(page.getByRole("link", { name: "/@fixture-revnet" })).toBeVisible();
+  await expect(page.getByRole("link", { name: projectUrl })).toBeVisible();
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 

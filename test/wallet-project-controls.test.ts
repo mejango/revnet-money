@@ -177,16 +177,22 @@ for (const { marker, sources } of actionExpectations) {
 }
 
 describe("project handle ENS authorization", () => {
-  it("presents arbitrary .eth names as a tuple-scoped resumable self-service flow", () => {
+  it("presents the normalized draft or current handle as an absolute project URL", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"),
       "utf8",
     );
-    expect(source).toContain("Use any .eth name you control or are authorized to update.");
-    expect(source).toContain("it can differ from");
-    expect(source).toContain("the revnet operator");
-    expect(source).toContain("This resumable flow sets its");
-    expect(source).toContain("this viewed {chainName(project.chainId)} deployment only");
+    expect(source).toContain("You’ll be able to find your project at");
+    expect(source).toContain("parsed.handle?.handle ??");
+    expect(source).toContain("inputWasEdited ? null : currentHandle?.handle");
+    expect(source).toContain("window.location.origin");
+    expect(source).toContain('routeHandle ?? "<handle>"');
+    expect(source).not.toContain("NEXT_PUBLIC_SITE_URL");
+    expect(source).toContain("{projectRoute}");
+    expect(source).not.toContain("Project route");
+    expect(source).not.toContain("Use any .eth name you control or are authorized to update.");
+    expect(source).toContain("Publishing is blocked until the");
+    expect(source).toContain("The current revnet operator could not be verified.");
     expect(source).toContain('placeholder="banny.eth"');
     expect(source).toContain("onClick={textMatches ? publish : setEnsRecord}");
     expect(source).toContain("`Set ${parsed.handle.ensName} record`");
