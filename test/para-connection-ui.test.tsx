@@ -8,9 +8,6 @@ const bridge = vi.hoisted(() => ({
   connectAsync: vi.fn(),
 }));
 
-vi.mock("@/components/loading/LoadingSkeletons", () => ({
-  AppLoadingSkeleton: () => null,
-}));
 vi.mock("@/components/TransactionReviewProvider", () => ({
   TransactionReviewProvider: ({ children }: { children: React.ReactNode }) => children,
 }));

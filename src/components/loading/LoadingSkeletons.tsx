@@ -1,10 +1,7 @@
 import { Skeleton, SkeletonLines, SkeletonTable } from "@/components/ui/skeleton";
 import { IpfsImage } from "@/components/IpfsImage";
 import { Revalidating } from "@/components/ui/Revalidating";
-import {
-  getProjectNavigationHint,
-  type ProjectNavigationHint,
-} from "@/lib/project-navigation";
+import { type ProjectNavigationHint } from "@/lib/project-navigation";
 
 function ActivityRows({ rows = 5 }: { rows?: number }) {
   return (
@@ -301,7 +298,7 @@ function NavigationSkeleton() {
   );
 }
 
-function DiscoverPageSkeleton() {
+export function DiscoverPageSkeleton() {
   return (
     <div className="container mt-40 px-6 sm:px-8" role="status" aria-label="Loading discover page">
       <span className="sr-only">Loading discover page</span>
@@ -316,7 +313,7 @@ function DiscoverPageSkeleton() {
   );
 }
 
-function CreatePageSkeleton() {
+export function CreatePageSkeleton() {
   return (
     <div className="min-h-screen" role="status" aria-label="Loading creation form">
       <span className="sr-only">Loading creation form</span>
@@ -334,12 +331,6 @@ function CreatePageSkeleton() {
       </div>
     </div>
   );
-}
-
-export function AppLoadingSkeleton({ pathname }: { pathname: string }) {
-  if (pathname === "/discover") return <DiscoverPageSkeleton />;
-  if (pathname === "/create") return <CreatePageSkeleton />;
-  return <ProjectPageSkeleton hint={getProjectNavigationHint(pathname)} />;
 }
 
 export function ProjectPageSkeleton({ hint }: { hint?: ProjectNavigationHint | null }) {

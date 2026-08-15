@@ -1,6 +1,5 @@
 "use client";
 
-import { AppLoadingSkeleton } from "@/components/loading/LoadingSkeletons";
 import { installQueryPersistence } from "@/lib/query-persist";
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,26 +10,27 @@ import { verifyMarkedParaSession } from "@/providers/para-session";
 import { ParaAuthContext } from "@/providers/ParaAuthContext";
 import { ParaConnectionNotice } from "@/providers/ParaConnectionNotice";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { usePathname } from "next/navigation";
 import * as React from "react";
 import { useAccount, useConnect, useConnectors, WagmiProvider } from "wagmi";
 
 const ParaModalHost = React.lazy(() => import("@/providers/ParaModalHost"));
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      gcTime: 10 * 60_000,
-      retry: 1,
-      refetchOnWindowFocus: false,
+function createQueryClient() {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 30_000,
+        gcTime: 10 * 60_000,
+        retry: 1,
+        refetchOnWindowFocus: false,
+      },
     },
-  },
-});
-
-// Synchronous, so the first paint already has last session's values for every
-// query tagged in @/lib/query-persist.
-installQueryPersistence(queryClient);
+  });
+  // Synchronous, so the first paint already has last session's values for every
+  // query tagged in @/lib/query-persist. It no-ops without a `window`.
+  installQueryPersistence(client);
+  return client;
+}
 
 export function ParaConnectionBridge({
   modalOpen,
@@ -69,17 +69,14 @@ export function ParaConnectionBridge({
 }
 
 export function AppSpecificProviders({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const [mounted, setMounted] = React.useState(false);
+  // Per render tree, never module scope: on the server one shared client would
+  // hand one visitor's fetched data to the next request.
+  const [queryClient] = React.useState(createQueryClient);
   const [paraHostLoaded, setParaHostLoaded] = React.useState(false);
   const [paraRequestId, setParaRequestId] = React.useState(0);
   const [paraModalOpen, setParaModalOpen] = React.useState(false);
   const [paraSessionVersion, setParaSessionVersion] = React.useState(0);
   const [paraConnectionError, setParaConnectionError] = React.useState(false);
-
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
 
   // Preserve embedded-wallet sessions without penalizing anonymous visitors.
   // Para's own session is authoritative; transient verification failures keep
@@ -113,10 +110,6 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
     }),
     [paraModalOpen, paraSessionVersion, requestSignIn],
   );
-
-  if (!mounted) {
-    return <AppLoadingSkeleton pathname={pathname} />;
-  }
 
   return (
     <WagmiProvider config={wagmiConfig} reconnectOnMount>
