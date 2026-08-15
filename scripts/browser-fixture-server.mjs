@@ -234,6 +234,11 @@ const fixtureProject = {
   tokenSymbol: "USDC",
   isRevnet: true,
   volume: "1250000000",
+  // The discovery documents ask for the trending triple; a project without it fails
+  // the client's response contract, which is what left home and discover empty.
+  trendingScore: "1250000000",
+  trendingVolume: "1250000000",
+  trendingPaymentsCount: 2,
   owner: addresses.revOwner,
   permissionHolders: { items: [] },
   suckerGroup: {
@@ -549,14 +554,19 @@ const graphqlHandlers = {
   },
   TopSuckerGroups(variables) {
     requireExactVariables("TopSuckerGroups", variables, { limit: 1000, offset: 0 });
+    // Every field the document asks for: a missing one fails the client's response
+    // contract, and the home totals then render as "…" forever.
     return {
       suckerGroups: {
         items: [
           {
+            id: suckerGroupId,
             balance: "1250000000",
+            volume: "1250000000",
             projects: {
               items: [
                 {
+                  balance: "1250000000",
                   chainId,
                   currency: "2",
                   decimals: 6,
@@ -566,6 +576,7 @@ const graphqlHandlers = {
                   projectId,
                   projectTagline: browserProject.metadata.projectTagline,
                   tokenSymbol: "USDC",
+                  version: 6,
                 },
               ],
             },

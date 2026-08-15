@@ -57,7 +57,7 @@ export function Nav({ wide = false }: { wide?: boolean }) {
         </div>
         <div
           data-site-nav-wallet
-          className="col-start-3 row-start-1 flex min-w-0 max-w-[55vw] items-stretch justify-self-end sm:max-w-none [&>*]:min-w-0 [&>*]:max-w-full [&_button]:max-w-full [&>button]:min-h-11"
+          className="col-start-3 row-start-1 flex min-w-0 max-w-full items-stretch justify-self-end [&>*]:min-w-0 [&>*]:max-w-full [&_button]:max-w-full [&>button]:min-h-11"
         >
           <WalletButton />
         </div>

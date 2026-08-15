@@ -6,6 +6,7 @@ import {
   expectSecurityHeaders,
   installBrowserBoundary,
   type BrowserBoundary,
+  retryUntilVisible,
 } from "./browser-support";
 
 async function openCreatePage(page: Page): Promise<BrowserBoundary> {
@@ -66,9 +67,11 @@ test("production create surface stays visible and contained", async ({ page }) =
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Ticker", exact: true })).toBeVisible();
-  await page.getByRole("checkbox", { name: "USDC" }).check();
+  await retryUntilVisible(
+    () => page.getByRole("checkbox", { name: "USDC" }).check(),
+    page.getByText("backed by both ETH and USDC", { exact: false }),
+  );
   await expect(page.getByRole("checkbox", { name: "ETH", exact: true })).toBeChecked();
-  await expect(page.getByText("backed by both ETH and USDC", { exact: false })).toBeVisible();
 
   // The issuance denomination is one global value edited at its point of use:
   // inline in the stage's issuance row, not in a standalone block.

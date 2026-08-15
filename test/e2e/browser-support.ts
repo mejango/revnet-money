@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, type Page, type Response } from "@playwright/test";
+import { expect, type Locator, type Page, type Response } from "@playwright/test";
 import browserProject from "../fixtures/browser-project.json";
 
 export const FIXTURE_ORIGIN = `http://127.0.0.1:${browserProject.fixturePort}`;
@@ -44,6 +44,20 @@ export async function installBrowserBoundary(page: Page): Promise<BrowserBoundar
 export function expectBoundaryToStayLocal(boundary: BrowserBoundary): void {
   expect(boundary.externalRequests, "production page attempted external traffic").toEqual([]);
   expect(boundary.pageErrors, "production page raised uncaught browser errors").toEqual([]);
+}
+
+/**
+ * An interaction that lands before React hydrates is a no-op: the server sent the
+ * markup, but no handler is attached yet. Retry the interaction until it takes.
+ */
+export async function retryUntilVisible(
+  act: () => Promise<void>,
+  expected: Locator,
+): Promise<void> {
+  await expect(async () => {
+    await act();
+    await expect(expected).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 export function expectSecurityHeaders(response: Response | null, expectedStatus = 200): void {

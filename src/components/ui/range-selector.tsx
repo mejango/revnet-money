@@ -23,7 +23,10 @@ export function RangeSelector<T extends string>({ ranges, defaultValue }: Props<
   const currentValue = validValues.includes(rangeParam as T) ? (rangeParam as T) : defaultValue;
 
   return (
-    <div className="flex gap-1 p-1 bg-teal-50 rounded-lg shrink-0">
+    // Eight ranges are 381px of pills, wider than a 320px screen. Wrapping keeps
+    // every range reachable; `shrink-0` used to push the whole page into a
+    // horizontal scroll instead.
+    <div className="flex flex-wrap justify-start gap-1 rounded-lg bg-teal-50 p-1">
       {ranges.map(({ value, label }) => (
         <Link
           key={value}

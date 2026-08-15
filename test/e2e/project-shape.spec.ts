@@ -7,6 +7,7 @@ import {
   FIXTURE_ORIGIN,
   installBrowserBoundary,
   type BrowserBoundary,
+  retryUntilVisible,
 } from "./browser-support";
 
 type FixtureStatus = {
@@ -88,7 +89,7 @@ test("fixture project renders its contract-hydrated production shape", async ({
   const about = page.getByRole("heading", { name: "About", exact: true });
   if ((viewport?.width ?? 0) <= 800) {
     await expect(about).toBeHidden();
-    await expect(page.getByRole("button", { name: "Activity", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Latest", exact: true })).toBeVisible();
     await page.getByRole("link", { name: "Overview" }).click();
   }
   await expect(about).toBeVisible();
@@ -220,10 +221,14 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   await expect(page.getByRole("button", { name: "Accounts" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "You", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "All", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Auto issuance", exact: true }).click();
-  await expect(page.getByText("No auto issuances")).toBeVisible();
-  await page.getByRole("button", { name: "Loans", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Active loans", exact: true })).toBeVisible();
+  await retryUntilVisible(
+    () => page.getByRole("button", { name: "Auto issuance", exact: true }).click(),
+    page.getByText("No auto issuances"),
+  );
+  await retryUntilVisible(
+    () => page.getByRole("button", { name: "Loans", exact: true }).click(),
+    page.getByRole("heading", { name: "Active loans", exact: true }),
+  );
   await expect(page.getByRole("columnheader", { name: "Prepaid fee" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Current fee outstanding" })).toBeVisible();
   await expect(page.getByText("603.5741 USDC")).toBeVisible();
@@ -253,7 +258,10 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   // once in React's hidden staging container and once in place.
   await expect(page.locator("main").getByText("Set project uri")).toBeVisible();
   await expect(page.locator("main").getByText("Set project handle")).toBeVisible();
-  await page.getByRole("button", { name: "Set project handle", exact: true }).click();
+  await retryUntilVisible(
+    () => page.getByRole("button", { name: "Set project handle", exact: true }).click(),
+    page.getByRole("dialog"),
+  );
   const projectHandleDialog = page.getByRole("dialog");
   await expect(
     projectHandleDialog.getByRole("heading", { name: "Set project handle" }),
@@ -307,7 +315,10 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   expectSecurityHeaders(handleResponse);
   await expect(page).toHaveURL(/\/@fixture-revnet\/operator$/u);
   await expect(page.locator("main").getByText("Set project handle")).toBeVisible();
-  await page.getByRole("button", { name: "Set project handle", exact: true }).click();
+  await retryUntilVisible(
+    () => page.getByRole("button", { name: "Set project handle", exact: true }).click(),
+    page.getByRole("dialog"),
+  );
   await expect(page.getByRole("dialog").getByRole("link", { name: projectUrl })).toBeVisible();
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
@@ -322,7 +333,10 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
       new URL(response.url()).pathname === "/@fixture-revnet/owners" &&
       new URL(response.url()).searchParams.get("subtab") === "splits",
   );
-  await page.getByRole("button", { name: "Splits", exact: true }).click();
+  await retryUntilVisible(
+    () => page.getByRole("button", { name: "Splits", exact: true }).click(),
+    page.getByText("No splits on this chain."),
+  );
   expectSecurityHeaders(await refreshedSubtab);
   await expect(page).toHaveURL(/\/@fixture-revnet\/owners\?subtab=splits$/u);
   await expect(page.getByText("No splits on this chain.")).toBeVisible();
@@ -437,8 +451,13 @@ test("home and discover shells stay contained and deterministic", async ({ page,
     page.locator("main").getByText("Guarantees that stand the test of time."),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "Create yours" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Fixture Revnet/ })).toBeVisible();
-  await expect(page.getByText("$1,250", { exact: true })).toBeVisible();
+  // The Top and Trending panels are the dashboard's project rows, and the layout
+  // hides both below the tablet breakpoint — mobile home is the activity feed. Above
+  // it, the same revnet appears in each panel, so take the first.
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    await expect(page.getByRole("link", { name: /Fixture Revnet/ }).first()).toBeVisible();
+    await expect(page.getByText("$1,250", { exact: true }).first()).toBeVisible();
+  }
   await expectContained(page, ["main", "footer"]);
   await expectNoBlockingAccessibilityFindings(page);
 

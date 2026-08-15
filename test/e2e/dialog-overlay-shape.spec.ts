@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { expectSecurityHeaders, installBrowserBoundary } from "./browser-support";
+import {
+  expectSecurityHeaders,
+  installBrowserBoundary,
+  retryUntilVisible,
+} from "./browser-support";
 
 /**
  * Every modal in this app is a native `<dialog>` opened with `showModal()`, so
@@ -46,9 +50,11 @@ test("an open dialog inerts the page, stacks, and restores it on close", async (
   });
   expect(await page.evaluate(probeReachability)).toEqual({ focusable: true, hitTestable: true });
 
-  await page.getByRole("button", { name: "Add stage" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
+  await retryUntilVisible(
+    () => page.getByRole("button", { name: "Add stage" }).click(),
+    dialog,
+  );
 
   // The shell is the element itself, in the top layer, with a painted backdrop.
   expect(
@@ -106,12 +112,18 @@ test("an open dialog inerts the page, stacks, and restores it on close", async (
   await page.keyboard.press("Escape");
   await expect(page.locator("#stacked-probe")).not.toHaveAttribute("open", /.*/);
   await expect(dialog).toBeVisible();
-  expect(await page.evaluate(probeReachability)).toEqual({ focusable: false, hitTestable: false });
+  await expect
+    .poll(async () => page.evaluate(probeReachability))
+    .toEqual({ focusable: false, hitTestable: false });
 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  expect(await page.evaluate(probeReachability)).toEqual({ focusable: true, hitTestable: true });
-  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+  // The dialog element closes in the browser; React restores the page in the effect
+  // cleanup that follows, a frame or two later. Poll rather than read the gap.
+  await expect
+    .poll(async () => page.evaluate(probeReachability))
+    .toEqual({ focusable: true, hitTestable: true });
+  await expect.poll(async () => page.evaluate(() => document.body.style.overflow)).toBe("");
 
   await page.evaluate(() => {
     document.getElementById("shape-probe")?.remove();
