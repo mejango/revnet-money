@@ -63,7 +63,7 @@ does not cause an orchestrator restart loop.
 
 ## IPFS pinning threat model
 
-The pin route consumes a paid provider quota and is therefore disabled by
+The pin routes consume a paid provider quota and are therefore disabled by
 default. An `Origin` check is only CSRF defense: a non-browser can forge it. Do
 not enable public pinning unless the ingress:
 
@@ -72,12 +72,20 @@ not enable public pinning unless the ingress:
    quotas are recommended);
 3. injects that header with `IPFS_PINNING_INGRESS_TOKEN` only after the policy
    passes;
-4. limits `/api/ipfs/pinJson` to POST and caps request bodies at 128 KiB; and
+4. limits every pin route to POST and caps request bodies per route —
+   `/api/ipfs/pinJson` at 128 KiB, `/api/ipfs/pinFile` at 1 MiB, and
+   `/api/ipfs/pinMedia` at 25 MiB (allow ~256 KiB of multipart envelope on the
+   two upload routes); and
 5. alerts on provider usage and enforces a provider-side spending quota.
 
+A rule written for `pinJson` alone leaves the upload routes unauthorized: they
+share the same gate, so they answer 401 until the ingress injects the header for
+them too.
+
 The application independently uses a constant-time token comparison, exact
-canonical-origin check, JSON/content-length validation, 128 KiB parsed-body
-limit, a 15-second upstream timeout, and response validation. Rotate the ingress
+canonical-origin check, content-length validation before the body is buffered,
+per-route size and media-type limits, a 15-second upstream timeout, and response
+validation. Rotate the ingress
 and provider tokens together if either layer may have leaked. If those ingress
 capabilities are unavailable, keep `IPFS_PINNING_ENABLED=false` and use a
 separate scoped upload service.
