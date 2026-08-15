@@ -19,12 +19,12 @@ export async function pinJsonMetadata(metadata: Record<string, unknown>) {
   return Hash;
 }
 
-/** Pin item media after the caller has proved it can perform the related write. */
+/** Pin item media through this app's own redundant pinning route. */
 export async function pinMediaFile(file: File) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch("https://api.juicebox.money/api/ipfs/file", {
+  const response = await fetch("/api/ipfs/pinMedia", {
     method: "POST",
     body: formData,
   });

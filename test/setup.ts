@@ -3,7 +3,10 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 import { installNativeDialogShim, resetNativeDialogShim } from "./native-dialog-shim";
 
-installNativeDialogShim(window);
+// Route handlers run in the node environment, where there is no DOM to shim.
+const hasDom = typeof window !== "undefined";
+
+if (hasDom) installNativeDialogShim(window);
 
 function blockedNetworkConstructor(transport: string) {
   return class {
@@ -31,8 +34,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  cleanup();
-  resetNativeDialogShim();
+  if (hasDom) {
+    cleanup();
+    resetNativeDialogShim();
+  }
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });

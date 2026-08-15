@@ -12,7 +12,7 @@ const pinFile = async (file: File | Blob | string, options?: { signal?: AbortSig
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch("https://api.juicebox.money/api/ipfs/file", {
+  const res = await fetch("/api/ipfs/pinFile", {
     method: "POST",
     body: formData,
     signal: options?.signal,
