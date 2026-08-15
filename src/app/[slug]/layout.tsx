@@ -1,6 +1,7 @@
 import { Nav } from "@/components/layout/Nav";
 import { projectPreviewSlogan } from "@/lib/project-link-preview";
-import { decodeProjectRouteSlug } from "@/lib/slug";
+import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
+import { decodeProjectRouteSlug, slugFor } from "@/lib/slug";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PropsWithChildren } from "react";
@@ -22,6 +23,44 @@ export const revalidate = 300;
 
 interface Props {
   params: Promise<{ slug: string }>;
+}
+
+/**
+ * Machine-readable identity for search engines and agents, which otherwise have to
+ * infer a revnet from rendered markup.
+ */
+function ProjectJsonLd({
+  name,
+  description,
+  logoUri,
+  path,
+  identifier,
+}: {
+  name: string;
+  description: string | null | undefined;
+  logoUri: string | null | undefined;
+  path: string;
+  identifier: string;
+}) {
+  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
+  const logo = ipfsUriToGatewayUrl(String(logoUri ?? ""));
+  const data = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name,
+    url: new URL(path, origin).href,
+    identifier,
+    ...(description ? { description } : {}),
+    ...(logo ? { logo } : {}),
+  };
+  return (
+    <script
+      type="application/ld+json"
+      // The name and tagline are untrusted project metadata: escaping `<` keeps a
+      // crafted value from closing this script tag.
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</gu, "\\u003c") }}
+    />
+  );
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -121,7 +160,18 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
   const startDate = rulesets[0]?.start;
 
   return (
-    <ProjectProviders chainId={chainId} projectId={projectId} project={project} projects={projects}>
+    <>
+      {/* Outside the client providers on purpose: inside them React ships this in the
+          flight payload instead of the HTML, so a crawler that does not run JS — which
+          is most agents — would never see it. */}
+      <ProjectJsonLd
+        name={project.name || `Revnet ${projectId}`}
+        description={projectPreviewSlogan(project.projectTagline, project.description)}
+        logoUri={project.logoUri}
+        path={`/${decodeProjectRouteSlug(slug) ?? slug}`}
+        identifier={slugFor(chainId, projectId) ?? `${chainId}:${projectId}`}
+      />
+      <ProjectProviders chainId={chainId} projectId={projectId} project={project} projects={projects}>
       <ShopCartProvider>
         <div id="project-top">
           <Nav wide />
@@ -159,7 +209,8 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
           </ResponsiveProjectLayout>
         ) : null}
       </ShopCartProvider>
-    </ProjectProviders>
+      </ProjectProviders>
+    </>
   );
 }
 
@@ -176,6 +227,11 @@ function buildMetadata({
 }): Metadata {
   return {
     title,
+    // Search results and agents read the page description; only the social cards
+    // carried one before.
+    description,
+    // A revnet answers at /@handle and /<chain>:<id> alike. Name one.
+    alternates: { canonical: url },
     openGraph: {
       title,
       description,
