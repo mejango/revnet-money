@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { readEthUsdPrice } from "./ethUsdFeed";
 
 /**
  * Throws on failure rather than returning a fallback, so `unstable_cache` stores only real
@@ -6,14 +7,7 @@ import { unstable_cache } from "next/cache";
  * window.
  */
 const cachedEthPrice = unstable_cache(
-  async (): Promise<number> => {
-    const response = await fetch("https://juicebox.money/api/juicebox/prices/ethusd");
-    if (!response.ok) throw new Error(`ETH price feed returned ${response.status}`);
-    const data = await response.json();
-    const price = parseFloat(data.price);
-    if (!Number.isFinite(price) || price <= 0) throw new Error("ETH price feed returned no price");
-    return price;
-  },
+  async (): Promise<number> => readEthUsdPrice(),
   ["eth-price"],
   { revalidate: 1200 }, // 20 minutes
 );
