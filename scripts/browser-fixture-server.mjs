@@ -343,10 +343,12 @@ function requireExactVariables(operation, actual, expected) {
 
 const graphqlHandlers = {
   IndexedProjects(variables) {
+    // 60/trendingScore is the homepage's discovery query; 32/250 belong to search and
+    // /discover. All three answer with the same deterministic project.
     requireFixture(
-      [32, 250].includes(variables.limit) &&
+      [32, 60, 250].includes(variables.limit) &&
         variables.offset === 0 &&
-        ["createdAt", "volume"].includes(variables.orderBy) &&
+        ["createdAt", "volume", "trendingScore"].includes(variables.orderBy) &&
         variables.orderDirection === "desc" &&
         variables.where &&
         typeof variables.where === "object",
@@ -450,13 +452,18 @@ const graphqlHandlers = {
     return { payEvents: { items: [] } };
   },
   ActivityEvents(variables) {
-    requireExactVariables("ActivityEvents", variables, {
-      orderBy: "timestamp",
-      orderDirection: "desc",
-      where: { suckerGroupId },
-      limit: 250,
-      offset: 0,
-    });
+    // Two callers: a project's own feed (scoped to its sucker group) and the homepage
+    // feed (every v6 event). Both are deterministic and empty here.
+    const projectScoped =
+      variables.where?.suckerGroupId === suckerGroupId && variables.limit === 250;
+    const homepageScoped = variables.where?.version === 6 && variables.limit === 100;
+    requireFixture(
+      variables.orderBy === "timestamp" &&
+        variables.orderDirection === "desc" &&
+        variables.offset === 0 &&
+        (projectScoped || homepageScoped),
+      `ActivityEvents variables=${JSON.stringify(variables)}`,
+    );
     return { activityEvents: { items: [], totalCount: 0 } };
   },
   CashOutTaxSnapshots(variables) {

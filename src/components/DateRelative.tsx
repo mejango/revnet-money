@@ -29,7 +29,10 @@ export function DateRelative({ timestamp, className }: Props) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <time dateTime={date.toISOString()} className={className}>
+        {/* "3h ago" is measured from the render clock, so the server's value is
+            already stale by the time the browser hydrates. The client's value is the
+            correct one — keep it instead of reporting a hydration mismatch. */}
+        <time dateTime={date.toISOString()} className={className} suppressHydrationWarning>
           {relative}
         </time>
       </TooltipTrigger>

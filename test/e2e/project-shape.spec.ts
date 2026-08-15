@@ -32,7 +32,7 @@ async function openFixtureProject(page: Page): Promise<BrowserBoundary> {
   await expect(page.getByRole("link", { name: "FREV", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "$1,250.00 balance" })).toBeVisible();
   await expect(page.getByText("2 owners", { exact: true })).toBeVisible();
-  await expect(page.getByText("Created:", { exact: true })).toBeVisible();
+  await expect(page.locator("main").getByText("Created:", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Amount")).toBeEnabled();
   await expect(page.getByLabel("Payment mode")).toHaveValue("pay");
   await expect(page.getByText("USDC", { exact: true }).first()).toBeVisible();
@@ -70,7 +70,7 @@ test("fixture project renders its contract-hydrated production shape", async ({
   await expect(page.locator('[data-overflow-orientation="horizontal"]')).toBeVisible();
   await page.getByRole("button", { name: "More project sections" }).click();
   await expect(page.getByRole("link", { name: "Extras" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Latest", exact: true })).toBeVisible();
   await expect(page.getByText("No activity yet")).toBeVisible();
 
   const viewport = page.viewportSize();
@@ -169,7 +169,7 @@ test("project terms stay contract-backed, contained, and accessible", async ({ p
   await expect(
     page.getByRole("img", { name: /Projected .* issuance price in USD over time/ }),
   ).toBeVisible();
-  await expect(page.getByText(/USD per /)).toBeVisible();
+  await expect(page.locator("main").getByText(/USD per /)).toBeVisible();
   const headingLeft = await page
     .getByRole("heading", { name: "Token issuance" })
     .evaluate((element) => element.getBoundingClientRect().left);
@@ -249,8 +249,10 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   for (const heading of ["Account", "Edits", "Buyback & swap router", "Permissions"]) {
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
-  await expect(page.getByText("Set project uri")).toBeVisible();
-  await expect(page.getByText("Set project handle")).toBeVisible();
+  // Scoped to main: while a streamed segment lands, the same markup exists twice —
+  // once in React's hidden staging container and once in place.
+  await expect(page.locator("main").getByText("Set project uri")).toBeVisible();
+  await expect(page.locator("main").getByText("Set project handle")).toBeVisible();
   await page.getByRole("button", { name: "Set project handle", exact: true }).click();
   const projectHandleDialog = page.getByRole("dialog");
   await expect(
@@ -304,7 +306,7 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   });
   expectSecurityHeaders(handleResponse);
   await expect(page).toHaveURL(/\/@fixture-revnet\/operator$/u);
-  await expect(page.getByText("Set project handle")).toBeVisible();
+  await expect(page.locator("main").getByText("Set project handle")).toBeVisible();
   await page.getByRole("button", { name: "Set project handle", exact: true }).click();
   await expect(page.getByRole("dialog").getByRole("link", { name: projectUrl })).toBeVisible();
   await expectContained(page, ["nav", "main"]);
@@ -361,7 +363,7 @@ test("verified handle routes decode exactly once", async ({ page, request }) => 
   });
   expectSecurityHeaders(handleResponse);
   expect(handleResponse?.status()).toBe(200);
-  await expect(page.getByText("Set project handle")).toBeVisible();
+  await expect(page.locator("main").getByText("Set project handle")).toBeVisible();
 
   // On a mutable alias, mobile Latest/Overview changes must survive the
   // document navigation which revalidates the alias.
@@ -412,14 +414,14 @@ test("verified handle routes decode exactly once", async ({ page, request }) => 
   // proves the fresh alias document was actually requested.
   await page.goBack({ waitUntil: "commit" });
   expectSecurityHeaders(await backNavigation);
-  await expect(page.getByText("Set project handle")).toBeVisible();
+  await expect(page.locator("main").getByText("Set project handle")).toBeVisible();
 
   const doubleEncodedResponse = await page.goto("/%2540fixture-revnet/operator", {
     waitUntil: "domcontentloaded",
   });
   expectSecurityHeaders(doubleEncodedResponse, 404);
   expect(doubleEncodedResponse?.status()).toBe(404);
-  await expect(page.getByText("Set project handle")).toHaveCount(0);
+  await expect(page.locator("main").getByText("Set project handle")).toHaveCount(0);
 
   const status = await fixtureStatus(request);
   expect(status.unknownRequests).toEqual([]);
@@ -431,7 +433,9 @@ test("home and discover shells stay contained and deterministic", async ({ page,
 
   const homeResponse = await page.goto("/", { waitUntil: "domcontentloaded" });
   expectSecurityHeaders(homeResponse);
-  await expect(page.getByText("An autonomous business model for the open web.")).toBeVisible();
+  await expect(
+    page.locator("main").getByText("Guarantees that stand the test of time."),
+  ).toBeVisible();
   await expect(page.getByRole("link", { name: "Create yours" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Fixture Revnet/ })).toBeVisible();
   await expect(page.getByText("$1,250", { exact: true })).toBeVisible();

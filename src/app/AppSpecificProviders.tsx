@@ -26,9 +26,6 @@ function createQueryClient() {
       },
     },
   });
-  // Synchronous, so the first paint already has last session's values for every
-  // query tagged in @/lib/query-persist. It no-ops without a `window`.
-  installQueryPersistence(client);
   return client;
 }
 
@@ -72,6 +69,23 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
   // Per render tree, never module scope: on the server one shared client would
   // hand one visitor's fetched data to the next request.
   const [queryClient] = React.useState(createQueryClient);
+
+  // Last session's values are, by definition, values the server did not render, and
+  // streamed segments keep hydrating after this effect fires. Seeding the cache before
+  // the document settles re-renders a tree React is still matching against the server's
+  // HTML, which it reports as a hydration failure. Restore once the document is done.
+  React.useEffect(() => {
+    let teardown: (() => void) | undefined;
+    const restore = () => {
+      teardown = installQueryPersistence(queryClient);
+    };
+    if (document.readyState === "complete") restore();
+    else window.addEventListener("load", restore, { once: true });
+    return () => {
+      window.removeEventListener("load", restore);
+      teardown?.();
+    };
+  }, [queryClient]);
   const [paraHostLoaded, setParaHostLoaded] = React.useState(false);
   const [paraRequestId, setParaRequestId] = React.useState(0);
   const [paraModalOpen, setParaModalOpen] = React.useState(false);

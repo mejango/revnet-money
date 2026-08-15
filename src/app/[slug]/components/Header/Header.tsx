@@ -288,7 +288,9 @@ export function Header(props: Props) {
                           />
                         ) : null}
                         <span className="text-zinc-500">Created:</span>
-                        <span className="ml-1 font-medium text-zinc-900">
+                        {/* Formatted in the reader's time zone, which the server cannot
+                            know: keep the client's date rather than flag a mismatch. */}
+                        <span className="ml-1 font-medium text-zinc-900" suppressHydrationWarning>
                           {formatShortDate(new Date(createdAt * 1000))}
                         </span>
                       </span>

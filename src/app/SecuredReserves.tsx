@@ -110,7 +110,7 @@ export function SecuredReserves({ data }: { data: HomepageReserves }) {
             {usd(totalUsd)}
           </span>
         )}
-        <span className="flex items-center gap-2 text-xs text-teal-500 sm:text-sm">
+        <span className="flex items-center gap-2 text-xs text-teal-700 sm:text-sm">
           <span className="relative inline-flex">
             <select
               value={metric}
@@ -135,6 +135,7 @@ export function SecuredReserves({ data }: { data: HomepageReserves }) {
             </span>
           </span>
           <span
+            role="img"
             className="inline-flex items-center gap-1"
             aria-label="Ethereum, Arbitrum, Base, and Optimism"
           >
