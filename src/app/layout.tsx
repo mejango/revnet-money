@@ -21,9 +21,13 @@ const simplonMono = localFont({
 export const revalidate = 300;
 
 const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
+// Preview deployments have no canonical domain, so they fall back to the Railway host
+// that actually serves them. Once a custom domain is configured it is the public name and
+// the one every card should advertise.
 const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
 const assetOrigin =
-  railwayDomain && /^[a-z0-9.-]+$/iu.test(railwayDomain) ? `https://${railwayDomain}` : siteOrigin;
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (railwayDomain && /^[a-z0-9.-]+$/iu.test(railwayDomain) ? `https://${railwayDomain}` : siteOrigin);
 const siteTitle = "Revnet";
 const siteDescription = "An autonomous business model for the open web. 100% open source.";
 
