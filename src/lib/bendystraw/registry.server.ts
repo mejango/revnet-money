@@ -32,6 +32,7 @@ import {
   ShieldProjectOperation,
   StoreAutoIssuanceAmountEventsOperation,
   SuckerGroupMomentsOperation,
+  AddToBalanceInflowsOperation,
   SuckerGroupOperation,
   TopSuckerGroupsOperation,
   V6AutoIssueEventsOperation,
@@ -647,6 +648,21 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         after: $after
       ) {
         items { timestamp balance volume tokenSupply suckerGroupId version accountingTokenUsdRate }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`,
+  },
+  [AddToBalanceInflowsOperation.id]: {
+    operationName: "AddToBalanceInflows",
+    query: `query AddToBalanceInflows($after: String) {
+      addToBalanceEvents(
+        where: { version: 6 }
+        orderBy: "timestamp"
+        orderDirection: "asc"
+        limit: 1000
+        after: $after
+      ) {
+        items { suckerGroupId timestamp amount }
         pageInfo { hasNextPage endCursor }
       }
     }`,

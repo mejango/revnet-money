@@ -1,4 +1,6 @@
 import type {
+  AddToBalanceInflowsQuery,
+  AddToBalanceInflowsQueryVariables,
   AccountActivityEventsQuery,
   AccountActivityEventsQueryVariables,
   AccountPermissionHoldersQuery,
@@ -353,6 +355,14 @@ export const SuckerGroupMomentsOperation = operation<
   variablesWith({ suckerGroupId: isString }, { after: isOptionalString }),
   hasRoot("suckerGroupMoments", "items"),
 );
+export const AddToBalanceInflowsOperation = operation<
+  AddToBalanceInflowsQuery,
+  AddToBalanceInflowsQueryVariables
+>(
+  "add-to-balance-inflows.v1",
+  variablesWith({}, { after: isOptionalString }),
+  hasRoot("addToBalanceEvents", "items"),
+);
 export const ProjectMomentsOperation = operation<
   ProjectMomentsQuery,
   ProjectMomentsQueryVariables
@@ -491,6 +501,7 @@ export const BENDYSTRAW_OPERATIONS = [
   LoansByAccountOperation,
   CashOutTaxSnapshotsOperation,
   SuckerGroupMomentsOperation,
+  AddToBalanceInflowsOperation,
   ProjectMomentsOperation,
   TopSuckerGroupsOperation,
   ProjectPayersOperation,

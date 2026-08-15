@@ -1,11 +1,16 @@
 import "server-only";
 
 import {
+  AddToBalanceInflowsOperation,
   ProjectMomentsOperation,
   SuckerGroupMomentsOperation,
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import type { ProjectMoment, SuckerGroupMoment } from "@/lib/bendystraw/types";
+import type {
+  AddToBalanceInflow,
+  ProjectMoment,
+  SuckerGroupMoment,
+} from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
@@ -43,6 +48,29 @@ const RESERVE_CHAIN_IDS = [1, 42161, 8453, 10] as const;
 function downsample(points: ReservePoint[]): ReservePoint[] {
   const stride = Math.max(1, Math.ceil(points.length / 48));
   return points.filter((_, index) => index % stride === 0 || index === points.length - 1);
+}
+
+/**
+ * Every `addToBalance` across V6, oldest first.
+ *
+ * A group's indexed `volume` counts payments only, so funds added straight to a
+ * terminal — grants, returned payouts, repaid loans — never appear in it even
+ * though they are money that passed through. Without them a revnet can report
+ * holding more than it ever received.
+ */
+async function addToBalanceInflows(): Promise<AddToBalanceInflow[]> {
+  const items: AddToBalanceInflow[] = [];
+  let after: string | undefined;
+  const cursors = new Set<string>();
+  for (;;) {
+    const result = await queryBendystraw(mainnet.id, AddToBalanceInflowsOperation, { after });
+    items.push(...result.addToBalanceEvents.items);
+    const page = result.addToBalanceEvents.pageInfo;
+    after = page.hasNextPage ? (page.endCursor ?? undefined) : undefined;
+    if (!after || cursors.has(after)) break;
+    cursors.add(after);
+  }
+  return items;
 }
 
 async function momentsFor(suckerGroupId: string): Promise<SuckerGroupMoment[]> {
@@ -123,10 +151,18 @@ function feePointsFrom(
 
 const cachedReserves = unstable_cache(
   async (): Promise<HomepageReserves> => {
-    const [groups, ethPrice] = await Promise.all([
+    const [groups, ethPrice, inflows] = await Promise.all([
       getHomepageSuckerGroups(),
       getHomepageEthPrice(),
+      addToBalanceInflows().catch(() => [] as AddToBalanceInflow[]),
     ]);
+    const addedByGroup = new Map<string, bigint>();
+    for (const inflow of inflows) {
+      addedByGroup.set(
+        inflow.suckerGroupId,
+        (addedByGroup.get(inflow.suckerGroupId) ?? 0n) + BigInt(inflow.amount),
+      );
+    }
     const supported = groups.flatMap((group) => {
       const project = group.projects?.items[0];
       if (!project?.isRevnet || project.decimals == null || !project.tokenSymbol) return [];
@@ -149,7 +185,12 @@ const cachedReserves = unstable_cache(
     );
     for (const item of supported) {
       const value = Number(formatUnits(BigInt(item.group.balance), item.decimals));
-      const volume = Number(formatUnits(BigInt(item.group.volume), item.decimals));
+      const volume = Number(
+        formatUnits(
+          BigInt(item.group.volume) + (addedByGroup.get(item.group.id) ?? 0n),
+          item.decimals,
+        ),
+      );
       if (item.symbol === "ETH") {
         eth += value;
         passedThroughUsd += volume * (ethPrice ?? 0);
@@ -241,11 +282,33 @@ const cachedReserves = unstable_cache(
       { chainId: number; symbol: string; amount: number }
     >();
     let projectEventIndex = 0;
+    // The same inflows, replayed in order, so the curve reaches the headline.
+    const decimalsByGroup = new Map(supported.map((item) => [item.group.id, item.decimals]));
+    const inflowEvents = inflows
+      .filter((inflow) => decimalsByGroup.has(inflow.suckerGroupId))
+      .map((inflow) => ({
+        groupId: inflow.suckerGroupId,
+        timestamp: inflow.timestamp,
+        amount: Number(
+          formatUnits(BigInt(inflow.amount), decimalsByGroup.get(inflow.suckerGroupId)!),
+        ),
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+    const addedSoFar = new Map<string, number>();
+    let inflowIndex = 0;
     const raw: ReservePoint[] = [];
     const rawVolumePoints: ReservePoint[] = [];
     for (const event of events) {
       latest.set(event.groupId, event.amount);
       latestVolume.set(event.groupId, event.volume);
+      while (
+        inflowIndex < inflowEvents.length &&
+        inflowEvents[inflowIndex].timestamp <= event.timestamp
+      ) {
+        const inflow = inflowEvents[inflowIndex];
+        addedSoFar.set(inflow.groupId, (addedSoFar.get(inflow.groupId) ?? 0) + inflow.amount);
+        inflowIndex += 1;
+      }
       while (
         projectEventIndex < projectEvents.length &&
         projectEvents[projectEventIndex].timestamp <= event.timestamp
@@ -262,7 +325,8 @@ const cachedReserves = unstable_cache(
       let volumeUsd = 0;
       for (const item of supported) {
         const amount = latest.get(item.group.id) ?? 0;
-        const volume = latestVolume.get(item.group.id) ?? 0;
+        const volume =
+          (latestVolume.get(item.group.id) ?? 0) + (addedSoFar.get(item.group.id) ?? 0);
         if (item.symbol === "ETH") {
           valueUsd += amount * (ethPrice ?? 0);
           volumeUsd += volume * (ethPrice ?? 0);

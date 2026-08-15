@@ -549,6 +549,19 @@ export type SuckerGroupMomentsQuery = {
   };
 };
 
+export type AddToBalanceInflow = {
+  suckerGroupId: string;
+  timestamp: number;
+  amount: BigNumberish;
+};
+export type AddToBalanceInflowsQueryVariables = { after?: string };
+export type AddToBalanceInflowsQuery = {
+  addToBalanceEvents: {
+    items: AddToBalanceInflow[];
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  };
+};
+
 export type ProjectMoment = {
   projectId: number;
   chainId: number;
