@@ -37,7 +37,7 @@ async function fetchMetadata(uri: string | null): Promise<ProjectMetadata | null
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ chainId: string; projectId: string }> },
 ) {
   const raw = await params;
@@ -74,7 +74,10 @@ export async function GET(
   }
 
   const appPath = ipfsUriToAppUrl(source);
-  if (appPath) return Response.redirect(new URL(appPath, request.url), 307);
+  // A relative Location, deliberately: behind the platform proxy `request.url` is the
+  // container's own bind address (https://0.0.0.0:8080/...), and redirecting there sends
+  // every caller — including the card renderer fetching this logo — nowhere.
+  if (appPath) return new Response(null, { status: 307, headers: { location: appPath } });
 
   // Keep the Open Graph image renderable even when a project has no logo or
   // its metadata uses an unsupported external URL. The preview route can then

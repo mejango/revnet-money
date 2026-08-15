@@ -38,8 +38,10 @@ export async function GET(
     projectPreviewSlogan(project.projectTagline, project.description) ||
     "An autonomous business model for the open web.";
 
-  const imageUrl = new URL(`/api/project-image/${chainId}/${projectId}`, request.nextUrl.origin)
-    .href;
+  // Not `request.nextUrl.origin`: behind the platform proxy that is the container's bind
+  // address, which this renderer cannot fetch, and the card silently loses its logo.
+  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? request.nextUrl.origin;
+  const imageUrl = new URL(`/api/project-image/${chainId}/${projectId}`, origin).href;
 
   return new ImageResponse(
     <div
