@@ -406,10 +406,12 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
             </div>
           ) : null}
 
-          {connectors.length > 0 ? (
-            <>
-              <p className="mb-2 mt-4 text-xs font-medium text-zinc-600">Wallets</p>
-              <div className="flex flex-wrap gap-1.5">
+          {/* Always rendered, with the row's height reserved. EIP-6963 wallets
+              announce themselves over the first few hundred milliseconds, so
+              revealing this section once they arrive would resize a panel the
+              visitor is already looking at — and it is centred, so it jumps. */}
+          <p className="mb-2 mt-4 text-xs font-medium text-zinc-600">Wallets</p>
+          <div className="flex min-h-10 flex-wrap gap-1.5">
                 {connectors.map((connector) => (
                   <Button
                     key={connector.id}
@@ -433,9 +435,7 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
                     )}
                   </Button>
                 ))}
-              </div>
-            </>
-          ) : null}
+          </div>
 
           {/* A phone browser with no injected wallet can still get there, but
               only by reopening the page inside the wallet's own browser. */}
