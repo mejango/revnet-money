@@ -70,9 +70,9 @@ export function DeployRevnetForm({
       <Divider />
       <Stages disabled={disabled} />
       <Divider />
-      <OperatorSection disabled={disabled} />
-      <Divider />
       <StoreSection disabled={disabled} />
+      <Divider />
+      <OperatorSection disabled={disabled} />
       <Divider />
       <DeploySection validBundle={validBundle} disabled={disabled} />
       {relayrResponse && (

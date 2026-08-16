@@ -85,7 +85,7 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
   return (
     <>
       <div className="md:col-span-1">
-        <h2 className="mb-4 text-lg font-bold md:mb-2">5. Store</h2>
+        <h2 className="mb-4 text-lg font-bold md:mb-2">4. Store</h2>
         <p className="text-lg text-zinc-600">
           Sell things right from your revnet&apos;s page. Each sale pays the revnet, and the buyer
           gets the item plus {revnetTokenSymbol}.

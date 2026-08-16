@@ -70,8 +70,8 @@ describe("create form section order", () => {
       "1. Look",
       "2. Settlement",
       "3. Terms",
-      "4. Operator",
-      "5. Store",
+      "4. Store",
+      "5. Operator",
       "6. Deploy",
     ]);
   });
