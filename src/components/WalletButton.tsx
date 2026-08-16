@@ -500,15 +500,20 @@ export function WalletButton() {
           >
             Copy address
           </button>
-          <GetFunds
-            symbol="ETH"
-            chainId={chain?.id}
-            onNavigate={() => {
-              setOpen(false);
-              menu.triggerRef.current?.focus();
-            }}
-            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
-          />
+          {/* Both assets the on-ramp can deliver. Each hides itself where its own
+              chain-and-asset pair has no route, so neither is a dead end. */}
+          {(["ETH", "USDC"] as const).map((symbol) => (
+            <GetFunds
+              key={symbol}
+              symbol={symbol}
+              chainId={chain?.id}
+              onNavigate={() => {
+                setOpen(false);
+                menu.triggerRef.current?.focus();
+              }}
+              className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+            />
+          ))}
           <button
             type="button"
             role="menuitem"
