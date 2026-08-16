@@ -38,6 +38,12 @@ Build-time values are compiled into JavaScript and are public:
 - `NEXT_PUBLIC_BENDYSTRAW_URL` and
   `NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL`: indexed contract-derived views.
 - `NEXT_PUBLIC_PARA_API_KEY`: public Para application key.
+- `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID`: optional; a WalletConnect Cloud
+  project id. Empty hides the WalletConnect option — the relay rejects
+  unregistered ids, so a connector without one always fails.
+- `NEXT_PUBLIC_PARA_ONRAMP_PROVIDER`: optional; which Para on-ramp provider the
+  headless "Get ETH" call bills through (`STRIPE` default, or `MOONPAY`, `RAMP`,
+  `CDP`, `MERCURYO`). It must be enabled in the Para dashboard to work.
 - `NEXT_PUBLIC_PARA_ENV`: one of `DEV`, `SANDBOX`, `BETA`, or `PROD`; use
   `PROD` for the production application.
 - `NEXT_PUBLIC_DWELLIR_API_KEY`: a dedicated browser-visible Dwellir key used
@@ -50,11 +56,12 @@ Build-time values are compiled into JavaScript and are public:
 Runtime-only values must never be Docker build arguments:
 
 - `IPFS_PINNING_ENABLED`, normally `false`;
-- `IPFS_PINNING_EDGE_PROTECTED`, which must be `true` when pinning is enabled;
+- `IPFS_PINNING_EDGE_PROTECTED`, `true` when an ingress enforces the quota policy
+  and `false` when the app budgets callers itself (see below);
 - `FILEBASE_IPFS_RPC_TOKEN` and `PINATA_JWT`, required only when redundant
   pinning is enabled;
-- `IPFS_PINNING_INGRESS_TOKEN`, a random 32+ character secret required only
-  when pinning is enabled.
+- `IPFS_PINNING_INGRESS_TOKEN`, a random 32+ character secret required only in
+  edge-protected mode, and rejected at startup in first-party mode.
 
 The container refuses to start when its runtime contract is invalid. The health
 endpoint is dependency-free and returns `cache-control: no-store`; external RPC,
@@ -63,9 +70,12 @@ does not cause an orchestrator restart loop.
 
 ## IPFS pinning threat model
 
-The pin routes consume a paid provider quota and are therefore disabled by
-default. An `Origin` check is only CSRF defense: a non-browser can forge it. Do
-not enable public pinning unless the ingress:
+The pin routes consume a paid provider quota, so they are disabled by default and
+support two deployments. `IPFS_PINNING_ENABLED=true` is required for either.
+
+**Edge-protected** (`IPFS_PINNING_EDGE_PROTECTED=true`, `IPFS_PINNING_INGRESS_TOKEN`
+set). Something in front — a WAF or proxy — enforces the policy and injects the
+token, which is then the authorization. Do not run this mode unless that ingress:
 
 1. strips any client-supplied `x-revnet-pinning-ingress-token` header;
 2. authenticates or rate-limits the caller (wallet/session plus IP and global
@@ -82,13 +92,28 @@ A rule written for `pinJson` alone leaves the upload routes unauthorized: they
 share the same gate, so they answer 401 until the ingress injects the header for
 them too.
 
+**First-party** (`IPFS_PINNING_EDGE_PROTECTED=false`, no token). The app is reached
+directly — the deployment Railway gives you, with no CDN in front. The app then
+enforces the budget itself: same-origin only, ten pins per client and two hundred
+site-wide per ten minutes, plus the per-route size and media-type limits. Be clear
+about what this is and is not:
+
+- the origin check is CSRF defense; a non-browser can forge it;
+- the client key comes from `x-forwarded-for`, which without a trusted proxy is
+  client-supplied, so a determined caller can rotate it;
+- the budget lives in process memory, so it resets on redeploy and counts per
+  instance.
+
+It stops a script from draining the provider quota in a minute, which is the
+realistic threat for a site published straight from the platform. It is not a WAF.
+Set a provider-side spending cap on Filebase and Pinata regardless — that is the
+backstop that does not depend on this code being right.
+
 The application independently uses a constant-time token comparison, exact
 canonical-origin check, content-length validation before the body is buffered,
 per-route size and media-type limits, a 15-second upstream timeout, and response
-validation. Rotate the ingress
-and provider tokens together if either layer may have leaked. If those ingress
-capabilities are unavailable, keep `IPFS_PINNING_ENABLED=false` and use a
-separate scoped upload service.
+validation. Rotate the ingress and provider tokens together if either layer may
+have leaked.
 
 The read-only Bendystraw and IPFS proxy routes have fixed configured upstreams,
 bounded bodies/paths, and no server credential. IPFS upstream fetches explicitly
@@ -123,6 +148,8 @@ docker build \
   --build-arg NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL \
   --build-arg NEXT_PUBLIC_PARA_API_KEY \
   --build-arg NEXT_PUBLIC_PARA_ENV \
+  --build-arg NEXT_PUBLIC_PARA_ONRAMP_PROVIDER \
+  --build-arg NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID \
   --build-arg NEXT_PUBLIC_DWELLIR_API_KEY \
   --build-arg NEXT_PUBLIC_VERSION \
   --tag revnet-money:local .

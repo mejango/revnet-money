@@ -178,6 +178,8 @@ jobs:
             --build-arg NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL \
             --build-arg NEXT_PUBLIC_PARA_API_KEY \
             --build-arg NEXT_PUBLIC_PARA_ENV \
+            --build-arg NEXT_PUBLIC_PARA_ONRAMP_PROVIDER \
+            --build-arg NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID \
             --build-arg NEXT_PUBLIC_DWELLIR_API_KEY \
             --build-arg NEXT_PUBLIC_VERSION \
             --build-arg NEXT_PUBLIC_MAINNET_SUBGRAPH_URL \

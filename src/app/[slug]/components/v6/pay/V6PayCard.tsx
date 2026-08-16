@@ -1,5 +1,6 @@
 "use client";
 
+import { GetFunds } from "@/components/GetFunds";
 import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1449,6 +1450,20 @@ export function V6PayCard() {
           </div>
         </div>
       </div>
+
+      {/* Balance + on-ramp. The balance was already computed for the
+          insufficient-funds notice below; showing it is what makes the notice
+          predictable rather than a surprise at submit time. */}
+      {selected ? (
+        <div className="mt-1.5 flex items-center justify-end gap-3">
+          {isConnected ? (
+            <span className="text-xs text-zinc-600">
+              Balance: {formatPayAmount(walletBalance, selected.decimals)}
+            </span>
+          ) : null}
+          <GetFunds symbol={selected.symbol} chainId={chainId} />
+        </div>
+      ) : null}
 
       {/* Notices */}
       {insufficientBalance && selected ? (

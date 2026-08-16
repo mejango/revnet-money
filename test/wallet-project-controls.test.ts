@@ -247,10 +247,23 @@ describe("project handle ENS authorization", () => {
     expect(edits).toContain("fallbackOperator={fallbackOperator}");
   });
 
-  it("registers the Safe App connector needed by an Ethereum operator Safe", () => {
-    const source = readFileSync(resolve(process.cwd(), "src/lib/wagmiConfig.ts"), "utf8");
-    expect(source).toContain('import { safe } from "wagmi/connectors/safe"');
-    expect(source).toContain("[safe(), injected({ shimDisconnect: true })");
+  it("registers the Safe App connector needed by an Ethereum operator Safe", async () => {
+    // Asserted through the built config rather than the import line: the Safe
+    // connector now loads lazily, so where it is imported from is an
+    // implementation detail. What must hold is that Wagmi knows about it.
+    const { createConfig, http } = await import("wagmi");
+    const { mainnet } = await import("wagmi/chains");
+    const { externalWalletConnectors } = await import("@/providers/wallet-connectors");
+
+    const config = createConfig({
+      chains: [mainnet],
+      connectors: externalWalletConnectors(),
+      transports: { [mainnet.id]: http() },
+      multiInjectedProviderDiscovery: false,
+      storage: null,
+    });
+
+    expect(config.connectors.map((connector) => connector.id)).toContain("safe");
   });
 
   it("rechecks the active ENS resolver and live cross-chain operator after receipts", () => {

@@ -7,7 +7,11 @@ import { IS_DETERMINISTIC_BROWSER, PARA_EMBEDDED_WALLET_ENABLED } from "@/lib/br
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { connectParaSession } from "@/providers/para-bridge";
 import { verifyMarkedParaSession } from "@/providers/para-session";
-import { ParaAuthContext } from "@/providers/ParaAuthContext";
+import {
+  ParaAuthContext,
+  type ParaAddFundsRequest,
+  type ParaRequest,
+} from "@/providers/ParaAuthContext";
 import { ParaConnectionNotice } from "@/providers/ParaConnectionNotice";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
@@ -88,6 +92,7 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
   }, [queryClient]);
   const [paraHostLoaded, setParaHostLoaded] = React.useState(false);
   const [paraRequestId, setParaRequestId] = React.useState(0);
+  const [paraRequest, setParaRequest] = React.useState<ParaRequest>({ kind: "auth" });
   const [paraModalOpen, setParaModalOpen] = React.useState(false);
   const [paraSessionVersion, setParaSessionVersion] = React.useState(0);
   const [paraConnectionError, setParaConnectionError] = React.useState(false);
@@ -103,6 +108,14 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
     if (!PARA_EMBEDDED_WALLET_ENABLED) return;
     setParaConnectionError(false);
     setParaHostLoaded(true);
+    setParaRequest({ kind: "auth" });
+    setParaRequestId((current) => current + 1);
+  }, []);
+  const requestAddFunds = React.useCallback((request: ParaAddFundsRequest) => {
+    if (!PARA_EMBEDDED_WALLET_ENABLED) return;
+    setParaConnectionError(false);
+    setParaHostLoaded(true);
+    setParaRequest({ kind: "addFunds", ...request });
     setParaRequestId((current) => current + 1);
   }, []);
   const markParaSettled = React.useCallback(
@@ -121,8 +134,9 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
       modalOpen: paraModalOpen,
       sessionVersion: paraSessionVersion,
       requestSignIn,
+      requestAddFunds,
     }),
-    [paraModalOpen, paraSessionVersion, requestSignIn],
+    [paraModalOpen, paraSessionVersion, requestSignIn, requestAddFunds],
   );
 
   return (
@@ -148,6 +162,7 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
             <React.Suspense fallback={null}>
               <ParaModalHost
                 requestId={paraRequestId}
+                request={paraRequest}
                 onOpenChange={setParaModalOpen}
                 onSettled={markParaSettled}
               />

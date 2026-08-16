@@ -4,7 +4,11 @@ import { gzipSync } from "node:zlib";
 
 const routeBudgetKiB = Number(process.env.CLIENT_ROUTE_GZIP_BUDGET_KIB ?? 900);
 const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2000);
+// Counts every emitted chunk, including ones a visitor may never download.
+// WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
+// strictly lazy vendor SDK here; the per-route budgets and the lazy-load
+// assertions at the bottom of this file are what protect first paint.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2600);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
@@ -119,6 +123,35 @@ if (allClientSize > allClientBudget) {
   failures.push(
     `all client JavaScript is ${kib(allClientSize)} (budget ${allClientBudgetKiB} KiB)`,
   );
+}
+
+// Wagmi's `reconnect()` calls `getProvider()` on every configured connector, so
+// a vendor wallet SDK becomes an eager download the moment its `shouldRestore`
+// gate is dropped. Markers must be strings only the vendor bundle can contain —
+// never a connector id or display name, which our own source carries.
+const vendorWallets = [
+  ["WalletConnect", ["walletconnect.org", "wc@2:", "@reown/appkit"]],
+  ["Coinbase Wallet", ["CoinbaseWalletSDK", "keys.coinbase.com", "walletlink"]],
+  ["Safe", ["safe-apps-provider", "SafeAppProvider"]],
+];
+for (const [label, markers] of vendorWallets) {
+  const vendorAssets = new Set(
+    allClientFiles
+      .filter((file) => {
+        const source = readFileSync(file, "utf8");
+        return markers.some((marker) => source.includes(marker));
+      })
+      .map((file) => file.slice(buildDirectory.length + 1)),
+  );
+  if (vendorAssets.size === 0) continue;
+  const eager = Object.values(pages)
+    .flat()
+    .filter((asset) => vendorAssets.has(asset));
+  if (eager.length > 0) {
+    failures.push(`${label} SDK is eagerly loaded: ${[...new Set(eager)].join(", ")}`);
+  } else {
+    console.log(`${label} SDK is lazy-loaded`);
+  }
 }
 
 if (failures.length > 0) {

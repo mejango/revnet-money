@@ -1,6 +1,7 @@
 "use client";
 
 import { USDC_DECIMALS } from "@/app/constants";
+import { GetFunds } from "@/components/GetFunds";
 import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { useEnsName } from "@/hooks/ens/useEnsName";
 import { useMobileWallet } from "@/hooks/useMobileWallet";
@@ -658,6 +659,15 @@ export function WalletButton() {
           >
             Copy address
           </button>
+          <GetFunds
+            symbol="ETH"
+            chainId={chain?.id}
+            onNavigate={() => {
+              setOpen(false);
+              menu.triggerRef.current?.focus();
+            }}
+            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-melon-950 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
+          />
           <button
             type="button"
             role="menuitem"

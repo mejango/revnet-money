@@ -92,7 +92,13 @@ describe("local wallet controls", () => {
     const requestSignIn = vi.fn();
     render(
       <ParaAuthContext.Provider
-        value={{ enabled: true, modalOpen: false, requestSignIn, sessionVersion: 0 }}
+        value={{
+          enabled: true,
+          modalOpen: false,
+          requestSignIn,
+          requestAddFunds: vi.fn(),
+          sessionVersion: 0,
+        }}
       >
         <WalletConnectButton />
       </ParaAuthContext.Provider>,

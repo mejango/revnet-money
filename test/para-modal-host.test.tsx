@@ -10,12 +10,22 @@ const para = vi.hoisted(() => {
     isOpen: false,
     /** Every container the host has offered Para for its overlay portal. */
     containers: [] as (HTMLElement | null | undefined)[],
+    loggedIn: true,
+    connectorId: "injected" as string | undefined,
+    address: "0xfeedfacefeedfacefeedfacefeedfacefeedface" as string | undefined,
+    openModalCalls: [] as unknown[],
+    onRampCalls: [] as unknown[],
   };
   return {
     state,
     reset() {
       state.isOpen = false;
       state.containers.length = 0;
+      state.loggedIn = true;
+      state.connectorId = "injected";
+      state.address = "0xfeedfacefeedfacefeedfacefeedfacefeedface";
+      state.openModalCalls.length = 0;
+      state.onRampCalls.length = 0;
     },
     setOpen(open: boolean) {
       state.isOpen = open;
@@ -42,7 +52,10 @@ vi.mock("@getpara/react-sdk-lite", async () => {
     );
     return {
       isOpen,
-      openModal: () => para.setOpen(true),
+      openModal: (options?: unknown) => {
+        para.state.openModalCalls.push(options);
+        para.setOpen(true);
+      },
       closeModal: () => para.setOpen(false),
     };
   };
@@ -63,8 +76,42 @@ vi.mock("@getpara/react-sdk-lite", async () => {
     );
   };
 
-  return { ParaProvider, useModal };
+  return {
+    ParaProvider,
+    useModal,
+    useAuthenticateWithEmailOrPhone: () => ({
+      authenticateWithEmailOrPhoneAsync: vi.fn(),
+      error: null,
+    }),
+    useAuthenticateWithOAuth: () => ({
+      authenticateWithOAuthAsync: vi.fn(),
+      error: null,
+    }),
+    useVerifyNewAccount: () => ({
+      verifyNewAccountAsync: vi.fn(),
+      isPending: false,
+      error: null,
+    }),
+    useResendVerificationCode: () => ({ resendVerificationCodeAsync: vi.fn() }),
+  };
 });
+
+// The SDK ships these as string enums; the host uses them as lookup tables.
+vi.mock("@getpara/web-sdk", () => ({
+  Network: { ETHEREUM: "ETHEREUM", BASE: "BASE" },
+  OnRampAsset: { ETHEREUM: "ETHEREUM", USDC: "USDC" },
+  OnRampProvider: { STRIPE: "STRIPE" },
+  OnRampPurchaseType: { BUY: "BUY" },
+}));
+
+vi.mock("wagmi", () => ({
+  useAccount: () => ({
+    address: para.state.address,
+    connector: para.state.connectorId ? { id: para.state.connectorId } : undefined,
+  }),
+  useConnectors: () => [],
+  useConnect: () => ({ connectAsync: vi.fn() }),
+}));
 
 vi.mock("@getpara/react-component-library", () => ({
   PortalContainerProvider: ({
@@ -80,8 +127,16 @@ vi.mock("@getpara/react-component-library", () => ({
 }));
 
 vi.mock("@/providers/para-config", () => ({
-  getParaClient: () => ({}),
+  getParaClient: () => ({
+    isFullyLoggedIn: async () => para.state.loggedIn,
+    initiateOnRampTransaction: async (options: unknown) => {
+      para.state.onRampCalls.push(options);
+      return {};
+    },
+    onStatePhaseChange: () => () => {},
+  }),
   PARA_APP: { appName: "Revnet" },
+  PARA_ONRAMP_PROVIDER: "STRIPE",
 }));
 
 function hostDialog(): HTMLDialogElement {
@@ -102,7 +157,12 @@ describe("ParaModalHost", () => {
             <button type="button">Pay now</button>
           </DialogContent>
         </Dialog>
-        <ParaModalHost requestId={0} onOpenChange={() => {}} onSettled={() => {}} />
+        <ParaModalHost
+          requestId={0}
+          request={{ kind: "auth" }}
+          onOpenChange={() => {}}
+          onSettled={() => {}}
+        />
       </>,
     );
 
@@ -141,24 +201,98 @@ describe("ParaModalHost", () => {
     expect(isBlockedByModalDialog(screen.getByRole("button", { name: "Pay now" }))).toBe(false);
   });
 
-  it("opens the Para modal once per sign-in request", async () => {
+  it("signs in with our own sheet, never Para's packaged modal", async () => {
     para.reset();
     const onOpenChange = vi.fn();
     const onSettled = vi.fn();
 
     const { rerender } = render(
-      <ParaModalHost requestId={1} onOpenChange={onOpenChange} onSettled={onSettled} />,
+      <ParaModalHost
+        requestId={1}
+        request={{ kind: "auth" }}
+        onOpenChange={onOpenChange}
+        onSettled={onSettled}
+      />,
     );
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(true));
     await waitFor(() => expect(hostDialog().open).toBe(true));
+    expect(para.state.openModalCalls).toEqual([]);
+    expect(screen.getByText(/No wallet needed/)).toBeTruthy();
 
-    act(() => para.setOpen(false));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(1));
     expect(hostDialog().open).toBe(false);
 
-    // A re-render with the same request must not reopen the modal.
-    rerender(<ParaModalHost requestId={1} onOpenChange={onOpenChange} onSettled={onSettled} />);
+    // A re-render with the same request must not reopen the sheet.
+    rerender(
+      <ParaModalHost
+        requestId={1}
+        request={{ kind: "auth" }}
+        onOpenChange={onOpenChange}
+        onSettled={onSettled}
+      />,
+    );
     expect(hostDialog().open).toBe(false);
+  });
+
+  it("buys to the connected external wallet rather than the embedded one", async () => {
+    para.reset();
+
+    render(
+      <ParaModalHost
+        requestId={1}
+        request={{ kind: "addFunds", asset: "ETHEREUM", network: "BASE" }}
+        onOpenChange={() => {}}
+        onSettled={() => {}}
+      />,
+    );
+
+    // Para's add-funds modal has no address parameter, so an injected wallet
+    // has to go through the headless call or the ETH lands in the wrong place.
+    await waitFor(() => expect(para.state.onRampCalls).toHaveLength(1));
+    expect(para.state.openModalCalls).toEqual([]);
+    expect(para.state.onRampCalls[0]).toMatchObject({
+      externalWalletAddress: para.state.address,
+      shouldOpenPopup: true,
+      params: { asset: "ETHEREUM", network: "BASE", provider: "STRIPE" },
+    });
+  });
+
+  it("uses Para's own add-funds screen for the embedded wallet", async () => {
+    para.reset();
+    para.state.connectorId = "para";
+
+    render(
+      <ParaModalHost
+        requestId={1}
+        request={{ kind: "addFunds", asset: "USDC", network: "BASE" }}
+        onOpenChange={() => {}}
+        onSettled={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(para.state.openModalCalls).toEqual([{ step: "ACCOUNT_ADD_FUNDS_BUY" }]),
+    );
+    expect(para.state.onRampCalls).toEqual([]);
+  });
+
+  it("signs in first when the on-ramp has no Para session to bill against", async () => {
+    para.reset();
+    para.state.loggedIn = false;
+
+    render(
+      <ParaModalHost
+        requestId={1}
+        request={{ kind: "addFunds", asset: "ETHEREUM", network: "BASE" }}
+        onOpenChange={() => {}}
+        onSettled={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText(/No wallet needed/)).toBeTruthy());
+    expect(para.state.onRampCalls).toEqual([]);
+    expect(para.state.openModalCalls).toEqual([]);
   });
 });
