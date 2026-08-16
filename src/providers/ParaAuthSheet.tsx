@@ -215,9 +215,9 @@ export default function ParaAuthSheet({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [busy, onClose]);
-  // Either signal means the same thing: Para is waiting on a code. Taking the URL as one too
-  // keeps the step from disappearing when Para reports it that way instead.
-  const awaitingCode = authPhase === "awaiting_account_verification" || !!hostedVerifyUrl;
+  // Para reports this phase only for accounts the app is allowed to verify itself. Basic-login
+  // accounts arrive as a `verificationUrl` instead, and take the portal branch below.
+  const awaitingCode = authPhase === "awaiting_account_verification";
 
   const submitIdentifier = useCallback(async () => {
     if (identifier.kind !== "email" && identifier.kind !== "phone") return;
@@ -310,6 +310,42 @@ export default function ParaAuthSheet({
     </button>
   );
 
+  // A `verificationUrl` means Para has this project on basic login, where the code is entered
+  // on its portal and `verifyNewAccount` is not a call the app may make: it never settles, so a
+  // code field here would take a code, accept a wrong one, and hang. Say what the step is
+  // instead, and open the window from the click rather than behind it, where a popup blocker
+  // eats it silently.
+  if (hostedVerifyUrl) {
+    return (
+      <div className="w-full">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium text-zinc-900">Check your email</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              We sent a code to <span className="font-medium text-zinc-900">{entry.trim()}</span>.
+              Enter it in the secure window to finish.
+            </p>
+          </div>
+          {closeButton}
+        </div>
+        <Button
+          type="button"
+          className="mt-5 w-full"
+          onClick={() => {
+            popupRef.current = window.open(
+              hostedVerifyUrl,
+              "ParaAuth",
+              "popup,width=420,height=560",
+            );
+          }}
+        >
+          Open the secure window
+        </Button>
+        <p className="mt-3 text-xs text-zinc-600">It may already be open behind this one.</p>
+      </div>
+    );
+  }
+
   if (awaitingCode) {
     return (
       <div className="w-full">
@@ -372,21 +408,6 @@ export default function ParaAuthSheet({
               Don&apos;t see it?
             </button>
           </p>
-        ) : null}
-        {verifyError && hostedVerifyUrl ? (
-          <button
-            type="button"
-            onClick={() => {
-              popupRef.current = window.open(
-                hostedVerifyUrl,
-                "ParaAuth",
-                "popup,width=420,height=560",
-              );
-            }}
-            className="mt-3 text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
-          >
-            Having trouble? Verify in a separate window
-          </button>
         ) : null}
       </div>
     );
