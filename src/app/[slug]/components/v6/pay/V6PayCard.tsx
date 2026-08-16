@@ -1207,7 +1207,7 @@ export function V6PayCard() {
                 aria-label="Amount"
                 className="col-start-1 row-start-2 min-h-11 border-0 bg-transparent pl-0 pr-3 pt-1 pb-0 text-zinc-900 text-2xl w-full placeholder:text-zinc-400 focus:ring-0 focus:outline-none sm:leading-6 disabled:opacity-60"
               />
-              {tokens.length > 1 ? (
+              {tokens.length > 1 || onRamp.supported ? (
                 // Valued by INDEX, not address — a token can appear direct and
                 // via-router, so the option stays in lock-step with the selection.
                 <TextSelect
