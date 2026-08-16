@@ -504,7 +504,14 @@ export default function ParaAuthSheet({
         >
           View as…
         </button>
-        {viewAsOpen ? <ViewAsForm onDone={onClose} /> : null}
+        {viewAsOpen ? (
+          <>
+            <p className="mt-1.5 text-xs text-zinc-500">
+              You can browse the site as if you were a different account.
+            </p>
+            <ViewAsForm onDone={onClose} />
+          </>
+        ) : null}
       </div>
 
 
