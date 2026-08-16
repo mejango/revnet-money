@@ -122,6 +122,9 @@ export default function ParaAuthSheet({
   const [pairingQr, setPairingQr] = useState<string | null>(null);
   const [pairingUri, setPairingUri] = useState<string | null>(null);
   const [hostedVerifyUrl, setHostedVerifyUrl] = useState<string | null>(null);
+  // Set when the account's key is being created on Para's own origin. A blocked popup looks
+  // exactly like a slow one, so the sheet says which window to look for and offers it again.
+  const [walletSetupUrl, setWalletSetupUrl] = useState<string | null>(null);
 
   const popupRef = useRef<Window | null>(null);
   const lastUrlRef = useRef<string | null>(null);
@@ -173,6 +176,7 @@ export default function ParaAuthSheet({
       const next = info.passkeyUrl ?? info.passwordUrl ?? info.pinUrl ?? null;
       if (next && next !== lastUrlRef.current) {
         lastUrlRef.current = next;
+        setWalletSetupUrl(next);
         popupRef.current = window.open(next, "ParaAuth", "popup,width=420,height=560");
       }
       // Closing is what settles the flow: the host reports the transition,
@@ -180,6 +184,7 @@ export default function ParaAuthSheet({
       if (snapshot.corePhase === "authenticated" && !settledRef.current) {
         settledRef.current = true;
         setHostedVerifyUrl(null);
+        setWalletSetupUrl(null);
         popupRef.current?.close();
         onClose();
       }
@@ -191,6 +196,17 @@ export default function ParaAuthSheet({
   }, [para, onClose]);
 
   const busy = BUSY_PHASES.has(authPhase) || verifying;
+
+  // Checking a six-digit code is quick; creating the account's key is not. One word for both
+  // reads as a hang, so the label follows the phase Para is actually in.
+  const progressLabel =
+    authPhase === "verifying_new_account"
+      ? "Checking your code\u2026"
+      : authPhase === "awaiting_session_start" || authPhase === "waiting_for_session"
+        ? "Setting up your account\u2026"
+        : authPhase === "processing_authentication"
+          ? "Almost there\u2026"
+          : "Verifying\u2026";
 
   // The host dialog swallows Escape so Para's own modal stays in sync with it.
   // This sheet has no such contract, and a dialog you can only leave by
@@ -263,11 +279,27 @@ export default function ParaAuthSheet({
   const submitCode = useCallback(async () => {
     setLocalError(null);
     try {
-      await verifyNewAccountAsync({ verificationCode: code.trim() });
+      // Verifying the code is only half of a signup: it answers with the portal URL for
+      // creating the account's key, and NOTHING else advances the flow until that window is
+      // opened. The URL arrives in this promise, not in the state stream the popup effect
+      // watches — waiting on that stream is what left this sitting at "Verifying…" forever.
+      const signup = await verifyNewAccountAsync({ verificationCode: code.trim() });
+      const setupUrl = signup?.passkeyUrl ?? signup?.passwordUrl ?? signup?.pinUrl ?? null;
+      if (!setupUrl) return;
+      lastUrlRef.current = setupUrl;
+      setWalletSetupUrl(setupUrl);
+      popupRef.current = window.open(setupUrl, "ParaAuth", "popup,width=420,height=560");
+      // Key generation runs on Para's side; this settles when it lands, and the state stream
+      // then reports `authenticated` and closes the sheet.
+      await para.waitForWalletCreation({
+        onPoll: () => {
+          if (popupRef.current?.closed) popupRef.current = null;
+        },
+      });
     } catch (error) {
       setLocalError(messageOf(error));
     }
-  }, [verifyNewAccountAsync, code]);
+  }, [verifyNewAccountAsync, code, para]);
 
   const error =
     localError ?? messageOf(verifyError) ?? messageOf(authError) ?? messageOf(oauthError);
@@ -323,9 +355,27 @@ export default function ParaAuthSheet({
             onClick={submitCode}
             disabled={verifying || code.trim().length === 0}
           >
-            {verifying ? "Verifying\u2026" : "Verify"}
+            {verifying || busy ? progressLabel : "Verify"}
           </Button>
         </div>
+        {walletSetupUrl ? (
+          <p className="mt-3 text-xs leading-relaxed text-zinc-600">
+            Finish setting up your account in the window we opened.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                popupRef.current = window.open(
+                  walletSetupUrl,
+                  "ParaAuth",
+                  "popup,width=420,height=560",
+                );
+              }}
+              className="underline underline-offset-2 hover:text-zinc-900"
+            >
+              Don&apos;t see it?
+            </button>
+          </p>
+        ) : null}
         {verifyError && hostedVerifyUrl ? (
           <button
             type="button"
