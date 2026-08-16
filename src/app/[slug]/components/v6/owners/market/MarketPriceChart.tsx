@@ -62,7 +62,11 @@ function PoolChart({
   tokenSymbol: string;
   chainLabel: string | null;
 }) {
-  const [rangeSeconds, setRangeSeconds] = useState<number>(30 * DAY);
+  const [rangeSeconds, setRangeSeconds] = useState<number>(
+    // Matches the price chart above it: a quarter reads as the project's
+    // shape, where a month reads as noise.
+    91 * DAY,
+  );
   const [marketPriceView, setMarketPriceView] = useState<MarketPriceView>("smooth");
 
   const { data, isLoading } = useQuery(

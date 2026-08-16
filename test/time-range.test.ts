@@ -5,6 +5,11 @@ describe("short price-chart ranges", () => {
   it("accepts one- and six-hour URLs with minute-scale buckets", () => {
     expect(parseTimeRange("1h")).toBe("1h");
     expect(parseTimeRange("6h")).toBe("6h");
+    // Nothing in the URL means a quarter, which is the range the selector
+    // shows as active — the two defaults have to agree or the chart renders
+    // one range with another highlighted.
+    expect(parseTimeRange(null)).toBe("3m");
+    expect(parseTimeRange("nonsense")).toBe("3m");
     expect(getTimeRangeConfig("1h")).toEqual({ seconds: 3600, interval: 60 });
     expect(getTimeRangeConfig("6h")).toEqual({ seconds: 21_600, interval: 300 });
   });

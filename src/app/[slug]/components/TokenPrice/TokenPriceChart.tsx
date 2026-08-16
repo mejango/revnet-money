@@ -246,7 +246,7 @@ export function TokenPriceChart({
           ) : null}
         </div>
         <div className="flex w-full flex-wrap justify-start gap-2 sm:justify-end">
-          <RangeSelector ranges={TIME_RANGES} defaultValue="1y" />
+          <RangeSelector ranges={TIME_RANGES} defaultValue="3m" />
         </div>
       </div>
       {(data?.unavailableSources.length ?? 0) > 0 ? (

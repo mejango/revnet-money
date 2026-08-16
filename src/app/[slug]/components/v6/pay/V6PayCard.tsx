@@ -1,6 +1,7 @@
 "use client";
 
 import { useOnRamp } from "@/components/GetFunds";
+import { useParaAuth } from "@/providers/ParaAuthContext";
 import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -464,6 +465,8 @@ export function V6PayCard() {
 
   // Offered from inside the token menu: buying the token is a way of getting
   // one, so it belongs where the token is chosen.
+  const { requestSignIn } = useParaAuth();
+
   const onRamp = useOnRamp({
     symbol: selected?.symbol ?? "",
     chainId,
@@ -1093,17 +1096,21 @@ export function V6PayCard() {
     }
   };
 
+  // Signed out, this button signs in, so the checks that describe a payment
+  // do not apply to it yet — gating on them would leave a disabled button
+  // with nothing explaining why.
   const payDisabled =
     busy ||
     notStarted ||
     surfaceError ||
-    !selected ||
-    addBalanceViaRouter ||
-    insufficientBalance ||
-    (surface?.pausePay === true && mode === "pay") ||
-    (cartCount > 0 && (shopRoutesLoading || shopCreditsLoading || !shopMatchesToken)) ||
-    (amountRaw <= 0n && !creditOnlyCheckout) ||
-    (mode === "pay" && !previewReady);
+    (isConnected &&
+      (!selected ||
+        addBalanceViaRouter ||
+        insufficientBalance ||
+        (surface?.pausePay === true && mode === "pay") ||
+        (cartCount > 0 && (shopRoutesLoading || shopCreditsLoading || !shopMatchesToken)) ||
+        (amountRaw <= 0n && !creditOnlyCheckout) ||
+        (mode === "pay" && !previewReady)));
 
   const hasShopStrip = Boolean(shop && shop.tiers.length > 0 && mode === "pay");
   const payPanelLayout = payPanelLayoutClasses({
@@ -1478,10 +1485,16 @@ export function V6PayCard() {
             <Button
               disabled={payDisabled}
               loading={busy}
-              onClick={openConfirm}
+              onClick={isConnected ? openConfirm : requestSignIn}
               className="h-14 w-full bg-teal-500 text-melon-950 hover:bg-teal-600"
             >
-              {notStarted ? "Soon" : mode === "pay" ? "Pay" : "Add"}
+              {notStarted
+                ? "Soon"
+                : !isConnected
+                  ? "Sign in"
+                  : mode === "pay"
+                    ? "Pay"
+                    : "Add"}
             </Button>
           </div>
         </div>

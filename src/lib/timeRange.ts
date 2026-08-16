@@ -8,7 +8,9 @@ export function parseTimeRange(range?: string | null): TimeRange {
   if (range && VALID_RANGES.includes(range as TimeRange)) {
     return range as TimeRange;
   }
-  return "1y";
+  // A quarter is where a revnet's shape is legible: long enough to show the
+  // trend, short enough that recent movement is not a smudge at the edge.
+  return "3m";
 }
 
 export function getTimeRangeConfig(range: TimeRange): { seconds: number | null; interval: number } {
