@@ -79,7 +79,15 @@ export async function isLiveRevnetOperator(
 export type PermissionHolderRow = Pick<
   PermissionHolder,
   "chainId" | "projectId" | "account" | "operator" | "permissions" | "isRevnetOperator"
->;
+> & {
+  /**
+   * Scoped to JBPermissions.WILDCARD_PROJECT_ID (0) rather than to this project.
+   * Wildcard grants act on every project the granting account owns and
+   * `hasPermission` honors them, so they confer power here while carrying a
+   * different project id — a project-scoped query never returns them.
+   */
+  wildcard?: boolean;
+};
 
 /** Per-project (chainId, projectId) filter for v6 projects. */
 export function permissionHoldersWhere(
@@ -88,6 +96,32 @@ export function permissionHoldersWhere(
 ): PermissionHolderFilter {
   const exactProjects = projectRefsWhere(rows.map((row) => ({ ...row, version: 6 }))) ?? { OR: [] };
   return extra && Object.keys(extra).length > 0 ? { AND: [exactProjects, extra] } : exactProjects;
+}
+
+/** A revnet's project owner: the REVOwner contract, which delegates to the operator. */
+export function revnetOwnerAddress(chainId: JBChainId): Address | undefined {
+  try {
+    return getJBContractAddress(RevnetCoreContracts.REVOwner, 6, chainId);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Wildcard (projectId 0) grants made by each chain's REVOwner. An operator
+ * holding ROOT this way controls the revnet while appearing in no
+ * project-scoped query. Scoped to REVOwner as the grantor: other accounts'
+ * wildcards confer nothing here.
+ */
+export function wildcardPermissionHoldersWhere(
+  rows: readonly ChainProjectRow[],
+): PermissionHolderFilter | null {
+  const clauses = rows.flatMap((row) => {
+    const account = revnetOwnerAddress(row.chainId);
+    if (!account) return [];
+    return [{ AND: [{ chainId: row.chainId }, { projectId: 0 }, { version: 6 }, { account }] }];
+  });
+  return clauses.length ? { OR: clauses } : null;
 }
 
 // ---------------------------------------------------------------------------
