@@ -9,7 +9,7 @@ import {
 import type { StateSnapshot, TOAuthMethod } from "@getpara/web-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnect, useConnectors } from "wagmi";
-import { BrandMark } from "@/components/BrandMarks";
+import { BrandMark, WalletFallbackMark } from "@/components/BrandMarks";
 import { Button } from "@/components/ui/button";
 import { X } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
@@ -68,13 +68,6 @@ function parseIdentifier(raw: string): Identifier {
     return { kind: "invalid", hint: "Add your country code, like +1." };
   }
   return { kind: "invalid", hint: "Enter an email address or phone number." };
-}
-
-/** The icon does the recognising, so the label only has to disambiguate.
- *  "Coinbase Wallet" and "Brave Wallet" are the same word twice over. */
-function shortWalletName(name: string): string {
-  if (name === "Injected") return "Browser";
-  return name.replace(/\s*Wallet$/i, "");
 }
 
 function messageOf(error: unknown): string | null {
@@ -372,21 +365,23 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
       {expanded ? (
         <>
           <p className="mb-2 mt-5 text-xs font-medium text-zinc-600">Socials</p>
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {OAUTH_METHODS.map(({ method, label }) => (
               <Button
                 key={method}
                 type="button"
                 variant="secondary"
                 title={label}
-                className="flex h-16 flex-col items-center justify-center gap-1 px-1"
+                aria-label={label}
+                aria-busy={pendingMethod === method}
+                className="flex h-10 w-10 items-center justify-center px-0"
                 onClick={() => void submitOAuth(method)}
                 disabled={busy}
               >
-                <BrandMark method={method} className="h-5 w-5 shrink-0" />
-                <span className="w-full truncate text-[10px] leading-none">
-                  {pendingMethod === method ? "\u2026" : label}
-                </span>
+                <BrandMark
+                  method={method}
+                  className={`h-5 w-5 shrink-0 ${pendingMethod === method ? "animate-pulse" : ""}`}
+                />
               </Button>
             ))}
           </div>
@@ -416,14 +411,15 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
           {connectors.length > 0 ? (
             <>
               <p className="mb-2 mt-4 text-xs font-medium text-zinc-600">Wallets</p>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="flex flex-wrap gap-1.5">
                 {connectors.map((connector) => (
                   <Button
                     key={connector.id}
                     type="button"
                     variant="secondary"
                     title={connector.name}
-                    className="flex h-16 flex-col items-center justify-center gap-1 px-1"
+                    aria-label={connector.name}
+                    className="flex h-10 w-10 items-center justify-center px-0"
                     onClick={() => {
                       connectAsync({ connector })
                         .then(onClose)
@@ -435,11 +431,8 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={connector.icon} alt="" className="h-5 w-5 shrink-0" />
                     ) : (
-                      <span className="h-5 w-5 shrink-0 rounded-full bg-zinc-200" />
+                      <WalletFallbackMark id={connector.id} className="h-5 w-5 shrink-0" />
                     )}
-                    <span className="w-full truncate text-[10px] leading-none">
-                      {shortWalletName(connector.name)}
-                    </span>
                   </Button>
                 ))}
               </div>
