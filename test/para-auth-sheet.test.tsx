@@ -65,7 +65,7 @@ describe("ParaAuthSheet verification", () => {
     fireEvent.change(screen.getByLabelText("Verification code"), {
       target: { value: "089262" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /verify/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
 
     await waitFor(() =>
       expect(para.openedUrls).toContain("https://app.getpara.com/v2/signup/passkey"),
