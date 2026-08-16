@@ -333,9 +333,6 @@ export function WalletConnectButton({
                 className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 disabled:opacity-50"
               >
                 <span className="block">Email or social</span>
-                <span className="block text-xs text-zinc-600">
-                  No wallet needed — we make one for you
-                </span>
               </button>
               <div className="mx-3 my-1 border-t border-zinc-100" aria-hidden />
             </>
