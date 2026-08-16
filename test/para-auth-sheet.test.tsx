@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const para = vi.hoisted(() => ({
   verifyNewAccountAsync: vi.fn(),
@@ -50,6 +50,12 @@ vi.mock("wagmi", () => ({
 const { default: ParaAuthSheet } = await import("@/providers/ParaAuthSheet");
 
 describe("ParaAuthSheet verification", () => {
+  beforeEach(() => {
+    para.authStateInfo = {};
+    para.authPhase = "awaiting_account_verification";
+    para.openedUrls.length = 0;
+  });
+
   it("sends basic-login accounts to the portal instead of a code field that cannot work", async () => {
     // A `verificationUrl` means Para owns this account's OTP: `verifyNewAccount` is not a call
     // the app may make, and it never settles — so a code field here would accept a wrong code
@@ -58,18 +64,24 @@ describe("ParaAuthSheet verification", () => {
     para.authPhase = "awaiting_account_verification";
     const open = vi.spyOn(window, "open").mockImplementation((url) => {
       para.openedUrls.push(String(url));
-      return null;
+      // A claimed window with no URL yet; navigating it is what the sheet does next.
+      return {
+        closed: false,
+        focus: () => {},
+        location: {
+          replace: (next: string) => para.openedUrls.push(next),
+        },
+      } as unknown as Window;
     });
 
     render(<ParaAuthSheet entry="me@example.com" onEntryChange={() => {}} onClose={() => {}} />);
 
     expect(screen.queryByLabelText("Verification code")).not.toBeInTheDocument();
-    // Opened from the click, where a popup blocker cannot eat it silently.
-    expect(para.openedUrls).toEqual([]);
-    fireEvent.click(screen.getByRole("button", { name: /open the secure window/i }));
+    // The window Para's URL goes into is claimed inside the click that starts sign-in, so the
+    // sheet needs no second button and no popup blocker can eat it.
     expect(para.openedUrls).toContain("https://app.getpara.com/v2/login/otp");
+    expect(screen.getByText(/see the window/i)).toBeInTheDocument();
 
-    para.authStateInfo = {};
     open.mockRestore();
   });
 
@@ -81,7 +93,14 @@ describe("ParaAuthSheet verification", () => {
     });
     const open = vi.spyOn(window, "open").mockImplementation((url) => {
       para.openedUrls.push(String(url));
-      return null;
+      // A claimed window with no URL yet; navigating it is what the sheet does next.
+      return {
+        closed: false,
+        focus: () => {},
+        location: {
+          replace: (next: string) => para.openedUrls.push(next),
+        },
+      } as unknown as Window;
     });
 
     render(<ParaAuthSheet entry="me@example.com" onEntryChange={() => {}} onClose={() => {}} />);
