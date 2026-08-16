@@ -193,7 +193,9 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
           {configOpen ? (
             <div className="mt-4 space-y-5 border border-zinc-200 p-4">
               <p className="text-xs text-zinc-500">
-                The revnet operator can set or change most of these after launch.
+                The collection&apos;s name and symbol can be changed later, by the revnet operator
+                as long as it keeps &ldquo;Update item metadata&rdquo;. Everything else here is
+                fixed when the revnet deploys.
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
