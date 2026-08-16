@@ -4,7 +4,14 @@ import { PortalContainerProvider } from "@getpara/react-component-library";
 import { ParaProvider, useModal } from "@getpara/react-sdk-lite";
 import "@getpara/react-sdk-lite/styles.css";
 import { Network, OnRampAsset, OnRampProvider, OnRampPurchaseType } from "@getpara/web-sdk";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { useAccount } from "wagmi";
 import type { ParaRequest } from "./ParaAuthContext";
@@ -16,6 +23,27 @@ import { SignInShell } from "./SignInShell";
 /** Layout effects run before paint, which is the whole point here; on the
  *  server there is no paint and React warns, so fall back there. */
 const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/**
+ * Dismiss on a click that both starts and ends on the backdrop.
+ *
+ * Checking only where the mouse came up would close the panel when a drag to
+ * select text inside it happened to be released outside.
+ */
+function useBackdropDismiss(onDismiss: () => void) {
+  const pressedBackdrop = useRef(false);
+  return {
+    onMouseDown(event: MouseEvent<HTMLElement>) {
+      pressedBackdrop.current = event.target === event.currentTarget;
+    },
+    onClick(event: MouseEvent<HTMLElement>) {
+      const dismiss =
+        pressedBackdrop.current && event.target === event.currentTarget;
+      pressedBackdrop.current = false;
+      if (dismiss) onDismiss();
+    },
+  };
+}
 
 function Driver({
   requestId,
@@ -100,6 +128,9 @@ function Driver({
     });
   }, [requestId, request, startAddFunds]);
 
+  const sheetBackdrop = useBackdropDismiss(() => closeSheet());
+  const handoffBackdrop = useBackdropDismiss(() => setHandoffUrl(null));
+
   const closeSheet = useCallback(() => {
     setSheetOpen(false);
     const resume = resumeAddFunds.current;
@@ -135,7 +166,10 @@ function Driver({
 
   if (handoffUrl) {
     return (
-      <div className="flex h-full w-full items-center justify-center overflow-y-auto bg-black/80 p-6">
+      <div
+        className="flex h-full w-full items-center justify-center overflow-y-auto bg-black/80 p-6"
+        {...handoffBackdrop}
+      >
         <div className="w-full max-w-sm border border-zinc-200 bg-white p-6">
           <OnRampHandoff url={handoffUrl} onClose={() => setHandoffUrl(null)} />
         </div>
@@ -148,7 +182,10 @@ function Driver({
   // backdrop and its `.ui-dialog` styling is `<dialog>`-scoped — so the sheet
   // brings its own dimmed surface and panel.
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-y-auto bg-black/80 p-6">
+    <div
+      className="flex h-full w-full items-center justify-center overflow-y-auto bg-black/80 p-6"
+      {...sheetBackdrop}
+    >
       <div className="w-full max-w-sm border border-zinc-200 bg-white p-6">
         <ParaAuthSheet
             onClose={closeSheet}

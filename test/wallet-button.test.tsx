@@ -100,13 +100,12 @@ describe("local wallet controls", () => {
     expect(wallet.connectAsync).not.toHaveBeenCalled();
   });
 
-  it("keeps View as reachable beside Sign in while signed out", async () => {
-    // It used to be the last entry of the sign-in menu; with that menu gone it
-    // has to stand on its own next to the button.
+  it("leaves View as to the sign-in sheet, not the header", async () => {
+    // Impersonation moved into the sheet, so the header offers one thing.
     render(<WalletButton />);
 
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "View as…" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View as…" })).not.toBeInTheDocument();
   });
 
   it("shows the connected address, native balance, network, and disconnect action", async () => {

@@ -10,6 +10,7 @@ import type { StateSnapshot, TOAuthMethod } from "@getpara/web-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnect, useConnectors } from "wagmi";
 import { BrandMark, WalletFallbackMark } from "@/components/BrandMarks";
+import { ViewAsForm } from "@/components/ViewAsForm";
 import { Button } from "@/components/ui/button";
 import { X } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
@@ -120,6 +121,7 @@ export default function ParaAuthSheet({
   const [authPhase, setAuthPhase] = useState<AuthPhase>("unauthenticated");
   const [pendingMethod, setPendingMethod] = useState<TOAuthMethod | "local" | null>(null);
   const [resent, setResent] = useState(false);
+  const [viewAsOpen, setViewAsOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const [pairingQr, setPairingQr] = useState<string | null>(null);
@@ -489,6 +491,21 @@ export default function ParaAuthSheet({
       </>
 
       {error ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
+
+      {/* Looking without signing in. Folded away by default: it answers a
+          different question from the ways in above, and only a few people
+          are asking it. */}
+      <div className="mt-6 border-t border-zinc-200 pt-3">
+        <button
+          type="button"
+          onClick={() => setViewAsOpen((open) => !open)}
+          aria-expanded={viewAsOpen}
+          className="text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-900"
+        >
+          View as…
+        </button>
+        {viewAsOpen ? <ViewAsForm onDone={onClose} /> : null}
+      </div>
 
 
     </div>

@@ -135,10 +135,19 @@ export function Header(props: Props) {
     };
 
     updateSeparators();
-    const metadataElement = metadataRef.current;
-    if (!metadataElement) return;
     const observer = new ResizeObserver(updateSeparators);
-    observer.observe(metadataElement);
+    // Watch the items, not just the row. The row is full-width, so it does
+    // not resize when an operator's ENS name resolves — but the items do, and
+    // that reflow is exactly what decides whether they still share a line.
+    for (const element of [
+      metadataRef.current,
+      operatorRef.current,
+      websiteRef.current,
+      createdRef.current,
+      chainsRef.current,
+    ]) {
+      if (element) observer.observe(element);
+    }
     return () => observer.disconnect();
   }, [hasOperator, hasWebsite, hasCreated, hasSuckers]);
 

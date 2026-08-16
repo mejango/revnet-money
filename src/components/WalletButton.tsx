@@ -244,13 +244,6 @@ export function WalletConnectButton({
     // wallets — so a menu in front of it would only ask which door to use
     // twice. Impersonation is the one thing left that needs its own control.
     <div className="inline-flex items-center gap-3">
-      <button
-        type="button"
-        onClick={() => setViewAsOpen(true)}
-        className="whitespace-nowrap text-sm text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
-      >
-        View as…
-      </button>
       <Button
         ref={menu.triggerRef}
         {...props}
