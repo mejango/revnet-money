@@ -102,6 +102,44 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
   const [signInEntry, setSignInEntry] = React.useState("");
   const [paraConnectionError, setParaConnectionError] = React.useState(false);
 
+  // Bring Para up in the background once the page is done and the browser is
+  // idle. It mounts closed and invisible, so by the time anyone clicks Sign
+  // in both the chunk and Para's own async init are already finished and the
+  // sheet opens with nothing to wait for.
+  //
+  // Skipped on metered or slow connections: this is ~725 KiB that a visitor
+  // who never signs in does not need, and on those links the preload would
+  // cost more than the wait it saves. They still get it on click.
+  React.useEffect(() => {
+    if (!PARA_EMBEDDED_WALLET_ENABLED) return;
+    const link = (
+      navigator as Navigator & {
+        connection?: { saveData?: boolean; effectiveType?: string };
+      }
+    ).connection;
+    if (link?.saveData) return;
+    if (link?.effectiveType && /(^|-)2g$/.test(link.effectiveType)) return;
+
+    let cancelled = false;
+    const warm = () => {
+      if (!cancelled) setParaHostLoaded(true);
+    };
+    const idle = (
+      window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      }
+    ).requestIdleCallback;
+    const schedule = () => (idle ? idle(warm, { timeout: 4000 }) : window.setTimeout(warm, 1500));
+
+    let handle: number | undefined;
+    if (document.readyState === "complete") handle = schedule();
+    else window.addEventListener("load", () => (handle = schedule()), { once: true });
+    return () => {
+      cancelled = true;
+      if (handle !== undefined) window.clearTimeout(handle);
+    };
+  }, []);
+
   // Preserve embedded-wallet sessions without penalizing anonymous visitors.
   // Para's own session is authoritative; transient verification failures keep
   // the local marker intact so a later page load can recover.
@@ -166,7 +204,7 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
           {paraHostLoaded ? (
             <React.Suspense
               fallback={
-                paraRequest.kind === "auth" ? (
+                paraRequest.kind === "auth" && paraRequestId > 0 ? (
                   <SignInPlaceholder entry={signInEntry} onEntryChange={setSignInEntry} />
                 ) : null
               }

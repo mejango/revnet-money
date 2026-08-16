@@ -1226,7 +1226,7 @@ export function V6PayCard() {
                   notice; showing it is what makes that notice predictable
                   rather than a surprise at submit time. */}
               {selected ? (
-                <div className="col-start-2 row-start-3 flex flex-col items-start gap-0.5">
+                <div className="col-start-2 row-start-3 flex flex-col items-end gap-0.5">
                   {isConnected ? (
                     <span className="whitespace-nowrap text-xs text-zinc-600">
                       Balance: {formatPayAmount(walletBalance, selected.decimals)}
@@ -1238,6 +1238,7 @@ export function V6PayCard() {
                     needed={amountRaw}
                     balance={walletBalance}
                     decimals={selected.decimals}
+                    className="text-[11px] leading-none text-zinc-500 underline underline-offset-2 hover:text-zinc-900"
                   />
                 </div>
               ) : null}
