@@ -269,14 +269,18 @@ describe("store section", () => {
     expect(container).toBeTruthy();
   });
 
-  it("names a shelf and offers it to items", () => {
+  it("names a category from the item's own category picker", () => {
     const form = validRevnetForm();
     form.store.items = [item({ moreOpen: true })];
     renderStore(form);
 
-    fireEvent.change(screen.getByLabelText("New shelf name"), { target: { value: "Shirts" } });
-    fireEvent.click(screen.getByText("+ Add a shelf"));
+    fireEvent.change(screen.getByLabelText("Item 1 category"), { target: { value: "add" } });
+    fireEvent.change(screen.getByLabelText("New category name"), { target: { value: "Shirts" } });
+    fireEvent.click(screen.getByText("Add"));
+
     expect(storeState().categories).toEqual([{ id: 1, name: "Shirts" }]);
+    // The item lands in the category it just named, and the name travels in its metadata.
+    expect(storeState().items[0].category).toBe("1");
     expect(screen.getByRole("option", { name: "Shirts" })).toBeInTheDocument();
   });
 

@@ -140,9 +140,9 @@ describe("create form section order", () => {
     expect(message.closest('[role="alert"]')).toHaveTextContent("Name is required");
     expect(message.closest('[role="alert"]')).toHaveTextContent("Description is required");
     expect(message.closest('[role="alert"]')).toHaveTextContent("At least one stage is required");
-    expect(message.closest('[role="alert"]')).toHaveTextContent(
-      "At least one chain must be selected",
-    );
+    // No chain error to assert: the picker selects one for you, so an empty selection is not a
+    // state the form can be left in. The schema rule stays for drafts and programmatic input.
+    expect(formState().chainIds).toHaveLength(1);
   });
 });
 

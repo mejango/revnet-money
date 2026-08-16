@@ -28,7 +28,6 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
   const store = values.store;
   const chains = sortChains(values.chainIds);
   const [configOpen, setConfigOpen] = useState(false);
-  const [shelfName, setShelfName] = useState("");
   const [mediaError, setMediaError] = useState<string | null>(null);
 
   // Object URLs outlive the component unless they are handed back.
@@ -48,12 +47,18 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
         ? "USD"
         : reserveAssetSymbol;
 
+  // Two writes in one handler — naming a category, then putting the item in it — would each
+  // spread the same render's `store` and the second would drop the first. The ref carries the
+  // value forward within the tick.
+  const storeRef = useRef(store);
+  storeRef.current = store;
   const setStore = (patch: Partial<RevnetFormData["store"]>) => {
-    setFieldValue("store", { ...store, ...patch });
+    storeRef.current = { ...storeRef.current, ...patch };
+    setFieldValue("store", storeRef.current);
   };
   const setItem = (index: number, patch: Partial<DraftItem>) => {
     setStore({
-      items: store.items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+      items: storeRef.current.items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
     });
   };
   const selectMedia = (index: number, file: File | null) => {
@@ -80,12 +85,12 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
     setStore({ items: store.items.filter((_, i) => i !== index) });
   };
 
-  const addShelf = () => {
-    const name = shelfName.trim();
-    if (!name) return;
-    const id = store.categories.reduce((max, category) => Math.max(max, category.id), 0) + 1;
-    setStore({ categories: [...store.categories, { id, name }] });
-    setShelfName("");
+  // Categories are just numbers onchain; their names ride along in each item's metadata, which
+  // is where the shop reads its labels from.
+  const addCategory = (name: string) => {
+    const id = storeRef.current.categories.reduce((max, c) => Math.max(max, c.id), 0) + 1;
+    setStore({ categories: [...storeRef.current.categories, { id, name }] });
+    return id;
   };
 
   return (
@@ -156,35 +161,10 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
                   }}
                   disabled={disabled}
                   chains={chains}
+                  onAddCategory={addCategory}
                   onChange={(patch) => setItem(index, patch)}
                   onSelectMedia={(file) => selectMedia(index, file)}
                 />
-                {item.moreOpen ? (
-                  <div className="mt-5">
-                    <Label className="text-xs">Shelves</Label>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      Name a shelf to group items under on the store page.
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <Input
-                        aria-label="New shelf name"
-                        value={shelfName}
-                        onChange={(event) => setShelfName(event.target.value)}
-                        placeholder="Shelf name"
-                        disabled={disabled}
-                        className="h-10 w-56 bg-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={addShelf}
-                        disabled={disabled || !shelfName.trim()}
-                        className="border border-dashed border-zinc-400 bg-white px-3 py-2 text-xs font-medium disabled:opacity-50"
-                      >
-                        + Add a shelf
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
               </div>
             ))}
           </div>

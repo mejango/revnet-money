@@ -5,6 +5,10 @@ import type { DraftItem } from "@/components/shop/itemDraft";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
+import { useState } from "react";
+
+/** Sentinel option value; a category id can never be this. */
+const ADD_CATEGORY = "add";
 
 /** What the collection this item is going into will and will not accept. */
 export type ItemLimits = {
@@ -29,6 +33,7 @@ export function ItemDraftFields({
   limits,
   disabled = false,
   chains,
+  onAddCategory,
   onChange,
   onSelectMedia,
 }: {
@@ -41,9 +46,14 @@ export function ItemDraftFields({
   disabled?: boolean;
   /** When given, quantity can be set per chain. Absent for a single live hook. */
   chains?: JBChainId[];
+  /** Names a new category and returns its id. Absent where categories are fixed. */
+  onAddCategory?: (name: string) => number;
   onChange: (patch: Partial<DraftItem>) => void;
   onSelectMedia: (file: File | null) => void;
 }) {
+  const [namingCategory, setNamingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
+
   return (
     <>
       <div className="mt-4 flex flex-col gap-4 sm:flex-row">
@@ -178,8 +188,16 @@ export function ItemDraftFields({
               Group this item with others in the collection.
             </p>
             <select
+              aria-label={`Item ${index + 1} category`}
               value={item.category}
-              onChange={(e) => onChange({ category: e.target.value })}
+              onChange={(e) => {
+                if (e.target.value === ADD_CATEGORY) {
+                  setNamingCategory(true);
+                  return;
+                }
+                setNamingCategory(false);
+                onChange({ category: e.target.value });
+              }}
               disabled={disabled}
               className="mt-2 h-11 min-w-56 border border-zinc-300 bg-white px-3 text-sm"
             >
@@ -191,7 +209,36 @@ export function ItemDraftFields({
                     {category.name}
                   </option>
                 ))}
+              {onAddCategory ? <option value={ADD_CATEGORY}>+ Add category…</option> : null}
             </select>
+            {namingCategory && onAddCategory ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Input
+                  aria-label="New category name"
+                  value={newCategory}
+                  onChange={(event) => setNewCategory(event.target.value)}
+                  placeholder="Category name"
+                  disabled={disabled}
+                  className="h-10 w-56 bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const name = newCategory.trim();
+                    if (!name) return;
+                    // The name travels in this item's own metadata, which is where the shop
+                    // reads category labels from.
+                    onChange({ category: String(onAddCategory(name)) });
+                    setNewCategory("");
+                    setNamingCategory(false);
+                  }}
+                  disabled={disabled || !newCategory.trim()}
+                  className="border border-dashed border-zinc-400 bg-white px-3 py-2 text-xs font-medium disabled:opacity-50"
+                >
+                  Add
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div>

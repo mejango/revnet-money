@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, ChevronUp } from "@/components/ui/icons";
+import { Check, ChevronDown } from "@/components/ui/icons";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
@@ -499,44 +499,13 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
         }}
         {...props}
       >
-        <SelectScrollUpButton />
         <div className="p-1">{children}</div>
-        <SelectScrollDownButton />
       </div>,
       portal,
     );
   },
 );
 SelectContent.displayName = "SelectContent";
-
-const SelectScrollUpButton = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
-    <div
-      ref={ref}
-      aria-hidden="true"
-      className={cn("flex cursor-default items-center justify-center py-1", className)}
-      {...props}
-    >
-      <ChevronUp className="h-4 w-4" />
-    </div>
-  ),
-);
-SelectScrollUpButton.displayName = "SelectScrollUpButton";
-
-const SelectScrollDownButton = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    aria-hidden="true"
-    className={cn("flex cursor-default items-center justify-center py-1", className)}
-    {...props}
-  >
-    <ChevronDown className="h-4 w-4" />
-  </div>
-));
-SelectScrollDownButton.displayName = "SelectScrollDownButton";
 
 const SelectGroup = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   (props, ref) => <div ref={ref} role="group" {...props} />,

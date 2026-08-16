@@ -20,22 +20,16 @@ import { JBProjectToken, USDC_ADDRESSES, type JBChainId } from "@bananapus/nana-
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
-  type Dispatch,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type SetStateAction,
   useEffect,
   useId,
   useRef,
   useState,
+  type Dispatch,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type SetStateAction,
 } from "react";
 import { erc20Abi, formatUnits } from "viem";
-import {
-  useAccount,
-  useBalance,
-  useConfig,
-  useDisconnect,
-  useReadContract,
-} from "wagmi";
+import { useAccount, useBalance, useConfig, useDisconnect, useReadContract } from "wagmi";
 import { getBalance, readContract } from "wagmi/actions";
 import { Button, type ButtonProps } from "./ui/button";
 
@@ -440,11 +434,14 @@ export function WalletButton() {
         }}
         className="gap-2"
       >
-        <span className="h-2 w-2 shrink-0 bg-teal-500" aria-hidden />
-        {/* The state is the headline; which account is the detail. */}
+        {/* The state is the headline; which account is the detail. The dot belongs to the
+            headline, so it sits on that line rather than centred against both. */}
         <span className="flex flex-col items-start leading-tight">
-          <span>Signed in</span>
-          <span className="text-[11px] text-zinc-600">
+          <span className="flex items-center gap-2">
+            <span className="h-2 w-2 shrink-0 bg-teal-500" aria-hidden />
+            Signed in
+          </span>
+          <span className="pl-4 text-[11px] text-zinc-600">
             {ensName ?? formatEthAddress(address, { truncateTo: 4 })}
           </span>
         </span>

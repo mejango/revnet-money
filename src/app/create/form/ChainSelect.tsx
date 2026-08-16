@@ -20,8 +20,16 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
 
   const { values, setFieldValue } = useCreateForm();
 
-  // A revnet is deployed to chains; zero of them is not a state the form can act on, and
-  // clearing the last one silently drops every per-chain value with it.
+  // A revnet has to launch somewhere, so the form opens with one chain already chosen rather
+  // than in a state it cannot act on. Ethereum leads MAINNET_CHAIN_IDS.
+  useEffect(() => {
+    if (values.chainIds.length > 0) return;
+    const visible = environment === "production" ? MAINNET_CHAIN_IDS : TESTNET_CHAIN_IDS;
+    if (visible.length > 0) setFieldValue("chainIds", [visible[0]]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.chainIds.length, environment]);
+
+  // Clearing the last one silently drops every per-chain value with it.
   const isOnlySelection = (chainId: JBChainId) =>
     values.chainIds.length === 1 && values.chainIds[0] === chainId;
 

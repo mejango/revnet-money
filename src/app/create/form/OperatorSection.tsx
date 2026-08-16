@@ -1,5 +1,6 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { useFormContext } from "@/lib/forms";
+import { OPERATOR_LIMITS, OPERATOR_POWERS } from "@/lib/protocolConcepts";
 import { sortChains } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useRef, useState } from "react";
@@ -136,16 +137,24 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
             disabled={disabled}
             onChange={(event) => answerControls(event.target.checked)}
           />
-          <span>
+          <div>
             <span className="block text-md font-semibold text-zinc-800">
               Enable limited operator controls
             </span>
             <span className="mt-1 block text-sm leading-relaxed text-zinc-500">
-              An operator can update the revnet&apos;s name, logo, and description; redirect only
-              the precommitted split limit; manage shop inventory; and extend the revnet to new
-              approved chains. It cannot rewrite staged issuance, cash out rules, or sequencing.
+              One address gets exactly these powers over the revnet once it&apos;s live:
             </span>
-          </span>
+            {/* The whole list, not a summary of it: every line is a permission the contracts
+                actually grant, so a reader can check what they are agreeing to. */}
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-zinc-500">
+              {OPERATOR_POWERS.map((power) => (
+                <li key={power}>{power}</li>
+              ))}
+            </ul>
+            <span className="mt-2 block text-sm leading-relaxed text-zinc-500">
+              {OPERATOR_LIMITS}
+            </span>
+          </div>
         </label>
         {controlsEnabled && sortedChains.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-500">

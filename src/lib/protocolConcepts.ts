@@ -54,3 +54,29 @@ export const PROTOCOL_CONCEPTS = {
   twapWindow:
     "How far back to average the trading price when checking that a swap is a fair deal. A longer window is harder for someone to manipulate, but slower to notice a real change in price. A shorter one is the opposite. Anything from 300 to 172800 seconds.",
 } as const;
+
+/**
+ * Exactly what a revnet's operator may do.
+ *
+ * Not a paraphrase: `REVOwner._operatorPermissionIndexesOf` grants SET_SPLIT_GROUPS,
+ * SET_BUYBACK_POOL, SET_BUYBACK_TWAP, SET_PROJECT_URI, SUCKER_SAFETY, SET_BUYBACK_HOOK,
+ * SET_ROUTER_TERMINAL, SET_TOKEN_METADATA and SIGN_FOR_ERC20; `REVDeployer` adds
+ * ADJUST_721_TIERS, SET_721_METADATA, MINT_721 and SET_721_DISCOUNT_PERCENT for the shop, each
+ * droppable by its `prevent*` flag; and `deploySuckersFor` / `REVOwner.setOperatorOf` are
+ * operator-only entrypoints. One line here per power, and nothing that is not one.
+ */
+export const OPERATOR_POWERS = [
+  "Change the revnet's name, logo, and description",
+  "Change the token's name and symbol",
+  "Point the precommitted split limit at different recipients — never enlarge it",
+  "Add, remove, and re-price store items, mint them for free, and change their discounts",
+  "Pick the market pool used for buybacks, and how far back its price is averaged",
+  "Add the terminal that lets payers pay in any token",
+  "Extend the revnet to new approved chains, and pause a bridge that looks unsafe",
+  "Sign messages on behalf of the revnet's token",
+  "Hand the operator role to another address",
+] as const;
+
+/** The other half of the sentence: what the role can never reach. */
+export const OPERATOR_LIMITS =
+  "It cannot rewrite issuance, cash out rules, or the stage schedule, and it cannot withdraw the revnet's funds.";
