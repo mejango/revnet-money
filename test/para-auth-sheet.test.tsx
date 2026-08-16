@@ -36,6 +36,7 @@ vi.mock("@/providers/para-config", () => ({
     waitForWalletCreation: para.waitForWalletCreation,
   }),
   PARA_APP: { appName: "Revnet" },
+  PARA_PORTAL_THEME: { backgroundColor: "#F6FEF9" },
 }));
 
 vi.mock("@/hooks/useWallet", () => ({

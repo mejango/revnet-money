@@ -57,3 +57,21 @@ export function createParaWagmiConnector(transports: Record<number, Transport>):
     transports,
   }) as unknown as CreateConnectorFn;
 }
+
+/**
+ * How Para's own pages should look when they appear inside ours.
+ *
+ * The verification code renders in an iframe in the sign-in sheet, so its default white-and-blue
+ * portal styling sat inside a melon panel looking like a foreign object. Para bakes this into
+ * the URL it generates, so it has to travel with the auth call that asks for one.
+ *
+ * Values are the site's own tokens: melon 25 ground, melon 950 text, melon 500 accent, and
+ * square corners like everything else here.
+ */
+export const PARA_PORTAL_THEME = {
+  backgroundColor: "#F6FEF9",
+  foregroundColor: "#15281D",
+  accentColor: "#68CA8F",
+  mode: "light" as const,
+  borderRadius: "none" as const,
+};

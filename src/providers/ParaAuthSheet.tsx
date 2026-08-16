@@ -17,7 +17,7 @@ import {
 import type { StateSnapshot, TOAuthMethod } from "@getpara/web-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnect, useConnectors } from "wagmi";
-import { getParaClient } from "./para-config";
+import { getParaClient, PARA_PORTAL_THEME } from "./para-config";
 
 /** Not exported by the SDK on its own, but reachable through the snapshot. */
 type AuthPhase = StateSnapshot["authPhase"];
@@ -260,6 +260,9 @@ export default function ParaAuthSheet({
       await authenticateWithEmailOrPhoneAsync({
         auth:
           identifier.kind === "email" ? { email: identifier.email } : { phone: identifier.phone },
+        // Para bakes the theme into the URL it generates, so it has to be asked for here rather
+        // than applied to the iframe afterwards — nothing of ours can reach inside that frame.
+        portalTheme: PARA_PORTAL_THEME,
         sessionPollingCallbacks: {
           onPoll: () => {
             if (popupRef.current?.closed) popupRef.current = null;
@@ -313,7 +316,10 @@ export default function ParaAuthSheet({
       // creating the account's key, and NOTHING else advances the flow until that window is
       // opened. The URL arrives in this promise, not in the state stream the popup effect
       // watches — waiting on that stream is what left this sitting at "Verifying…" forever.
-      const signup = await verifyNewAccountAsync({ verificationCode: code.trim() });
+      const signup = await verifyNewAccountAsync({
+        verificationCode: code.trim(),
+        portalTheme: PARA_PORTAL_THEME,
+      });
       const setupUrl = signup?.passkeyUrl ?? signup?.passwordUrl ?? signup?.pinUrl ?? null;
       if (!setupUrl) return;
       lastUrlRef.current = setupUrl;
@@ -366,19 +372,27 @@ export default function ParaAuthSheet({
           </div>
           {closeButton}
         </div>
-        <iframe
-          src={hostedVerifyUrl}
-          title="Verification code"
-          // Tall enough for the code boxes and the resend row beneath them, without a scrollbar.
-          className="mt-4 h-64 w-full border-0"
-        />
-        <button
-          type="button"
-          onClick={() => sendPopupTo(hostedVerifyUrl)}
-          className="mt-1 text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
-        >
-          Open in a separate window instead
-        </button>
+        {/* The frame paints nothing for a beat, and an empty rectangle in the middle of a
+            sign-in reads as broken. The skeleton sits behind it and is covered as it loads. */}
+        <div className="relative mt-4 h-64 w-full">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3"
+          >
+            <div className="flex gap-2">
+              {[0, 1, 2, 3, 4, 5].map((box) => (
+                <span key={box} className="h-11 w-9 animate-pulse bg-melon-100" />
+              ))}
+            </div>
+          </div>
+          <iframe
+            src={hostedVerifyUrl}
+            title="Verification code"
+            // Tall enough for the code boxes and the resend row beneath them, without a
+            // scrollbar.
+            className="absolute inset-0 h-full w-full border-0"
+          />
+        </div>
       </div>
     );
   }
