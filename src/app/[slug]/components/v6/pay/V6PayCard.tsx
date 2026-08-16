@@ -1461,7 +1461,13 @@ export function V6PayCard() {
               Balance: {formatPayAmount(walletBalance, selected.decimals)}
             </span>
           ) : null}
-          <GetFunds symbol={selected.symbol} chainId={chainId} />
+          <GetFunds
+            symbol={selected.symbol}
+            chainId={chainId}
+            needed={amountRaw}
+            balance={walletBalance}
+            decimals={selected.decimals}
+          />
         </div>
       ) : null}
 
