@@ -1,5 +1,13 @@
 "use client";
 
+import { BrandMark, WalletFallbackMark } from "@/components/BrandMarks";
+import { ViewAsForm } from "@/components/ViewAsForm";
+import { Button } from "@/components/ui/button";
+import { X } from "@/components/ui/icons";
+import { Input } from "@/components/ui/input";
+import { useMobileWallet } from "@/hooks/useMobileWallet";
+import { offerableWallets } from "@/lib/wallet-list";
+import { mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
 import {
   useAuthenticateWithEmailOrPhone,
   useAuthenticateWithOAuth,
@@ -9,14 +17,6 @@ import {
 import type { StateSnapshot, TOAuthMethod } from "@getpara/web-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnect, useConnectors } from "wagmi";
-import { BrandMark, WalletFallbackMark } from "@/components/BrandMarks";
-import { ViewAsForm } from "@/components/ViewAsForm";
-import { Button } from "@/components/ui/button";
-import { X } from "@/components/ui/icons";
-import { Input } from "@/components/ui/input";
-import { useMobileWallet } from "@/hooks/useMobileWallet";
-import { mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
-import { offerableWallets } from "@/lib/wallet-list";
 import { getParaClient } from "./para-config";
 
 /** Not exported by the SDK on its own, but reachable through the snapshot. */
@@ -107,14 +107,9 @@ export default function ParaAuthSheet({
 
   const connectors = useMemo(() => offerableWallets(allConnectors), [allConnectors]);
 
-  const { authenticateWithEmailOrPhoneAsync, error: authError } =
-    useAuthenticateWithEmailOrPhone();
+  const { authenticateWithEmailOrPhoneAsync, error: authError } = useAuthenticateWithEmailOrPhone();
   const { authenticateWithOAuthAsync, error: oauthError } = useAuthenticateWithOAuth();
-  const {
-    verifyNewAccountAsync,
-    isPending: verifying,
-    error: verifyError,
-  } = useVerifyNewAccount();
+  const { verifyNewAccountAsync, isPending: verifying, error: verifyError } = useVerifyNewAccount();
   const { resendVerificationCodeAsync } = useResendVerificationCode();
 
   const [code, setCode] = useState("");
@@ -126,6 +121,7 @@ export default function ParaAuthSheet({
 
   const [pairingQr, setPairingQr] = useState<string | null>(null);
   const [pairingUri, setPairingUri] = useState<string | null>(null);
+  const [hostedVerifyUrl, setHostedVerifyUrl] = useState<string | null>(null);
 
   const popupRef = useRef<Window | null>(null);
   const lastUrlRef = useRef<string | null>(null);
@@ -162,14 +158,19 @@ export default function ParaAuthSheet({
 
   // Para hands portal URLs back through the state stream rather than the hook
   // promise, so opening them is our job. Passkey URLs *must* be a popup —
-  // WebAuthn silently fails inside an iframe — and the rest follow suit for
-  // consistency.
+  // WebAuthn silently fails inside an iframe — and password/PIN entry belongs on Para's own
+  // origin for the same reason.
+  //
+  // The verification code is the exception, and deliberately so: entering it is a plain API call
+  // (`verifyNewAccountAsync`), so it stays here, in the sheet the visitor started in, instead of
+  // throwing them onto a Para-branded page mid-sign-in. The URL is kept only as a way out if
+  // that call keeps failing.
   useEffect(() => {
     const unsubscribe = para.onStatePhaseChange((snapshot: StateSnapshot) => {
       setAuthPhase(snapshot.authPhase);
       const info = snapshot.authStateInfo;
-      const next =
-        info.verificationUrl ?? info.passkeyUrl ?? info.passwordUrl ?? info.pinUrl ?? null;
+      if (info.verificationUrl) setHostedVerifyUrl(info.verificationUrl);
+      const next = info.passkeyUrl ?? info.passwordUrl ?? info.pinUrl ?? null;
       if (next && next !== lastUrlRef.current) {
         lastUrlRef.current = next;
         popupRef.current = window.open(next, "ParaAuth", "popup,width=420,height=560");
@@ -178,6 +179,7 @@ export default function ParaAuthSheet({
       // which is what tells Wagmi to pick the new Para session up.
       if (snapshot.corePhase === "authenticated" && !settledRef.current) {
         settledRef.current = true;
+        setHostedVerifyUrl(null);
         popupRef.current?.close();
         onClose();
       }
@@ -203,7 +205,9 @@ export default function ParaAuthSheet({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [busy, onClose]);
-  const awaitingCode = authPhase === "awaiting_account_verification";
+  // Either signal means the same thing: Para is waiting on a code. Taking the URL as one too
+  // keeps the step from disappearing when Para reports it that way instead.
+  const awaitingCode = authPhase === "awaiting_account_verification" || !!hostedVerifyUrl;
 
   const submitIdentifier = useCallback(async () => {
     if (identifier.kind !== "email" && identifier.kind !== "phone") return;
@@ -212,9 +216,7 @@ export default function ParaAuthSheet({
     try {
       await authenticateWithEmailOrPhoneAsync({
         auth:
-          identifier.kind === "email"
-            ? { email: identifier.email }
-            : { phone: identifier.phone },
+          identifier.kind === "email" ? { email: identifier.email } : { phone: identifier.phone },
         sessionPollingCallbacks: {
           onPoll: () => {
             if (popupRef.current?.closed) popupRef.current = null;
@@ -289,8 +291,7 @@ export default function ParaAuthSheet({
           <div>
             <h2 className="text-lg font-medium text-zinc-900">Enter your code</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              We sent it to{" "}
-              <span className="font-medium text-zinc-900">{entry.trim()}</span>.
+              We sent it to <span className="font-medium text-zinc-900">{entry.trim()}</span>.
             </p>
           </div>
           {closeButton}
@@ -325,6 +326,21 @@ export default function ParaAuthSheet({
             {verifying ? "Verifying\u2026" : "Verify"}
           </Button>
         </div>
+        {verifyError && hostedVerifyUrl ? (
+          <button
+            type="button"
+            onClick={() => {
+              popupRef.current = window.open(
+                hostedVerifyUrl,
+                "ParaAuth",
+                "popup,width=420,height=560",
+              );
+            }}
+            className="mt-3 text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+          >
+            Having trouble? Verify in a separate window
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -334,9 +350,7 @@ export default function ParaAuthSheet({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-medium text-zinc-900">Sign in</h2>
-          <p className="mt-1 text-sm text-zinc-600">
-            You will receive a code.
-          </p>
+          <p className="mt-1 text-sm text-zinc-600">You will receive a code.</p>
         </div>
         {closeButton}
       </div>
@@ -373,121 +387,119 @@ export default function ParaAuthSheet({
       </form>
 
       <>
-          <p className="mb-2 mt-5 text-xs text-zinc-500">Or, use socials</p>
-          <div className="flex flex-wrap gap-1.5">
-            {OAUTH_METHODS.map(({ method, label }) => (
-              <Button
-                key={method}
-                type="button"
-                variant="secondary"
-                title={label}
-                aria-label={label}
-                aria-busy={pendingMethod === method}
-                className="flex h-10 w-10 items-center justify-center px-0"
-                onClick={() => void submitOAuth(method)}
-                disabled={busy}
-              >
-                <BrandMark
-                  method={method}
-                  className={`h-5 w-5 shrink-0 ${pendingMethod === method ? "animate-pulse" : ""}`}
-                />
-              </Button>
-            ))}
+        <p className="mb-2 mt-5 text-xs text-zinc-500">Or, use socials</p>
+        <div className="flex flex-wrap gap-1.5">
+          {OAUTH_METHODS.map(({ method, label }) => (
+            <Button
+              key={method}
+              type="button"
+              variant="secondary"
+              title={label}
+              aria-label={label}
+              aria-busy={pendingMethod === method}
+              className="flex h-10 w-10 items-center justify-center px-0"
+              onClick={() => void submitOAuth(method)}
+              disabled={busy}
+            >
+              <BrandMark
+                method={method}
+                className={`h-5 w-5 shrink-0 ${pendingMethod === method ? "animate-pulse" : ""}`}
+              />
+            </Button>
+          ))}
+        </div>
+
+        {pairingUri ? (
+          <div className="mt-4 border border-zinc-200 bg-white p-3 text-center">
+            <p className="text-xs text-zinc-600">
+              Scan with your wallet app, or open it on this device.
+            </p>
+            {pairingQr ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={pairingQr}
+                alt="WalletConnect pairing QR code"
+                className="mx-auto mt-2 h-40 w-40"
+              />
+            ) : null}
+            <a
+              href={pairingUri}
+              className="mt-2 flex h-10 items-center justify-center bg-melon-500 text-sm font-medium text-melon-950 no-underline hover:bg-melon-600"
+            >
+              Open in wallet app
+            </a>
           </div>
+        ) : null}
 
-          {pairingUri ? (
-            <div className="mt-4 border border-zinc-200 bg-white p-3 text-center">
-              <p className="text-xs text-zinc-600">
-                Scan with your wallet app, or open it on this device.
-              </p>
-              {pairingQr ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={pairingQr}
-                  alt="WalletConnect pairing QR code"
-                  className="mx-auto mt-2 h-40 w-40"
-                />
-              ) : null}
-              <a
-                href={pairingUri}
-                className="mt-2 flex h-10 items-center justify-center bg-melon-500 text-sm font-medium text-melon-950 no-underline hover:bg-melon-600"
-              >
-                Open in wallet app
-              </a>
-            </div>
-          ) : null}
-
-          {/* Always rendered, with the row's height reserved. EIP-6963 wallets
+        {/* Always rendered, with the row's height reserved. EIP-6963 wallets
               announce themselves over the first few hundred milliseconds, so
               revealing this section once they arrive would resize a panel the
               visitor is already looking at — and it is centred, so it jumps. */}
-          <p className="mb-2 mt-4 text-xs text-zinc-500">... or, a wallet.</p>
-          <div className="flex min-h-10 flex-wrap gap-1.5">
-                {connectors.map((connector) => (
-                  <Button
-                    key={connector.id}
-                    type="button"
-                    variant="secondary"
-                    title={connector.name}
-                    aria-label={connector.name}
-                    className="flex h-10 w-10 items-center justify-center px-0"
-                    onClick={() => {
-                      connectAsync({ connector })
-                        .then(onClose)
-                        .catch((cause) => setLocalError(messageOf(cause)));
-                    }}
-                  >
-                    {connector.icon ? (
-                      // EIP-6963 hands us the wallet's own mark as a data URI.
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={connector.icon} alt="" className="h-5 w-5 shrink-0" />
-                    ) : (
-                      <WalletFallbackMark id={connector.id} className="h-5 w-5 shrink-0" />
-                    )}
-                  </Button>
-                ))}
-          </div>
+        <p className="mb-2 mt-4 text-xs text-zinc-500">... or, a wallet.</p>
+        <div className="flex min-h-10 flex-wrap gap-1.5">
+          {connectors.map((connector) => (
+            <Button
+              key={connector.id}
+              type="button"
+              variant="secondary"
+              title={connector.name}
+              aria-label={connector.name}
+              className="flex h-10 w-10 items-center justify-center px-0"
+              onClick={() => {
+                connectAsync({ connector })
+                  .then(onClose)
+                  .catch((cause) => setLocalError(messageOf(cause)));
+              }}
+            >
+              {connector.icon ? (
+                // EIP-6963 hands us the wallet's own mark as a data URI.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={connector.icon} alt="" className="h-5 w-5 shrink-0" />
+              ) : (
+                <WalletFallbackMark id={connector.id} className="h-5 w-5 shrink-0" />
+              )}
+            </Button>
+          ))}
+        </div>
 
-          {/* A phone browser with no injected wallet can still get there, but
+        {/* A phone browser with no injected wallet can still get there, but
               only by reopening the page inside the wallet's own browser. */}
-          {mobileWallet === "handoff" && typeof window !== "undefined" ? (
-            <>
-              <p className="mb-2 mt-4 text-xs text-zinc-500">
-                Open in a wallet app
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {mobileWalletLinks(window.location.href).map((link) => (
-                  <a
-                    key={link.name}
-                    href={link.url}
-                    className="flex h-10 items-center border border-melon-300 bg-melon-25 px-3 text-xs text-zinc-900 no-underline hover:bg-melon-100"
-                  >
-                    {link.name}
-                  </a>
-                ))}
-                {typeof navigator.share === "function" ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="h-10 px-3 text-xs"
-                    onClick={() => {
-                      void navigator
-                        .share({
-                          title: document.title,
-                          url: walletDappUrl(window.location.href),
-                        })
-                        .catch((cause) => {
-                          if (cause instanceof Error && cause.name === "AbortError") return;
-                          console.error("Wallet handoff share failed:", cause);
-                        });
-                    }}
-                  >
-                    Other…
-                  </Button>
-                ) : null}
-              </div>
-            </>
-          ) : null}
+        {mobileWallet === "handoff" && typeof window !== "undefined" ? (
+          <>
+            <p className="mb-2 mt-4 text-xs text-zinc-500">Open in a wallet app</p>
+            <div className="flex flex-wrap gap-1.5">
+              {mobileWalletLinks(window.location.href).map((link) => (
+                <a
+                  key={link.name}
+                  href={link.url}
+                  className="flex h-10 items-center border border-melon-300 bg-melon-25 px-3 text-xs text-zinc-900 no-underline hover:bg-melon-100"
+                >
+                  {link.name}
+                </a>
+              ))}
+              {typeof navigator.share === "function" ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-10 px-3 text-xs"
+                  onClick={() => {
+                    void navigator
+                      .share({
+                        title: document.title,
+                        url: walletDappUrl(window.location.href),
+                      })
+                      .catch((cause) => {
+                        if (cause instanceof Error && cause.name === "AbortError") return;
+                        console.error("Wallet handoff share failed:", cause);
+                      });
+                  }}
+                >
+                  Other…
+                </Button>
+              ) : null}
+            </div>
+          </>
+        ) : null}
       </>
 
       {error ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
@@ -513,8 +525,6 @@ export default function ParaAuthSheet({
           </>
         ) : null}
       </div>
-
-
     </div>
   );
 }
