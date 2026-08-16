@@ -13,6 +13,9 @@ import { BrandMark, WalletFallbackMark } from "@/components/BrandMarks";
 import { Button } from "@/components/ui/button";
 import { X } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
+import { useMobileWallet } from "@/hooks/useMobileWallet";
+import { mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
+import { offerableWallets } from "@/lib/wallet-list";
 import { getParaClient } from "./para-config";
 
 /** Not exported by the SDK on its own, but reachable through the snapshot. */
@@ -89,26 +92,9 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
   const para = getParaClient();
   const allConnectors = useConnectors();
   const { connectAsync } = useConnect();
+  const mobileWallet = useMobileWallet();
 
-  const connectors = useMemo(() => {
-    const external = allConnectors.filter((connector) => connector.id !== "para");
-    const discovered = external.filter((connector) => connector.id !== "injected");
-    // Prefer individually named EIP-6963 wallets. Keep the generic injected
-    // connector only as a compatibility fallback for older providers.
-    const usable = discovered.length ? discovered : external;
-    // Our configured connectors and EIP-6963 discovery can both surface the
-    // same wallet — Coinbase ships an extension AND an SDK — so collapse by
-    // name, keeping whichever the browser actually announced. Only a
-    // discovered provider carries an icon, which is the tell.
-    return usable.reduce<typeof usable>((kept, connector) => {
-      const clash = kept.findIndex(
-        (other) => other.name.toLowerCase() === connector.name.toLowerCase(),
-      );
-      if (clash === -1) return [...kept, connector];
-      if (!kept[clash].icon && connector.icon) kept[clash] = connector;
-      return kept;
-    }, []);
-  }, [allConnectors]);
+  const connectors = useMemo(() => offerableWallets(allConnectors), [allConnectors]);
 
   const { authenticateWithEmailOrPhoneAsync, error: authError } =
     useAuthenticateWithEmailOrPhone();
@@ -193,6 +179,20 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
   }, [para, onClose]);
 
   const busy = BUSY_PHASES.has(authPhase) || verifying;
+
+  // The host dialog swallows Escape so Para's own modal stays in sync with it.
+  // This sheet has no such contract, and a dialog you can only leave by
+  // hunting for the X is one people get stuck in. Mid-flight is the exception:
+  // unmounting then would strand Para's poll.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || busy) return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [busy, onClose]);
   const awaitingCode = authPhase === "awaiting_account_verification";
 
   const submitIdentifier = useCallback(async () => {
@@ -438,19 +438,63 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
               </div>
             </>
           ) : null}
+
+          {/* A phone browser with no injected wallet can still get there, but
+              only by reopening the page inside the wallet's own browser. */}
+          {mobileWallet === "handoff" && typeof window !== "undefined" ? (
+            <>
+              <p className="mb-2 mt-4 text-xs font-medium text-zinc-600">
+                Open in a wallet app
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {mobileWalletLinks(window.location.href).map((link) => (
+                  <a
+                    key={link.name}
+                    href={link.url}
+                    className="flex h-10 items-center border border-melon-300 bg-melon-25 px-3 text-xs text-zinc-900 no-underline hover:bg-melon-100"
+                  >
+                    {link.name}
+                  </a>
+                ))}
+                {typeof navigator.share === "function" ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-10 px-3 text-xs"
+                    onClick={() => {
+                      void navigator
+                        .share({
+                          title: document.title,
+                          url: walletDappUrl(window.location.href),
+                        })
+                        .catch((cause) => {
+                          if (cause instanceof Error && cause.name === "AbortError") return;
+                          console.error("Wallet handoff share failed:", cause);
+                        });
+                    }}
+                  >
+                    Other…
+                  </Button>
+                ) : null}
+              </div>
+            </>
+          ) : null}
         </>
       ) : null}
 
       {error ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
 
-      <button
-        type="button"
-        onClick={() => setExpanded((open) => !open)}
-        aria-expanded={expanded}
-        className="mt-5 text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
-      >
-        {expanded ? "Fewer options" : "Use socials or wallets"}
-      </button>
+      {/* One-way on purpose: once the other options are showing there is
+          nothing to gain from putting them away again. */}
+      {expanded ? null : (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mt-5 text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+        >
+          Use socials or wallets
+        </button>
+      )}
     </div>
   );
 }

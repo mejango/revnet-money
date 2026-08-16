@@ -75,20 +75,9 @@ describe("local wallet controls", () => {
     wallet.switchChainAsync.mockResolvedValue(undefined);
   });
 
-  it("lets a disconnected user explicitly choose a discovered wallet", async () => {
-    render(<WalletConnectButton />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Browser Wallet" }));
-
-    await waitFor(() => {
-      expect(wallet.connectAsync).toHaveBeenCalledWith({
-        connector: expect.objectContaining({ uid: "browser-wallet" }),
-      });
-    });
-  });
-
-  it("offers embedded email or social authentication without replacing browser wallets", () => {
+  it("sends a disconnected visitor straight to the sign-in sheet", () => {
+    // The sheet carries email, phone, socials and wallets, so a menu in front
+    // of it would only ask which door to use twice.
     const requestSignIn = vi.fn();
     render(
       <ParaAuthContext.Provider
@@ -105,65 +94,19 @@ describe("local wallet controls", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Email or social/i }));
 
     expect(requestSignIn).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(wallet.connectAsync).not.toHaveBeenCalled();
   });
 
-  it("prefers named EIP-6963 wallets and supports complete menu keyboard navigation", () => {
-    wallet.connectors.mockReturnValue([
-      { id: "injected", name: "Injected", uid: "injected" },
-      { id: "io.metamask", name: "MetaMask", uid: "metamask" },
-      { id: "com.example.wallet", name: "Example Wallet", uid: "example" },
-    ]);
-    render(<WalletConnectButton />);
-
-    const trigger = screen.getByRole("button", { name: "Sign in" });
-    fireEvent.keyDown(trigger, { key: "ArrowDown" });
-
-    const first = screen.getByRole("menuitem", { name: "MetaMask" });
-    const secondWallet = screen.getByRole("menuitem", { name: "Example Wallet" });
-    const last = screen.getByRole("menuitem", { name: "View as…" });
-    expect(screen.queryByRole("menuitem", { name: "Injected" })).not.toBeInTheDocument();
-    expect(first).toHaveFocus();
-
-    fireEvent.keyDown(first, { key: "End" });
-    expect(last).toHaveFocus();
-    fireEvent.keyDown(last, { key: "Home" });
-    expect(first).toHaveFocus();
-    fireEvent.keyDown(first, { key: "ArrowDown" });
-    expect(secondWallet).toHaveFocus();
-    fireEvent.keyDown(secondWallet, { key: "ArrowDown" });
-    expect(last).toHaveFocus();
-    fireEvent.keyDown(last, { key: "ArrowDown" });
-    expect(first).toHaveFocus();
-    fireEvent.keyDown(first, { key: "ArrowUp" });
-    expect(last).toHaveFocus();
-
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("menu", { name: "Available wallets" })).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
-  });
-
-  it("dismisses the wallet picker with Escape", () => {
-    render(<WalletConnectButton />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(screen.getByRole("menu", { name: "Available wallets" })).toBeVisible();
-
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("menu", { name: "Available wallets" })).not.toBeInTheDocument();
-  });
-
-  it("keeps View as inside the Sign in menu as its final separated action", async () => {
+  it("keeps View as reachable beside Sign in while signed out", async () => {
+    // It used to be the last entry of the sign-in menu; with that menu gone it
+    // has to stand on its own next to the button.
     render(<WalletButton />);
 
-    expect(screen.queryByRole("button", { name: "View as" })).not.toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
-
-    const items = screen.getAllByRole("menuitem");
-    expect(items.at(-1)).toHaveAccessibleName("View as…");
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "View as…" })).toBeInTheDocument();
   });
 
   it("shows the connected address, native balance, network, and disconnect action", async () => {

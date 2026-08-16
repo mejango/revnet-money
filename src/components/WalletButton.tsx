@@ -4,13 +4,11 @@ import { USDC_DECIMALS } from "@/app/constants";
 import { GetFunds } from "@/components/GetFunds";
 import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { useEnsName } from "@/hooks/ens/useEnsName";
-import { useMobileWallet } from "@/hooks/useMobileWallet";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
 import { useJBProject, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { cn, formatEthAddress, formatTokenSymbol } from "@/lib/utils";
 import { useViewAs } from "@/lib/view-as";
-import { mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
 import {
   logoutParaSession,
   ParaLocalDisconnectError,
@@ -26,7 +24,6 @@ import {
   type SetStateAction,
   useEffect,
   useId,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -35,8 +32,6 @@ import {
   useAccount,
   useBalance,
   useConfig,
-  useConnect,
-  useConnectors,
   useDisconnect,
   useReadContract,
 } from "wagmi";
@@ -231,17 +226,6 @@ function useDismissableMenu(open: boolean, setOpen: Dispatch<SetStateAction<bool
   return { containerRef, menuRef, onMenuKeyDown, onTriggerKeyDown, openMenu, triggerRef };
 }
 
-function useAvailableWallets() {
-  const connectors = useConnectors();
-  return useMemo(() => {
-    const external = connectors.filter((connector) => connector.id !== "para");
-    const discovered = external.filter((connector) => connector.id !== "injected");
-    // Prefer individually named EIP-6963 wallets. Keep the generic injected
-    // connector only as a compatibility fallback for older providers.
-    return discovered.length ? discovered : external;
-  }, [connectors]);
-}
-
 export function WalletConnectButton({
   label = "Sign in",
   menuAlign = "left",
@@ -249,179 +233,37 @@ export function WalletConnectButton({
   variant = "default",
   ...props
 }: WalletConnectButtonProps) {
-  const connectors = useAvailableWallets();
-  const { enabled: paraEnabled, requestSignIn } = useParaAuth();
-  const { connectAsync, error, isPending, reset } = useConnect();
+  const { requestSignIn } = useParaAuth();
   const [open, setOpen] = useState(false);
   const [viewAsOpen, setViewAsOpen] = useState(false);
-  const mobileWallet = useMobileWallet();
-  const menuId = useId();
   const menu = useDismissableMenu(open, setOpen);
 
-  const shownConnectors =
-    mobileWallet === "checking" || mobileWallet === "handoff"
-      ? connectors.filter((connector) => connector.id !== "injected")
-      : connectors;
-
-  const connect = async (connector: (typeof connectors)[number]) => {
-    reset();
-    try {
-      await connectAsync({ connector });
-      setOpen(false);
-    } catch {
-      // The mutation exposes a sanitized message in the menu. Keeping the menu
-      // open lets the user choose another installed wallet.
-    }
-  };
-
   return (
-    <div
-      className="relative inline-flex"
-      ref={menu.containerRef}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
-      }}
-    >
+    // The sign-in sheet now carries every way in — email, phone, socials,
+    // wallets — so a menu in front of it would only ask which door to use
+    // twice. Impersonation is the one thing left that needs its own control.
+    <div className="inline-flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => setViewAsOpen(true)}
+        className="whitespace-nowrap text-sm text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+      >
+        View as…
+      </button>
       <Button
         ref={menu.triggerRef}
         {...props}
         type={props.type ?? "button"}
         variant={variant}
         className={className}
-        aria-haspopup="menu"
-        aria-controls={menuId}
-        aria-expanded={open}
-        onKeyDown={(event) => {
-          props.onKeyDown?.(event);
-          if (!event.defaultPrevented) menu.onTriggerKeyDown(event);
-        }}
         onClick={(event) => {
           props.onClick?.(event);
           if (event.defaultPrevented) return;
-          reset();
-          if (open) setOpen(false);
-          else menu.openMenu();
+          requestSignIn();
         }}
-        loading={isPending}
       >
         {label}
       </Button>
-      {open ? (
-        <div
-          ref={menu.menuRef}
-          id={menuId}
-          role="menu"
-          tabIndex={-1}
-          aria-label="Available wallets"
-          onKeyDown={menu.onMenuKeyDown}
-          className={cn(
-            "absolute top-full z-50 mt-2 min-w-56 border border-zinc-200 bg-white p-1 text-zinc-950 shadow-lg",
-            menuAlign === "right" ? "right-0" : "left-0",
-          )}
-        >
-          {paraEnabled ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={isPending}
-                onClick={() => {
-                  reset();
-                  setOpen(false);
-                  requestSignIn();
-                }}
-                className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 disabled:opacity-50"
-              >
-                <span className="block">Email or social</span>
-              </button>
-              <div className="mx-3 my-1 border-t border-zinc-100" aria-hidden />
-            </>
-          ) : null}
-          {shownConnectors.length ? (
-            shownConnectors.map((connector) => (
-              <button
-                key={connector.uid}
-                type="button"
-                role="menuitem"
-                disabled={isPending}
-                onClick={() => void connect(connector)}
-                className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 disabled:opacity-50"
-              >
-                {connector.name}
-              </button>
-            ))
-          ) : mobileWallet !== "checking" && mobileWallet !== "handoff" ? (
-            <p className="max-w-64 px-3 py-2 text-sm text-zinc-600">
-              No browser wallet was detected. Install or enable an EIP-6963 wallet, then reload.
-            </p>
-          ) : null}
-          {mobileWallet === "checking" ? (
-            <p className="max-w-64 px-3 py-2 text-sm text-zinc-600">
-              Checking this browser for MetaMask…
-            </p>
-          ) : null}
-          {mobileWallet === "handoff" && typeof window !== "undefined" ? (
-            <>
-              <p className="max-w-64 border-t border-zinc-100 px-3 py-2 text-xs text-zinc-600">
-                Open this page inside a wallet app to connect.
-              </p>
-              {mobileWalletLinks(window.location.href).map((link) => (
-                <a
-                  key={link.name}
-                  href={link.url}
-                  role="menuitem"
-                  onClick={() => setOpen(false)}
-                  className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
-                >
-                  Open in {link.name}
-                </a>
-              ))}
-              {typeof navigator.share === "function" ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    void navigator
-                      .share({
-                        title: document.title,
-                        url: walletDappUrl(window.location.href),
-                      })
-                      .catch((shareError) => {
-                        if (shareError instanceof Error && shareError.name === "AbortError") {
-                          return;
-                        }
-                        console.error("Wallet handoff share failed:", shareError);
-                      });
-                  }}
-                  className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
-                >
-                  Open in another wallet…
-                </button>
-              ) : null}
-            </>
-          ) : null}
-          {error ? (
-            <p
-              role="alert"
-              className="max-w-64 border-t border-zinc-100 px-3 py-2 text-xs text-red-700"
-            >
-              The wallet could not connect. Check that it is unlocked and try again.
-            </p>
-          ) : null}
-          <div className="mx-3 my-1 border-t border-zinc-200" aria-hidden />
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              setViewAsOpen(true);
-            }}
-            className="block min-h-11 w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950"
-          >
-            View as…
-          </button>
-        </div>
-      ) : null}
       {viewAsOpen ? <ViewAsDialog open={viewAsOpen} onOpenChange={setViewAsOpen} /> : null}
     </div>
   );

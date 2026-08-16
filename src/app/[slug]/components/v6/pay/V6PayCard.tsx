@@ -1221,6 +1221,26 @@ export function V6PayCard() {
                   {selected?.symbol ?? nativeSymbol}
                 </span>
               )}
+              {/* Balance and the on-ramp sit under the token they describe.
+                  The balance was already computed for the insufficient-funds
+                  notice; showing it is what makes that notice predictable
+                  rather than a surprise at submit time. */}
+              {selected ? (
+                <div className="col-start-2 row-start-3 flex flex-col items-end gap-0.5 pt-1">
+                  {isConnected ? (
+                    <span className="whitespace-nowrap text-xs text-zinc-600">
+                      Balance: {formatPayAmount(walletBalance, selected.decimals)}
+                    </span>
+                  ) : null}
+                  <GetFunds
+                    symbol={selected.symbol}
+                    chainId={chainId}
+                    needed={amountRaw}
+                    balance={walletBalance}
+                    decimals={selected.decimals}
+                  />
+                </div>
+              ) : null}
             </div>
 
             {/* Receipt — hidden while idle; item checkouts expand into a detailed cart. */}
@@ -1450,28 +1470,6 @@ export function V6PayCard() {
           </div>
         </div>
       </div>
-
-      {/* Balance + on-ramp. The balance was already computed for the
-          insufficient-funds notice below; showing it is what makes the notice
-          predictable rather than a surprise at submit time. The row is inset by
-          the pay button's fixed 150px column so it lines up with the field's
-          right edge rather than the button's. */}
-      {selected ? (
-        <div className="mt-1.5 flex items-center justify-end gap-3 pr-[150px]">
-          {isConnected ? (
-            <span className="text-xs text-zinc-600">
-              Balance: {formatPayAmount(walletBalance, selected.decimals)}
-            </span>
-          ) : null}
-          <GetFunds
-            symbol={selected.symbol}
-            chainId={chainId}
-            needed={amountRaw}
-            balance={walletBalance}
-            decimals={selected.decimals}
-          />
-        </div>
-      ) : null}
 
       {/* Notices */}
       {insufficientBalance && selected ? (
