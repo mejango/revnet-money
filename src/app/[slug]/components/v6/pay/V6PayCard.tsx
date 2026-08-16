@@ -1,6 +1,6 @@
 "use client";
 
-import { GetFunds } from "@/components/GetFunds";
+import { useOnRamp } from "@/components/GetFunds";
 import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -107,6 +107,9 @@ function payChainName(chainId: JBChainId): string {
  * confirm-before-send flow with a fresh previewed minimum and simulate-first
  * sends.
  */
+/** Sentinel for the token menu's buy entry; never a token index. */
+const BUY_OPTION = "buy";
+
 export function V6PayCard() {
   const { selectedSucker, setSelectedSucker } = useSelectedSucker();
   const chainId = selectedSucker.peerChainId;
@@ -458,6 +461,16 @@ export function V6PayCard() {
   const walletBalance = selected ? (balances.get(selected.token) ?? 0n) : 0n;
   const insufficientBalance =
     isConnected && !!selected && amountRaw > 0n && amountRaw > walletBalance;
+
+  // Offered from inside the token menu: buying the token is a way of getting
+  // one, so it belongs where the token is chosen.
+  const onRamp = useOnRamp({
+    symbol: selected?.symbol ?? "",
+    chainId,
+    needed: amountRaw,
+    balance: walletBalance,
+    decimals: selected?.decimals,
+  });
 
   // Add-to-balance has no on-chain minimum-output field, so a router swap
   // can't be bounded — refuse it; only direct tokens top up.
@@ -1200,6 +1213,10 @@ export function V6PayCard() {
                 <TextSelect
                   value={String(Math.min(tokenIndex, tokens.length - 1))}
                   onChange={(value) => {
+                    if (value === BUY_OPTION) {
+                      onRamp.buy();
+                      return;
+                    }
                     const i = Number(value);
                     setTokenIndex(i);
                     const picked = tokens[i];
@@ -1210,40 +1227,35 @@ export function V6PayCard() {
                   ariaLabel="Payment token"
                   className="relative col-start-2 row-start-2 inline-flex shrink-0 justify-self-end self-center items-center gap-1"
                   labelClassName="text-right select-none text-lg text-zinc-900"
-                  options={tokens.map((t, i) => ({
-                    value: String(i),
-                    label: t.symbol,
-                    disabled: cartCount > 0 && !shopRoutes?.[payTokenKey(t)]?.supported,
-                  }))}
+                  options={[
+                    ...tokens.map((t, i) => ({
+                      value: String(i),
+                      label: t.symbol,
+                      disabled: cartCount > 0 && !shopRoutes?.[payTokenKey(t)]?.supported,
+                    })),
+                    // Para's on-ramp takes no payment method, so this cannot
+                    // promise one — the provider's window asks. Naming both
+                    // rails is still worth it: bank transfers authorise far
+                    // more often than cards, and people do not know it is on
+                    // offer unless it is said.
+                    ...(onRamp.supported
+                      ? [{ value: BUY_OPTION, label: "Buy \u2014 card or bank" }]
+                      : []),
+                  ]}
                 />
               ) : (
                 <span className="col-start-2 row-start-2 justify-self-end self-center text-right select-none text-lg">
                   {selected?.symbol ?? nativeSymbol}
                 </span>
               )}
-              {/* Balance and the on-ramp sit under the token they describe.
-                  The balance was already computed for the insufficient-funds
-                  notice; showing it is what makes that notice predictable
-                  rather than a surprise at submit time. */}
-              {selected ? (
-                <div
-                  // Inset by the caret (h-3.5) plus its gap-1, so this
-                  // right-aligns with the token's name, not the chevron.
-                  className="col-start-2 row-start-3 -mt-0.5 flex flex-col items-end justify-self-end gap-0.5 pb-1.5 pr-[18px]"
-                >
-                  {isConnected ? (
-                    <span className="whitespace-nowrap text-xs text-zinc-600">
-                      Balance: {formatPayAmount(walletBalance, selected.decimals)}
-                    </span>
-                  ) : null}
-                  <GetFunds
-                    symbol={selected.symbol}
-                    chainId={chainId}
-                    needed={amountRaw}
-                    balance={walletBalance}
-                    decimals={selected.decimals}
-                    className="text-[11px] leading-none text-zinc-500 underline underline-offset-2 hover:text-zinc-900"
-                  />
+              {/* Sits under the token it describes. Already computed for the
+                  insufficient-funds notice; showing it is what makes that
+                  notice predictable rather than a surprise at submit time. */}
+              {selected && isConnected ? (
+                <div className="col-start-2 row-start-3 -mt-0.5 flex flex-col items-end justify-self-end pb-1.5 pr-[18px]">
+                  <span className="whitespace-nowrap text-xs text-zinc-600">
+                    Balance: {formatPayAmount(walletBalance, selected.decimals)}
+                  </span>
                 </div>
               ) : null}
             </div>
