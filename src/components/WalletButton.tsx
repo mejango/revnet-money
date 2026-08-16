@@ -15,6 +15,7 @@ import {
   ParaSessionLogoutError,
 } from "@/providers/para-logout";
 import { useParaAuth } from "@/providers/ParaAuthContext";
+import { preloadParaHost } from "@/providers/preload-para";
 import { JBProjectToken, USDC_ADDRESSES, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
@@ -256,6 +257,11 @@ export function WalletConnectButton({
         type={props.type ?? "button"}
         variant={variant}
         className={className}
+        // Fetch Para's runtime as the pointer arrives, so the click has
+        // nothing left to wait for.
+        onMouseEnter={preloadParaHost}
+        onFocus={preloadParaHost}
+        onTouchStart={preloadParaHost}
         onClick={(event) => {
           props.onClick?.(event);
           if (event.defaultPrevented) return;

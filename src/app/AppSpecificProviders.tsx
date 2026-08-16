@@ -13,6 +13,7 @@ import {
   type ParaRequest,
 } from "@/providers/ParaAuthContext";
 import { ParaConnectionNotice } from "@/providers/ParaConnectionNotice";
+import { SignInPlaceholder } from "@/providers/SignInPlaceholder";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
 import { useAccount, useConnect, useConnectors, WagmiProvider } from "wagmi";
@@ -159,7 +160,9 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
             />
           ) : null}
           {paraHostLoaded ? (
-            <React.Suspense fallback={null}>
+            <React.Suspense
+              fallback={paraRequest.kind === "auth" ? <SignInPlaceholder /> : null}
+            >
               <ParaModalHost
                 requestId={paraRequestId}
                 request={paraRequest}

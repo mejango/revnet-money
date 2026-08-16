@@ -110,7 +110,6 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState("");
   const [authPhase, setAuthPhase] = useState<AuthPhase>("unauthenticated");
   const [pendingMethod, setPendingMethod] = useState<TOAuthMethod | "local" | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const [resent, setResent] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -362,8 +361,7 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
         </div>
       </form>
 
-      {expanded ? (
-        <>
+      <>
           <p className="mb-2 mt-5 text-xs font-medium text-zinc-600">Socials</p>
           <div className="flex flex-wrap gap-1.5">
             {OAUTH_METHODS.map(({ method, label }) => (
@@ -479,22 +477,11 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
               </div>
             </>
           ) : null}
-        </>
-      ) : null}
+      </>
 
       {error ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
 
-      {/* One-way on purpose: once the other options are showing there is
-          nothing to gain from putting them away again. */}
-      {expanded ? null : (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="mt-5 text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
-        >
-          Use socials or wallets
-        </button>
-      )}
+
     </div>
   );
 }
