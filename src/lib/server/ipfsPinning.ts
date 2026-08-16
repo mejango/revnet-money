@@ -12,8 +12,20 @@ const FILEBASE_IPFS_API_BASE_URL = "https://rpc.filebase.io";
 const PINATA_PIN_BY_CID_URL = "https://api.pinata.cloud/v3/files/public/pin_by_cid";
 const PINNING_TIMEOUT_MS = 15_000;
 
-function configuredOrigin() {
-  return new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002").origin;
+/**
+ * The origins this deployment answers as. NEXT_PUBLIC_SITE_URL is the canonical one,
+ * but Railway also serves the app on its generated domain, and a pin from there is
+ * still first-party.
+ */
+function allowedOrigins(): string[] {
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  return [
+    process.env.NEXT_PUBLIC_SITE_URL,
+    railwayDomain ? `https://${railwayDomain}` : undefined,
+    process.env.NODE_ENV === "production" ? undefined : "http://localhost:3002",
+  ]
+    .filter((url): url is string => !!url)
+    .map((url) => new URL(url).origin);
 }
 
 function hasValidIngressToken(req: NextRequest) {
@@ -85,7 +97,8 @@ export function requirePinningAccess(req: NextRequest): Response | null {
     return Response.json({ error: "pinning ingress is not authorized" }, { status: 401 });
   }
 
-  if (req.headers.get("origin") !== configuredOrigin()) {
+  const origin = req.headers.get("origin");
+  if (!origin || !allowedOrigins().includes(origin)) {
     return Response.json({ error: "origin not allowed" }, { status: 403 });
   }
 
