@@ -65,15 +65,17 @@ export function createParaWagmiConnector(transports: Record<number, Transport>):
  * portal styling sat inside a melon panel looking like a foreign object. Para bakes this into
  * the URL it generates, so it has to travel with the auth call that asks for one.
  *
- * Values are the site's own tokens: melon 25 ground, melon 950 text, melon 500 accent, and
- * square corners like everything else here.
+ * Values are the site's own tokens: the sheet's white ground, melon 950 text, melon 500
+ * accent, and square corners like everything else here.
  */
 /** Nothing is fetched: whichever of these the visitor already has wins. */
 const PARA_PORTAL_MONO =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace';
 
 export const PARA_PORTAL_THEME = {
-  backgroundColor: "#F6FEF9",
+  // The sheet's panel is white, and the frame sits inside it — so the ground has to match what
+  // surrounds it, not the site's page colour, or the frame reads as a stripe.
+  backgroundColor: "#FFFFFF",
   foregroundColor: "#15281D",
   accentColor: "#68CA8F",
   mode: "light" as const,
