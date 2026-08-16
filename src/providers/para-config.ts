@@ -68,13 +68,21 @@ export function createParaWagmiConnector(transports: Record<number, Transport>):
  * Values are the site's own tokens: melon 25 ground, melon 950 text, melon 500 accent, and
  * square corners like everything else here.
  */
+/** Nothing is fetched: whichever of these the visitor already has wins. */
+const PARA_PORTAL_MONO =
+  'ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace';
+
 export const PARA_PORTAL_THEME = {
   backgroundColor: "#F6FEF9",
   foregroundColor: "#15281D",
   accentColor: "#68CA8F",
   mode: "light" as const,
   borderRadius: "none" as const,
-  // A stack rather than a family name: Para hands this straight to CSS, so anything the
-  // visitor's machine already has resolves without the portal fetching a webfont.
-  font: 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace',
+  // NOT `font`. Para wraps that value in quotes — `"${font}", ui-sans-serif, …` — so a stack
+  // passed there becomes one quoted family name that matches nothing, and the portal silently
+  // renders sans. `cssOverrides` is applied afterwards, verbatim, and wins.
+  cssOverrides: {
+    fontFamily: PARA_PORTAL_MONO,
+    "--para-font-sans": PARA_PORTAL_MONO,
+  },
 };

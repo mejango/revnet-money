@@ -383,7 +383,7 @@ export default function ParaAuthSheet({
 
             The skeleton behind it covers the beat where the frame paints nothing, which mid
             sign-in reads as broken. */}
-        <div className="relative mt-4 w-full overflow-hidden" style={{ height: "72px" }}>
+        <div className="relative mt-4 w-full overflow-hidden" style={{ height: "64px" }}>
           <div
             aria-hidden="true"
             className="absolute inset-0 flex items-center justify-center gap-2"
