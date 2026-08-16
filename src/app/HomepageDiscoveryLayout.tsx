@@ -45,7 +45,9 @@ function FeedTabs({
           aria-controls={`home-${feed.id}-panel`}
           aria-selected={active === feed.id}
           onClick={() => onChange(feed.id)}
-          className={`min-h-11 shrink-0 border-b-2 text-sm transition-colors ${
+          // These are section headings that happen to be selectable, so they
+          // carry the same type scale as the standalone "Latest" heading.
+          className={`min-h-11 shrink-0 border-b-2 text-xl font-semibold transition-colors md:text-2xl ${
             active === feed.id
               ? "border-teal-600 text-teal-700"
               : "border-transparent text-zinc-500 hover:text-zinc-900"

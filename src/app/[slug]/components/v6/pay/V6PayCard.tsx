@@ -1453,9 +1453,11 @@ export function V6PayCard() {
 
       {/* Balance + on-ramp. The balance was already computed for the
           insufficient-funds notice below; showing it is what makes the notice
-          predictable rather than a surprise at submit time. */}
+          predictable rather than a surprise at submit time. The row is inset by
+          the pay button's fixed 150px column so it lines up with the field's
+          right edge rather than the button's. */}
       {selected ? (
-        <div className="mt-1.5 flex items-center justify-end gap-3">
+        <div className="mt-1.5 flex items-center justify-end gap-3 pr-[150px]">
           {isConnected ? (
             <span className="text-xs text-zinc-600">
               Balance: {formatPayAmount(walletBalance, selected.decimals)}

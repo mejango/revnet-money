@@ -10,6 +10,7 @@ import type { StateSnapshot, TOAuthMethod } from "@getpara/web-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnect, useConnectors } from "wagmi";
 import { Button } from "@/components/ui/button";
+import { X } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { getParaClient } from "./para-config";
 
@@ -38,6 +39,43 @@ const BUSY_PHASES: ReadonlySet<AuthPhase> = new Set<AuthPhase>([
   "waiting_for_session",
 ]);
 
+type Identifier =
+  | { kind: "empty" }
+  | { kind: "email"; email: string }
+  | { kind: "phone"; phone: `+${number}` }
+  | { kind: "invalid"; hint: string };
+
+/**
+ * One field for either an email or a phone number, rather than a mode switch
+ * the visitor has to set before typing. An `@` is the only reliable signal —
+ * no phone number contains one, and no address omits one.
+ */
+function parseIdentifier(raw: string): Identifier {
+  const value = raw.trim();
+  if (!value) return { kind: "empty" };
+  if (value.includes("@")) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)
+      ? { kind: "email", email: value }
+      : { kind: "invalid", hint: "That email address looks incomplete." };
+  }
+  const compact = value.replace(/[\s().-]/g, "");
+  if (/^\+\d{6,15}$/.test(compact)) {
+    return { kind: "phone", phone: compact as `+${number}` };
+  }
+  // Guessing a country code would silently text the wrong country, so ask.
+  if (/^\d{6,15}$/.test(compact)) {
+    return { kind: "invalid", hint: "Add your country code, like +1." };
+  }
+  return { kind: "invalid", hint: "Enter an email address or phone number." };
+}
+
+/** The icon does the recognising, so the label only has to disambiguate.
+ *  "Coinbase Wallet" and "Brave Wallet" are the same word twice over. */
+function shortWalletName(name: string): string {
+  if (name === "Injected") return "Browser";
+  return name.replace(/\s*Wallet$/i, "");
+}
+
 function messageOf(error: unknown): string | null {
   if (!error) return null;
   return error instanceof Error ? error.message : String(error);
@@ -63,7 +101,19 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
     const discovered = external.filter((connector) => connector.id !== "injected");
     // Prefer individually named EIP-6963 wallets. Keep the generic injected
     // connector only as a compatibility fallback for older providers.
-    return discovered.length ? discovered : external;
+    const usable = discovered.length ? discovered : external;
+    // Our configured connectors and EIP-6963 discovery can both surface the
+    // same wallet — Coinbase ships an extension AND an SDK — so collapse by
+    // name, keeping whichever the browser actually announced. Only a
+    // discovered provider carries an icon, which is the tell.
+    return usable.reduce<typeof usable>((kept, connector) => {
+      const clash = kept.findIndex(
+        (other) => other.name.toLowerCase() === connector.name.toLowerCase(),
+      );
+      if (clash === -1) return [...kept, connector];
+      if (!kept[clash].icon && connector.icon) kept[clash] = connector;
+      return kept;
+    }, []);
   }, [allConnectors]);
 
   const { authenticateWithEmailOrPhoneAsync, error: authError } =
@@ -76,13 +126,11 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
   } = useVerifyNewAccount();
   const { resendVerificationCodeAsync } = useResendVerificationCode();
 
-  const [channel, setChannel] = useState<"email" | "phone">("email");
-  const [email, setEmail] = useState("");
-  const [dialCode, setDialCode] = useState("1");
-  const [phone, setPhone] = useState("");
+  const [entry, setEntry] = useState("");
   const [code, setCode] = useState("");
   const [authPhase, setAuthPhase] = useState<AuthPhase>("unauthenticated");
   const [pendingMethod, setPendingMethod] = useState<TOAuthMethod | "local" | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [resent, setResent] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -92,6 +140,8 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
   const popupRef = useRef<Window | null>(null);
   const lastUrlRef = useRef<string | null>(null);
   const settledRef = useRef(false);
+
+  const identifier = parseIdentifier(entry);
 
   // WalletConnect runs with its own modal suppressed, so the pairing URI
   // arrives as a connector message and this sheet is what shows it. The QR
@@ -152,19 +202,15 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
   const awaitingCode = authPhase === "awaiting_account_verification";
 
   const submitIdentifier = useCallback(async () => {
+    if (identifier.kind !== "email" && identifier.kind !== "phone") return;
     setLocalError(null);
     setPendingMethod("local");
     try {
       await authenticateWithEmailOrPhoneAsync({
         auth:
-          channel === "email"
-            ? { email: email.trim() }
-            : {
-                phone: `+${dialCode.replace(/\D/g, "")}${phone.replace(
-                  /\D/g,
-                  "",
-                )}` as `+${number}`,
-              },
+          identifier.kind === "email"
+            ? { email: identifier.email }
+            : { phone: identifier.phone },
         sessionPollingCallbacks: {
           onPoll: () => {
             if (popupRef.current?.closed) popupRef.current = null;
@@ -176,7 +222,7 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
     } finally {
       setPendingMethod(null);
     }
-  }, [authenticateWithEmailOrPhoneAsync, channel, dialCode, email, phone]);
+  }, [authenticateWithEmailOrPhoneAsync, identifier]);
 
   const submitOAuth = useCallback(
     async (method: TOAuthMethod) => {
@@ -220,19 +266,31 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
   const error =
     localError ?? messageOf(verifyError) ?? messageOf(authError) ?? messageOf(oauthError);
 
+  const closeButton = (
+    <button
+      type="button"
+      onClick={onClose}
+      disabled={busy}
+      aria-label="Close"
+      className="-mr-1 -mt-1 shrink-0 p-1 text-zinc-500 transition-colors hover:text-zinc-900 disabled:opacity-50"
+    >
+      <X aria-hidden="true" className="h-4 w-4" />
+    </button>
+  );
+
   if (awaitingCode) {
     return (
       <div className="w-full">
-        <h2 className="text-lg font-medium text-zinc-900">
-          Check your {channel === "email" ? "email" : "phone"}
-        </h2>
-        <p className="mt-1 text-sm text-zinc-600">
-          We sent a code to{" "}
-          <span className="font-medium text-zinc-900">
-            {channel === "email" ? email : `+${dialCode} ${phone}`}
-          </span>
-          .
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium text-zinc-900">Enter your code</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              We sent it to{" "}
+              <span className="font-medium text-zinc-900">{entry.trim()}</span>.
+            </p>
+          </div>
+          {closeButton}
+        </div>
         <Input
           value={code}
           onChange={(event) => setCode(event.target.value)}
@@ -240,52 +298,43 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
           autoComplete="one-time-code"
           placeholder="000000"
           aria-label="Verification code"
-          className="mt-4 h-12 text-center text-xl tracking-[0.4em]"
+          className="mt-5 h-12 px-4 text-center text-xl tracking-[0.4em]"
         />
-        <Button
-          type="button"
-          onClick={submitCode}
-          disabled={verifying || code.trim().length === 0}
-          className="mt-3 w-full"
-        >
-          {verifying ? "Verifying…" : "Verify"}
-        </Button>
         {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
-        <button
-          type="button"
-          onClick={() => {
-            setResent(true);
-            void resendVerificationCodeAsync({ type: "SIGNUP" }).catch(() => setResent(false));
-          }}
-          className="mt-3 text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
-        >
-          {resent ? "Code resent" : "Resend code"}
-        </button>
+        <div className="mt-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => {
+              setResent(true);
+              void resendVerificationCodeAsync({ type: "SIGNUP" }).catch(() => setResent(false));
+            }}
+            className="text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+          >
+            {resent ? "Code resent" : "Resend code"}
+          </button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={submitCode}
+            disabled={verifying || code.trim().length === 0}
+          >
+            {verifying ? "Verifying\u2026" : "Verify"}
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="w-full">
-      <h2 className="text-lg font-medium text-zinc-900">Sign in</h2>
-      <p className="mt-1 text-sm text-zinc-600">No wallet needed — we make one for you.</p>
-
-      <div className="mt-4 flex gap-1">
-        {(["email", "phone"] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => setChannel(option)}
-            aria-pressed={channel === option}
-            className={`h-8 px-3 text-xs font-medium capitalize ${
-              channel === option
-                ? "bg-melon-100 text-melon-900"
-                : "text-zinc-600 hover:bg-zinc-100"
-            }`}
-          >
-            {option}
-          </button>
-        ))}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-medium text-zinc-900">Sign in</h2>
+          <p className="mt-1 text-sm text-zinc-600">
+            We&apos;ll send you a code. No wallet needed.
+          </p>
+        </div>
+        {closeButton}
       </div>
 
       <form
@@ -293,114 +342,104 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
           event.preventDefault();
           void submitIdentifier();
         }}
-        className="mt-2"
+        className="mt-5"
       >
-        {channel === "email" ? (
-          <Input
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
-            aria-label="Email"
-            autoComplete="email"
-          />
-        ) : (
-          <div className="flex gap-2">
-            <Input
-              value={dialCode}
-              onChange={(event) => setDialCode(event.target.value)}
-              inputMode="numeric"
-              aria-label="Country code"
-              className="w-16"
-            />
-            <Input
-              type="tel"
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              placeholder="555 000 1234"
-              aria-label="Phone number"
-              autoComplete="tel-national"
-              className="min-w-0 flex-1"
-            />
-          </div>
-        )}
-        <Button
-          type="submit"
-          disabled={busy || (channel === "email" ? !email.trim() : !phone.trim())}
-          className="mt-2 w-full"
-        >
-          {pendingMethod === "local" ? "Sending…" : "Continue"}
-        </Button>
+        <Input
+          type="text"
+          value={entry}
+          onChange={(event) => setEntry(event.target.value)}
+          placeholder="you@example.com or +1 555 000 1234"
+          aria-label="Email address or phone number"
+          autoComplete="email"
+          autoFocus
+          className="h-11 px-4"
+        />
+        {identifier.kind === "invalid" && entry.trim().length > 3 ? (
+          <p className="mt-1.5 text-xs text-zinc-600">{identifier.hint}</p>
+        ) : null}
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="submit"
+            size="sm"
+            disabled={busy || (identifier.kind !== "email" && identifier.kind !== "phone")}
+          >
+            {pendingMethod === "local" ? "Sending\u2026" : "Continue"}
+          </Button>
+        </div>
       </form>
 
-      <div className="my-4 flex items-center gap-3">
-        <span className="h-px flex-1 bg-zinc-200" />
-        <span className="text-xs text-zinc-500">or</span>
-        <span className="h-px flex-1 bg-zinc-200" />
-      </div>
-
-      <div className="grid grid-cols-2 gap-1.5">
-        {OAUTH_METHODS.map(({ method, label }) => (
-          <Button
-            key={method}
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => void submitOAuth(method)}
-            disabled={busy}
-          >
-            {pendingMethod === method ? "Opening…" : label}
-          </Button>
-        ))}
-      </div>
-
-      {pairingUri ? (
-        <div className="mt-4 border border-zinc-200 bg-white p-3 text-center">
-          <p className="text-xs text-zinc-600">
-            Scan with your wallet app, or open it on this device.
-          </p>
-          {pairingQr ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={pairingQr}
-              alt="WalletConnect pairing QR code"
-              className="mx-auto mt-2 h-40 w-40"
-            />
-          ) : null}
-          <a
-            href={pairingUri}
-            className="mt-2 flex h-10 items-center justify-center bg-melon-500 text-sm font-medium text-melon-950 no-underline hover:bg-melon-600"
-          >
-            Open in wallet app
-          </a>
-        </div>
-      ) : null}
-
-      {connectors.length > 0 ? (
+      {expanded ? (
         <>
-          <div className="my-4 flex items-center gap-3">
+          <div className="my-5 flex items-center gap-3">
             <span className="h-px flex-1 bg-zinc-200" />
-            <span className="text-xs text-zinc-500">or connect a wallet</span>
+            <span className="text-xs text-zinc-500">or</span>
             <span className="h-px flex-1 bg-zinc-200" />
           </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {connectors.map((connector) => (
+
+          <div className="grid grid-cols-3 gap-1.5">
+            {OAUTH_METHODS.map(({ method, label }) => (
               <Button
-                key={connector.id}
+                key={method}
                 type="button"
                 variant="secondary"
                 size="sm"
-                className="truncate"
-                onClick={() => {
-                  connectAsync({ connector })
-                    .then(onClose)
-                    .catch((cause) => setLocalError(messageOf(cause)));
-                }}
+                className="px-1 text-xs"
+                onClick={() => void submitOAuth(method)}
+                disabled={busy}
               >
-                {connector.name}
+                {pendingMethod === method ? "\u2026" : label}
               </Button>
             ))}
           </div>
+
+          {pairingUri ? (
+            <div className="mt-4 border border-zinc-200 bg-white p-3 text-center">
+              <p className="text-xs text-zinc-600">
+                Scan with your wallet app, or open it on this device.
+              </p>
+              {pairingQr ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={pairingQr}
+                  alt="WalletConnect pairing QR code"
+                  className="mx-auto mt-2 h-40 w-40"
+                />
+              ) : null}
+              <a
+                href={pairingUri}
+                className="mt-2 flex h-10 items-center justify-center bg-melon-500 text-sm font-medium text-melon-950 no-underline hover:bg-melon-600"
+              >
+                Open in wallet app
+              </a>
+            </div>
+          ) : null}
+
+          {connectors.length > 0 ? (
+            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+              {connectors.map((connector) => (
+                <Button
+                  key={connector.id}
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  title={connector.name}
+                  className="gap-1.5 px-1 text-xs"
+                  onClick={() => {
+                    connectAsync({ connector })
+                      .then(onClose)
+                      .catch((cause) => setLocalError(messageOf(cause)));
+                  }}
+                >
+                  {connector.icon ? (
+                    // EIP-6963 hands us the wallet's own mark as a data URI.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={connector.icon} alt="" className="h-4 w-4 shrink-0" />
+                  ) : null}
+                  <span className="truncate">{shortWalletName(connector.name)}</span>
+                </Button>
+              ))}
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -408,11 +447,11 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
 
       <button
         type="button"
-        onClick={onClose}
-        disabled={busy}
-        className="mt-4 w-full text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900 disabled:opacity-50"
+        onClick={() => setExpanded((open) => !open)}
+        aria-expanded={expanded}
+        className="mt-5 text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
       >
-        Cancel
+        {expanded ? "Fewer options" : "More ways to sign in"}
       </button>
     </div>
   );

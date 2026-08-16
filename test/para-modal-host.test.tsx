@@ -220,7 +220,7 @@ describe("ParaModalHost", () => {
     expect(para.state.openModalCalls).toEqual([]);
     expect(screen.getByText(/No wallet needed/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(1));
     expect(hostDialog().open).toBe(false);
 
@@ -275,6 +275,29 @@ describe("ParaModalHost", () => {
     await waitFor(() =>
       expect(para.state.openModalCalls).toEqual([{ step: "ACCOUNT_ADD_FUNDS_BUY" }]),
     );
+    expect(para.state.onRampCalls).toEqual([]);
+  });
+
+  it("does not reopen the sheet when sign-in for the on-ramp is cancelled", async () => {
+    // Closing reports the same event whether the visitor signed in or gave up,
+    // so resuming unconditionally walks back into "no session, open the sheet"
+    // and the sheet becomes impossible to dismiss.
+    para.reset();
+    para.state.loggedIn = false;
+
+    render(
+      <ParaModalHost
+        requestId={1}
+        request={{ kind: "addFunds", asset: "ETHEREUM", network: "BASE" }}
+        onOpenChange={() => {}}
+        onSettled={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText(/No wallet needed/)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(hostDialog().open).toBe(false));
     expect(para.state.onRampCalls).toEqual([]);
   });
 
