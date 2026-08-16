@@ -100,7 +100,7 @@ vi.mock("@getpara/react-sdk-lite", async () => {
 vi.mock("@getpara/web-sdk", () => ({
   Network: { ETHEREUM: "ETHEREUM", BASE: "BASE" },
   OnRampAsset: { ETHEREUM: "ETHEREUM", USDC: "USDC" },
-  OnRampProvider: { STRIPE: "STRIPE" },
+  OnRampProvider: { MOONPAY: "MOONPAY" },
   OnRampPurchaseType: { BUY: "BUY" },
 }));
 
@@ -131,12 +131,12 @@ vi.mock("@/providers/para-config", () => ({
     isFullyLoggedIn: async () => para.state.loggedIn,
     initiateOnRampTransaction: async (options: unknown) => {
       para.state.onRampCalls.push(options);
-      return {};
+      return { portalUrl: "https://portal.example/buy" };
     },
     onStatePhaseChange: () => () => {},
   }),
   PARA_APP: { appName: "Revnet" },
-  PARA_ONRAMP_PROVIDER: "STRIPE",
+  PARA_ONRAMP_PROVIDER: "MOONPAY",
 }));
 
 function hostDialog(): HTMLDialogElement {
@@ -218,7 +218,7 @@ describe("ParaModalHost", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(true));
     await waitFor(() => expect(hostDialog().open).toBe(true));
     expect(para.state.openModalCalls).toEqual([]);
-    expect(screen.getByText(/No wallet needed/)).toBeTruthy();
+    expect(screen.getByText(/You will receive a code/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(1));
@@ -255,8 +255,30 @@ describe("ParaModalHost", () => {
     expect(para.state.onRampCalls[0]).toMatchObject({
       externalWalletAddress: para.state.address,
       shouldOpenPopup: true,
-      params: { asset: "ETHEREUM", network: "BASE", provider: "STRIPE" },
+      params: { asset: "ETHEREUM", network: "BASE", provider: "MOONPAY" },
     });
+  });
+
+  it("warns that the purchase may not go through, and offers the window again", async () => {
+    para.reset();
+
+    render(
+      <ParaModalHost
+        requestId={1}
+        request={{ kind: "addFunds", asset: "ETHEREUM", network: "BASE" }}
+        onOpenChange={() => {}}
+        onSettled={() => {}}
+      />,
+    );
+
+    // A card decline arrives inside the provider's window with no explanation,
+    // so the guidance has to live on our side of the handoff.
+    await waitFor(() => expect(screen.getByText(/always go through/)).toBeTruthy());
+    expect(screen.getByText(/bank transfer/)).toBeTruthy();
+    // Popup blockers are common enough that the link has to be clickable.
+    expect(
+      hostDialog().querySelector('a[href="https://portal.example/buy"]'),
+    ).not.toBeNull();
   });
 
   it("uses Para's own add-funds screen for the embedded wallet", async () => {
@@ -294,7 +316,7 @@ describe("ParaModalHost", () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByText(/No wallet needed/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/You will receive a code/)).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     await waitFor(() => expect(hostDialog().open).toBe(false));
@@ -314,7 +336,7 @@ describe("ParaModalHost", () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByText(/No wallet needed/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/You will receive a code/)).toBeTruthy());
     expect(para.state.onRampCalls).toEqual([]);
     expect(para.state.openModalCalls).toEqual([]);
   });

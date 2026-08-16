@@ -9,6 +9,7 @@ import {
 import type { StateSnapshot, TOAuthMethod } from "@getpara/web-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnect, useConnectors } from "wagmi";
+import { BrandMark } from "@/components/BrandMarks";
 import { Button } from "@/components/ui/button";
 import { X } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
@@ -331,7 +332,7 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
         <div>
           <h2 className="text-lg font-medium text-zinc-900">Sign in</h2>
           <p className="mt-1 text-sm text-zinc-600">
-            We&apos;ll send you a code. No wallet needed.
+            You will receive a code.
           </p>
         </div>
         {closeButton}
@@ -370,24 +371,22 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
 
       {expanded ? (
         <>
-          <div className="my-5 flex items-center gap-3">
-            <span className="h-px flex-1 bg-zinc-200" />
-            <span className="text-xs text-zinc-500">or</span>
-            <span className="h-px flex-1 bg-zinc-200" />
-          </div>
-
-          <div className="grid grid-cols-3 gap-1.5">
+          <p className="mb-2 mt-5 text-xs font-medium text-zinc-600">Socials</p>
+          <div className="grid grid-cols-4 gap-1.5">
             {OAUTH_METHODS.map(({ method, label }) => (
               <Button
                 key={method}
                 type="button"
                 variant="secondary"
-                size="sm"
-                className="px-1 text-xs"
+                title={label}
+                className="flex h-16 flex-col items-center justify-center gap-1 px-1"
                 onClick={() => void submitOAuth(method)}
                 disabled={busy}
               >
-                {pendingMethod === method ? "\u2026" : label}
+                <BrandMark method={method} className="h-5 w-5 shrink-0" />
+                <span className="w-full truncate text-[10px] leading-none">
+                  {pendingMethod === method ? "\u2026" : label}
+                </span>
               </Button>
             ))}
           </div>
@@ -415,30 +414,36 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
           ) : null}
 
           {connectors.length > 0 ? (
-            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
-              {connectors.map((connector) => (
-                <Button
-                  key={connector.id}
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  title={connector.name}
-                  className="gap-1.5 px-1 text-xs"
-                  onClick={() => {
-                    connectAsync({ connector })
-                      .then(onClose)
-                      .catch((cause) => setLocalError(messageOf(cause)));
-                  }}
-                >
-                  {connector.icon ? (
-                    // EIP-6963 hands us the wallet's own mark as a data URI.
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={connector.icon} alt="" className="h-4 w-4 shrink-0" />
-                  ) : null}
-                  <span className="truncate">{shortWalletName(connector.name)}</span>
-                </Button>
-              ))}
-            </div>
+            <>
+              <p className="mb-2 mt-4 text-xs font-medium text-zinc-600">Wallets</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {connectors.map((connector) => (
+                  <Button
+                    key={connector.id}
+                    type="button"
+                    variant="secondary"
+                    title={connector.name}
+                    className="flex h-16 flex-col items-center justify-center gap-1 px-1"
+                    onClick={() => {
+                      connectAsync({ connector })
+                        .then(onClose)
+                        .catch((cause) => setLocalError(messageOf(cause)));
+                    }}
+                  >
+                    {connector.icon ? (
+                      // EIP-6963 hands us the wallet's own mark as a data URI.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={connector.icon} alt="" className="h-5 w-5 shrink-0" />
+                    ) : (
+                      <span className="h-5 w-5 shrink-0 rounded-full bg-zinc-200" />
+                    )}
+                    <span className="w-full truncate text-[10px] leading-none">
+                      {shortWalletName(connector.name)}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </>
           ) : null}
         </>
       ) : null}
@@ -451,7 +456,7 @@ export default function ParaAuthSheet({ onClose }: { onClose: () => void }) {
         aria-expanded={expanded}
         className="mt-5 text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
       >
-        {expanded ? "Fewer options" : "More ways to sign in"}
+        {expanded ? "Fewer options" : "Use socials or wallets"}
       </button>
     </div>
   );
