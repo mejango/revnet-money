@@ -202,7 +202,7 @@ export function V6PayCard() {
   }, [debouncedAmount, decimals]);
 
   // ---- 721 shop ----
-  const { data: shop, isLoading: shopLoading } = usePayShop(chainId, projectId);
+  const { data: shop } = usePayShop(chainId, projectId);
   const { data: shopCredits = 0n, isLoading: shopCreditsLoading } = usePayShopCredits(
     chainId,
     shop?.hook,
@@ -1108,7 +1108,6 @@ export function V6PayCard() {
   const hasShopStrip = Boolean(shop && shop.tiers.length > 0 && mode === "pay");
   const payPanelLayout = payPanelLayoutClasses({
     mode,
-    shopLoading,
     shopTierCount: shop?.tiers.length,
   });
   const showPayReceipt =

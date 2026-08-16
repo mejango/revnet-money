@@ -8,14 +8,16 @@ import { V6PayMode } from "@/lib/v6/pay";
  */
 export function payPanelLayoutClasses({
   mode,
-  shopLoading,
   shopTierCount,
 }: {
   mode: V6PayMode;
-  shopLoading: boolean;
   shopTierCount: number | undefined;
 }) {
-  return mode === "pay" && (shopLoading || (shopTierCount ?? 0) > 0) ? "h-30 py-4" : "py-0";
+  // Deliberately blind to whether the inventory is still loading. Reserving
+  // the taller layout up front meant the card shrank on every project without
+  // a shop, which is most of them — a settled card that jumps is worse than
+  // one that grows to fit something it turned out to have.
+  return mode === "pay" && (shopTierCount ?? 0) > 0 ? "h-30 py-4" : "py-0";
 }
 
 export function paySettlementLabel(routeType: PaymentTerminalType) {
