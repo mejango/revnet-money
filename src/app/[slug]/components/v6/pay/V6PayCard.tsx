@@ -1208,7 +1208,7 @@ export function V6PayCard() {
                   }}
                   disabled={busy}
                   ariaLabel="Payment token"
-                  className="relative col-start-2 row-start-2 inline-flex shrink-0 self-center items-center gap-1"
+                  className="relative col-start-2 row-start-2 inline-flex shrink-0 justify-self-end self-center items-center gap-1"
                   labelClassName="text-right select-none text-lg text-zinc-900"
                   options={tokens.map((t, i) => ({
                     value: String(i),
@@ -1217,7 +1217,7 @@ export function V6PayCard() {
                   }))}
                 />
               ) : (
-                <span className="col-start-2 row-start-2 self-center text-right select-none text-lg">
+                <span className="col-start-2 row-start-2 justify-self-end self-center text-right select-none text-lg">
                   {selected?.symbol ?? nativeSymbol}
                 </span>
               )}
@@ -1229,7 +1229,7 @@ export function V6PayCard() {
                 <div
                   // Inset by the caret (h-3.5) plus its gap-1, so this
                   // right-aligns with the token's name, not the chevron.
-                  className="col-start-2 row-start-3 -mt-1 flex flex-col items-end gap-0.5 pr-[18px]"
+                  className="col-start-2 row-start-3 -mt-0.5 flex flex-col items-end justify-self-end gap-0.5 pb-1.5 pr-[18px]"
                 >
                   {isConnected ? (
                     <span className="whitespace-nowrap text-xs text-zinc-600">
