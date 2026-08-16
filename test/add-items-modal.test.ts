@@ -1,4 +1,4 @@
-import { buildTierConfigs, newDraftItem } from "@/app/[slug]/components/v6/shop/AddItemsModal";
+import { buildTierConfigs, newDraftItem } from "@/components/shop/itemDraft";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -128,7 +128,8 @@ describe("revnet shop item editor", () => {
   });
 
   it("keeps the basic fields compact and the protocol controls behind More options", () => {
-    const source = readFileSync("src/app/[slug]/components/v6/shop/AddItemsModal.tsx", "utf8");
+    // The fields themselves are shared with the create flow's store section.
+    const fields = readFileSync("src/components/shop/ItemDraftFields.tsx", "utf8");
     for (const label of [
       "Upload media",
       "Short description (optional)",
@@ -138,16 +139,19 @@ describe("revnet shop item editor", () => {
       "Reserve inventory",
       "Voting power",
       "Item rules",
-      "Add on",
-      "Review items",
     ]) {
+      expect(fields).toContain(label);
+    }
+
+    const source = readFileSync("src/app/[slug]/components/v6/shop/AddItemsModal.tsx", "utf8");
+    for (const label of ["Add on", "Review items"]) {
       expect(source).toContain(label);
     }
-    expect(source.indexOf("canAdjust721Tiers")).toBeLessThan(
-      source.indexOf("pinMediaFile(item.mediaFile)"),
-    );
+    // Nothing is pinned until the wallet is known to be authorized and the tiers are known to
+    // encode: a rejected submit should not leave orphaned uploads behind.
+    expect(source.indexOf("canAdjust721Tiers")).toBeLessThan(source.indexOf("pinDraftItems("));
     expect(source.indexOf("const draftConfigs = buildTierConfigs")).toBeLessThan(
-      source.indexOf("pinMediaFile(item.mediaFile)"),
+      source.indexOf("pinDraftItems("),
     );
   });
 });

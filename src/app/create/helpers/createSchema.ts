@@ -1,3 +1,4 @@
+import { buildTierConfigs, type DraftItem } from "@/components/shop/itemDraft";
 import { isRecord, issue, schema, ValidationIssue } from "@/lib/formValidation";
 import { isAddress } from "viem";
 import type { RevnetFormData } from "../types";
@@ -102,6 +103,47 @@ export const createSchema = schema<RevnetFormData>((input) => {
         issue(issues, ["operator", index, "address"], "Address is required");
       } else if (!isAddress(address, { strict: false })) {
         issue(issues, ["operator", index, "address"], "Invalid address");
+      }
+    });
+  }
+
+  // Store items go through the same encoder the launch uses, so a price, split, or reserve the
+  // deployment would reject is reported here rather than at the wallet.
+  const store = isRecord(input.store) ? input.store : undefined;
+  const storeItems = store && Array.isArray(store.items) ? (store.items as DraftItem[]) : [];
+  if (storeItems.length > 0) {
+    // The same decimals the launch will encode with, so a price that survives validation
+    // cannot be rejected by the encoder later.
+    const customDecimals = isRecord(input.customReserveAsset)
+      ? Number(input.customReserveAsset.decimals)
+      : NaN;
+    const decimals =
+      store?.pricing === "USD"
+        ? 6
+        : input.reserveAsset === "CUSTOM"
+          ? Number.isFinite(customDecimals)
+            ? customDecimals
+            : 18
+          : input.issuanceBaseCurrency === "USD"
+            ? 6
+            : 18;
+    const encoded = buildTierConfigs(storeItems, decimals);
+    if (typeof encoded === "string") issue(issues, ["store", "items"], encoded);
+    storeItems.forEach((item, index) => {
+      const composes = item.name?.trim() || item.description?.trim() || item.mediaFile;
+      if (composes && !item.name?.trim()) {
+        issue(issues, ["store", "items", index, "name"], "Item name is required");
+      }
+      for (const [chainId, value] of Object.entries(item.perChainSupply ?? {})) {
+        const trimmed = String(value).trim();
+        if (trimmed === "" || trimmed === "unlimited") continue;
+        if (!/^\d+$/.test(trimmed)) {
+          issue(
+            issues,
+            ["store", "items", index, "perChainSupply", chainId],
+            'Quantity must be a whole number, empty, or "unlimited"',
+          );
+        }
       }
     });
   }

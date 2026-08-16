@@ -1,0 +1,324 @@
+import { ItemDraftFields } from "@/components/shop/ItemDraftFields";
+import { MAX_MEDIA_BYTES, newDraftItem, type DraftItem } from "@/components/shop/itemDraft";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useFormContext } from "@/lib/forms";
+import { sortChains } from "@/lib/utils";
+import { useEffect, useRef, useState } from "react";
+import { RevnetFormData } from "../types";
+import { useCreateForm } from "./useCreateForm";
+
+/**
+ * The shop that deploys with the revnet.
+ *
+ * Items are optional, but the collection is not retrofittable: a revnet's rulesets are
+ * immutable and the 721 hook is wired in as the pay data hook at launch, so a revnet that
+ * launches without a shop can never be given one. The section says so rather than quietly
+ * deciding for the reader.
+ */
+export function StoreSection({ disabled = false }: { disabled?: boolean }) {
+  const { values, setFieldValue } = useFormContext<RevnetFormData>();
+  const { revnetTokenSymbol, reserveAssetSymbol } = useCreateForm();
+  const store = values.store;
+  const chains = sortChains(values.chainIds);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [shelfName, setShelfName] = useState("");
+  const [mediaError, setMediaError] = useState<string | null>(null);
+
+  // Object URLs outlive the component unless they are handed back.
+  const previews = useRef(new Set<string>());
+  useEffect(
+    () => () => {
+      for (const preview of previews.current) URL.revokeObjectURL(preview);
+      previews.current.clear();
+    },
+    [],
+  );
+
+  const priceSymbol =
+    store.pricing === "USD"
+      ? "USD"
+      : values.issuanceBaseCurrency === "USD" && values.reserveAsset !== "CUSTOM"
+        ? "USD"
+        : reserveAssetSymbol;
+
+  const setStore = (patch: Partial<RevnetFormData["store"]>) => {
+    setFieldValue("store", { ...store, ...patch });
+  };
+  const setItem = (index: number, patch: Partial<DraftItem>) => {
+    setStore({
+      items: store.items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+    });
+  };
+  const selectMedia = (index: number, file: File | null) => {
+    if (file && file.size > MAX_MEDIA_BYTES) {
+      setMediaError("Media must be 25 MB or smaller.");
+      return;
+    }
+    setMediaError(null);
+    const previous = store.items[index]?.mediaPreview;
+    if (previous) {
+      URL.revokeObjectURL(previous);
+      previews.current.delete(previous);
+    }
+    const mediaPreview = file?.type.startsWith("image/") ? URL.createObjectURL(file) : null;
+    if (mediaPreview) previews.current.add(mediaPreview);
+    setItem(index, { mediaFile: file, mediaPreview });
+  };
+  const removeItem = (index: number) => {
+    const preview = store.items[index]?.mediaPreview;
+    if (preview) {
+      URL.revokeObjectURL(preview);
+      previews.current.delete(preview);
+    }
+    setStore({ items: store.items.filter((_, i) => i !== index) });
+  };
+
+  const addShelf = () => {
+    const name = shelfName.trim();
+    if (!name) return;
+    const id = store.categories.reduce((max, category) => Math.max(max, category.id), 0) + 1;
+    setStore({ categories: [...store.categories, { id, name }] });
+    setShelfName("");
+  };
+
+  return (
+    <>
+      <div className="md:col-span-1">
+        <h2 className="mb-4 text-lg font-bold md:mb-2">5. Store</h2>
+        <p className="text-lg text-zinc-600">
+          Sell things right from your revnet&apos;s page. Each sale pays the revnet, and the buyer
+          gets the item plus {revnetTokenSymbol}.
+        </p>
+        <p className="mt-2 text-lg text-zinc-600">
+          Optional, but only at launch: a revnet&apos;s rules are fixed once deployed, so a revnet
+          that launches without a store can never add one. Stock it with a single item now and the
+          operator can add the rest later.
+        </p>
+      </div>
+      <div className="mt-6 md:col-span-2 md:mt-0">
+        <div>
+          <Label className="text-xs">Pricing currency</Label>
+          <p className="mt-1 text-xs text-zinc-500">
+            What items are priced in — buyers can still pay with anything the revnet accepts.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            {(
+              [
+                {
+                  value: "reserve" as const,
+                  title: values.issuanceBaseCurrency === "USD" ? "USD" : reserveAssetSymbol,
+                  blurb: "Same denomination as issuance",
+                },
+                { value: "USD" as const, title: "USD", blurb: "US dollars" },
+              ] as const
+            ).map((option) => (
+              <label
+                key={option.value}
+                className="flex cursor-pointer items-start gap-2 border border-melon-300 bg-melon-25 px-4 py-3"
+              >
+                <input
+                  type="radio"
+                  name="storePricing"
+                  className="mt-0.5 h-4 w-4 accent-green-600"
+                  checked={store.pricing === option.value}
+                  disabled={disabled}
+                  onChange={() => setStore({ pricing: option.value })}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-zinc-800">{option.title}</span>
+                  <span className="block text-xs text-zinc-500">{option.blurb}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {store.items.length > 0 ? (
+          <div className="mt-5 flex flex-col gap-5">
+            {store.items.map((item, index) => (
+              <div key={index} className="bg-melon-50 p-4 sm:p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-zinc-800">Item {index + 1}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeItem(index)}
+                    disabled={disabled}
+                    className="text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <ItemDraftFields
+                  item={item}
+                  index={index}
+                  priceSymbol={priceSymbol}
+                  categories={store.categories}
+                  limits={{
+                    noNewTiersWithReserves: store.noNewTiersWithReserves,
+                    noNewTiersWithVotes: store.noNewTiersWithVotes,
+                    noNewTiersWithOwnerMinting: store.noNewTiersWithOwnerMinting,
+                    // Every stage of a new revnet keeps the collection's transfer gate closed,
+                    // so a non-transferable item here is a permanent guarantee.
+                    transferabilityFixed: true,
+                  }}
+                  disabled={disabled}
+                  chains={chains}
+                  onChange={(patch) => setItem(index, patch)}
+                  onSelectMedia={(file) => selectMedia(index, file)}
+                />
+                {item.moreOpen ? (
+                  <div className="mt-5">
+                    <Label className="text-xs">Shelves</Label>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Name a shelf to group items under on the store page.
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Input
+                        aria-label="New shelf name"
+                        value={shelfName}
+                        onChange={(event) => setShelfName(event.target.value)}
+                        placeholder="Shelf name"
+                        disabled={disabled}
+                        className="h-10 w-56 bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={addShelf}
+                        disabled={disabled || !shelfName.trim()}
+                        className="border border-dashed border-zinc-400 bg-white px-3 py-2 text-xs font-medium disabled:opacity-50"
+                      >
+                        + Add a shelf
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {mediaError ? <p className="mt-3 text-sm text-red-700">{mediaError}</p> : null}
+
+        <button
+          type="button"
+          onClick={() => setStore({ items: [...store.items, newDraftItem()] })}
+          disabled={disabled}
+          className="mt-4 border border-dashed border-zinc-400 bg-white px-4 py-3 text-sm font-medium hover:border-zinc-600 disabled:opacity-50"
+        >
+          + Add an item
+        </button>
+
+        <div className="mt-6">
+          <button
+            type="button"
+            onClick={() => setConfigOpen(!configOpen)}
+            aria-expanded={configOpen}
+            className="text-sm font-medium text-teal-700 hover:text-teal-900"
+          >
+            Store config {configOpen ? "▾" : "▸"}
+          </button>
+          {configOpen ? (
+            <div className="mt-4 space-y-5 border border-zinc-200 p-4">
+              <p className="text-xs text-zinc-500">
+                The revnet operator can set or change most of these after launch.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label className="text-xs">Collection name</Label>
+                  <Input
+                    value={store.collectionName}
+                    onChange={(event) => setStore({ collectionName: event.target.value })}
+                    placeholder={values.name ? `${values.name} Store` : "Collection name"}
+                    disabled={disabled}
+                    className="mt-1 h-11 bg-white"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Collection symbol</Label>
+                  <Input
+                    value={store.collectionSymbol}
+                    onChange={(event) => setStore({ collectionSymbol: event.target.value })}
+                    placeholder={`${values.tokenSymbol || "TOKEN"}STORE`}
+                    disabled={disabled}
+                    className="mt-1 h-11 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {(
+                  [
+                    [
+                      "preventOverspending",
+                      "Require exact payment",
+                      "Buyers must pay exactly the item price — no overpaying for extra credit.",
+                    ],
+                    [
+                      "noNewTiersWithReserves",
+                      "Lock reserved items after launch",
+                      "Items added later can never set aside reserved inventory.",
+                    ],
+                    [
+                      "noNewTiersWithVotes",
+                      "Lock voting items after launch",
+                      "Items added later can never carry custom voting power.",
+                    ],
+                    [
+                      "noNewTiersWithOwnerMinting",
+                      "Lock free minting after launch",
+                      "Items added later can never be minted for free.",
+                    ],
+                  ] as const
+                ).map(([key, title, blurb]) => (
+                  <label key={key} className="flex gap-3 border border-zinc-200 bg-white p-3">
+                    <input
+                      type="checkbox"
+                      checked={store[key]}
+                      onChange={() => setStore({ [key]: !store[key] })}
+                      disabled={disabled}
+                      className="mt-0.5 h-4 w-4"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-zinc-800">{title}</span>
+                      <span className="mt-0.5 block text-xs text-zinc-500">{blurb}</span>
+                    </span>
+                  </label>
+                ))}
+                <p className="bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-600">
+                  Items can&apos;t cash out for surplus: a revnet&apos;s tokens already can, and the
+                  two can&apos;t both redeem.
+                </p>
+              </div>
+
+              <div className="space-y-2 border-t border-zinc-200 pt-4">
+                <span className="text-xs font-semibold text-zinc-500">
+                  What the revnet operator can do after launch
+                </span>
+                {(
+                  [
+                    ["operatorCanAdjustTiers", "Add & remove items"],
+                    ["operatorCanUpdateMetadata", "Update item metadata"],
+                    ["operatorCanMint", "Mint items for free"],
+                    ["operatorCanIncreaseDiscount", "Increase discounts"],
+                  ] as const
+                ).map(([key, title]) => (
+                  <label key={key} className="flex gap-3 border border-zinc-200 bg-white p-3">
+                    <input
+                      type="checkbox"
+                      checked={store[key]}
+                      onChange={() => setStore({ [key]: !store[key] })}
+                      disabled={disabled}
+                      className="mt-0.5 h-4 w-4"
+                    />
+                    <span className="text-sm font-medium text-zinc-800">{title}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </>
+  );
+}

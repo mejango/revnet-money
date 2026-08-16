@@ -82,11 +82,7 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
       "operator",
       sortedChains.map((chainId) => ({
         chainId: String(chainId),
-        address: enabled
-          ? isDisabled(fromStage)
-            ? ""
-            : fromStage
-          : PERMANENTLY_DISABLED_OPERATOR,
+        address: enabled ? (isDisabled(fromStage) ? "" : fromStage) : PERMANENTLY_DISABLED_OPERATOR,
       })),
     );
     if (values.stages.length > 0 && !enabled) {

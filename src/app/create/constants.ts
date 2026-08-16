@@ -1,7 +1,23 @@
-import { RevnetFormData, StageData } from "./types";
+import { RevnetFormData, StageData, StoreFormData } from "./types";
 
 export const PERMANENTLY_DISABLED_OPERATOR =
   "0xdead000000000000000000000000000000000000";
+
+export const defaultStoreData: StoreFormData = {
+  collectionName: "",
+  collectionSymbol: "",
+  pricing: "reserve",
+  categories: [],
+  items: [],
+  preventOverspending: false,
+  noNewTiersWithReserves: false,
+  noNewTiersWithVotes: false,
+  noNewTiersWithOwnerMinting: false,
+  operatorCanAdjustTiers: true,
+  operatorCanUpdateMetadata: true,
+  operatorCanMint: true,
+  operatorCanIncreaseDiscount: true,
+};
 
 export const defaultStageData: StageData = {
   initialOperator: PERMANENTLY_DISABLED_OPERATOR,
@@ -41,6 +57,7 @@ export const DEFAULT_FORM_DATA: RevnetFormData = {
   stages: [],
   chainIds: [],
   operator: [],
+  store: defaultStoreData,
 };
 
 export const TEST_FORM_DATA: RevnetFormData = {
@@ -258,6 +275,7 @@ export const TEST_FORM_DATA: RevnetFormData = {
       address: "0xfedcba9876543210fedcba9876543210fedcba98",
     },
   ],
+  store: defaultStoreData,
 } as const;
 
 export const SHORTER_TEST_FORM_DATA: RevnetFormData = {
@@ -306,4 +324,5 @@ export const SHORTER_TEST_FORM_DATA: RevnetFormData = {
   ],
   chainIds: [],
   operator: [],
+  store: defaultStoreData,
 } as const;

@@ -11,6 +11,7 @@ import { DeploySection } from "./DeploySection";
 import { Divider } from "./Divider";
 import { OperatorSection } from "./OperatorSection";
 import { ProjectDetails } from "./ProjectDetails";
+import { StoreSection } from "./StoreSection";
 import { QuoteResponse } from "./QuoteResponse";
 import { SettlementSection } from "./SettlementSection";
 import { Stages } from "./Stages";
@@ -70,6 +71,8 @@ export function DeployRevnetForm({
       <Stages disabled={disabled} />
       <Divider />
       <OperatorSection disabled={disabled} />
+      <Divider />
+      <StoreSection disabled={disabled} />
       <Divider />
       <DeploySection validBundle={validBundle} disabled={disabled} />
       {relayrResponse && (

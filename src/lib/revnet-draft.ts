@@ -1,6 +1,7 @@
 import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
-import { DEFAULT_FORM_DATA } from "@/app/create/constants";
+import { DEFAULT_FORM_DATA, defaultStoreData } from "@/app/create/constants";
 import type { RevnetFormData, StageData } from "@/app/create/types";
+import { newDraftItem } from "@/components/shop/itemDraft";
 import { readAllProjectRulesets } from "@/lib/nana/rulesets";
 import type { JBChainId } from "@/lib/nana/types";
 import {
@@ -106,6 +107,81 @@ function sanitizeStage(value: unknown): StageData {
   };
 }
 
+/**
+ * Whitelist a store from an untrusted draft. Media files cannot travel in a JSON draft, so an
+ * item arrives as its already-pinned URIs; everything else is clamped to the shapes the create
+ * form and the tier encoder accept.
+ */
+function sanitizeStore(value: unknown): RevnetFormData["store"] {
+  const raw = (value ?? {}) as Record<string, unknown>;
+  const items = Array.isArray(raw.items) ? raw.items : [];
+  const categories = Array.isArray(raw.categories) ? raw.categories : [];
+  const bool = (key: string, fallback: boolean) =>
+    typeof raw[key] === "boolean" ? (raw[key] as boolean) : fallback;
+  return {
+    ...defaultStoreData,
+    collectionName: text(raw.collectionName, 100),
+    collectionSymbol: text(raw.collectionSymbol, 32),
+    pricing: raw.pricing === "USD" ? "USD" : "reserve",
+    categories: categories.slice(0, 32).flatMap((entry) => {
+      const category = (entry ?? {}) as Record<string, unknown>;
+      const id = Number(category.id);
+      const name = text(category.name, 64);
+      return Number.isSafeInteger(id) && id > 0 && name ? [{ id, name }] : [];
+    }),
+    items: items.slice(0, 64).map((entry) => {
+      const item = (entry ?? {}) as Record<string, unknown>;
+      const splits = Array.isArray(item.splits) ? item.splits : [];
+      const perChainSupply = (item.perChainSupply ?? {}) as Record<string, unknown>;
+      return {
+        ...newDraftItem(),
+        name: text(item.name, 100),
+        description: text(item.description, 2_000),
+        mediaUri: text(item.mediaUri, 500),
+        uri: text(item.uri, 500),
+        price: numericText(item.price),
+        supply: numericText(item.supply),
+        category: numericText(item.category) || "0",
+        reserveFrequency: numericText(item.reserveFrequency),
+        reserveBeneficiary: text(item.reserveBeneficiary, 64),
+        discountPct: numericText(item.discountPct),
+        votingUnits: numericText(item.votingUnits),
+        splits: splits.slice(0, 16).map((splitValue) => {
+          const split = (splitValue ?? {}) as Record<string, unknown>;
+          return {
+            percent: numericText(split.percent),
+            beneficiary: text(split.beneficiary, 64),
+          };
+        }),
+        allowOwnerMint: item.allowOwnerMint === true,
+        cantBeRemoved: item.cantBeRemoved === true,
+        allowCredits: item.allowCredits !== false,
+        operatorCanEditDiscount: item.operatorCanEditDiscount !== false,
+        nonTransferable: item.nonTransferable === true,
+        perChainSupply: Object.fromEntries(
+          Object.entries(perChainSupply)
+            .filter(([chainId]) => Number.isSafeInteger(Number(chainId)) && Number(chainId) > 0)
+            .slice(0, 16)
+            .map(([chainId, supply]) => [
+              Number(chainId),
+              String(supply).trim().toLowerCase() === "unlimited"
+                ? "unlimited"
+                : numericText(supply),
+            ]),
+        ),
+      };
+    }),
+    preventOverspending: bool("preventOverspending", false),
+    noNewTiersWithReserves: bool("noNewTiersWithReserves", false),
+    noNewTiersWithVotes: bool("noNewTiersWithVotes", false),
+    noNewTiersWithOwnerMinting: bool("noNewTiersWithOwnerMinting", false),
+    operatorCanAdjustTiers: bool("operatorCanAdjustTiers", true),
+    operatorCanUpdateMetadata: bool("operatorCanUpdateMetadata", true),
+    operatorCanMint: bool("operatorCanMint", true),
+    operatorCanIncreaseDiscount: bool("operatorCanIncreaseDiscount", true),
+  };
+}
+
 /** Parse an untrusted Revnet .jb file into whitelisted create-form values. */
 export function parseRevnetDraft(source: string): RevnetFormData {
   if (source.length > MAX_DRAFT_BYTES) throw new Error("That file is too large.");
@@ -157,6 +233,7 @@ export function parseRevnetDraft(source: string): RevnetFormData {
     }),
     reserveAsset,
     issuanceBaseCurrency: raw.issuanceBaseCurrency === "USD" ? "USD" : "ETH",
+    store: sanitizeStore(raw.store),
     customReserveAsset: {
       address: text(custom.address, 64),
       symbol: text(custom.symbol, 32),

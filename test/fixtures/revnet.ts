@@ -1,3 +1,4 @@
+import { defaultStoreData } from "@/app/create/constants";
 import type { RevnetFormData } from "@/app/create/types";
 import type { Address, Hex } from "viem";
 import { sepolia } from "viem/chains";
@@ -25,6 +26,7 @@ export function validRevnetForm(): RevnetFormData {
     discord: "discord.gg/revnet-test",
     infoUri: "https://example.com",
     tokenSymbol: "SAFE",
+    store: structuredClone(defaultStoreData),
     reserveAsset: "ETH",
     issuanceBaseCurrency: "ETH",
     customReserveAsset: {

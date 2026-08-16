@@ -22,6 +22,7 @@ import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/cus
 import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
 import { parseDeployData } from "./helpers/parseDeployData";
 import { pinProjectMetadata } from "./helpers/pinProjectMetaData";
+import { pinDraftItems } from "@/components/shop/itemDraft";
 import { calculateFinalStageStarts } from "./helpers/recalculateStageStarts";
 import { quotedStageStartOf, type QuotedStageStart } from "./helpers/staleQuote";
 import { RevnetFormData } from "./types";
@@ -69,6 +70,21 @@ export default function Page() {
       discord: deploymentFormData.discord,
       infoUri: deploymentFormData.infoUri,
     });
+
+    // Item media and metadata pin once: CIDs are chain-independent, so every chain in a
+    // multichain launch deploys the same digests.
+    if (deploymentFormData.store.items.length > 0) {
+      deploymentFormData = {
+        ...deploymentFormData,
+        store: {
+          ...deploymentFormData.store,
+          items: await pinDraftItems(
+            deploymentFormData.store.items,
+            deploymentFormData.store.categories,
+          ),
+        },
+      };
+    }
 
     const salt = createSalt();
     const timestamp = Math.floor(Date.now() / 1000);

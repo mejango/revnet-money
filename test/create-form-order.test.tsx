@@ -71,7 +71,8 @@ describe("create form section order", () => {
       "2. Settlement",
       "3. Terms",
       "4. Operator",
-      "5. Deploy",
+      "5. Store",
+      "6. Deploy",
     ]);
   });
 
@@ -109,7 +110,7 @@ describe("create form section order", () => {
     // promise only reads correctly once it sits with the other post-deploy
     // expectations.
     const copy = screen.getByText(/able to add new chains to the revnet later/i);
-    expect(copy.closest("div")?.querySelector("h2")?.textContent).toBe("5. Deploy");
+    expect(copy.closest("div")?.querySelector("h2")?.textContent).toBe("6. Deploy");
   });
 
   it("shows create validation beside the button that requested the quote", () => {
