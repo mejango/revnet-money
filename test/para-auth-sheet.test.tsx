@@ -56,7 +56,7 @@ describe("ParaAuthSheet verification", () => {
     para.openedUrls.length = 0;
   });
 
-  it("sends basic-login accounts to the portal instead of a code field that cannot work", async () => {
+  it("frames Para's code page in the sheet rather than sending anyone to it", async () => {
     // A `verificationUrl` means Para owns this account's OTP: `verifyNewAccount` is not a call
     // the app may make, and it never settles — so a code field here would accept a wrong code
     // and hang on it forever.
@@ -76,11 +76,13 @@ describe("ParaAuthSheet verification", () => {
 
     render(<ParaAuthSheet entry="me@example.com" onEntryChange={() => {}} onClose={() => {}} />);
 
-    expect(screen.queryByLabelText("Verification code")).not.toBeInTheDocument();
-    // The window Para's URL goes into is claimed inside the click that starts sign-in, so the
-    // sheet needs no second button and no popup blocker can eat it.
-    expect(para.openedUrls).toContain("https://app.getpara.com/v2/login/otp");
-    expect(screen.getByText(/see the window/i)).toBeInTheDocument();
+    // No field of ours: `verifyNewAccount` is not a call this account allows, so one would
+    // take a code, accept a wrong one, and hang on it.
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // Framed here, not opened elsewhere — the visitor never leaves the page.
+    const frame = screen.getByTitle("Verification code");
+    expect(frame).toHaveAttribute("src", "https://app.getpara.com/v2/login/otp");
+    expect(para.openedUrls).not.toContain("https://app.getpara.com/v2/login/otp");
 
     open.mockRestore();
   });
