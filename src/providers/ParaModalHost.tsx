@@ -6,7 +6,7 @@ import { Network, OnRampAsset, OnRampProvider, OnRampPurchaseType } from "@getpa
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { useAccount } from "wagmi";
-import { OnRampHandoff } from "./OnRampHandoff";
+import { OnRampFrame, OnRampHandoff } from "./OnRampHandoff";
 import type { ParaRequest } from "./ParaAuthContext";
 import ParaAuthSheet from "./ParaAuthSheet";
 import { SignInShell } from "./SignInShell";
@@ -59,6 +59,8 @@ function Driver({
   // Set once the purchase window is handed off, so we can say what to do when
   // it does not go through — and re-offer the link if the popup was blocked.
   const [handoffUrl, setHandoffUrl] = useState<string | null>(null);
+  // Whether that purchase belongs inside the dialog rather than in a window of its own.
+  const [embedded, setEmbedded] = useState(false);
   const handledRequest = useRef(0);
   const wasOpen = useRef(false);
   // Set when the on-ramp had to sign the user in first, so it can resume once
@@ -89,9 +91,12 @@ function Driver({
       // objects double as the lookup table.
       const asset = OnRampAsset[target.asset];
       const network = Network[target.network];
+      const embed = target.display === "embed";
       const { portalUrl } = await para.initiateOnRampTransaction({
         externalWalletAddress: destination,
-        shouldOpenPopup: true,
+        // An embedded purchase is shown in the dialog below; a popup as well would be two of
+        // the same thing, one of them behind the page.
+        shouldOpenPopup: !embed,
         params: {
           type: OnRampPurchaseType.BUY,
           provider: OnRampProvider[PARA_ONRAMP_PROVIDER],
@@ -101,8 +106,11 @@ function Driver({
           defaultNetwork: network,
           externalWalletAddress: destination,
           ...(target.assetQuantity ? { assetQuantity: target.assetQuantity } : {}),
+          // A payer who typed dollars gets the provider'"'"'s fiat field filled, not its asset one.
+          ...(target.fiatQuantity ? { fiat: "USD", fiatQuantity: target.fiatQuantity } : {}),
         },
       });
+      setEmbedded(embed);
       setHandoffUrl(portalUrl);
     },
     [address],
@@ -163,8 +171,18 @@ function Driver({
         className="flex h-full w-full items-center justify-center overflow-y-auto bg-black/80 p-6"
         {...handoffBackdrop}
       >
-        <div className="w-full max-w-sm border border-zinc-200 bg-white p-6">
-          <OnRampHandoff url={handoffUrl} onClose={() => setHandoffUrl(null)} />
+        <div
+          className={
+            embedded
+              ? "w-full max-w-md border border-zinc-200 bg-white p-4"
+              : "w-full max-w-sm border border-zinc-200 bg-white p-6"
+          }
+        >
+          {embedded ? (
+            <OnRampFrame url={handoffUrl} onClose={() => setHandoffUrl(null)} />
+          ) : (
+            <OnRampHandoff url={handoffUrl} onClose={() => setHandoffUrl(null)} />
+          )}
         </div>
       </div>
     );

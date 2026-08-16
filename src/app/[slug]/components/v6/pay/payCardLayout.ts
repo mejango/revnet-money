@@ -23,3 +23,36 @@ export function payPanelLayoutClasses({
 export function paySettlementLabel(routeType: PaymentTerminalType) {
   return routeType === "swap" ? "Swap" : "Issuance";
 }
+
+/**
+ * Whether the token menu should open on "$" rather than on a token.
+ *
+ * A wallet holding none of the tokens a project accepts cannot pay in any of them, so offering
+ * one as the default asks the payer to go and acquire it before the card does anything. Their
+ * own choice always wins — this only decides where the menu starts.
+ */
+export function defaultsToDollars({
+  isConnected,
+  balances,
+}: {
+  isConnected: boolean;
+  /** One balance per accepted token. Empty while they are still being read. */
+  balances: bigint[];
+}): boolean {
+  if (!isConnected || balances.length === 0) return false;
+  return balances.every((balance) => balance === 0n);
+}
+
+/** What pressing the pay button does, given who is here and what they picked. */
+export function payButtonAction({
+  isConnected,
+  payWithDollars,
+}: {
+  isConnected: boolean;
+  payWithDollars: boolean;
+}): "signIn" | "buyFirst" | "confirm" {
+  if (!isConnected) return "signIn";
+  // Dollars are not a token this project can be paid in; pressing Pay says so and offers the
+  // purchase, rather than starting a payment that cannot settle.
+  return payWithDollars ? "buyFirst" : "confirm";
+}

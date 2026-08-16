@@ -1,9 +1,9 @@
 "use client";
 
 import { useOnRamp } from "@/components/GetFunds";
-import { useParaAuth } from "@/providers/ParaAuthContext";
 import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAllowance } from "@/hooks/useAllowance";
 import { useReviewedPermit2Signature } from "@/hooks/useReviewedPermit2Signature";
@@ -42,6 +42,7 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
+import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
   JB_CHAINS,
   JBChainId,
@@ -74,7 +75,12 @@ import { useAccount, usePublicClient } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
 import { readPoolSnapshot } from "../owners/market/lib";
 import { useShopCart } from "../ShopCartContext";
-import { payPanelLayoutClasses, paySettlementLabel } from "./payCardLayout";
+import {
+  defaultsToDollars,
+  payButtonAction,
+  payPanelLayoutClasses,
+  paySettlementLabel,
+} from "./payCardLayout";
 import { TextSelect } from "./TextSelect";
 import {
   BASE_CURRENCY_ETH,
@@ -147,6 +153,10 @@ export function V6PayCard() {
   // auto-defaults to the project's accounting token (list[0]) so an ETH/USDC
   // router option never shadows a USDC/ETH project's real token.
   const [tokenTouched, setTokenTouched] = useState(false);
+  /** "$" is picked in the token menu: the payer has dollars, not the token this project takes.
+   *  Nothing is bought until they press Pay — the amount is theirs to type first. */
+  const [payWithDollars, setPayWithDollars] = useState(false);
+  const [buyExplainerOpen, setBuyExplainerOpen] = useState(false);
   // The (address+route) identity of the user's pick, so a background refetch or
   // chain switch remaps the index to the same token rather than clobbering it.
   const selectedKeyRef = useRef<string | null>(null);
@@ -247,9 +257,7 @@ export function V6PayCard() {
   // A feed the app could not READ is not a feed the protocol lacks. Both hide the route, but
   // only one of them is permanent, and only one of them is worth retrying.
   const shopRouteCheckFailed = useMemo(
-    () =>
-      !!shopRoutes &&
-      tokens.some((t) => shopRoutes[payTokenKey(t)]?.unavailable),
+    () => !!shopRoutes && tokens.some((t) => shopRoutes[payTokenKey(t)]?.unavailable),
     [shopRoutes, tokens],
   );
   const supportedShopTokenIndexes = useMemo(
@@ -444,24 +452,34 @@ export function V6PayCard() {
   const routeIsRouter = preview?.routeType === "swap";
 
   // ---- Wallet balance ----
+  // Every accepted token, not only the selected one: whether this wallet can pay AT ALL is what
+  // decides the default choice below, and one token's balance cannot answer that.
   const balanceToken = useMemo<Token[]>(
     () =>
-      selected
-        ? [
-            {
-              address: selected.token,
-              symbol: selected.symbol,
-              decimals: selected.decimals,
-              isNative: isNativePayToken(selected.token),
-            },
-          ]
-        : [],
-    [selected],
+      tokens.map((token) => ({
+        address: token.token,
+        symbol: token.symbol,
+        decimals: token.decimals,
+        isNative: isNativePayToken(token.token),
+      })),
+    [tokens],
   );
   const { balances } = useTokenBalances(balanceToken, chainId);
+  const holdsNothing = defaultsToDollars({
+    isConnected,
+    balances: balanceToken.map((token) => balances.get(token.address) ?? 0n),
+  });
   const walletBalance = selected ? (balances.get(selected.token) ?? 0n) : 0n;
   const insufficientBalance =
     isConnected && !!selected && amountRaw > 0n && amountRaw > walletBalance;
+
+  // A wallet with nothing in it cannot pay in any of these tokens, so the menu opens on "$"
+  // rather than on a token the payer would have to go and acquire first. Their own choice wins
+  // the moment they make one.
+  useEffect(() => {
+    if (tokenTouched) return;
+    setPayWithDollars(holdsNothing);
+  }, [holdsNothing, tokenTouched]);
 
   // Offered from inside the token menu: buying the token is a way of getting
   // one, so it belongs where the token is chosen.
@@ -1103,7 +1121,11 @@ export function V6PayCard() {
     busy ||
     notStarted ||
     surfaceError ||
+    // Paying in dollars is a purchase, not a send: it needs an amount and nothing else. The
+    // checks below are about a token this payer does not hold yet.
+    (isConnected && payWithDollars && amountRaw <= 0n) ||
     (isConnected &&
+      !payWithDollars &&
       (!selected ||
         addBalanceViaRouter ||
         insufficientBalance ||
@@ -1217,12 +1239,18 @@ export function V6PayCard() {
                 // Valued by INDEX, not address — a token can appear direct and
                 // via-router, so the option stays in lock-step with the selection.
                 <TextSelect
-                  value={String(Math.min(tokenIndex, tokens.length - 1))}
+                  value={
+                    payWithDollars ? BUY_OPTION : String(Math.min(tokenIndex, tokens.length - 1))
+                  }
                   onChange={(value) => {
+                    setTokenTouched(true);
                     if (value === BUY_OPTION) {
-                      onRamp.buy();
+                      // Selecting dollars buys nothing yet. The payer types what they want to
+                      // spend first, and Pay explains the swap they are about to make.
+                      setPayWithDollars(true);
                       return;
                     }
+                    setPayWithDollars(false);
                     const i = Number(value);
                     setTokenIndex(i);
                     const picked = tokens[i];
@@ -1244,9 +1272,9 @@ export function V6PayCard() {
                     // window asks. Saying both is still worth it — bank
                     // transfers authorise far more often than cards, and
                     // nobody reaches for one they did not know was offered.
-                    ...(onRamp.supported
-                      ? [{ value: BUY_OPTION, label: "Card or Bank" }]
-                      : []),
+                    // "$" rather than a description of the rails: it is a currency in a list of
+                    // currencies, and what it costs to use is said at Pay, where it matters.
+                    ...(onRamp.supported ? [{ value: BUY_OPTION, label: "$" }] : []),
                   ]}
                 />
               ) : (
@@ -1485,16 +1513,16 @@ export function V6PayCard() {
             <Button
               disabled={payDisabled}
               loading={busy}
-              onClick={isConnected ? openConfirm : requestSignIn}
+              onClick={
+                {
+                  signIn: requestSignIn,
+                  buyFirst: () => setBuyExplainerOpen(true),
+                  confirm: openConfirm,
+                }[payButtonAction({ isConnected, payWithDollars })]
+              }
               className="h-14 w-full bg-teal-500 text-melon-950 hover:bg-teal-600"
             >
-              {notStarted
-                ? "Soon"
-                : !isConnected
-                  ? "Sign in"
-                  : mode === "pay"
-                    ? "Pay"
-                    : "Add"}
+              {notStarted ? "Soon" : !isConnected ? "Sign in" : mode === "pay" ? "Pay" : "Add"}
             </Button>
           </div>
         </div>
@@ -1520,6 +1548,36 @@ export function V6PayCard() {
           token, or use Pay to route this one.
         </p>
       ) : null}
+
+      {/* What "$" costs, said where it is spent. A payer who picked dollars is one step from a
+          purchase they did not ask for, so the swap is named before it starts rather than
+          explained by the provider's window appearing. */}
+      <Dialog open={buyExplainerOpen} onOpenChange={setBuyExplainerOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>First, buy ETH or USDC</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm leading-relaxed text-zinc-600">
+            Payments to this project take ETH or USDC — that is what settles instantly, runs its
+            automated rules, and sends out its rewards. You&apos;ll use your card or bank to buy
+            some first, then come back here to pay.
+          </p>
+          <div className="mt-4 flex justify-end">
+            <Button
+              type="button"
+              onClick={() => {
+                setBuyExplainerOpen(false);
+                onRamp.buy({
+                  fiatQuantity: amount.trim() || undefined,
+                  display: "embed",
+                });
+              }}
+            >
+              Buy ETH/USDC
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <V6PayConfirmDialog
         open={confirmOpen}
