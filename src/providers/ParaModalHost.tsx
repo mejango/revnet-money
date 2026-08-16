@@ -11,23 +11,25 @@ import type { ParaRequest } from "./ParaAuthContext";
 import { getParaClient, PARA_APP, PARA_ONRAMP_PROVIDER } from "./para-config";
 import { OnRampHandoff } from "./OnRampHandoff";
 import ParaAuthSheet from "./ParaAuthSheet";
+import { SignInShell } from "./SignInShell";
 
 /** Layout effects run before paint, which is the whole point here; on the
  *  server there is no paint and React warns, so fall back there. */
 const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function Driver({
-  host,
   requestId,
   request,
   onOpenChange,
   onSettled,
+  onLive,
 }: {
-  host: HTMLDialogElement;
   requestId: number;
   request: ParaRequest;
   onOpenChange: (open: boolean) => void;
   onSettled: () => void;
+  /** Fired once Para is initialised far enough for this to render at all. */
+  onLive: () => void;
 }) {
   const { isOpen, openModal } = useModal();
   const { address, connector } = useAccount();
@@ -114,14 +116,12 @@ function Driver({
       .catch(() => {});
   }, [startAddFunds]);
 
-  // Para owns whether its own modal is showing; the host mirrors that and our
-  // sheet into the top layer. `showModal()` throws on an already-open dialog.
+  // Para owns whether its own modal is showing; the host above owns the
+  // dialog, because it has to open it before this component can exist at all
+  // — ParaProvider renders nothing until Para's API answers.
   const open = isOpen || sheetOpen || !!handoffUrl;
 
-  useEffect(() => {
-    if (open && !host.open) host.showModal();
-    else if (!open && host.open) host.close();
-  }, [host, open]);
+  useEffect(() => onLive(), [onLive]);
 
   useEffect(() => {
     onOpenChange(open);
@@ -181,6 +181,25 @@ export default function ParaModalHost({
   const [host] = useState<HTMLDialogElement | null>(() =>
     typeof document === "undefined" ? null : document.createElement("dialog"),
   );
+  // ParaProvider renders nothing until Para's API answers, so Driver — and
+  // with it the sheet — does not exist for the first few hundred
+  // milliseconds. Without this the dialog would sit closed and the visitor
+  // would watch the page reappear between the placeholder and the sheet.
+  const [driverOpen, setDriverOpen] = useState(false);
+  const [driverLive, setDriverLive] = useState(false);
+  const showShell = !driverLive && request.kind === "auth";
+  const open = driverOpen || showShell;
+
+  // Stable identities: Driver keys effects off these, so a closure recreated
+  // each render would re-run them every render. The callers' own handlers are
+  // not stable, so hold them in a ref rather than in the dependency list.
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  const reportOpen = useCallback((next: boolean) => {
+    setDriverOpen(next);
+    onOpenChangeRef.current(next);
+  }, []);
+  const markDriverLive = useCallback(() => setDriverLive(true), []);
 
   useBeforePaint(() => {
     if (!host) return;
@@ -197,6 +216,15 @@ export default function ParaModalHost({
     };
   }, [host]);
 
+  // Deliberately a passive effect, not a layout one: sign-in is reachable
+  // from inside other dialogs, and this has to enter the top layer after
+  // theirs to sit above them. Opening before paint would put it under.
+  useEffect(() => {
+    if (!host) return;
+    if (open && !host.open) host.showModal();
+    else if (!open && host.open) host.close();
+  }, [host, open]);
+
   if (!host) return null;
 
   return createPortal(
@@ -205,6 +233,13 @@ export default function ParaModalHost({
           mounted only to render the add-funds step, which has no headless
           equivalent for the embedded wallet. Its theme is therefore only ever
           seen on that screen. */}
+      {showShell ? (
+        <div className="flex h-full w-full items-center justify-center overflow-y-auto bg-black/80 p-6">
+          <div className="w-full max-w-sm border border-zinc-200 bg-white p-6">
+            <SignInShell />
+          </div>
+        </div>
+      ) : null}
       <ParaProvider
         paraClientConfig={paraClient}
         config={{ appName: PARA_APP.appName }}
@@ -226,11 +261,11 @@ export default function ParaModalHost({
         externalWalletConfig={{ wallets: [] }}
       >
         <Driver
-          host={host}
           requestId={requestId}
           request={request}
-          onOpenChange={onOpenChange}
+          onOpenChange={reportOpen}
           onSettled={onSettled}
+          onLive={markDriverLive}
         />
       </ParaProvider>
     </PortalContainerProvider>,

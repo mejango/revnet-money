@@ -11,6 +11,8 @@ const para = vi.hoisted(() => {
     /** Every container the host has offered Para for its overlay portal. */
     containers: [] as (HTMLElement | null | undefined)[],
     loggedIn: true,
+    // ParaProvider renders nothing until Para's API answers; mirror that.
+    driverLive: true,
     connectorId: "injected" as string | undefined,
     address: "0xfeedfacefeedfacefeedfacefeedfacefeedface" as string | undefined,
     openModalCalls: [] as unknown[],
@@ -22,6 +24,7 @@ const para = vi.hoisted(() => {
       state.isOpen = false;
       state.containers.length = 0;
       state.loggedIn = true;
+      state.driverLive = true;
       state.connectorId = "injected";
       state.address = "0xfeedfacefeedfacefeedfacefeedfacefeedface";
       state.openModalCalls.length = 0;
@@ -64,6 +67,7 @@ vi.mock("@getpara/react-sdk-lite", async () => {
   // the modal is open, an overlay portalled into `usePortalContainer()`.
   const ParaProvider = ({ children }: { children: React.ReactNode }) => {
     const { isOpen } = useModal();
+    if (!para.state.driverLive) return null;
     const container = para.state.containers.at(-1);
     return (
       <>
@@ -316,7 +320,10 @@ describe("ParaModalHost", () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByText(/You will receive a code/)).toBeTruthy());
+    // The host owns the dialog now, so it opens a commit after the sheet
+    // renders — wait for the dialog itself, not just its contents, or the
+    // button is still inert.
+    await waitFor(() => expect(hostDialog().open).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     await waitFor(() => expect(hostDialog().open).toBe(false));
