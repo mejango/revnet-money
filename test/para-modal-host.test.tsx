@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import ParaModalHost from "@/providers/ParaModalHost";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { isBlockedByModalDialog, openModalDialogs } from "./native-dialog-shim";
 
@@ -17,6 +17,7 @@ const para = vi.hoisted(() => {
     address: "0xfeedfacefeedfacefeedfacefeedfacefeedface" as string | undefined,
     openModalCalls: [] as unknown[],
     onRampCalls: [] as unknown[],
+    wallets: {} as Record<string, { type: string; address?: string }>,
   };
   return {
     state,
@@ -29,6 +30,9 @@ const para = vi.hoisted(() => {
       state.address = "0xfeedfacefeedfacefeedfacefeedfacefeedface";
       state.openModalCalls.length = 0;
       state.onRampCalls.length = 0;
+      state.wallets = {
+        embedded: { type: "EVM", address: "0xbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef" },
+      };
     },
     setOpen(open: boolean) {
       state.isOpen = open;
@@ -138,6 +142,7 @@ vi.mock("@/providers/para-config", () => ({
       return { portalUrl: "https://portal.example/buy" };
     },
     onStatePhaseChange: () => () => {},
+    getWallets: () => para.state.wallets,
   }),
   PARA_APP: { appName: "Revnet" },
   PARA_ONRAMP_PROVIDER: "MOONPAY",
@@ -149,11 +154,24 @@ function hostDialog(): HTMLDialogElement {
   return host;
 }
 
+function Host({ requestId }: { requestId: number }) {
+  return (
+    <ParaModalHost
+      requestId={requestId}
+      request={{ kind: "auth" }}
+      onOpenChange={() => {}}
+      onSettled={() => {}}
+      entry=""
+      onEntryChange={() => {}}
+    />
+  );
+}
+
 describe("ParaModalHost", () => {
   it("hosts Para in the top layer so sign-in works above an open dialog", async () => {
     para.reset();
 
-    render(
+    const { rerender } = render(
       <>
         <Dialog open>
           <DialogContent>
@@ -161,18 +179,12 @@ describe("ParaModalHost", () => {
             <button type="button">Pay now</button>
           </DialogContent>
         </Dialog>
-        <ParaModalHost
-          requestId={0}
-          request={{ kind: "auth" }}
-          onOpenChange={() => {}}
-          onSettled={() => {}}
-          entry=""
-          onEntryChange={() => {}}
-        />
+        <Host requestId={0} />
       </>,
     );
 
     const payDialog = await screen.findByRole("dialog", { name: "Pay" });
+    expect(para.state.openModalCalls).toEqual([]);
     await waitFor(() => expect(para.state.containers.at(-1)).toBeInstanceOf(HTMLDialogElement));
     const host = hostDialog();
 
@@ -184,23 +196,30 @@ describe("ParaModalHost", () => {
     expect(host.open).toBe(false);
     expect(openModalDialogs()).toEqual([payDialog]);
 
-    act(() => para.setOpen(true));
+    // Our own sheet is what opens now — Para's packaged modal is never asked for.
+    rerender(
+      <>
+        <Dialog open>
+          <DialogContent>
+            <DialogTitle>Pay</DialogTitle>
+            <button type="button">Pay now</button>
+          </DialogContent>
+        </Dialog>
+        <Host requestId={1} />
+      </>,
+    );
 
     await waitFor(() => expect(host.open).toBe(true));
     expect(openModalDialogs()).toEqual([payDialog, host]);
-    const signIn = screen.getByRole("button", { name: "Continue with email" });
+    const signIn = screen.getByRole("button", { name: "Continue" });
     expect(host.contains(signIn)).toBe(true);
     expect(isBlockedByModalDialog(signIn)).toBe(false);
     expect(
       isBlockedByModalDialog(screen.getByRole("button", { name: "Pay now", hidden: true })),
     ).toBe(true);
 
-    // Escape belongs to Para: a native cancel would close the host while Para
-    // still believed its own modal was open.
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(host.open).toBe(true);
-
-    act(() => para.setOpen(false));
+    // The pay dialog carries a Close of its own; this one is the sheet's.
+    fireEvent.click(within(host).getByRole("button", { name: "Close" }));
 
     await waitFor(() => expect(host.open).toBe(false));
     expect(openModalDialogs()).toEqual([payDialog]);
@@ -290,14 +309,15 @@ describe("ParaModalHost", () => {
     await waitFor(() => expect(screen.getByText(/always go through/)).toBeTruthy());
     expect(screen.getByText(/bank transfer/)).toBeTruthy();
     // Popup blockers are common enough that the link has to be clickable.
-    expect(
-      hostDialog().querySelector('a[href="https://portal.example/buy"]'),
-    ).not.toBeNull();
+    expect(hostDialog().querySelector('a[href="https://portal.example/buy"]')).not.toBeNull();
   });
 
-  it("uses Para's own add-funds screen for the embedded wallet", async () => {
+  it("keeps the embedded wallet off Para's own add-funds screen", async () => {
+    // Para's modal would bring its branding and a second provider picker with it. The headless
+    // call takes any destination, and Para knows the embedded wallet's own address.
     para.reset();
     para.state.connectorId = "para";
+    para.state.address = undefined;
 
     render(
       <ParaModalHost
@@ -310,10 +330,11 @@ describe("ParaModalHost", () => {
       />,
     );
 
-    await waitFor(() =>
-      expect(para.state.openModalCalls).toEqual([{ step: "ACCOUNT_ADD_FUNDS_BUY" }]),
-    );
-    expect(para.state.onRampCalls).toEqual([]);
+    await waitFor(() => expect(para.state.onRampCalls).toHaveLength(1));
+    expect(para.state.openModalCalls).toEqual([]);
+    expect(para.state.onRampCalls[0]).toMatchObject({
+      externalWalletAddress: para.state.wallets.embedded.address,
+    });
   });
 
   it("does not reopen the sheet when sign-in for the on-ramp is cancelled", async () => {
