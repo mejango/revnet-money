@@ -4,13 +4,17 @@ import { PortalContainerProvider } from "@getpara/react-component-library";
 import { ParaProvider, useModal } from "@getpara/react-sdk-lite";
 import "@getpara/react-sdk-lite/styles.css";
 import { Network, OnRampAsset, OnRampProvider, OnRampPurchaseType } from "@getpara/web-sdk";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAccount } from "wagmi";
 import type { ParaRequest } from "./ParaAuthContext";
 import { getParaClient, PARA_APP, PARA_ONRAMP_PROVIDER } from "./para-config";
 import { OnRampHandoff } from "./OnRampHandoff";
 import ParaAuthSheet from "./ParaAuthSheet";
+
+/** Layout effects run before paint, which is the whole point here; on the
+ *  server there is no paint and React warns, so fall back there. */
+const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function Driver({
   host,
@@ -170,22 +174,28 @@ export default function ParaModalHost({
   // body. The provider tree itself lives in the host as well, because Para's
   // warm-up iframe is a sibling of the overlay and has to stay above the
   // dialog underneath along with it.
-  const [host, setHost] = useState<HTMLDialogElement | null>(null);
-  useEffect(() => {
-    const node = document.createElement("dialog");
-    node.className = "ui-modal-host";
-    node.dataset.uiModalPortal = "";
+  // Built during render rather than in an effect. Creating it afterwards
+  // meant returning null for a render first — and since the placeholder has
+  // already unmounted by then, that null is a frame of empty screen between
+  // the two. Attaching it happens before paint for the same reason.
+  const [host] = useState<HTMLDialogElement | null>(() =>
+    typeof document === "undefined" ? null : document.createElement("dialog"),
+  );
+
+  useBeforePaint(() => {
+    if (!host) return;
+    host.className = "ui-modal-host";
+    host.dataset.uiModalPortal = "";
     // Escape belongs to Para's own dismissal path. Closing the host natively
     // would leave Para believing its modal was still open.
     const preventNativeCancel = (event: Event) => event.preventDefault();
-    node.addEventListener("cancel", preventNativeCancel);
-    document.body.appendChild(node);
-    setHost(node);
+    host.addEventListener("cancel", preventNativeCancel);
+    document.body.appendChild(host);
     return () => {
-      node.removeEventListener("cancel", preventNativeCancel);
-      node.remove();
+      host.removeEventListener("cancel", preventNativeCancel);
+      host.remove();
     };
-  }, []);
+  }, [host]);
 
   if (!host) return null;
 
