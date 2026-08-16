@@ -383,7 +383,7 @@ export default function ParaAuthSheet({
 
             The skeleton behind it covers the beat where the frame paints nothing, which mid
             sign-in reads as broken. */}
-        <div className="relative mt-4 w-full overflow-hidden" style={{ height: "64px" }}>
+        <div className="relative mt-4 w-full overflow-hidden" style={{ height: "72px" }}>
           <div
             aria-hidden="true"
             className="absolute inset-0 flex items-center justify-center gap-2"
@@ -396,7 +396,7 @@ export default function ParaAuthSheet({
             src={hostedVerifyUrl}
             title="Verification code"
             className="absolute left-0 h-72 w-full border-0"
-            style={{ top: "-112px" }}
+            style={{ top: "-104px" }}
           />
         </div>
         <button
