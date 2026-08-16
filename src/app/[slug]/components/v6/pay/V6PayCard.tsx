@@ -1226,7 +1226,11 @@ export function V6PayCard() {
                   notice; showing it is what makes that notice predictable
                   rather than a surprise at submit time. */}
               {selected ? (
-                <div className="col-start-2 row-start-3 flex flex-col items-end gap-0.5">
+                <div
+                  // Inset by the caret (h-3.5) plus its gap-1, so this
+                  // right-aligns with the token's name, not the chevron.
+                  className="col-start-2 row-start-3 -mt-1 flex flex-col items-end gap-0.5 pr-[18px]"
+                >
                   {isConnected ? (
                     <span className="whitespace-nowrap text-xs text-zinc-600">
                       Balance: {formatPayAmount(walletBalance, selected.decimals)}
