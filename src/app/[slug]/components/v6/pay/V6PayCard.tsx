@@ -1233,13 +1233,13 @@ export function V6PayCard() {
                       label: t.symbol,
                       disabled: cartCount > 0 && !shopRoutes?.[payTokenKey(t)]?.supported,
                     })),
-                    // Para's on-ramp takes no payment method, so this cannot
-                    // promise one — the provider's window asks. Naming both
-                    // rails is still worth it: bank transfers authorise far
-                    // more often than cards, and people do not know it is on
-                    // offer unless it is said.
+                    // Names both rails without promising to pick one: Para's
+                    // on-ramp takes no payment method, so the provider's own
+                    // window asks. Saying both is still worth it — bank
+                    // transfers authorise far more often than cards, and
+                    // nobody reaches for one they did not know was offered.
                     ...(onRamp.supported
-                      ? [{ value: BUY_OPTION, label: "Buy \u2014 card or bank" }]
+                      ? [{ value: BUY_OPTION, label: "Card or Bank" }]
                       : []),
                   ]}
                 />
