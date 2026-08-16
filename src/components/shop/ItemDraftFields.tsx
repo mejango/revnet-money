@@ -450,24 +450,47 @@ export function ItemDraftFields({
           </div>
 
           <div>
-            <Label className="text-xs">Use existing metadata (optional)</Label>
+            <Label className="text-xs">Use existing files (optional)</Label>
             <p className="mt-1 text-xs text-zinc-500">
-              Enter already-pinned metadata, or a media URI if you are not uploading a file.
+              Two different jobs: metadata is used as-is and supplies the item&apos;s own name,
+              description, and media; a media link is wrapped in new metadata built from the fields
+              above.
             </p>
+            <label className="mt-2 block text-xs text-zinc-500" htmlFor={`itemUri-${index}`}>
+              Metadata, already pinned
+            </label>
             <Input
+              id={`itemUri-${index}`}
+              aria-label={`Item ${index + 1} metadata URI`}
               value={item.uri}
               onChange={(e) => onChange({ uri: e.target.value })}
               placeholder="ipfs://Qm… metadata"
               disabled={disabled}
-              className="mt-2 h-10 bg-white font-mono text-xs"
+              className="mt-1 h-10 bg-white font-mono text-xs"
             />
-            <Input
-              value={item.mediaUri}
-              onChange={(e) => onChange({ mediaUri: e.target.value })}
-              placeholder="ipfs://… or https://… media"
-              disabled={disabled || !!item.mediaFile}
-              className="mt-2 h-10 bg-white font-mono text-xs"
-            />
+            {item.uri.trim() ? (
+              <p className="mt-1 text-xs text-zinc-500">
+                This item ships with that metadata. Nothing else here is uploaded for it.
+              </p>
+            ) : (
+              <>
+                <label
+                  className="mt-3 block text-xs text-zinc-500"
+                  htmlFor={`itemMediaUri-${index}`}
+                >
+                  Media link, instead of uploading a file
+                </label>
+                <Input
+                  id={`itemMediaUri-${index}`}
+                  aria-label={`Item ${index + 1} media URI`}
+                  value={item.mediaUri}
+                  onChange={(e) => onChange({ mediaUri: e.target.value })}
+                  placeholder="ipfs://… or https://… media"
+                  disabled={disabled || !!item.mediaFile}
+                  className="mt-1 h-10 bg-white font-mono text-xs"
+                />
+              </>
+            )}
           </div>
         </div>
       ) : null}

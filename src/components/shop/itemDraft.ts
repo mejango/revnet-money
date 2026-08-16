@@ -283,6 +283,10 @@ export async function pinDraftItems(
   return Promise.all(
     items.map(async (item, index) => {
       const label = items.length > 1 ? `Item ${index + 1}: ` : "";
+      // Metadata that already exists is the whole answer — it carries its own name, description
+      // and media. Pinning a second document from the form's fields would replace what the
+      // reader explicitly asked to use.
+      if (item.uri.trim()) return item;
       let mediaUri = item.mediaUri.trim();
       if (item.mediaFile) {
         const mediaCid = await pinMediaFile(item.mediaFile);
