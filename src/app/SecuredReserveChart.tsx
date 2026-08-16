@@ -163,7 +163,7 @@ export function SecuredReserveChart({
                 className="transition-opacity duration-150"
               />
             ))}
-            {hovered ? (
+            {hovered && hoveredIndex !== null ? (
               <>
                 <line
                   x1={hovered.x}
@@ -173,6 +173,17 @@ export function SecuredReserveChart({
                   stroke="currentColor"
                   strokeDasharray="3 3"
                   vectorEffect="non-scaling-stroke"
+                />
+                {/* The value marker, drawn as the bar's own cap. A CSS dot laid over the plot
+                    cannot match it: this viewBox is stretched (`preserveAspectRatio="none"`),
+                    so a bar's width in pixels depends on how wide the chart is rendered. */}
+                <rect
+                  x={chart.bars[hoveredIndex].x}
+                  y={hovered.y}
+                  width={chart.bars[hoveredIndex].width}
+                  height={Math.min(2, Math.max(HEIGHT - BOTTOM - hovered.y, 0))}
+                  rx="0.55"
+                  fill="currentColor"
                 />
               </>
             ) : null}
@@ -186,13 +197,6 @@ export function SecuredReserveChart({
               onPointerLeave={() => setHoveredIndex(null)}
             />
             </svg>
-            {hovered ? (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-600"
-                style={{ left: `${hovered.x}%`, top: `${(hovered.y / HEIGHT) * 100}%` }}
-              />
-            ) : null}
           </div>
           <div className="mt-1 flex justify-between text-[10px] tabular-nums text-zinc-400">
             <span>{date(chart.minTime, true)}</span>

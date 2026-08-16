@@ -87,6 +87,12 @@ export function AddStageDialog({
     reserveAssetSymbol,
   } = useCreateForm();
   const reserveAsset = reserveAssetSymbol;
+  // Splits most often pay the operator, so its address is the useful prefill. The operator
+  // itself is set in its own section; this only reads it.
+  const namedOperator =
+    perChainOperators.find(
+      (entry) => entry.address.trim().toLowerCase() !== PERMANENTLY_DISABLED_OPERATOR,
+    )?.address ?? "";
   // A custom reserve is its own denomination, so there is nothing to choose.
   const customReserve = reserveAssetChoice === "CUSTOM";
   // Chains are picked in the form's first section, so every chain-dependent
@@ -96,11 +102,6 @@ export function AddStageDialog({
     "h-9 flex-1 border-2 border-melon-300 bg-melon-25 px-3 py-1.5 text-md placeholder:text-zinc-500 hover:border-melon-400 focus-visible:border-melon-600 focus-visible:outline-none focus-visible:ring-0";
 
   const [open, setOpen] = useState(false);
-
-  // Per-chain operators are a parent-form field, but edits are buffered here
-  // and committed only on "Save stage" — closing the dialog without saving
-  // must leave the parent form untouched.
-  const [draftOperators, setDraftOperators] = useState(perChainOperators);
 
   // The issuance denomination is a single global value (the ruleset's base
   // currency for the whole revnet), edited inline in the first stage's issuance
@@ -140,7 +141,6 @@ export function AddStageDialog({
       onOpenChange={(nextOpen) => {
         // (Re)start the buffers from the parent's current state on every open.
         if (nextOpen) {
-          setDraftOperators(perChainOperators);
           setDraftBaseCurrency(issuanceBaseCurrency);
         }
         setOpen(nextOpen);
@@ -169,7 +169,6 @@ export function AddStageDialog({
 
                 // Commit the buffered parent-form fields along with the stage.
                 if (stageIdx === 0) {
-                  setCreateFieldValue("operator", draftOperators);
                   setCreateFieldValue("issuanceBaseCurrency", draftBaseCurrency);
                 }
                 onSave(newValues);
@@ -230,10 +229,6 @@ export function AddStageDialog({
                   setFieldValue(`splits.${index}.beneficiary.${entryIndex}.address`, address);
                 }
               };
-
-              const operatorControlsEnabled =
-                values.initialOperator?.trim().toLowerCase() !==
-                PERMANENTLY_DISABLED_OPERATOR;
 
               return (
                 <Form>
@@ -413,7 +408,7 @@ export function AddStageDialog({
                                       width="min-w-40 flex-1"
                                       placeholder="0x"
                                       required
-                                      defaultValue={stages[0]?.initialOperator || ""}
+                                      defaultValue={namedOperator}
                                     />
                                     <Button
                                       variant="ghost"
@@ -517,122 +512,6 @@ export function AddStageDialog({
                         {values.splits.length == 0 && (
                           <div className="text-sm font-medium text-zinc-500 mt-4 border-l border-zinc-300 pl-2 py-1 px-1">
                             Without splits, the payer always receives 100% of issuance.
-                          </div>
-                        )}
-                        {stageIdx === 0 && (
-                          <div className="mt-6 border-t border-zinc-200 pt-5">
-                            <label className="flex cursor-pointer items-start gap-3 border border-melon-300 bg-melon-25 p-4">
-                              <input
-                                type="checkbox"
-                                className="mt-1 h-4 w-4 accent-green-600"
-                                checked={operatorControlsEnabled}
-                                onChange={(event) => {
-                                  setFieldValue(
-                                    "initialOperator",
-                                    event.target.checked ? "" : PERMANENTLY_DISABLED_OPERATOR,
-                                  );
-                                  setDraftOperators([]);
-                                }}
-                              />
-                              <span>
-                                <span className="block text-md font-semibold text-zinc-800">
-                                  Enable limited operator controls
-                                </span>
-                                <span className="mt-1 block text-sm leading-relaxed text-zinc-500">
-                                  An operator can update the revnet&apos;s name, logo, and description;
-                                  redirect only the precommitted split share; manage shop items only
-                                  where those permissions were enabled; and add matching chains when
-                                  the original deployer is the operator. It cannot rewrite staged
-                                  issuance or cash-out rules.
-                                </span>
-                              </span>
-                            </label>
-                            {operatorControlsEnabled ? (
-                              <div className="mt-4">
-                                <label
-                                  className="mb-1 block text-md text-zinc-600"
-                                  htmlFor="initialOperator"
-                                >
-                                  Revnet operator
-                                </label>
-                                <Field id="initialOperator" name="initialOperator" placeholder="0x" />
-                                <p className="mt-1 text-sm text-zinc-500">
-                                  Leave empty here to confirm an address for each chain before
-                                  deploying.
-                                </p>
-                                {chainIds.length > 1 && (
-                                  <div className="mt-2">
-                                    <label
-                                      className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
-                                      htmlFor="perChainOperator"
-                                    >
-                                      set operator per chain?
-                                      <input
-                                        type="checkbox"
-                                        id="perChainOperator"
-                                        checked={draftOperators.length > 0}
-                                        onChange={(event) =>
-                                          setDraftOperators(
-                                            event.target.checked
-                                              ? sortedChainIds.map((chainId) => ({
-                                                  chainId: String(chainId),
-                                                  address: values.initialOperator || "",
-                                                }))
-                                              : [],
-                                          )
-                                        }
-                                      />
-                                    </label>
-                                    {draftOperators.length > 0 && (
-                                      <div className="mt-2 space-y-2">
-                                        {draftOperators.map((operator, operatorIndex) => {
-                                          const chainId = Number(operator.chainId) as JBChainId;
-                                          return (
-                                            <div
-                                              key={operator.chainId}
-                                              className="flex items-center gap-2 text-md text-zinc-600"
-                                            >
-                                              <div className="flex w-40 shrink-0 items-center gap-2 text-sm">
-                                                <ChainLogo
-                                                  chainId={chainId}
-                                                  width={20}
-                                                  height={20}
-                                                />
-                                                <span className="text-zinc-400">
-                                                  {JB_CHAINS[chainId].name}
-                                                </span>
-                                              </div>
-                                              <input
-                                                aria-label={`${JB_CHAINS[chainId].name} operator`}
-                                                className={perChainInputClassName}
-                                                placeholder="0x"
-                                                value={operator.address}
-                                                onChange={(event) =>
-                                                  setDraftOperators((previous) =>
-                                                    previous.map((entry, index) =>
-                                                      index === operatorIndex
-                                                        ? {
-                                                            ...entry,
-                                                            address: event.target.value,
-                                                          }
-                                                        : entry,
-                                                    ),
-                                                  )
-                                                }
-                                              />
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <p className="mt-3 text-sm text-zinc-500">
-                                No operator address will retain these limited controls.
-                              </p>
-                            )}
                           </div>
                         )}
                       </div>

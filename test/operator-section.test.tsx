@@ -1,12 +1,11 @@
-import { ChainOperator } from "@/app/create/form/ChainOperator";
 import { PERMANENTLY_DISABLED_OPERATOR } from "@/app/create/constants";
+import { OperatorSection } from "@/app/create/form/OperatorSection";
 import { createSchema } from "@/app/create/helpers/createSchema";
 import { parseDeployData } from "@/app/create/helpers/parseDeployData";
 import type { RevnetFormData } from "@/app/create/types";
 import { withSchema } from "@/lib/formValidation";
 import { FormProvider } from "@/lib/forms";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { useState } from "react";
 import { baseSepolia, sepolia } from "viem/chains";
 import { describe, expect, it } from "vitest";
 import {
@@ -32,7 +31,6 @@ function operatorForm(): RevnetFormData {
 }
 
 function Harness({ initialValues }: { initialValues: RevnetFormData }) {
-  const [show, setShow] = useState(true);
   return (
     <FormProvider
       initialValues={initialValues}
@@ -42,10 +40,7 @@ function Harness({ initialValues }: { initialValues: RevnetFormData }) {
     >
       {({ values }) => (
         <>
-          {show ? <ChainOperator /> : null}
-          <button type="button" onClick={() => setShow(false)}>
-            hide-operator
-          </button>
+          <OperatorSection />
           <output data-testid="operator-state">{JSON.stringify(values.operator)}</output>
         </>
       )}
@@ -55,6 +50,10 @@ function Harness({ initialValues }: { initialValues: RevnetFormData }) {
 
 function operatorState(): RevnetFormData["operator"] {
   return JSON.parse(screen.getByTestId("operator-state").textContent ?? "[]");
+}
+
+function toggle() {
+  return screen.getByRole("checkbox", { name: /enable limited operator controls/i });
 }
 
 function deployOperatorFor(form: RevnetFormData, chainId: number) {
@@ -69,13 +68,20 @@ function deployOperatorFor(form: RevnetFormData, chainId: number) {
   return (request.args[1] as { operator: string }).operator;
 }
 
-describe("ChainOperator per-chain binding", () => {
-  it("encodes 0xdead on every chain when limited controls are disabled", () => {
+describe("OperatorSection", () => {
+  it("starts with no operator, and offers no address inputs until controls are enabled", () => {
     render(<Harness initialValues={operatorForm()} />);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /enable limited operator controls/i }));
-
+    expect(toggle()).not.toBeChecked();
     expect(screen.queryByLabelText("Sepolia operator address")).not.toBeInTheDocument();
+  });
+
+  it("encodes 0xdead on every chain when limited controls are switched off", () => {
+    render(<Harness initialValues={operatorForm()} />);
+
+    fireEvent.click(toggle()); // on
+    fireEvent.click(toggle()); // off again
+
     expect(operatorState()).toEqual([
       { chainId: String(sepolia.id), address: PERMANENTLY_DISABLED_OPERATOR },
       { chainId: String(baseSepolia.id), address: PERMANENTLY_DISABLED_OPERATOR },
@@ -86,8 +92,26 @@ describe("ChainOperator per-chain binding", () => {
     expect(deployOperatorFor(form, baseSepolia.id)).toBe(PERMANENTLY_DISABLED_OPERATOR);
   });
 
+  it("seeds an entry per chain when enabled, so an unfilled operator cannot deploy as 0xdead", () => {
+    // The stage carries the disabled sentinel, which is what parseDeployData falls back to when
+    // a chain has no entry of its own. Without a seeded entry, checking the box would read as
+    // "operator enabled" and still deploy with nobody holding the controls.
+    const form = operatorForm();
+    form.stages[0].initialOperator = PERMANENTLY_DISABLED_OPERATOR;
+    render(<Harness initialValues={form} />);
+
+    fireEvent.click(toggle());
+
+    expect(operatorState()).toEqual([
+      { chainId: String(sepolia.id), address: "" },
+      { chainId: String(baseSepolia.id), address: "" },
+    ]);
+    expect(createSchema.safeParse({ ...form, operator: operatorState() }).success).toBe(false);
+  });
+
   it("binds each typed address to the chain it is rendered beside, not the selection index", () => {
     render(<Harness initialValues={operatorForm()} />);
+    fireEvent.click(toggle());
 
     fireEvent.change(screen.getByLabelText("Sepolia operator address"), {
       target: { value: TEST_ACCOUNT },
@@ -109,53 +133,28 @@ describe("ChainOperator per-chain binding", () => {
     expect(deployOperatorFor(form, baseSepolia.id)).toBe(TEST_BENEFICIARY);
   });
 
-  it("does not seed entries on mount and never rewrites existing entries", () => {
+  it("shows the operator an imported draft saved on its first stage", () => {
     const form = operatorForm();
-    // A pre-existing entry, e.g. set from the stage dialog.
-    form.operator = [{ chainId: String(baseSepolia.id), address: TEST_BENEFICIARY }];
+    form.stages[0].initialOperator = TEST_ACCOUNT;
     render(<Harness initialValues={form} />);
 
-    // Untouched on mount: same single entry, same chainId.
+    expect(toggle()).toBeChecked();
+    expect(screen.getByLabelText("Sepolia operator address")).toHaveValue(TEST_ACCOUNT);
     expect(operatorState()).toEqual([
-      { chainId: String(baseSepolia.id), address: TEST_BENEFICIARY },
-    ]);
-
-    // The pre-existing entry backs its chain's input; the other starts empty.
-    expect(screen.getByLabelText("Base Sepolia operator address")).toHaveValue(TEST_BENEFICIARY);
-    expect(screen.getByLabelText("Sepolia operator address")).toHaveValue("");
-
-    // Typing on the other chain appends without touching the existing entry.
-    fireEvent.change(screen.getByLabelText("Sepolia operator address"), {
-      target: { value: TEST_ACCOUNT },
-    });
-    expect(operatorState()).toEqual([
-      { chainId: String(baseSepolia.id), address: TEST_BENEFICIARY },
       { chainId: String(sepolia.id), address: TEST_ACCOUNT },
+      { chainId: String(baseSepolia.id), address: TEST_ACCOUNT },
     ]);
   });
 
-  it("starts with no entries and removes empty ones when the section unmounts", () => {
-    render(<Harness initialValues={operatorForm()} />);
-
-    // No empty seeding on mount (empty entries would dead-end validation
-    // after the section disappears).
-    expect(operatorState()).toEqual([]);
-
-    fireEvent.change(screen.getByLabelText("Sepolia operator address"), {
-      target: { value: TEST_ACCOUNT },
-    });
-    fireEvent.change(screen.getByLabelText("Base Sepolia operator address"), {
-      target: { value: TEST_BENEFICIARY },
-    });
-    // Clearing leaves an empty entry behind…
-    fireEvent.change(screen.getByLabelText("Sepolia operator address"), {
-      target: { value: "" },
-    });
-
-    // …which is cleaned up when the section unmounts.
-    fireEvent.click(screen.getByText("hide-operator"));
-    expect(operatorState()).toEqual([
+  it("drops entries for chains that are no longer selected", () => {
+    const form = operatorForm();
+    form.chainIds = [sepolia.id];
+    form.operator = [
+      { chainId: String(sepolia.id), address: TEST_ACCOUNT },
       { chainId: String(baseSepolia.id), address: TEST_BENEFICIARY },
-    ]);
+    ];
+    render(<Harness initialValues={form} />);
+
+    expect(operatorState()).toEqual([{ chainId: String(sepolia.id), address: TEST_ACCOUNT }]);
   });
 });

@@ -1,5 +1,7 @@
 "use client";
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
 /**
  * A term whose definition appears on hover, marked by a dotted underline.
  *
@@ -26,16 +28,27 @@ export function ConceptTerm({
   className?: string;
 }) {
   return (
-    <span
-      title={note}
-      tabIndex={0}
-      className={[
-        "cursor-help border-b border-dotted border-zinc-400 transition-colors",
-        "hover:border-zinc-600 focus:border-zinc-600 focus:outline-none",
-        className ?? "",
-      ].join(" ")}
-    >
-      {children}
-    </span>
+    <Tooltip>
+      <TooltipTrigger
+        asChild
+        // The browser's own `title` tooltip waits about a second and cannot be
+        // tuned, which reads as nothing happening. This is the same panel the
+        // rest of the app uses, on the app's own delay.
+      >
+        <span
+          tabIndex={0}
+          className={[
+            "cursor-help border-b border-dotted border-zinc-400 transition-colors",
+            "hover:border-zinc-600 focus:border-zinc-600 focus:outline-none",
+            className ?? "",
+          ].join(" ")}
+        >
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed font-normal">
+        {note}
+      </TooltipContent>
+    </Tooltip>
   );
 }

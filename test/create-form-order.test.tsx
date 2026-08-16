@@ -66,7 +66,13 @@ describe("create form section order", () => {
       .getAllByRole("heading", { level: 2 })
       .map((heading) => heading.textContent ?? "");
 
-    expect(headings).toEqual(["1. Look", "2. Settlement", "3. Terms", "4. Deploy"]);
+    expect(headings).toEqual([
+      "1. Look",
+      "2. Settlement",
+      "3. Terms",
+      "4. Operator",
+      "5. Deploy",
+    ]);
   });
 
   it("settles chains and the reserve asset in one section, chains first", () => {
@@ -99,11 +105,11 @@ describe("create form section order", () => {
   it("promises operator-added chains from the deploy step, not the chain picker", () => {
     renderCreateForm(validRevnetForm());
 
-    // The operator is configured in Terms, below the chain picker: this
+    // The operator is named in its own section, below the chain picker: this
     // promise only reads correctly once it sits with the other post-deploy
     // expectations.
     const copy = screen.getByText(/able to add new chains to the revnet later/i);
-    expect(copy.closest("div")?.querySelector("h2")?.textContent).toBe("4. Deploy");
+    expect(copy.closest("div")?.querySelector("h2")?.textContent).toBe("5. Deploy");
   });
 
   it("shows create validation beside the button that requested the quote", () => {
@@ -146,7 +152,7 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
     return (suffix?.textContent ?? "").replace(/\s+/g, " ").trim();
   }
 
-  it("expands a split beneficiary and the operator to per-chain values at the field", () => {
+  it("expands a split beneficiary to per-chain values at the field", () => {
     renderCreateForm(multiChainForm());
 
     fireEvent.click(screen.getByLabelText("Edit stage 1"));
@@ -162,44 +168,11 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
       target: { value: TEST_ACCOUNT },
     });
 
-    // Operator expands the same way, seeded with the stage operator. The
-    // dialog buffers the edit: nothing reaches the parent form until Save.
-    fireEvent.click(screen.getByLabelText(/per chain/i, { selector: "#perChainOperator" }));
-    fireEvent.change(screen.getByLabelText("Base Sepolia operator"), {
-      target: { value: TEST_BENEFICIARY },
-    });
-    expect(formState().operator).toEqual([]);
-
     fireEvent.click(screen.getByText("Save stage"));
-    expect(formState().operator).toEqual([
-      { chainId: String(sepolia.id), address: TEST_ACCOUNT },
-      { chainId: String(baseSepolia.id), address: TEST_BENEFICIARY },
-    ]);
     expect(formState().stages[0].splits[0].beneficiary).toEqual([
       { chainId: sepolia.id, address: TEST_BENEFICIARY },
       { chainId: baseSepolia.id, address: TEST_ACCOUNT },
     ]);
-  });
-
-  it("discards buffered per-chain operator edits when the dialog closes without saving", () => {
-    renderCreateForm(multiChainForm());
-
-    fireEvent.click(screen.getByLabelText("Edit stage 1"));
-    fireEvent.click(screen.getByLabelText(/per chain/i, { selector: "#perChainOperator" }));
-    fireEvent.change(screen.getByLabelText("Base Sepolia operator"), {
-      target: { value: TEST_BENEFICIARY },
-    });
-
-    // Cancel means cancel: close without saving.
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
-    expect(formState().operator).toEqual([]);
-
-    // Reopening starts from the parent's (unchanged) state.
-    fireEvent.click(screen.getByLabelText("Edit stage 1"));
-    expect(
-      (screen.getByLabelText(/per chain/i, { selector: "#perChainOperator" }) as HTMLInputElement)
-        .checked,
-    ).toBe(false);
   });
 
   it("edits the issuance denomination inline in the stage, as one global value", () => {

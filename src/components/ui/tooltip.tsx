@@ -14,7 +14,9 @@ type TooltipProviderValue = {
 };
 
 const defaultProvider: TooltipProviderValue = {
-  delayDuration: 700,
+  // Short enough to feel like a response to the hover rather than a timeout.
+  // The browser's own `title` delay is ~1s, which reads as broken.
+  delayDuration: 200,
   markClosed: () => {},
   skipDelayDuration: 300,
   wasRecentlyOpen: () => false,
@@ -30,7 +32,7 @@ interface TooltipProviderProps {
 
 function TooltipProvider({
   children,
-  delayDuration = 700,
+  delayDuration = 200,
   skipDelayDuration = 300,
 }: TooltipProviderProps) {
   const lastClosedAt = React.useRef(0);

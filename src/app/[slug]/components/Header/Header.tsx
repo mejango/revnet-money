@@ -110,19 +110,23 @@ export function Header(props: Props) {
       const chainsElement = chainsRef.current;
       const previousCreatedElement = websiteElement ?? operatorElement;
       const previousChainsElement = createdElement ?? previousCreatedElement;
+      // Compare vertical centres, not top edges. These items are not the same
+      // height — the operator's link carries a touch-target minimum — so on a
+      // single line their tops differ and an offsetTop check reads as
+      // "wrapped", quietly hiding every separator.
+      const onSameLine = (a: HTMLElement | null, b: HTMLElement | null) => {
+        if (!a || !b) return false;
+        const first = a.getBoundingClientRect();
+        const second = b.getBoundingClientRect();
+        const apart = Math.abs(
+          (first.top + first.bottom) / 2 - (second.top + second.bottom) / 2,
+        );
+        return apart < Math.min(first.height, second.height) / 2;
+      };
       const nextJoinedMetadata = {
-        website:
-          operatorElement != null &&
-          websiteElement != null &&
-          operatorElement.offsetTop === websiteElement.offsetTop,
-        created:
-          previousCreatedElement != null &&
-          createdElement != null &&
-          previousCreatedElement.offsetTop === createdElement.offsetTop,
-        chains:
-          previousChainsElement != null &&
-          chainsElement != null &&
-          previousChainsElement.offsetTop === chainsElement.offsetTop,
+        website: onSameLine(operatorElement, websiteElement),
+        created: onSameLine(previousCreatedElement, createdElement),
+        chains: onSameLine(previousChainsElement, chainsElement),
       };
 
       setJoinedMetadata((current) =>

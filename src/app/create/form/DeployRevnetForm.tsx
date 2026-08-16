@@ -9,6 +9,7 @@ import { useTestData } from "../helpers/useTestData";
 import type { RevnetFormData } from "../types";
 import { DeploySection } from "./DeploySection";
 import { Divider } from "./Divider";
+import { OperatorSection } from "./OperatorSection";
 import { ProjectDetails } from "./ProjectDetails";
 import { QuoteResponse } from "./QuoteResponse";
 import { SettlementSection } from "./SettlementSection";
@@ -67,6 +68,8 @@ export function DeployRevnetForm({
       <SettlementSection disabled={disabled} />
       <Divider />
       <Stages disabled={disabled} />
+      <Divider />
+      <OperatorSection disabled={disabled} />
       <Divider />
       <DeploySection validBundle={validBundle} disabled={disabled} />
       {relayrResponse && (

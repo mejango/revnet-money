@@ -18,7 +18,8 @@ import {
  * wrong — a permanent banner reads as a warning and trains the reader to ignore it. Anything
  * saying data is missing or a source is down belongs inline, where it cannot be missed.
  *
- * `title` carries the same text so it survives touch, where there is no hover.
+ * No `title` alongside it: the browser would show its own slower copy on top of this one.
+ * `aria-label` carries the text for assistive tech, and the panel opens on tap.
  */
 export function InfoTip({ note }: { note: string }) {
   return (
@@ -28,7 +29,6 @@ export function InfoTip({ note }: { note: string }) {
           <button
             type="button"
             aria-label={note}
-            title={note}
             className="flex items-center justify-center text-zinc-400 transition-colors hover:text-zinc-600"
           >
             <InformationCircle className="h-[18px] w-[18px]" />

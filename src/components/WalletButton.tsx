@@ -440,8 +440,14 @@ export function WalletButton() {
         }}
         className="gap-2"
       >
-        <span className="h-2 w-2 bg-teal-500" aria-hidden />
-        <span>{ensName ?? formatEthAddress(address, { truncateTo: 4 })}</span>
+        <span className="h-2 w-2 shrink-0 bg-teal-500" aria-hidden />
+        {/* The state is the headline; which account is the detail. */}
+        <span className="flex flex-col items-start leading-tight">
+          <span>Signed in</span>
+          <span className="text-[11px] text-zinc-600">
+            {ensName ?? formatEthAddress(address, { truncateTo: 4 })}
+          </span>
+        </span>
         {formattedBalance ? (
           <span className="hidden whitespace-nowrap border-l border-zinc-200 pl-2 text-zinc-600 sm:inline">
             {formattedBalance}
