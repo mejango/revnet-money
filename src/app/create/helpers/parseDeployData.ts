@@ -197,11 +197,10 @@ export function parseDeployData(
   // The v6 REVDeployer bakes in the terminals, buyback hook, and loans contract.
   // `buildDeployRevnetTx` sends the creation fee as the transaction's value
   // (revnetId defaults to 0n: a new revnet).
-  // The shop's collection deploys with the revnet whenever it is stocked here. A revnet's
-  // rulesets are immutable and the 721 hook is wired in as the pay data hook at launch, so a
-  // collection that is not deployed now can never be added later — the store section says so.
-  // A custom reserve asset also deploys an (empty) collection, so its store inherits the
-  // ERC-20's decimals rather than the convenience overload's hardcoded 18.
+  // Every revnet gets a store: REVDeployer's four-argument `deployFor` deploys an empty 721
+  // hook itself when none is given (REVDeployer.sol:594-605). It hardcodes 18 price decimals
+  // there, which mis-prices a USD- or USDC-denominated store by twelve orders of magnitude, and
+  // grants the operator every 721 permission. So the config is always ours to send.
   //
   // Item prices are denominated in the revnet's own base currency by default — the same unit
   // its issuance is quoted in — or in USD when the store is priced that way. The decimals must
@@ -223,36 +222,32 @@ export function parseDeployData(
   const tiers = buildTierConfigs(formData.store.items, storePricing.decimals, extra.chainId);
   if (typeof tiers === "string") throw new Error(tiers);
 
-  const deploysStore = formData.store.items.length > 0 || formData.reserveAsset === "CUSTOM";
-
-  const tiered721Config = !deploysStore
-    ? undefined
-    : {
-        baseline721HookConfiguration: {
-          name: formData.store.collectionName.trim() || `${formData.name} Store`,
-          symbol: formData.store.collectionSymbol.trim() || `${formData.tokenSymbol}STORE`,
-          baseUri: "ipfs://",
-          tokenUriResolver: zeroAddress,
-          contractUri: extra.metadataCid,
-          tiersConfig: {
-            tiers,
-            currency: storePricing.currency,
-            decimals: storePricing.decimals,
-          },
-          flags: {
-            noNewTiersWithReserves: formData.store.noNewTiersWithReserves,
-            noNewTiersWithVotes: formData.store.noNewTiersWithVotes,
-            noNewTiersWithOwnerMinting: formData.store.noNewTiersWithOwnerMinting,
-            preventOverspending: formData.store.preventOverspending,
-          },
-        },
-        salt: extra.salt,
-        // The form asks what the operator MAY do; the deployer takes what it may NOT.
-        preventOperatorAdjustingTiers: !formData.store.operatorCanAdjustTiers,
-        preventOperatorUpdatingMetadata: !formData.store.operatorCanUpdateMetadata,
-        preventOperatorMinting: !formData.store.operatorCanMint,
-        preventOperatorIncreasingDiscountPercent: !formData.store.operatorCanIncreaseDiscount,
-      };
+  const tiered721Config = {
+    baseline721HookConfiguration: {
+      name: formData.store.collectionName.trim() || `${formData.name} Store`,
+      symbol: formData.store.collectionSymbol.trim() || `${formData.tokenSymbol}STORE`,
+      baseUri: "ipfs://",
+      tokenUriResolver: zeroAddress,
+      contractUri: extra.metadataCid,
+      tiersConfig: {
+        tiers,
+        currency: storePricing.currency,
+        decimals: storePricing.decimals,
+      },
+      flags: {
+        noNewTiersWithReserves: formData.store.noNewTiersWithReserves,
+        noNewTiersWithVotes: formData.store.noNewTiersWithVotes,
+        noNewTiersWithOwnerMinting: formData.store.noNewTiersWithOwnerMinting,
+        preventOverspending: formData.store.preventOverspending,
+      },
+    },
+    salt: extra.salt,
+    // The form asks what the operator MAY do; the deployer takes what it may NOT.
+    preventOperatorAdjustingTiers: !formData.store.operatorCanAdjustTiers,
+    preventOperatorUpdatingMetadata: !formData.store.operatorCanUpdateMetadata,
+    preventOperatorMinting: !formData.store.operatorCanMint,
+    preventOperatorIncreasingDiscountPercent: !formData.store.operatorCanIncreaseDiscount,
+  };
 
   const request = buildDeployRevnetTx({
     chainId: extra.chainId,
@@ -274,11 +269,8 @@ export function parseDeployData(
       salt: extra.salt,
     },
     creationFee: extra.creationFee,
-    // The explicit hook config, never the convenience 4-arg overload: that one hardcodes 18
-    // shop-price decimals, which mis-prices every USDC- and USD-denominated store by twelve
-    // orders of magnitude.
     tiered721Config,
-    allowedPosts: tiered721Config ? [] : undefined,
+    allowedPosts: [],
   });
 
   // Viem cannot reliably disambiguate overloaded tuple-heavy functions when

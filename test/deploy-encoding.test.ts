@@ -70,7 +70,10 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     expect(request.address).toBe(SEPOLIA_REV_DEPLOYER);
   });
 
-  it("selects and round-trips the canonical four-argument deployFor overload", () => {
+  // Every revnet carries a store: REVDeployer deploys an empty 721 hook itself when no config
+  // is given, hardcoding 18 price decimals and every operator permission, so the client always
+  // sends the six-argument overload with the store the form actually described.
+  it("selects and round-trips the store-carrying deployFor overload", () => {
     const request = buildRequest();
     const data = encodeFunctionData({
       abi: request.abi,
@@ -79,7 +82,6 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
     });
     const decoded = decodeFunctionData({ abi: request.abi, data });
 
-    expect(data.slice(0, 10)).toBe("0x54ca091d");
     expect(decoded.functionName).toBe("deployFor");
     expect(
       encodeFunctionData({
@@ -88,7 +90,7 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
         args: decoded.args as typeof request.args,
       }),
     ).toBe(data);
-    expect(request.args).toHaveLength(4);
+    expect(request.args).toHaveLength(6);
     expect(request.args[0]).toBe(0n);
     expect(request.value).toBe(CREATION_FEE);
     expect(request.chainId).toBe(sepolia.id);
@@ -212,7 +214,7 @@ describe("wallet-action:create-revnet — REVDeployer deployment encoding", () =
       },
       { token: usdc, decimals: 6, currency: tokenCurrencyId(usdc) },
     ]);
-    expect(request.args).toHaveLength(4);
+    expect(request.args).toHaveLength(6);
     expect(() => encodeFunctionData(request)).not.toThrow();
 
     const usdRequest = buildRequest("ETH_USDC", "USD");

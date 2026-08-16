@@ -2,6 +2,13 @@ import { ItemDraftFields } from "@/components/shop/ItemDraftFields";
 import { MAX_MEDIA_BYTES, newDraftItem, type DraftItem } from "@/components/shop/itemDraft";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useFormContext } from "@/lib/forms";
 import { sortChains } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
@@ -11,10 +18,9 @@ import { useCreateForm } from "./useCreateForm";
 /**
  * The shop that deploys with the revnet.
  *
- * Items are optional, but the collection is not retrofittable: a revnet's rulesets are
- * immutable and the 721 hook is wired in as the pay data hook at launch, so a revnet that
- * launches without a shop can never be given one. The section says so rather than quietly
- * deciding for the reader.
+ * Items are optional. The collection itself is not: REVDeployer deploys an empty 721 hook for
+ * every revnet whether or not one is configured, so the only question here is what it holds and
+ * how it is set up — which is why nothing in this section is gated on adding an item.
  */
 export function StoreSection({ disabled = false }: { disabled?: boolean }) {
   const { values, setFieldValue } = useFormContext<RevnetFormData>();
@@ -87,14 +93,10 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
       <div className="md:col-span-1">
         <h2 className="mb-4 text-lg font-bold md:mb-2">4. Store</h2>
         <p className="text-lg text-zinc-600">
-          Sell things right from your revnet&apos;s page. Each sale pays the revnet, and the buyer
-          gets the item plus {revnetTokenSymbol}.
+          Sell things right from your revnet. Each sale pays the revnet, and the buyer gets the item
+          plus {revnetTokenSymbol}.
         </p>
-        <p className="mt-2 text-lg text-zinc-600">
-          Optional, but only at launch: a revnet&apos;s rules are fixed once deployed, so a revnet
-          that launches without a store can never add one. Stock it with a single item now and the
-          operator can add the rest later.
-        </p>
+        <p className="mt-2 text-lg text-zinc-600">The Operator can add items later.</p>
       </div>
       <div className="mt-6 md:col-span-2 md:mt-0">
         <div>
@@ -102,36 +104,26 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
           <p className="mt-1 text-xs text-zinc-500">
             What items are priced in — buyers can still pay with anything the revnet accepts.
           </p>
-          <div className="mt-2 flex flex-wrap gap-3">
-            {(
-              [
-                {
-                  value: "reserve" as const,
-                  title: values.issuanceBaseCurrency === "USD" ? "USD" : reserveAssetSymbol,
-                  blurb: "Same denomination as issuance",
-                },
-                { value: "USD" as const, title: "USD", blurb: "US dollars" },
-              ] as const
-            ).map((option) => (
-              <label
-                key={option.value}
-                className="flex cursor-pointer items-start gap-2 border border-melon-300 bg-melon-25 px-4 py-3"
-              >
-                <input
-                  type="radio"
-                  name="storePricing"
-                  className="mt-0.5 h-4 w-4 accent-green-600"
-                  checked={store.pricing === option.value}
-                  disabled={disabled}
-                  onChange={() => setStore({ pricing: option.value })}
-                />
-                <span>
-                  <span className="block text-sm font-medium text-zinc-800">{option.title}</span>
-                  <span className="block text-xs text-zinc-500">{option.blurb}</span>
-                </span>
-              </label>
-            ))}
-          </div>
+          <Select
+            value={store.pricing}
+            onValueChange={(value) => setStore({ pricing: value as typeof store.pricing })}
+            disabled={disabled}
+          >
+            <SelectTrigger
+              aria-label="Pricing currency"
+              className="mt-2 w-56 border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="reserve">
+                {values.issuanceBaseCurrency === "USD" && values.reserveAsset !== "CUSTOM"
+                  ? "USD"
+                  : reserveAssetSymbol}
+              </SelectItem>
+              <SelectItem value="USD">USD</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {store.items.length > 0 ? (

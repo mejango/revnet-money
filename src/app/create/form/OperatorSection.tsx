@@ -2,7 +2,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { useFormContext } from "@/lib/forms";
 import { sortChains } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PERMANENTLY_DISABLED_OPERATOR } from "../constants";
 import { RevnetFormData } from "../types";
 
@@ -32,38 +32,73 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
   // Drafts written before this section existed carry the operator on stage 1. Reading it here
   // keeps an imported `.jb` showing the operator it was saved with.
   const fromStage = values.stages[0]?.initialOperator?.trim() ?? "";
-  const controlsEnabled =
-    operators.length > 0
-      ? !operators.every((entry) => isDisabled(entry.address))
-      : fromStage !== "" && !isDisabled(fromStage);
+  const namedInStage = fromStage !== "" && !isDisabled(fromStage);
+
+  // The answer to "is there an operator?" is a question about the revnet, not about any chain,
+  // so the section holds it rather than deriving it from the address rows. Chains are picked in
+  // an earlier section, but the reader can answer this one before going back for them.
+  const [controlsEnabled, setControlsEnabled] = useState(
+    () => namedInStage || (operators.length > 0 && !operators.every((e) => isDisabled(e.address))),
+  );
 
   const entryFor = (chainId: JBChainId) =>
     operators.find((entry) => Number(entry.chainId) === Number(chainId));
 
-  // Entries for chains that are no longer selected are a validation error the reader cannot
-  // see, since this section only renders rows for selected chains. Prune them where they are
-  // made rather than leaving them to fail at submit.
-  const latestRef = useRef({ operators, sortedChains, setFieldValue, fromStage });
-  latestRef.current = { operators, sortedChains, setFieldValue, fromStage };
+  const latestRef = useRef({ operators, sortedChains, setFieldValue, fromStage, controlsEnabled });
+  latestRef.current = { operators, sortedChains, setFieldValue, fromStage, controlsEnabled };
+
+  // An imported draft arrives after mount, so the initial answer above can be the wrong one.
+  useEffect(() => {
+    if (operators.length > 0 && !operators.every((entry) => isDisabled(entry.address))) {
+      setControlsEnabled(true);
+    }
+  }, [operators]);
+
+  // The rows mirror the chains that are actually selected: one entry each, no more. Anything
+  // else is a validation error the reader cannot see, since only selected chains are rendered —
+  // a stale entry for a dropped chain, or a missing one for a chain added after this was
+  // answered, would only surface at submit.
   useEffect(() => {
     const latest = latestRef.current;
-    // An operator carried on stage 1 by an older draft, with no per-chain entries of its own:
-    // fill the rows in so the reader sees the address they are about to deploy with.
-    if (latest.operators.length === 0 && latest.fromStage !== "" && !isDisabled(latest.fromStage)) {
-      latest.setFieldValue(
-        "operator",
-        latest.sortedChains.map((chainId) => ({
-          chainId: String(chainId),
-          address: latest.fromStage,
-        })),
+    if (latest.sortedChains.length === 0) return;
+    const next = latest.sortedChains.map((chainId) => {
+      const existing = latest.operators.find(
+        (entry) => Number(entry.chainId) === Number(chainId),
+      )?.address;
+      const seed = latest.controlsEnabled
+        ? isDisabled(latest.fromStage)
+          ? ""
+          : latest.fromStage
+        : PERMANENTLY_DISABLED_OPERATOR;
+      // Keep whatever was typed, unless the answer above contradicts it.
+      const keep =
+        existing !== undefined && isDisabled(existing) !== latest.controlsEnabled ? existing : seed;
+      return { chainId: String(chainId), address: keep };
+    });
+    const unchanged =
+      next.length === latest.operators.length &&
+      next.every(
+        (entry, index) =>
+          entry.chainId === String(latest.operators[index]?.chainId) &&
+          entry.address === latest.operators[index]?.address,
       );
-      return;
-    }
-    const kept = latest.operators.filter((entry) =>
-      latest.sortedChains.some((chainId) => Number(chainId) === Number(entry.chainId)),
+    if (!unchanged) latest.setFieldValue("operator", next);
+  }, [values.chainIds, controlsEnabled, operators]);
+
+  // One operator for the whole revnet is the common case, so the per-chain rows are opt-in —
+  // the same affordance a split beneficiary uses. They open by themselves when the addresses
+  // already differ, which is how an imported draft with per-chain operators arrives.
+  const distinctAddresses = new Set(
+    sortedChains.map((chainId) => entryFor(chainId)?.address?.trim().toLowerCase() ?? ""),
+  );
+  const [perChain, setPerChain] = useState(() => distinctAddresses.size > 1);
+
+  const setEveryAddress = (address: string) => {
+    setFieldValue(
+      "operator",
+      sortedChains.map((chainId) => ({ chainId: String(chainId), address })),
     );
-    if (kept.length !== latest.operators.length) latest.setFieldValue("operator", kept);
-  }, [values.chainIds, operators.length]);
+  };
 
   const setAddress = (chainId: JBChainId, address: string) => {
     const index = operators.findIndex((entry) => Number(entry.chainId) === Number(chainId));
@@ -74,17 +109,8 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
     }
   };
 
-  const setControlsEnabled = (enabled: boolean) => {
-    // An entry per selected chain either way: an empty list would fall back to stage 1's
-    // address, which is the sentinel by default — silently deploying with no operator while
-    // the box reads as checked.
-    setFieldValue(
-      "operator",
-      sortedChains.map((chainId) => ({
-        chainId: String(chainId),
-        address: enabled ? (isDisabled(fromStage) ? "" : fromStage) : PERMANENTLY_DISABLED_OPERATOR,
-      })),
-    );
+  const answerControls = (enabled: boolean) => {
+    setControlsEnabled(enabled);
     if (values.stages.length > 0 && !enabled) {
       setFieldValue("stages.0.initialOperator", PERMANENTLY_DISABLED_OPERATOR);
     }
@@ -107,8 +133,8 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
             type="checkbox"
             className="mt-1 h-4 w-4 accent-green-600"
             checked={controlsEnabled}
-            disabled={disabled || sortedChains.length === 0}
-            onChange={(event) => setControlsEnabled(event.target.checked)}
+            disabled={disabled}
+            onChange={(event) => answerControls(event.target.checked)}
           />
           <span>
             <span className="block text-md font-semibold text-zinc-800">
@@ -121,38 +147,62 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
             </span>
           </span>
         </label>
-        {sortedChains.length === 0 ? (
+        {controlsEnabled && sortedChains.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-500">
-            Select the chains you&apos;re deploying on first.
+            Pick the chains you&apos;re deploying on, and an address per chain appears here.
           </p>
         ) : controlsEnabled ? (
           <div className="mt-4">
-            <div className="mb-2 text-sm text-zinc-500">
-              Confirm the revnet operator&apos;s address for each chain.
-            </div>
-            <div className="mb-2 flex text-sm font-semibold text-zinc-500">
-              <div className="w-48">Chain</div>
-              <div>Address</div>
-            </div>
-            {sortedChains.map((chain) => (
-              <div key={chain} className="mt-4 flex items-center text-md text-zinc-600">
-                <div className="flex w-48 items-center gap-2 text-sm">
-                  <ChainLogo chainId={chain} width={25} height={25} />
-                  <div className="text-zinc-400">{JB_CHAINS[chain].name}</div>
-                </div>
-                <div className="w-3/5">
-                  <input
-                    aria-label={`${JB_CHAINS[chain].name} operator address`}
-                    className={inputClassName}
-                    placeholder="0x"
-                    disabled={disabled}
-                    required
-                    value={entryFor(chain)?.address ?? ""}
-                    onChange={(event) => setAddress(chain, event.target.value)}
-                  />
-                </div>
-              </div>
-            ))}
+            <label className="mb-1 block text-md text-zinc-600" htmlFor="operatorAddress">
+              Revnet operator
+            </label>
+            <input
+              id="operatorAddress"
+              aria-label="Revnet operator address"
+              className={inputClassName}
+              placeholder="0x"
+              disabled={disabled}
+              required
+              value={perChain ? "" : (entryFor(sortedChains[0])?.address ?? "")}
+              // One address is the common case; the per-chain rows below are the exception, so
+              // typing here sets it on every chain at once.
+              onChange={(event) => setEveryAddress(event.target.value)}
+              hidden={perChain}
+            />
+            {sortedChains.length > 1 ? (
+              <label
+                className="mt-2 flex w-fit items-center gap-2 text-md italic text-zinc-400"
+                htmlFor="perChainOperator"
+              >
+                set operator per chain?
+                <input
+                  type="checkbox"
+                  id="perChainOperator"
+                  checked={perChain}
+                  disabled={disabled}
+                  onChange={(event) => setPerChain(event.target.checked)}
+                />
+              </label>
+            ) : null}
+            {perChain
+              ? sortedChains.map((chain) => (
+                  <div key={chain} className="mt-3 flex items-center gap-2 text-md text-zinc-600">
+                    <div className="flex w-40 shrink-0 items-center gap-2 text-sm">
+                      <ChainLogo chainId={chain} width={20} height={20} />
+                      <span className="text-zinc-400">{JB_CHAINS[chain].name}</span>
+                    </div>
+                    <input
+                      aria-label={`${JB_CHAINS[chain].name} operator address`}
+                      className={inputClassName}
+                      placeholder="0x"
+                      disabled={disabled}
+                      required
+                      value={entryFor(chain)?.address ?? ""}
+                      onChange={(event) => setAddress(chain, event.target.value)}
+                    />
+                  </div>
+                ))
+              : null}
           </div>
         ) : (
           <p className="mt-3 text-sm text-zinc-500">

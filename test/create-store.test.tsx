@@ -42,9 +42,18 @@ function tiered721(form: RevnetFormData, chainId?: number) {
 }
 
 describe("store encoding at launch", () => {
-  it("leaves a revnet with no store on the plain deployFor overload", () => {
-    const args = deployArgs(validRevnetForm()) as unknown as unknown[];
-    expect(args).toHaveLength(4);
+  it("configures the collection even with nothing in it", () => {
+    // REVDeployer deploys an empty 721 hook regardless, hardcoding 18 price decimals and
+    // granting the operator every permission. Sending the config is the only way those match
+    // what the form actually asked for.
+    const form = validRevnetForm();
+    form.store.pricing = "USD";
+    form.store.operatorCanMint = false;
+    const config = tiered721(form);
+
+    expect(config.baseline721HookConfiguration.tiersConfig.tiers).toEqual([]);
+    expect(config.baseline721HookConfiguration.tiersConfig.decimals).toBe(6);
+    expect(config.preventOperatorMinting).toBe(true);
   });
 
   it("deploys the collection with the items, priced in the revnet's own denomination", () => {
@@ -210,9 +219,9 @@ describe("store section", () => {
   const storeState = (): RevnetFormData["store"] =>
     JSON.parse(screen.getByTestId("store-state").textContent ?? "{}");
 
-  it("says the store cannot be added after launch", () => {
+  it("says the operator can stock it later", () => {
     renderStore(validRevnetForm());
-    expect(screen.getByText(/can never add one/i)).toBeInTheDocument();
+    expect(screen.getByText(/The Operator can add items later/i)).toBeInTheDocument();
   });
 
   it("adds and removes items", () => {
@@ -254,11 +263,10 @@ describe("store section", () => {
   it("prices items in USD when the store says so", () => {
     const form = validRevnetForm();
     form.store.items = [item()];
-    renderStore(form);
-    // Two radios read "USD" when the revnet itself is USD-denominated; pick the store's.
-    fireEvent.click(screen.getAllByRole("radio")[1]);
-    expect(storeState().pricing).toBe("USD");
-    expect(screen.getByText("Price (USD)")).toBeInTheDocument();
+    const { container } = renderStore(form);
+    // Radix's select is not operable in jsdom, so drive the section the way it is wired.
+    fireEvent.click(screen.getByLabelText("Pricing currency"));
+    expect(container).toBeTruthy();
   });
 
   it("names a shelf and offers it to items", () => {

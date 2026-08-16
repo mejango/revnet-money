@@ -1,3 +1,4 @@
+import { MAINNET_CHAIN_IDS, TESTNET_CHAIN_IDS } from "@/app/constants";
 import {
   Select,
   SelectContent,
@@ -5,7 +6,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MAINNET_CHAIN_IDS, TESTNET_CHAIN_IDS } from "@/app/constants";
 import { FormField } from "@/lib/forms";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
@@ -20,7 +20,13 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
 
   const { values, setFieldValue } = useCreateForm();
 
+  // A revnet is deployed to chains; zero of them is not a state the form can act on, and
+  // clearing the last one silently drops every per-chain value with it.
+  const isOnlySelection = (chainId: JBChainId) =>
+    values.chainIds.length === 1 && values.chainIds[0] === chainId;
+
   const handleChainSelect = (chainId: JBChainId, checked: boolean) => {
+    if (!checked && isOnlySelection(chainId)) return;
     setFieldValue(
       "chainIds",
       checked ? [...values.chainIds, chainId] : values.chainIds.filter((id) => id !== chainId),
@@ -68,8 +74,8 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
       {reassignedRows > 0 ? (
         <p className="text-xs text-amber-700">
           {reassignedRows} auto-issuance {reassignedRows === 1 ? "row was" : "rows were"} moved to
-          the only selected chain. Re-adding chains will not restore the previous targets —
-          set them again on the stage.
+          the only selected chain. Re-adding chains will not restore the previous targets — set them
+          again on the stage.
         </p>
       ) : null}
       <div className="max-w-56">
@@ -83,7 +89,10 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
               values,
               v === "production" ? MAINNET_CHAIN_IDS : TESTNET_CHAIN_IDS,
             );
-            setFieldValue("chainIds", pruned.chainIds);
+            // Switching environments prunes every selection, which would leave the revnet with
+            // no chain at all. Fall back to the new environment's first chain.
+            const visible = v === "production" ? MAINNET_CHAIN_IDS : TESTNET_CHAIN_IDS;
+            setFieldValue("chainIds", pruned.chainIds.length > 0 ? pruned.chainIds : [visible[0]]);
             setFieldValue("operator", pruned.operator);
             setFieldValue("stages", pruned.stages);
           }}

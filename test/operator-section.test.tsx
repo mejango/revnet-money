@@ -4,7 +4,7 @@ import { createSchema } from "@/app/create/helpers/createSchema";
 import { parseDeployData } from "@/app/create/helpers/parseDeployData";
 import type { RevnetFormData } from "@/app/create/types";
 import { withSchema } from "@/lib/formValidation";
-import { FormProvider } from "@/lib/forms";
+import { FormProvider, useFormContext } from "@/lib/forms";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { baseSepolia, sepolia } from "viem/chains";
 import { describe, expect, it } from "vitest";
@@ -30,7 +30,23 @@ function operatorForm(): RevnetFormData {
   return form;
 }
 
-function Harness({ initialValues }: { initialValues: RevnetFormData }) {
+/** Selecting chains happens in an earlier section; this stands in for it. */
+function PickChains({ chainIds }: { chainIds: RevnetFormData["chainIds"] }) {
+  const { setFieldValue } = useFormContext<RevnetFormData>();
+  return (
+    <button type="button" onClick={() => setFieldValue("chainIds", chainIds)}>
+      pick-chains
+    </button>
+  );
+}
+
+function Harness({
+  initialValues,
+  picks,
+}: {
+  initialValues: RevnetFormData;
+  picks?: RevnetFormData["chainIds"];
+}) {
   return (
     <FormProvider
       initialValues={initialValues}
@@ -41,6 +57,7 @@ function Harness({ initialValues }: { initialValues: RevnetFormData }) {
       {({ values }) => (
         <>
           <OperatorSection />
+          {picks ? <PickChains chainIds={picks} /> : null}
           <output data-testid="operator-state">{JSON.stringify(values.operator)}</output>
         </>
       )}
@@ -76,6 +93,21 @@ describe("OperatorSection", () => {
     expect(screen.queryByLabelText("Sepolia operator address")).not.toBeInTheDocument();
   });
 
+  it("can be answered before the chains are picked, and fills in once they are", () => {
+    // The chains live in an earlier section. Gating this question on them left the checkbox
+    // dead for anyone answering the form out of order.
+    const form = operatorForm();
+    form.chainIds = [];
+    render(<Harness initialValues={form} picks={[sepolia.id]} />);
+
+    fireEvent.click(toggle());
+    expect(toggle()).toBeChecked();
+
+    fireEvent.click(screen.getByText("pick-chains"));
+    expect(screen.getByLabelText("Revnet operator address")).toBeInTheDocument();
+    expect(operatorState()).toEqual([{ chainId: String(sepolia.id), address: "" }]);
+  });
+
   it("encodes 0xdead on every chain when limited controls are switched off", () => {
     render(<Harness initialValues={operatorForm()} />);
 
@@ -109,9 +141,23 @@ describe("OperatorSection", () => {
     expect(createSchema.safeParse({ ...form, operator: operatorState() }).success).toBe(false);
   });
 
+  it("sets one operator on every chain unless asked for per-chain addresses", () => {
+    render(<Harness initialValues={operatorForm()} />);
+    fireEvent.click(toggle());
+
+    fireEvent.change(screen.getByLabelText("Revnet operator address"), {
+      target: { value: TEST_ACCOUNT },
+    });
+    expect(operatorState()).toEqual([
+      { chainId: String(sepolia.id), address: TEST_ACCOUNT },
+      { chainId: String(baseSepolia.id), address: TEST_ACCOUNT },
+    ]);
+  });
+
   it("binds each typed address to the chain it is rendered beside, not the selection index", () => {
     render(<Harness initialValues={operatorForm()} />);
     fireEvent.click(toggle());
+    fireEvent.click(screen.getByLabelText(/set operator per chain/i));
 
     fireEvent.change(screen.getByLabelText("Sepolia operator address"), {
       target: { value: TEST_ACCOUNT },
@@ -139,7 +185,7 @@ describe("OperatorSection", () => {
     render(<Harness initialValues={form} />);
 
     expect(toggle()).toBeChecked();
-    expect(screen.getByLabelText("Sepolia operator address")).toHaveValue(TEST_ACCOUNT);
+    expect(screen.getByLabelText("Revnet operator address")).toHaveValue(TEST_ACCOUNT);
     expect(operatorState()).toEqual([
       { chainId: String(sepolia.id), address: TEST_ACCOUNT },
       { chainId: String(baseSepolia.id), address: TEST_ACCOUNT },

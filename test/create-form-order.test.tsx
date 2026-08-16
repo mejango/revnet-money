@@ -5,7 +5,7 @@ import { withSchema } from "@/lib/formValidation";
 import { FormProvider } from "@/lib/forms";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { baseSepolia, sepolia } from "viem/chains";
+import { baseSepolia, mainnet, sepolia } from "viem/chains";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TEST_ACCOUNT, TEST_BENEFICIARY, validRevnetForm } from "./fixtures/revnet";
 
@@ -30,6 +30,7 @@ function createForm(initialValues: RevnetFormData) {
           <DeployRevnetForm resetRelayrResponse={() => undefined} />
           <output data-testid="form-state">
             {JSON.stringify({
+              chainIds: values.chainIds,
               operator: values.operator,
               stages: values.stages,
               issuanceBaseCurrency: values.issuanceBaseCurrency,
@@ -43,6 +44,7 @@ function createForm(initialValues: RevnetFormData) {
 
 function formState() {
   return JSON.parse(screen.getByTestId("form-state").textContent ?? "{}") as {
+    chainIds: RevnetFormData["chainIds"];
     operator: RevnetFormData["operator"];
     stages: RevnetFormData["stages"];
     issuanceBaseCurrency: RevnetFormData["issuanceBaseCurrency"];
@@ -111,6 +113,17 @@ describe("create form section order", () => {
     // expectations.
     const copy = screen.getByText(/able to add new chains to the revnet later/i);
     expect(copy.closest("div")?.querySelector("h2")?.textContent).toBe("6. Deploy");
+  });
+
+  it("keeps at least one chain selected", () => {
+    const form = validRevnetForm();
+    form.chainIds = [mainnet.id];
+    renderCreateForm(form);
+
+    // A revnet is deployed to chains; unchecking the last one leaves the form with nothing to
+    // deploy to and silently drops every per-chain value along with it.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Ethereum" }));
+    expect(formState().chainIds).toEqual([mainnet.id]);
   });
 
   it("shows create validation beside the button that requested the quote", () => {
