@@ -29,24 +29,82 @@ function hasValidIngressToken(req: NextRequest) {
 }
 
 /**
- * The gate every pinning route shares: the feature is off unless the ingress in
- * DEPLOYMENT.md is in front of it, and the token it injects is what authorizes the
- * call. The origin check is a second fence, never the authorization itself.
+ * Per-IP and site-wide pin budgets, for the deployment that has no edge in front.
+ *
+ * ponytail: an in-process sliding window. It resets on redeploy and counts per
+ * instance, so two instances allow two budgets — swap in a shared store if this
+ * ever runs on more than one. What it buys is the thing that actually matters:
+ * a stranger with a script cannot spend the whole provider quota in a minute.
+ */
+const PIN_WINDOW_MS = 10 * 60_000;
+const PIN_PER_CLIENT = 10;
+const PIN_PER_SITE = 200;
+const pinHistory = new Map<string, number[]>();
+
+function withinBudget(key: string, limit: number, now: number): boolean {
+  const recent = (pinHistory.get(key) ?? []).filter((at) => now - at < PIN_WINDOW_MS);
+  if (recent.length >= limit) {
+    pinHistory.set(key, recent);
+    return false;
+  }
+  recent.push(now);
+  pinHistory.set(key, recent);
+  return true;
+}
+
+function clientKey(req: NextRequest): string {
+  // Railway terminates TLS and forwards the caller in `x-forwarded-for`. The left-most
+  // entry is client-supplied and therefore only as good as the proxy in front; it is a
+  // budget key, never an identity.
+  const forwarded = req.headers.get("x-forwarded-for") ?? "";
+  return forwarded.split(",")[0]?.trim() || "unknown";
+}
+
+/**
+ * The gate every pinning route shares.
+ *
+ * Two supported deployments:
+ *
+ * - **Edge-protected**: something in front (a WAF, a proxy) enforces the policy in
+ *   DEPLOYMENT.md and injects `IPFS_PINNING_INGRESS_TOKEN`. Set the token and that
+ *   header is the authorization.
+ * - **First-party**: no edge exists — the app is reached directly. Set
+ *   `IPFS_PINNING_EDGE_PROTECTED=false` and leave the token unset; this function then
+ *   enforces the budget itself. Weaker than a real WAF and it says so, but it is the
+ *   honest description of a service published straight from the platform.
+ *
+ * The origin check is a CSRF fence in both modes, never the authorization.
  */
 export function requirePinningAccess(req: NextRequest): Response | null {
-  if (
-    process.env.IPFS_PINNING_ENABLED !== "true" ||
-    process.env.IPFS_PINNING_EDGE_PROTECTED !== "true"
-  ) {
+  if (process.env.IPFS_PINNING_ENABLED !== "true") {
     return Response.json({ error: "IPFS pinning is disabled" }, { status: 503 });
   }
-  if (!hasValidIngressToken(req)) {
+
+  const edgeProtected = process.env.IPFS_PINNING_EDGE_PROTECTED === "true";
+  if (edgeProtected && !hasValidIngressToken(req)) {
     return Response.json({ error: "pinning ingress is not authorized" }, { status: 401 });
   }
+
   if (req.headers.get("origin") !== configuredOrigin()) {
     return Response.json({ error: "origin not allowed" }, { status: 403 });
   }
+
+  if (!edgeProtected) {
+    const now = Date.now();
+    if (!withinBudget(`client:${clientKey(req)}`, PIN_PER_CLIENT, now)) {
+      return Response.json({ error: "too many pins from this client" }, { status: 429 });
+    }
+    if (!withinBudget("site", PIN_PER_SITE, now)) {
+      return Response.json({ error: "the site pin budget is spent" }, { status: 429 });
+    }
+  }
+
   return null;
+}
+
+/** Test seam: the budget is process state, so a test must be able to clear it. */
+export function resetPinBudgets(): void {
+  pinHistory.clear();
 }
 
 /**

@@ -64,20 +64,22 @@ if (phase !== "build" && phase !== "runtime") {
 
 const specification = phase === "build" ? BUILD_VALUES : RUNTIME_VALUES;
 const entries = Object.entries(specification);
-if (phase === "runtime" && process.env.IPFS_PINNING_ENABLED === "true") {
+const pinningEnabled = phase === "runtime" && process.env.IPFS_PINNING_ENABLED === "true";
+const edgeProtected = process.env.IPFS_PINNING_EDGE_PROTECTED === "true";
+if (pinningEnabled) {
   entries.push(
     ["FILEBASE_IPFS_RPC_TOKEN", "provider-credential"],
     ["PINATA_JWT", "provider-credential"],
-    ["IPFS_PINNING_INGRESS_TOKEN", "secret"],
   );
+  // The token is the authorization in edge-protected mode, and meaningless without an
+  // edge: first-party deployments budget in the app instead (see DEPLOYMENT.md).
+  if (edgeProtected) entries.push(["IPFS_PINNING_INGRESS_TOKEN", "secret"]);
 }
 const errors = entries.map(([name, kind]) => validate(name, kind)).filter(Boolean);
-if (
-  phase === "runtime" &&
-  process.env.IPFS_PINNING_ENABLED === "true" &&
-  process.env.IPFS_PINNING_EDGE_PROTECTED !== "true"
-) {
-  errors.push("enabled IPFS pinning requires edge quota protection");
+if (pinningEnabled && !edgeProtected && process.env.IPFS_PINNING_INGRESS_TOKEN) {
+  errors.push(
+    "IPFS_PINNING_INGRESS_TOKEN is set while IPFS_PINNING_EDGE_PROTECTED is false: the app would ignore the token and budget callers itself",
+  );
 }
 if (phase === "build" && process.env.NEXT_PUBLIC_DETERMINISTIC_BROWSER === "true") {
   errors.push("NEXT_PUBLIC_DETERMINISTIC_BROWSER cannot be enabled in a deployment build");
