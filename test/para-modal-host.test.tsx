@@ -166,6 +166,8 @@ describe("ParaModalHost", () => {
           request={{ kind: "auth" }}
           onOpenChange={() => {}}
           onSettled={() => {}}
+          entry=""
+          onEntryChange={() => {}}
         />
       </>,
     );
@@ -216,6 +218,8 @@ describe("ParaModalHost", () => {
         request={{ kind: "auth" }}
         onOpenChange={onOpenChange}
         onSettled={onSettled}
+        entry=""
+        onEntryChange={() => {}}
       />,
     );
 
@@ -235,6 +239,8 @@ describe("ParaModalHost", () => {
         request={{ kind: "auth" }}
         onOpenChange={onOpenChange}
         onSettled={onSettled}
+        entry=""
+        onEntryChange={() => {}}
       />,
     );
     expect(hostDialog().open).toBe(false);
@@ -249,6 +255,8 @@ describe("ParaModalHost", () => {
         request={{ kind: "addFunds", asset: "ETHEREUM", network: "BASE" }}
         onOpenChange={() => {}}
         onSettled={() => {}}
+        entry=""
+        onEntryChange={() => {}}
       />,
     );
 
@@ -272,6 +280,8 @@ describe("ParaModalHost", () => {
         request={{ kind: "addFunds", asset: "ETHEREUM", network: "BASE" }}
         onOpenChange={() => {}}
         onSettled={() => {}}
+        entry=""
+        onEntryChange={() => {}}
       />,
     );
 
@@ -295,6 +305,8 @@ describe("ParaModalHost", () => {
         request={{ kind: "addFunds", asset: "USDC", network: "BASE" }}
         onOpenChange={() => {}}
         onSettled={() => {}}
+        entry=""
+        onEntryChange={() => {}}
       />,
     );
 
@@ -317,6 +329,8 @@ describe("ParaModalHost", () => {
         request={{ kind: "addFunds", asset: "ETHEREUM", network: "BASE" }}
         onOpenChange={() => {}}
         onSettled={() => {}}
+        entry=""
+        onEntryChange={() => {}}
       />,
     );
 
@@ -340,6 +354,8 @@ describe("ParaModalHost", () => {
         request={{ kind: "addFunds", asset: "ETHEREUM", network: "BASE" }}
         onOpenChange={() => {}}
         onSettled={() => {}}
+        entry=""
+        onEntryChange={() => {}}
       />,
     );
 

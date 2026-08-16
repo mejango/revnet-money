@@ -20,7 +20,13 @@ const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffe
  * sign-in is reachable from inside other dialogs, and everything outside the
  * topmost one is inert.
  */
-export function SignInPlaceholder() {
+export function SignInPlaceholder({
+  entry,
+  onEntryChange,
+}: {
+  entry: string;
+  onEntryChange: (value: string) => void;
+}) {
   const [host] = useState<HTMLDialogElement | null>(() =>
     typeof document === "undefined" ? null : document.createElement("dialog"),
   );
@@ -44,7 +50,7 @@ export function SignInPlaceholder() {
   return createPortal(
     <div className="flex h-full w-full items-center justify-center overflow-y-auto bg-black/80 p-6">
       <div className="w-full max-w-sm border border-zinc-200 bg-white p-6">
-        <SignInShell />
+        <SignInShell entry={entry} onEntryChange={onEntryChange} />
       </div>
     </div>,
     host,

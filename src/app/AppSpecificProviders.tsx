@@ -96,6 +96,10 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
   const [paraRequest, setParaRequest] = React.useState<ParaRequest>({ kind: "auth" });
   const [paraModalOpen, setParaModalOpen] = React.useState(false);
   const [paraSessionVersion, setParaSessionVersion] = React.useState(0);
+  // Held here so it survives the shell handing over to the real sheet: those
+  // are two components either side of a Suspense boundary, and anything typed
+  // during the wait would otherwise go with the first one.
+  const [signInEntry, setSignInEntry] = React.useState("");
   const [paraConnectionError, setParaConnectionError] = React.useState(false);
 
   // Preserve embedded-wallet sessions without penalizing anonymous visitors.
@@ -161,13 +165,19 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
           ) : null}
           {paraHostLoaded ? (
             <React.Suspense
-              fallback={paraRequest.kind === "auth" ? <SignInPlaceholder /> : null}
+              fallback={
+                paraRequest.kind === "auth" ? (
+                  <SignInPlaceholder entry={signInEntry} onEntryChange={setSignInEntry} />
+                ) : null
+              }
             >
               <ParaModalHost
                 requestId={paraRequestId}
                 request={paraRequest}
                 onOpenChange={setParaModalOpen}
                 onSettled={markParaSettled}
+                entry={signInEntry}
+                onEntryChange={setSignInEntry}
               />
             </React.Suspense>
           ) : null}
