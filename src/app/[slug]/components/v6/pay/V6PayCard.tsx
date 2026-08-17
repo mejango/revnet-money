@@ -76,7 +76,7 @@ import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
 import { readPoolSnapshot } from "../owners/market/lib";
 import { useShopCart } from "../ShopCartContext";
 import {
-  buyableAssetLabel,
+  buyableAsset,
   defaultsToDollars,
   payButtonAction,
   payPanelLayoutClasses,
@@ -466,7 +466,10 @@ export function V6PayCard() {
     [tokens],
   );
   const { balances } = useTokenBalances(balanceToken, chainId);
-  const buyableLabel = buyableAssetLabel(tokens.map((token) => token.symbol));
+  const buyableLabel = buyableAsset({
+    accepted: tokens.map((token) => token.symbol),
+    preferred: selected?.symbol,
+  });
   const holdsNothing = defaultsToDollars({
     isConnected,
     balances: balanceToken.map((token) => balances.get(token.address) ?? 0n),
@@ -1230,10 +1233,12 @@ export function V6PayCard() {
               <input
                 type="text"
                 inputMode="decimal"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                // Dollars are shown with their sign and stored without it: everything
+                // downstream — the preview, the amount sent to the provider — parses a number.
+                value={payWithDollars && amount ? `$${amount}` : amount}
+                onChange={(e) => setAmount(e.target.value.replace(/^\$/, ""))}
                 disabled={busy}
-                placeholder="0.00"
+                placeholder={payWithDollars ? "$0.00" : "0.00"}
                 aria-label="Amount"
                 className="col-start-1 row-start-2 min-h-11 border-0 bg-transparent pl-0 pr-3 pt-1 pb-0 text-zinc-900 text-2xl w-full placeholder:text-zinc-400 focus:ring-0 focus:outline-none sm:leading-6 disabled:opacity-60"
               />
