@@ -16,11 +16,22 @@ import { X } from "@/components/ui/icons";
  * `url` is the same window we just opened: popup blockers are common enough
  * that the handoff needs a link the visitor can click themselves.
  */
-export function OnRampHandoff({ url, onClose }: { url: string; onClose: () => void }) {
+export function OnRampHandoff({
+  url,
+  asset,
+  onClose,
+}: {
+  url: string;
+  /** What the provider is being asked to deliver, so the heading names it. */
+  asset?: string;
+  onClose: () => void;
+}) {
   return (
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
-        <h2 className="text-lg font-medium text-zinc-900">Finish in the new window</h2>
+        <h2 className="text-lg font-medium text-zinc-900">
+          {asset ? `Buy ${asset} in the new window` : "Finish in the new window"}
+        </h2>
         <button
           type="button"
           onClick={onClose}
@@ -58,48 +69,6 @@ export function OnRampHandoff({ url, onClose }: { url: string; onClose: () => vo
           Done
         </Button>
       </div>
-    </div>
-  );
-}
-
-/**
- * The provider's own page, inside our dialog.
- *
- * For a purchase started mid-payment: sending someone to another window in the middle of
- * paying loses the thread of what they were doing. Para's portal talks to its opener over
- * `postMessage`, so it is built to be embedded — but whether it permits framing is the
- * provider's call, not ours, which is why the window is still one click away below.
- */
-export function OnRampFrame({ url, onClose }: { url: string; onClose: () => void }) {
-  return (
-    <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="text-lg font-medium text-zinc-900">Buy ETH or USDC</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="-mr-1 -mt-1 shrink-0 p-1 text-zinc-500 transition-colors hover:text-zinc-900"
-        >
-          <X aria-hidden="true" className="h-4 w-4" />
-        </button>
-      </div>
-      <p className="mt-1 text-sm text-zinc-600">
-        Your wallet address is already filled in. Come back here when it&apos;s done.
-      </p>
-      <iframe
-        src={url}
-        title="Buy ETH or USDC"
-        className="mt-3 h-[32rem] w-full border border-zinc-200"
-      />
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-2 inline-block text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
-      >
-        Open in a separate window instead
-      </a>
     </div>
   );
 }

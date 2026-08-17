@@ -1569,19 +1569,16 @@ export function V6PayCard() {
             <DialogTitle>First, buy {buyableLabel}</DialogTitle>
           </DialogHeader>
           <p className="text-sm leading-relaxed text-zinc-600">
-            Payments to this project take {buyableLabel} in order to settle instantly, stick to
-            automated rules, and send out incentives on schedule. You&apos;ll use your card or bank
-            to buy some first, then come back here to pay.
+            {/* One string, not JSX text around an expression: a line break after `{asset}`
+                swallows the space that follows it, which is how this shipped as "USDCin". */}
+            {`Payments to this project take ${buyableLabel} in order to settle instantly, stick to automated rules, and send out incentives on schedule. You'll use your card or bank to buy some first, then come back here to pay.`}
           </p>
           <div className="mt-4 flex justify-end">
             <Button
               type="button"
               onClick={() => {
                 setBuyExplainerOpen(false);
-                onRamp.buy({
-                  fiatQuantity: amount.trim() || undefined,
-                  display: "embed",
-                });
+                onRamp.buy({ fiatQuantity: amount.trim() || undefined });
               }}
             >
               Buy {buyableLabel}

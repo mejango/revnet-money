@@ -26,12 +26,7 @@ export function markParaSession(active: boolean) {
 export type ParaOnRampAsset = "ETHEREUM" | "USDC";
 
 /** Para names networks itself; only the ones we deploy to are mapped. */
-export type ParaOnRampNetwork =
-  | "ETHEREUM"
-  | "BASE"
-  | "ARBITRUM"
-  | "OPTIMISM"
-  | "SEPOLIA";
+export type ParaOnRampNetwork = "ETHEREUM" | "BASE" | "ARBITRUM" | "OPTIMISM" | "SEPOLIA";
 
 export type ParaAddFundsRequest = {
   asset: ParaOnRampAsset;
@@ -44,15 +39,9 @@ export type ParaAddFundsRequest = {
   /** How much to SPEND, in dollars, when the payer typed a dollar figure rather than an amount
    *  of the asset. Seeds the provider's fiat field instead of its asset field. */
   fiatQuantity?: string;
-  /** Where the provider's own page goes. "embed" keeps it inside our dialog, which is what a
-   *  payer part-way through a payment expects; "window" hands it a popup and is the default
-   *  everywhere else. */
-  display?: "window" | "embed";
 };
 
-export type ParaRequest =
-  | { kind: "auth" }
-  | ({ kind: "addFunds" } & ParaAddFundsRequest);
+export type ParaRequest = { kind: "auth" } | ({ kind: "addFunds" } & ParaAddFundsRequest);
 
 export type ParaAuthController = {
   enabled: boolean;
