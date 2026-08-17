@@ -69,13 +69,13 @@ export function createParaWagmiConnector(transports: Record<number, Transport>):
  * accent, and square corners like everything else here.
  */
 /** Nothing is fetched: whichever of these the visitor already has wins. */
-const PARA_PORTAL_MONO =
-  'ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace';
+const PARA_PORTAL_MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace';
 
 export const PARA_PORTAL_THEME = {
-  // The sheet's panel is white, and the frame sits inside it — so the ground has to match what
-  // surrounds it, not the site's page colour, or the frame reads as a stripe.
-  backgroundColor: "#FFFFFF",
+  // Melon 25, because that is what `bg-white` IS here — the palette redefines `white` as this
+  // mint-tinted off-white, so the sheet's "white" panel is not #FFFFFF and a true white frame
+  // sits inside it as a visible band.
+  backgroundColor: "#F6FEF9",
   foregroundColor: "#15281D",
   accentColor: "#68CA8F",
   mode: "light" as const,

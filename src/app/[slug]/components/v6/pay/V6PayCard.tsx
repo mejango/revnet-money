@@ -1272,9 +1272,11 @@ export function V6PayCard() {
                     // window asks. Saying both is still worth it — bank
                     // transfers authorise far more often than cards, and
                     // nobody reaches for one they did not know was offered.
-                    // "$" rather than a description of the rails: it is a currency in a list of
-                    // currencies, and what it costs to use is said at Pay, where it matters.
-                    ...(onRamp.supported ? [{ value: BUY_OPTION, label: "$" }] : []),
+                    // Names both rails without promising to pick one: Para's on-ramp takes no
+                    // payment method, so the provider's own window asks. Saying both is still
+                    // worth it — bank transfers authorise far more often than cards, and
+                    // nobody reaches for one they did not know was offered.
+                    ...(onRamp.supported ? [{ value: BUY_OPTION, label: "Card or bank" }] : []),
                   ]}
                 />
               ) : (
@@ -1529,7 +1531,9 @@ export function V6PayCard() {
       </div>
 
       {/* Notices */}
-      {insufficientBalance && selected ? (
+      {/* Not while paying by card: the shortfall is in a token this payer is not spending, and
+          buying it is the very thing the button now offers. */}
+      {insufficientBalance && selected && !payWithDollars ? (
         <p className="mt-2 text-xs text-red-600">
           You don&apos;t have enough {selected.symbol} on {JB_CHAINS[chainId]?.name}.
         </p>
