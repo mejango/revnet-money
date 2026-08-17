@@ -1578,7 +1578,10 @@ export function V6PayCard() {
               type="button"
               onClick={() => {
                 setBuyExplainerOpen(false);
-                onRamp.buy({ fiatQuantity: amount.trim() || undefined });
+                onRamp.buy({
+                  fiatQuantity: amount.trim() || undefined,
+                  display: "embed",
+                });
               }}
             >
               Buy {buyableLabel}

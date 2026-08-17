@@ -72,3 +72,55 @@ export function OnRampHandoff({
     </div>
   );
 }
+
+/**
+ * The provider's own page, inside our dialog.
+ *
+ * For a purchase started mid-payment: sending someone to another window loses the thread of
+ * what they were doing. Para's portal answers over a `MessagePort` it supplies, so it does not
+ * care whether it is a popup or a frame — what it does care about is that the purchase was
+ * recorded, which `recordOnRampPurchase` does before this renders.
+ */
+export function OnRampFrame({
+  url,
+  asset,
+  onClose,
+}: {
+  url: string;
+  asset?: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="w-full">
+      <div className="flex items-start justify-between gap-4">
+        <h2 className="text-lg font-medium text-zinc-900">
+          {asset ? `Buy ${asset}` : "Buy ETH or USDC"}
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="-mr-1 -mt-1 shrink-0 p-1 text-zinc-500 transition-colors hover:text-zinc-900"
+        >
+          <X aria-hidden="true" className="h-4 w-4" />
+        </button>
+      </div>
+      <p className="mt-1 text-sm text-zinc-600">
+        Your wallet address is already filled in. Come back here when it&apos;s done.
+      </p>
+      <iframe
+        src={url}
+        title={asset ? `Buy ${asset}` : "Buy crypto"}
+        className="mt-3 h-[32rem] w-full border border-zinc-200"
+      />
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-2 inline-block text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+      >
+        Open in a separate window instead
+      </a>
+    </div>
+  );
+}
