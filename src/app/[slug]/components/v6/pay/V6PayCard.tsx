@@ -76,6 +76,7 @@ import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
 import { readPoolSnapshot } from "../owners/market/lib";
 import { useShopCart } from "../ShopCartContext";
 import {
+  buyableAssetLabel,
   defaultsToDollars,
   payButtonAction,
   payPanelLayoutClasses,
@@ -465,6 +466,7 @@ export function V6PayCard() {
     [tokens],
   );
   const { balances } = useTokenBalances(balanceToken, chainId);
+  const buyableLabel = buyableAssetLabel(tokens.map((token) => token.symbol));
   const holdsNothing = defaultsToDollars({
     isConnected,
     balances: balanceToken.map((token) => balances.get(token.address) ?? 0n),
@@ -1559,12 +1561,12 @@ export function V6PayCard() {
       <Dialog open={buyExplainerOpen} onOpenChange={setBuyExplainerOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>First, buy ETH or USDC</DialogTitle>
+            <DialogTitle>First, buy {buyableLabel}</DialogTitle>
           </DialogHeader>
           <p className="text-sm leading-relaxed text-zinc-600">
-            Payments to this project take ETH or USDC — that is what settles instantly, runs its
-            automated rules, and sends out its rewards. You&apos;ll use your card or bank to buy
-            some first, then come back here to pay.
+            Payments to this project take {buyableLabel} in order to settle instantly, stick to
+            automated rules, and send out incentives on schedule. You&apos;ll use your card or bank
+            to buy some first, then come back here to pay.
           </p>
           <div className="mt-4 flex justify-end">
             <Button
@@ -1577,7 +1579,7 @@ export function V6PayCard() {
                 });
               }}
             >
-              Buy ETH/USDC
+              Buy {buyableLabel}
             </Button>
           </div>
         </DialogContent>

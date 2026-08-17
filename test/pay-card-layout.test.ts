@@ -1,4 +1,5 @@
 import {
+  buyableAssetLabel,
   defaultsToDollars,
   payButtonAction,
   payPanelLayoutClasses,
@@ -57,5 +58,22 @@ describe("v6 pay card dollar payments", () => {
     expect(payButtonAction({ isConnected: false, payWithDollars: true })).toBe("signIn");
     expect(payButtonAction({ isConnected: true, payWithDollars: true })).toBe("buyFirst");
     expect(payButtonAction({ isConnected: true, payWithDollars: false })).toBe("confirm");
+  });
+});
+
+describe("what a payer can buy their way in with", () => {
+  it("names only the assets this project accepts", () => {
+    // A USDC-only project told to buy "ETH or USDC" invites the half that cannot pay it.
+    expect(buyableAssetLabel(["USDC"])).toBe("USDC");
+    expect(buyableAssetLabel(["ETH"])).toBe("ETH");
+    expect(buyableAssetLabel(["ETH", "USDC"])).toBe("ETH or USDC");
+  });
+
+  it("ignores accepted tokens no on-ramp delivers", () => {
+    expect(buyableAssetLabel(["USDC", "DAI"])).toBe("USDC");
+  });
+
+  it("falls back to both rather than naming nothing", () => {
+    expect(buyableAssetLabel(["DAI"])).toBe("ETH or USDC");
   });
 });

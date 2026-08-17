@@ -384,13 +384,11 @@ export default function ParaAuthSheet({
             The skeleton behind it covers the beat where the frame paints nothing, which mid
             sign-in reads as broken. */}
         <div className="relative mt-4 w-full overflow-hidden" style={{ height: "72px" }}>
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 flex items-center justify-center gap-2"
-          >
-            {[0, 1, 2, 3, 4, 5].map((box) => (
-              <span key={box} className="h-11 w-9 animate-pulse bg-melon-100" />
-            ))}
+          {/* Not a mock-up of the boxes: a placeholder shaped like the thing it is standing in
+              for promises the field is ready, and taking a keystroke that goes nowhere is worse
+              than an honest wait. It says what it is instead, and gets out of the way. */}
+          <div aria-hidden="true" className="absolute inset-0 flex items-center justify-center">
+            <span className="animate-pulse text-xs text-zinc-500">Loading secure entry…</span>
           </div>
           <iframe
             src={hostedVerifyUrl}
