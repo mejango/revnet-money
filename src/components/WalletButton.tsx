@@ -18,8 +18,10 @@ import { useParaAuth } from "@/providers/ParaAuthContext";
 import { preloadParaHost } from "@/providers/preload-para";
 import { JBProjectToken, USDC_ADDRESSES, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
+import { getConnections } from "@wagmi/core";
 import Link from "next/link";
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -263,7 +265,8 @@ export function WalletConnectButton({
 }
 
 export function WalletButton() {
-  const { address, chain, connector: activeConnector, isConnected } = useAccount();
+  const { address, chain, isConnected } = useAccount();
+  const config = useConfig();
   const { viewAs, clearViewAs } = useViewAs();
   const balanceAddress = viewAs ?? address;
   const { data: balance } = useBalance({ address: balanceAddress });
@@ -278,6 +281,40 @@ export function WalletButton() {
   });
   const project = useJBProject();
   const { disconnectAsync, isPending } = useDisconnect();
+
+  /**
+   * End the session, whatever is holding it.
+   *
+   * Two things can outlive a click on Disconnect. Para's session is authoritative and survives
+   * Wagmi entirely, so it is asked first — and asked whenever one EXISTS, not when the active
+   * connector happens to be named "para": an email sign-in whose connector reads as anything
+   * else took the plain path, failed, and left the account signed in with nothing but "the
+   * wallet could not disconnect" to show for it.
+   *
+   * Wagmi's own disconnect can then refuse — a connector it holds but is no longer connected
+   * to. Asking each live connection to go instead is what actually clears that.
+   */
+  const endSession = useCallback(async () => {
+    if (!IS_DETERMINISTIC_BROWSER) {
+      const { getParaClient } = await import("@/providers/para-config");
+      const hasParaSession = await getParaClient()
+        .isFullyLoggedIn()
+        .catch(() => false);
+      if (hasParaSession) {
+        await logoutParaSession({ disconnect: disconnectAsync });
+        return;
+      }
+    }
+    try {
+      await disconnectAsync();
+    } catch (error) {
+      const live = getConnections(config);
+      if (live.length === 0) throw error;
+      for (const connection of live) {
+        await disconnectAsync({ connector: connection.connector });
+      }
+    }
+  }, [disconnectAsync, config]);
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [disconnectError, setDisconnectError] = useState<string>();
@@ -445,11 +482,8 @@ export function WalletButton() {
             {ensName ?? formatEthAddress(address, { truncateTo: 4 })}
           </span>
         </span>
-        {formattedBalance ? (
-          <span className="hidden whitespace-nowrap border-l border-zinc-200 pl-2 text-zinc-600 sm:inline">
-            {formattedBalance}
-          </span>
-        ) : null}
+        {/* No balance on the trigger: the menu lists every token this project touches, with
+            the chains they are spread across, which is the answer "0 ETH" only gestured at. */}
       </Button>
       {open ? (
         <div
@@ -518,10 +552,8 @@ export function WalletButton() {
             disabled={isPending || paraLogoutPending}
             onClick={() => {
               setDisconnectError(undefined);
-              const isPara = !IS_DETERMINISTIC_BROWSER && activeConnector?.id === "para";
-              if (isPara) setParaLogoutPending(true);
-
-              void (isPara ? logoutParaSession({ disconnect: disconnectAsync }) : disconnectAsync())
+              setParaLogoutPending(true);
+              void endSession()
                 .then(() => setOpen(false))
                 .catch((error: unknown) => {
                   setDisconnectError(
@@ -532,9 +564,7 @@ export function WalletButton() {
                         : "The wallet could not disconnect. Try again.",
                   );
                 })
-                .finally(() => {
-                  if (isPara) setParaLogoutPending(false);
-                });
+                .finally(() => setParaLogoutPending(false));
             }}
             className={cn(
               "block min-h-11 w-full px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50",

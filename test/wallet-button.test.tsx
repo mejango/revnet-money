@@ -20,6 +20,9 @@ const wallet = vi.hoisted(() => ({
   switchChainAsync: vi.fn(),
 }));
 
+/** Whether Para reports a live session when Disconnect asks. */
+const paraSessionLive = vi.hoisted(() => ({ value: false }));
+
 vi.mock("wagmi", () => ({
   useAccount: wallet.account,
   useBalance: wallet.balance,
@@ -30,6 +33,7 @@ vi.mock("wagmi", () => ({
     isPending: false,
     reset: wallet.reset,
   }),
+  useConfig: () => ({}),
   useConnectors: wallet.connectors,
   useDisconnect: () => ({ disconnectAsync: wallet.disconnectAsync, isPending: false }),
   useReadContract: wallet.readContract,
@@ -37,6 +41,18 @@ vi.mock("wagmi", () => ({
     isPending: false,
     switchChainAsync: wallet.switchChainAsync,
   }),
+}));
+
+vi.mock("@wagmi/core", () => ({
+  // No live connections in these tests: the fallback path only runs when wagmi's own
+  // disconnect refuses, which none of them exercise.
+  getConnections: () => [],
+}));
+
+vi.mock("@/providers/para-config", () => ({
+  // Disconnect asks whether a Para session exists before deciding how to end it.
+  getParaClient: () => ({ isFullyLoggedIn: async () => paraSessionLive.value }),
+  PARA_APP: { appName: "Revnet" },
 }));
 
 vi.mock("@/lib/nana/project", () => ({
@@ -122,11 +138,12 @@ describe("local wallet controls", () => {
     render(<WalletButton />);
 
     const account = await screen.findByRole("button", { name: /0x1234.*5678/i });
-    const nativeBalance = screen.getByText("1.2346 ETH");
-    expect(account).toContainElement(nativeBalance);
-    expect(nativeBalance).toHaveClass("whitespace-nowrap");
+    // The trigger says who is signed in and nothing else: balances belong in the menu, where
+    // every token and the chains it spans are listed rather than gestured at.
+    expect(account).not.toHaveTextContent("1.2346 ETH");
     fireEvent.click(account);
 
+    expect(screen.getByText("1.2346 ETH")).toBeVisible();
     expect(screen.getByText("Ethereum")).toBeVisible();
     expect(screen.getByText("12.5 USDC")).toBeVisible();
     fireEvent.click(screen.getByRole("menuitem", { name: "Disconnect" }));
@@ -160,6 +177,7 @@ describe("local wallet controls", () => {
       connector: { id: "para" },
       isConnected: true,
     });
+    paraSessionLive.value = true;
     wallet.logoutParaSession.mockRejectedValueOnce(new ParaSessionLogoutError());
 
     render(<WalletButton />);
@@ -172,6 +190,27 @@ describe("local wallet controls", () => {
       ),
     ).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "Disconnect" })).toBeVisible();
+    paraSessionLive.value = false;
+  });
+
+  it("ends a Para session whatever the connector calls itself", async () => {
+    // The old check keyed on `connector.id === "para"`. An email sign-in whose connector reads
+    // as anything else took the plain Wagmi path, failed, and left the visitor signed in with
+    // "the wallet could not disconnect" and no way out.
+    paraSessionLive.value = true;
+    wallet.account.mockReturnValue({
+      address: "0x1234567890abcdef1234567890abcdef12345678",
+      chain: { name: "Ethereum" },
+      connector: { id: "injected" },
+      isConnected: true,
+    });
+
+    render(<WalletButton />);
+    fireEvent.click(await screen.findByRole("button", { name: /0x1234.*5678/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Disconnect" }));
+
+    await waitFor(() => expect(wallet.logoutParaSession).toHaveBeenCalled());
+    paraSessionLive.value = false;
   });
 
   it("offers connection before chain switching when the user is disconnected", () => {
