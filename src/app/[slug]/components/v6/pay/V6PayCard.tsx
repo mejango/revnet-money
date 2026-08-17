@@ -1293,8 +1293,11 @@ export function V6PayCard() {
               )}
               {/* Sits under the token it describes. Already computed for the
                   insufficient-funds notice; showing it is what makes that
-                  notice predictable rather than a surprise at submit time. */}
-              {selected && isConnected ? (
+                  notice predictable rather than a surprise at submit time.
+
+                  Not while paying by card: that is a balance in a token this payer is not
+                  spending, on a row that is about to buy some. */}
+              {selected && isConnected && !payWithDollars ? (
                 <div className="col-start-2 row-start-3 -mt-0.5 flex flex-col items-end justify-self-end pb-1.5 pr-[18px]">
                   <span className="whitespace-nowrap text-xs text-zinc-600">
                     Balance: {formatPayAmount(walletBalance, selected.decimals)}
