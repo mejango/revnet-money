@@ -69,7 +69,15 @@ export function combinedDescription(event: ActivityEvent, projectTokenSymbol: st
   return `${fragments.slice(0, -1).join(", ")}, and ${fragments[fragments.length - 1]}`;
 }
 
-function eventDescription(event: ActivityEvent, projectTokenSymbol: string): string {
+type DescriptionParts = {
+  pre: string;
+  /** The token amount, slightly emphasized when rendered (same color, heavier weight). */
+  strong?: string;
+  post?: string;
+};
+
+function descriptionParts(event: ActivityEvent, projectTokenSymbol: string): DescriptionParts {
+  const count = `${event.tokenCount} ${projectTokenSymbol}`;
   switch (event.type) {
     case "in":
       // Acquisitions read "bought <amount> <token> <source>", matching the
@@ -77,38 +85,43 @@ function eventDescription(event: ActivityEvent, projectTokenSymbol: string): str
       // same-tx remint row carries the payer's receipt, so "bought 0" would
       // misread.
       return event.tokenCount && event.tokenCount !== "0"
-        ? `bought ${event.tokenCount} ${projectTokenSymbol} from issuance`
-        : "paid in";
+        ? { pre: "bought ", strong: count, post: " from issuance" }
+        : { pre: "paid in" };
     case "out":
-      return `cashed out ${event.tokenCount} ${projectTokenSymbol}`;
+      return { pre: "cashed out ", strong: count };
     case "addToBalance":
-      return "added to balance";
+      return { pre: "added to balance" };
     case "mint":
       // `detail` marks the reserved-rate remint of a same-tx buyback swap.
       return event.detail
-        ? `received ${event.tokenCount} ${projectTokenSymbol} ${event.detail}`
-        : `minted ${event.tokenCount} ${projectTokenSymbol}`;
+        ? { pre: "received ", strong: count, post: ` ${event.detail}` }
+        : { pre: "minted ", strong: count };
     case "autoIssue":
-      return `auto-issued ${event.tokenCount} ${projectTokenSymbol}`;
+      return { pre: "auto-issued ", strong: count };
     case "deployErc20":
-      return `deployed the ${event.detail ?? projectTokenSymbol} token`;
+      return { pre: `deployed the ${event.detail ?? projectTokenSymbol} token` };
     case "projectCreate":
-      return "created the project";
+      return { pre: "created the project" };
     case "projectTransfer":
-      return `transferred the project${event.detail ? ` to ${event.detail}` : ""}`;
+      return { pre: `transferred the project${event.detail ? ` to ${event.detail}` : ""}` };
     case "operatorPermissionsSet":
-      return "updated permissions";
+      return { pre: "updated permissions" };
     case "rulesetQueued":
-      return "queued a ruleset";
+      return { pre: "queued a ruleset" };
     case "swapBuy":
-      return `bought ${event.tokenCount} ${projectTokenSymbol} via the buyback pool`;
+      return { pre: "bought ", strong: count, post: " via the buyback pool" };
     case "swapSell":
-      return `sold ${event.tokenCount} ${projectTokenSymbol} via the buyback pool`;
+      return { pre: "sold ", strong: count, post: " via the buyback pool" };
     case "buybackPool":
-      return "set the buyback pool";
+      return { pre: "set the buyback pool" };
     case "payout":
-      return "sent payouts";
+      return { pre: "sent payouts" };
   }
+}
+
+function eventDescription(event: ActivityEvent, projectTokenSymbol: string): string {
+  const parts = descriptionParts(event, projectTokenSymbol);
+  return `${parts.pre}${parts.strong ?? ""}${parts.post ?? ""}`;
 }
 
 /** Project-page wrapper: reads the project token context for the symbol. */
@@ -140,9 +153,16 @@ export function ActivityItemRow({
   const isInflow = isPayEvent || event.type === "addToBalance" || event.type === "swapBuy";
   const isOutflow = event.type === "out" || event.type === "swapSell";
   // One fragment per same-tx event: a lone one reads inline, several read as bullets.
-  const fragments = describableEntries(event).map((entry) =>
-    eventDescription(entry, projectTokenSymbol),
-  );
+  const fragments = describableEntries(event).map((entry) => {
+    const parts = descriptionParts(entry, projectTokenSymbol);
+    return (
+      <>
+        {parts.pre}
+        {parts.strong ? <span className="font-medium">{parts.strong}</span> : null}
+        {parts.post}
+      </>
+    );
+  });
   const description = combinedDescription(event, projectTokenSymbol);
 
   const handleShare = async () => {
