@@ -171,40 +171,42 @@ export function ActivityItemRow({
   return (
     <div className="py-3 border-b border-zinc-200 last:border-b-0 flex gap-2">
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between text-xs text-zinc-500">
-          {/* One shape for every row: time | actor, then the memo headline,
-              then the actions as fine-print bullets. */}
-          <span className="flex min-w-0 items-center gap-1.5">
+        <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
+          {/* One shape for every row: actor left, time right, then the flow
+              line ("20 USDC [in] on <chain>"), the memo headline, and the
+              actions as fine-print bullets. */}
+          <span className="min-w-0 truncate">
+            <ProfileAvatar address={event.beneficiary} short chain={chain} />
+          </span>
+          <span className="shrink-0">
             <EtherscanLink type="tx" value={event.txHash} chain={chain}>
               <DateRelative timestamp={event.timestamp} />
             </EtherscanLink>
-            <span aria-hidden className="text-zinc-300">|</span>
-            <ProfileAvatar address={event.beneficiary} short chain={chain} />
           </span>
-          <div className="flex items-center gap-2">
-            {isInflow && (
-              <span className="border border-teal-600 bg-teal-50 text-teal-600 text-[10px] px-1 py-0.5">
-                in
-              </span>
-            )}
-            {isOutflow && (
-              <span className="border border-orange-500 bg-orange-50 text-orange-500 text-[10px] px-1 py-0.5">
-                out
-              </span>
-            )}
-            <ChainLogo chainId={event.chainId} width={14} height={14} />
-          </div>
         </div>
-        {/* The flow amount stands on its own line, bold, under time | actor.
-            The exact value is one hover away — `title` has no open delay, so an
+        {/* The exact value is one hover away — `title` has no open delay, so an
             abbreviated or USD-denominated headline never hides the real number. */}
-        {event.baseAmount && (
-          <p className="mt-0.5 text-sm font-semibold text-zinc-800" title={event.exactAmount}>
-            {event.baseTokenSymbol
-              ? `${event.baseAmount} ${event.baseTokenSymbol}`
-              : event.baseAmount}
-          </p>
-        )}
+        <p className="mt-0.5 flex items-center gap-1.5 text-sm text-zinc-500">
+          {event.baseAmount && (
+            <span className="font-semibold text-zinc-800" title={event.exactAmount}>
+              {event.baseTokenSymbol
+                ? `${event.baseAmount} ${event.baseTokenSymbol}`
+                : event.baseAmount}
+            </span>
+          )}
+          {isInflow && (
+            <span className="border border-teal-600 bg-teal-50 text-teal-600 text-[10px] px-1 py-0.5">
+              in
+            </span>
+          )}
+          {isOutflow && (
+            <span className="border border-orange-500 bg-orange-50 text-orange-500 text-[10px] px-1 py-0.5">
+              out
+            </span>
+          )}
+          <span>on</span>
+          <ChainLogo chainId={event.chainId} width={14} height={14} />
+        </p>
         {event.memo && (
           <p className="text-sm text-zinc-700 break-all mt-0.5">
             <button
