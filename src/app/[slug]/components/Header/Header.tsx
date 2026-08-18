@@ -87,6 +87,11 @@ export function Header(props: Props) {
   const links = getProjectLinks(metadata?.data);
   const website = links.find((link) => link.type === "infoUri");
   const metadataRef = useRef<HTMLDivElement>(null);
+  // The metadata row lives inside a Suspense boundary, which can commit AFTER
+  // the measuring layout effect first ran (against null refs, observing
+  // nothing). Flipping this state when the row actually mounts re-runs the
+  // effect with live elements — without it the separators never appear.
+  const [metadataMounted, setMetadataMounted] = useState(false);
   const operatorRef = useRef<HTMLSpanElement>(null);
   const websiteRef = useRef<HTMLSpanElement>(null);
   const createdRef = useRef<HTMLSpanElement>(null);
@@ -153,7 +158,7 @@ export function Header(props: Props) {
       if (element) observer.observe(element);
     }
     return () => observer.disconnect();
-  }, [hasOperator, hasWebsite, hasCreated, hasSuckers]);
+  }, [hasOperator, hasWebsite, hasCreated, hasSuckers, metadataMounted]);
 
   return (
     <header>
@@ -247,7 +252,10 @@ export function Header(props: Props) {
               <Suspense>
                 {(hasOperator || website || hasCreated || suckers?.length) && (
                   <div
-                    ref={metadataRef}
+                    ref={(node) => {
+                      metadataRef.current = node;
+                      setMetadataMounted(!!node);
+                    }}
                     className="mt-1.5 flex flex-wrap items-center gap-x-5 text-[15px] text-zinc-700"
                   >
                     {hasOperator && (
