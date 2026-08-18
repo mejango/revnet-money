@@ -172,24 +172,12 @@ export function ActivityItemRow({
     <div className="py-3 border-b border-zinc-200 last:border-b-0 flex gap-2">
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
-          {/* One shape for every row: actor left, time right, then the flow
-              line ("20 USDC [in] on <chain>"), the memo headline, and the
-              actions as fine-print bullets. */}
-          <span className="min-w-0 truncate">
-            <ProfileAvatar address={event.beneficiary} short chain={chain} />
-          </span>
-          <span className="flex shrink-0 items-center gap-1.5">
-            <EtherscanLink type="tx" value={event.txHash} chain={chain}>
-              <DateRelative timestamp={event.timestamp} />
-            </EtherscanLink>
-            <span>on</span>
-            <ChainLogo chainId={event.chainId} width={14} height={14} />
-          </span>
-        </div>
-        {/* The exact value is one hover away — `title` has no open delay, so an
-            abbreviated or USD-denominated headline never hides the real number. */}
-        {(event.baseAmount || isInflow || isOutflow) && (
-          <p className="mt-0.5 flex items-center gap-1.5 text-sm text-zinc-500">
+          {/* One shape for every row: the flow cluster left with "time on
+              <chain>" right, the prefixed actor below, then the memo headline
+              and the actions as fine-print bullets. The exact value is one
+              hover away — `title` has no open delay, so an abbreviated or
+              USD-denominated headline never hides the real number. */}
+          <span className="flex min-w-0 items-center gap-1.5 text-sm text-zinc-500">
             {isInflow && (
               <span className="border border-teal-600 bg-teal-50 text-teal-600 text-[10px] px-1 py-0.5">
                 in
@@ -201,16 +189,29 @@ export function ActivityItemRow({
               </span>
             )}
             {event.baseAmount && (
-              <span className="font-semibold text-zinc-800" title={event.exactAmount}>
+              <span className="truncate font-semibold text-zinc-800" title={event.exactAmount}>
                 {event.baseTokenSymbol
                   ? `${event.baseAmount} ${event.baseTokenSymbol}`
                   : event.baseAmount}
               </span>
             )}
-          </p>
-        )}
+          </span>
+          <span className="flex shrink-0 items-center gap-1.5">
+            <EtherscanLink type="tx" value={event.txHash} chain={chain}>
+              <DateRelative timestamp={event.timestamp} />
+            </EtherscanLink>
+            <span>on</span>
+            <ChainLogo chainId={event.chainId} width={14} height={14} />
+          </span>
+        </div>
+        <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500">
+          {isOutflow ? "From" : isInflow ? "To" : "By"}{" "}
+          <span className="min-w-0 truncate">
+            <ProfileAvatar address={event.beneficiary} short chain={chain} />
+          </span>
+        </p>
         {event.memo && (
-          <p className="text-sm text-zinc-700 break-all mt-2">
+          <p className="text-sm text-zinc-700 break-all mt-3">
             <button
               type="button"
               onClick={() => void handleShare()}
@@ -222,7 +223,7 @@ export function ActivityItemRow({
             </button>
           </p>
         )}
-        <ul className={`${event.memo ? "mt-1" : "mt-2"} space-y-0.5 text-xs text-zinc-500`}>
+        <ul className={`${event.memo ? "mt-1" : "mt-3"} space-y-0.5 text-xs text-zinc-500`}>
           {/* Hand-rolled markers: the dot sits flush left while wrapped
               lines keep hanging-indent alignment with the first line's text. */}
           {fragments.map((fragment, index) => (
