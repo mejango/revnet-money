@@ -283,7 +283,7 @@ export function mapActivityEvents(
         chainId,
         tokenCount: prettyNumber(new JBProjectToken(BigInt(e.beneficiaryTokenCount)).format(6)),
         memo: e.memo || undefined,
-        detail: reservePercent ? `after the ${reservePercent}% reserve` : undefined,
+        detail: reservePercent ? `after the ${reservePercent}% split` : undefined,
       });
     } else if (event.manualMintTokensEvent) {
       if (autoIssueTxs.has(txKey)) continue;
@@ -303,7 +303,7 @@ export function mapActivityEvents(
         chainId,
         tokenCount: prettyNumber(new JBProjectToken(BigInt(e.beneficiaryTokenCount)).format(6)),
         memo: e.memo || undefined,
-        detail: reservePercent ? `after the ${reservePercent}% reserve` : undefined,
+        detail: reservePercent ? `after the ${reservePercent}% split` : undefined,
       });
     } else if (event.autoIssueEvent) {
       const e = event.autoIssueEvent;

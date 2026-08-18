@@ -231,9 +231,14 @@ export function ActivityItemRow({
           </p>
         )}
         {fragments.length > 1 && (
-          <ul className="mt-0.5 list-inside list-disc space-y-0.5 text-xs text-zinc-500 marker:text-zinc-300">
+          <ul className="mt-0.5 space-y-0.5 text-xs text-zinc-500">
+            {/* Hand-rolled markers: the dot sits flush left while wrapped
+                lines keep hanging-indent alignment with the first line's text. */}
             {fragments.map((fragment, index) => (
-              <li key={index} className="break-words">
+              <li
+                key={index}
+                className="relative break-words pl-3.5 before:absolute before:left-0 before:text-zinc-300 before:content-['•']"
+              >
                 {fragment}
               </li>
             ))}

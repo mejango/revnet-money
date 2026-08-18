@@ -45,7 +45,7 @@ describe("foldSameTxActivities + combinedDescription", () => {
       id: "d",
       type: "mint",
       tokenCount: "17k",
-      detail: "after the 40% reserve",
+      detail: "after the 40% split",
     });
     const folded = foldSameTxActivities([swap, remint, pay]);
     expect(folded.memo).toBe("gm");
@@ -53,7 +53,7 @@ describe("foldSameTxActivities + combinedDescription", () => {
     // The zero-issuance pay anchors the row but contributes no fragment —
     // the amount + "in" tag already say "paid in".
     expect(combinedDescription(folded, "ART")).toBe(
-      "bought 28.4k ART via the buyback pool and received 17k ART after the 40% reserve",
+      "bought 28.4k ART via the buyback pool and received 17k ART after the 40% split",
     );
   });
 
