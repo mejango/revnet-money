@@ -217,7 +217,7 @@ export function ActivityItemRow({
           </p>
         )}
         {fragments.length > 1 && (
-          <ul className="mt-0.5 list-disc space-y-0.5 pl-5 text-xs text-zinc-500 marker:text-zinc-300">
+          <ul className="mt-0.5 list-inside list-disc space-y-0.5 text-xs text-zinc-500 marker:text-zinc-300">
             {fragments.map((fragment, index) => (
               <li key={index} className="break-words">
                 {fragment}
