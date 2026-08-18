@@ -62,7 +62,7 @@ export function ChartRangeSelect({
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
         aria-label="Time range"
-        className="cursor-pointer appearance-none border-0 bg-none bg-transparent p-0 pr-4 text-xs font-medium text-current hover:underline focus:border-0 focus:ring-0 focus-visible:!outline-none focus-visible:underline"
+        className="cursor-pointer appearance-none border-0 bg-none bg-transparent p-0 pr-4 text-xs font-medium text-current [field-sizing:content] hover:underline focus:border-0 focus:ring-0 focus-visible:!outline-none focus-visible:underline"
       >
         {ranges.map((range) => (
           <option key={range.label} value={range.value}>

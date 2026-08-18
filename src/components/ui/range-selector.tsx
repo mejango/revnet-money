@@ -34,7 +34,7 @@ export function RangeSelector<T extends string>({ ranges, defaultValue }: Props<
           router.push(`${pathname}?range=${event.target.value}`, { scroll: false })
         }
         aria-label="Time range"
-        className="cursor-pointer appearance-none border-0 bg-none bg-transparent p-0 pr-4 text-xs font-medium text-current hover:underline focus:border-0 focus:ring-0 focus-visible:!outline-none focus-visible:underline"
+        className="cursor-pointer appearance-none border-0 bg-none bg-transparent p-0 pr-4 text-xs font-medium text-current [field-sizing:content] hover:underline focus:border-0 focus:ring-0 focus-visible:!outline-none focus-visible:underline"
       >
         {ranges.map(({ value, label }) => (
           <option key={value} value={value}>
