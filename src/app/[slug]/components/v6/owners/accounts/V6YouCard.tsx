@@ -100,10 +100,21 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     () => ammPresence?.filter((state) => state.pool) ?? [],
     [ammPresence],
   );
-  const [showLiquidity, setShowLiquidity] = useState(false);
+  // The chain whose liquidity form the dialog shows, or null while closed.
+  // Network selection comes first so a wallet on Base never lands on a
+  // Mainnet form by default.
+  const [liquidityChain, setLiquidityChain] = useState<JBChainId | null>(null);
+  const { chainId: walletChainId } = useAccount();
+  const openLiquidity = useCallback(
+    (target?: JBChainId) => {
+      const pooled = pooledAmmStates.find((state) => state.chainId === (target ?? walletChainId));
+      setLiquidityChain(pooled?.chainId ?? pooledAmmStates[0]?.chainId ?? null);
+    },
+    [pooledAmmStates, walletChainId],
+  );
   const { data: dialogAmmStates } = useQuery({
     queryKey: ["v6AmmReferences", chainProjectsKey(ammChains)],
-    enabled: showLiquidity && pooledAmmStates.length > 0,
+    enabled: liquidityChain != null && pooledAmmStates.length > 0,
     staleTime: 60_000,
     queryFn: () => fetchAmmReferences(pooledAmmStates),
   });
@@ -331,7 +342,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                   isRevnet={projectData?.project?.isRevnet ?? undefined}
                   onQuote={reportQuote}
                   ammState={ammPresence?.find((state) => state.chainId === b.chainId)}
-                  onManage={() => setShowLiquidity(true)}
+                  onManage={() => openLiquidity(b.chainId as JBChainId)}
                 />
               ))}
             </TableBody>
@@ -429,7 +440,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
             type="button"
             variant="outline"
             className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
-            onClick={() => setShowLiquidity(true)}
+            onClick={() => openLiquidity()}
           >
             Manage market liquidity
           </Button>
@@ -442,34 +453,35 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
         )}
       </div>
 
-      {showLiquidity && pooledAmmStates.length > 0 ? (
-        <Dialog open onOpenChange={(next) => !next && setShowLiquidity(false)}>
+      {liquidityChain != null && pooledAmmStates.length > 0 ? (
+        <Dialog open onOpenChange={(next) => !next && setLiquidityChain(null)}>
           <DialogContent className="max-w-lg">
             <DialogTitle className="text-base font-medium">Market liquidity</DialogTitle>
             <p className="text-sm text-zinc-500">
               Add liquidity or manage positions owned by your connected wallet.
             </p>
-            <div className="space-y-4">
-              {dialogAmmStates ? (
-                dialogAmmStates
-                  .filter((state) => state.pool)
-                  .map((state) => (
-                    <div
-                      key={state.chainId}
-                      className="border-t border-zinc-100 pt-3 first:border-t-0 first:pt-0"
-                    >
-                      <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
-                        <ChainLogo chainId={state.chainId} width={16} height={16} />
-                        {chainName(state.chainId)}
-                      </div>
-                      <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
-                      <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
-                    </div>
-                  ))
-              ) : (
-                <SkeletonLines lines={4} />
-              )}
+            <div className="flex flex-wrap gap-1">
+              {pooledAmmStates.map((state) => (
+                <LiquidityChainPill
+                  key={state.chainId}
+                  state={state}
+                  selected={state.chainId === liquidityChain}
+                  onSelect={() => setLiquidityChain(state.chainId)}
+                />
+              ))}
             </div>
+            {(() => {
+              const state = dialogAmmStates?.find(
+                (candidate) => candidate.chainId === liquidityChain && candidate.pool,
+              );
+              if (!state) return <SkeletonLines lines={4} />;
+              return (
+                <div key={state.chainId}>
+                  <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
+                  <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
+                </div>
+              );
+            })()}
           </DialogContent>
         </Dialog>
       ) : null}
@@ -490,6 +502,53 @@ function CellWithSub({ main, sub }: { main: string; sub?: string }) {
       <span>{main}</span>
       {sub && <span className="text-xs text-zinc-400">{sub}</span>}
     </span>
+  );
+}
+
+/**
+ * One network tab in the liquidity dialog. The dot marks chains where the
+ * connected wallet already holds LP positions (same query the LP column
+ * runs, so the cache is shared).
+ */
+function LiquidityChainPill({
+  state,
+  selected,
+  onSelect,
+}: {
+  state: AmmPresence;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { address } = useAccount();
+  const pool = state.pool;
+  const positions = useQuery({
+    queryKey: ["revnetWalletLpPositions", pool?.chainId, pool?.poolId, address?.toLowerCase()],
+    enabled: Boolean(pool && address),
+    retry: 0,
+    staleTime: 30_000,
+    queryFn: () => readUserLpPositions(pool!, address!),
+  });
+  const hasLiquidity = (positions.data?.length ?? 0) > 0;
+  return (
+    <button
+      type="button"
+      className={
+        selected
+          ? "flex items-center gap-1.5 bg-zinc-900 px-2.5 py-1.5 text-xs text-white"
+          : "flex items-center gap-1.5 border border-zinc-300 px-2.5 py-1.5 text-xs hover:bg-zinc-50"
+      }
+      onClick={onSelect}
+    >
+      <ChainLogo chainId={state.chainId} width={14} height={14} />
+      {chainName(state.chainId)}
+      {hasLiquidity ? (
+        <span
+          className="h-1.5 w-1.5 rounded-full bg-teal-400"
+          title="You have liquidity on this network"
+          aria-label="You have liquidity on this network"
+        />
+      ) : null}
+    </button>
   );
 }
 
