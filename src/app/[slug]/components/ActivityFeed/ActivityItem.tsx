@@ -205,20 +205,13 @@ export function ActivityItemRow({
             <ChainLogo chainId={event.chainId} width={14} height={14} />
           </div>
         </div>
+        {/* One shape for every row: actor, memo headline, then the actions
+            as fine-print bullets — a lone action is still a bullet. */}
         <div className="text-sm mt-0.5">
           <ProfileAvatar address={event.beneficiary} short chain={chain} />
-          {fragments.length === 1 && <span className="text-zinc-600"> {fragments[0]}</span>}
         </div>
-        {/* Grouped rows swap the emphasis: the memo is the headline above the
-            actions, which read as fine print. */}
         {event.memo && (
-          <p
-            className={
-              fragments.length > 1
-                ? "text-sm text-zinc-700 break-all mt-0.5"
-                : "text-sm text-zinc-700 break-all mt-1"
-            }
-          >
+          <p className="text-sm text-zinc-700 break-all mt-0.5">
             <button
               type="button"
               onClick={() => void handleShare()}
@@ -230,20 +223,18 @@ export function ActivityItemRow({
             </button>
           </p>
         )}
-        {fragments.length > 1 && (
-          <ul className="mt-0.5 space-y-0.5 text-xs text-zinc-500">
-            {/* Hand-rolled markers: the dot sits flush left while wrapped
-                lines keep hanging-indent alignment with the first line's text. */}
-            {fragments.map((fragment, index) => (
-              <li
-                key={index}
-                className="relative break-words pl-3.5 before:absolute before:left-0 before:text-zinc-300 before:content-['•']"
-              >
-                {fragment}
-              </li>
-            ))}
-          </ul>
-        )}
+        <ul className="mt-0.5 space-y-0.5 text-xs text-zinc-500">
+          {/* Hand-rolled markers: the dot sits flush left while wrapped
+              lines keep hanging-indent alignment with the first line's text. */}
+          {fragments.map((fragment, index) => (
+            <li
+              key={index}
+              className="relative break-words pl-3.5 before:absolute before:left-0 before:text-zinc-300 before:content-['•']"
+            >
+              {fragment}
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );
