@@ -292,28 +292,40 @@ export function StepChartBase({
           </svg>
           {/* Constant-size labels overlay the plot as HTML so they don't scale
               with the svg. */}
-          {resolved.map((s, i) =>
-            i > 0 && s.start > t0 && s.start < t1 ? (
+          {resolved.map((s, i) => {
+            if (!(i > 0 && s.start > t0 && s.start < t1)) return null;
+            // A marker near the plot's left edge carries its label on the
+            // RIGHT of the line — translated fully left it escapes the card.
+            const nearLeftEdge = X(s.start) / VW < 0.15;
+            return (
               <span
                 key={s.start}
-                className="pointer-events-none absolute top-0 -translate-x-full text-base font-medium leading-none text-[#3D7955]"
-                style={{ left: `calc(${pct(X(s.start))} - 8px)` }}
+                className={cn(
+                  "pointer-events-none absolute top-0 text-base font-medium leading-none text-[#3D7955]",
+                  nearLeftEdge ? "" : "-translate-x-full",
+                )}
+                style={{
+                  left: `calc(${pct(X(s.start))} ${nearLeftEdge ? "+" : "-"} 8px)`,
+                }}
               >
                 Stage {i + 1}
               </span>
-            ) : null,
-          )}
+            );
+          })}
           {showNowMarker ? (
             <span
-              className="pointer-events-none absolute top-0 -translate-x-full text-base font-semibold leading-none text-[#EE6F3A]"
-              style={{ left: `calc(${pct(nowX)} - 8px)` }}
+              className={cn(
+                "pointer-events-none absolute top-0 text-base font-semibold leading-none text-[#EE6F3A]",
+                nowX / VW < 0.15 ? "" : "-translate-x-full",
+              )}
+              style={{ left: `calc(${pct(nowX)} ${nowX / VW < 0.15 ? "+" : "-"} 8px)` }}
             >
               Now
             </span>
           ) : null}
         </div>
       </div>
-      <div className="relative ml-20 mt-1 h-5 text-sm text-[#666666]">
+      <div className="relative mt-1 h-5 text-sm text-[#666666]">
         {axisTimes.map((timestamp, i) => (
           <span
             key={timestamp}
