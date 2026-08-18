@@ -184,12 +184,12 @@ export function HomepageActivityFeed({
                     ) : null}
                     {isIn ? (
                       <span className="inline-flex h-5 min-w-7 items-center justify-center border border-teal-600 px-1 text-center text-[10px] leading-none text-teal-600">
-                        In
+                        in
                       </span>
                     ) : null}
                     {isOut ? (
                       <span className="inline-flex h-5 min-w-7 items-center justify-center border border-orange-500 px-1 text-center text-[10px] leading-none text-orange-500">
-                        Out
+                        out
                       </span>
                     ) : null}
                     <ChainLogo chainId={chainId} width={14} height={14} />

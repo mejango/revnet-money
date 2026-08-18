@@ -187,12 +187,12 @@ export function ActivityItemRow({
             )}
             {isInflow && (
               <span className="inline-flex h-5 min-w-7 items-center justify-center border border-teal-600 bg-teal-50 px-1 text-center text-[10px] leading-none text-teal-600">
-                In
+                in
               </span>
             )}
             {isOutflow && (
               <span className="inline-flex h-5 min-w-7 items-center justify-center border border-orange-500 bg-orange-50 px-1 text-center text-[10px] leading-none text-orange-500">
-                Out
+                out
               </span>
             )}
           </span>
