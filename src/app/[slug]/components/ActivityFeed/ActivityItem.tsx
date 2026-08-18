@@ -182,15 +182,6 @@ export function ActivityItemRow({
             <ProfileAvatar address={event.beneficiary} short chain={chain} />
           </span>
           <div className="flex items-center gap-2">
-            {event.baseAmount && (
-              // The exact value is one hover away — `title` has no open delay, so an
-              // abbreviated or USD-denominated headline never hides the real number.
-              <span title={event.exactAmount}>
-                {event.baseTokenSymbol
-                  ? `${event.baseAmount} ${event.baseTokenSymbol}`
-                  : event.baseAmount}
-              </span>
-            )}
             {isInflow && (
               <span className="border border-teal-600 bg-teal-50 text-teal-600 text-[10px] px-1 py-0.5">
                 in
@@ -204,6 +195,16 @@ export function ActivityItemRow({
             <ChainLogo chainId={event.chainId} width={14} height={14} />
           </div>
         </div>
+        {/* The flow amount stands on its own line, bold, under time | actor.
+            The exact value is one hover away — `title` has no open delay, so an
+            abbreviated or USD-denominated headline never hides the real number. */}
+        {event.baseAmount && (
+          <p className="mt-0.5 text-sm font-semibold text-zinc-800" title={event.exactAmount}>
+            {event.baseTokenSymbol
+              ? `${event.baseAmount} ${event.baseTokenSymbol}`
+              : event.baseAmount}
+          </p>
+        )}
         {event.memo && (
           <p className="text-sm text-zinc-700 break-all mt-0.5">
             <button
