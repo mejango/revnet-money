@@ -208,7 +208,7 @@ export function ActivityItemRow({
           <ChainLogo chainId={event.chainId} width={14} height={14} />
         </p>
         {event.memo && (
-          <p className="text-sm text-zinc-700 break-all mt-0.5">
+          <p className="text-sm text-zinc-700 break-all mt-2">
             <button
               type="button"
               onClick={() => void handleShare()}
@@ -220,7 +220,7 @@ export function ActivityItemRow({
             </button>
           </p>
         )}
-        <ul className="mt-0.5 space-y-0.5 text-xs text-zinc-500">
+        <ul className={`${event.memo ? "mt-1" : "mt-2"} space-y-0.5 text-xs text-zinc-500`}>
           {/* Hand-rolled markers: the dot sits flush left while wrapped
               lines keep hanging-indent alignment with the first line's text. */}
           {fragments.map((fragment, index) => (
