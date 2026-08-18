@@ -123,6 +123,10 @@ export function ActivityItemRow({
   const isPayEvent = event.type === "in";
   const isInflow = isPayEvent || event.type === "addToBalance" || event.type === "swapBuy";
   const isOutflow = event.type === "out" || event.type === "swapSell";
+  // One fragment per same-tx event: a lone one reads inline, several read as bullets.
+  const fragments = [event, ...(event.also ?? [])].map((entry) =>
+    eventDescription(entry, projectTokenSymbol),
+  );
   const description = combinedDescription(event, projectTokenSymbol);
 
   const handleShare = async () => {
@@ -187,8 +191,17 @@ export function ActivityItemRow({
         </div>
         <div className="text-sm mt-0.5">
           <ProfileAvatar address={event.beneficiary} short chain={chain} />
-          <span className="text-zinc-600"> {description}</span>
+          {fragments.length === 1 && <span className="text-zinc-600"> {fragments[0]}</span>}
         </div>
+        {fragments.length > 1 && (
+          <ul className="mt-0.5 list-disc space-y-0.5 pl-5 text-sm text-zinc-600 marker:text-zinc-400">
+            {fragments.map((fragment, index) => (
+              <li key={index} className="break-words">
+                {fragment}
+              </li>
+            ))}
+          </ul>
+        )}
         {event.memo && (
           <p className="text-sm text-zinc-700 break-all mt-1">
             <button
