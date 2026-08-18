@@ -398,6 +398,16 @@ export function CartesianChart<T extends ChartDatum>({
                 />
               ))
             : null}
+          {/* The y-axis border anchors the plot's left edge. */}
+          <line
+            x1={plotLeft}
+            y1={plotTop}
+            x2={plotLeft}
+            y2={plotBottom}
+            stroke="currentColor"
+            className="text-zinc-300"
+            strokeWidth="1"
+          />
           {grid === "both"
             ? resolvedXTicks.map((tick) => (
                 <line

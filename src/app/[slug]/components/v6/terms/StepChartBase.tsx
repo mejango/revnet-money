@@ -211,6 +211,16 @@ export function StepChartBase({
                 />
               );
             })}
+            {/* The y-axis border anchors the plot's left edge. */}
+            <line
+              x1={PL}
+              y1={PT}
+              x2={PL}
+              y2={VH - PB}
+              stroke="#CCCCCC"
+              strokeWidth="1"
+              vectorEffect="non-scaling-stroke"
+            />
             {/* Stage boundaries */}
             {resolved.map((s, i) =>
               i > 0 && s.start > t0 && s.start < t1 ? (
