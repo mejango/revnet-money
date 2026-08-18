@@ -43,28 +43,48 @@ export type ChartGeom = {
   maxV: number;
 };
 
-/** One range-selector pill, styled like the ui RangeSelector's options. */
-export function ChartRangeButton({
-  label,
-  active,
-  onClick,
+/**
+ * A quiet range picker in the same voice as MarketPriceViewToggle: a naked
+ * select with a chevron, taking one text line instead of a row of pills.
+ */
+export function ChartRangeSelect({
+  ranges,
+  value,
+  onChange,
 }: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
+  ranges: readonly { label: string; value: number }[];
+  value: number;
+  onChange: (value: number) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "px-2.5 py-1 text-sm font-medium rounded-md transition-all focus-visible:outline-none",
-        active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700",
-      )}
-    >
-      {label}
-    </button>
+    <div className="relative inline-flex shrink-0 items-center text-teal-700">
+      <select
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        aria-label="Time range"
+        className="cursor-pointer appearance-none border-0 bg-none bg-transparent p-0 pr-4 text-xs font-medium text-current hover:underline focus:border-0 focus:ring-0 focus-visible:!outline-none focus-visible:underline"
+      >
+        {ranges.map((range) => (
+          <option key={range.label} value={range.value}>
+            {range.label}
+          </option>
+        ))}
+      </select>
+      <svg
+        viewBox="0 0 12 12"
+        aria-hidden="true"
+        className="pointer-events-none absolute right-0 h-3 w-3"
+      >
+        <path
+          d="m2.5 4.25 3.5 3.5 3.5-3.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
   );
 }
 
@@ -166,26 +186,7 @@ export function StepChartBase({
     <div className="mt-3 w-full">
       {header}
       <div className="relative mt-2">
-        <div className="pointer-events-none absolute inset-y-0 left-0 w-20 text-sm text-[#666666]">
-          {[0, 1, 2, 3, 4].map((i) => {
-            const y = PT + ((VH - PT - PB) * i) / 4;
-            const value = maxV * (1 - i / 4);
-            return (
-              <span
-                key={i}
-                className={cn(
-                  "absolute left-0 whitespace-nowrap leading-none",
-                  i === 0 ? "translate-y-0" : i === 4 ? "-translate-y-full" : "-translate-y-1/2",
-                )}
-                data-slot="issuance-y-tick"
-                style={{ top: `${(y / VH) * 100}%` }}
-              >
-                {formatPrice(value)}
-              </span>
-            );
-          })}
-        </div>
-        <div ref={plotRef} className="relative ml-20">
+        <div ref={plotRef} className="relative">
           <svg
             viewBox={`0 0 ${VW} ${VH}`}
             className="h-auto w-full cursor-crosshair touch-none"

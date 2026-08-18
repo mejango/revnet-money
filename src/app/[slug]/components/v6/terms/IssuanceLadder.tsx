@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CHART_RANGES, resolveStages, timeBounds, type ChartStage } from "./chartUtils";
-import { ChartRangeButton, StepChartBase } from "./StepChartBase";
+import { ChartRangeSelect, StepChartBase } from "./StepChartBase";
 
 /**
  * Projected issuance price (base units per token) as a rising ladder. The
@@ -37,16 +37,11 @@ export function IssuanceLadder({
       showNowMarker={now < t1}
       header={
         <div className="flex justify-end">
-          <div className="flex gap-1 p-1 bg-zinc-100 rounded-lg shrink-0">
-            {CHART_RANGES.map((r) => (
-              <ChartRangeButton
-                key={r.label}
-                label={r.label}
-                active={years === r.years}
-                onClick={() => setYears(r.years)}
-              />
-            ))}
-          </div>
+          <ChartRangeSelect
+            ranges={CHART_RANGES.map((r) => ({ label: r.label, value: r.years }))}
+            value={years}
+            onChange={setYears}
+          />
         </div>
       }
     />

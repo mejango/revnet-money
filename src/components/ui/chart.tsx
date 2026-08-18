@@ -461,7 +461,7 @@ export function CartesianChart<T extends ChartDatum>({
                   d={path}
                   fill="none"
                   stroke={item.color}
-                  strokeWidth={item.width ?? 2}
+                  strokeWidth={item.width ?? 3}
                   strokeDasharray={item.dash}
                   opacity={item.opacity}
                   strokeLinecap="round"

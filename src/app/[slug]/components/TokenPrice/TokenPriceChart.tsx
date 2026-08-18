@@ -212,11 +212,14 @@ export function TokenPriceChart({
 
   return (
     <div className="w-full">
-      <div className="flex w-full flex-wrap items-center justify-start gap-4 sm:justify-end">
-        <RangeSelector ranges={TIME_RANGES} defaultValue="3m" />
-        {hasPool && hasAmmData ? (
-          <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
-        ) : null}
+      <div className="flex w-full flex-wrap items-center justify-between gap-4">
+        <h3 className="text-base font-semibold text-zinc-700">Price</h3>
+        <span className="flex flex-wrap items-center gap-4">
+          <RangeSelector ranges={TIME_RANGES} defaultValue="3m" />
+          {hasPool && hasAmmData ? (
+            <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
+          ) : null}
+        </span>
       </div>
       {(data?.unavailableSources.length ?? 0) > 0 ? (
         <p className="mt-3 text-xs text-amber-700">
