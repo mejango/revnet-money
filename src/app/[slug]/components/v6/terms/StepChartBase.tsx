@@ -293,10 +293,10 @@ export function StepChartBase({
           {/* Constant-size labels overlay the plot as HTML so they don't scale
               with the svg. */}
           {(() => {
-            // Lay the stage/Now labels out with collision handling: a marker
-            // near the plot's left edge carries its label on the RIGHT of the
-            // line (translated fully left it escapes the card), and a label
-            // that would overlap an earlier one drops to a second row.
+            // Lay the stage/Now labels out with collision handling: a stage
+            // label sits to the RIGHT of its boundary — inside the stage it
+            // names — flipping left only near the plot's right edge, and a
+            // label that would overlap an earlier one drops to a second row.
             const markers = [
               ...resolved
                 .map((stage, i) => ({ x: X(stage.start), label: `Stage ${i + 1}`, now: false, i }))
@@ -306,7 +306,7 @@ export function StepChartBase({
             const CHAR_PX = 9.6; // text-base mono, close enough for layout
             const rowEnds: number[] = [];
             return markers.map((marker) => {
-              const side = marker.x / VW < 0.15 ? "right" : "left";
+              const side = marker.x / VW > 0.85 ? "left" : "right";
               const anchorPx = plotWidth > 0 ? (marker.x / VW) * plotWidth : marker.x;
               const widthPx = marker.label.length * CHAR_PX + 8;
               const startPx = side === "right" ? anchorPx + 8 : anchorPx - 8 - widthPx;
