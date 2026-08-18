@@ -178,7 +178,7 @@ export function ActivityItemRow({
             <EtherscanLink type="tx" value={event.txHash} chain={chain}>
               <DateRelative timestamp={event.timestamp} />
             </EtherscanLink>
-            <span aria-hidden>|</span>
+            <span aria-hidden className="text-zinc-300">|</span>
             <ProfileAvatar address={event.beneficiary} short chain={chain} />
           </span>
           <div className="flex items-center gap-2">
