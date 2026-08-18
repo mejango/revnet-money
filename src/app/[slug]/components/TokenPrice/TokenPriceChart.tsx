@@ -212,42 +212,8 @@ export function TokenPriceChart({
 
   return (
     <div className="w-full">
-      <div className="flex flex-col items-start gap-2.5">
-        <div className="flex w-full flex-wrap items-center gap-1.5 lg:gap-4">
-          <ChartToggleButton
-            label="Issuance Price"
-            active={showIssuance}
-            colorVar="--chart-2"
-            note={priceConcept("issuance", { baseSymbol: axisSymbol })}
-            onClick={() => setShowIssuance(!showIssuance)}
-          />
-          {hasPool && (
-            <ChartToggleButton
-              label="Pool Price"
-              active={showAmm}
-              disabled={!hasAmmData}
-              colorVar="--chart-4"
-              note={priceConcept("pool", { baseSymbol: axisSymbol })}
-              onClick={() => setShowAmm(!showAmm)}
-            />
-          )}
-          <ChartToggleButton
-            label="Cash out Price"
-            active={showFloor}
-            disabled={!hasFloorData}
-            colorVar="--chart-3"
-            note={priceConcept("cashOut", { baseSymbol: axisSymbol })}
-            onClick={() => setShowFloor(!showFloor)}
-          />
-          {conversionNote ? (
-            <span className="ml-auto">
-              <InfoTip note={conversionNote} />
-            </span>
-          ) : null}
-        </div>
-        <div className="flex w-full flex-wrap justify-start gap-2 sm:justify-end">
-          <RangeSelector ranges={TIME_RANGES} defaultValue="3m" />
-        </div>
+      <div className="flex w-full flex-wrap justify-start gap-2 sm:justify-end">
+        <RangeSelector ranges={TIME_RANGES} defaultValue="3m" />
       </div>
       {(data?.unavailableSources.length ?? 0) > 0 ? (
         <p className="mt-3 text-xs text-amber-700">
@@ -298,6 +264,35 @@ export function TokenPriceChart({
           No price data available
         </div>
       )}
+      {/* The legend reads under the graph, with the methodology tip beside it. */}
+      <div className="mt-2.5 flex w-full flex-wrap items-center gap-1.5 lg:gap-4">
+        <ChartToggleButton
+          label="Issuance Price"
+          active={showIssuance}
+          colorVar="--chart-2"
+          note={priceConcept("issuance", { baseSymbol: axisSymbol })}
+          onClick={() => setShowIssuance(!showIssuance)}
+        />
+        {hasPool && (
+          <ChartToggleButton
+            label="Pool Price"
+            active={showAmm}
+            disabled={!hasAmmData}
+            colorVar="--chart-4"
+            note={priceConcept("pool", { baseSymbol: axisSymbol })}
+            onClick={() => setShowAmm(!showAmm)}
+          />
+        )}
+        <ChartToggleButton
+          label="Cash out Price"
+          active={showFloor}
+          disabled={!hasFloorData}
+          colorVar="--chart-3"
+          note={priceConcept("cashOut", { baseSymbol: axisSymbol })}
+          onClick={() => setShowFloor(!showFloor)}
+        />
+        {conversionNote ? <InfoTip note={conversionNote} /> : null}
+      </div>
     </div>
   );
 }
