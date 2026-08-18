@@ -229,7 +229,7 @@ export function ActivityItemRow({
           {fragments.map((fragment, index) => (
             <li
               key={index}
-              className="relative break-words pl-3.5 before:absolute before:left-0 before:text-zinc-300 before:content-['•']"
+              className="relative break-words pl-3.5 before:absolute before:left-0 before:text-zinc-500 before:content-['•']"
             >
               {fragment}
             </li>
