@@ -212,8 +212,11 @@ export function TokenPriceChart({
 
   return (
     <div className="w-full">
-      <div className="flex w-full flex-wrap justify-start gap-2 sm:justify-end">
+      <div className="flex w-full flex-wrap items-center justify-start gap-4 sm:justify-end">
         <RangeSelector ranges={TIME_RANGES} defaultValue="3m" />
+        {hasPool && hasAmmData ? (
+          <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
+        ) : null}
       </div>
       {(data?.unavailableSources.length ?? 0) > 0 ? (
         <p className="mt-3 text-xs text-amber-700">
@@ -225,12 +228,6 @@ export function TokenPriceChart({
           Market and cash-out prices can&apos;t be converted into this revnet&apos;s issuance
           currency right now, so only issuance is shown.
         </p>
-      ) : null}
-
-      {hasPool && hasAmmData ? (
-        <div className="mt-2 flex justify-end">
-          <MarketPriceViewToggle value={marketPriceView} onChange={setMarketPriceView} />
-        </div>
       ) : null}
 
       {hasData ? (

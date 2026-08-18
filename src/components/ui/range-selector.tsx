@@ -1,8 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export type RangeOption<T extends string> = {
   value: T;
@@ -14,7 +12,13 @@ interface Props<T extends string> {
   defaultValue: T;
 }
 
+/**
+ * A quiet range picker in the same voice as MarketPriceViewToggle: a naked
+ * select with a chevron, taking one text line instead of a row of pills.
+ * The range stays URL state (?range=) so links and reloads keep it.
+ */
 export function RangeSelector<T extends string>({ ranges, defaultValue }: Props<T>) {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const rangeParam = searchParams.get("range");
@@ -23,27 +27,35 @@ export function RangeSelector<T extends string>({ ranges, defaultValue }: Props<
   const currentValue = validValues.includes(rangeParam as T) ? (rangeParam as T) : defaultValue;
 
   return (
-    // Eight ranges are 381px of pills, wider than a 320px screen. Wrapping keeps
-    // every range reachable; `shrink-0` used to push the whole page into a
-    // horizontal scroll instead.
-    <div className="flex flex-wrap justify-start gap-1 rounded-lg bg-teal-50 p-1">
-      {ranges.map(({ value, label }) => (
-        <Link
-          key={value}
-          href={`${pathname}?range=${value}`}
-          scroll={false}
-          className={cn(
-            "inline-flex min-h-11 items-center px-3 py-1.5 text-sm font-medium rounded-md transition-all",
-            // A darker fill of the track's own green reads as selected; white
-            // read as a hole punched in the control.
-            currentValue === value
-              ? "bg-teal-100 text-zinc-900"
-              : "text-zinc-600 hover:bg-teal-100/60 hover:text-zinc-900",
-          )}
-        >
-          {label}
-        </Link>
-      ))}
+    <div className="relative inline-flex shrink-0 items-center text-teal-700">
+      <select
+        value={currentValue}
+        onChange={(event) =>
+          router.push(`${pathname}?range=${event.target.value}`, { scroll: false })
+        }
+        aria-label="Time range"
+        className="cursor-pointer appearance-none border-0 bg-none bg-transparent p-0 pr-4 text-xs font-medium text-current hover:underline focus:border-0 focus:ring-0 focus-visible:!outline-none focus-visible:underline"
+      >
+        {ranges.map(({ value, label }) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <svg
+        viewBox="0 0 12 12"
+        aria-hidden="true"
+        className="pointer-events-none absolute right-0 h-3 w-3"
+      >
+        <path
+          d="m2.5 4.25 3.5 3.5 3.5-3.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
     </div>
   );
 }
