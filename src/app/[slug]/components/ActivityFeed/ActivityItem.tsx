@@ -170,13 +170,6 @@ export function ActivityItemRow({
 
   return (
     <div className="py-3 border-b border-zinc-200 last:border-b-0 flex gap-2">
-      <ProfileAvatar
-        address={event.beneficiary}
-        withAvatar
-        avatarProps={{ size: "sm" }}
-        chain={chain}
-        className="[&>*:last-child]:hidden"
-      />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between text-xs text-zinc-500">
           <EtherscanLink type="tx" value={event.txHash} chain={chain}>
