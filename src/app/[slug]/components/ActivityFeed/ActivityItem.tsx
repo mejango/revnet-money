@@ -179,12 +179,12 @@ export function ActivityItemRow({
               USD-denominated headline never hides the real number. */}
           <span className="flex min-w-0 items-center gap-1.5 text-sm text-zinc-500">
             {isInflow && (
-              <span className="border border-teal-600 bg-teal-50 text-teal-600 text-[10px] px-1 py-0.5">
+              <span className="inline-flex h-5 min-w-7 items-center justify-center border border-teal-600 bg-teal-50 px-1 text-center text-[10px] leading-none text-teal-600">
                 In
               </span>
             )}
             {isOutflow && (
-              <span className="border border-orange-500 bg-orange-50 text-orange-500 text-[10px] px-1 py-0.5">
+              <span className="inline-flex h-5 min-w-7 items-center justify-center border border-orange-500 bg-orange-50 px-1 text-center text-[10px] leading-none text-orange-500">
                 Out
               </span>
             )}

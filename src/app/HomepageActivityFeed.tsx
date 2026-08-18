@@ -183,12 +183,12 @@ export function HomepageActivityFeed({
                       </span>
                     ) : null}
                     {isIn ? (
-                      <span className="border border-teal-600 px-1 py-0.5 text-[10px] text-teal-600">
+                      <span className="inline-flex h-5 min-w-7 items-center justify-center border border-teal-600 px-1 text-center text-[10px] leading-none text-teal-600">
                         In
                       </span>
                     ) : null}
                     {isOut ? (
-                      <span className="border border-orange-500 px-1 py-0.5 text-[10px] text-orange-500">
+                      <span className="inline-flex h-5 min-w-7 items-center justify-center border border-orange-500 px-1 text-center text-[10px] leading-none text-orange-500">
                         Out
                       </span>
                     ) : null}
