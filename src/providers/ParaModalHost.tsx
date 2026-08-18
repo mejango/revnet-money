@@ -136,9 +136,6 @@ function Driver({
     });
   }, [requestId, request, startAddFunds]);
 
-  const sheetBackdrop = useBackdropDismiss(() => closeSheet());
-  const handoffBackdrop = useBackdropDismiss(() => setHandoffUrl(null));
-
   const closeSheet = useCallback(() => {
     setSheetOpen(false);
     const resume = resumeAddFunds.current;
@@ -158,6 +155,9 @@ function Driver({
       })
       .catch(() => {});
   }, [startAddFunds]);
+
+  const sheetBackdrop = useBackdropDismiss(() => closeSheet());
+  const handoffBackdrop = useBackdropDismiss(() => setHandoffUrl(null));
 
   // Para owns whether its own modal is showing; the host above owns the
   // dialog, because it has to open it before this component can exist at all
@@ -249,9 +249,13 @@ export default function ParaModalHost({
   // meant returning null for a render first — and since the placeholder has
   // already unmounted by then, that null is a frame of empty screen between
   // the two. Attaching it happens before paint for the same reason.
-  const [host] = useState<HTMLDialogElement | null>(() =>
-    typeof document === "undefined" ? null : document.createElement("dialog"),
-  );
+  const [host] = useState<HTMLDialogElement | null>(() => {
+    if (typeof document === "undefined") return null;
+    const dialog = document.createElement("dialog");
+    dialog.className = "ui-modal-host";
+    dialog.dataset.uiModalPortal = "";
+    return dialog;
+  });
   // ParaProvider renders nothing until Para's API answers, so Driver — and
   // with it the sheet — does not exist for the first few hundred
   // milliseconds. Without this the dialog would sit closed and the visitor
@@ -276,8 +280,6 @@ export default function ParaModalHost({
 
   useBeforePaint(() => {
     if (!host) return;
-    host.className = "ui-modal-host";
-    host.dataset.uiModalPortal = "";
     // Escape belongs to Para's own dismissal path. Closing the host natively
     // would leave Para believing its modal was still open.
     const preventNativeCancel = (event: Event) => event.preventDefault();
