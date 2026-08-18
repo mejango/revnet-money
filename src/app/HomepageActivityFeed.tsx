@@ -184,12 +184,12 @@ export function HomepageActivityFeed({
                     ) : null}
                     {isIn ? (
                       <span className="border border-teal-600 px-1 py-0.5 text-[10px] text-teal-600">
-                        in
+                        In
                       </span>
                     ) : null}
                     {isOut ? (
                       <span className="border border-orange-500 px-1 py-0.5 text-[10px] text-orange-500">
-                        out
+                        Out
                       </span>
                     ) : null}
                     <ChainLogo chainId={chainId} width={14} height={14} />

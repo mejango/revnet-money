@@ -180,12 +180,12 @@ export function ActivityItemRow({
           <span className="flex min-w-0 items-center gap-1.5 text-sm text-zinc-500">
             {isInflow && (
               <span className="border border-teal-600 bg-teal-50 text-teal-600 text-[10px] px-1 py-0.5">
-                in
+                In
               </span>
             )}
             {isOutflow && (
               <span className="border border-orange-500 bg-orange-50 text-orange-500 text-[10px] px-1 py-0.5">
-                out
+                Out
               </span>
             )}
             {event.baseAmount && (
@@ -205,7 +205,7 @@ export function ActivityItemRow({
           </span>
         </div>
         <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500">
-          {isOutflow ? "To" : isInflow ? "From" : "By"}{" "}
+          {isOutflow ? "to" : isInflow ? "from" : "by"}{" "}
           <span className="min-w-0 truncate">
             <ProfileAvatar address={event.beneficiary} short chain={chain} />
           </span>
