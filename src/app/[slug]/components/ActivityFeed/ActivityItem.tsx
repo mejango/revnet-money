@@ -172,9 +172,15 @@ export function ActivityItemRow({
     <div className="py-3 border-b border-zinc-200 last:border-b-0 flex gap-2">
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between text-xs text-zinc-500">
-          <EtherscanLink type="tx" value={event.txHash} chain={chain}>
-            <DateRelative timestamp={event.timestamp} />
-          </EtherscanLink>
+          {/* One shape for every row: time | actor, then the memo headline,
+              then the actions as fine-print bullets. */}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <EtherscanLink type="tx" value={event.txHash} chain={chain}>
+              <DateRelative timestamp={event.timestamp} />
+            </EtherscanLink>
+            <span aria-hidden>|</span>
+            <ProfileAvatar address={event.beneficiary} short chain={chain} />
+          </span>
           <div className="flex items-center gap-2">
             {event.baseAmount && (
               // The exact value is one hover away — `title` has no open delay, so an
@@ -197,11 +203,6 @@ export function ActivityItemRow({
             )}
             <ChainLogo chainId={event.chainId} width={14} height={14} />
           </div>
-        </div>
-        {/* One shape for every row: actor, memo headline, then the actions
-            as fine-print bullets — a lone action is still a bullet. */}
-        <div className="text-sm mt-0.5">
-          <ProfileAvatar address={event.beneficiary} short chain={chain} />
         </div>
         {event.memo && (
           <p className="text-sm text-zinc-700 break-all mt-0.5">
