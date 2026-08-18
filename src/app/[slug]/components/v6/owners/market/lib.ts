@@ -1280,7 +1280,7 @@ export interface AmmChainState {
   reference: MarketReferencePrices;
 }
 
-interface MarketReferencePrices {
+export interface MarketReferencePrices {
   /** Issuance ceiling, in pair tokens per project token. */
   issuance: number | null;
   /** Cash-out floor, in pair tokens per project token. */
@@ -1372,6 +1372,122 @@ async function readMarketReferencePrices(
 }
 
 const EMPTY_REFERENCE: MarketReferencePrices = { issuance: null, cashOut: null };
+
+export interface SolvedRange {
+  minPrice: number;
+  maxPrice: number;
+  /** Which end of the range stayed pinned to its reference price. */
+  anchor: "floor" | "ceiling";
+}
+
+/**
+ * Turns "I have X project tokens and Y pair tokens" into a concrete price
+ * range, so depositors never have to reverse-engineer concentrated-liquidity
+ * ratio math. Prices are pair tokens per project token, matching the form.
+ *
+ * Strategy: pin the floor at the cash-out price (the protocol's natural
+ * backstop — below it, cashing out beats selling) and solve the ceiling that
+ * consumes exactly the given amounts. When the token side is too heavy for ANY
+ * ceiling to absorb, pin the ceiling at the issuance price (above it, paying
+ * the project beats buying) and solve the floor instead. A zero on either side
+ * degrades to the matching single-sided position, so every non-degenerate
+ * input yields a valid range.
+ */
+export function solveRangeFromAmounts(inputs: {
+  price: number;
+  tokenAmount: number;
+  pairAmount: number;
+  floorHint?: number | null;
+  ceilingHint?: number | null;
+}): SolvedRange | null {
+  const { price, tokenAmount, pairAmount } = inputs;
+  if (!Number.isFinite(price) || price <= 0) return null;
+  if (!Number.isFinite(tokenAmount) || tokenAmount < 0) return null;
+  if (!Number.isFinite(pairAmount) || pairAmount < 0) return null;
+  if (tokenAmount === 0 && pairAmount === 0) return null;
+
+  const floorHint = inputs.floorHint ?? 0;
+  const ceilingHint = inputs.ceilingHint ?? 0;
+  const floor = floorHint > 0 && floorHint < price ? floorHint : price / 2;
+  const ceiling = ceilingHint > price ? ceilingHint : price * 2;
+
+  const sp = Math.sqrt(price);
+  const sa = Math.sqrt(floor);
+
+  if (pairAmount > 0) {
+    // Floor pinned: L is fixed by the pair side, the ceiling absorbs the
+    // token side. amountTok = L·(1/√p − 1/√pb) caps at L/√p as pb → ∞.
+    const liquidity = pairAmount / (sp - sa);
+    const inverseCeilingSqrt = 1 / sp - tokenAmount / liquidity;
+    if (inverseCeilingSqrt > 0) {
+      const maxPrice = tokenAmount === 0 ? price : (1 / inverseCeilingSqrt) ** 2;
+      return { minPrice: floor, maxPrice, anchor: "floor" };
+    }
+  }
+
+  // Token side too heavy for the pinned floor (or no pair at all): pin the
+  // ceiling and solve the floor. Always solvable — the solved floor lands
+  // strictly between the pinned floor and spot.
+  const sb = Math.sqrt(ceiling);
+  const liquidity = tokenAmount / (1 / sp - 1 / sb);
+  const floorSqrt = sp - pairAmount / liquidity;
+  const minPrice = pairAmount === 0 ? price : floorSqrt ** 2;
+  return { minPrice, maxPrice: ceiling, anchor: "ceiling" };
+}
+
+export interface AmmPresence {
+  chainId: JBChainId;
+  projectId: bigint;
+  hook: Address | null;
+  pool: PoolSnapshot | null;
+}
+
+/**
+ * The cheap "does a market pool exist" probe: one snapshot read per chain,
+ * no composition log scan and no reference quotes. Gate affordances (like the
+ * Manage market liquidity button) on this, never on `fetchAmmStates` — the
+ * log scan there can take tens of seconds and the button doesn't need it.
+ */
+export async function fetchAmmPresence(
+  chains: ChainProject[],
+  readSnapshot: (
+    chainId: JBChainId,
+    projectId: bigint,
+  ) => Promise<{ hook: Address | null; pool: PoolSnapshot | null }> = readPoolSnapshot,
+): Promise<AmmPresence[]> {
+  return Promise.all(
+    chains.map(async ({ chainId, projectId }): Promise<AmmPresence> => {
+      try {
+        const { hook, pool } = await readSnapshot(chainId, projectId);
+        return { chainId, projectId, hook, pool };
+      } catch {
+        return { chainId, projectId, hook: null, pool: null };
+      }
+    }),
+  );
+}
+
+/**
+ * Expands presences into the dialog-ready `AmmChainState` shape by adding
+ * reference prices (cash-out floor + issuance ceiling). Composition stays
+ * null: the add/manage dialog never reads it, so the log scan is never paid.
+ */
+export async function fetchAmmReferences(
+  presence: AmmPresence[],
+  readReference: (
+    pool: PoolSnapshot,
+    projectId: bigint,
+  ) => Promise<MarketReferencePrices> = readMarketReferencePrices,
+): Promise<AmmChainState[]> {
+  return Promise.all(
+    presence.map(async ({ chainId, projectId, hook, pool }): Promise<AmmChainState> => {
+      const reference = pool
+        ? await readReference(pool, projectId).catch(() => EMPTY_REFERENCE)
+        : EMPTY_REFERENCE;
+      return { chainId, hook, pool, composition: null, reference };
+    }),
+  );
+}
 
 export async function fetchAmmStates(chains: ChainProject[]): Promise<AmmChainState[]> {
   return Promise.all(

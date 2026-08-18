@@ -40,13 +40,15 @@ import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAccount, usePublicClient, useReadContract, useReadContracts } from "wagmi";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import { ProjectItem } from "../../shared";
 import { AddLiquidityForm, LiquidityManager } from "../market/AmmCard";
 import {
-  fetchAmmStates,
+  fetchAmmPresence,
+  fetchAmmReferences,
   readLpPositionFees,
   readUserLpPositions,
-  type AmmChainState,
+  type AmmPresence,
 } from "../market/lib";
 import { chainName, chainProjectsKey, toChainProjects } from "../settlement/lib";
 import { BurnRow, V6BurnTokensDialog } from "./V6BurnTokensDialog";
@@ -85,17 +87,26 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   const tokenSymbol = formatTokenSymbol(token);
   const projectTokenDecimals = token?.data?.decimals ?? 18;
   const ammChains = useMemo(() => toChainProjects(projects), [projects]);
-  const { data: ammStates } = useQuery({
-    queryKey: ["v6AmmStates", chainProjectsKey(ammChains)],
+  // Gate the LP affordances on the cheap pool-existence probe. The heavy
+  // reference quotes load lazily once the dialog opens; the composition log
+  // scan is never paid here.
+  const { data: ammPresence } = useQuery({
+    queryKey: ["v6AmmPresence", chainProjectsKey(ammChains)],
     enabled: ammChains.length > 0,
     staleTime: 60_000,
-    queryFn: () => fetchAmmStates(ammChains),
+    queryFn: () => fetchAmmPresence(ammChains),
   });
   const pooledAmmStates = useMemo(
-    () => ammStates?.filter((state) => state.pool) ?? [],
-    [ammStates],
+    () => ammPresence?.filter((state) => state.pool) ?? [],
+    [ammPresence],
   );
   const [showLiquidity, setShowLiquidity] = useState(false);
+  const { data: dialogAmmStates } = useQuery({
+    queryKey: ["v6AmmReferences", chainProjectsKey(ammChains)],
+    enabled: showLiquidity && pooledAmmStates.length > 0,
+    staleTime: 60_000,
+    queryFn: () => fetchAmmReferences(pooledAmmStates),
+  });
 
   const { data: balances, isLoading: isLoadingBalances } = useSuckersUserTokenBalance();
 
@@ -319,7 +330,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                   suckerGroupData={suckerGroupData}
                   isRevnet={projectData?.project?.isRevnet ?? undefined}
                   onQuote={reportQuote}
-                  ammState={ammStates?.find((state) => state.chainId === b.chainId)}
+                  ammState={ammPresence?.find((state) => state.chainId === b.chainId)}
                   onManage={() => setShowLiquidity(true)}
                 />
               ))}
@@ -439,19 +450,25 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
               Add liquidity or manage positions owned by your connected wallet.
             </p>
             <div className="space-y-4">
-              {pooledAmmStates.map((state) => (
-                <div
-                  key={state.chainId}
-                  className="border-t border-zinc-100 pt-3 first:border-t-0 first:pt-0"
-                >
-                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
-                    <ChainLogo chainId={state.chainId} width={16} height={16} />
-                    {chainName(state.chainId)}
-                  </div>
-                  <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
-                  <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
-                </div>
-              ))}
+              {dialogAmmStates ? (
+                dialogAmmStates
+                  .filter((state) => state.pool)
+                  .map((state) => (
+                    <div
+                      key={state.chainId}
+                      className="border-t border-zinc-100 pt-3 first:border-t-0 first:pt-0"
+                    >
+                      <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
+                        <ChainLogo chainId={state.chainId} width={16} height={16} />
+                        {chainName(state.chainId)}
+                      </div>
+                      <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
+                      <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
+                    </div>
+                  ))
+              ) : (
+                <SkeletonLines lines={4} />
+              )}
             </div>
           </DialogContent>
         </Dialog>
@@ -487,7 +504,7 @@ function YourLpCell({
   tokenSymbol,
   onManage,
 }: {
-  ammState: AmmChainState | undefined;
+  ammState: AmmPresence | undefined;
   tokenSymbol: string;
   onManage: () => void;
 }) {
@@ -593,7 +610,7 @@ function YouChainRow({
   /** Only a revnet pays the revnet cash-out fee; undefined while it loads. */
   isRevnet: boolean | undefined;
   onQuote: (chainId: number, quote: ChainQuote) => void;
-  ammState: AmmChainState | undefined;
+  ammState: AmmPresence | undefined;
   onManage: () => void;
 }) {
   // Null while the accounting context is unresolved — the quotes stay gated

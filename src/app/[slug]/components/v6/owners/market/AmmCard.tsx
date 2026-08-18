@@ -2,6 +2,7 @@
 
 import {
   uniswapV4AmountsForLiquidity,
+  uniswapV4DefaultPriceRange,
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
 import { ChainLogo } from "@/components/ChainLogo";
@@ -37,6 +38,12 @@ import {
   explorerAddressUrl,
   fmtUnits,
 } from "../settlement/lib";
+import {
+  describeAddLiquidityPlan,
+  liquidityFormView,
+  type LiquidityFormMode,
+  type LiquidityFormSide,
+} from "./formView";
 import {
   AmmChainState,
   encodeAddLiquidityCall,
@@ -535,10 +542,12 @@ export function AddLiquidityForm({
   const publicClient = usePublicClient({ chainId });
   const { ensureAllowance, isApproving } = useAllowance(chainId);
   const { writeContractAsync, isPending } = useWriteContract();
-  const [minimumPrice, setMinimumPrice] = useState("");
-  const [maximumPrice, setMaximumPrice] = useState("");
-  const [pairAmount, setPairAmount] = useState("");
-  const [tokenAmount, setTokenAmount] = useState("");
+  const [mode, setMode] = useState<LiquidityFormMode>("amounts");
+  const [minText, setMinText] = useState("");
+  const [maxText, setMaxText] = useState("");
+  const [pairText, setPairText] = useState("");
+  const [tokenText, setTokenText] = useState("");
+  const [driver, setDriver] = useState<LiquidityFormSide>("token");
   const [reviewed, setReviewed] = useState<{
     plan: AddLiquidityPlan;
     snapshot: string;
@@ -547,33 +556,93 @@ export function AddLiquidityForm({
   const [busy, setBusy] = useState(false);
   const pool = state.pool;
 
+  // Seed the range-mode inputs once from the economic corridor (cash-out
+  // floor → issuance ceiling) rather than an arbitrary band; never clobber a
+  // range the user already touched.
   useEffect(() => {
-    if (!pool?.price || pool.price <= 0) return;
-    setMinimumPrice(String(Number((pool.price * 0.5).toPrecision(6))));
-    setMaximumPrice(String(Number((pool.price * 2).toPrecision(6))));
-    setReviewed(null);
-  }, [pool?.poolId, pool?.price]);
+    const price = pool?.price;
+    if (!price || price <= 0) return;
+    setMinText((current) => {
+      if (current !== "") return current;
+      const seeded = uniswapV4DefaultPriceRange(
+        price,
+        state.reference.cashOut ?? 0,
+        state.reference.issuance ?? 0,
+      );
+      setMaxText((max) => (max === "" ? String(Number(seeded.max.toPrecision(6))) : max));
+      return String(Number(seeded.min.toPrecision(6)));
+    });
+  }, [pool?.poolId, pool?.price, state.reference.cashOut, state.reference.issuance]);
 
   if (!pool || !POSITION_MANAGER_BY_CHAIN[chainId]) return null;
 
-  const snapshot = [minimumPrice, maximumPrice, pairAmount, tokenAmount].join("|");
+  const view = liquidityFormView({
+    mode,
+    tokenText,
+    pairText,
+    minText,
+    maxText,
+    driver,
+    price: pool.price ?? 0,
+    reference: state.reference,
+    tokenSymbol,
+    pairSymbol: pool.pair.symbol,
+  });
+
+  const snapshot = [mode, minText, maxText, pairText, tokenText, driver].join("|");
   const review = reviewed?.snapshot === snapshot ? reviewed.plan : null;
+
+  // Typed amounts submit from their exact text; derived ones from the solved
+  // float (their on-chain amounts are recomputed from liquidity anyway).
+  const sideUnits = (side: LiquidityFormSide): bigint => {
+    const decimals = side === "token" ? 18 : pool.pair.decimals;
+    const amount = side === "token" ? view.tokenAmount : view.pairAmount;
+    if (amount == null || amount <= 0) return 0n;
+    const text = (side === "token" ? tokenText : pairText).trim();
+    const typed = mode === "amounts" || view.derived !== side;
+    return typed && text ? parseUnits(text, decimals) : parseUnits(amount.toFixed(decimals), decimals);
+  };
+
+  // The derived side displays its computed counterpart; everything else shows
+  // what the user typed.
+  const amountValue = (side: LiquidityFormSide): string => {
+    if (mode !== "amounts" && view.disabled[side]) return "";
+    if (mode !== "amounts" && view.derived === side) {
+      const amount = side === "token" ? view.tokenAmount : view.pairAmount;
+      return amount == null ? "" : String(Number(amount.toPrecision(6)));
+    }
+    return side === "token" ? tokenText : pairText;
+  };
+
+  const planText = review
+    ? describeAddLiquidityPlan({
+        tokenMaximum: review.tokenMaximum,
+        pairMaximum: review.pairMaximum,
+        tickLower: review.tickLower,
+        tickUpper: review.tickUpper,
+        tokenSymbol,
+        pairSymbol: pool.pair.symbol,
+        pairDecimals: pool.pair.decimals,
+      })
+    : null;
   const prepare = async () => {
     if (!address || !publicClient) {
       setStatus("Connect a wallet first.");
       return;
     }
+    if (!view.ready || view.minPrice == null || view.maxPrice == null) {
+      setStatus(view.note ?? "Finish the amounts first.");
+      return;
+    }
     setBusy(true);
     setStatus("Reading fresh pool and wallet balances…");
     try {
-      const pairRaw = pairAmount ? parseUnits(pairAmount, pool.pair.decimals) : 0n;
-      const tokenRaw = tokenAmount ? parseUnits(tokenAmount, 18) : 0n;
       const plan = prepareAddLiquidity(
         pool,
-        { pairAmount: pairRaw, tokenAmount: tokenRaw },
+        { pairAmount: sideUnits("pair"), tokenAmount: sideUnits("token") },
         {
-          minimumPrice: Number(minimumPrice),
-          maximumPrice: Number(maximumPrice),
+          minimumPrice: view.minPrice,
+          maximumPrice: view.maxPrice,
         },
         address,
       );
@@ -664,8 +733,8 @@ export function AddLiquidityForm({
       if (receipt.status !== "success") throw new Error(`Liquidity mint ${hash} reverted.`);
       setStatus("Liquidity added successfully.");
       setReviewed(null);
-      setPairAmount("");
-      setTokenAmount("");
+      setPairText("");
+      setTokenText("");
     } catch (cause) {
       setStatus(cause instanceof Error ? cause.message : "Could not add liquidity.");
     } finally {
@@ -682,82 +751,172 @@ export function AddLiquidityForm({
           Current ~{pool.price?.toPrecision(6) ?? "—"} {pool.pair.symbol}/{tokenSymbol}
         </span>
       </div>
-      <LiquidityRangePreview
-        floor={state.reference.cashOut}
-        ceiling={state.reference.issuance}
-        current={pool.price}
-        minimum={Number(minimumPrice)}
-        maximum={Number(maximumPrice)}
-        pairSymbol={pool.pair.symbol}
-        tokenSymbol={tokenSymbol}
-      />
+      <div className="mt-2 flex gap-1 text-[11px]">
+        <button
+          type="button"
+          className={
+            mode === "amounts"
+              ? "bg-zinc-900 px-2 py-1 text-white"
+              : "border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
+          }
+          disabled={disabled}
+          onClick={() => {
+            if (mode === "amounts") return;
+            // Materialize the derived amount so it stays editable text.
+            if (view.derived === "pair" && view.pairAmount != null) {
+              setPairText(String(Number(view.pairAmount.toPrecision(6))));
+            } else if (view.derived === "token" && view.tokenAmount != null) {
+              setTokenText(String(Number(view.tokenAmount.toPrecision(6))));
+            }
+            setMode("amounts");
+            setReviewed(null);
+          }}
+        >
+          By amounts
+        </button>
+        <button
+          type="button"
+          className={
+            mode === "full"
+              ? "bg-zinc-900 px-2 py-1 text-white"
+              : "border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
+          }
+          disabled={disabled}
+          onClick={() => {
+            if (mode === "full") return;
+            setMode("full");
+            setReviewed(null);
+          }}
+        >
+          Full range
+        </button>
+        <button
+          type="button"
+          className={
+            mode === "range"
+              ? "bg-zinc-900 px-2 py-1 text-white"
+              : "border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
+          }
+          disabled={disabled}
+          onClick={() => {
+            if (mode === "range") return;
+            // Carry the solved range over so fine-tuning starts from it; a
+            // full-range span is no starting point, so re-seed the economic
+            // corridor instead.
+            if (mode === "full") {
+              if (pool.price && pool.price > 0) {
+                const seeded = uniswapV4DefaultPriceRange(
+                  pool.price,
+                  state.reference.cashOut ?? 0,
+                  state.reference.issuance ?? 0,
+                );
+                setMinText(String(Number(seeded.min.toPrecision(6))));
+                setMaxText(String(Number(seeded.max.toPrecision(6))));
+              }
+            } else if (view.minPrice != null && view.maxPrice != null) {
+              setMinText(String(Number(view.minPrice.toPrecision(6))));
+              setMaxText(String(Number(view.maxPrice.toPrecision(6))));
+            }
+            setMode("range");
+            setReviewed(null);
+          }}
+        >
+          By price range
+        </button>
+      </div>
+      {mode !== "full" ? (
+        <LiquidityRangePreview
+          floor={state.reference.cashOut}
+          ceiling={state.reference.issuance}
+          current={pool.price}
+          minimum={view.minPrice ?? 0}
+          maximum={view.maxPrice ?? 0}
+          pairSymbol={pool.pair.symbol}
+          tokenSymbol={tokenSymbol}
+        />
+      ) : null}
+      {mode === "range" ? (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <label className="text-[11px] text-zinc-500">
+            Min price
+            <input
+              className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+              type="number"
+              min="0"
+              value={minText}
+              disabled={disabled}
+              onChange={(event) => {
+                setMinText(event.target.value);
+                setReviewed(null);
+              }}
+            />
+          </label>
+          <label className="text-[11px] text-zinc-500">
+            Max price
+            <input
+              className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+              type="number"
+              min="0"
+              value={maxText}
+              disabled={disabled}
+              onChange={(event) => {
+                setMaxText(event.target.value);
+                setReviewed(null);
+              }}
+            />
+          </label>
+        </div>
+      ) : null}
       <div className="mt-2 grid grid-cols-2 gap-2">
         <label className="text-[11px] text-zinc-500">
-          Min price
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
-            type="number"
-            min="0"
-            value={minimumPrice}
-            disabled={disabled}
-            onChange={(event) => {
-              setMinimumPrice(event.target.value);
-              setReviewed(null);
-            }}
-          />
-        </label>
-        <label className="text-[11px] text-zinc-500">
-          Max price
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
-            type="number"
-            min="0"
-            value={maximumPrice}
-            disabled={disabled}
-            onChange={(event) => {
-              setMaximumPrice(event.target.value);
-              setReviewed(null);
-            }}
-          />
-        </label>
-        <label className="text-[11px] text-zinc-500">
-          {tokenSymbol}
+          <span className="flex items-center justify-between">
+            {tokenSymbol}
+            {mode !== "amounts" && view.derived === "token" ? (
+              <span className="text-zinc-400">≈ auto</span>
+            ) : null}
+          </span>
           <input
             className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
             type="number"
             min="0"
             placeholder="0"
-            value={tokenAmount}
-            disabled={disabled}
+            value={amountValue("token")}
+            disabled={disabled || (mode !== "amounts" && view.disabled.token)}
             onChange={(event) => {
-              setTokenAmount(event.target.value);
+              setTokenText(event.target.value);
+              setDriver("token");
               setReviewed(null);
             }}
           />
         </label>
         <label className="text-[11px] text-zinc-500">
-          {pool.pair.symbol}
+          <span className="flex items-center justify-between">
+            {pool.pair.symbol}
+            {mode !== "amounts" && view.derived === "pair" ? (
+              <span className="text-zinc-400">≈ auto</span>
+            ) : null}
+          </span>
           <input
             className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
             type="number"
             min="0"
             placeholder="0"
-            value={pairAmount}
-            disabled={disabled}
+            value={amountValue("pair")}
+            disabled={disabled || (mode !== "amounts" && view.disabled.pair)}
             onChange={(event) => {
-              setPairAmount(event.target.value);
+              setPairText(event.target.value);
+              setDriver("pair");
               setReviewed(null);
             }}
           />
         </label>
       </div>
-      {review ? (
+      {view.summary ? <p className="mt-2 text-xs text-zinc-600">{view.summary}</p> : null}
+      {view.note ? <p className="mt-1 text-[11px] text-zinc-500">{view.note}</p> : null}
+      {review && planText ? (
         <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
-          <p>
-            Mint ticks {review.tickLower} → {review.tickUpper}, using at most{" "}
-            {fmtUnits(review.tokenMaximum, 18)} {tokenSymbol} +{" "}
-            {fmtUnits(review.pairMaximum, pool.pair.decimals)} {pool.pair.symbol}.
-          </p>
+          <p className="font-medium">{planText.lead}</p>
+          <p className="mt-1 text-[11px] text-zinc-500">{planText.detail}</p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"
@@ -781,7 +940,7 @@ export function AddLiquidityForm({
         <button
           type="button"
           className="mt-2 border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-50"
-          disabled={disabled || !address}
+          disabled={disabled || !address || !view.ready}
           onClick={() => void prepare()}
         >
           {disabled ? "Checking…" : address ? "Review add liquidity" : "Connect to add liquidity"}
