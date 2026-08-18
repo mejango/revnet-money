@@ -213,7 +213,34 @@ export function TokenPriceChart({
   return (
     <div className="w-full">
       <div className="flex w-full flex-wrap items-center justify-between gap-4">
-        <h3 className="text-base font-semibold text-zinc-700">Price</h3>
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5 lg:gap-4">
+          <ChartToggleButton
+            label="Issuance Price"
+            active={showIssuance}
+            colorVar="--chart-2"
+            note={priceConcept("issuance", { baseSymbol: axisSymbol })}
+            onClick={() => setShowIssuance(!showIssuance)}
+          />
+          {hasPool && (
+            <ChartToggleButton
+              label="Pool Price"
+              active={showAmm}
+              disabled={!hasAmmData}
+              colorVar="--chart-4"
+              note={priceConcept("pool", { baseSymbol: axisSymbol })}
+              onClick={() => setShowAmm(!showAmm)}
+            />
+          )}
+          <ChartToggleButton
+            label="Cash out Price"
+            active={showFloor}
+            disabled={!hasFloorData}
+            colorVar="--chart-3"
+            note={priceConcept("cashOut", { baseSymbol: axisSymbol })}
+            onClick={() => setShowFloor(!showFloor)}
+          />
+          {conversionNote ? <InfoTip note={conversionNote} /> : null}
+        </span>
         <span className="flex flex-wrap items-center gap-4">
           <RangeSelector ranges={TIME_RANGES} defaultValue="3m" />
           {hasPool && hasAmmData ? (
@@ -265,35 +292,6 @@ export function TokenPriceChart({
           No price data available
         </div>
       )}
-      {/* The legend reads under the graph, with the methodology tip beside it. */}
-      <div className="mt-2.5 flex w-full flex-wrap items-center gap-1.5 lg:gap-4">
-        <ChartToggleButton
-          label="Issuance Price"
-          active={showIssuance}
-          colorVar="--chart-2"
-          note={priceConcept("issuance", { baseSymbol: axisSymbol })}
-          onClick={() => setShowIssuance(!showIssuance)}
-        />
-        {hasPool && (
-          <ChartToggleButton
-            label="Pool Price"
-            active={showAmm}
-            disabled={!hasAmmData}
-            colorVar="--chart-4"
-            note={priceConcept("pool", { baseSymbol: axisSymbol })}
-            onClick={() => setShowAmm(!showAmm)}
-          />
-        )}
-        <ChartToggleButton
-          label="Cash out Price"
-          active={showFloor}
-          disabled={!hasFloorData}
-          colorVar="--chart-3"
-          note={priceConcept("cashOut", { baseSymbol: axisSymbol })}
-          onClick={() => setShowFloor(!showFloor)}
-        />
-        {conversionNote ? <InfoTip note={conversionNote} /> : null}
-      </div>
     </div>
   );
 }

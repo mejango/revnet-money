@@ -177,7 +177,7 @@ export function ActivityItemRow({
               and the actions as fine-print bullets. The exact value is one
               hover away — `title` has no open delay, so an abbreviated or
               USD-denominated headline never hides the real number. */}
-          <span className="flex min-w-0 items-center gap-1.5 text-sm text-zinc-500">
+          <span className="flex min-w-0 items-center gap-2 text-sm text-zinc-500">
             {event.baseAmount && (
               <span className="truncate font-semibold text-zinc-800" title={event.exactAmount}>
                 {event.baseTokenSymbol
