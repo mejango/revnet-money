@@ -212,6 +212,21 @@ describe("mapActivityEvents", () => {
 
     expect(events.map((event) => event.id)).toEqual(["pay-1", "swap-1", "mint-1"]);
     expect(events[2].detail).toBe("after the 40% reserve");
+
+    // The remint can also arrive indexed as a manual mint (a direct
+    // mintTokensOf call) — same reserve tagging applies.
+    const manualRemint: ActivityEventItem = {
+      ...payItem({ payEvent: null }),
+      id: "manual-1",
+      manualMintTokensEvent: remint.mintTokensEvent,
+    };
+    const manualEvents = mapActivityEvents([buybackPay, swap, manualRemint], () => ({
+      tokenSymbol: "USDC",
+      decimals: 6,
+    }));
+    const manualRow = manualEvents.find((event) => event.id === "manual-1");
+    expect(manualRow?.detail).toBe("after the 40% reserve");
+    expect(manualRow?.tokenCount).toBe("17k");
   });
 });
 

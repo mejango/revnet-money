@@ -45,9 +45,23 @@ export interface ActivityEvent {
   also?: ActivityEvent[];
 }
 
-/** One sentence for a row and its same-tx companions: "paid …, bought …, and minted …". */
+/**
+ * The group members worth describing. A zero-issuance pay's "paid in" adds
+ * nothing next to the row's amount and "in" tag, so it contributes no
+ * fragment when other actions exist — it still anchors the row's meta.
+ */
+export function describableEntries(event: ActivityEvent): ActivityEvent[] {
+  const entries = [event, ...(event.also ?? [])];
+  if (entries.length === 1) return entries;
+  const visible = entries.filter(
+    (entry) => !(entry.type === "in" && (!entry.tokenCount || entry.tokenCount === "0")),
+  );
+  return visible.length ? visible : entries;
+}
+
+/** One sentence for a row and its same-tx companions: "bought …, and received …". */
 export function combinedDescription(event: ActivityEvent, projectTokenSymbol: string): string {
-  const fragments = [event, ...(event.also ?? [])].map((entry) =>
+  const fragments = describableEntries(event).map((entry) =>
     eventDescription(entry, projectTokenSymbol),
   );
   if (fragments.length === 1) return fragments[0];
@@ -126,7 +140,7 @@ export function ActivityItemRow({
   const isInflow = isPayEvent || event.type === "addToBalance" || event.type === "swapBuy";
   const isOutflow = event.type === "out" || event.type === "swapSell";
   // One fragment per same-tx event: a lone one reads inline, several read as bullets.
-  const fragments = [event, ...(event.also ?? [])].map((entry) =>
+  const fragments = describableEntries(event).map((entry) =>
     eventDescription(entry, projectTokenSymbol),
   );
   const description = combinedDescription(event, projectTokenSymbol);

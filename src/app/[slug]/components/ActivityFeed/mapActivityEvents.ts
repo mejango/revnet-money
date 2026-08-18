@@ -219,7 +219,9 @@ export function mapActivityEvents(
     };
 
     if (event.payEvent) {
-      const tokenCount = new JBProjectToken(BigInt(event.payEvent.newlyIssuedTokenCount)).format(6);
+      const tokenCount = prettyNumber(
+        new JBProjectToken(BigInt(event.payEvent.newlyIssuedTokenCount)).format(6),
+      );
 
       events.push({
         id: event.id,
@@ -279,13 +281,19 @@ export function mapActivityEvents(
         timestamp: e.timestamp,
         beneficiary: e.beneficiary as Address,
         chainId,
-        tokenCount: new JBProjectToken(BigInt(e.beneficiaryTokenCount)).format(6),
+        tokenCount: prettyNumber(new JBProjectToken(BigInt(e.beneficiaryTokenCount)).format(6)),
         memo: e.memo || undefined,
         detail: reservePercent ? `after the ${reservePercent}% reserve` : undefined,
       });
     } else if (event.manualMintTokensEvent) {
       if (autoIssueTxs.has(txKey)) continue;
       const e = event.manualMintTokensEvent;
+      // The buyback remint arrives as a manual mint (a direct mintTokensOf
+      // call) — same reserved-rate story as the mintTokensEvent branch.
+      const reservePercent = reservePercentLabel(
+        buySwapAmountByTx.get(txKey),
+        e.beneficiaryTokenCount,
+      );
       events.push({
         id: event.id,
         type: "mint",
@@ -293,8 +301,9 @@ export function mapActivityEvents(
         timestamp: e.timestamp,
         beneficiary: e.beneficiary as Address,
         chainId,
-        tokenCount: new JBProjectToken(BigInt(e.beneficiaryTokenCount)).format(6),
+        tokenCount: prettyNumber(new JBProjectToken(BigInt(e.beneficiaryTokenCount)).format(6)),
         memo: e.memo || undefined,
+        detail: reservePercent ? `after the ${reservePercent}% reserve` : undefined,
       });
     } else if (event.autoIssueEvent) {
       const e = event.autoIssueEvent;

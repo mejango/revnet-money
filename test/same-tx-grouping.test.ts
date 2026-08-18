@@ -50,8 +50,10 @@ describe("foldSameTxActivities + combinedDescription", () => {
     const folded = foldSameTxActivities([swap, remint, pay]);
     expect(folded.memo).toBe("gm");
     expect(folded.baseAmount).toBe("20");
+    // The zero-issuance pay anchors the row but contributes no fragment —
+    // the amount + "in" tag already say "paid in".
     expect(combinedDescription(folded, "ART")).toBe(
-      "paid in, bought 28.4k ART via the buyback pool, and received 17k ART after the 40% reserve",
+      "bought 28.4k ART via the buyback pool and received 17k ART after the 40% reserve",
     );
   });
 

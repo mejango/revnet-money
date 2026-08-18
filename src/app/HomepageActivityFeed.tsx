@@ -49,9 +49,20 @@ function description(event: HomepageActivity, symbol: string) {
   }
 }
 
-/** One sentence for a row and its same-tx companions: "got …, and bought … through the market". */
+/** One sentence for a row and its same-tx companions: "bought … through the market". */
 function combinedDescription(event: HomepageActivity, symbol: string): string {
-  const fragments = [event, ...(event.also ?? [])].map((entry) => description(entry, symbol));
+  // A zero-issuance pay's "paid in" adds nothing next to the amount + "in"
+  // tag — it contributes no fragment when other actions exist.
+  const entries = [event, ...(event.also ?? [])];
+  const visible =
+    entries.length > 1
+      ? entries.filter(
+          (entry) => !(entry.type === "in" && (!entry.tokenCount || entry.tokenCount === "0")),
+        )
+      : entries;
+  const fragments = (visible.length ? visible : entries).map((entry) =>
+    description(entry, symbol),
+  );
   if (fragments.length === 1) return fragments[0];
   if (fragments.length === 2) return `${fragments[0]} and ${fragments[1]}`;
   return `${fragments.slice(0, -1).join(", ")}, and ${fragments[fragments.length - 1]}`;
