@@ -6,6 +6,7 @@ import { ChevronDown } from "@/components/ui/icons";
 import { useCompleteActivityEvents } from "@/hooks/useCompleteBendystrawLists";
 import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
 import { useState } from "react";
+import { ProjectTabIcon } from "../ProjectTabIcon";
 import { ActivityItem, type ActivityEvent } from "./ActivityItem";
 import {
   groupSameTxEvents,
@@ -188,7 +189,12 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
   return (
     <div className="mt-6">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-lg font-medium">Latest</h3>
+        {/* Same voice as the project tabs — the icon and type the Latest tab
+            uses when the feed collapses into the tab bar. */}
+        <h3 className="flex items-center gap-2 text-base font-medium uppercase">
+          <ProjectTabIcon label="Activity" />
+          Latest
+        </h3>
         <ActivityTypeFilter
           categories={categories}
           selected={selectedCategories}
