@@ -70,6 +70,83 @@ function truncateAddress(address: string): string {
 }
 
 /**
+ * "40" or "12.5" when the mint count reads as the reserved-rate remint of the
+ * swap output (0 < mint < swap); null when the pair doesn't fit that shape.
+ */
+function reservePercentLabel(
+  swapRaw: string | number | undefined,
+  mintRaw: string | number,
+): string | null {
+  if (swapRaw == null) return null;
+  try {
+    const swap = BigInt(swapRaw);
+    const mint = BigInt(mintRaw);
+    if (swap <= 0n || mint <= 0n || mint >= swap) return null;
+    const tenths = Number(((swap - mint) * 1000n) / swap);
+    return tenths % 10 === 0 ? String(tenths / 10) : (tenths / 10).toFixed(1);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reading order for a same-tx group: the first type present becomes the row's
+ * primary event (actor, amount, in/out tag, avatar); the rest fold into the
+ * sentence via `also`. A buyback pay reads as one row: "paid …, bought … via
+ * the buyback pool".
+ */
+const SAME_TX_ORDER: ActivityEvent["type"][] = [
+  "projectCreate",
+  "in",
+  "addToBalance",
+  "out",
+  "swapBuy",
+  "swapSell",
+  "mint",
+  "autoIssue",
+];
+
+function sameTxRank(type: ActivityEvent["type"]): number {
+  const rank = SAME_TX_ORDER.indexOf(type);
+  return rank === -1 ? SAME_TX_ORDER.length : rank;
+}
+
+/**
+ * Collapse rows that belong to one transaction (on one chain) into a single
+ * row. Order is preserved: a group sits where its first row sat.
+ */
+export function groupSameTxEvents(events: ActivityEvent[]): ActivityEvent[] {
+  const groups = new Map<string, ActivityEvent[]>();
+  const order: ActivityEvent[][] = [];
+  for (const event of events) {
+    const key = `${event.chainId}:${event.txHash}`;
+    const group = groups.get(key);
+    if (group) group.push(event);
+    else {
+      const fresh = [event];
+      groups.set(key, fresh);
+      order.push(fresh);
+    }
+  }
+  return order.map(foldSameTxActivities);
+}
+
+/** Fold one same-tx group into its primary row, the rest carried in `also`. */
+export function foldSameTxActivities(group: ActivityEvent[]): ActivityEvent {
+  if (group.length === 1) return group[0];
+  const ordered = [...group].sort((a, b) => sameTxRank(a.type) - sameTxRank(b.type));
+  const amountSource = ordered.find((entry) => entry.baseAmount) ?? ordered[0];
+  return {
+    ...ordered[0],
+    baseAmount: amountSource.baseAmount,
+    exactAmount: amountSource.exactAmount,
+    baseTokenSymbol: amountSource.baseTokenSymbol,
+    memo: ordered.find((entry) => entry.memo)?.memo,
+    also: ordered.slice(1),
+  };
+}
+
+/**
  * Maps raw bendystraw activity-event rows to renderable ActivityEvent rows.
  * Extracted from the project ActivityFeed so it also works without a sucker
  * group: `tokenContextFor` decides each row's denomination (and whether the
@@ -81,16 +158,23 @@ export function mapActivityEvents(
 ): ActivityEvent[] {
   // mintTokensOf fires alongside pays, manual mints, and auto-issuance, each of which
   // already gets its own row — only surface mintTokensEvent rows for txs none of those
-  // cover (e.g. bridge receipts). Same idea for manual mints inside auto-issue txs.
+  // cover. A pay that issued NOTHING itself (the buyback route: the terminal minted
+  // zero, the hook reminted the swap output) does not cover its tx's mint — that mint
+  // is the payer's actual receipt. Same idea for manual mints inside auto-issue txs.
   const mintCoveredTxs = new Set<string>();
   const autoIssueTxs = new Set<string>();
+  const buySwapAmountByTx = new Map<string, string | number>();
   for (const event of items) {
     if (!event) continue;
     const key = `${event.chainId}:${event.txHash}`;
-    if (event.payEvent || event.manualMintTokensEvent || event.autoIssueEvent) {
+    const payIssued = event.payEvent && BigInt(event.payEvent.newlyIssuedTokenCount) > 0n;
+    if (payIssued || event.manualMintTokensEvent || event.autoIssueEvent) {
       mintCoveredTxs.add(key);
     }
     if (event.autoIssueEvent) autoIssueTxs.add(key);
+    if (event.swapEvent && event.swapEvent.direction.toLowerCase() !== "sell") {
+      buySwapAmountByTx.set(key, event.swapEvent.projectTokenAmount);
+    }
   }
 
   const events: ActivityEvent[] = [];
@@ -182,6 +266,12 @@ export function mapActivityEvents(
     } else if (event.mintTokensEvent) {
       if (mintCoveredTxs.has(txKey)) continue;
       const e = event.mintTokensEvent;
+      // Paired with a same-tx buyback swap, this mint is the reserved-rate
+      // remint of the swap output — name the reserve instead of "minted".
+      const reservePercent = reservePercentLabel(
+        buySwapAmountByTx.get(txKey),
+        e.beneficiaryTokenCount,
+      );
       events.push({
         id: event.id,
         type: "mint",
@@ -191,6 +281,7 @@ export function mapActivityEvents(
         chainId,
         tokenCount: new JBProjectToken(BigInt(e.beneficiaryTokenCount)).format(6),
         memo: e.memo || undefined,
+        detail: reservePercent ? `after the ${reservePercent}% reserve` : undefined,
       });
     } else if (event.manualMintTokensEvent) {
       if (autoIssueTxs.has(txKey)) continue;

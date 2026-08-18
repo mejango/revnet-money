@@ -10,6 +10,7 @@ import { formatEthAddress } from "@/lib/utils";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useCallback, useMemo, useState } from "react";
 import {
+  foldSameTxActivities,
   mapActivityEvents,
   type ActivityEventItem,
 } from "./[slug]/components/ActivityFeed/mapActivityEvents";
@@ -20,7 +21,10 @@ type HomepageActivity = ReturnType<typeof mapActivityEvents>[number];
 function description(event: HomepageActivity, symbol: string) {
   switch (event.type) {
     case "in":
-      return `got ${event.tokenCount} ${symbol}`;
+      // Buyback-routed pays issue nothing themselves — "got 0" would misread.
+      return event.tokenCount && event.tokenCount !== "0"
+        ? `got ${event.tokenCount} ${symbol}`
+        : "paid in";
     case "out":
       return `cashed out ${event.tokenCount} ${symbol}`;
     case "addToBalance":
@@ -42,6 +46,14 @@ function description(event: HomepageActivity, symbol: string) {
         ? `auto-issued ${event.tokenCount} ${symbol}`
         : "updated the revnet";
   }
+}
+
+/** One sentence for a row and its same-tx companions: "got …, and bought … through the market". */
+function combinedDescription(event: HomepageActivity, symbol: string): string {
+  const fragments = [event, ...(event.also ?? [])].map((entry) => description(entry, symbol));
+  if (fragments.length === 1) return fragments[0];
+  if (fragments.length === 2) return `${fragments[0]} and ${fragments[1]}`;
+  return `${fragments.slice(0, -1).join(", ")}, and ${fragments[fragments.length - 1]}`;
 }
 
 export function HomepageActivityFeed({
@@ -84,6 +96,22 @@ export function HomepageActivityFeed({
   }, [events.length, hasMore, loading]);
   const markerRef = useInfiniteScroll(loadMore, hasMore && !loading);
 
+  // One line item per transaction (per project): fold same-tx rows together.
+  const eventGroups: HomepageRawActivity[][] = [];
+  {
+    const groups = new Map<string, HomepageRawActivity[]>();
+    for (const event of events) {
+      const key = `${event.chainId}:${event.project?.projectId ?? ""}:${event.txHash}`;
+      const group = groups.get(key);
+      if (group) group.push(event);
+      else {
+        const fresh = [event];
+        groups.set(key, fresh);
+        eventGroups.push(fresh);
+      }
+    }
+  }
+
   if (!events.length)
     return (
       <p className="flex min-h-[420px] items-center justify-center px-6 text-center text-sm text-zinc-500">
@@ -92,10 +120,14 @@ export function HomepageActivityFeed({
     );
   return (
     <ol className="divide-y divide-teal-100">
-      {events.map((event, index) => {
+      {eventGroups.map((group, index) => {
+        const event = group[0];
         const project = event.project;
-        const activity = mappedById.get(event.id);
-        if (!project || !activity) return null;
+        const activities = group
+          .map((member) => mappedById.get(member.id))
+          .filter((activity): activity is HomepageActivity => !!activity);
+        if (!project || !activities.length) return null;
+        const activity = foldSameTxActivities(activities);
         const chainId = event.chainId as JBChainId;
         const name = project.name ?? `Project #${project.projectId}`;
         const href = `/${JB_CHAINS[chainId]?.slug ?? "eth"}:${project.projectId}`;
@@ -175,7 +207,7 @@ export function HomepageActivityFeed({
                   ) : (
                     <span>{formatEthAddress(activity.beneficiary)}</span>
                   )}
-                  <span className="text-zinc-700"> {description(activity, symbol)}</span>
+                  <span className="text-zinc-700"> {combinedDescription(activity, symbol)}</span>
                 </div>
               </div>
             </div>

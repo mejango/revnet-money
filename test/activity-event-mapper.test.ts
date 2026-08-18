@@ -172,6 +172,47 @@ describe("mapActivityEvents", () => {
       }),
     ]);
   });
+
+  it("keeps the buyback remint row when the pay itself issued nothing, tagged with the reserve", () => {
+    const buybackPay = payItem({
+      payEvent: { ...payItem().payEvent!, newlyIssuedTokenCount: "0" },
+    });
+    const swap: ActivityEventItem = {
+      ...payItem({ payEvent: null }),
+      id: "swap-1",
+      swapEvent: {
+        txHash: "0xaaa",
+        timestamp: 1_700_000_000,
+        direction: "buy",
+        terminalTokenAmount: "20000000",
+        projectTokenAmount: "28406000000000000000000",
+        caller: "0x498581ff718922c3f8e6a244956af099b2652b2b",
+        from: "0x823b92d6a4b2aed4b15675c7917c9f922ea8adad",
+      },
+    };
+    const remint: ActivityEventItem = {
+      ...payItem({ payEvent: null }),
+      id: "mint-1",
+      mintTokensEvent: {
+        id: "mint-event-1",
+        txHash: "0xaaa",
+        timestamp: 1_700_000_000,
+        from: "0x2222222222222222222222222222222222222222",
+        caller: "0x2222222222222222222222222222222222222222",
+        beneficiary: "0x1111111111111111111111111111111111111111",
+        beneficiaryTokenCount: "17043000000000000000000",
+        memo: null,
+      },
+    };
+
+    const events = mapActivityEvents([buybackPay, swap, remint], () => ({
+      tokenSymbol: "USDC",
+      decimals: 6,
+    }));
+
+    expect(events.map((event) => event.id)).toEqual(["pay-1", "swap-1", "mint-1"]);
+    expect(events[2].detail).toBe("after the 40% reserve");
+  });
 });
 
 describe("projectFeedTokenContext", () => {

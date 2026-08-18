@@ -8,6 +8,7 @@ import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
 import { useState } from "react";
 import { ActivityItem, type ActivityEvent } from "./ActivityItem";
 import {
+  groupSameTxEvents,
   isProjectFeedActivityEvent,
   mapActivityEvents,
   projectFeedTokenContext,
@@ -172,10 +173,14 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
     const category = activityCategory(event);
     if (category && !categories.includes(category)) categories.push(category);
   });
-  const filteredEvents = events.filter((event) => {
-    const category = activityCategory(event);
-    return selectedCategories === null || (!!category && selectedCategories.has(category));
-  });
+  // Filter by category first, then collapse same-tx rows — filtering to one
+  // category still surfaces that category's own fragment on its own row.
+  const filteredEvents = groupSameTxEvents(
+    events.filter((event) => {
+      const category = activityCategory(event);
+      return selectedCategories === null || (!!category && selectedCategories.has(category));
+    }),
+  );
   const visibleEvents = filteredEvents.slice(0, visibleCount);
   const hasMore = filteredEvents.length > visibleCount;
   const addresses = visibleEvents.map((e) => e.beneficiary);

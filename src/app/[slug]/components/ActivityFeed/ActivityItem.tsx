@@ -41,18 +41,37 @@ export interface ActivityEvent {
   memo?: string;
   /** Pre-formatted suffix detail, e.g. "ART" for deployErc20 or a truncated address for transfers. */
   detail?: string;
+  /** Other events from the same transaction, folded into this row's sentence. */
+  also?: ActivityEvent[];
+}
+
+/** One sentence for a row and its same-tx companions: "paid …, bought …, and minted …". */
+export function combinedDescription(event: ActivityEvent, projectTokenSymbol: string): string {
+  const fragments = [event, ...(event.also ?? [])].map((entry) =>
+    eventDescription(entry, projectTokenSymbol),
+  );
+  if (fragments.length === 1) return fragments[0];
+  if (fragments.length === 2) return `${fragments[0]} and ${fragments[1]}`;
+  return `${fragments.slice(0, -1).join(", ")}, and ${fragments[fragments.length - 1]}`;
 }
 
 function eventDescription(event: ActivityEvent, projectTokenSymbol: string): string {
   switch (event.type) {
     case "in":
-      return `got ${event.tokenCount} ${projectTokenSymbol}`;
+      // A buyback-routed pay issues nothing itself — the same-tx remint row
+      // carries the payer's receipt, so "got 0" would misread.
+      return event.tokenCount && event.tokenCount !== "0"
+        ? `got ${event.tokenCount} ${projectTokenSymbol}`
+        : "paid in";
     case "out":
       return `cashed out ${event.tokenCount} ${projectTokenSymbol}`;
     case "addToBalance":
       return "added to balance";
     case "mint":
-      return `minted ${event.tokenCount} ${projectTokenSymbol}`;
+      // `detail` marks the reserved-rate remint of a same-tx buyback swap.
+      return event.detail
+        ? `received ${event.tokenCount} ${projectTokenSymbol} ${event.detail}`
+        : `minted ${event.tokenCount} ${projectTokenSymbol}`;
     case "autoIssue":
       return `auto-issued ${event.tokenCount} ${projectTokenSymbol}`;
     case "deployErc20":
@@ -104,7 +123,7 @@ export function ActivityItemRow({
   const isPayEvent = event.type === "in";
   const isInflow = isPayEvent || event.type === "addToBalance" || event.type === "swapBuy";
   const isOutflow = event.type === "out" || event.type === "swapSell";
-  const description = eventDescription(event, projectTokenSymbol);
+  const description = combinedDescription(event, projectTokenSymbol);
 
   const handleShare = async () => {
     const embedUrl = typeof window !== "undefined" ? window.location.href : "";
