@@ -58,10 +58,12 @@ export function combinedDescription(event: ActivityEvent, projectTokenSymbol: st
 function eventDescription(event: ActivityEvent, projectTokenSymbol: string): string {
   switch (event.type) {
     case "in":
-      // A buyback-routed pay issues nothing itself — the same-tx remint row
-      // carries the payer's receipt, so "got 0" would misread.
+      // Acquisitions read "bought <amount> <token> <source>", matching the
+      // buyback fragment. A buyback-routed pay issues nothing itself — the
+      // same-tx remint row carries the payer's receipt, so "bought 0" would
+      // misread.
       return event.tokenCount && event.tokenCount !== "0"
-        ? `got ${event.tokenCount} ${projectTokenSymbol}`
+        ? `bought ${event.tokenCount} ${projectTokenSymbol} from issuance`
         : "paid in";
     case "out":
       return `cashed out ${event.tokenCount} ${projectTokenSymbol}`;

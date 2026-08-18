@@ -21,9 +21,10 @@ type HomepageActivity = ReturnType<typeof mapActivityEvents>[number];
 function description(event: HomepageActivity, symbol: string) {
   switch (event.type) {
     case "in":
-      // Buyback-routed pays issue nothing themselves — "got 0" would misread.
+      // Acquisitions read "bought <amount> <token> <source>". Buyback-routed
+      // pays issue nothing themselves — "bought 0" would misread.
       return event.tokenCount && event.tokenCount !== "0"
-        ? `got ${event.tokenCount} ${symbol}`
+        ? `bought ${event.tokenCount} ${symbol} from issuance`
         : "paid in";
     case "out":
       return `cashed out ${event.tokenCount} ${symbol}`;
