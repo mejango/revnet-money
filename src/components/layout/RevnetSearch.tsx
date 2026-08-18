@@ -249,7 +249,7 @@ export function RevnetSearch() {
             >
               <span className="block truncate font-medium">{handleRoute.slice(1)}</span>
               <span className="block truncate text-xs text-zinc-600">
-                Open revnet handle · verified on load
+                Open revnet handle | verified on load
               </span>
             </a>
           ) : accountResult ? (
@@ -262,7 +262,7 @@ export function RevnetSearch() {
                 {accountResult.name ?? formatEthAddress(accountResult.address)}
               </span>
               <span className="block truncate text-xs text-zinc-600">
-                {accountResult.name ? `${formatEthAddress(accountResult.address)} · ` : ""}
+                {accountResult.name ? `${formatEthAddress(accountResult.address)} | ` : ""}
                 View account
               </span>
             </button>

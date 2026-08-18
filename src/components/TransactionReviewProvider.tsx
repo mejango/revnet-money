@@ -102,7 +102,7 @@ function PrettyCall({
       <div className="flex flex-wrap justify-between gap-2 text-xs uppercase text-melon-700">
         <span>{total > 1 ? `Call ${index + 1} of ${total}` : "Exact call"}</span>
         <span>
-          {chain?.name ?? `Chain ${call.chainId}`} · {call.chainId}
+          {chain?.name ?? `Chain ${call.chainId}`} | {call.chainId}
         </span>
       </div>
       {call.label ? (
@@ -116,13 +116,13 @@ function PrettyCall({
           </div>
         ) : null}
         <div>
-          <dt className="text-melon-700">Destination{contract ? ` · ${contract}` : ""}</dt>
+          <dt className="text-melon-700">Destination{contract ? ` | ${contract}` : ""}</dt>
           <dd className="mt-1 break-all font-mono">{call.to}</dd>
         </div>
         <div>
           <dt className="text-melon-700">Native value</dt>
           <dd className="mt-1 font-mono">
-            {formatEther(call.value ?? 0n)} native · {(call.value ?? 0n).toString()} wei
+            {formatEther(call.value ?? 0n)} native | {(call.value ?? 0n).toString()} wei
           </dd>
         </div>
         {call.safeTxGas !== undefined ? (
@@ -356,7 +356,7 @@ function TransactionStatusCenter() {
               rel="noreferrer"
               href={`https://app.safe.global/transactions/queue?safe=${SAFE_PREFIX[activity.chainId]}:${activity.account}`}
             >
-              Open pending Safe proposal · {activity.safeProposalHash ?? activity.hash}
+              Open pending Safe proposal | {activity.safeProposalHash ?? activity.hash}
             </a>
           ) : activity.kind !== "safe" &&
             activity.hash &&
@@ -368,7 +368,7 @@ function TransactionStatusCenter() {
               rel="noreferrer"
               href={`${explorerBaseUrl(activity.chainId)}/tx/${activity.hash}`}
             >
-              View transaction · {activity.hash}
+              View transaction | {activity.hash}
             </a>
           ) : activity.kind !== "safe" && activity.hash ? (
             <p className="mt-2 break-all font-mono text-[10px]">{activity.hash}</p>
@@ -380,7 +380,7 @@ function TransactionStatusCenter() {
               rel="noreferrer"
               href={`${explorerBaseUrl(activity.chainId)}/tx/${activity.executionHash}`}
             >
-              Safe execution · {activity.executionHash}
+              Safe execution | {activity.executionHash}
             </a>
           ) : null}
           {activity.safeProposalHash &&
@@ -394,7 +394,7 @@ function TransactionStatusCenter() {
               rel="noreferrer"
               href={`https://app.safe.global/transactions/queue?safe=${SAFE_PREFIX[activity.chainId]}:${activity.account}`}
             >
-              Safe proposal · {activity.safeProposalHash}
+              Safe proposal | {activity.safeProposalHash}
             </a>
           ) : null}
           {activity.bundleUuid ? (

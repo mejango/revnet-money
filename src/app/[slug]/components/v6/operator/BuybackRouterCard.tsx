@@ -229,7 +229,7 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
     );
     pools = windows.filter((w) => w.twap > 0);
     if (pools.length) {
-      poolSummary = pools.map((w) => `${w.label} pool · TWAP ${w.twap}s`).join(", ");
+      poolSummary = pools.map((w) => `${w.label} pool | TWAP ${w.twap}s`).join(", ");
     }
   }
 

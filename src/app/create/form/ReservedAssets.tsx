@@ -60,7 +60,7 @@ export function ReserveAssetFields({ disabled = false }: { disabled?: boolean })
         setFieldValue("customReserveAsset", verified);
         setLookup({
           kind: "success",
-          message: `${verified.symbol} · ${verified.decimals} decimals · verified on ${chainIds
+          message: `${verified.symbol} | ${verified.decimals} decimals | verified on ${chainIds
             .map((chainId) => JB_CHAINS[chainId]?.name ?? chainId)
             .join(", ")}`,
         });

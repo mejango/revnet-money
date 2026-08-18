@@ -135,7 +135,7 @@ export async function GET(
           </div>
         </div>
         <div style={{ color: "#668075", display: "flex", fontSize: 18, marginTop: 18 }}>
-          REVNET · autonomous, open-source businesses
+          REVNET | autonomous, open-source businesses
         </div>
       </div>
     </div>,

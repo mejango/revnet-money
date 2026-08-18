@@ -483,8 +483,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                         )}{" "}
                         {baseToken?.symbol}
                         {directSell
-                          ? ` · direct pool sale beats ${formatDecimals(expectedReclaim, 5)} ${baseToken?.symbol} from cashing out`
-                          : " · best hook-aware cash-out route"}
+                          ? ` | direct pool sale beats ${formatDecimals(expectedReclaim, 5)} ${baseToken?.symbol} from cashing out`
+                          : " | best hook-aware cash-out route"}
                       </div>
                     </div>
                   ) : null}

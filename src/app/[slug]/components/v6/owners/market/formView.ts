@@ -228,6 +228,6 @@ export function describeAddLiquidityPlan(plan: {
 }): { lead: string; detail: string } {
   return {
     lead: `Adds up to ${fmtUnits(plan.tokenMaximum, 18)} ${plan.tokenSymbol} + ${fmtUnits(plan.pairMaximum, plan.pairDecimals)} ${plan.pairSymbol}.`,
-    detail: `Uniswap V4 mint · ticks ${plan.tickLower} → ${plan.tickUpper}.`,
+    detail: `Uniswap V4 mint | ticks ${plan.tickLower} → ${plan.tickUpper}.`,
   };
 }

@@ -500,9 +500,9 @@ export function PayerDeployForm({
                 <p key={call.chainId} className="font-mono break-all">
                   {JB_CHAINS[call.chainId]?.name ?? call.chainId}: project #{call.projectId}
                   {!review.addToBalance
-                    ? ` · tokens to ${call.request.args[1] === zeroAddress ? "the sender" : call.request.args[1]}`
+                    ? ` | tokens to ${call.request.args[1] === zeroAddress ? "the sender" : call.request.args[1]}`
                     : ""}
-                  {` · admin ${call.request.args[5] === zeroAddress ? "none (immutable)" : call.request.args[5]}`}
+                  {` | admin ${call.request.args[5] === zeroAddress ? "none (immutable)" : call.request.args[5]}`}
                 </p>
               ))}
               {review.memo ? <p>Memo: {review.memo}</p> : null}

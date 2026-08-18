@@ -160,7 +160,7 @@ export function TokenHoldings({ address }: { address: Address }) {
                           </span>
                           {credits > 0n ? (
                             <span className="block text-[11px] tabular-nums text-zinc-500">
-                              {formatUnits(claimed, 18, { fractionDigits: 5 })} claimed ·{" "}
+                              {formatUnits(claimed, 18, { fractionDigits: 5 })} claimed |{" "}
                               {formatUnits(credits, 18, { fractionDigits: 5 })} credits
                             </span>
                           ) : null}

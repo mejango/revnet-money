@@ -124,7 +124,7 @@ export function CustomersSection({
           <>
             <p className="mt-2 text-sm font-medium text-zinc-900">
               {customers.length.toLocaleString("en-US")}{" "}
-              {customers.length === 1 ? "customer" : "customers"} ·{" "}
+              {customers.length === 1 ? "customer" : "customers"} |{" "}
               {(purchases.data?.totalCount || purchaseRows.length).toLocaleString("en-US")}{" "}
               {(purchases.data?.totalCount || purchaseRows.length) === 1 ? "item" : "items"} sold
             </p>

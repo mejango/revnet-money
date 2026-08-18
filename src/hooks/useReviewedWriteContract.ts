@@ -87,7 +87,7 @@ async function watchSafeProposal(id: string, hash: Hex, chainId: number): Promis
           const required = transaction.confirmationsRequired;
           updateTransactionActivity(id, {
             status: "safe-proposed",
-            message: `Safe proposal is not executed${required ? ` · ${approvals}/${required} approvals` : ""}. It remains asynchronous; do not submit it again.`,
+            message: `Safe proposal is not executed${required ? ` | ${approvals}/${required} approvals` : ""}. It remains asynchronous; do not submit it again.`,
           });
         }
       } catch {

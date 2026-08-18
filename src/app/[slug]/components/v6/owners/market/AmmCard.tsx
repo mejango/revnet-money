@@ -1119,7 +1119,7 @@ export function LiquidityManager({
               className="flex flex-wrap items-center justify-between gap-2 border border-zinc-100 p-2 text-xs"
             >
               <span>
-                #{position.tokenId.toString()} · {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}{" "}
+                #{position.tokenId.toString()} | {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}{" "}
                 + {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
                 <span className="block text-zinc-500">
                   {(() => {

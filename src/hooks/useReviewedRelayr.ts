@@ -104,7 +104,7 @@ function bundleSummary(bundle: RelayrGetBundleResponse): string {
       const hash = data?.hash ?? data?.transaction?.hash;
       return `Chain ${transaction.request.chain}: ${transaction.status?.state ?? "Pending"}${hash ? ` (${hash})` : ""}`;
     })
-    .join(" · ");
+    .join(" | ");
 }
 
 function bundleChainStates(bundle: RelayrGetBundleResponse) {

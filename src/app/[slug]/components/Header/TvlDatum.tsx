@@ -147,11 +147,11 @@ export function TvlDatum({ projects }: Props) {
         {rows.map((row) => (
           <div key={`${row.chainId}:${row.token}`} className="flex justify-between gap-2">
             <span>
-              Chain {row.chainId} · {row.symbol}
+              Chain {row.chainId} | {row.symbol}
             </span>
             <span className="font-medium">
               {formatTokenAmount(row.balance, row)} {row.symbol}
-              {row.usd == null ? " · USD unavailable" : ` · ${formatUsd18(row.usd)}`}
+              {row.usd == null ? " | USD unavailable" : ` | ${formatUsd18(row.usd)}`}
             </span>
           </div>
         ))}

@@ -228,7 +228,7 @@ describe("TransactionReviewProvider", () => {
     }).catch(() => undefined);
 
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("Destination · Permit2");
+    expect(dialog).toHaveTextContent("Destination | Permit2");
     expect(dialog).toHaveTextContent("USDC |");
     expect(dialog).toHaveTextContent("Uniswap Universal Router |");
   });

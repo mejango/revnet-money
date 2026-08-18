@@ -188,7 +188,7 @@ export default function Page() {
                 </p>
                 {trimmedSearch && (
                   <p className="mt-2 text-xs text-zinc-500">
-                    {p.ticker ? `$${p.ticker} · ` : ""}
+                    {p.ticker ? `$${p.ticker} | ` : ""}
                     {(p.chainIds ?? [p.chainId ?? 1])
                       .map((chainId) => CHAIN_NAMES[chainId] ?? `Chain ${chainId}`)
                       .join(", ")}

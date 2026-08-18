@@ -487,7 +487,7 @@ export function SafeQueueCard({
           <div key={`${row.chainId}:${row.safe}`} className="border border-melon-200 bg-white p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-bold">
-                {row.handleOnly ? "Ethereum handles" : chainName(row.chainId)} · nonce{" "}
+                {row.handleOnly ? "Ethereum handles" : chainName(row.chainId)} | nonce{" "}
                 {row.policy.nonce}
               </span>
               {safeQueueLink(row.chainId, row.safe) ? (
@@ -526,7 +526,7 @@ export function SafeQueueCard({
                     <li key={`${tx.nonce}:${tx.safeTxHash ?? tx.data}`} className="py-3 text-xs">
                       <details>
                         <summary className="cursor-pointer font-bold">
-                          #{tx.nonce} · {tx.data?.slice(0, 10) ?? "0x"} · {confirmations.length}/
+                          #{tx.nonce} | {tx.data?.slice(0, 10) ?? "0x"} | {confirmations.length}/
                           {row.policy.threshold} signatures
                         </summary>
                         {handleBinding ? (
