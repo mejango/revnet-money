@@ -178,6 +178,13 @@ export function ActivityItemRow({
               hover away — `title` has no open delay, so an abbreviated or
               USD-denominated headline never hides the real number. */}
           <span className="flex min-w-0 items-center gap-1.5 text-sm text-zinc-500">
+            {event.baseAmount && (
+              <span className="truncate font-semibold text-zinc-800" title={event.exactAmount}>
+                {event.baseTokenSymbol
+                  ? `${event.baseAmount} ${event.baseTokenSymbol}`
+                  : event.baseAmount}
+              </span>
+            )}
             {isInflow && (
               <span className="inline-flex h-5 min-w-7 items-center justify-center border border-teal-600 bg-teal-50 px-1 text-center text-[10px] leading-none text-teal-600">
                 In
@@ -186,13 +193,6 @@ export function ActivityItemRow({
             {isOutflow && (
               <span className="inline-flex h-5 min-w-7 items-center justify-center border border-orange-500 bg-orange-50 px-1 text-center text-[10px] leading-none text-orange-500">
                 Out
-              </span>
-            )}
-            {event.baseAmount && (
-              <span className="truncate font-semibold text-zinc-800" title={event.exactAmount}>
-                {event.baseTokenSymbol
-                  ? `${event.baseAmount} ${event.baseTokenSymbol}`
-                  : event.baseAmount}
               </span>
             )}
           </span>

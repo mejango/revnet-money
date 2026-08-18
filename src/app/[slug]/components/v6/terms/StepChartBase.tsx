@@ -292,37 +292,45 @@ export function StepChartBase({
           </svg>
           {/* Constant-size labels overlay the plot as HTML so they don't scale
               with the svg. */}
-          {resolved.map((s, i) => {
-            if (!(i > 0 && s.start > t0 && s.start < t1)) return null;
-            // A marker near the plot's left edge carries its label on the
-            // RIGHT of the line — translated fully left it escapes the card.
-            const nearLeftEdge = X(s.start) / VW < 0.15;
-            return (
-              <span
-                key={s.start}
-                className={cn(
-                  "pointer-events-none absolute top-0 text-base font-medium leading-none text-[#3D7955]",
-                  nearLeftEdge ? "" : "-translate-x-full",
-                )}
-                style={{
-                  left: `calc(${pct(X(s.start))} ${nearLeftEdge ? "+" : "-"} 8px)`,
-                }}
-              >
-                Stage {i + 1}
-              </span>
-            );
-          })}
-          {showNowMarker ? (
-            <span
-              className={cn(
-                "pointer-events-none absolute top-0 text-base font-semibold leading-none text-[#EE6F3A]",
-                nowX / VW < 0.15 ? "" : "-translate-x-full",
-              )}
-              style={{ left: `calc(${pct(nowX)} ${nowX / VW < 0.15 ? "+" : "-"} 8px)` }}
-            >
-              Now
-            </span>
-          ) : null}
+          {(() => {
+            // Lay the stage/Now labels out with collision handling: a marker
+            // near the plot's left edge carries its label on the RIGHT of the
+            // line (translated fully left it escapes the card), and a label
+            // that would overlap an earlier one drops to a second row.
+            const markers = [
+              ...resolved
+                .map((stage, i) => ({ x: X(stage.start), label: `Stage ${i + 1}`, now: false, i }))
+                .filter(({ i, x }) => i > 0 && resolved[i].start > t0 && resolved[i].start < t1 && x >= 0),
+              ...(showNowMarker ? [{ x: nowX, label: "Now", now: true, i: -1 }] : []),
+            ].sort((a, b) => a.x - b.x);
+            const CHAR_PX = 9.6; // text-base mono, close enough for layout
+            const rowEnds: number[] = [];
+            return markers.map((marker) => {
+              const side = marker.x / VW < 0.15 ? "right" : "left";
+              const anchorPx = plotWidth > 0 ? (marker.x / VW) * plotWidth : marker.x;
+              const widthPx = marker.label.length * CHAR_PX + 8;
+              const startPx = side === "right" ? anchorPx + 8 : anchorPx - 8 - widthPx;
+              let row = 0;
+              while (row < rowEnds.length && startPx < rowEnds[row] + 6) row += 1;
+              rowEnds[row] = startPx + widthPx;
+              return (
+                <span
+                  key={marker.now ? "now" : marker.label}
+                  className={cn(
+                    "pointer-events-none absolute leading-none text-base",
+                    side === "left" && "-translate-x-full",
+                    marker.now ? "font-semibold text-[#EE6F3A]" : "font-medium text-[#3D7955]",
+                  )}
+                  style={{
+                    top: `${row * 20}px`,
+                    left: `calc(${pct(marker.x)} ${side === "right" ? "+" : "-"} 8px)`,
+                  }}
+                >
+                  {marker.label}
+                </span>
+              );
+            });
+          })()}
         </div>
       </div>
       <div className="relative mt-1 h-5 text-sm text-[#666666]">
