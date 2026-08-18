@@ -193,17 +193,16 @@ export function ActivityItemRow({
           <ProfileAvatar address={event.beneficiary} short chain={chain} />
           {fragments.length === 1 && <span className="text-zinc-600"> {fragments[0]}</span>}
         </div>
-        {fragments.length > 1 && (
-          <ul className="mt-0.5 list-disc space-y-0.5 pl-5 text-sm text-zinc-600 marker:text-zinc-400">
-            {fragments.map((fragment, index) => (
-              <li key={index} className="break-words">
-                {fragment}
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* Grouped rows swap the emphasis: the memo is the headline above the
+            actions, which read as fine print. */}
         {event.memo && (
-          <p className="text-sm text-zinc-700 break-all mt-1">
+          <p
+            className={
+              fragments.length > 1
+                ? "text-sm text-zinc-700 break-all mt-0.5"
+                : "text-sm text-zinc-700 break-all mt-1"
+            }
+          >
             <button
               type="button"
               onClick={() => void handleShare()}
@@ -214,6 +213,15 @@ export function ActivityItemRow({
               {event.memo}
             </button>
           </p>
+        )}
+        {fragments.length > 1 && (
+          <ul className="mt-0.5 list-disc space-y-0.5 pl-5 text-xs text-zinc-500 marker:text-zinc-300">
+            {fragments.map((fragment, index) => (
+              <li key={index} className="break-words">
+                {fragment}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>
