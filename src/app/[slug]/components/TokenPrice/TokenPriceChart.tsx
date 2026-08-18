@@ -23,13 +23,13 @@ import { PriceChartTooltip } from "./PriceChartTooltip";
 import { priceConcept } from "./priceConcepts";
 
 const TIME_RANGES: RangeOption<TimeRange>[] = [
-  { value: "1h", label: "1H" },
-  { value: "6h", label: "6H" },
-  { value: "1d", label: "1D" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
-  { value: "3m", label: "3M" },
-  { value: "1y", label: "1Y" },
+  { value: "1h", label: "1 hour" },
+  { value: "6h", label: "6 hours" },
+  { value: "1d", label: "1 day" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "3m", label: "3 months" },
+  { value: "1y", label: "1 year" },
   { value: "all", label: "All" },
 ];
 
@@ -238,7 +238,8 @@ export function TokenPriceChart({
           ariaLabel={`${tokenSymbol} price history`}
           description={`Issuance, ${marketPriceView === "smooth" ? "time-weighted pool" : "every post-trade pool"}, and cash out prices for ${tokenSymbol} over the selected ${range} range.${showCashOutAsymptote ? " The dotted line is the cash-out asymptote." : ""}`}
           className="mt-2 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
-          margin={{ left: 84, right: 20, top: 24, bottom: 36 }}
+          showYTickLabels={false}
+          margin={{ left: 1, right: 20, top: 24, bottom: 36 }}
           xDomain={[firstTimestamp ?? 0, lastTimestamp ?? 1]}
           yDomain={[0, maxVisiblePrice > 0 ? maxVisiblePrice * 1.1 : 1]}
           formatXTick={(timestamp) => formatXAxis(timestamp, range)}
