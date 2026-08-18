@@ -178,35 +178,37 @@ export function ActivityItemRow({
           <span className="min-w-0 truncate">
             <ProfileAvatar address={event.beneficiary} short chain={chain} />
           </span>
-          <span className="shrink-0">
+          <span className="flex shrink-0 items-center gap-1.5">
             <EtherscanLink type="tx" value={event.txHash} chain={chain}>
               <DateRelative timestamp={event.timestamp} />
             </EtherscanLink>
+            <span>on</span>
+            <ChainLogo chainId={event.chainId} width={14} height={14} />
           </span>
         </div>
         {/* The exact value is one hover away — `title` has no open delay, so an
             abbreviated or USD-denominated headline never hides the real number. */}
-        <p className="mt-0.5 flex items-center gap-1.5 text-sm text-zinc-500">
-          {event.baseAmount && (
-            <span className="font-semibold text-zinc-800" title={event.exactAmount}>
-              {event.baseTokenSymbol
-                ? `${event.baseAmount} ${event.baseTokenSymbol}`
-                : event.baseAmount}
-            </span>
-          )}
-          {isInflow && (
-            <span className="border border-teal-600 bg-teal-50 text-teal-600 text-[10px] px-1 py-0.5">
-              in
-            </span>
-          )}
-          {isOutflow && (
-            <span className="border border-orange-500 bg-orange-50 text-orange-500 text-[10px] px-1 py-0.5">
-              out
-            </span>
-          )}
-          <span>on</span>
-          <ChainLogo chainId={event.chainId} width={14} height={14} />
-        </p>
+        {(event.baseAmount || isInflow || isOutflow) && (
+          <p className="mt-0.5 flex items-center gap-1.5 text-sm text-zinc-500">
+            {isInflow && (
+              <span className="border border-teal-600 bg-teal-50 text-teal-600 text-[10px] px-1 py-0.5">
+                in
+              </span>
+            )}
+            {isOutflow && (
+              <span className="border border-orange-500 bg-orange-50 text-orange-500 text-[10px] px-1 py-0.5">
+                out
+              </span>
+            )}
+            {event.baseAmount && (
+              <span className="font-semibold text-zinc-800" title={event.exactAmount}>
+                {event.baseTokenSymbol
+                  ? `${event.baseAmount} ${event.baseTokenSymbol}`
+                  : event.baseAmount}
+              </span>
+            )}
+          </p>
+        )}
         {event.memo && (
           <p className="text-sm text-zinc-700 break-all mt-2">
             <button
