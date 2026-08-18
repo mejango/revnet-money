@@ -292,7 +292,7 @@ export function RevnetSearch() {
                       {result.name ?? `Project ${result.projectId}`}
                     </span>
                     <span className="block truncate text-xs text-zinc-600">
-                      {result.ticker ? `$${result.ticker} · ` : ""}
+                      {result.ticker ? `${result.ticker.replace(/^\$+/, "")} ` : ""}
                       {(result.chainIds.length ? result.chainIds : [result.chainId])
                         .map((chainId) => CHAIN_NAMES[chainId] ?? `Chain ${chainId}`)
                         .join(", ")}
