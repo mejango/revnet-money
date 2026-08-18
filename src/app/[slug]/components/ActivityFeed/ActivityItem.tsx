@@ -219,7 +219,7 @@ export function ActivityItemRow({
               title="Share this activity"
               aria-label={`Share activity: ${event.memo}`}
             >
-              {event.memo}
+              “{event.memo}”
             </button>
           </p>
         )}
