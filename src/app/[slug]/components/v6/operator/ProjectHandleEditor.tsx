@@ -64,7 +64,7 @@ import {
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   isAddress,
   isAddressEqual,
@@ -132,17 +132,12 @@ function HandleProgressStep({
   );
 }
 
-function subscribeToSiteOrigin(): () => void {
-  return () => undefined;
-}
-
-function siteOriginSnapshot(): string | null {
-  return window.location.origin;
-}
-
-function serverSiteOriginSnapshot(): string | null {
-  return null;
-}
+// The canonical origin, not the browser's: the shown URL is the project's
+// public address, which shouldn't change when the operator browses via a
+// deployment-platform domain.
+const SITE_ORIGIN = (
+  process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002"
+).replace(/\/+$/u, "");
 
 function authorityStatusMessage(status: CrossChainHandleAuthorityStatus): string {
   switch (status) {
@@ -258,11 +253,7 @@ export function ProjectHandleEditor({
   const [busyAction, setBusyAction] = useState<"ens" | "deploy-safe" | "publish" | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const siteOrigin = useSyncExternalStore(
-    subscribeToSiteOrigin,
-    siteOriginSnapshot,
-    serverSiteOriginSnapshot,
-  );
+  const siteOrigin = SITE_ORIGIN;
 
   const holdersQuery = useCompleteProjectPermissions(
     permissionHoldersWhere([project], {

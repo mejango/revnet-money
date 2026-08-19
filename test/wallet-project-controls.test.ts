@@ -185,9 +185,11 @@ describe("project handle ENS authorization", () => {
     expect(source).toContain("You’ll be able to find your project at");
     expect(source).toContain("parsed.handle?.handle ??");
     expect(source).toContain("inputWasEdited ? null : currentHandle?.handle");
-    expect(source).toContain("window.location.origin");
+    // The shown URL is the project's public address: always the canonical
+    // origin, never the deployment-platform host the operator happens to be on.
+    expect(source).toContain("NEXT_PUBLIC_SITE_URL");
+    expect(source).not.toContain("window.location.origin");
     expect(source).toContain('routeHandle ?? "<handle>"');
-    expect(source).not.toContain("NEXT_PUBLIC_SITE_URL");
     expect(source).toContain("{projectRoute}");
     expect(source).not.toContain("Project route");
     expect(source).not.toContain("Use any .eth name you control or are authorized to update.");
