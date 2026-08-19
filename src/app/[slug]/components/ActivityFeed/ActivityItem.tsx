@@ -215,6 +215,14 @@ export function ActivityItemRow({
                 out
               </span>
             )}
+            {/* No amount and no flow tag = nothing for the title slot; the
+                actor takes its place (bare, no "to/from/by") instead of
+                leaving a blank line. */}
+            {!event.baseAmount && !isInflow && !isOutflow && (
+              <span className="min-w-0 truncate text-xs">
+                <ProfileAvatar address={event.beneficiary} short chain={chain} />
+              </span>
+            )}
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
             <EtherscanLink type="tx" value={event.txHash} chain={chain}>
@@ -224,12 +232,14 @@ export function ActivityItemRow({
             <ChainLogo chainId={event.chainId} width={14} height={14} />
           </span>
         </div>
-        <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500">
-          {isOutflow ? "to" : isInflow ? "from" : "by"}{" "}
-          <span className="min-w-0 truncate">
-            <ProfileAvatar address={event.beneficiary} short chain={chain} />
-          </span>
-        </p>
+        {(event.baseAmount || isInflow || isOutflow) && (
+          <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500">
+            {isOutflow ? "to" : isInflow ? "from" : "by"}{" "}
+            <span className="min-w-0 truncate">
+              <ProfileAvatar address={event.beneficiary} short chain={chain} />
+            </span>
+          </p>
+        )}
         {event.memo && (
           <p className="text-sm text-zinc-700 break-all mt-3">
             <button
