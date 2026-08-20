@@ -13,8 +13,11 @@ import { ResponsiveProjectLayout } from "./components/ResponsiveProjectLayout";
 import { ShopCartProvider } from "./components/v6/ShopCartContext";
 import { getProject } from "./getProject";
 import { getProjectWithFallback } from "./getProjectFallback";
-import { getProjectOperator } from "./getProjectOperator";
+import { getIndexedProjectOperatorAddresses, getProjectOperator } from "./getProjectOperator";
 import { getSuckerGroup } from "./getSuckerGroup";
+import { PROJECT_HANDLE_CHAIN_ID, readExactProjectHandle } from "@/lib/projectHandles";
+import { getViemPublicClient } from "@/lib/wagmiTransports";
+import { unstable_cache } from "next/cache";
 import { ProjectProviders } from "./ProjectProviders";
 import { resolveProjectRoute } from "./resolveProjectRoute.server";
 import { getRulesets } from "./terms/getRulesets";
@@ -63,6 +66,45 @@ function ProjectJsonLd({
   );
 }
 
+/**
+ * The verified handle names the revnet, so it is the canonical URL for every
+ * route that reaches it — each chain's slug and the handle itself. The
+ * registry keys handles by (chainId, projectId), so every deployment in the
+ * group is checked, and only the operator (the callable authority) counts as
+ * a trusted setter. handleOf() already enforces the bidirectional ENS check.
+ */
+const lookupCanonicalHandle = unstable_cache(
+  async (
+    chainId: number,
+    projectId: number,
+    suckerGroupId: string | null,
+  ): Promise<string | null> => {
+    const operators = await getIndexedProjectOperatorAddresses(projectId, chainId).catch(
+      () => [],
+    );
+    if (!operators.length) return null;
+    const deployments: [number, number][] = [[chainId, projectId]];
+    if (suckerGroupId) {
+      const group = await getSuckerGroup(suckerGroupId, chainId);
+      for (const sibling of group?.projects?.items ?? []) {
+        const pair: [number, number] = [Number(sibling.chainId), Number(sibling.projectId)];
+        if (!deployments.some(([chain, id]) => chain === pair[0] && id === pair[1])) {
+          deployments.push(pair);
+        }
+      }
+    }
+    const client = getViemPublicClient(PROJECT_HANDLE_CHAIN_ID);
+    const handles = await Promise.all(
+      deployments.flatMap(([chain, id]) =>
+        operators.map((operator) => readExactProjectHandle(client, chain, id, operator)),
+      ),
+    );
+    return handles.find((handle) => handle) ?? null;
+  },
+  ["project-canonical-handle"],
+  { revalidate: 900 },
+);
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
   // The custom domain is the public name; the Railway host is only the fallback for a
@@ -96,13 +138,25 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       ? new URL(`/api/project-og/${chainId}/${projectId}`, assetOrigin).href
       : new URL("/assets/img/revnet-social.png", assetOrigin).href;
 
+  // The handle is always canonical when present, no matter which of the
+  // revnet's URLs — /@handle or any chain's slug — served this render.
+  let canonicalUrl = url;
+  if (!slug.startsWith("@") && projectId) {
+    const handle = await lookupCanonicalHandle(
+      chainId,
+      Number(projectId),
+      project?.suckerGroupId ?? null,
+    ).catch(() => null);
+    if (handle) canonicalUrl = new URL(`/@${encodeURIComponent(handle)}`, origin);
+  }
+
   return buildMetadata({
     title: project?.name ? `${project.name} | REVNET` : "Revnet",
     description:
       projectPreviewSlogan(project?.projectTagline, project?.description) ||
       "An autonomous business model for the open web. 100% open source.",
     imageUrl,
-    url: url.href,
+    url: canonicalUrl.href,
   });
 }
 
