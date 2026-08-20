@@ -1,6 +1,7 @@
 "use client";
 
 import { FieldGroup } from "@/app/create/form/Fields";
+import { MarkdownFieldGroup } from "@/app/create/form/MarkdownFieldGroup";
 import { pinProjectMetadata } from "@/app/create/helpers/pinProjectMetaData";
 import { IpfsImageUploader } from "@/components/IpfsFileUploader";
 import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
@@ -26,10 +27,10 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useTokenA } from "@/hooks/useTokenA";
-import { gasWithHeadroom } from "@/lib/gas";
 import type { Project } from "@/lib/bendystraw/types";
 import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
 import { FormProvider, type FormHelpers } from "@/lib/forms";
+import { gasWithHeadroom } from "@/lib/gas";
 import { ipfsUri } from "@/lib/ipfs";
 import { useJBContractContext, useJBProjectMetadataContext } from "@/lib/nana/project";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
@@ -409,12 +410,12 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                     />
                   </div>
 
-                  <FieldGroup
+                  <MarkdownFieldGroup
                     id="description"
                     name="description"
                     label="Description"
-                    component="textarea"
                     rows={4}
+                    description="Markdown supported. Drop or paste images to embed them."
                   />
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

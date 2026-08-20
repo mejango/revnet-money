@@ -1,6 +1,7 @@
 import { IpfsImageUploader } from "@/components/IpfsFileUploader";
 import { ipfsUri } from "@/lib/ipfs";
 import { FieldGroup } from "./Fields";
+import { MarkdownFieldGroup } from "./MarkdownFieldGroup";
 import { useCreateForm } from "./useCreateForm";
 
 export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
@@ -45,14 +46,14 @@ export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
             />
           </div>
         </div>
-        <FieldGroup
+        <MarkdownFieldGroup
           id="description"
           name="description"
           label="About"
           groupClassName="mt-6"
-          component="textarea"
           rows={3}
           placeholder="What is the gist?"
+          description="Markdown supported. Drop or paste images to embed them."
           disabled={disabled}
         />
 

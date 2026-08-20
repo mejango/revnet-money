@@ -8,7 +8,7 @@ type IpfsPinResponse = {
   Hash: string;
 };
 
-const pinFile = async (file: File | Blob | string, options?: { signal?: AbortSignal }) => {
+export const pinFile = async (file: File | Blob | string, options?: { signal?: AbortSignal }) => {
   const formData = new FormData();
   formData.append("file", file);
 

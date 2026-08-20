@@ -50,6 +50,31 @@ describe("untrusted project content", () => {
     expect(container.querySelectorAll("a")).toHaveLength(1);
   });
 
+  it("renders markdown formatting and restricts images to https and ipfs sources", () => {
+    const cid = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
+    const { container } = render(
+      createElement(ProjectRichText, {
+        source: [
+          "# Heading",
+          "**bold** text",
+          `![pinned](ipfs://${cid})`,
+          "![hot](https://example.com/a.png)",
+          "![plain](http://example.com/a.png)",
+          "![inline](data:image/png;base64,AAAA)",
+        ].join("\n\n"),
+      }),
+    );
+
+    expect(screen.getByText("Heading").tagName).toBe("H1");
+    expect(screen.getByText("bold").tagName).toBe("STRONG");
+    const images = [...container.querySelectorAll("img")];
+    expect(images.map((image) => image.getAttribute("src"))).toEqual([
+      `/api/ipfs/${cid}`,
+      "https://example.com/a.png",
+    ]);
+    expect(images.map((image) => image.getAttribute("alt"))).toEqual(["pinned", "hot"]);
+  });
+
   it("caps project-controlled input before parsing", () => {
     const { container } = render(
       createElement(ProjectRichText, {
