@@ -551,6 +551,7 @@ export const BROWSER_BENDYSTRAW_OPERATIONS = [
   AllLoansOperation,
   OwnedNftsOperation,
   MintNftEventsOperation,
+  IndexedLpPositionsOperation,
 ] as const;
 
 export type BrowserBendystrawOperation = (typeof BROWSER_BENDYSTRAW_OPERATIONS)[number];

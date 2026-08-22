@@ -22,7 +22,10 @@ import {
   V6StoredAutoIssuancesOperation,
   getBrowserOperationById,
 } from "@/lib/bendystraw/operations";
+import * as operations from "@/lib/bendystraw/operations";
 import { BENDYSTRAW_QUERY_REGISTRY } from "@/lib/bendystraw/registry.server";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("reviewed Bendystraw operations", () => {
@@ -45,6 +48,36 @@ describe("reviewed Bendystraw operations", () => {
     expect(getBrowserOperationById(ProjectOperation.id)).toBe(ProjectOperation);
     expect(BROWSER_BENDYSTRAW_OPERATIONS).not.toContain(ShieldGroupOperation);
     expect(getBrowserOperationById(ShieldGroupOperation.id)).toBeUndefined();
+  });
+
+  // The BFF rejects any operation missing from the browser allowlist, and the
+  // callers swallow that 400 as "not indexed" — so a forgotten entry shows up
+  // as a silently empty panel, never as an error. Scan for the callers instead.
+  it("allowlists every operation the browser actually calls", () => {
+    const names = new Set<string>();
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (/\.tsx?$/u.test(entry.name)) {
+          for (const [, name] of readFileSync(path, "utf8").matchAll(
+            /queryBendystrawFromBrowser\(\s*(\w+Operation)\b/gu,
+          )) {
+            names.add(name);
+          }
+        }
+      }
+    };
+    walk(join(process.cwd(), "src"));
+
+    expect(names.size).toBeGreaterThan(0);
+    const allowed = new Set(BROWSER_BENDYSTRAW_OPERATIONS.map((operation) => operation.id));
+    const byName = Object.fromEntries(
+      Object.entries(operations).filter(([key]) => key.endsWith("Operation")),
+    ) as Record<string, { id: string } | undefined>;
+    for (const name of names) {
+      expect(allowed.has(byName[name]?.id ?? "")).toBe(true);
+    }
   });
 
   it("uses Bendystraw's case-sensitive permission-holder filter type", () => {

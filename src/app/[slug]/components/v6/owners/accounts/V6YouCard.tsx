@@ -519,7 +519,9 @@ function LiquidityChainPill({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const { address } = useAccount();
+  // The whole card reads the VIEWED account, so the LP dot must too — under
+  // "View as" the connected wallet is not the account being shown.
+  const { address } = useViewedAccount();
   const pool = state.pool;
   const positions = useQuery({
     queryKey: ["revnetWalletLpPositions", pool?.chainId, pool?.poolId, address?.toLowerCase()],
@@ -567,7 +569,7 @@ function YourLpCell({
   tokenSymbol: string;
   onManage: () => void;
 }) {
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
   const pool = ammState?.pool ?? null;
   const client = usePublicClient({ chainId: Number(pool?.chainId ?? 1) }) as
     | PublicClient
