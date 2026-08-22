@@ -462,15 +462,22 @@ function LiquidityVisualization({
             <text x="1" y="13" fontSize="8" fill="#71717a">
               floor
             </text>
-            <text
-              x={Math.max(18, Math.min(DEPTH_WIDTH - 18, model.depth.priceX)).toFixed(1)}
-              y="13"
-              fontSize="8"
-              fill="#71717a"
-              textAnchor="middle"
-            >
-              price
-            </text>
+            {/* ponytail: measured at 8px in the page font, "floor" and the
+                centered "price" are 24.3 wide and "ceiling" 34.1 — so the
+                centered label collides with an end label outside this band.
+                Drop it there rather than print over them: the amber line still
+                marks the price and the readout below the chart names it. */}
+            {model.depth.priceX > 42 && model.depth.priceX < DEPTH_WIDTH - 52 ? (
+              <text
+                x={model.depth.priceX.toFixed(1)}
+                y="13"
+                fontSize="8"
+                fill="#71717a"
+                textAnchor="middle"
+              >
+                price
+              </text>
+            ) : null}
             <text x="319" y="13" fontSize="8" fill="#71717a" textAnchor="end">
               ceiling
             </text>
