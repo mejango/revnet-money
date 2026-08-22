@@ -1,10 +1,10 @@
 "use client";
 
-import type { PublicClient } from "viem";
 import { ChainLogo } from "@/components/ChainLogo";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -39,8 +39,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { PublicClient } from "viem";
 import { useAccount, usePublicClient, useReadContract, useReadContracts } from "wagmi";
-import { SkeletonLines } from "@/components/ui/skeleton";
 import { ProjectItem } from "../../shared";
 import { AddLiquidityForm, LiquidityManager } from "../market/AmmCard";
 import {
@@ -572,8 +572,7 @@ function YourLpCell({
   const { address } = useViewedAccount();
   const pool = ammState?.pool ?? null;
   const client = usePublicClient({ chainId: Number(pool?.chainId ?? 1) }) as
-    | PublicClient
-    | undefined;
+    PublicClient | undefined;
 
   const positions = useQuery({
     queryKey: ["revnetWalletLpPositions", pool?.chainId, pool?.poolId, address?.toLowerCase()],

@@ -34,6 +34,7 @@ import {
   useJBTokenContext,
 } from "@/lib/nana/project";
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
+import { PERSIST } from "@/lib/query-persist";
 import { formatEthAddress, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -59,7 +60,6 @@ import {
 import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
-import { PERSIST } from "@/lib/query-persist";
 
 type TokenChainState = {
   chainId: JBChainId;

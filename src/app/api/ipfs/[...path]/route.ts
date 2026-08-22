@@ -7,8 +7,7 @@ const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 const PRIMARY_GATEWAY_TIMEOUT_MS = 6_000;
 const FALLBACK_GATEWAY_TIMEOUT_MS = 12_000;
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]{1,128}$/u;
-const IMMUTABLE_CACHE_CONTROL =
-  "public, max-age=31536000, s-maxage=31536000, immutable";
+const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, s-maxage=31536000, immutable";
 
 function supportedMediaType(value: string | null) {
   const type = value?.split(";", 1)[0].trim().toLowerCase() ?? "";

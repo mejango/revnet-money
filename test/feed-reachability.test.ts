@@ -9,12 +9,7 @@ import {
   assertLaunchFeedsReachable,
   requiredFeedPairs,
 } from "@/app/create/helpers/feedReachability";
-import {
-  ETH_CURRENCY_ID,
-  JB_CHAINS,
-  NATIVE_TOKEN,
-  USDC_ADDRESSES,
-} from "@bananapus/nana-sdk-core";
+import { ETH_CURRENCY_ID, JB_CHAINS, NATIVE_TOKEN, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
 import { NATIVE_TOKEN_CURRENCY_ID, tokenCurrencyId } from "@bananapus/nana-sdk-core/v6";
 import { ContractFunctionRevertedError, type PublicClient } from "viem";
 import { sepolia } from "viem/chains";
@@ -128,9 +123,7 @@ describe("assertLaunchFeedsReachable — fail-closed launch gate", () => {
         contexts: [nativeContext, usdcContext],
         baseCurrency: ETH_CURRENCY_ID,
       }),
-    ).rejects.toThrow(
-      new RegExp(`No price feed on ${CHAIN_NAME} converts ETH to USDC`),
-    );
+    ).rejects.toThrow(new RegExp(`No price feed on ${CHAIN_NAME} converts ETH to USDC`));
   });
 
   it("blocks the ETH-base USDC pay pair too, naming USDC and the base", async () => {

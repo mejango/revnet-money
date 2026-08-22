@@ -12,8 +12,7 @@ const APP = {
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://revnet.money",
 };
 
-export const WALLET_CONNECT_PROJECT_ID =
-  process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID ?? "";
+export const WALLET_CONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID ?? "";
 
 /**
  * WalletConnect — the only route to mobile wallets that aren't in this browser.

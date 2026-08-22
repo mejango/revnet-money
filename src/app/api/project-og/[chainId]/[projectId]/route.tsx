@@ -1,9 +1,6 @@
 import { getProject } from "@/app/[slug]/getProject";
 import { getSuckerGroup } from "@/app/[slug]/getSuckerGroup";
-import {
-  formatProjectPreviewBalance,
-  projectPreviewSlogan,
-} from "@/lib/project-link-preview";
+import { formatProjectPreviewBalance, projectPreviewSlogan } from "@/lib/project-link-preview";
 import { ImageResponse } from "next/og";
 import type { NextRequest } from "next/server";
 

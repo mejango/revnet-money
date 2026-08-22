@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 import {
   dehydrate,
@@ -6,7 +6,7 @@ import {
   type DehydratedState,
   type Query,
   type QueryClient,
-} from '@tanstack/react-query'
+} from "@tanstack/react-query";
 
 /**
  * Cross-session query persistence, opt-in per query.
@@ -28,49 +28,46 @@ import {
  * during normal use.
  */
 
-const STORE_KEY = 'revnet:query-cache:v1'
-const MAX_BYTES = 2_500_000
-const WRITE_DEBOUNCE_MS = 1_000
+const STORE_KEY = "revnet:query-cache:v1";
+const MAX_BYTES = 2_500_000;
+const WRITE_DEBOUNCE_MS = 1_000;
 
-type PersistTier = 'immutable' | 'revalidate'
+type PersistTier = "immutable" | "revalidate";
 
-export type PersistMeta = { persist?: PersistTier }
+export type PersistMeta = { persist?: PersistTier };
 
 /**
  * Drop-in `meta` for a read worth showing from the last session while it
  * revalidates. Pair it with `Revalidating` so the stale value reads as
  * unconfirmed rather than current.
  */
-export const PERSIST: PersistMeta = { persist: 'revalidate' }
-
+export const PERSIST: PersistMeta = { persist: "revalidate" };
 
 function tierOf(query: Query): PersistTier | undefined {
-  return (query.meta as PersistMeta | undefined)?.persist
+  return (query.meta as PersistMeta | undefined)?.persist;
 }
 
 // viem returns bigints throughout; JSON.stringify throws on them.
-const BIGINT_TAG = '$bigint'
+const BIGINT_TAG = "$bigint";
 
 function replacer(_key: string, value: unknown) {
-  return typeof value === 'bigint'
-    ? { [BIGINT_TAG]: value.toString() }
-    : value
+  return typeof value === "bigint" ? { [BIGINT_TAG]: value.toString() } : value;
 }
 
 function reviver(_key: string, value: unknown) {
-  if (value && typeof value === 'object' && BIGINT_TAG in value) {
-    const raw = (value as Record<string, unknown>)[BIGINT_TAG]
-    if (typeof raw === 'string') return BigInt(raw)
+  if (value && typeof value === "object" && BIGINT_TAG in value) {
+    const raw = (value as Record<string, unknown>)[BIGINT_TAG];
+    if (typeof raw === "string") return BigInt(raw);
   }
-  return value
+  return value;
 }
 
 export function serializeState(state: DehydratedState): string {
-  return JSON.stringify(state, replacer)
+  return JSON.stringify(state, replacer);
 }
 
 export function deserializeState(raw: string): DehydratedState {
-  return JSON.parse(raw, reviver) as DehydratedState
+  return JSON.parse(raw, reviver) as DehydratedState;
 }
 
 /**
@@ -80,57 +77,54 @@ export function deserializeState(raw: string): DehydratedState {
  */
 export function installQueryPersistence(
   client: QueryClient,
-  storage: Storage | undefined = typeof window === 'undefined'
-    ? undefined
-    : window.localStorage,
+  storage: Storage | undefined = typeof window === "undefined" ? undefined : window.localStorage,
 ): () => void {
-  if (!storage) return () => {}
+  if (!storage) return () => {};
 
   try {
-    const raw = storage.getItem(STORE_KEY)
-    if (raw) hydrate(client, deserializeState(raw))
+    const raw = storage.getItem(STORE_KEY);
+    if (raw) hydrate(client, deserializeState(raw));
   } catch {
     // A corrupt or version-skewed store must never break boot.
     try {
-      storage.removeItem(STORE_KEY)
+      storage.removeItem(STORE_KEY);
     } catch {}
   }
 
-  let timer: ReturnType<typeof setTimeout> | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const write = () => {
-    timer = undefined
+    timer = undefined;
     try {
       const state = dehydrate(client, {
-        shouldDehydrateQuery: query =>
-          !!tierOf(query) && query.state.status === 'success',
-      })
-      const payload = serializeState(state)
+        shouldDehydrateQuery: (query) => !!tierOf(query) && query.state.status === "success",
+      });
+      const payload = serializeState(state);
       // Over budget: drop the store rather than half-write it. The next
       // settled queries repopulate it.
-      if (payload.length > MAX_BYTES) storage.removeItem(STORE_KEY)
-      else storage.setItem(STORE_KEY, payload)
+      if (payload.length > MAX_BYTES) storage.removeItem(STORE_KEY);
+      else storage.setItem(STORE_KEY, payload);
     } catch {
       // Quota or serialization failure: persistence is an optimization, so
       // give up quietly rather than surface an error to the user.
       try {
-        storage.removeItem(STORE_KEY)
+        storage.removeItem(STORE_KEY);
       } catch {}
     }
-  }
+  };
 
-  const unsubscribe = client.getQueryCache().subscribe(event => {
-    if (event.type !== 'updated') return
-    if (event.query.state.status !== 'success') return
-    if (!tierOf(event.query)) return
-    if (timer) return
-    timer = setTimeout(write, WRITE_DEBOUNCE_MS)
-  })
+  const unsubscribe = client.getQueryCache().subscribe((event) => {
+    if (event.type !== "updated") return;
+    if (event.query.state.status !== "success") return;
+    if (!tierOf(event.query)) return;
+    if (timer) return;
+    timer = setTimeout(write, WRITE_DEBOUNCE_MS);
+  });
 
   return () => {
-    unsubscribe()
-    if (timer) clearTimeout(timer)
-  }
+    unsubscribe();
+    if (timer) clearTimeout(timer);
+  };
 }
 
 /**
@@ -138,10 +132,12 @@ export function installQueryPersistence(
  * across sessions. Only use where the write path has been checked — see
  * `tasks/webclient-caching-plan.md`.
  */
-export function immutableQuery<T extends object>(options: T): T & {
-  staleTime: number
-  gcTime: number
-  meta: PersistMeta
+export function immutableQuery<T extends object>(
+  options: T,
+): T & {
+  staleTime: number;
+  gcTime: number;
+  meta: PersistMeta;
 } {
   return {
     ...options,
@@ -149,23 +145,25 @@ export function immutableQuery<T extends object>(options: T): T & {
     gcTime: Number.POSITIVE_INFINITY,
     meta: {
       ...(options as { meta?: Record<string, unknown> }).meta,
-      persist: 'immutable',
+      persist: "immutable",
     },
-  }
+  };
 }
 
 /**
  * Tag a query whose answer can change but is worth showing immediately from
  * the last session while it revalidates.
  */
-export function cachedQuery<T extends object>(options: T): T & {
-  meta: PersistMeta
+export function cachedQuery<T extends object>(
+  options: T,
+): T & {
+  meta: PersistMeta;
 } {
   return {
     ...options,
     meta: {
       ...(options as { meta?: Record<string, unknown> }).meta,
-      persist: 'revalidate',
+      persist: "revalidate",
     },
-  }
+  };
 }

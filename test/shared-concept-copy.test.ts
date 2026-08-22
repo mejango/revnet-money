@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
-import { PROTOCOL_CONCEPTS } from '@/lib/protocolConcepts'
-import { describe, expect, it } from 'vitest'
+import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
+import { createHash } from "node:crypto";
+import { describe, expect, it } from "vitest";
 
 /**
  * The definitions in PROTOCOL_CONCEPTS are duplicated into juicebox-money
@@ -18,16 +18,16 @@ import { describe, expect, it } from 'vitest'
  * point: it is cheaper than discovering months later that a fee is explained three ways.
  */
 const SHARED_CONCEPT_KEYS = [
-  'issuance',
-  'reservedShare',
-  'autoIssuance',
-  'cashOutTax',
-  'surplusAllowance',
-  'twapWindow',
-] as const
+  "issuance",
+  "reservedShare",
+  "autoIssuance",
+  "cashOutTax",
+  "surplusAllowance",
+  "twapWindow",
+] as const;
 
 /** Must match juicebox-money and juicescan. Update all three together, never one. */
-const SHARED_CONCEPT_HASH = '41c5c9369e51e09e'
+const SHARED_CONCEPT_HASH = "41c5c9369e51e09e";
 
 export function hashSharedConcepts(
   concepts: Record<string, string>,
@@ -35,24 +35,24 @@ export function hashSharedConcepts(
 ): string {
   const body = [...keys]
     .sort()
-    .map(key => `${key}\n${concepts[key]}`)
-    .join('\n---\n')
-  return createHash('sha256').update(body).digest('hex').slice(0, 16)
+    .map((key) => `${key}\n${concepts[key]}`)
+    .join("\n---\n");
+  return createHash("sha256").update(body).digest("hex").slice(0, 16);
 }
 
-describe('shared concept copy', () => {
-  it('carries every definition the other clients rely on', () => {
+describe("shared concept copy", () => {
+  it("carries every definition the other clients rely on", () => {
     for (const key of SHARED_CONCEPT_KEYS) {
-      expect(PROTOCOL_CONCEPTS[key], `${key} is missing`).toBeTruthy()
+      expect(PROTOCOL_CONCEPTS[key], `${key} is missing`).toBeTruthy();
     }
-  })
+  });
 
-  it('matches the copy shipped by juicebox-money and juicescan', () => {
+  it("matches the copy shipped by juicebox-money and juicescan", () => {
     expect(
       hashSharedConcepts(PROTOCOL_CONCEPTS, SHARED_CONCEPT_KEYS),
-      'Shared concept copy changed. Make the same edit in juicebox-money ' +
-        '(src/lib/protocol-concepts.ts) and juicescan (PROTOCOL_CONCEPTS in discover.js), then ' +
-        'update SHARED_CONCEPT_HASH in all three.',
-    ).toBe(SHARED_CONCEPT_HASH)
-  })
-})
+      "Shared concept copy changed. Make the same edit in juicebox-money " +
+        "(src/lib/protocol-concepts.ts) and juicescan (PROTOCOL_CONCEPTS in discover.js), then " +
+        "update SHARED_CONCEPT_HASH in all three.",
+    ).toBe(SHARED_CONCEPT_HASH);
+  });
+});

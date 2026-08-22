@@ -23,4 +23,3 @@ export function quotePayerTokensForOneUnit({
     (weight.value * reservedPercent.value * unit) / BigInt(MAX_RESERVED_PERCENT) / unit;
   return totalTokens - reservedTokens;
 }
-

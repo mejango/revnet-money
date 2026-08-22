@@ -6,11 +6,7 @@ import {
   SuckerGroupMomentsOperation,
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import type {
-  AddToBalanceInflow,
-  ProjectMoment,
-  SuckerGroupMoment,
-} from "@/lib/bendystraw/types";
+import type { AddToBalanceInflow, ProjectMoment, SuckerGroupMoment } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
@@ -251,36 +247,31 @@ const cachedReserves = unstable_cache(
     const rawFeePoints = feePointsFrom(histories, revGroupIds, ethPrice);
     const latestAggregateTimestamp = events.at(-1)?.timestamp;
     const projectEvents = projectHistories
-      .flatMap((project) =>
-        [
-          ...project.moments.map((moment) => ({
-            key: project.key,
-            chainId: project.chainId,
-            symbol: project.symbol,
-            timestamp: moment.timestamp,
-            amount: Number(formatUnits(BigInt(moment.balance), project.decimals)),
-          })),
-          ...(latestAggregateTimestamp == null
-            ? []
-            : [
-                {
-                  key: project.key,
-                  chainId: project.chainId,
-                  symbol: project.symbol,
-                  timestamp: latestAggregateTimestamp,
-                  amount: project.currentAmount,
-                },
-              ]),
-        ],
-      )
+      .flatMap((project) => [
+        ...project.moments.map((moment) => ({
+          key: project.key,
+          chainId: project.chainId,
+          symbol: project.symbol,
+          timestamp: moment.timestamp,
+          amount: Number(formatUnits(BigInt(moment.balance), project.decimals)),
+        })),
+        ...(latestAggregateTimestamp == null
+          ? []
+          : [
+              {
+                key: project.key,
+                chainId: project.chainId,
+                symbol: project.symbol,
+                timestamp: latestAggregateTimestamp,
+                amount: project.currentAmount,
+              },
+            ]),
+      ])
       .sort((a, b) => a.timestamp - b.timestamp);
 
     const latest = new Map<string, number>();
     const latestVolume = new Map<string, number>();
-    const latestProjects = new Map<
-      string,
-      { chainId: number; symbol: string; amount: number }
-    >();
+    const latestProjects = new Map<string, { chainId: number; symbol: string; amount: number }>();
     let projectEventIndex = 0;
     // The same inflows, replayed in order, so the curve reaches the headline.
     const decimalsByGroup = new Map(supported.map((item) => [item.group.id, item.decimals]));

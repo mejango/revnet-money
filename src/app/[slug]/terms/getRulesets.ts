@@ -20,29 +20,26 @@ export type Ruleset = {
   baseCurrency: number;
 };
 
-const readRulesets = async (
-  projectId: string,
-  chainId: JBChainId,
-): Promise<Ruleset[]> => {
-    const client = getViemPublicClient(chainId);
-    const contract = getContract({
-      address: getJBContractAddress(JBCoreContracts.JBRulesets, 6, chainId),
-      abi: jbRulesetsAbi,
-      client,
-    });
+const readRulesets = async (projectId: string, chainId: JBChainId): Promise<Ruleset[]> => {
+  const client = getViemPublicClient(chainId);
+  const contract = getContract({
+    address: getJBContractAddress(JBCoreContracts.JBRulesets, 6, chainId),
+    abi: jbRulesetsAbi,
+    client,
+  });
 
-    const data = await readAllProjectRulesets(client, contract.address, BigInt(projectId));
+  const data = await readAllProjectRulesets(client, contract.address, BigInt(projectId));
 
-    return data
-      .map((r) => ({
-        id: r.id,
-        start: r.start,
-        duration: r.duration,
-        weight: r.weight.toString(),
-        weightCutPercent: new WeightCutPercent(r.weightCutPercent).toFloat(),
-        baseCurrency: decodeRulesetMetadata(BigInt(r.metadata)).baseCurrency,
-      }))
-      .sort((a, b) => a.start - b.start);
+  return data
+    .map((r) => ({
+      id: r.id,
+      start: r.start,
+      duration: r.duration,
+      weight: r.weight.toString(),
+      weightCutPercent: new WeightCutPercent(r.weightCutPercent).toFloat(),
+      baseCurrency: decodeRulesetMetadata(BigInt(r.metadata)).baseCurrency,
+    }))
+    .sort((a, b) => a.start - b.start);
 };
 
 /**
@@ -59,10 +56,7 @@ const cachedRulesets = unstable_cache(readRulesets, ["rulesets-with-base-currenc
   revalidate: 60,
 });
 
-export async function getRulesets(
-  projectId: string,
-  chainId: JBChainId,
-): Promise<Ruleset[]> {
+export async function getRulesets(projectId: string, chainId: JBChainId): Promise<Ruleset[]> {
   const cached = await cachedRulesets(projectId, chainId);
   if (cached.length > 0) return cached;
   // An empty read means the revnet is mid-deploy or the RPC failed — never let

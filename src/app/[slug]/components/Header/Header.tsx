@@ -5,6 +5,7 @@ import EtherscanLink from "@/components/EtherscanLink";
 import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
 import { ProjectLink } from "@/components/ProjectLink";
 import { FastForward as ForwardIcon } from "@/components/ui/icons";
+import { Revalidating } from "@/components/ui/Revalidating";
 import { useCompleteParticipants } from "@/hooks/useCompleteBendystrawLists";
 import type { Project } from "@/lib/bendystraw/types";
 import { formatShortDate } from "@/lib/date";
@@ -24,7 +25,6 @@ import Link from "next/link";
 import { Suspense, use, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { participantCountSummary } from "../v6/owners/accounts/participantsAggregate";
 import { TvlDatum } from "./TvlDatum";
-import { Revalidating } from "@/components/ui/Revalidating";
 
 interface Props {
   isRevnet: boolean;
@@ -67,8 +67,7 @@ export function Header(props: Props) {
       : `${holderSummary.count}${holderSummary.exact ? "" : "+"}`;
   // Restored from the last session: show the count now, mark it unconfirmed
   // until the 15s poll answers.
-  const holdersPending =
-    participantsQuery.isFetching && !participantsQuery.isLoading;
+  const holdersPending = participantsQuery.isFetching && !participantsQuery.isLoading;
   const { data: suckers } = useSuckers();
   const { name: projectName, logoUri } = metadata?.data ?? {};
   const tokenSymbol = tokenContext?.data ? formatTokenSymbol(tokenContext) : undefined;
@@ -123,9 +122,7 @@ export function Header(props: Props) {
         if (!a || !b) return false;
         const first = a.getBoundingClientRect();
         const second = b.getBoundingClientRect();
-        const apart = Math.abs(
-          (first.top + first.bottom) / 2 - (second.top + second.bottom) / 2,
-        );
+        const apart = Math.abs((first.top + first.bottom) / 2 - (second.top + second.bottom) / 2);
         return apart < Math.min(first.height, second.height) / 2;
       };
       const nextJoinedMetadata = {

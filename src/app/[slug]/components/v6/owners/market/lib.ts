@@ -1,3 +1,5 @@
+import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
+import { IndexedLpPositionsOperation } from "@/lib/bendystraw/operations";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   JBBuybackHookContracts,
@@ -53,8 +55,6 @@ import {
   toFunctionSelector,
   zeroAddress,
 } from "viem";
-import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
-import { IndexedLpPositionsOperation } from "@/lib/bendystraw/operations";
 import { ChainProject } from "../settlement/lib";
 
 // ── Uniswap V4 singletons (from deploy-all-v6 Deploy.s.sol) ──────────────────
@@ -701,7 +701,11 @@ async function poolPositionTokenIds(
     let windows = 0;
     while (initializeBlock == null && cursor >= 0n && windows < SCAN_MAX_WINDOWS) {
       const ranges: { from: bigint; to: bigint }[] = [];
-      for (let n = 0; n < SCAN_BATCH_WINDOWS && cursor >= 0n && windows < SCAN_MAX_WINDOWS; n += 1) {
+      for (
+        let n = 0;
+        n < SCAN_BATCH_WINDOWS && cursor >= 0n && windows < SCAN_MAX_WINDOWS;
+        n += 1
+      ) {
         const from = cursor >= SCAN_WINDOW ? cursor - SCAN_WINDOW + 1n : 0n;
         ranges.push({ from, to: cursor });
         windows += 1;
@@ -791,9 +795,7 @@ async function positionFor(
  * position's fee checkpoint on every collect, so live state only ever shows
  * what is currently unclaimed.
  */
-async function readIndexedLpPositions(
-  pool: PoolSnapshot,
-): Promise<UserLpPosition[] | null> {
+async function readIndexedLpPositions(pool: PoolSnapshot): Promise<UserLpPosition[] | null> {
   try {
     const result = await queryBendystrawFromBrowser(
       IndexedLpPositionsOperation,
@@ -836,9 +838,7 @@ async function readIndexedLpPositions(
  * Every position in the pool, whoever owns it — the index when it has this
  * pool, the onchain scan otherwise.
  */
-export async function readPoolLpPositions(
-  pool: PoolSnapshot,
-): Promise<UserLpPosition[]> {
+export async function readPoolLpPositions(pool: PoolSnapshot): Promise<UserLpPosition[]> {
   const indexed = await readIndexedLpPositions(pool);
   if (indexed) return indexed;
 
@@ -850,8 +850,7 @@ export async function readPoolLpPositions(
     ids.map((tokenId) => positionFor(client, pool, positionManager, tokenId)),
   );
   return positions.filter(
-    (position): position is UserLpPosition =>
-      position != null && position.liquidity > 0n,
+    (position): position is UserLpPosition => position != null && position.liquidity > 0n,
   );
 }
 
@@ -864,9 +863,7 @@ export async function readUserLpPositions(
 
   const indexed = await readIndexedLpPositions(pool);
   if (indexed) {
-    return indexed.filter(
-      (position) => position.owner.toLowerCase() === account.toLowerCase(),
-    );
+    return indexed.filter((position) => position.owner.toLowerCase() === account.toLowerCase());
   }
 
   const client = getViemPublicClient(pool.chainId) as PublicClient;
@@ -919,10 +916,7 @@ const LP_DEADLINE_SECONDS = 20 * 60;
 const SAFE_LP_DEADLINE_SECONDS = 30 * 24 * 60 * 60;
 
 /** The unix deadline for a liquidity transaction proposed now. */
-export function lpDeadline(
-  isSafe: boolean,
-  nowSeconds = Math.floor(Date.now() / 1000),
-): bigint {
+export function lpDeadline(isSafe: boolean, nowSeconds = Math.floor(Date.now() / 1000)): bigint {
   return BigInt(nowSeconds + (isSafe ? SAFE_LP_DEADLINE_SECONDS : LP_DEADLINE_SECONDS));
 }
 
@@ -1255,10 +1249,7 @@ export async function reverifyAddLiquidity(
   }
 }
 
-export function encodeAddLiquidityCall(
-  plan: AddLiquidityPlan,
-  deadline = lpDeadline(false),
-) {
+export function encodeAddLiquidityCall(plan: AddLiquidityPlan, deadline = lpDeadline(false)) {
   return {
     args: [plan.unlockData, deadline] as const,
     data: encodeFunctionData({

@@ -6,8 +6,8 @@ import {
   expectSecurityHeaders,
   FIXTURE_ORIGIN,
   installBrowserBoundary,
-  type BrowserBoundary,
   retryUntilVisible,
+  type BrowserBoundary,
 } from "./browser-support";
 
 type FixtureStatus = {
@@ -38,7 +38,9 @@ async function openFixtureProject(page: Page): Promise<BrowserBoundary> {
   await expect(page.getByLabel("Payment mode")).toHaveValue("pay");
   await expect(page.getByText("USDC", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Ethereum", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Pay", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("complementary").getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeEnabled();
   return boundary;
 }
 
@@ -174,11 +176,10 @@ test("project terms stay contract-backed, contained, and accessible", async ({ p
   const headingLeft = await page
     .getByRole("heading", { name: "Token issuance" })
     .evaluate((element) => element.getBoundingClientRect().left);
-  const yTickLeft = await page
-    .locator('[data-slot="issuance-y-tick"]')
-    .first()
+  const chartLeft = await page
+    .getByRole("img", { name: /Projected .* issuance price in USD over time/ })
     .evaluate((element) => element.getBoundingClientRect().left);
-  expect(Math.abs(yTickLeft - headingLeft)).toBeLessThanOrEqual(1);
+  expect(Math.abs(chartLeft - headingLeft)).toBeLessThanOrEqual(1);
 
   await expect
     .poll(async () => {

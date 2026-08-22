@@ -54,8 +54,7 @@ export function useAutoIssuances() {
       // `findIndex` returns -1 when nothing matches, and -1 is TRUTHY — so `|| 0` never fired
       // and an unmatched stageId rendered as "Stage 0" with an undefined start. Mirror
       // V6AutoIssuanceSubtab and leave both undefined instead of inventing a stage.
-      const rulesetIndex =
-        rulesets?.findIndex((r) => String(r.id) === autoIssuance.stageId) ?? -1;
+      const rulesetIndex = rulesets?.findIndex((r) => String(r.id) === autoIssuance.stageId) ?? -1;
 
       const distributed = issuedRows?.find((event) => {
         return (

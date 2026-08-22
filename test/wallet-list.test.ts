@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { offerableWallets } from "@/lib/wallet-list";
+import { describe, expect, it } from "vitest";
 
 const announced = (id: string, name: string) => ({ id, name, icon: "data:image/svg+xml,x" });
 const configured = (id: string, name: string) => ({ id, name, icon: undefined });

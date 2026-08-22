@@ -1,6 +1,6 @@
 import {
-  JBCoreContracts,
   jbContractAddress,
+  JBCoreContracts,
   jbPricesAbi,
   USD_CURRENCY_ID,
 } from "@bananapus/nana-sdk-core";

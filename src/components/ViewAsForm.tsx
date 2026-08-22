@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { isAddress } from "viem";
-import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
-import { useViewAs } from "@/lib/view-as";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
+import { useViewAs } from "@/lib/view-as";
+import { useState } from "react";
+import { isAddress } from "viem";
 
 /**
  * Browse the site as any account, without connecting one.

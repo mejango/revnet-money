@@ -30,9 +30,7 @@ export function currentStageIndex(
   rulesets: readonly { start: number | bigint }[] | undefined | null,
   nowSeconds: number = Date.now() / 1000,
 ): number {
-  const started = (rulesets ?? []).filter(
-    (ruleset) => Number(ruleset.start) <= nowSeconds,
-  ).length;
+  const started = (rulesets ?? []).filter((ruleset) => Number(ruleset.start) <= nowSeconds).length;
   return Math.max(started - 1, 0);
 }
 

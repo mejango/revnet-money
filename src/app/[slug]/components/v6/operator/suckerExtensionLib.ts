@@ -11,7 +11,6 @@ import {
 import { Abi } from "viem";
 import { ChainProjectRow, ChainWrite, v6ContractAddress } from "./operatorLib";
 
-
 /**
  * The chains a sucker group could extend to: the group's own environment
  * (production or testnet — suckers never bridge across them), minus the

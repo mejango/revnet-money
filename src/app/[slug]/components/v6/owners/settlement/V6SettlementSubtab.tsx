@@ -1,5 +1,6 @@
 "use client";
 
+import { PERSIST } from "@/lib/query-persist";
 import { useQuery } from "@tanstack/react-query";
 import { ProjectItem } from "../../shared";
 import { AcrossChainsCard } from "./AcrossChainsCard";
@@ -7,7 +8,6 @@ import { BridgesCard } from "./BridgesCard";
 import { GossipCard } from "./GossipCard";
 import { chainProjectsKey, projectTokenSymbol, toChainProjects } from "./lib";
 import { QueuedMovementsCard } from "./QueuedMovementsCard";
-import { PERSIST } from "@/lib/query-persist";
 
 /**
  * Owners → Settlement: the project's cross-chain accounting surface — per-chain

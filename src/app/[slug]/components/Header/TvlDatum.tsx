@@ -2,6 +2,7 @@
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Project } from "@/lib/bendystraw/types";
+import { PERSIST } from "@/lib/query-persist";
 import { formatTokenAmount } from "@/lib/token";
 import {
   getJBContractAddress,
@@ -18,7 +19,6 @@ import { useQuery } from "@tanstack/react-query";
 import type { Address, PublicClient } from "viem";
 import { useConfig } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
-import { PERSIST } from "@/lib/query-persist";
 
 type TreasuryRow = {
   chainId: JBChainId;

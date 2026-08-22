@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { describe, expect, it } from "vitest";
 
 import {
   fetchAmmPresence,
@@ -73,9 +73,7 @@ describe("fetchAmmReferences", () => {
   });
 
   it("keeps the state when a reference quote fails", async () => {
-    const presence = [
-      { chainId: 8453 as JBChainId, projectId: 3n, hook: HOOK, pool: fakePool },
-    ];
+    const presence = [{ chainId: 8453 as JBChainId, projectId: 3n, hook: HOOK, pool: fakePool }];
     const states = await fetchAmmReferences(presence, async () => {
       throw new Error("no feed");
     });

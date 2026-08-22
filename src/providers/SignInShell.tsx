@@ -1,11 +1,11 @@
 "use client";
 
-import type { TOAuthMethod } from "@getpara/web-sdk";
-import { useConnectors } from "wagmi";
 import { BrandMark, WalletFallbackMark } from "@/components/BrandMarks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { offerableWallets } from "@/lib/wallet-list";
+import type { TOAuthMethod } from "@getpara/web-sdk";
+import { useConnectors } from "wagmi";
 
 /** Kept in step with the sheet's own list. */
 const OAUTH_METHODS: { method: TOAuthMethod; label: string }[] = [

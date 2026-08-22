@@ -1,12 +1,12 @@
 "use client";
 
+import { PERSIST } from "@/lib/query-persist";
 import { useQuery } from "@tanstack/react-query";
 import { ProjectItem } from "../../shared";
 import { chainProjectsKey, projectTokenSymbol, toChainProjects } from "../settlement/lib";
 import { AmmCard } from "./AmmCard";
 import { MarketPriceChart } from "./MarketPriceChart";
 import { SplitHookCard } from "./SplitHookCard";
-import { PERSIST } from "@/lib/query-persist";
 
 /**
  * Owners → Market: the project's buyback-hook Uniswap V4 pool per chain, plus

@@ -3,6 +3,7 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import {
   Table,
   TableBody,
@@ -17,6 +18,7 @@ import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { currentOutstandingLoanFee } from "@/lib/loanFees";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { commaNumber } from "@/lib/number";
+import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 import { accountingDecimalsOf, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
@@ -27,8 +29,6 @@ import { LoanDetailsTable } from "../../Value/LoansDetailsTable";
 import { ReallocateDialog } from "../../Value/ReallocateDialog";
 import { RepayDialog } from "../../Value/RepayDialog";
 import { ProjectItem } from "../shared";
-import { ConceptTerm } from "@/components/ui/ConceptTerm";
-import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 
 function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; tokenSymbol: string }) {
   const { data, isLoading, isError } = useCompleteLoans(
@@ -72,14 +72,11 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
                 {rows.map((loan) => {
                   const project = projects.find(
                     (candidate) =>
-                      candidate.chainId === loan.chainId &&
-                      candidate.projectId === loan.projectId,
+                      candidate.chainId === loan.chainId && candidate.projectId === loan.projectId,
                   );
                   const knownSymbol = getTokenSymbolFromAddress(loan.token);
                   const sourceSymbol =
-                    knownSymbol === "TOKEN"
-                      ? project?.tokenSymbol || "TOKEN"
-                      : knownSymbol;
+                    knownSymbol === "TOKEN" ? project?.tokenSymbol || "TOKEN" : knownSymbol;
                   const sourceDecimals = accountingDecimalsOf({
                     token: loan.token,
                     decimals: project?.decimals,
@@ -98,11 +95,7 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
                         <ChainLogo chainId={loan.chainId as JBChainId} standalone />
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
-                        <EthereumAddress
-                          address={loan.owner as `0x${string}`}
-                          short
-                          withEnsName
-                        />
+                        <EthereumAddress address={loan.owner as `0x${string}`} short withEnsName />
                       </TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums">
                         {commaNumber(formatUnits(BigInt(loan.borrowAmount), sourceDecimals))}{" "}

@@ -6,6 +6,7 @@ import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { toast } from "@/components/ui/use-toast";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import {
   buildV6ClaimTxFromRow,
@@ -29,7 +30,6 @@ import {
   tokenSymbolOf,
   viemChainOf,
 } from "./lib";
-import { PERSIST } from "@/lib/query-persist";
 
 type Filter = "all" | "pending" | "claimable";
 
