@@ -9,7 +9,6 @@ const buildNames = [
 const baseEnvironment = {
   ...process.env,
   ...Object.fromEntries(buildNames.map((name) => [name, "https://service.example"])),
-  NEXT_PUBLIC_DWELLIR_API_KEY: "dwellir-browser-key",
   NEXT_PUBLIC_PARA_API_KEY: "public-para-key",
   NEXT_PUBLIC_PARA_ENV: "PROD",
   NEXT_PUBLIC_VERSION: "development",
@@ -44,7 +43,6 @@ expectStatus(
   run("build", { NEXT_PUBLIC_BENDYSTRAW_URL: "http://bendystraw.example" }),
   1,
 );
-expectStatus("malformed Dwellir key", run("build", { NEXT_PUBLIC_DWELLIR_API_KEY: "bad/key" }), 1);
 expectStatus("invalid Para environment", run("build", { NEXT_PUBLIC_PARA_ENV: "STAGING" }), 1);
 expectStatus(
   "production origin with production Para",
@@ -77,6 +75,4 @@ expectStatus(
 );
 expectStatus("runtime has no app-owned secrets", run("runtime"), 0);
 
-console.log(
-  "Environment validation fixtures passed (HTTPS, Dwellir, Para, and no runtime secrets).",
-);
+console.log("Environment validation fixtures passed (HTTPS, Para, and no runtime secrets).");

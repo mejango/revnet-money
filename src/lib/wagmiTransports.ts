@@ -10,16 +10,7 @@ import {
 } from "@/lib/chains";
 import { cache } from "react";
 import { createPublicClient, PublicClient } from "viem";
-import { fallback, http, type Transport } from "wagmi";
-import { getDwellirRpcUrl } from "./dwellir";
-
-function rpcTransport(chainId: number): Transport {
-  const url = getDwellirRpcUrl(chainId);
-
-  // Production builds validate the shared Dwellir key before Next compiles
-  // this module. The default keeps isolated unit imports usable without env.
-  return fallback(url ? [http(url)] : [http()]);
-}
+import { jbCenterRpcTransport } from "./jbcenter-rpc";
 
 export const SUPPORTED_CHAINS = [
   mainnet,
@@ -33,14 +24,14 @@ export const SUPPORTED_CHAINS = [
 ] as const;
 
 export const transports = {
-  [sepolia.id]: rpcTransport(sepolia.id),
-  [optimismSepolia.id]: rpcTransport(optimismSepolia.id),
-  [baseSepolia.id]: rpcTransport(baseSepolia.id),
-  [arbitrumSepolia.id]: rpcTransport(arbitrumSepolia.id),
-  [mainnet.id]: rpcTransport(mainnet.id),
-  [optimism.id]: rpcTransport(optimism.id),
-  [base.id]: rpcTransport(base.id),
-  [arbitrum.id]: rpcTransport(arbitrum.id),
+  [sepolia.id]: jbCenterRpcTransport(sepolia.id),
+  [optimismSepolia.id]: jbCenterRpcTransport(optimismSepolia.id),
+  [baseSepolia.id]: jbCenterRpcTransport(baseSepolia.id),
+  [arbitrumSepolia.id]: jbCenterRpcTransport(arbitrumSepolia.id),
+  [mainnet.id]: jbCenterRpcTransport(mainnet.id),
+  [optimism.id]: jbCenterRpcTransport(optimism.id),
+  [base.id]: jbCenterRpcTransport(base.id),
+  [arbitrum.id]: jbCenterRpcTransport(arbitrum.id),
 };
 
 export const getViemPublicClient = cache((chainId: keyof typeof transports) => {

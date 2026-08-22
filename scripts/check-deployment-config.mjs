@@ -190,7 +190,6 @@ for (const file of workflowFiles) {
 for (const name of [
   "NEXT_PUBLIC_SITE_URL",
   "NEXT_PUBLIC_VERSION",
-  "NEXT_PUBLIC_DWELLIR_API_KEY",
   "NEXT_PUBLIC_PARA_API_KEY",
   "NEXT_PUBLIC_PARA_ENV",
 ]) {
