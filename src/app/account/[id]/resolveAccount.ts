@@ -1,9 +1,9 @@
 import "server-only";
 
 import { mainnet } from "@/lib/chains";
-import { getDwellirRpcUrl } from "@/lib/dwellir";
+import { jbCenterRpcTransport } from "@/lib/jbcenter-rpc";
 import { cache } from "react";
-import { createPublicClient, getAddress, http, isAddress, type Address } from "viem";
+import { createPublicClient, getAddress, isAddress, type Address } from "viem";
 import { normalize } from "viem/ens";
 
 /**
@@ -25,10 +25,9 @@ export const resolveAccount = cache(
 
     // Forward-resolve on the configured mainnet transport, mirroring
     // useEnsName's onchain-only policy.
-    const rpcUrl = getDwellirRpcUrl(mainnet.id);
     const client = createPublicClient({
       chain: mainnet,
-      transport: rpcUrl ? http(rpcUrl) : http(),
+      transport: jbCenterRpcTransport(mainnet.id),
     });
     const address = await client.getEnsAddress({ name }).catch(() => null);
     return address ? { address, ensName: name } : null;

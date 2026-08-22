@@ -17,8 +17,7 @@ export const JB_PERMISSIONS_DEPLOYMENT_BLOCKS: Readonly<Record<number, bigint>> 
 export const MAX_OPERATOR_HISTORY_REQUESTS = 32;
 export const MAX_OPERATOR_HISTORY_LOGS_PER_WINDOW = 256;
 export const MAX_OPERATOR_HISTORY_CANDIDATES = 64;
-const INITIAL_OPERATOR_HISTORY_WINDOW = 250_000n;
-const MAX_OPERATOR_HISTORY_WINDOW = 5_000_000n;
+const OPERATOR_HISTORY_WINDOW = 50_000n;
 export const operatorPermissionsSetEvent = {
   type: "event",
   name: "OperatorPermissionsSet",
@@ -108,7 +107,7 @@ export async function findRevnetOperatorFromPermissionHistory({
 
   const seen = new Set<string>();
   let newestBlock = throughBlock;
-  let windowSize = INITIAL_OPERATOR_HISTORY_WINDOW;
+  let windowSize = OPERATOR_HISTORY_WINDOW;
   let requests = 0;
   let candidates = 0;
 
@@ -167,12 +166,7 @@ export async function findRevnetOperatorFromPermissionHistory({
 
     if (oldestBlock === deploymentBlock) return null;
     newestBlock = oldestBlock - 1n;
-    windowSize =
-      windowSize < MAX_OPERATOR_HISTORY_WINDOW
-        ? windowSize * 2n > MAX_OPERATOR_HISTORY_WINDOW
-          ? MAX_OPERATOR_HISTORY_WINDOW
-          : windowSize * 2n
-        : MAX_OPERATOR_HISTORY_WINDOW;
+    windowSize = OPERATOR_HISTORY_WINDOW;
   }
 
   // Reaching a request/result/candidate budget is not evidence of authority.

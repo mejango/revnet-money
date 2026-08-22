@@ -12,7 +12,6 @@ const deterministicEnvironment = {
   NEXT_PUBLIC_SITE_URL: appOrigin,
   NEXT_PUBLIC_BENDYSTRAW_URL: fixtureOrigin,
   NEXT_PUBLIC_DETERMINISTIC_BROWSER: "true",
-  NEXT_PUBLIC_DWELLIR_API_KEY: "deterministic-dwellir-key",
   NEXT_PUBLIC_PARA_API_KEY: "deterministic-browser-key",
   NEXT_PUBLIC_PARA_ENV: "BETA",
   NEXT_PUBLIC_RPC_FIXTURE_URL: `${fixtureOrigin}/rpc`,

@@ -10,10 +10,10 @@ back by digest.
 Use the repository `railway.json` for both Railway services and keep branch
 promotion identical across the webclients:
 
-| Git branch | Railway environment | Public origin |
-| --- | --- | --- |
-| `staging` | staging | `https://staging.revnet.money` |
-| `main` | production | `https://revnet.money` |
+| Git branch | Railway environment | Public origin                  |
+| ---------- | ------------------- | ------------------------------ |
+| `staging`  | staging             | `https://staging.revnet.money` |
+| `main`     | production          | `https://revnet.money`         |
 
 Connect the staging service to `staging` and the production service to `main`,
 enable automatic deploys only after CI succeeds, and disable overlap so an
@@ -46,10 +46,6 @@ Build-time values are compiled into JavaScript and are public:
   `CDP`, `MERCURYO`). It must be enabled in the Para dashboard to work.
 - `NEXT_PUBLIC_PARA_ENV`: one of `DEV`, `SANDBOX`, `BETA`, or `PROD`; use
   `PROD` for the production application.
-- `NEXT_PUBLIC_DWELLIR_API_KEY`: a dedicated browser-visible Dwellir key used
-  to derive the Ethereum, Optimism, Base, Arbitrum, and Sepolia RPC endpoints.
-  Apply strict daily/monthly quotas; IP allowlisting is incompatible with
-  browser-originated requests.
 - `NEXT_PUBLIC_VERSION`: optional non-Railway build override for the immutable
   Git commit SHA reported by `/api/healthz`; Railway derives it automatically.
 
@@ -58,14 +54,15 @@ dependency-free and returns `cache-control: no-store`; external RPC,
 Bendystraw, or Juicebox Center health must be monitored separately so a
 third-party outage does not cause an orchestrator restart loop.
 
-## IPFS safety
+## Juicebox Center safety
 
-Revnet Money is a credential-free Juicebox Center browser client. It imports
+Revnet Money is a credential-free Juicebox Center client. It imports
 `@bananapus/nana-sdk-core/jbcenter`, calls `pinJson`, `pinImage`, and `pinMedia`
 directly from the browser, and reads immutable content through
-`https://juicebox.center/ipfs/:cid`. The browser supplies the production
-`Origin`; Center owns origin policy, quotas, upload limits, provider
-credentials, and redundant pinning.
+`https://juicebox.center/ipfs/:cid`. Read-only RPC also uses the SDK's
+EIP-1193 provider. Browsers supply the production `Origin`; server-rendered
+reads set that same fixed origin. Center owns origin policy, quotas, upload and
+RPC limits, provider credentials, and redundant pinning.
 
 Do not add a Center API key to `NEXT_PUBLIC_*`, reintroduce provider secrets, or
 proxy these requests through a webclient API route. Server-side clients may use
@@ -105,7 +102,6 @@ docker build \
   --build-arg NEXT_PUBLIC_PARA_ENV \
   --build-arg NEXT_PUBLIC_PARA_ONRAMP_PROVIDER \
   --build-arg NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID \
-  --build-arg NEXT_PUBLIC_DWELLIR_API_KEY \
   --build-arg NEXT_PUBLIC_VERSION \
   --tag revnet-money:local .
 ```

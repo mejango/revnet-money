@@ -4,7 +4,6 @@ const BUILD_VALUES = {
   NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL: "url",
   NEXT_PUBLIC_PARA_API_KEY: "para-key",
   NEXT_PUBLIC_PARA_ENV: "para-env",
-  NEXT_PUBLIC_DWELLIR_API_KEY: "public-key",
   NEXT_PUBLIC_VERSION: "revision",
 };
 
@@ -30,9 +29,6 @@ function validate(name, kind) {
   }
   if (kind === "para-key" && value.length < 8) {
     return `${name} must be at least 8 characters`;
-  }
-  if (kind === "public-key" && !/^[A-Za-z\d_-]{8,128}$/u.test(value)) {
-    return `${name} must be an 8-128 character URL-safe API key`;
   }
   if (kind === "revision" && value.length < 7) {
     return `${name} must be at least 7 characters`;
