@@ -87,6 +87,12 @@ module.exports = {
         port: "",
         pathname: "/avatar/**",
       },
+      {
+        protocol: "https",
+        hostname: "juicebox.center",
+        port: "",
+        pathname: "/ipfs/**",
+      },
     ],
     unoptimized: false,
   },

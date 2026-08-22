@@ -69,7 +69,7 @@ describe("untrusted project content", () => {
     expect(screen.getByText("bold").tagName).toBe("STRONG");
     const images = [...container.querySelectorAll("img")];
     expect(images.map((image) => image.getAttribute("src"))).toEqual([
-      `/api/ipfs/${cid}`,
+      `https://juicebox.center/ipfs/${cid}`,
       "https://example.com/a.png",
     ]);
     expect(images.map((image) => image.getAttribute("alt"))).toEqual(["pinned", "hot"]);

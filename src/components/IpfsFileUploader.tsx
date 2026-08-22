@@ -1,31 +1,15 @@
 import { IpfsImage } from "@/components/IpfsImage";
 import { ipfsUri } from "@/lib/ipfs";
-import { isIpfsCid } from "@/lib/ipfs-cid";
+import { JBCENTER_MAX_IMAGE_BYTES, jbCenterIpfs } from "@/lib/jbcenter-ipfs";
 import { useMutation } from "@tanstack/react-query";
 import { twMerge } from "tailwind-merge";
 
-type IpfsPinResponse = {
-  Hash: string;
-};
-
-export const pinFile = async (file: File | Blob | string, options?: { signal?: AbortSignal }) => {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const res = await fetch("/api/ipfs/pinFile", {
-    method: "POST",
-    body: formData,
-    signal: options?.signal,
-    // Note: Don't set Content-Type header - fetch will set it automatically with boundary for FormData
-  });
-
-  if (!res.ok) {
-    throw new Error(`HTTP error! status: ${res.status}`);
+export const pinFile = async (file: File) => {
+  if (file.size > JBCENTER_MAX_IMAGE_BYTES) {
+    throw new Error("Images must be 25 MB or smaller.");
   }
-
-  const data = (await res.json()) as Partial<IpfsPinResponse>;
-  if (!isIpfsCid(data.Hash)) throw new Error("IPFS provider returned an invalid CID");
-  return { Hash: data.Hash };
+  const pin = await jbCenterIpfs.pinImage(file);
+  return { Hash: pin.cid };
 };
 
 export function IpfsImageUploader({

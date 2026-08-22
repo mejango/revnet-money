@@ -8,10 +8,6 @@ const BUILD_VALUES = {
   NEXT_PUBLIC_VERSION: "revision",
 };
 
-const RUNTIME_VALUES = {
-  IPFS_PINNING_ENABLED: "boolean",
-  IPFS_PINNING_EDGE_PROTECTED: "boolean",
-};
 const PRODUCTION_SITE_ORIGIN = "https://revnet.money";
 
 function validUrl(value) {
@@ -32,13 +28,7 @@ function validate(name, kind) {
   if (kind === "url" && !validUrl(value)) {
     return `${name} must use HTTPS (HTTP is allowed only for loopback development)`;
   }
-  if (kind === "boolean" && value !== "true" && value !== "false") {
-    return `${name} must be either true or false`;
-  }
   if (kind === "para-key" && value.length < 8) {
-    return `${name} must be at least 8 characters`;
-  }
-  if (kind === "provider-credential" && value.length < 8) {
     return `${name} must be at least 8 characters`;
   }
   if (kind === "public-key" && !/^[A-Za-z\d_-]{8,128}$/u.test(value)) {
@@ -50,9 +40,6 @@ function validate(name, kind) {
   if (kind === "para-env" && !["DEV", "SANDBOX", "BETA", "PROD"].includes(value)) {
     return `${name} must be DEV, SANDBOX, BETA, or PROD`;
   }
-  if (kind === "secret" && value.length < 32) {
-    return `${name} must be at least 32 characters`;
-  }
   return null;
 }
 
@@ -62,25 +49,9 @@ if (phase !== "build" && phase !== "runtime") {
   process.exit(2);
 }
 
-const specification = phase === "build" ? BUILD_VALUES : RUNTIME_VALUES;
+const specification = phase === "build" ? BUILD_VALUES : {};
 const entries = Object.entries(specification);
-const pinningEnabled = phase === "runtime" && process.env.IPFS_PINNING_ENABLED === "true";
-const edgeProtected = process.env.IPFS_PINNING_EDGE_PROTECTED === "true";
-if (pinningEnabled) {
-  entries.push(
-    ["FILEBASE_IPFS_RPC_TOKEN", "provider-credential"],
-    ["PINATA_JWT", "provider-credential"],
-  );
-  // The token is the authorization in edge-protected mode, and meaningless without an
-  // edge: first-party deployments budget in the app instead (see DEPLOYMENT.md).
-  if (edgeProtected) entries.push(["IPFS_PINNING_INGRESS_TOKEN", "secret"]);
-}
 const errors = entries.map(([name, kind]) => validate(name, kind)).filter(Boolean);
-if (pinningEnabled && !edgeProtected && process.env.IPFS_PINNING_INGRESS_TOKEN) {
-  errors.push(
-    "IPFS_PINNING_INGRESS_TOKEN is set while IPFS_PINNING_EDGE_PROTECTED is false: the app would ignore the token and budget callers itself",
-  );
-}
 if (phase === "build" && process.env.NEXT_PUBLIC_DETERMINISTIC_BROWSER === "true") {
   errors.push("NEXT_PUBLIC_DETERMINISTIC_BROWSER cannot be enabled in a deployment build");
 }

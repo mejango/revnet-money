@@ -1,36 +1,19 @@
-import { isIpfsCid } from "@/lib/ipfs-cid";
+import { JBCENTER_MAX_MEDIA_BYTES, jbCenterIpfs } from "@/lib/jbcenter-ipfs";
 import { JBProjectMetadata } from "@bananapus/nana-sdk-core";
 
 export async function pinProjectMetadata(metadata: JBProjectMetadata) {
   return pinJsonMetadata(metadata as unknown as Record<string, unknown>);
 }
 
-/** Pin bounded metadata JSON through the app's redundant IPFS pinning route. */
+/** Pin metadata directly through Juicebox Center's trusted browser API. */
 export async function pinJsonMetadata(metadata: Record<string, unknown>) {
-  const response = await fetch("/api/ipfs/pinJson", {
-    method: "post",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(metadata),
-  });
-  if (!response.ok) throw new Error(`Metadata pinning failed (${response.status})`);
-  const { Hash } = (await response.json()) as { Hash?: unknown };
-  if (!isIpfsCid(Hash)) throw new Error("Metadata pinning returned an invalid CID");
-
-  return Hash;
+  return (await jbCenterIpfs.pinJson(metadata)).cid;
 }
 
-/** Pin item media through this app's own redundant pinning route. */
+/** Pin item media directly through Juicebox Center's trusted browser API. */
 export async function pinMediaFile(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch("/api/ipfs/pinMedia", {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) throw new Error(`Media pinning failed (${response.status})`);
-  const { Hash } = (await response.json()) as { Hash?: unknown };
-  if (!isIpfsCid(Hash)) throw new Error("Media pinning returned an invalid CID");
-
-  return Hash;
+  if (file.size > JBCENTER_MAX_MEDIA_BYTES) {
+    throw new Error("Media must be 500 MB or smaller.");
+  }
+  return (await jbCenterIpfs.pinMedia(file)).cid;
 }

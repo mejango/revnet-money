@@ -56,12 +56,14 @@ describe("shop tier media", () => {
       }),
     ).resolves.toMatchObject({
       name: "Banny shop item",
-      image: `/api/ipfs/${CID_V0}/item.png`,
+      image: `https://juicebox.center/ipfs/${CID_V0}/item.png`,
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(ipfsUriToAppUrl(candidates![0]));
-    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/^\/api\/ipfs\/(?:Qm|bafy)/u);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
+      /^https:\/\/juicebox\.center\/ipfs\/(?:Qm|bafy)/u,
+    );
   });
 
   it("uses a tier's encoded CID directly when it resolves to artwork", async () => {
@@ -81,7 +83,7 @@ describe("shop tier media", () => {
         encodedIpfsUri,
       }),
     ).resolves.toMatchObject({
-      image: `/api/ipfs/${CID_V0}`,
+      image: `https://juicebox.center/ipfs/${CID_V0}`,
       mediaType: "image/svg+xml",
     });
   });

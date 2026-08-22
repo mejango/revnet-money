@@ -90,7 +90,7 @@ export function AddItemsModal({
 
   const selectMedia = (index: number, file: File | null) => {
     if (file && file.size > MAX_MEDIA_BYTES) {
-      setError("Media must be 25 MB or smaller.");
+      setError("Media must be 500 MB or smaller.");
       return;
     }
     const previous = items[index]?.mediaPreview;

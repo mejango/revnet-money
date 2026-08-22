@@ -37,18 +37,6 @@ export default defineConfig({
           functions: 100,
           lines: 69,
         },
-        "src/app/api/ipfs/[...path]/route.ts": {
-          statements: 84,
-          branches: 68,
-          functions: 100,
-          lines: 84,
-        },
-        "src/app/api/ipfs/pinJson/route.ts": {
-          statements: 84,
-          branches: 78,
-          functions: 100,
-          lines: 89,
-        },
         "src/hooks/useAllowance.ts": {
           statements: 94,
           branches: 85,

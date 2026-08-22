@@ -63,7 +63,7 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
   };
   const selectMedia = (index: number, file: File | null) => {
     if (file && file.size > MAX_MEDIA_BYTES) {
-      setMediaError("Media must be 25 MB or smaller.");
+      setMediaError("Media must be 500 MB or smaller.");
       return;
     }
     setMediaError(null);

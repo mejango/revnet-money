@@ -87,7 +87,7 @@ export function routerPayRouteWorks(
 export { parseTierMetadataJson, TIER_UNLIMITED_SUPPLY };
 export type TierDisplayMetadata = TierMetadata;
 
-const APP_IPFS_GATEWAY = "/api/ipfs/";
+const APP_IPFS_GATEWAY = "https://juicebox.center/ipfs/";
 
 /**
  * The one tier-media resolution chain (shop tab AND pay strip): pick the
@@ -102,7 +102,7 @@ export function tierDisplayMetadata(json: Record<string, unknown>): TierDisplayM
  * Make a tier media URL loadable from the browser. IPFS-addressed URLs —
  * ipfs:// URIs AND ones hot-linked to somebody else's gateway host (Banny
  * resolver SVGs point at bannyverse.infura-ipfs.io) — are re-routed through
- * the app's open gateway: the CID path is immutable, so it serves the same
+ * Juicebox Center's open gateway: the CID path is immutable, so it serves the same
  * bytes without depending on a third-party host staying up (juicy-vision/
  * website parity; public gateways 504 on cold DHT lookups for these CIDs).
  */
