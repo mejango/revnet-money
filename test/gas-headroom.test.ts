@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { gasWithHeadroom } from "@/lib/gas";
+import { describe, expect, it } from "vitest";
 
 describe("gasWithHeadroom", () => {
   it("sets an explicit 2x limit without rounding loss", () => {

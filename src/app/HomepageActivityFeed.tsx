@@ -60,9 +60,7 @@ function combinedDescription(event: HomepageActivity, symbol: string): string {
           (entry) => !(entry.type === "in" && (!entry.tokenCount || entry.tokenCount === "0")),
         )
       : entries;
-  const fragments = (visible.length ? visible : entries).map((entry) =>
-    description(entry, symbol),
-  );
+  const fragments = (visible.length ? visible : entries).map((entry) => description(entry, symbol));
   if (fragments.length === 1) return fragments[0];
   if (fragments.length === 2) return `${fragments[0]} and ${fragments[1]}`;
   return `${fragments.slice(0, -1).join(", ")}, and ${fragments[fragments.length - 1]}`;

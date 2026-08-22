@@ -89,10 +89,8 @@ export async function GET(req: Request) {
   // other ERC-20) context has no ETH rate here, and multiplying by one would invent
   // a number; the badge reports the token amount alone in that case.
   const isNativeTreasury =
-    accountingTokens.size === 1 &&
-    [...accountingTokens][0] === NATIVE_TOKEN.toLowerCase();
-  const denomination =
-    accountingSymbols.size === 1 ? [...accountingSymbols][0] : "tokens";
+    accountingTokens.size === 1 && [...accountingTokens][0] === NATIVE_TOKEN.toLowerCase();
+  const denomination = accountingSymbols.size === 1 ? [...accountingSymbols][0] : "tokens";
 
   // This badge is embedded off-site, so a price outage must not publish a number. Null here
   // falls through to the token-amount label below — the same path a non-native treasury takes

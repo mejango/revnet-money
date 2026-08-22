@@ -62,7 +62,9 @@ vi.mock("@/lib/nana/suckers", () => ({
   // `effectiveProjectId` fallback resolves to the route id — the loan row's own
   // projectId must still win for every per-loan quote.
   useSuckersUserTokenBalance: () => ({
-    data: [{ chainId: 1, projectId: Number(ROUTE_PROJECT_ID), balance: { value: 5n * 10n ** 18n } }],
+    data: [
+      { chainId: 1, projectId: Number(ROUTE_PROJECT_ID), balance: { value: 5n * 10n ** 18n } },
+    ],
   }),
 }));
 

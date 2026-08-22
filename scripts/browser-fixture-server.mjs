@@ -182,6 +182,7 @@ const addresses = {
   routerRegistry: addressOf(JBRouterTerminalContracts.JBRouterTerminalRegistry),
   routerTerminal: addressOf(JBRouterTerminalContracts.JBRouterTerminal),
 };
+allowedEnsReverseAddresses.add(addresses.revOwner.toLowerCase());
 
 const ruleset = {
   cycleNumber: 1n,
@@ -298,6 +299,7 @@ function requireFixture(condition, message) {
 
 const allowedGraphqlOperations = new Set([
   "ActivityEvents",
+  "AddToBalanceInflows",
   "AutoIssueEvents",
   "CashOutTaxSnapshots",
   "HasPermission",
@@ -315,6 +317,7 @@ const allowedGraphqlOperations = new Set([
   "ProjectCreateEvent",
   "ProjectErc20Tickers",
   "ProjectOperator",
+  "ProjectMoments",
   "ProjectWithPermissions",
   "Projects",
   "SuckerGroup",
@@ -347,6 +350,15 @@ function requireExactVariables(operation, actual, expected) {
 }
 
 const graphqlHandlers = {
+  AddToBalanceInflows(variables) {
+    requireExactVariables("AddToBalanceInflows", variables, {});
+    return {
+      addToBalanceEvents: {
+        items: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    };
+  },
   IndexedProjects(variables) {
     // 60/trendingScore is the homepage's discovery query; 32/250 belong to search and
     // /discover. All three answer with the same deterministic project.
@@ -387,6 +399,15 @@ const graphqlHandlers = {
   ProjectOperator(variables) {
     requireExactVariables("ProjectOperator", variables, { chainId, projectId, version: 6 });
     return { permissionHolders: { items: [] } };
+  },
+  ProjectMoments(variables) {
+    requireExactVariables("ProjectMoments", variables, { projectId, chainId, version: 6 });
+    return {
+      projectMoments: {
+        items: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    };
   },
   ProjectWithPermissions(variables) {
     requireExactVariables("ProjectWithPermissions", variables, {
@@ -620,6 +641,13 @@ const graphqlHandlers = {
     const exactRevOwnerAccount = {
       AND: [exactProjects, { account: revOwnerAccount }],
     };
+    const exactWildcardRevOwnerAccount = {
+      OR: [
+        {
+          AND: [{ chainId }, { projectId: 0 }, { version: 6 }, { account: revOwnerAccount }],
+        },
+      ],
+    };
     const expected = [
       { where: exactProjects },
       { where: exactOperator },
@@ -636,6 +664,11 @@ const graphqlHandlers = {
       },
       {
         where: exactRevOwnerAccount,
+        limit: 250,
+        offset: 0,
+      },
+      {
+        where: exactWildcardRevOwnerAccount,
         limit: 250,
         offset: 0,
       },
@@ -663,6 +696,12 @@ const graphqlHandlers = {
         limit: 64,
         offset: 0,
       })
+    ) {
+      return { permissionHolders: { items: [], totalCount: 0 } };
+    }
+    if (
+      stableJson(variables) ===
+      stableJson({ where: exactWildcardRevOwnerAccount, limit: 250, offset: 0 })
     ) {
       return { permissionHolders: { items: [], totalCount: 0 } };
     }
@@ -1039,6 +1078,13 @@ registerCall({
   functionName: "pricePerUnitOf",
   address: addresses.prices,
   result: ([requestedProjectId, pricingCurrency, unitCurrency, decimals]) => {
+    if (requestedProjectId === 0n) {
+      requireFixture(
+        pricingCurrency === 2n && unitCurrency === 1n && decimals === 18n,
+        `default pricePerUnitOf quote=${pricingCurrency}:${unitCurrency}:${decimals}`,
+      );
+      return 3_000_000_000_000_000_000_000n;
+    }
     requireFixture(requestedProjectId === 1n, `pricePerUnitOf projectId=${requestedProjectId}`);
     requireFixture(
       pricingCurrency === 2n && [2n, 906_423_112n].includes(unitCurrency) && decimals === 18n,

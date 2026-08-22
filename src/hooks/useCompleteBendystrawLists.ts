@@ -42,8 +42,8 @@ import type {
   V6AutoIssueEventsQuery,
   V6StoredAutoIssuancesQuery,
 } from "@/lib/bendystraw/types";
-import { useQuery } from "@tanstack/react-query";
 import { PERSIST } from "@/lib/query-persist";
+import { useQuery } from "@tanstack/react-query";
 
 const PAGE_SIZE = 250;
 

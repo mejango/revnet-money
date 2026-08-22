@@ -3,10 +3,10 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { ArrowRightLeft as ArrowsRightLeftIcon } from "@/components/ui/icons";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { PERSIST } from "@/lib/query-persist";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { chainName, ChainProject, chainProjectsKey, fetchBridges, SuckerInfra } from "./lib";
-import { PERSIST } from "@/lib/query-persist";
 
 function InfraTag({ infra }: { infra: SuckerInfra }) {
   const styles =

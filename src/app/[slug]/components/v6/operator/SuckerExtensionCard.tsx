@@ -13,10 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError, useWriteContract } from "@/hooks/useReviewedWriteContract";
-import {
-  clearExtensionSalt,
-  saltForExtension,
-} from "@/lib/suckerExtensionSalt";
+import { clearExtensionSalt, saltForExtension } from "@/lib/suckerExtensionSalt";
 import { formatWalletError } from "@/lib/utils";
 import {
   JBChainId,

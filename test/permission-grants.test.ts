@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  aggregateGrants,
-} from "@/app/[slug]/components/v6/operator/PermissionsCard";
+import { aggregateGrants } from "@/app/[slug]/components/v6/operator/PermissionsCard";
 import type {
   ChainProjectRow,
   PermissionHolderRow,
@@ -55,10 +53,7 @@ describe("aggregateGrants", () => {
   // A wildcard grant reaches every project REVOwner holds, so it can't be folded into the project row.
   it("keeps wildcard grants separate from project-scoped ones for the same operator", () => {
     const grants = aggregateGrants(
-      [
-        holder(REV_OWNER, [24]),
-        holder(REV_OWNER, [1], { projectId: 0, wildcard: true }),
-      ],
+      [holder(REV_OWNER, [24]), holder(REV_OWNER, [1], { projectId: 0, wildcard: true })],
       ROWS,
     );
     expect(grants).toHaveLength(2);

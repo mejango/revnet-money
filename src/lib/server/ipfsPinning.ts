@@ -206,10 +206,7 @@ export function makePinFileHandler({
     const rawLength = req.headers.get("content-length");
     const declaredLength = Number(rawLength);
     if (!rawLength || !Number.isSafeInteger(declaredLength) || declaredLength <= 0) {
-      return Response.json(
-        { error: "a valid Content-Length header is required" },
-        { status: 411 },
-      );
+      return Response.json({ error: "a valid Content-Length header is required" }, { status: 411 });
     }
     if (declaredLength > maxBytes + 256 * 1024) {
       return Response.json({ error: `file too large (max ${sizeLabel})` }, { status: 413 });

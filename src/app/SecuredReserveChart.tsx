@@ -99,7 +99,8 @@ export function SecuredReserveChart({
                   <span key={chain.chainId} className="inline-flex items-center gap-1 tabular-nums">
                     <ChainLogo chainId={chain.chainId as JBChainId} width={11} height={11} />
                     <span className="sr-only">
-                      {JB_CHAINS[chain.chainId as JBChainId]?.name ?? "Chain " + chain.chainId}: {" "}
+                      {JB_CHAINS[chain.chainId as JBChainId]?.name ?? "Chain " + chain.chainId}
+                      :{" "}
                     </span>
                     <span className="text-zinc-700">{usd(chain.valueUsd)}</span>
                   </span>
@@ -115,71 +116,71 @@ export function SecuredReserveChart({
         <div className="min-w-0">
           <div className="relative">
             <svg
-            viewBox={`0 0 100 ${HEIGHT}`}
-            preserveAspectRatio="none"
-            className="h-24 w-full overflow-visible text-teal-600 outline-none focus-visible:ring-2 focus-visible:ring-teal-500 sm:h-28"
-            role="img"
-            tabIndex={0}
-            onFocus={() => setHoveredIndex(chart.plotted.length - 1)}
-            onBlur={() => setHoveredIndex(null)}
-            onKeyDown={moveSelection}
-            aria-label={ariaLabel}
-          >
-            <line
-              x1="0"
-              y1={HEIGHT - BOTTOM}
-              x2="100"
-              y2={HEIGHT - BOTTOM}
-              stroke="currentColor"
-              className="text-teal-100"
-              vectorEffect="non-scaling-stroke"
-            />
-            {chart.bars.map((bar, index) => (
-              <rect
-                key={`${bar.timestamp}-${index}`}
-                x={bar.x}
-                y={bar.y}
-                width={bar.width}
-                height={Math.max(HEIGHT - BOTTOM - bar.y, 0)}
-                rx="0.55"
-                fill="currentColor"
-                opacity={hoveredIndex === null ? 0.42 : hoveredIndex === index ? 0.92 : 0.2}
-                className="transition-opacity duration-150"
+              viewBox={`0 0 100 ${HEIGHT}`}
+              preserveAspectRatio="none"
+              className="h-24 w-full overflow-visible text-teal-600 outline-none focus-visible:ring-2 focus-visible:ring-teal-500 sm:h-28"
+              role="img"
+              tabIndex={0}
+              onFocus={() => setHoveredIndex(chart.plotted.length - 1)}
+              onBlur={() => setHoveredIndex(null)}
+              onKeyDown={moveSelection}
+              aria-label={ariaLabel}
+            >
+              <line
+                x1="0"
+                y1={HEIGHT - BOTTOM}
+                x2="100"
+                y2={HEIGHT - BOTTOM}
+                stroke="currentColor"
+                className="text-teal-100"
+                vectorEffect="non-scaling-stroke"
               />
-            ))}
-            {hovered && hoveredIndex !== null ? (
-              <>
-                <line
-                  x1={hovered.x}
-                  y1={TOP}
-                  x2={hovered.x}
-                  y2={HEIGHT - BOTTOM}
-                  stroke="currentColor"
-                  strokeDasharray="3 3"
-                  vectorEffect="non-scaling-stroke"
-                />
-                {/* The value marker, drawn as the bar's own cap. A CSS dot laid over the plot
-                    cannot match it: this viewBox is stretched (`preserveAspectRatio="none"`),
-                    so a bar's width in pixels depends on how wide the chart is rendered. */}
+              {chart.bars.map((bar, index) => (
                 <rect
-                  x={chart.bars[hoveredIndex].x}
-                  y={hovered.y}
-                  width={chart.bars[hoveredIndex].width}
-                  height={Math.min(2, Math.max(HEIGHT - BOTTOM - hovered.y, 0))}
+                  key={`${bar.timestamp}-${index}`}
+                  x={bar.x}
+                  y={bar.y}
+                  width={bar.width}
+                  height={Math.max(HEIGHT - BOTTOM - bar.y, 0)}
                   rx="0.55"
                   fill="currentColor"
+                  opacity={hoveredIndex === null ? 0.42 : hoveredIndex === index ? 0.92 : 0.2}
+                  className="transition-opacity duration-150"
                 />
-              </>
-            ) : null}
-            <rect
-              x="0"
-              y="0"
-              width="100"
-              height={HEIGHT}
-              fill="transparent"
-              onPointerMove={selectNearest}
-              onPointerLeave={() => setHoveredIndex(null)}
-            />
+              ))}
+              {hovered && hoveredIndex !== null ? (
+                <>
+                  <line
+                    x1={hovered.x}
+                    y1={TOP}
+                    x2={hovered.x}
+                    y2={HEIGHT - BOTTOM}
+                    stroke="currentColor"
+                    strokeDasharray="3 3"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  {/* The value marker, drawn as the bar's own cap. A CSS dot laid over the plot
+                    cannot match it: this viewBox is stretched (`preserveAspectRatio="none"`),
+                    so a bar's width in pixels depends on how wide the chart is rendered. */}
+                  <rect
+                    x={chart.bars[hoveredIndex].x}
+                    y={hovered.y}
+                    width={chart.bars[hoveredIndex].width}
+                    height={Math.min(2, Math.max(HEIGHT - BOTTOM - hovered.y, 0))}
+                    rx="0.55"
+                    fill="currentColor"
+                  />
+                </>
+              ) : null}
+              <rect
+                x="0"
+                y="0"
+                width="100"
+                height={HEIGHT}
+                fill="transparent"
+                onPointerMove={selectNearest}
+                onPointerLeave={() => setHoveredIndex(null)}
+              />
             </svg>
           </div>
           <div className="mt-1 flex justify-between text-[10px] tabular-nums text-zinc-400">

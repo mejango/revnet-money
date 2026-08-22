@@ -44,7 +44,10 @@ describe("wallet-action:bridge-prepare — protected bridge preparation", () => 
     expect(slippagePercentToBps("1")).toBe(100n);
     expect(slippagePercentToBps("0.25")).toBe(25n);
     expect(protectedOutputFloor(1_001n, 100n)).toBe(990n);
+    expect(() => slippagePercentToBps("1.234")).toThrow(/at most two decimal places/u);
     expect(() => slippagePercentToBps("5.01")).toThrow(/cannot exceed 5%/u);
+    expect(() => protectedOutputFloor(0n, 100n)).toThrow(/no backing/u);
+    expect(() => protectedOutputFloor(1_000n, 10_000n)).toThrow(/less than 100%/u);
     expect(() => protectedOutputFloor(1n, 100n)).toThrow(/rounds to zero/u);
   });
 
@@ -61,6 +64,16 @@ describe("wallet-action:bridge-prepare — protected bridge preparation", () => 
     expect(request.functionName).toBe("prepare");
     expect(request.args[0]).toBe(10n ** 18n);
     expect(request.args[2]).toBe(975_000n);
+    expect(() =>
+      buildProtectedBridgePrepareTx({
+        chainId: 1,
+        sucker: SUCKER,
+        projectTokenCount: 0n,
+        beneficiary: BENEFICIARY,
+        minTokensReclaimed: 975_000n,
+        token: TOKEN,
+      }),
+    ).toThrow(/include project tokens/u);
     expect(() =>
       buildProtectedBridgePrepareTx({
         chainId: 1,

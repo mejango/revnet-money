@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  rememberProjectNavigation,
-  type ProjectNavigationHint,
-} from "@/lib/project-navigation";
+import { rememberProjectNavigation, type ProjectNavigationHint } from "@/lib/project-navigation";
 import Link from "next/link";
 import type { ComponentProps } from "react";
 

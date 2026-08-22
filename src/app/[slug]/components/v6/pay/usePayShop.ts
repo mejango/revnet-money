@@ -12,12 +12,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { BASE_CURRENCY_ETH, BASE_CURRENCY_USD } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Address,
-  BaseError,
-  ContractFunctionRevertedError,
-  PublicClient,
-} from "viem";
+import { Address, BaseError, ContractFunctionRevertedError, PublicClient } from "viem";
 import { usePublicClient } from "wagmi";
 import { loadShopInventory } from "../shop/shopLib";
 

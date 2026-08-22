@@ -51,10 +51,7 @@ test("an open dialog inerts the page, stacks, and restores it on close", async (
   expect(await page.evaluate(probeReachability)).toEqual({ focusable: true, hitTestable: true });
 
   const dialog = page.getByRole("dialog");
-  await retryUntilVisible(
-    () => page.getByRole("button", { name: "Add stage" }).click(),
-    dialog,
-  );
+  await retryUntilVisible(() => page.getByRole("button", { name: "Add stage" }).click(), dialog);
 
   // The shell is the element itself, in the top layer, with a painted backdrop.
   expect(

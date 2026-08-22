@@ -1,6 +1,6 @@
-import { Skeleton, SkeletonLines, SkeletonTable } from "@/components/ui/skeleton";
 import { IpfsImage } from "@/components/IpfsImage";
 import { Revalidating } from "@/components/ui/Revalidating";
+import { Skeleton, SkeletonLines, SkeletonTable } from "@/components/ui/skeleton";
 import { type ProjectNavigationHint } from "@/lib/project-navigation";
 
 function ActivityRows({ rows = 5 }: { rows?: number }) {

@@ -24,8 +24,7 @@ const WHY_REVNET_POINTS = [
   },
   {
     lead: "Fund builders predictably.",
-    detail:
-      "A fixed share of newly issued tokens can support builders and contributors over time.",
+    detail: "A fixed share of newly issued tokens can support builders and contributors over time.",
   },
   {
     lead: "Lock in future terms from day one.",
@@ -61,8 +60,7 @@ const WHY_REVNET_POINTS = [
   },
   {
     lead: "Build on a shared standard.",
-    detail:
-      "Every revnet becomes easier to trust, integrate, and extend as the network grows.",
+    detail: "Every revnet becomes easier to trust, integrate, and extend as the network grows.",
   },
 ];
 

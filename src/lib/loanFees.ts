@@ -59,10 +59,7 @@ export function repayCeilingFor(principal: bigint, accruedSourceFee: bigint): bi
  * ceiling be scaled to a PARTIAL repay: the simulation takes the ceiling as an input, so
  * reading the amount back out of it is circular.
  */
-export function repayPrincipalFor(
-  loanAmount: bigint,
-  remainingBorrowCapacity: bigint,
-): bigint {
+export function repayPrincipalFor(loanAmount: bigint, remainingBorrowCapacity: bigint): bigint {
   if (remainingBorrowCapacity === 0n) return loanAmount;
   if (remainingBorrowCapacity >= loanAmount) return 0n;
   return loanAmount - remainingBorrowCapacity;

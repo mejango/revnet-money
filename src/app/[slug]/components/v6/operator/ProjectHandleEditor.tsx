@@ -135,9 +135,10 @@ function HandleProgressStep({
 // The canonical origin, not the browser's: the shown URL is the project's
 // public address, which shouldn't change when the operator browses via a
 // deployment-platform domain.
-const SITE_ORIGIN = (
-  process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002"
-).replace(/\/+$/u, "");
+const SITE_ORIGIN = (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002").replace(
+  /\/+$/u,
+  "",
+);
 
 function authorityStatusMessage(status: CrossChainHandleAuthorityStatus): string {
   switch (status) {

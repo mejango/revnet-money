@@ -24,11 +24,7 @@ const STORAGE_KEY = "revnet-sucker-extension-salt-v1";
 
 type SaltStore = Record<string, `0x${string}`>;
 
-function attemptKey(
-  sender: Address,
-  projectId: bigint | number,
-  targetChainId: number,
-): string {
+function attemptKey(sender: Address, projectId: bigint | number, targetChainId: number): string {
   return `${sender.toLowerCase()}:${projectId.toString()}:${targetChainId}`;
 }
 

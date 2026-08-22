@@ -1,7 +1,4 @@
-import {
-  formatProjectPreviewBalance,
-  projectPreviewSlogan,
-} from "@/lib/project-link-preview";
+import { formatProjectPreviewBalance, projectPreviewSlogan } from "@/lib/project-link-preview";
 import { describe, expect, it } from "vitest";
 
 describe("project link preview balance", () => {

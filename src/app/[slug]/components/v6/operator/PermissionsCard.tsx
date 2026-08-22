@@ -88,10 +88,15 @@ export function aggregateGrants(items: PermissionHolderRow[], rows: ChainProject
     const first = (grant.rows[0]?.permissions ?? []).map(Number).filter((id) => id > 0);
     // Wildcard grants carry projectId 0, so coverage is only meaningful per chain for them.
     const covered = new Set(
-      grant.rows.map((row) => (grant.wildcard ? String(row.chainId) : `${row.chainId}:${row.projectId}`)),
+      grant.rows.map((row) =>
+        grant.wildcard ? String(row.chainId) : `${row.chainId}:${row.projectId}`,
+      ),
     );
     grant.differs =
-      rows.some((row) => !covered.has(grant.wildcard ? String(row.chainId) : `${row.chainId}:${row.projectId}`)) ||
+      rows.some(
+        (row) =>
+          !covered.has(grant.wildcard ? String(row.chainId) : `${row.chainId}:${row.projectId}`),
+      ) ||
       grant.rows.some(
         (row) =>
           !samePermissionSet(
@@ -139,7 +144,10 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
       const key = owner.toLowerCase();
       seen.set(key, [...(seen.get(key) ?? []), row.chainId]);
     }
-    return [...seen.entries()].map(([address, chains]) => ({ address: address as Address, chains }));
+    return [...seen.entries()].map(([address, chains]) => ({
+      address: address as Address,
+      chains,
+    }));
   }, [rows]);
 
   return (
@@ -186,7 +194,10 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
         ) : (
           <div className="mt-3 divide-y divide-melon-200 bg-melon-50 px-4">
             {grants.map((grant) => (
-              <div key={`${grant.operator}:${grant.wildcard ? "wildcard" : "project"}`} className="py-4">
+              <div
+                key={`${grant.operator}:${grant.wildcard ? "wildcard" : "project"}`}
+                className="py-4"
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <EthereumAddress
                     address={grant.operator}

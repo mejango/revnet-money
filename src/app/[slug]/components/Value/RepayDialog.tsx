@@ -12,9 +12,9 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { repayCeilingFor, repayPrincipalFor } from "@/lib/loanFees";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
-import { repayCeilingFor, repayPrincipalFor } from "@/lib/loanFees";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -299,8 +299,6 @@ export function RepayDialog({
         : undefined,
     value: isNativeBase ? finalRepayAmount : 0n, // Only send native value for native-base projects
   });
-
-
 
   // ===== ALLOWANCE CHECKING =====
   // Check allowance for non-ETH base tokens
@@ -755,30 +753,32 @@ export function RepayDialog({
                           {collateralToReturn} {tokenSymbol}
                         </td>
                       </tr>
-                      {!isSimulating && !simulationError && amountToPayNow !== undefined && repayPrincipal !== undefined && (
-                        <>
-                          <tr>
-                            <td className="pr-4">Amount to pay now:</td>
-                            <td className="font-semibold text-right">
-                              {formatUnits(amountToPayNow, baseTokenDecimals)}{" "}
-                              {baseTokenSymbol}
-                              {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
-                                <span className="block text-xs font-normal text-zinc-500">
-                                  includes {formatUnits(feeForThisRepay, baseTokenDecimals)}{" "}
-                                  {baseTokenSymbol} source fee
-                                </span>
-                              ) : null}
-                            </td>
-                          </tr>
-                          <tr>
-                            <td className="pr-4">Amount rolled into new loan id:</td>
-                            <td className="font-semibold text-right">
-                              {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
-                              {baseTokenSymbol}
-                            </td>
-                          </tr>
-                        </>
-                      )}
+                      {!isSimulating &&
+                        !simulationError &&
+                        amountToPayNow !== undefined &&
+                        repayPrincipal !== undefined && (
+                          <>
+                            <tr>
+                              <td className="pr-4">Amount to pay now:</td>
+                              <td className="font-semibold text-right">
+                                {formatUnits(amountToPayNow, baseTokenDecimals)} {baseTokenSymbol}
+                                {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
+                                  <span className="block text-xs font-normal text-zinc-500">
+                                    includes {formatUnits(feeForThisRepay, baseTokenDecimals)}{" "}
+                                    {baseTokenSymbol} source fee
+                                  </span>
+                                ) : null}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="pr-4">Amount rolled into new loan id:</td>
+                              <td className="font-semibold text-right">
+                                {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
+                                {baseTokenSymbol}
+                              </td>
+                            </tr>
+                          </>
+                        )}
                     </tbody>
                   </table>
                 </div>

@@ -1,6 +1,4 @@
 import type {
-  AddToBalanceInflowsQuery,
-  AddToBalanceInflowsQueryVariables,
   AccountActivityEventsQuery,
   AccountActivityEventsQueryVariables,
   AccountPermissionHoldersQuery,
@@ -9,6 +7,8 @@ import type {
   AccountTokenBalancesQueryVariables,
   ActivityEventsQuery,
   ActivityEventsQueryVariables,
+  AddToBalanceInflowsQuery,
+  AddToBalanceInflowsQueryVariables,
   AllLoansQuery,
   AllLoansQueryVariables,
   AutoIssueEventsQuery,
@@ -35,16 +35,18 @@ import type {
   OwnedNftsQueryVariables,
   ParticipantsQuery,
   ParticipantsQueryVariables,
+  PayEventRatesQuery,
+  PayEventRatesQueryVariables,
   PermissionHoldersQuery,
   PermissionHoldersQueryVariables,
   ProjectAccountingContextQuery,
   ProjectAccountingContextQueryVariables,
   ProjectErc20TickersQuery,
   ProjectErc20TickersQueryVariables,
-  ProjectOperatorQuery,
-  ProjectOperatorQueryVariables,
   ProjectMomentsQuery,
   ProjectMomentsQueryVariables,
+  ProjectOperatorQuery,
+  ProjectOperatorQueryVariables,
   ProjectPayersQuery,
   ProjectPayersQueryVariables,
   ProjectQuery,
@@ -53,8 +55,6 @@ import type {
   ProjectsByOwnerQueryVariables,
   ProjectWithPermissionsQuery,
   ProjectWithPermissionsQueryVariables,
-  PayEventRatesQuery,
-  PayEventRatesQueryVariables,
   ShieldGroupQuery,
   ShieldGroupQueryVariables,
   ShieldProjectQuery,
@@ -283,10 +283,7 @@ export const ProjectErc20TickersOperation = operation<
 );
 /** Pay events carrying both the accounting amount and its USD valuation, for deriving the
  *  historical base-currency rate a price chart needs (see lib/baseCurrencyRate.ts). */
-export const PayEventRatesOperation = operation<
-  PayEventRatesQuery,
-  PayEventRatesQueryVariables
->(
+export const PayEventRatesOperation = operation<PayEventRatesQuery, PayEventRatesQueryVariables>(
   "pay-event-rates.v1",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
   hasRoot("payEvents", "items"),
@@ -363,10 +360,7 @@ export const AddToBalanceInflowsOperation = operation<
   variablesWith({}, { after: isOptionalString }),
   hasRoot("addToBalanceEvents", "items"),
 );
-export const ProjectMomentsOperation = operation<
-  ProjectMomentsQuery,
-  ProjectMomentsQueryVariables
->(
+export const ProjectMomentsOperation = operation<ProjectMomentsQuery, ProjectMomentsQueryVariables>(
   "project-moments.v1",
   variablesWith(
     { projectId: isNumber, chainId: isNumber, version: isNumber },
@@ -432,10 +426,7 @@ export const IndexedLpPositionsOperation = operation<
   IndexedLpPositionsQueryVariables
 >(
   "indexed-lp-positions.v1",
-  variablesWith(
-    { chainId: isNumber, poolId: isString },
-    { limit: positiveLimit, offset },
-  ),
+  variablesWith({ chainId: isNumber, poolId: isString }, { limit: positiveLimit, offset }),
   // Rows carry no projectId, so the shared identity guard does not apply: a
   // position is identified by its pool, which the query already pins.
   (value) => {

@@ -42,8 +42,7 @@ export function LiquidityRangePreview({
     { label: "Ceiling", value: ceiling ?? 0, color: "#1a8a8a" },
   ].filter((marker) => marker.value > 0);
   const stagger =
-    topMarkers.length === 2 &&
-    Math.abs(xFor(topMarkers[0].value) - xFor(topMarkers[1].value)) < 92;
+    topMarkers.length === 2 && Math.abs(xFor(topMarkers[0].value) - xFor(topMarkers[1].value)) < 92;
   const rows = stagger ? 2 : 1;
   const baseline = rows * 20 + 18;
   const height = baseline + 32;

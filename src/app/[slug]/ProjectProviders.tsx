@@ -7,7 +7,6 @@ import type { InitialProjectData, SuckerPair } from "@/lib/nana/types";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { PropsWithChildren } from "react";
 
-
 export function ProjectProviders(
   props: PropsWithChildren<{
     projectId: bigint;

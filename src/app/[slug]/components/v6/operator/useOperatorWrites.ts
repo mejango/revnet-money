@@ -8,8 +8,8 @@ import {
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { gasWithHeadroom } from "@/lib/gas";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { getAccount } from "wagmi/actions";
 import { Address, encodeFunctionData } from "viem";
+import { getAccount } from "wagmi/actions";
 import { ChainWrite, chainName, publicClientFor, runSequentialWrites } from "./operatorLib";
 
 export type OperatorWritesResult = {

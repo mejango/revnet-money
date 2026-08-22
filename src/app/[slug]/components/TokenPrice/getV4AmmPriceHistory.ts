@@ -1,9 +1,9 @@
+import { usdRateOf } from "@/lib/baseCurrencyRate";
 import {
   IndexedBuybackPoolsOperation,
   IndexedPoolSwapsOperation,
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import { usdRateOf } from "@/lib/baseCurrencyRate";
 import type { IndexedBuybackPoolsQuery, IndexedPoolSwapsQuery } from "@/lib/bendystraw/types";
 import { downsampleTimeSeries, JBChainId } from "@bananapus/nana-sdk-core";
 import { uniswapV4PriceFromSqrtPriceX96 } from "@bananapus/nana-sdk-core/v6";
@@ -66,9 +66,7 @@ export async function getV4AmmPriceHistory({
   } while (pools.length < poolTotalCount);
   const pool = poolId
     ? pools.find((item) => item.poolId.toLowerCase() === poolId.toLowerCase())
-    : pools.find(
-        (item) => item.terminalToken.toLowerCase() === terminalToken?.toLowerCase(),
-      );
+    : pools.find((item) => item.terminalToken.toLowerCase() === terminalToken?.toLowerCase());
   if (!pool) return { data: [], hasPool: false };
 
   const swaps: RawSwap[] = [];

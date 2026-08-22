@@ -1,12 +1,7 @@
 "use client";
 
 import { InformationCircle } from "@/components/ui/icons";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 /**
  * Qualifies DATA that is shown — an approximation, a sampling caveat, a stale read. Defining a
