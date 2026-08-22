@@ -18,10 +18,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
-      FILEBASE_IPFS_RPC_TOKEN: ci-filebase-token
-      PINATA_JWT: ci-pinata-jwt
-      IPFS_PINNING_ENABLED: "false"
-      IPFS_PINNING_EDGE_PROTECTED: "false"
       NODE_OPTIONS: --no-experimental-webstorage
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:4173
       NEXT_PUBLIC_BENDYSTRAW_URL: http://127.0.0.1:4174
@@ -207,10 +203,6 @@ jobs:
             --tmpfs /app/.next/cache:uid=1001,gid=1001 \
             --cap-drop ALL \
             --security-opt no-new-privileges \
-            --env FILEBASE_IPFS_RPC_TOKEN=ci-filebase-token \
-            --env PINATA_JWT=ci-pinata-jwt \
-            --env IPFS_PINNING_ENABLED=false \
-            --env IPFS_PINNING_EDGE_PROTECTED=false \
             --publish 127.0.0.1:3000:3000 \
             revnet-money:ci
 

@@ -1,4 +1,4 @@
-const WALLET_SAFE_GATEWAY = "https://ipfs.io";
+const WALLET_SAFE_GATEWAY = "https://juicebox.center";
 const SUBDOMAIN_IPFS_SUFFIXES = [
   ".ipfs.inbrowser.link",
   ".ipfs.dweb.link",

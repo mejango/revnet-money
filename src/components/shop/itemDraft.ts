@@ -3,6 +3,7 @@
 import { encodeIpfsCid, TIER_UNLIMITED_SUPPLY } from "@/app/[slug]/components/v6/shop/shopLib";
 import { pinJsonMetadata, pinMediaFile } from "@/app/create/helpers/pinProjectMetaData";
 import { cidFromIpfsUri } from "@/lib/ipfs";
+import { JBCENTER_MAX_MEDIA_BYTES } from "@/lib/jbcenter-ipfs";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
 import { Address, Hex, isAddress, parseUnits, zeroAddress } from "viem";
@@ -76,7 +77,7 @@ export function newDraftItem(): DraftItem {
 
 const MAX_UINT104 = (1n << 104n) - 1n;
 /** Pinning service ceiling; the editors refuse a larger file before upload. */
-export const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
+export const MAX_MEDIA_BYTES = JBCENTER_MAX_MEDIA_BYTES;
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex;
 
 type TierConfig = {

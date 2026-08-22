@@ -11,11 +11,23 @@ const playwright = await readFile("playwright.config.ts", "utf8");
 const browserFixture = await readFile("scripts/browser-fixture-server.mjs", "utf8");
 const browserBuild = await readFile("scripts/build-browser.mjs", "utf8");
 const browserProject = JSON.parse(await readFile("test/fixtures/browser-project.json", "utf8"));
-const ipfsProxy = await readFile("src/app/api/ipfs/[...path]/route.ts", "utf8");
+const centerClient = await readFile("src/lib/jbcenter-ipfs.ts", "utf8");
 const gitignore = await readFile(".gitignore", "utf8");
 const dockerignore = await readFile(".dockerignore", "utf8");
 const npmConfig = await readFile(".npmrc", "utf8");
 const packageManifest = JSON.parse(await readFile("package.json", "utf8"));
+
+for (const legacyRoute of [
+  "src/app/api/ipfs/[...path]/route.ts",
+  "src/app/api/ipfs/pinFile/route.ts",
+  "src/app/api/ipfs/pinJson/route.ts",
+  "src/app/api/ipfs/pinMedia/route.ts",
+  "src/lib/server/ipfsPinning.ts",
+]) {
+  if (existsSync(legacyRoute)) {
+    throw new Error(`Webclients must not own Juicebox Center's IPFS boundary: ${legacyRoute}`);
+  }
+}
 
 if (existsSync("yarn.lock")) {
   throw new Error("Only package-lock.json is allowed; remove the stale Yarn Classic lockfile");
@@ -147,10 +159,11 @@ if (/hostname:\s*["']\*\*/u.test(nextConfig) || /pathname:\s*["']\*\*/u.test(nex
   throw new Error("Next image optimization must not allow arbitrary remote hosts or paths");
 }
 if (
-  !/cache:\s*["']no-store["']/u.test(ipfsProxy) ||
-  /cache:\s*["']force-cache["']/u.test(ipfsProxy)
+  !centerClient.includes("@bananapus/nana-sdk-core/jbcenter") ||
+  !centerClient.includes("createJBCenterClient") ||
+  centerClient.includes("process.env")
 ) {
-  throw new Error("Attacker-selected IPFS CIDs must bypass Next's persistent server data cache");
+  throw new Error("Browser IPFS writes must use the credential-free Juicebox Center SDK client");
 }
 
 if (!/sbom:\s*true/u.test(release) || !/provenance:\s*mode=max/u.test(release)) {
@@ -180,11 +193,6 @@ for (const name of [
   "NEXT_PUBLIC_DWELLIR_API_KEY",
   "NEXT_PUBLIC_PARA_API_KEY",
   "NEXT_PUBLIC_PARA_ENV",
-  "IPFS_PINNING_ENABLED",
-  "IPFS_PINNING_EDGE_PROTECTED",
-  "FILEBASE_IPFS_RPC_TOKEN",
-  "PINATA_JWT",
-  "IPFS_PINNING_INGRESS_TOKEN",
 ]) {
   if (!exampleEnvironment.includes(`${name}=`)) {
     throw new Error(`.env.example is missing ${name}`);

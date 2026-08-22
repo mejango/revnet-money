@@ -179,7 +179,9 @@ describe("pay display normalization", () => {
   });
 
   it("routes immutable tier media through the app gateway and unwraps SVG image shells", () => {
-    expect(tierMediaAssetUrl(`ipfs://${CID}/animation.mp4`)).toBe(`/api/ipfs/${CID}/animation.mp4`);
+    expect(tierMediaAssetUrl(`ipfs://${CID}/animation.mp4`)).toBe(
+      `https://juicebox.center/ipfs/${CID}/animation.mp4`,
+    );
     expect(
       tierDisplayMetadata({
         name: "Poster",
@@ -188,13 +190,13 @@ describe("pay display normalization", () => {
       }),
     ).toMatchObject({
       name: "Poster",
-      image: `/api/ipfs/${CID}/image.png`,
-      animationUrl: `/api/ipfs/${CID}/animation.mp4`,
+      image: `https://juicebox.center/ipfs/${CID}/image.png`,
+      animationUrl: `https://juicebox.center/ipfs/${CID}/animation.mp4`,
     });
 
     const svg = `<svg><image href="ipfs://${CID}/wrapped.png" /></svg>`;
     expect(tierMediaImageUrl(`data:image/svg+xml,${encodeURIComponent(svg)}`)).toBe(
-      `/api/ipfs/${CID}/wrapped.png`,
+      `https://juicebox.center/ipfs/${CID}/wrapped.png`,
     );
   });
 });

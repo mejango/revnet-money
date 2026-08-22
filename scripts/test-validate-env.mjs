@@ -13,7 +13,6 @@ const baseEnvironment = {
   NEXT_PUBLIC_PARA_API_KEY: "public-para-key",
   NEXT_PUBLIC_PARA_ENV: "PROD",
   NEXT_PUBLIC_VERSION: "development",
-  IPFS_PINNING_EDGE_PROTECTED: "false",
 };
 
 function run(phase, overrides = {}) {
@@ -76,48 +75,8 @@ expectStatus(
   run("build", { NEXT_PUBLIC_DETERMINISTIC_BROWSER: "true" }),
   1,
 );
-expectStatus(
-  "disabled public pinning",
-  run("runtime", {
-    IPFS_PINNING_ENABLED: "false",
-    FILEBASE_IPFS_RPC_TOKEN: "",
-    PINATA_JWT: "",
-  }),
-  0,
-);
-expectStatus(
-  "enabled public pinning with runtime secrets",
-  run("runtime", {
-    IPFS_PINNING_ENABLED: "true",
-    IPFS_PINNING_EDGE_PROTECTED: "true",
-    FILEBASE_IPFS_RPC_TOKEN: "runtime-filebase-token",
-    PINATA_JWT: "runtime-pinata-jwt",
-    IPFS_PINNING_INGRESS_TOKEN: "a-secure-ingress-token-at-least-32-characters",
-  }),
-  0,
-);
-expectStatus(
-  "missing runtime secret",
-  run("runtime", {
-    IPFS_PINNING_ENABLED: "true",
-    IPFS_PINNING_EDGE_PROTECTED: "true",
-    FILEBASE_IPFS_RPC_TOKEN: "runtime-filebase-token",
-    PINATA_JWT: "",
-    IPFS_PINNING_INGRESS_TOKEN: "a-secure-ingress-token-at-least-32-characters",
-  }),
-  1,
-);
-expectStatus(
-  "short ingress token",
-  run("runtime", {
-    IPFS_PINNING_ENABLED: "true",
-    IPFS_PINNING_EDGE_PROTECTED: "true",
-    FILEBASE_IPFS_RPC_TOKEN: "runtime-filebase-token",
-    PINATA_JWT: "runtime-pinata-jwt",
-    IPFS_PINNING_INGRESS_TOKEN: "too-short",
-  }),
-  1,
-);
-expectStatus("invalid pinning switch", run("runtime", { IPFS_PINNING_ENABLED: "yes" }), 1);
+expectStatus("runtime has no app-owned secrets", run("runtime"), 0);
 
-console.log("Environment validation fixtures passed (HTTPS, Dwellir, Para, and runtime secrets). ");
+console.log(
+  "Environment validation fixtures passed (HTTPS, Dwellir, Para, and no runtime secrets).",
+);

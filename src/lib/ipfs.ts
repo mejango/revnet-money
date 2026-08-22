@@ -1,14 +1,11 @@
-import { cidV0ToCidV1, isIpfsCid, isIpfsUri } from "./ipfs-cid";
+import { isIpfsCid, isIpfsUri } from "./ipfs-cid";
+import { JBCENTER_IPFS_GATEWAY } from "./jbcenter-ipfs";
 
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]{1,128}$/u;
 
 // This is an open gateway. It exposes any IPFS content, not just content we
 // pin. It is the last fallback after the media cache and Pinata.
-export const OPEN_IPFS_GATEWAY_HOSTNAME = "ipfs.io";
-
-// Independent fallback for cold/unpinned content on the configured gateway.
-const PUBLIC_IPFS_GATEWAY_HOSTNAME = "gateway.pinata.cloud";
-const IPFS_MEDIA_CACHE_HOSTNAME = "eth.sucks";
+export const OPEN_IPFS_GATEWAY_HOSTNAME = "juicebox.center";
 
 /**
  * Return a URL to our open IPFS gateway for the given cid (optionally with a
@@ -17,12 +14,12 @@ const IPFS_MEDIA_CACHE_HOSTNAME = "eth.sucks";
  *
  * Kept local rather than using the SDK's `ipfsGatewayUrl`: the SDK only checks
  * that the leading segment looks like a CID, while these URLs also reach the
- * same-origin `/api/ipfs` proxy and the Next image optimizer, so every segment
- * has to clear `isSafeIpfsPath` (no traversal, bounded length and depth).
+ * shared Juicebox Center gateway and the Next image optimizer, so every
+ * segment has to clear `isSafeIpfsPath` (no traversal, bounded length/depth).
  */
 const ipfsGatewayUrl = (cid: string): string => {
   if (!isSafeIpfsPath(cid)) throw new Error("Invalid IPFS CID or path");
-  return `https://${OPEN_IPFS_GATEWAY_HOSTNAME}/ipfs/${cid}`;
+  return `${JBCENTER_IPFS_GATEWAY}${cid}`;
 };
 
 /**
@@ -51,38 +48,25 @@ export function ipfsUriToGatewayUrl(ipfsUri: string): string | undefined {
 }
 
 /**
- * Returns a same-origin URL for an untrusted, content-addressed IPFS URI.
- *
- * The route validates the CID/path, media type, and response size before
- * serving bytes. Keeping this separate from Next's image optimizer prevents a
- * slow public gateway from tying up `/_next/image` requests.
+ * Returns the Juicebox Center gateway URL for an untrusted, content-addressed
+ * IPFS URI. Every path segment is validated before reaching the shared gateway.
  */
 export function ipfsUriToAppUrl(ipfsUri: unknown): string | undefined {
   if (typeof ipfsUri !== "string" || !ipfsUri.startsWith("ipfs://")) return undefined;
   const suffix = ipfsUri.slice("ipfs://".length);
   if (!isSafeIpfsPath(suffix)) return undefined;
-  return `/api/ipfs/${suffix}`;
+  return `${JBCENTER_IPFS_GATEWAY}${suffix}`;
 }
 
 /**
- * Trusted read candidates for immutable media. The CID subdomain cache is
- * preferred; path gateways are sequential fallbacks. CIDv0 is converted to
- * the equivalent DAG-PB CIDv1 so it is safe to place in DNS.
+ * The canonical Juicebox Center read candidate for immutable media.
  */
 export function ipfsMediaGatewayUrls(ipfsUri: unknown): string[] {
   if (typeof ipfsUri !== "string" || !ipfsUri.startsWith("ipfs://")) return [];
   const suffix = ipfsUri.slice("ipfs://".length);
   if (!isSafeIpfsPath(suffix)) return [];
 
-  const [cid, ...pathSegments] = suffix.split("/");
-  const dnsCid = cidV0ToCidV1(cid) ?? (cid.startsWith("b") ? cid : undefined);
-  const path = pathSegments.length ? `/${pathSegments.join("/")}` : "/";
-  const urls = [
-    dnsCid ? `https://${dnsCid}.${IPFS_MEDIA_CACHE_HOSTNAME}${path}` : undefined,
-    `https://${PUBLIC_IPFS_GATEWAY_HOSTNAME}/ipfs/${suffix}`,
-    `https://${OPEN_IPFS_GATEWAY_HOSTNAME}/ipfs/${suffix}`,
-  ];
-  return [...new Set(urls.filter((url): url is string => Boolean(url)))];
+  return [`${JBCENTER_IPFS_GATEWAY}${suffix}`];
 }
 
 function isSafeIpfsPath(value: string): boolean {

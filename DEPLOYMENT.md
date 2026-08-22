@@ -53,75 +53,30 @@ Build-time values are compiled into JavaScript and are public:
 - `NEXT_PUBLIC_VERSION`: optional non-Railway build override for the immutable
   Git commit SHA reported by `/api/healthz`; Railway derives it automatically.
 
-Runtime-only values must never be Docker build arguments:
+Revnet Money has no runtime-only IPFS credentials. The health endpoint is
+dependency-free and returns `cache-control: no-store`; external RPC,
+Bendystraw, or Juicebox Center health must be monitored separately so a
+third-party outage does not cause an orchestrator restart loop.
 
-- `IPFS_PINNING_ENABLED`, normally `false`;
-- `IPFS_PINNING_EDGE_PROTECTED`, `true` when an ingress enforces the quota policy
-  and `false` when the app budgets callers itself (see below);
-- `FILEBASE_IPFS_RPC_TOKEN` and `PINATA_JWT`, required only when redundant
-  pinning is enabled;
-- `IPFS_PINNING_INGRESS_TOKEN`, a random 32+ character secret required only in
-  edge-protected mode, and rejected at startup in first-party mode.
+## IPFS safety
 
-The container refuses to start when its runtime contract is invalid. The health
-endpoint is dependency-free and returns `cache-control: no-store`; external RPC,
-Bendystraw, or IPFS health must be monitored separately so a third-party outage
-does not cause an orchestrator restart loop.
+Revnet Money is a credential-free Juicebox Center browser client. It imports
+`@bananapus/nana-sdk-core/jbcenter`, calls `pinJson`, `pinImage`, and `pinMedia`
+directly from the browser, and reads immutable content through
+`https://juicebox.center/ipfs/:cid`. The browser supplies the production
+`Origin`; Center owns origin policy, quotas, upload limits, provider
+credentials, and redundant pinning.
 
-## IPFS pinning threat model
+Do not add a Center API key to `NEXT_PUBLIC_*`, reintroduce provider secrets, or
+proxy these requests through a webclient API route. Server-side clients may use
+a Center API key, but a browser key cannot be secret. Local development can run
+the rest of the app normally; exercising live pinning requires an origin trusted
+by Center.
 
-The pin routes consume a paid provider quota, so they are disabled by default and
-support two deployments. `IPFS_PINNING_ENABLED=true` is required for either.
-
-**Edge-protected** (`IPFS_PINNING_EDGE_PROTECTED=true`, `IPFS_PINNING_INGRESS_TOKEN`
-set). Something in front — a WAF or proxy — enforces the policy and injects the
-token, which is then the authorization. Do not run this mode unless that ingress:
-
-1. strips any client-supplied `x-revnet-pinning-ingress-token` header;
-2. authenticates or rate-limits the caller (wallet/session plus IP and global
-   quotas are recommended);
-3. injects that header with `IPFS_PINNING_INGRESS_TOKEN` only after the policy
-   passes;
-4. limits every pin route to POST and caps request bodies per route —
-   `/api/ipfs/pinJson` at 128 KiB, `/api/ipfs/pinFile` at 1 MiB, and
-   `/api/ipfs/pinMedia` at 25 MiB (allow ~256 KiB of multipart envelope on the
-   two upload routes); and
-5. alerts on provider usage and enforces a provider-side spending quota.
-
-A rule written for `pinJson` alone leaves the upload routes unauthorized: they
-share the same gate, so they answer 401 until the ingress injects the header for
-them too.
-
-**First-party** (`IPFS_PINNING_EDGE_PROTECTED=false`, no token). The app is reached
-directly — the deployment Railway gives you, with no CDN in front. The app then
-enforces the budget itself: same-origin only, ten pins per client and two hundred
-site-wide per ten minutes, plus the per-route size and media-type limits. Be clear
-about what this is and is not:
-
-- the origin check is CSRF defense; a non-browser can forge it;
-- the client key comes from `x-forwarded-for`, which without a trusted proxy is
-  client-supplied, so a determined caller can rotate it;
-- the budget lives in process memory, so it resets on redeploy and counts per
-  instance.
-
-It stops a script from draining the provider quota in a minute, which is the
-realistic threat for a site published straight from the platform. It is not a WAF.
-Set a provider-side spending cap on Filebase and Pinata regardless — that is the
-backstop that does not depend on this code being right.
-
-The application independently uses a constant-time token comparison, exact
-canonical-origin check, content-length validation before the body is buffered,
-per-route size and media-type limits, a 15-second upstream timeout, and response
-validation. Rotate the ingress and provider tokens together if either layer may
-have leaked.
-
-The read-only Bendystraw and IPFS proxy routes have fixed configured upstreams,
-bounded bodies/paths, and no server credential. IPFS upstream fetches explicitly
-bypass Next's persistent data cache so attacker-selected 25 MiB CIDs cannot grow
-local storage without bound; validated CID responses remain immutable in the
-browser and CDN. Configure bounded CDN eviction/quota policy. Apply ordinary
-edge per-IP and global rate limits to `/api/**` anyway to constrain bandwidth
-and upstream load.
+Revnet Money still validates form inputs before upload and requires a compatible
+DAG-PB CID for store-item metadata because the 721 hook stores the digest
+onchain. Center is the resource/security boundary; this app's checks are
+user-facing validation.
 
 ## Build locally
 
@@ -163,7 +118,6 @@ docker run --rm \
   --tmpfs /app/.next/cache:uid=1001,gid=1001,size=256m \
   --cap-drop ALL \
   --security-opt no-new-privileges \
-  --env IPFS_PINNING_ENABLED=false \
   --publish 127.0.0.1:3000:3000 \
   revnet-money:local
 ```

@@ -19,10 +19,6 @@ jobs:
     timeout-minutes: 45
     env:
       CI: "1"
-      FILEBASE_IPFS_RPC_TOKEN: ci-filebase-token
-      PINATA_JWT: ci-pinata-jwt
-      IPFS_PINNING_ENABLED: "false"
-      IPFS_PINNING_EDGE_PROTECTED: "false"
       NODE_OPTIONS: --no-experimental-webstorage
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:4173
       NEXT_PUBLIC_BENDYSTRAW_URL: http://127.0.0.1:4174

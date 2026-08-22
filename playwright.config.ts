@@ -8,11 +8,7 @@ const fixtureOrigin = `http://127.0.0.1:${fixturePort}`;
 
 const deterministicEnvironment = {
   NEXT_PUBLIC_VERSION: "browser-test",
-  IPFS_PINNING_ENABLED: "false",
-  IPFS_PINNING_EDGE_PROTECTED: "false",
   HOSTNAME: "127.0.0.1",
-  FILEBASE_IPFS_RPC_TOKEN: "ci-filebase-token",
-  PINATA_JWT: "ci-pinata-jwt",
   NEXT_PUBLIC_SITE_URL: appOrigin,
   NEXT_PUBLIC_BENDYSTRAW_URL: fixtureOrigin,
   NEXT_PUBLIC_DETERMINISTIC_BROWSER: "true",
