@@ -1,8 +1,11 @@
 import { Nav } from "@/components/layout/Nav";
-import { projectPreviewSlogan } from "@/lib/project-link-preview";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
+import { projectPreviewSlogan } from "@/lib/project-link-preview";
+import { PROJECT_HANDLE_CHAIN_ID, readExactProjectHandle } from "@/lib/projectHandles";
 import { decodeProjectRouteSlug, slugFor } from "@/lib/slug";
+import { getViemPublicClient } from "@/lib/wagmiTransports";
 import type { Metadata } from "next";
+import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import { PropsWithChildren } from "react";
 import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
@@ -15,9 +18,6 @@ import { getProject } from "./getProject";
 import { getProjectWithFallback } from "./getProjectFallback";
 import { getIndexedProjectOperatorAddresses, getProjectOperator } from "./getProjectOperator";
 import { getSuckerGroup } from "./getSuckerGroup";
-import { PROJECT_HANDLE_CHAIN_ID, readExactProjectHandle } from "@/lib/projectHandles";
-import { getViemPublicClient } from "@/lib/wagmiTransports";
-import { unstable_cache } from "next/cache";
 import { ProjectProviders } from "./ProjectProviders";
 import { resolveProjectRoute } from "./resolveProjectRoute.server";
 import { getRulesets } from "./terms/getRulesets";
@@ -79,9 +79,7 @@ const lookupCanonicalHandle = unstable_cache(
     projectId: number,
     suckerGroupId: string | null,
   ): Promise<string | null> => {
-    const operators = await getIndexedProjectOperatorAddresses(projectId, chainId).catch(
-      () => [],
-    );
+    const operators = await getIndexedProjectOperatorAddresses(projectId, chainId).catch(() => []);
     if (!operators.length) return null;
     const deployments: [number, number][] = [[chainId, projectId]];
     if (suckerGroupId) {
@@ -228,44 +226,49 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
         path={`/${decodeProjectRouteSlug(slug) ?? slug}`}
         identifier={slugFor(chainId, projectId) ?? `${chainId}:${projectId}`}
       />
-      <ProjectProviders chainId={chainId} projectId={projectId} project={project} projects={projects}>
-      <ShopCartProvider>
-        <div id="project-top">
-          <Nav wide />
-        </div>
-
-        {degraded && (
-          <div className="w-full px-4 sm:container pt-4">
-            <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              This project was found onchain but hasn't finished indexing. Some stats may be missing
-              or out of date.
-            </p>
+      <ProjectProviders
+        chainId={chainId}
+        projectId={projectId}
+        project={project}
+        projects={projects}
+      >
+        <ShopCartProvider>
+          <div id="project-top">
+            <Nav wide />
           </div>
-        )}
-        <div className="w-full px-4 sm:container pt-6">
-          <Header
-            isRevnet={isRevnet}
-            operatorPromise={operatorPromise}
-            projects={projects}
-            createdAt={project.createdAt}
-          />
-        </div>
-        {isRevnet ? (
-          <ResponsiveProjectLayout
-            sidebar={
-              <>
-                {startDate && <NewProjectNotice startDate={startDate} />}
-                <div className="mt-1 mb-4">
-                  <PayCard />
-                </div>
-              </>
-            }
-            activity={<ActivityFeed suckerGroupId={suckerGroup.id} projects={projects} />}
-          >
-            {children}
-          </ResponsiveProjectLayout>
-        ) : null}
-      </ShopCartProvider>
+
+          {degraded && (
+            <div className="w-full px-4 sm:container pt-4">
+              <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                This project was found onchain but hasn't finished indexing. Some stats may be
+                missing or out of date.
+              </p>
+            </div>
+          )}
+          <div className="w-full px-4 sm:container pt-6">
+            <Header
+              isRevnet={isRevnet}
+              operatorPromise={operatorPromise}
+              projects={projects}
+              createdAt={project.createdAt}
+            />
+          </div>
+          {isRevnet ? (
+            <ResponsiveProjectLayout
+              sidebar={
+                <>
+                  {startDate && <NewProjectNotice startDate={startDate} />}
+                  <div className="mt-1 mb-4">
+                    <PayCard />
+                  </div>
+                </>
+              }
+              activity={<ActivityFeed suckerGroupId={suckerGroup.id} projects={projects} />}
+            >
+              {children}
+            </ResponsiveProjectLayout>
+          ) : null}
+        </ShopCartProvider>
       </ProjectProviders>
     </>
   );

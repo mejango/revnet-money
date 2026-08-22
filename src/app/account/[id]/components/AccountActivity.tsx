@@ -2,8 +2,8 @@
 
 import { ActivityItemRow } from "@/app/[slug]/components/ActivityFeed/ActivityItem";
 import { mapActivityEvents } from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
-import { ProjectLink } from "@/components/ProjectLink";
 import { ProfilesProvider } from "@/components/ProfilesContext";
+import { ProjectLink } from "@/components/ProjectLink";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useCompleteAccountActivity } from "@/hooks/useCompleteBendystrawLists";
 import { waitForRelayrBundle } from "@/hooks/useReviewedRelayr";

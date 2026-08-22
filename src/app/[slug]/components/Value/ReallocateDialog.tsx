@@ -319,7 +319,8 @@ export function ReallocateDialog({
                   <p className="text-sm text-zinc-600 mb-4">
                     This shows the fee structure for the new loan that will be created with{" "}
                     {newLoanCollateral.toFixed(6)} {tokenSymbol} collateral (appreciation:{" "}
-                    {collateralToTransfer.toFixed(6)} + additional: {additionalCollateral.toFixed(6)}
+                    {collateralToTransfer.toFixed(6)} + additional:{" "}
+                    {additionalCollateral.toFixed(6)}
                     ), allowing you to borrow{" "}
                     {newLoanBorrowableAmount
                       ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)

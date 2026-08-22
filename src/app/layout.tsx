@@ -27,7 +27,9 @@ const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
 const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
 const assetOrigin =
   process.env.NEXT_PUBLIC_SITE_URL ??
-  (railwayDomain && /^[a-z0-9.-]+$/iu.test(railwayDomain) ? `https://${railwayDomain}` : siteOrigin);
+  (railwayDomain && /^[a-z0-9.-]+$/iu.test(railwayDomain)
+    ? `https://${railwayDomain}`
+    : siteOrigin);
 const siteTitle = "Revnet";
 const siteDescription = "An autonomous business model for the open web. 100% open source.";
 

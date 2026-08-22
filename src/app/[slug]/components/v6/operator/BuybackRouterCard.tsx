@@ -4,11 +4,13 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
+import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 import { formatWalletError } from "@/lib/utils";
 import {
   JBBuybackHookContracts,
@@ -38,8 +40,6 @@ import {
 } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
 import { useOperatorWrites } from "./useOperatorWrites";
-import { ConceptTerm } from "@/components/ui/ConceptTerm";
-import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 
 type BuybackChainState = ChainProjectRow & {
   buybackRegistry: Address | undefined;

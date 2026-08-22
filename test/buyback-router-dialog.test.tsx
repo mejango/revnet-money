@@ -75,7 +75,7 @@ describe("BuybackRouterCard", () => {
 
     await waitFor(() => expect(screen.getByText("Run on")).toBeTruthy());
     const dialog = document.querySelector("dialog")!;
-    const values = [...dialog.querySelectorAll("input")].map(input => input.value);
+    const values = [...dialog.querySelectorAll("input")].map((input) => input.value);
     // USDC on Base, not the native sentinel — ART has no native pool.
     expect(values).toContain("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
     expect(values).toContain("172800");

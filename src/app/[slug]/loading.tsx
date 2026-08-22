@@ -1,11 +1,8 @@
 "use client";
 
-import {
-  ProjectContentSkeleton,
-  ProjectPageSkeleton,
-} from "@/components/loading/LoadingSkeletons";
-import { getProjectNavigationHint } from "@/lib/project-navigation";
+import { ProjectContentSkeleton, ProjectPageSkeleton } from "@/components/loading/LoadingSkeletons";
 import { useJBProject } from "@/lib/nana/project";
+import { getProjectNavigationHint } from "@/lib/project-navigation";
 import { usePathname, useSelectedLayoutSegment } from "next/navigation";
 
 export default function Loading() {

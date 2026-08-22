@@ -11,10 +11,10 @@ import { DeploySection } from "./DeploySection";
 import { Divider } from "./Divider";
 import { OperatorSection } from "./OperatorSection";
 import { ProjectDetails } from "./ProjectDetails";
-import { StoreSection } from "./StoreSection";
 import { QuoteResponse } from "./QuoteResponse";
 import { SettlementSection } from "./SettlementSection";
 import { Stages } from "./Stages";
+import { StoreSection } from "./StoreSection";
 
 export type DirectDeployment = { chainId: JBChainId; hash: string };
 

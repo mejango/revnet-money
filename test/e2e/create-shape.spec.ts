@@ -5,8 +5,8 @@ import {
   expectNoBlockingAccessibilityFindings,
   expectSecurityHeaders,
   installBrowserBoundary,
-  type BrowserBoundary,
   retryUntilVisible,
+  type BrowserBoundary,
 } from "./browser-support";
 
 async function openCreatePage(page: Page): Promise<BrowserBoundary> {
@@ -62,7 +62,14 @@ test("production create surface stays visible and contained", async ({ page }) =
   // section, so each one can specialize per selected chain at the point of
   // input. "Look" carries no chain-dependent field, so it leads.
   const sectionHeadings = page.getByRole("heading", { level: 2 });
-  await expect(sectionHeadings).toHaveText(["1. Look", "2. Settlement", "3. Terms", "4. Deploy"]);
+  await expect(sectionHeadings).toHaveText([
+    "1. Look",
+    "2. Settlement",
+    "3. Terms",
+    "4. Store",
+    "5. Operator",
+    "6. Deploy",
+  ]);
   await expect(page.getByRole("combobox", { name: "Deployment environment" })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
@@ -188,9 +195,13 @@ test("only the first stage offers the issuance denomination; later stages quote 
 test("the first stage card starts level with the Terms heading", async ({ page }) => {
   const boundary = await openCreatePage(page);
 
-  await page.getByRole("button", { name: "Add stage" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Save stage" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const stageDialog = page.getByRole("dialog");
+  await retryUntilVisible(
+    () => page.getByRole("button", { name: "Add stage" }).click(),
+    stageDialog,
+  );
+  await stageDialog.getByRole("button", { name: "Save stage" }).click();
+  await expect(stageDialog).toHaveCount(0);
 
   const heading = page.getByRole("heading", { name: "3. Terms" });
   const firstCard = page.getByText("Stage 1", { exact: true });
@@ -210,9 +221,7 @@ test("the first stage card starts level with the Terms heading", async ({ page }
   expectBoundaryToStayLocal(boundary);
 });
 
-test("environment flip swaps the chain list and prunes hidden-environment picks", async ({
-  page,
-}) => {
+test("environment flip swaps the chain list and selects a visible fallback", async ({ page }) => {
   const boundary = await openCreatePage(page);
   const environment = page.getByRole("combobox", { name: "Deployment environment" });
 
@@ -224,10 +233,11 @@ test("environment flip swaps the chain list and prunes hidden-environment picks"
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toHaveCount(0);
   await expect(page.getByRole("checkbox", { name: "Sepolia", exact: true })).toBeVisible();
 
-  // The hidden environment's pick was dropped, not silently kept.
+  // The hidden environment's pick was dropped, and the form remains valid by
+  // selecting the first chain in the newly visible environment.
   await environment.click();
   await page.getByRole("option", { name: "Production" }).click();
-  await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeChecked();
 
   await page.waitForTimeout(250);
   expectBoundaryToStayLocal(boundary);

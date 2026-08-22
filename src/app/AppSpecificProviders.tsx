@@ -1,9 +1,9 @@
 "use client";
 
-import { installQueryPersistence } from "@/lib/query-persist";
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { IS_DETERMINISTIC_BROWSER, PARA_EMBEDDED_WALLET_ENABLED } from "@/lib/browserEnvironment";
+import { installQueryPersistence } from "@/lib/query-persist";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { connectParaSession } from "@/providers/para-bridge";
 import { verifyMarkedParaSession } from "@/providers/para-session";

@@ -1,8 +1,5 @@
-import {
-  clearExtensionSalt,
-  saltForExtension,
-} from "@/lib/suckerExtensionSalt";
 import { currentStageIndex } from "@/app/[slug]/owners/components/splitsLib";
+import { clearExtensionSalt, saltForExtension } from "@/lib/suckerExtensionSalt";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const ALICE = "0x1111111111111111111111111111111111111111" as const;

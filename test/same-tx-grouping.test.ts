@@ -1,4 +1,7 @@
-import { combinedDescription, type ActivityEvent } from "@/app/[slug]/components/ActivityFeed/ActivityItem";
+import {
+  combinedDescription,
+  type ActivityEvent,
+} from "@/app/[slug]/components/ActivityFeed/ActivityItem";
 import {
   foldSameTxActivities,
   groupSameTxEvents,
@@ -20,7 +23,13 @@ function row(overrides: Partial<ActivityEvent>): ActivityEvent {
 // The buyback shape: the pay row and the pool-swap row share one tx. They must
 // fold into ONE line item attributed to the payer, with the pay's amount and
 // memo, and both actions in the sentence.
-const pay = row({ id: "a", tokenCount: "0", memo: "gm", baseAmount: "20", baseTokenSymbol: "USDC" });
+const pay = row({
+  id: "a",
+  tokenCount: "0",
+  memo: "gm",
+  baseAmount: "20",
+  baseTokenSymbol: "USDC",
+});
 const swap = row({
   id: "b",
   type: "swapBuy",

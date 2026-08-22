@@ -1,7 +1,6 @@
 import { RevnetFormData, StageData, StoreFormData } from "./types";
 
-export const PERMANENTLY_DISABLED_OPERATOR =
-  "0xdead000000000000000000000000000000000000";
+export const PERMANENTLY_DISABLED_OPERATOR = "0xdead000000000000000000000000000000000000";
 
 export const defaultStoreData: StoreFormData = {
   collectionName: "",

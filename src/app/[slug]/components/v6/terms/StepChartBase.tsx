@@ -300,7 +300,9 @@ export function StepChartBase({
             const markers = [
               ...resolved
                 .map((stage, i) => ({ x: X(stage.start), label: `Stage ${i + 1}`, now: false, i }))
-                .filter(({ i, x }) => i > 0 && resolved[i].start > t0 && resolved[i].start < t1 && x >= 0),
+                .filter(
+                  ({ i, x }) => i > 0 && resolved[i].start > t0 && resolved[i].start < t1 && x >= 0,
+                ),
               ...(showNowMarker ? [{ x: nowX, label: "Now", now: true, i: -1 }] : []),
             ].sort((a, b) => a.x - b.x);
             const CHAR_PX = 9.6; // text-base mono, close enough for layout

@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearProjectNavigationHints,
   getProjectNavigationHint,
   rememberProjectNavigation,
 } from "@/lib/project-navigation";
+import { beforeEach, describe, expect, it } from "vitest";
 
 describe("project navigation hints", () => {
   beforeEach(clearProjectNavigationHints);

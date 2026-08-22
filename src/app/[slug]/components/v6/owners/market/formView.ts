@@ -157,7 +157,12 @@ export function liquidityFormView(inputs: LiquidityFormViewInputs): LiquidityFor
 
   const minPrice = Number(inputs.minText);
   const maxPrice = Number(inputs.maxText);
-  if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice) || minPrice <= 0 || maxPrice <= minPrice) {
+  if (
+    !Number.isFinite(minPrice) ||
+    !Number.isFinite(maxPrice) ||
+    minPrice <= 0 ||
+    maxPrice <= minPrice
+  ) {
     return { ...EMPTY_VIEW, note: "Set a valid price range first." };
   }
 

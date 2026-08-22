@@ -160,8 +160,12 @@ describe("pin-file route", () => {
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await POST(await request({ token: null, form: pngForm(), client: "1.1.1.1" }));
     }
-    expect((await POST(await request({ token: null, form: pngForm(), client: "1.1.1.1" }))).status).toBe(429);
-    expect((await POST(await request({ token: null, form: pngForm(), client: "2.2.2.2" }))).status).toBe(200);
+    expect(
+      (await POST(await request({ token: null, form: pngForm(), client: "1.1.1.1" }))).status,
+    ).toBe(429);
+    expect(
+      (await POST(await request({ token: null, form: pngForm(), client: "2.2.2.2" }))).status,
+    ).toBe(200);
   });
 
   it("pins through Filebase and replicates the same CID to Pinata", async () => {

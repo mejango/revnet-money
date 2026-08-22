@@ -5,6 +5,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { toast } from "@/components/ui/use-toast";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { JBChainId } from "@bananapus/nana-sdk-core";
@@ -24,7 +25,6 @@ import {
   GossipPeerRow,
   timeAgo,
 } from "./lib";
-import { PERSIST } from "@/lib/query-persist";
 
 function StatusBadge({ level, label }: { level: GossipLevel; label: string }) {
   const styles: Record<GossipLevel, string> = {

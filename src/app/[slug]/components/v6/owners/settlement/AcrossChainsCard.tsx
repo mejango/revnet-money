@@ -2,6 +2,7 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { PERSIST } from "@/lib/query-persist";
 import { useQuery } from "@tanstack/react-query";
 import {
   AcrossChainRow,
@@ -12,7 +13,6 @@ import {
   fmtUnits,
   pctOf,
 } from "./lib";
-import { PERSIST } from "@/lib/query-persist";
 
 /**
  * Per-chain token supply | terminal balance | unit cash-out value, with a totals

@@ -14,7 +14,14 @@ interface Props {
   note?: string;
 }
 
-export function ChartToggleButton({ label, active, disabled = false, colorVar, onClick, note }: Props) {
+export function ChartToggleButton({
+  label,
+  active,
+  disabled = false,
+  colorVar,
+  onClick,
+  note,
+}: Props) {
   const isActive = active && !disabled;
 
   return (

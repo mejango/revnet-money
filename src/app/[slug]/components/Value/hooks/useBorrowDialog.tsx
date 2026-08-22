@@ -48,7 +48,6 @@ type BorrowState =
   | "error"
   | "reallocation-pending";
 
-
 /**
  * A loan row as the loan tables select it (a superset of Bendystraw's LoanRow;
  * the legacy tables pass `chain` instead of `chainId`).
@@ -95,7 +94,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   const [internalSelectedLoan, setInternalSelectedLoan] = useState<SelectedLoan | null>(
     selectedLoan ?? null,
   );
-
 
   const { toast } = useToast();
 
@@ -199,7 +197,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       ? BigInt(internalSelectedLoan.collateral) + parseUnits(collateralAmount, projectTokenDecimals)
       : undefined;
 
-
   // ===== PHASE 2: UPDATE CONTRACT CALLS =====
 
   // Get token configuration for the selected chain
@@ -267,7 +264,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           ]
         : undefined,
   });
-
 
   // Transaction hooks
   const { writeContractAsync, isPending: isWriteLoading, data: txHash } = useWriteContract();

@@ -1,9 +1,9 @@
+import { usdRateOf } from "@/lib/baseCurrencyRate";
 import {
   CashOutTaxSnapshotsOperation,
   SuckerGroupMomentsOperation,
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import { usdRateOf } from "@/lib/baseCurrencyRate";
 import type { CashOutTaxSnapshot, SuckerGroupMoment } from "@/lib/bendystraw/types";
 import {
   downsampleTimeSeries,

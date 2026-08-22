@@ -110,13 +110,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         setInternalSelectedLoan(null);
       }
     },
-    [
-      balances,
-      setSelectedChainId,
-      setCashOutChainId,
-      setCollateralAmount,
-      setInternalSelectedLoan,
-    ],
+    [balances, setSelectedChainId, setCashOutChainId, setCollateralAmount, setInternalSelectedLoan],
   );
 
   // Start on the first chain where the account can collateralize tokens (or

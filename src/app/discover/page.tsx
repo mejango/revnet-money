@@ -12,11 +12,11 @@ type RevnetProject = {
   projectTagline?: string | null;
 };
 import { DiscoverGridSkeleton } from "@/components/loading/LoadingSkeletons";
+import { ProjectLink } from "@/components/ProjectLink";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
-import { ProjectLink } from "@/components/ProjectLink";
 import { useEffect, useState } from "react";
 import MiniHeaderCard from "./MiniHeaderCard";
 

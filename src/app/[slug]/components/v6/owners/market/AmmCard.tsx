@@ -1,15 +1,10 @@
 "use client";
 
-import {
-  uniswapV4AmountsForLiquidity,
-  uniswapV4DefaultPriceRange,
-  uniswapV4SqrtPriceX96AtTick,
-} from "@bananapus/nana-sdk-core/v6";
+import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
 import { ChainLogo } from "@/components/ChainLogo";
-import { Revalidating } from "@/components/ui/Revalidating";
-import { cachedQuery } from "@/lib/query-persist";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { Revalidating } from "@/components/ui/Revalidating";
+import { SkeletonLines } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -18,8 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
-import { SkeletonLines } from "@/components/ui/skeleton";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
   isSafeConnection,
@@ -27,9 +20,23 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { cachedQuery } from "@/lib/query-persist";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import {
+  uniswapV4AmountsForLiquidity,
+  uniswapV4DefaultPriceRange,
+  uniswapV4SqrtPriceX96AtTick,
+} from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { erc20Abi, formatUnits, parseUnits, zeroAddress, type Address, type PublicClient } from "viem";
+import {
+  erc20Abi,
+  formatUnits,
+  parseUnits,
+  zeroAddress,
+  type Address,
+  type PublicClient,
+} from "viem";
 import { useAccount, useConfig, usePublicClient } from "wagmi";
 import {
   chainName,
@@ -607,7 +614,9 @@ export function AddLiquidityForm({
     if (amount == null || amount <= 0) return 0n;
     const text = (side === "token" ? tokenText : pairText).trim();
     const typed = mode === "amounts" || view.derived !== side;
-    return typed && text ? parseUnits(text, decimals) : parseUnits(amount.toFixed(decimals), decimals);
+    return typed && text
+      ? parseUnits(text, decimals)
+      : parseUnits(amount.toFixed(decimals), decimals);
   };
 
   // The derived side displays its computed counterpart; everything else shows
@@ -980,9 +989,7 @@ export function LiquidityManager({
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
   const [claiming, setClaiming] = useState<bigint | null>(null);
-  const client = usePublicClient({ chainId: Number(state.chainId) }) as
-    | PublicClient
-    | undefined;
+  const client = usePublicClient({ chainId: Number(state.chainId) }) as PublicClient | undefined;
   const {
     writeContractAsync,
     data: hash,
@@ -1133,7 +1140,8 @@ export function LiquidityManager({
                     const owed = fees.data?.[position.tokenId.toString()];
                     if (fees.isLoading || owed === undefined) return "unclaimed fees: reading…";
                     if (!owed) return "unclaimed fees: unavailable on this chain";
-                    if (owed.pairFees <= 0n && owed.tokenFees <= 0n) return "unclaimed fees: none yet";
+                    if (owed.pairFees <= 0n && owed.tokenFees <= 0n)
+                      return "unclaimed fees: none yet";
                     return `unclaimed fees: ${fmtUnits(owed.tokenFees, 18)} ${tokenSymbol} + ${fmtUnits(owed.pairFees, pool.pair.decimals)} ${pool.pair.symbol}`;
                   })()}
                 </span>
@@ -1279,8 +1287,8 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
           Pool <span className="ml-1 text-xs uppercase tracking-wide text-zinc-400">AMM</span>
         </h3>
         <p className="mt-1 text-sm text-zinc-500">
-          The market fills orders that would give payers more {tokenSymbol} than issuance.
-          Arbitrage keeps its price between the issuance ceiling and the cash-out floor.
+          The market fills orders that would give payers more {tokenSymbol} than issuance. Arbitrage
+          keeps its price between the issuance ceiling and the cash-out floor.
         </p>
         <div className="mt-2">{content("market")}</div>
       </div>

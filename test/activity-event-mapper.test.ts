@@ -4,9 +4,9 @@ import {
   projectFeedTokenContext,
   type ActivityEventItem,
 } from "@/app/[slug]/components/ActivityFeed/mapActivityEvents";
-import { describe, expect, it } from "vitest";
-import { exactNumber, formatCompact } from "@/lib/number";
 import { formatUsd } from "@/app/[slug]/components/v6/extras/projectPayers";
+import { exactNumber, formatCompact } from "@/lib/number";
+import { describe, expect, it } from "vitest";
 
 const EMPTY_EVENTS = {
   payEvent: null,
