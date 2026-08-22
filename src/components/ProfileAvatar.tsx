@@ -67,8 +67,11 @@ export function ProfileAvatar({
     <img
       src={avatarSrc}
       alt={profile?.identity ?? address}
+      // shrink-0 for the same reason the fallback span carries it: a
+      // shrinkable avatar drops out of this inline-flex's intrinsic width and
+      // the name overruns whatever sits beside it.
       className={twMerge(
-        "inline-block rounded-full",
+        "inline-block shrink-0 rounded-full",
         avatarSize === "md" ? "w-9 h-9" : "w-6 h-6",
         withAvatar && !profile?.social?.uid ? "mr-2" : "",
       )}
@@ -94,7 +97,7 @@ export function ProfileAvatar({
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`View ${renderValue} on Farcaster`}
-          className="mr-2"
+          className="mr-2 shrink-0"
         >
           {avatarElement}
         </a>

@@ -51,8 +51,12 @@ export function EthereumAddress({
         <Image
           src={ensAvatarUrlForAddress(address)}
           alt={ensName ?? address}
+          // shrink-0 is load-bearing: as a shrinkable flex item the avatar
+          // contributes nothing to this inline-flex's intrinsic width, so a
+          // table column sizes itself an avatar too narrow and a long ENS name
+          // spills into the next cell.
           className={twMerge(
-            "inline-block mr-2 rounded-full",
+            "inline-block shrink-0 mr-2 rounded-full",
             avatarSize === "md" ? "w-9 h-9" : "w-6 h-6",
           )}
           width={avatarDimensions}
