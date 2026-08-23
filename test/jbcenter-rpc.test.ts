@@ -10,6 +10,7 @@ afterEach(() => {
 
 describe("Juicebox Center RPC transport", () => {
   it("routes server reads through Center with the trusted app origin", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "http://127.0.0.1:4173");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x1" }), {
         headers: { "content-type": "application/json" },

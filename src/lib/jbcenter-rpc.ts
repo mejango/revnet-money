@@ -1,10 +1,10 @@
-import { jbCenterBaseUrl } from "@/lib/jbcenter-config";
+import { jbCenterAppOrigin, jbCenterBaseUrl } from "@/lib/jbcenter-config";
 import { createJBCenterRpcProvider } from "@bananapus/nana-sdk-core/jbcenter";
 import { custom, http, type Transport } from "viem";
 
 const serverFetch: typeof fetch = (input, init) => {
   const headers = new Headers(init?.headers);
-  headers.set("Origin", process.env.NEXT_PUBLIC_SITE_URL ?? "https://revnet.money");
+  headers.set("Origin", jbCenterAppOrigin());
   return fetch(input, { ...init, headers });
 };
 
