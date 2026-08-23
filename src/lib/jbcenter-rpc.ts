@@ -9,6 +9,8 @@ const serverFetch: typeof fetch = (input, init) => {
   return fetch(input, { ...init, headers });
 };
 
+const browserFetch: typeof fetch = (input, init) => window.fetch(input, init);
+
 export function jbCenterRpcTransport(chainId: number): Transport {
   if (
     process.env.NEXT_PUBLIC_DETERMINISTIC_BROWSER === "true" &&
@@ -18,7 +20,7 @@ export function jbCenterRpcTransport(chainId: number): Transport {
   }
   return custom(
     createJBCenterRpcProvider(chainId, {
-      fetch: typeof window === "undefined" ? serverFetch : undefined,
+      fetch: typeof window === "undefined" ? serverFetch : browserFetch,
     }),
     { retryCount: 1 },
   );
