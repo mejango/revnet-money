@@ -10,20 +10,21 @@ back by digest.
 Use the repository `railway.json` for both Railway services and keep branch
 promotion identical across the webclients:
 
-| Git branch | Railway environment | Public origin                  |
-| ---------- | ------------------- | ------------------------------ |
-| `staging`  | staging             | `https://staging.revnet.money` |
-| `main`     | production          | `https://revnet.money`         |
+| Git branch | Railway environment | Public origin              |
+| ---------- | ------------------- | -------------------------- |
+| `dev`      | dev                 | `https://dev.revnet.money` |
+| `main`     | production          | `https://revnet.money`     |
 
-Connect the staging service to `staging` and the production service to `main`,
+Connect the dev service to `dev` and the production service to `main`,
 enable automatic deploys only after CI succeeds, and disable overlap so an
 older build cannot replace a newer commit. Set `NEXT_PUBLIC_SITE_URL` to the
 matching origin. Do not configure `NEXT_PUBLIC_VERSION` in Railway: the
 Dockerfile consumes Railway's automatically injected `RAILWAY_GIT_COMMIT_SHA`
 and exposes it to the application as `NEXT_PUBLIC_VERSION`. All other public
 variables are environment-scoped build values; provider credentials and
-ingress tokens are environment-scoped runtime secrets. Promote by merging
-`staging` into `main`, never by pointing production at `staging`.
+ingress tokens are environment-scoped runtime secrets. The dev environment is for active feature
+integration; a production-candidate staging environment may be added separately later. Promote
+reviewed work by merging `dev` into `main`, never by pointing production at `dev`.
 
 ## Configuration model
 
@@ -60,8 +61,9 @@ Revnet Money is a credential-free Juicebox Center client. It imports
 `@bananapus/nana-sdk-core/jbcenter`, calls `pinJson`, `pinImage`, and `pinMedia`
 directly from the browser, and reads immutable content through
 `https://juicebox.center/ipfs/:cid`. Read-only RPC also uses the SDK's
-EIP-1193 provider. Browsers supply the production `Origin`; server-rendered
-reads set that same fixed origin. Center owns origin policy, quotas, upload and
+EIP-1193 provider. Production uses `juicebox.center`; `dev.revnet.money` derives
+`dev.juicebox.center` from its canonical site URL without another environment variable. Browsers
+supply the deployment's `Origin`; server-rendered reads set that same origin. Center owns origin policy, quotas, upload and
 RPC limits, provider credentials, and redundant pinning.
 
 Do not add a Center API key to `NEXT_PUBLIC_*`, reintroduce provider secrets, or

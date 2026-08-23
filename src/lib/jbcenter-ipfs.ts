@@ -1,3 +1,4 @@
+import { jbCenterBaseUrl } from "@/lib/jbcenter-config";
 import {
   JBCENTER_DEFAULT_URL,
   JBCenterRequestError,
@@ -28,7 +29,10 @@ export type JBCenterIpfsClient = {
  * server keys are for non-browser integrations only.
  */
 export function createJBCenterIpfsClient(options: BrowserClientOptions = {}): JBCenterIpfsClient {
-  const center = createJBCenterClient(options);
+  const center = createJBCenterClient({
+    baseUrl: jbCenterBaseUrl(),
+    ...options,
+  });
 
   const friendly = async <T>(label: string, request: Promise<T>): Promise<T> => {
     try {
