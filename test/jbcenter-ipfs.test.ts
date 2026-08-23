@@ -3,7 +3,7 @@ import {
   JBCENTER_MAX_IMAGE_BYTES,
   JBCENTER_MAX_MEDIA_BYTES,
 } from "@/lib/jbcenter-ipfs";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const CID = "QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR";
 const PIN = {
@@ -12,6 +12,8 @@ const PIN = {
   uri: `ipfs://${CID}`,
   gatewayUrl: `/ipfs/${CID}`,
 };
+
+afterEach(() => vi.unstubAllEnvs());
 
 function successfulFetch() {
   return vi.fn<typeof fetch>().mockResolvedValue(Response.json(PIN));
@@ -34,6 +36,15 @@ describe("Juicebox Center browser IPFS client", () => {
     expect(init?.method).toBe("POST");
     expect(JSON.parse(String(init?.body))).toEqual({ name: "Project" });
     expect(new Headers(init?.headers).has("authorization")).toBe(false);
+  });
+
+  it("uses the isolated dev Center when configured", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://dev.revnet.money");
+    const fetchMock = successfulFetch();
+    const ipfs = createJBCenterIpfsClient({ fetch: fetchMock });
+
+    await expect(ipfs.pinJson({ name: "Dev revnet" })).resolves.toEqual(PIN);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://dev.juicebox.center/v1/pins/json");
   });
 
   it.each([

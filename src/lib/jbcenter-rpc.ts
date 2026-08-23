@@ -1,11 +1,10 @@
+import { jbCenterAppOrigin, jbCenterBaseUrl } from "@/lib/jbcenter-config";
 import { createJBCenterRpcProvider } from "@bananapus/nana-sdk-core/jbcenter";
 import { custom, http, type Transport } from "viem";
 
-const APP_ORIGIN = "https://revnet.money";
-
 const serverFetch: typeof fetch = (input, init) => {
   const headers = new Headers(init?.headers);
-  headers.set("Origin", APP_ORIGIN);
+  headers.set("Origin", jbCenterAppOrigin());
   return fetch(input, { ...init, headers });
 };
 
@@ -20,6 +19,7 @@ export function jbCenterRpcTransport(chainId: number): Transport {
   }
   return custom(
     createJBCenterRpcProvider(chainId, {
+      baseUrl: jbCenterBaseUrl(),
       fetch: typeof window === "undefined" ? serverFetch : browserFetch,
     }),
     { retryCount: 1 },
