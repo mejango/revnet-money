@@ -30,10 +30,9 @@ describe("Juicebox Center RPC transport", () => {
       fetch: vi.fn(function (this: unknown) {
         if (this !== browserWindow) throw new TypeError("Illegal invocation");
         return Promise.resolve(
-          new Response(
-            JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x1" }),
-            { headers: { "content-type": "application/json" } },
-          ),
+          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x1" }), {
+            headers: { "content-type": "application/json" },
+          }),
         );
       }),
     };
