@@ -11,6 +11,7 @@ import {
 } from "@/app/create/helpers/feedReachability";
 import { ETH_CURRENCY_ID, JB_CHAINS, NATIVE_TOKEN, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
 import { NATIVE_TOKEN_CURRENCY_ID, tokenCurrencyId } from "@bananapus/nana-sdk-core/v6";
+import { JBCenterRequestError, JBCenterTimeoutError } from "@bananapus/nana-sdk-core/jbcenter";
 import { ContractFunctionRevertedError, type PublicClient } from "viem";
 import { sepolia } from "viem/chains";
 import { describe, expect, it, vi } from "vitest";
@@ -155,6 +156,29 @@ describe("assertLaunchFeedsReachable — fail-closed launch gate", () => {
         contexts: [nativeContext, usdcContext],
         baseCurrency: ETH_CURRENCY_ID,
       }),
-    ).rejects.toThrow(/Couldn't verify the ETH to ETH price feed on Sepolia/);
+    ).rejects.toThrow(
+      /Couldn't verify the ETH to ETH price feed on Sepolia — Sepolia reads via juicebox.center were blocked before reaching the server/,
+    );
+  });
+
+  it("names a rate limit, timeout, or HTTP failure from juicebox.center", async () => {
+    const probe = (error: Error) =>
+      assertLaunchFeedsReachable({
+        chainId: sepolia.id,
+        publicClient: clientWith(vi.fn().mockRejectedValue(error)),
+        contexts: [nativeContext, usdcContext],
+        baseCurrency: ETH_CURRENCY_ID,
+      });
+    await expect(probe(new JBCenterRequestError("rate limited", 429))).rejects.toThrow(
+      /Sepolia reads via juicebox.center are rate-limited/,
+    );
+    await expect(probe(new JBCenterTimeoutError(15_000))).rejects.toThrow(
+      /Sepolia reads via juicebox.center timed out/,
+    );
+    // viem wraps transport failures in ContractFunctionExecutionError → cause chain.
+    const nested = new Error("outer", {
+      cause: new Error("inner", { cause: new JBCenterRequestError("x", 502) }),
+    });
+    await expect(probe(nested)).rejects.toThrow(/failed with HTTP 502/);
   });
 });

@@ -28,7 +28,8 @@ import {
   type JBAccountingContext,
   type JBFeedPair,
 } from "@bananapus/nana-sdk-core/v6";
-import { PublicClient } from "viem";
+import { JBCenterRequestError, JBCenterTimeoutError } from "@bananapus/nana-sdk-core/jbcenter";
+import { BaseError, ContractFunctionRevertedError, PublicClient } from "viem";
 
 /** Structurally the SDK's `JBAccountingContext`. */
 export type FeedProbeContext = JBAccountingContext;
@@ -55,6 +56,25 @@ function currencyLabel(
   if (currency === BASE_CURRENCY_ETH) return "ETH";
   if (currency === BASE_CURRENCY_USD) return "USD";
   return `currency ${currency}`;
+}
+
+/**
+ * One line naming why a read never completed. The SDK folds every non-revert
+ * failure into `unavailable`, and "check your connection" has already sent a
+ * user hunting for RPC workarounds when their browser never reached
+ * juicebox.center.
+ */
+function unavailableReason(error: unknown, chainName: string): string {
+  const where = `${chainName} reads via juicebox.center`;
+  // viem nests the transport error several `cause` levels deep.
+  for (let cause = error; cause instanceof Error; cause = cause.cause) {
+    if (cause instanceof JBCenterTimeoutError) return `${where} timed out.`;
+    if (cause instanceof JBCenterRequestError) {
+      if (cause.status === 429) return `${where} are rate-limited — wait a minute and retry.`;
+      return `${where} failed with HTTP ${cause.status}.`;
+    }
+  }
+  return `${where} were blocked before reaching the server — an ad blocker, browser shield, VPN, or DNS filter is the usual cause.`;
 }
 
 /**
@@ -89,10 +109,27 @@ export async function assertLaunchFeedsReachable({
     );
   }
 
+  // The SDK reports `unavailable` without the error; keep the first
+  // non-revert failure so the message can name it.
+  let reason: string | null = null;
+  const observed = {
+    readContract: async (request: unknown) => {
+      try {
+        return await publicClient.readContract(request as never);
+      } catch (error) {
+        const reverted =
+          error instanceof BaseError &&
+          error.walk((c) => c instanceof ContractFunctionRevertedError) !== null;
+        if (!reverted) reason ??= unavailableReason(error, chainName);
+        throw error;
+      }
+    },
+  } as unknown as PublicClient;
+
   for (const pair of pairs) {
     const from = currencyLabel(pair.pricingCurrency, contexts, chainId);
     const to = currencyLabel(pair.unitCurrency, contexts, chainId);
-    const verdict = await probeFeedReachability(publicClient, { chainId, pairs: [pair] });
+    const verdict = await probeFeedReachability(observed, { chainId, pairs: [pair] });
     // `missing` is a proven on-chain revert; `unavailable` is anything the
     // chain never answered. Both block the launch, but only the first is a
     // fact about the protocol.
@@ -103,7 +140,7 @@ export async function assertLaunchFeedsReachable({
     }
     if (verdict.status !== "ok") {
       throw new Error(
-        `Couldn't verify the ${from} to ${to} price feed on ${chainName}. Check your connection and try again.`,
+        `Couldn't verify the ${from} to ${to} price feed on ${chainName} — ${reason ?? "the chain never answered."} Retry once it's reachable.`,
       );
     }
   }
