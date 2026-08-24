@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src/vendor/HeartbeatWorker.js", "vitest.live.config.ts"],
+  "ignore": ["src/app/**/*.browsertest.tsx"],
   "ignoreDependencies": ["@getpara/core-sdk"]
 }
