@@ -1,6 +1,8 @@
 const SECURITY_HEADERS = [
-  { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
-  { key: "X-Frame-Options", value: "DENY" },
+  {
+    key: "Content-Security-Policy",
+    value: "frame-ancestors https://app.safe.global https://app.5afe.dev",
+  },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
@@ -18,6 +20,10 @@ module.exports = {
   async headers() {
     return [
       { source: "/:path*", headers: SECURITY_HEADERS },
+      {
+        source: "/manifest.json",
+        headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
+      },
       // Next serves public/ files with max-age=0, and link-preview proxies
       // (Discord's included) won't hold onto uncacheable media — the embed
       // keeps its blurhash placeholder and never shows the image. These are
