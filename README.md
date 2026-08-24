@@ -17,11 +17,9 @@ for anonymous visitors.
    cp .env.example .env.local
    ```
 
-   Every public RPC variable accepts a comma-separated provider list. Use at
-   least two independently operated endpoints per production chain.
-   `NEXT_PUBLIC_PARA_API_KEY` and `NEXT_PUBLIC_PARA_ENV` enable embedded
-   email/social wallets. If they are omitted during local development, the
-   existing EIP-6963/injected wallet picker continues to work unchanged.
+   The local defaults use real Bendystraw mainnet and testnet data, Para beta,
+   and `https://dev.juicebox.center` for RPC reads and IPFS writes. No provider
+   credential or Center API key is required.
 
 1. Install dependencies:
 
