@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 
 type Marker = {
   label: string;
@@ -39,7 +39,7 @@ export function LiquidityRangePreview({
   // The axis is scaled to the widest value, so an un-frozen scale would slide
   // out from under a handle being dragged outward.
   const frozenScale = useRef<number | null>(null);
-  const [dragging, setDragging] = useState<"minimum" | "maximum" | null>(null);
+  const dragging = useRef<"minimum" | "maximum" | null>(null);
 
   const values = [floor, ceiling, current, minimum, maximum].filter(
     (value): value is number => value != null && Number.isFinite(value) && value > 0,
@@ -70,10 +70,10 @@ export function LiquidityRangePreview({
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     frozenScale.current = maxValue;
-    setDragging(edge);
+    dragging.current = edge;
   };
   const move = (edge: "minimum" | "maximum") => (event: React.PointerEvent<SVGRectElement>) => {
-    if (!onRangeChange || dragging !== edge) return;
+    if (!onRangeChange || dragging.current !== edge) return;
     const raw = valueFor(event.clientX);
     if (raw == null) return;
     // Keep the edges ordered with a sliver of daylight between them.
@@ -85,7 +85,7 @@ export function LiquidityRangePreview({
   // Pointer capture releases itself on pointerup/pointercancel.
   const end = () => {
     frozenScale.current = null;
-    setDragging(null);
+    dragging.current = null;
   };
 
   const handle = (edge: "minimum" | "maximum", value: number) => (
