@@ -164,8 +164,9 @@ Publishing does not deploy or mutate a runtime environment.
   safe to discard; a shared/persistent cache only improves image response cost.
 - Set `HOSTNAME=0.0.0.0` and `PORT=3000` (the image defaults to both).
 - Terminate TLS at a trusted ingress and add HSTS there after the production
-  domain is final. Preserve the application's CSP `frame-ancestors 'none'` and
-  `X-Frame-Options: DENY` anti-framing headers.
+  domain is final. Preserve the application's CSP frame allowlist for
+  `https://app.safe.global` and `https://app.5afe.dev`; do not add an
+  `X-Frame-Options` header, because it would prevent Safe App embedding.
 - Route liveness/readiness to `/api/healthz`; use a 20-second startup grace and
   avoid restarts based on third-party dependency health.
 - Start one canary by digest, check health, image optimization, logs, the create

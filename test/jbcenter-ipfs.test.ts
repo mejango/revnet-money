@@ -38,14 +38,17 @@ describe("Juicebox Center browser IPFS client", () => {
     expect(new Headers(init?.headers).has("authorization")).toBe(false);
   });
 
-  it("uses the isolated dev Center when configured", async () => {
-    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://dev.revnet.money");
-    const fetchMock = successfulFetch();
-    const ipfs = createJBCenterIpfsClient({ fetch: fetchMock });
+  it.each(["https://dev.revnet.money", "http://localhost:3002"])(
+    "uses the isolated dev Center for %s",
+    async (siteUrl) => {
+      vi.stubEnv("NEXT_PUBLIC_SITE_URL", siteUrl);
+      const fetchMock = successfulFetch();
+      const ipfs = createJBCenterIpfsClient({ fetch: fetchMock });
 
-    await expect(ipfs.pinJson({ name: "Dev revnet" })).resolves.toEqual(PIN);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://dev.juicebox.center/v1/pins/json");
-  });
+      await expect(ipfs.pinJson({ name: "Dev revnet" })).resolves.toEqual(PIN);
+      expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://dev.juicebox.center/v1/pins/json");
+    },
+  );
 
   it.each([
     ["pinImage", "v1/pins/file", "image/png"],

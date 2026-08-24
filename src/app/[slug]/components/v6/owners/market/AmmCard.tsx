@@ -678,14 +678,30 @@ export function AddLiquidityForm({
               args: [address],
             }),
       ]);
-      if (plan.tokenMaximum > tokenBalance) {
-        throw new Error(`The reviewed maximum exceeds your ${tokenSymbol} balance.`);
+      // Gate on what the pool actually pulls, not on the plan's maxima: those
+      // carry 1% price headroom that only gets spent if the price moves, so
+      // blocking on them rejects an entry that comfortably fits.
+      const enteredToken = sideUnits("token");
+      const enteredPair = sideUnits("pair");
+      if (enteredToken > tokenBalance) {
+        throw new Error(`That's more ${tokenSymbol} than your balance.`);
       }
-      if (plan.pairMaximum > pairBalance) {
-        throw new Error(`The reviewed maximum exceeds your ${pool.pair.symbol} balance.`);
+      if (enteredPair > pairBalance) {
+        throw new Error(`That's more ${pool.pair.symbol} than your balance.`);
       }
       setReviewed({ plan, snapshot });
-      setStatus(null);
+      // The headroom is still worth naming when it outruns the balance — the
+      // mint reverts if the price moves against the position before it lands.
+      const tight = [
+        plan.tokenMaximum > tokenBalance ? tokenSymbol : null,
+        plan.pairMaximum > pairBalance ? pool.pair.symbol : null,
+      ].filter((symbol): symbol is string => symbol != null);
+      setStatus(
+        tight.length
+          ? `Heads up: your ${tight.join(" and ")} balance does not cover the 1% price headroom, ` +
+              `so this mint reverts if the price moves against it. Lower the amount to be safe.`
+          : null,
+      );
     } catch (cause) {
       setReviewed(null);
       setStatus(cause instanceof Error ? cause.message : "Could not prepare liquidity.");
@@ -849,6 +865,14 @@ export function AddLiquidityForm({
           maximum={view.maxPrice ?? 0}
           pairSymbol={pool.pair.symbol}
           tokenSymbol={tokenSymbol}
+          onRangeChange={
+            mode === "range" && !disabled
+              ? (edge, value) => {
+                  (edge === "minimum" ? setMinText : setMaxText)(String(value));
+                  setReviewed(null);
+                }
+              : undefined
+          }
         />
       ) : null}
       {mode === "range" ? (

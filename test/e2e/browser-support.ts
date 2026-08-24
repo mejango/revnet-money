@@ -63,8 +63,10 @@ export async function retryUntilVisible(
 export function expectSecurityHeaders(response: Response | null, expectedStatus = 200): void {
   expect(response?.status()).toBe(expectedStatus);
   const headers = response?.headers() ?? {};
-  expect(headers["content-security-policy"]).toContain("frame-ancestors 'none'");
-  expect(headers["x-frame-options"]).toBe("DENY");
+  expect(headers["content-security-policy"]).toContain(
+    "frame-ancestors https://app.safe.global https://app.5afe.dev",
+  );
+  expect(headers["x-frame-options"]).toBeUndefined();
   expect(headers["x-content-type-options"]).toBe("nosniff");
   expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
   expect(headers["x-permitted-cross-domain-policies"]).toBe("none");
