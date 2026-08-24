@@ -13,7 +13,10 @@ const PIN = {
   gatewayUrl: `/ipfs/${CID}`,
 };
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 function successfulFetch() {
   return vi.fn<typeof fetch>().mockResolvedValue(Response.json(PIN));
@@ -36,6 +39,18 @@ describe("Juicebox Center browser IPFS client", () => {
     expect(init?.method).toBe("POST");
     expect(JSON.parse(String(init?.body))).toEqual({ name: "Project" });
     expect(new Headers(init?.headers).has("authorization")).toBe(false);
+  });
+
+  it("calls the default browser fetch with the Window-compatible receiver", async () => {
+    const fetchMock = vi.fn(function (this: unknown) {
+      if (this !== globalThis) return Promise.reject(new TypeError("Illegal invocation"));
+      return Promise.resolve(Response.json(PIN));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ipfs = createJBCenterIpfsClient();
+
+    await expect(ipfs.pinJson({ name: "Revnet" })).resolves.toEqual(PIN);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it.each(["https://dev.revnet.money", "http://localhost:3002"])(
