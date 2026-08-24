@@ -18,8 +18,13 @@ import {
   isRecognizedSafeDeployment,
   isRecognizedSafeProxyCodeHash,
   isRuntimeBytecode,
+  pairedSafeL2Singleton,
   readCrossChainHandleAuthority,
   recognizedSafeVersionForSingleton,
+  safeSingletonsAreEquivalent,
+  SAFE_CANONICAL_PAYMENT_RECEIVER,
+  SAFE_TO_L2_SETUP_ADDRESS,
+  SAFE_TO_L2_SETUP_CODE_HASH,
   type CrossChainHandleAuthority,
   type SafeAuthorityIdentity,
 } from "./cross-chain-authority";
@@ -40,6 +45,16 @@ export const safeSetupAbi = [
       { name: "payment", type: "uint256" },
       { name: "paymentReceiver", type: "address" },
     ],
+    outputs: [],
+  },
+] as const;
+
+export const safeToL2SetupAbi = [
+  {
+    type: "function",
+    name: "setupToL2",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "l2Singleton", type: "address" }],
     outputs: [],
   },
 ] as const;
@@ -167,6 +182,34 @@ function sameOwners(left: readonly Address[], right: readonly Address[]): boolea
   );
 }
 
+/** True when this creation's initializer delegatecalls SafeToL2Setup. */
+function usesSafeToL2Setup(creation: SafeCreation): boolean {
+  try {
+    const decoded = decodeFunctionData({ abi: safeSetupAbi, data: creation.initializer });
+    return (
+      decoded.functionName === "setup" &&
+      isAddressEqual(decoded.args[2] as Address, SAFE_TO_L2_SETUP_ADDRESS)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Byte-exact `setupToL2(l2Singleton)` naming the SafeL2 counterpart of the
+ * initializer's own singleton. Nothing else may be delegatecalled at setup.
+ */
+function isExactSetupToL2Call(setupData: Hex, singleton: Address): boolean {
+  const l2Singleton = pairedSafeL2Singleton(singleton);
+  if (!l2Singleton) return false;
+  const expected = encodeFunctionData({
+    abi: safeToL2SetupAbi,
+    functionName: "setupToL2",
+    args: [l2Singleton],
+  });
+  return setupData.toLowerCase() === expected.toLowerCase();
+}
+
 /**
  * Validate that replaying the service-provided initializer creates today's
  * source Safe policy—not the historical owners from its original creation.
@@ -192,7 +235,7 @@ export function validateSafeCreationForCurrentPolicy(
   ) {
     return { valid: false, reason: "unsafe-current-policy" };
   }
-  if (!isAddressEqual(creation.singleton, currentSafe.singleton)) {
+  if (!safeSingletonsAreEquivalent(creation.singleton, currentSafe.singleton)) {
     return { valid: false, reason: "initializer-policy-mismatch" };
   }
 
@@ -238,12 +281,19 @@ export function validateSafeCreationForCurrentPolicy(
     ) {
       return { valid: false, reason: "initializer-policy-mismatch" };
     }
+    // The only accepted delegatecall hook is the canonical SafeToL2Setup
+    // installing this release's own SafeL2 counterpart. Any other target,
+    // selector, or argument stays rejected, as does a non-zero payment.
+    const usesSafeToL2Setup = isAddressEqual(to, SAFE_TO_L2_SETUP_ADDRESS);
+    if (usesSafeToL2Setup && !isExactSetupToL2Call(setupData, creation.singleton)) {
+      return { valid: false, reason: "unsafe-initializer" };
+    }
     if (
-      !isAddressEqual(to, zeroAddress) ||
-      setupData !== "0x" ||
+      (!usesSafeToL2Setup && (!isAddressEqual(to, zeroAddress) || setupData !== "0x")) ||
       !isAddressEqual(paymentToken, zeroAddress) ||
       payment !== 0n ||
-      !isAddressEqual(paymentReceiver, zeroAddress)
+      (!isAddressEqual(paymentReceiver, zeroAddress) &&
+        !isAddressEqual(paymentReceiver, SAFE_CANONICAL_PAYMENT_RECEIVER))
     ) {
       return { valid: false, reason: "unsafe-initializer" };
     }
@@ -358,10 +408,17 @@ export async function simulateSafeProxyDeployment({
   let expectedCode: Hex | undefined;
   let factoryCode: Hex | undefined;
   let singletonCode: Hex | undefined;
+  let setupLibraryCode: Hex | undefined;
   let ownerCode: (Hex | undefined)[];
   let fallbackHandlerCode: Hex | undefined;
   try {
-    const addresses = [expectedSafe, creation.factory, creation.singleton, ...destinationOwners];
+    const addresses = [
+      expectedSafe,
+      creation.factory,
+      creation.singleton,
+      SAFE_TO_L2_SETUP_ADDRESS,
+      ...destinationOwners,
+    ];
     if (!isAddressEqual(destinationFallbackHandler, zeroAddress)) {
       addresses.push(destinationFallbackHandler);
     }
@@ -369,8 +426,8 @@ export async function simulateSafeProxyDeployment({
     if (code.some((runtime) => runtime !== undefined && !isRuntimeBytecode(runtime))) {
       return { valid: false, reason: "rpc-error" };
     }
-    [expectedCode, factoryCode, singletonCode] = code;
-    ownerCode = code.slice(3, 3 + destinationOwners.length);
+    [expectedCode, factoryCode, singletonCode, setupLibraryCode] = code;
+    ownerCode = code.slice(4, 4 + destinationOwners.length);
     fallbackHandlerCode = isAddressEqual(destinationFallbackHandler, zeroAddress)
       ? undefined
       : code.at(-1);
@@ -380,7 +437,21 @@ export async function simulateSafeProxyDeployment({
   if (hasBytecode(expectedCode)) return { valid: false, reason: "address-occupied" };
   if (!hasBytecode(factoryCode)) return { valid: false, reason: "factory-unavailable" };
   if (!hasBytecode(singletonCode)) return { valid: false, reason: "singleton-unavailable" };
-  if (keccak256(singletonCode!) !== currentSafe.singletonCodeHash) {
+  // A paired Ethereum/SafeL2 singleton is a different runtime by construction,
+  // so bind it by its allow-listed address instead of the source Safe's hash.
+  if (
+    isAddressEqual(creation.singleton, currentSafe.singleton)
+      ? keccak256(singletonCode!) !== currentSafe.singletonCodeHash
+      : !safeSingletonsAreEquivalent(creation.singleton, currentSafe.singleton)
+  ) {
+    return { valid: false, reason: "singleton-mismatch" };
+  }
+  // The initializer delegatecalls SafeToL2Setup on the destination chain, so
+  // that library's runtime must be the canonical one there too.
+  if (
+    usesSafeToL2Setup(creation) &&
+    (!hasBytecode(setupLibraryCode) || keccak256(setupLibraryCode!) !== SAFE_TO_L2_SETUP_CODE_HASH)
+  ) {
     return { valid: false, reason: "singleton-mismatch" };
   }
   if (ownerCode.some((code) => !isEoaAuthorityRuntime(code))) {

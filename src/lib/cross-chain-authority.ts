@@ -79,6 +79,50 @@ export const RECOGNIZED_SAFE_RELEASES = [
 
 export type RecognizedSafeVersion = (typeof RECOGNIZED_SAFE_RELEASES)[number]["version"];
 
+/**
+ * Safe's canonical 1.4.1 creation calls `SafeToL2Setup.setupToL2` as `setup`'s
+ * delegatecall hook. That library repoints slot zero at SafeL2 on every chain
+ * except Ethereum, so one initializer produces the same address with a
+ * different — but paired — singleton per chain. Treating the pair as a
+ * mismatch would reject every Safe the Safe interface deploys on an L2.
+ */
+export const SAFE_TO_L2_SETUP_ADDRESS = "0xBD89A1CE4DDe368FFAB0eC35506eEcE0b1fFdc54" as Address;
+
+/** keccak256 of SafeToL2Setup's runtime, identical on every canonical chain. */
+export const SAFE_TO_L2_SETUP_CODE_HASH =
+  "0x2f25df28caf984366ee584e13241707e85dcd5a6ea0c14267928dafc1fd6274b" as Hex;
+
+/**
+ * Safe's vanity `paymentReceiver` marker. It is inert because the accepted
+ * initializer subset still requires a zero `payment`.
+ */
+export const SAFE_CANONICAL_PAYMENT_RECEIVER =
+  "0x5afe7a11e7000000000000000000000000000000" as Address;
+
+/** Ethereum singleton to its SafeL2 counterpart, per recognized release. */
+export const SAFE_L1_L2_SINGLETON_PAIRS = [
+  ["0x41675C099F32341bf84BFc5382aF534df5C7461a", "0x29fcB43b46531BcA003ddC8FCB67FFE91900C762"],
+] as const satisfies readonly (readonly [Address, Address])[];
+
+/** The SafeL2 singleton `SafeToL2Setup` may install for `singleton`, if any. */
+export function pairedSafeL2Singleton(singleton: Address): Address | null {
+  const pair = SAFE_L1_L2_SINGLETON_PAIRS.find(([l1]) => isAddressEqual(l1, singleton));
+  return pair ? getAddress(pair[1]) : null;
+}
+
+/**
+ * True when two singletons describe one recognized release: the same address,
+ * or its exact Ethereum/SafeL2 pair. Both halves stay allow-listed elsewhere.
+ */
+export function safeSingletonsAreEquivalent(left: Address, right: Address): boolean {
+  if (isAddressEqual(left, right)) return true;
+  return SAFE_L1_L2_SINGLETON_PAIRS.some(
+    ([l1, l2]) =>
+      (isAddressEqual(l1, left) && isAddressEqual(l2, right)) ||
+      (isAddressEqual(l1, right) && isAddressEqual(l2, left)),
+  );
+}
+
 const safeProxyAbi = [
   {
     type: "function",
@@ -570,9 +614,12 @@ export function authorityIdentitiesMatch(
     !destination.hasModules &&
     isAddressEqual(source.guard, zeroAddress) &&
     isAddressEqual(destination.guard, zeroAddress) &&
-    isAddressEqual(source.singleton, destination.singleton) &&
+    safeSingletonsAreEquivalent(source.singleton, destination.singleton) &&
     source.proxyCodeHash.toLowerCase() === destination.proxyCodeHash.toLowerCase() &&
-    source.singletonCodeHash.toLowerCase() === destination.singletonCodeHash.toLowerCase() &&
+    // Paired Ethereum/SafeL2 singletons are distinct implementations of one
+    // release, so their runtimes only have to match when the address does.
+    (!isAddressEqual(source.singleton, destination.singleton) ||
+      source.singletonCodeHash.toLowerCase() === destination.singletonCodeHash.toLowerCase()) &&
     source.version === destination.version &&
     isAddressEqual(source.fallbackHandler, destination.fallbackHandler) &&
     source.fallbackHandlerCodeHash?.toLowerCase() ===
