@@ -2,6 +2,6 @@
   "name": "Revnet",
   "short_name": "Revnet",
   "description": "Tokenize revenues and fundraises. 100% autonomous.",
-  "iconPath": "/assets/img/small-bw-200x200.png",
+  "iconPath": "/assets/img/safe-app-icon.svg",
   "safe_apps_permissions": []
 }

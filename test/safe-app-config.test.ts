@@ -37,5 +37,8 @@ describe("Safe App hosting", () => {
     expect(manifest.name).toBe("Revnet");
     expect(manifest.safe_apps_permissions).toEqual([]);
     expect(() => readFileSync(`${publicDirectory}${manifest.iconPath}`)).not.toThrow();
+    expect(readFileSync(`${publicDirectory}${manifest.iconPath}`, "utf8")).toContain(
+      'viewBox="0 0 128 128"',
+    );
   });
 });
