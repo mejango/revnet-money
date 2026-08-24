@@ -678,11 +678,17 @@ export function AddLiquidityForm({
               args: [address],
             }),
       ]);
+      // The plan's maxima carry 1% price headroom on top of the entered
+      // amounts, so name both numbers — "exceeds your balance" reads as a lie
+      // when the entered amount alone fits.
+      const short = (max: bigint, balance: bigint, symbol: string, decimals: number) =>
+        `Needs up to ${fmtUnits(max, decimals)} ${symbol} (the amount plus 1% price headroom), ` +
+        `but your balance is ${fmtUnits(balance, decimals)} ${symbol}.`;
       if (plan.tokenMaximum > tokenBalance) {
-        throw new Error(`The reviewed maximum exceeds your ${tokenSymbol} balance.`);
+        throw new Error(short(plan.tokenMaximum, tokenBalance, tokenSymbol, 18));
       }
       if (plan.pairMaximum > pairBalance) {
-        throw new Error(`The reviewed maximum exceeds your ${pool.pair.symbol} balance.`);
+        throw new Error(short(plan.pairMaximum, pairBalance, pool.pair.symbol, pool.pair.decimals));
       }
       setReviewed({ plan, snapshot });
       setStatus(null);
@@ -849,6 +855,14 @@ export function AddLiquidityForm({
           maximum={view.maxPrice ?? 0}
           pairSymbol={pool.pair.symbol}
           tokenSymbol={tokenSymbol}
+          onRangeChange={
+            mode === "range" && !disabled
+              ? (edge, value) => {
+                  (edge === "minimum" ? setMinText : setMaxText)(String(value));
+                  setReviewed(null);
+                }
+              : undefined
+          }
         />
       ) : null}
       {mode === "range" ? (

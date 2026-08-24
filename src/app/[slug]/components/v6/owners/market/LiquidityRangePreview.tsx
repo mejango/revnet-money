@@ -1,3 +1,5 @@
+import { useRef, useState } from "react";
+
 type Marker = {
   label: string;
   value: number;
@@ -21,6 +23,7 @@ export function LiquidityRangePreview({
   maximum,
   pairSymbol,
   tokenSymbol,
+  onRangeChange,
 }: {
   floor: number | null;
   ceiling: number | null;
@@ -29,14 +32,28 @@ export function LiquidityRangePreview({
   maximum: number;
   pairSymbol: string;
   tokenSymbol: string;
+  /** Supplied only when the range is editable; enables the drag handles. */
+  onRangeChange?: (edge: "minimum" | "maximum", value: number) => void;
 }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  // The axis is scaled to the widest value, so an un-frozen scale would slide
+  // out from under a handle being dragged outward.
+  const frozenScale = useRef<number | null>(null);
+  const [dragging, setDragging] = useState<"minimum" | "maximum" | null>(null);
+
   const values = [floor, ceiling, current, minimum, maximum].filter(
     (value): value is number => value != null && Number.isFinite(value) && value > 0,
   );
   if (values.length === 0) return null;
 
-  const maxValue = Math.max(...values) * 1.12;
+  const maxValue = frozenScale.current ?? Math.max(...values) * 1.12;
   const xFor = (value: number) => PAD + ((WIDTH - PAD * 2) * value) / maxValue;
+  const valueFor = (clientX: number) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return null;
+    const x = ((clientX - rect.left) / rect.width) * WIDTH;
+    return (maxValue * (x - PAD)) / (WIDTH - PAD * 2);
+  };
   const topMarkers: Marker[] = [
     { label: "Floor", value: floor ?? 0, color: "#2c2018" },
     { label: "Ceiling", value: ceiling ?? 0, color: "#1a8a8a" },
@@ -48,9 +65,59 @@ export function LiquidityRangePreview({
   const height = baseline + 32;
   const currentLabel = current != null && current > 0 ? labelAnchor(xFor(current)) : null;
 
+  const drag = (edge: "minimum" | "maximum") => (event: React.PointerEvent<SVGRectElement>) => {
+    if (!onRangeChange) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    frozenScale.current = maxValue;
+    setDragging(edge);
+  };
+  const move = (edge: "minimum" | "maximum") => (event: React.PointerEvent<SVGRectElement>) => {
+    if (!onRangeChange || dragging !== edge) return;
+    const raw = valueFor(event.clientX);
+    if (raw == null) return;
+    // Keep the edges ordered with a sliver of daylight between them.
+    const gap = maxValue / 400;
+    const next = edge === "minimum" ? Math.min(raw, maximum - gap) : Math.max(raw, minimum + gap);
+    if (!(next > 0)) return;
+    onRangeChange(edge, Number(next.toPrecision(6)));
+  };
+  // Pointer capture releases itself on pointerup/pointercancel.
+  const end = () => {
+    frozenScale.current = null;
+    setDragging(null);
+  };
+
+  const handle = (edge: "minimum" | "maximum", value: number) => (
+    <g key={edge}>
+      <line
+        x1={xFor(value)}
+        y1={baseline - 13}
+        x2={xFor(value)}
+        y2={baseline + 13}
+        stroke="#1a8a8a"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+      <rect
+        x={xFor(value) - 7}
+        y={baseline - 15}
+        width="14"
+        height="30"
+        fill="transparent"
+        className="cursor-ew-resize touch-none"
+        onPointerDown={drag(edge)}
+        onPointerMove={move(edge)}
+        onPointerUp={end}
+        onPointerCancel={end}
+      />
+    </g>
+  );
+
   return (
     <div className="mt-3" data-liquidity-range-preview>
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${WIDTH} ${height}`}
         className="h-auto w-full overflow-visible"
         role="img"
@@ -141,6 +208,11 @@ export function LiquidityRangePreview({
             </text>
           </g>
         ) : null}
+        {/* The Min/Max number inputs stay the keyboard path; these are a
+            pointer-only shortcut to the same values. */}
+        {onRangeChange && minimum > 0 && maximum > minimum
+          ? [handle("minimum", minimum), handle("maximum", maximum)]
+          : null}
       </svg>
     </div>
   );
