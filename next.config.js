@@ -17,6 +17,13 @@ module.exports = {
   reactStrictMode: true,
   output: "standalone",
   outputFileTracingRoot: __dirname,
+  // Compile the browser proof route only in deterministic browser builds. It
+  // exercises Center through Chromium's native fetch without shipping a test
+  // endpoint in production.
+  pageExtensions:
+    process.env.NEXT_PUBLIC_DETERMINISTIC_BROWSER === "true"
+      ? ["tsx", "ts", "jsx", "js", "browsertest.tsx"]
+      : ["tsx", "ts", "jsx", "js"],
   async headers() {
     return [
       { source: "/:path*", headers: SECURITY_HEADERS },
