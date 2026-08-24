@@ -3,7 +3,7 @@ import { encodeFunctionData, parseAbi, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  config: { id: "test-config" },
+  config: { id: "test-config", chains: [{ id: 8453, name: "Base" }] },
   queryClient: { id: "test-query-client" },
   account: {
     address: "0x000000000000000000000000000000000000dEaD" as Address | undefined,
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     connector: { id: "injected", name: "Injected" } as { id: string; name: string } | undefined,
   },
   getAccount: vi.fn(),
+  switchChain: vi.fn(),
   estimateContractGas: vi.fn(),
   simulateContract: vi.fn(),
   waitForTransactionReceipt: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock("wagmi/actions", () => ({
     getTransactionReceipt: mocks.getTransactionReceipt,
   }),
   simulateContract: mocks.simulateContract,
+  switchChain: mocks.switchChain,
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -88,6 +90,7 @@ beforeEach(() => {
   mocks.simulateContract.mockImplementation(async (_config, request) => ({ request }));
   mocks.estimateContractGas.mockResolvedValue(50_000n);
   mocks.submit.mockResolvedValue(HASH);
+  mocks.switchChain.mockResolvedValue(undefined);
   mocks.waitForTransactionReceipt.mockImplementation(() => new Promise(() => undefined));
   mocks.getTransactionReceipt.mockRejectedValue(new Error("Receipt not found"));
   mocks.wagmiReceipt.mockReturnValue({
@@ -150,6 +153,35 @@ describe("reviewed write hook", () => {
         account: ACCOUNT,
       }),
     );
+  });
+
+  it("switches a wallet parked on another chain to the call's chain before submitting", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    mocks.account = { ...mocks.account, chainId: 1 };
+
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    expect(mocks.switchChain).toHaveBeenCalledWith(mocks.config, { chainId: 11155111 });
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("names the target chain when the wallet refuses to switch", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    mocks.account = { ...mocks.account, chainId: 1 };
+    mocks.switchChain.mockRejectedValue(new Error("User rejected"));
+
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await expect(
+      act(async () => {
+        await result.current.writeContractAsync({ ...CALL, chainId: 8453 } as never);
+      }),
+    ).rejects.toThrow("Switch your wallet to Base to continue.");
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 
   it("defers generic receipt success until an action-specific verifier releases it", async () => {

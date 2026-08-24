@@ -198,7 +198,10 @@ describe("project handle ENS authorization", () => {
     expect(source).toContain('placeholder="banny.eth"');
     expect(source).toContain('title="ENS juicebox text record"');
     expect(source).toContain('title="JBProjectHandles reverse claim"');
-    expect(source).toContain("Step {number} of 2");
+    expect(source).toContain("total={2}");
+    expect(readFileSync(resolve(process.cwd(), "src/components/ui/TxSteps.tsx"), "utf8")).toContain(
+      "Step {number} of {total}",
+    );
     expect(source).toContain('handleProgress.nextAction === "publish" ? publish : setEnsRecord');
     expect(source).toContain("`Set ${parsed.handle.ensName} record`");
     expect(source).toContain("`Publish /@${parsed.handle.handle}`");

@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TxSteps } from "@/components/ui/TxSteps";
 import { useToast } from "@/components/ui/use-toast";
 import {
   requireOnchainExecution,
@@ -506,6 +507,19 @@ export function PayerDeployForm({
                 </p>
               ))}
               {review.memo ? <p>Memo: {review.memo}</p> : null}
+              <TxSteps
+                steps={review.calls.map((call) => ({
+                  key: String(call.chainId),
+                  title: `Deploy on ${JB_CHAINS[call.chainId]?.name ?? call.chainId}`,
+                }))}
+                activeIndex={busy ? deployed.length : -1}
+                intro={
+                  review.calls.length > 1
+                    ? `One deploy per chain, in order — your wallet will ask ${review.calls.length} times and switch networks between them.`
+                    : "Your wallet will ask for one action."
+                }
+                className="mt-2 rounded border border-melon-200 bg-melon-50 p-3 text-xs"
+              />
             </div>
           ) : null}
 
@@ -523,8 +537,8 @@ export function PayerDeployForm({
             </ButtonWithWallet>
           </div>
 
-          {status ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
-          {error ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+          {status ? <p className="mt-2 wrap-anywhere text-xs text-zinc-500">{status}</p> : null}
+          {error ? <p className="mt-2 wrap-anywhere text-xs text-red-600">{error}</p> : null}
 
           {deployed.length > 0 ? (
             <div className="mt-4 border border-zinc-200 p-3 rounded">

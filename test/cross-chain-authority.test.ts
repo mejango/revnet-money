@@ -2,6 +2,7 @@ import {
   RECOGNIZED_SAFE_RELEASES,
   SAFE_FALLBACK_HANDLER_STORAGE_SLOT,
   SAFE_GUARD_STORAGE_SLOT,
+  SAFE_L1_L2_SINGLETON_PAIRS,
   SAFE_MODULES_SENTINEL,
   authorityIdentitiesMatch,
   readAuthorityIdentity,
@@ -477,5 +478,51 @@ describe("cross-chain authority policy", () => {
         authority: AUTHORITY,
       }),
     ).resolves.toMatchObject({ status: "authority-mismatch", allowed: false });
+  });
+});
+
+describe("Ethereum/SafeL2 singleton pairing", () => {
+  const L1_SINGLETON = SAFE_L1_L2_SINGLETON_PAIRS[0][0];
+  const L2_SINGLETON = SAFE_L1_L2_SINGLETON_PAIRS[0][1];
+  const L1_CODE = "0x60106000" as Hex;
+  const L2_CODE = "0x60116000" as Hex;
+
+  // Safe deploys the Ethereum singleton on chain 1 and SafeL2 everywhere
+  // else from one initializer, so the two halves must read as one release.
+  const ethereumSafe = safeIdentity({
+    singleton: L1_SINGLETON,
+    singletonCodeHash: keccak256(L1_CODE),
+    version: "1.4.1",
+  });
+  const l2Safe = safeIdentity({
+    singleton: L2_SINGLETON,
+    singletonCodeHash: keccak256(L2_CODE),
+    version: "1.4.1",
+  });
+
+  it("matches a Safe deployed the canonical way on both chains", () => {
+    expect(authorityIdentitiesMatch(l2Safe, ethereumSafe)).toBe(true);
+  });
+
+  it("still requires identical runtime when the singleton address is shared", () => {
+    expect(
+      authorityIdentitiesMatch(ethereumSafe, {
+        ...ethereumSafe,
+        singletonCodeHash: keccak256(L2_CODE),
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a singleton from a different release", () => {
+    expect(
+      authorityIdentitiesMatch(l2Safe, {
+        ...ethereumSafe,
+        singleton: RECOGNIZED_SAFE_RELEASES[0].singletons[0],
+      }),
+    ).toBe(false);
+  });
+
+  it("does not let a paired singleton excuse divergent control", () => {
+    expect(authorityIdentitiesMatch(l2Safe, { ...ethereumSafe, threshold: 1 })).toBe(false);
   });
 });

@@ -1,4 +1,11 @@
-import { RECOGNIZED_SAFE_RELEASES, type SafeAuthorityIdentity } from "@/lib/cross-chain-authority";
+import {
+  RECOGNIZED_SAFE_RELEASES,
+  safeSingletonsAreEquivalent,
+  SAFE_CANONICAL_PAYMENT_RECEIVER,
+  SAFE_L1_L2_SINGLETON_PAIRS,
+  SAFE_TO_L2_SETUP_ADDRESS,
+  type SafeAuthorityIdentity,
+} from "@/lib/cross-chain-authority";
 import {
   buildSafeProxyFactoryCall,
   fetchSafeCreation,
@@ -6,6 +13,7 @@ import {
   safeCreationUrl,
   safeProxyFactoryAbi,
   safeSetupAbi,
+  safeToL2SetupAbi,
   simulateSafeProxyDeployment,
   simulatedSafeAddressMatchesExpected,
   validateSafeCreationForCurrentPolicy,
@@ -384,5 +392,115 @@ describe("same-address Safe deployment calls", () => {
         authority: SAFE,
       }),
     ).resolves.toMatchObject({ status: "valid-eoa", allowed: true });
+  });
+});
+
+describe("canonical SafeToL2Setup creation", () => {
+  const L1_SINGLETON = SAFE_L1_L2_SINGLETON_PAIRS[0][0];
+  const L2_SINGLETON = SAFE_L1_L2_SINGLETON_PAIRS[0][1];
+  const L2_FACTORY = RECOGNIZED_SAFE_RELEASES[1].factories[0];
+
+  function l2SetupData(l2Singleton: Address = L2_SINGLETON): Hex {
+    return encodeFunctionData({
+      abi: safeToL2SetupAbi,
+      functionName: "setupToL2",
+      args: [l2Singleton],
+    });
+  }
+
+  function l2Creation(overrides: Partial<SafeCreation> = {}): SafeCreation {
+    return creation({
+      factory: L2_FACTORY,
+      singleton: L1_SINGLETON,
+      initializer: initializer({
+        to: SAFE_TO_L2_SETUP_ADDRESS,
+        data: l2SetupData(),
+        paymentReceiver: SAFE_CANONICAL_PAYMENT_RECEIVER,
+      }),
+      ...overrides,
+    });
+  }
+
+  // The source Safe lives on an L2, where SafeToL2Setup already repointed
+  // slot zero at SafeL2 while the creation record still names the Ethereum
+  // singleton.
+  const l2Safe = currentSafe({ singleton: L2_SINGLETON, version: "1.4.1" });
+
+  it("accepts the initializer the Safe interface deploys on an L2", () => {
+    expect(validateSafeCreationForCurrentPolicy(l2Creation(), l2Safe)).toMatchObject({
+      valid: true,
+    });
+  });
+
+  it("treats an Ethereum/SafeL2 pair as one release", () => {
+    expect(safeSingletonsAreEquivalent(L1_SINGLETON, L2_SINGLETON)).toBe(true);
+    expect(safeSingletonsAreEquivalent(L2_SINGLETON, L1_SINGLETON)).toBe(true);
+    expect(safeSingletonsAreEquivalent(L1_SINGLETON, L1_SINGLETON)).toBe(true);
+    expect(safeSingletonsAreEquivalent(L1_SINGLETON, SINGLETON)).toBe(false);
+  });
+
+  it("rejects a foreign delegatecall target", () => {
+    expect(
+      validateSafeCreationForCurrentPolicy(
+        l2Creation({ initializer: initializer({ to: OTHER, data: l2SetupData() }) }),
+        l2Safe,
+      ),
+    ).toEqual({ valid: false, reason: "unsafe-initializer" });
+  });
+
+  it("rejects tampered SafeToL2Setup calldata", () => {
+    for (const data of [
+      l2SetupData(OTHER),
+      "0x" as Hex,
+      `${l2SetupData()}00` as Hex,
+      `0xdeadbeef${l2SetupData().slice(10)}` as Hex,
+    ]) {
+      expect(
+        validateSafeCreationForCurrentPolicy(
+          l2Creation({
+            initializer: initializer({ to: SAFE_TO_L2_SETUP_ADDRESS, data }),
+          }),
+          l2Safe,
+        ),
+      ).toEqual({ valid: false, reason: "unsafe-initializer" });
+    }
+  });
+
+  it("still rejects a non-zero setup payment", () => {
+    expect(
+      validateSafeCreationForCurrentPolicy(
+        l2Creation({
+          initializer: initializer({
+            to: SAFE_TO_L2_SETUP_ADDRESS,
+            data: l2SetupData(),
+            payment: 1n,
+            paymentReceiver: SAFE_CANONICAL_PAYMENT_RECEIVER,
+          }),
+        }),
+        l2Safe,
+      ),
+    ).toEqual({ valid: false, reason: "unsafe-initializer" });
+
+    expect(
+      validateSafeCreationForCurrentPolicy(
+        l2Creation({
+          initializer: initializer({
+            to: SAFE_TO_L2_SETUP_ADDRESS,
+            data: l2SetupData(),
+            paymentReceiver: OTHER,
+          }),
+        }),
+        l2Safe,
+      ),
+    ).toEqual({ valid: false, reason: "unsafe-initializer" });
+  });
+
+  it("still rejects a singleton outside the creation's own release", () => {
+    expect(
+      validateSafeCreationForCurrentPolicy(
+        l2Creation(),
+        currentSafe({ singleton: SINGLETON, version: "1.3.0" }),
+      ),
+    ).toEqual({ valid: false, reason: "initializer-policy-mismatch" });
   });
 });

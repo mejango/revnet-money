@@ -31,7 +31,7 @@ import {
   useWaitForTransactionReceipt as useWagmiWaitForTransactionReceipt,
   useWriteContract as useWagmiWriteContract,
 } from "wagmi";
-import { getAccount, getPublicClient, simulateContract } from "wagmi/actions";
+import { getAccount, getPublicClient, simulateContract, switchChain } from "wagmi/actions";
 
 const SAFE_PREFIX: Partial<Record<number, string>> = {
   1: "eth",
@@ -329,6 +329,16 @@ export function useWriteContract(
         }
         if (isSafeConnection(config) !== safe) {
           throw new Error("Wallet connection changed. Review the transaction again.");
+        }
+        // Every call names its own chain, so a wallet parked elsewhere is a
+        // switch away rather than an error the caller has to explain.
+        if (getAccount(config).chainId !== chainId) {
+          try {
+            await switchChain(config, { chainId } as Parameters<typeof switchChain>[1]);
+          } catch {
+            const target = config.chains.find((chain) => chain.id === chainId)?.name;
+            throw new Error(`Switch your wallet to ${target ?? `chain ${chainId}`} to continue.`);
+          }
         }
         const hash = await mutation.writeContractAsync({
           ...simulation.request,

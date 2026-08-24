@@ -1,5 +1,6 @@
 import type { JBChainId } from "@bananapus/nana-sdk-core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render as rtlRender, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AddLiquidityForm } from "@/app/[slug]/components/v6/owners/market/AmmCard";
@@ -44,6 +45,9 @@ const state: AmmChainState = {
   composition: null,
   reference: { cashOut: 6.68961e-8, issuance: 0.0016 },
 };
+
+const render = (ui: React.ReactElement) =>
+  rtlRender(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
 
 describe("AddLiquidityForm", () => {
   it("defaults to amounts mode and explains the solved range", () => {

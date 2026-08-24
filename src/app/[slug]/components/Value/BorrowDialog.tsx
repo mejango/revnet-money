@@ -1,5 +1,6 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
+import { TxSteps } from "@/components/ui/TxSteps";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     showChart,
     showInfo,
     borrowStatus,
+    grantsPermission,
     collateralAmount,
     cashOutChainId,
     prepaidPercent,
@@ -346,6 +348,20 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           <ImportantInfo collateralAmount={collateralAmount} tokenSymbol={tokenSymbol} />
         )}
         {/* Borrow Button and Status Message - horizontally aligned */}
+        {grantsPermission ? (
+          <TxSteps
+            steps={[
+              {
+                key: "permission",
+                title: "Let REVLoans burn your collateral",
+                detail: "A one-off permission so the loan can hold your tokens.",
+              },
+              { key: "borrow", title: "Open the loan" },
+            ]}
+            activeIndex={borrowStatus === "granting-permission" ? 0 : 1}
+            className="rounded border border-melon-200 bg-melon-50 p-3 text-xs"
+          />
+        ) : null}
         <DialogFooter className="flex items-center justify-between w-full gap-4">
           <div className="flex-1 text-left">
             {borrowStatus !== "idle" && (
