@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { TxStep, stepStatus } from "@/components/ui/TxSteps";
 import { useToast } from "@/components/ui/use-toast";
 import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import {
@@ -87,50 +88,6 @@ type HandleSetup = {
   textRecord: string | null;
   verifiedHandle: string;
 };
-
-function HandleProgressStep({
-  number,
-  title,
-  complete,
-  active,
-  children,
-}: {
-  number: 1 | 2;
-  title: string;
-  complete: boolean;
-  active: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <li className="flex items-start gap-3" aria-current={active ? "step" : undefined}>
-      <span
-        aria-hidden="true"
-        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${
-          complete
-            ? "border-teal-500 bg-teal-500 text-white"
-            : active
-              ? "border-teal-600 bg-teal-50 text-teal-700"
-              : "border-zinc-300 text-zinc-400"
-        }`}
-      >
-        {complete ? "✓" : number}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p
-          className={`text-[11px] uppercase tracking-wide ${
-            complete || active ? "text-teal-700" : "text-zinc-400"
-          }`}
-        >
-          Step {number} of 2
-        </p>
-        <p className={`font-medium ${complete || active ? "text-zinc-900" : "text-zinc-500"}`}>
-          {title}
-        </p>
-        {children}
-      </div>
-    </li>
-  );
-}
 
 // The canonical origin, not the browser's: the shown URL is the project's
 // public address, which shouldn't change when the operator browses via a
@@ -1027,11 +984,14 @@ export function ProjectHandleEditor({
                       </p>
                     ) : null}
                     <ol className="space-y-3 rounded border border-melon-200 bg-melon-50 p-3">
-                      <HandleProgressStep
+                      <TxStep
                         number={1}
+                        total={2}
                         title="ENS juicebox text record"
-                        complete={handleProgress.ensRecordComplete}
-                        active={handleProgress.nextAction === "ens"}
+                        status={stepStatus(
+                          handleProgress.ensRecordComplete,
+                          handleProgress.nextAction === "ens",
+                        )}
                       >
                         <p className="mt-1 text-zinc-500">
                           {handleProgress.ensRecordComplete
@@ -1048,12 +1008,15 @@ export function ProjectHandleEditor({
                             ; approved delegates can also submit.
                           </p>
                         ) : null}
-                      </HandleProgressStep>
-                      <HandleProgressStep
+                      </TxStep>
+                      <TxStep
                         number={2}
+                        total={2}
                         title="JBProjectHandles reverse claim"
-                        complete={handleProgress.reverseClaimComplete}
-                        active={handleProgress.nextAction === "publish"}
+                        status={stepStatus(
+                          handleProgress.reverseClaimComplete,
+                          handleProgress.nextAction === "publish",
+                        )}
                       >
                         <p className="mt-1 text-zinc-500">
                           {handleProgress.reverseClaimComplete
@@ -1074,7 +1037,7 @@ export function ProjectHandleEditor({
                             </p>
                           )
                         ) : null}
-                      </HandleProgressStep>
+                      </TxStep>
                     </ol>
                     {fullyVerified ? (
                       <p className="text-green-700">

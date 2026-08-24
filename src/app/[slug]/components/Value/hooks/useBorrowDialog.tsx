@@ -86,6 +86,14 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
   // Borrow-related state
   const [borrowStatus, setBorrowStatus] = useState<BorrowState>("idle");
+  // The burn permission is read live at submission, so a run only learns it is
+  // two prompts once the grant starts. Remembering that keeps the finished
+  // grant listed instead of vanishing when the loan step begins.
+  const [grantsPermission, setGrantsPermission] = useState(false);
+  useEffect(() => {
+    if (borrowStatus === "granting-permission") setGrantsPermission(true);
+    if (borrowStatus === "idle") setGrantsPermission(false);
+  }, [borrowStatus]);
   const [collateralAmount, setCollateralAmount] = useState("");
   const [selectedChainId, setSelectedChainId] = useState<number | undefined>(undefined);
   const [cashOutChainId, setCashOutChainId] = useState<string>();
@@ -825,6 +833,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     showRefinanceLoanDetailsTable,
     showingWaitingMessage,
     borrowStatus,
+    grantsPermission,
     collateralAmount,
     selectedChainId,
     cashOutChainId,

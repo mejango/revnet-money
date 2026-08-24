@@ -3,6 +3,7 @@
 import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { ExternalLink } from "@/components/ExternalLink";
 import { Revalidating } from "@/components/ui/Revalidating";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import {
@@ -13,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TxSteps } from "@/components/ui/TxSteps";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
   isSafeConnection,
@@ -21,13 +23,14 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { cachedQuery } from "@/lib/query-persist";
+import { explorerBaseUrl } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
   uniswapV4AmountsForLiquidity,
   uniswapV4DefaultPriceRange,
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
   erc20Abi,
@@ -35,6 +38,7 @@ import {
   parseUnits,
   zeroAddress,
   type Address,
+  type Hex,
   type PublicClient,
 } from "viem";
 import { useAccount, useConfig, usePublicClient } from "wagmi";
@@ -543,6 +547,24 @@ function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; token
   );
 }
 
+// Viem stuffs the whole request envelope into `message`; `shortMessage` is the
+// one sentence a reader can act on.
+function txMessage(cause: unknown, fallback: string): string {
+  const error = cause as { shortMessage?: string; message?: string } | null;
+  return error?.shortMessage || error?.message || fallback;
+}
+
+/**
+ * A wallet prompt this add will actually raise. Deciding the sequence while
+ * reviewing — not while executing — is what lets the signer see the whole queue
+ * before the first prompt, and keeps the list from naming approvals it skips.
+ */
+type LiquidityStep = {
+  title: string;
+  detail: string;
+  approval?: { kind: "erc20" | "permit2"; currency: Address; max: bigint };
+};
+
 export function AddLiquidityForm({
   state,
   tokenSymbol,
@@ -564,10 +586,14 @@ export function AddLiquidityForm({
   const [driver, setDriver] = useState<LiquidityFormSide>("token");
   const [reviewed, setReviewed] = useState<{
     plan: AddLiquidityPlan;
+    steps: LiquidityStep[];
     snapshot: string;
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [minted, setMinted] = useState<Hex | null>(null);
   const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
   const pool = state.pool;
 
   // Seed the range-mode inputs once from the economic corridor (cash-out
@@ -605,6 +631,7 @@ export function AddLiquidityForm({
 
   const snapshot = [mode, minText, maxText, pairText, tokenText, driver].join("|");
   const review = reviewed?.snapshot === snapshot ? reviewed.plan : null;
+  const reviewSteps = reviewed?.snapshot === snapshot ? reviewed.steps : [];
 
   // Typed amounts submit from their exact text; derived ones from the solved
   // float (their on-chain amounts are recomputed from liquidity anyway).
@@ -651,6 +678,8 @@ export function AddLiquidityForm({
       return;
     }
     setBusy(true);
+    setStepIndex(0);
+    setMinted(null);
     setStatus("Reading fresh pool and wallet balances…");
     try {
       const plan = prepareAddLiquidity(
@@ -689,7 +718,43 @@ export function AddLiquidityForm({
       if (enteredPair > pairBalance) {
         throw new Error(`That's more ${pool.pair.symbol} than your balance.`);
       }
-      setReviewed({ plan, snapshot });
+      const symbolOf = (currency: Address) =>
+        currency.toLowerCase() === pool.projectToken.toLowerCase() ? tokenSymbol : pool.pair.symbol;
+      const approvals: LiquidityStep[] = [];
+      for (const side of plan.erc20Sides) {
+        const symbol = symbolOf(side.currency);
+        const allowance = await publicClient.readContract({
+          address: side.currency,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [address, PERMIT2_ADDRESS],
+        });
+        if (allowance < side.max) {
+          approvals.push({
+            title: `Approve ${symbol} access`,
+            detail: `Permit2 is what moves your ${symbol} into the pool.`,
+            approval: { kind: "erc20", currency: side.currency, max: side.max },
+          });
+        }
+        if (!(await permit2AllowanceCovers(state.chainId, address, side.currency, side.max))) {
+          approvals.push({
+            title: `Authorize the Uniswap position manager for ${symbol}`,
+            detail: `A capped, expiring ${symbol} allowance — not an open-ended one.`,
+            approval: { kind: "permit2", currency: side.currency, max: side.max },
+          });
+        }
+      }
+      setReviewed({
+        plan,
+        steps: [
+          ...approvals,
+          {
+            title: "Mint the position",
+            detail: "Deposits both sides into your chosen price range.",
+          },
+        ],
+        snapshot,
+      });
       // The headroom is still worth naming when it outruns the balance — the
       // mint reverts if the price moves against the position before it lands.
       const tight = [
@@ -704,33 +769,39 @@ export function AddLiquidityForm({
       );
     } catch (cause) {
       setReviewed(null);
-      setStatus(cause instanceof Error ? cause.message : "Could not prepare liquidity.");
+      setStatus(txMessage(cause, "Could not prepare liquidity."));
     } finally {
       setBusy(false);
     }
   };
 
   const execute = async () => {
-    if (!address || !publicClient || !review) return;
+    if (!address || !publicClient || !reviewed || reviewed.snapshot !== snapshot) return;
+    const { plan, steps } = reviewed;
     setBusy(true);
-    setStatus("Checking token authorizations…");
+    setStatus(null);
     try {
-      for (const side of review.erc20Sides) {
-        await ensureAllowance(side.currency, PERMIT2_ADDRESS, side.max);
-        const covered = await permit2AllowanceCovers(
-          state.chainId,
-          address,
-          side.currency,
-          side.max,
-        );
-        if (!covered) {
-          const approvalArgs = permit2ApprovalArgs(state.chainId, side.currency, side.max);
+      for (const [index, step] of steps.entries()) {
+        setStepIndex(index);
+        if (step.approval?.kind === "erc20") {
+          await ensureAllowance(step.approval.currency, PERMIT2_ADDRESS, step.approval.max);
+          continue;
+        }
+        if (step.approval?.kind === "permit2") {
+          // Re-checked rather than trusted: the review's reading can age out.
+          const covered = await permit2AllowanceCovers(
+            state.chainId,
+            address,
+            step.approval.currency,
+            step.approval.max,
+          );
+          if (covered) continue;
           const approvalHash = await writeContractAsync({
             chainId,
             address: PERMIT2_ADDRESS,
             abi: PERMIT2_ABI,
             functionName: "approve",
-            args: approvalArgs,
+            args: permit2ApprovalArgs(state.chainId, step.approval.currency, step.approval.max),
           });
           if (submittedViaSafe(approvalHash)) {
             setStatus(
@@ -743,32 +814,39 @@ export function AddLiquidityForm({
           if (receipt.status !== "success") {
             throw new Error(`Permit2 authorization ${approvalHash} reverted.`);
           }
+          continue;
         }
+        await reverifyAddLiquidity(pool, plan);
+        const call = encodeAddLiquidityCall(plan, lpDeadline(isSafeConnection(wagmiConfig)));
+        const hash = await writeContractAsync({
+          chainId,
+          address: POSITION_MANAGER_BY_CHAIN[chainId]!,
+          abi: POSITION_MANAGER_ABI,
+          functionName: "modifyLiquidities",
+          args: call.args,
+          value: plan.value,
+        });
+        if (submittedViaSafe(hash)) {
+          setStatus("Liquidity mint was proposed to Safe and awaits approvals and execution.");
+          setReviewed(null);
+          return;
+        }
+        const receipt = await waitForReceiptWithRetry(publicClient, hash);
+        if (receipt.status !== "success") throw new Error(`Liquidity mint ${hash} reverted.`);
+        setStepIndex(steps.length);
+        setMinted(hash);
       }
-      setStatus("Re-checking the pool price…");
-      await reverifyAddLiquidity(pool, review);
-      const call = encodeAddLiquidityCall(review, lpDeadline(isSafeConnection(wagmiConfig)));
-      const hash = await writeContractAsync({
-        chainId,
-        address: POSITION_MANAGER_BY_CHAIN[chainId]!,
-        abi: POSITION_MANAGER_ABI,
-        functionName: "modifyLiquidities",
-        args: call.args,
-        value: review.value,
-      });
-      if (submittedViaSafe(hash)) {
-        setStatus("Liquidity mint was proposed to Safe and awaits approvals and execution.");
-        setReviewed(null);
-        return;
-      }
-      const receipt = await waitForReceiptWithRetry(publicClient, hash);
-      if (receipt.status !== "success") throw new Error(`Liquidity mint ${hash} reverted.`);
-      setStatus("Liquidity added successfully.");
       setReviewed(null);
       setPairText("");
       setTokenText("");
+      // The position list below this form is a sibling query: without this it
+      // keeps claiming the wallet owns nothing right after a successful mint.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["revnetWalletLpPositions"] }),
+        queryClient.invalidateQueries({ queryKey: ["revnetPoolLpProviders"] }),
+      ]);
     } catch (cause) {
-      setStatus(cause instanceof Error ? cause.message : "Could not add liquidity.");
+      setStatus(txMessage(cause, "Could not add liquidity."));
     } finally {
       setBusy(false);
     }
@@ -957,6 +1035,16 @@ export function AddLiquidityForm({
         <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
           <p className="font-medium">{planText.lead}</p>
           <p className="mt-1 text-[11px] text-zinc-500">{planText.detail}</p>
+          <TxSteps
+            steps={reviewSteps}
+            activeIndex={busy ? stepIndex : -1}
+            intro={
+              reviewSteps.length > 1
+                ? `Your wallet will ask for ${reviewSteps.length} actions. This form stays open and advances through each one.`
+                : "Your wallet will ask for one action."
+            }
+            className="mt-2 rounded border border-melon-200 bg-melon-50 p-3 text-xs"
+          />
           <div className="mt-2 flex gap-2">
             <button
               type="button"
@@ -986,8 +1074,25 @@ export function AddLiquidityForm({
           {disabled ? "Checking…" : address ? "Review add liquidity" : "Connect to add liquidity"}
         </button>
       )}
+      {minted ? (
+        <div className="mt-2 border border-teal-300 bg-teal-50 p-2 text-xs" role="status">
+          <p className="font-medium text-teal-800">Liquidity added.</p>
+          <p className="mt-1 text-[11px] text-zinc-600">
+            The position is yours and now earns fees. It is listed under &ldquo;Your
+            liquidity&rdquo; below.
+          </p>
+          {explorerBaseUrl(chainId) ? (
+            <ExternalLink
+              className="mt-1 inline-block text-[11px] underline"
+              href={`${explorerBaseUrl(chainId)}/tx/${minted}`}
+            >
+              View the transaction
+            </ExternalLink>
+          ) : null}
+        </div>
+      ) : null}
       {status ? (
-        <p className="mt-2 text-xs text-zinc-500" role="status">
+        <p className="mt-2 wrap-anywhere text-xs text-zinc-500" role="status">
           {status}
         </p>
       ) : null}
@@ -1081,7 +1186,7 @@ export function LiquidityManager({
         plan: prepareRemoveLiquidity(pool, fresh, address, isSafeConnection(wagmiConfig)),
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not refresh this position.");
+      setError(txMessage(cause, "Could not refresh this position."));
     } finally {
       setRefreshing(null);
     }
@@ -1104,7 +1209,7 @@ export function LiquidityManager({
         args: [plan.unlockData, plan.deadline],
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not claim fees.");
+      setError(txMessage(cause, "Could not claim fees."));
     } finally {
       setClaiming(null);
     }
@@ -1129,7 +1234,7 @@ export function LiquidityManager({
         args: [reviewed.plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not remove liquidity.");
+      setError(txMessage(cause, "Could not remove liquidity."));
     }
   };
 
@@ -1251,7 +1356,7 @@ export function LiquidityManager({
         <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
       ) : null}
       {error ? (
-        <p className="mt-2 text-xs text-red-600" role="alert">
+        <p className="mt-2 wrap-anywhere text-xs text-red-600" role="alert">
           {error}
         </p>
       ) : null}

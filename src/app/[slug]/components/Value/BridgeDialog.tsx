@@ -2,6 +2,7 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
+import { TxSteps } from "@/components/ui/TxSteps";
 import {
   Dialog,
   DialogContent,
@@ -44,7 +45,7 @@ import { JB_CHAINS, JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-cor
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useMemo, useState } from "react";
-import { formatUnits, getAddress, parseUnits } from "viem";
+import { erc20Abi, formatUnits, getAddress, parseUnits } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 
 interface Props {
@@ -62,6 +63,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const baseToken = useProjectBaseToken();
   const tokenSymbol = formatTokenSymbol(token);
   const { ensureAllowance, isApproving } = useAllowance(sourceChainId);
+  const [needsApproval, setNeedsApproval] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { address } = useAccount();
   const router = useRouter();
@@ -194,6 +196,15 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         throw new Error("Couldn't determine sucker pair. Please try again");
       }
 
+      // Named before any prompt opens: the approval is a separate wallet action
+      // and the dialog otherwise gives no sign that a second one is coming.
+      const allowance = await publicClient.readContract({
+        address: tokenAddress,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [address, suckerPair.local],
+      });
+      setNeedsApproval(allowance < amountValue);
       await ensureAllowance(tokenAddress, suckerPair.local, amountValue);
 
       // An approval can leave the dialog open for minutes. Re-read immediately
@@ -452,6 +463,21 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
               )}
             </div>
           </fieldset>
+
+          {needsApproval ? (
+            <TxSteps
+              steps={[
+                {
+                  key: "approve",
+                  title: "Approve the bridge for your tokens",
+                  detail: "The sucker cannot take custody of them without this allowance.",
+                },
+                { key: "prepare", title: "Queue the bridge" },
+              ]}
+              activeIndex={isApproving ? 0 : isLoading || isSuccess ? 1 : -1}
+              className="rounded border border-melon-200 bg-melon-50 p-3 text-xs"
+            />
+          ) : null}
 
           <DialogFooter className="flex items-center sm:justify-between w-full gap-4">
             <div

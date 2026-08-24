@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { TxSteps } from "@/components/ui/TxSteps";
 import {
   PERMIT2_ADDRESS,
   permit2TypedData,
@@ -256,44 +257,15 @@ export function V6PayConfirmDialog({
                         </SummaryRow>
                       ) : null}
                       {prepared.memo ? <SummaryRow label="Note">{prepared.memo}</SummaryRow> : null}
-                      {prepared.needsApproval || prepared.needsPermit2Approval ? (
-                        <p className="text-xs text-zinc-500">
-                          Your wallet will ask for {walletActionCount(prepared)} actions. This
-                          dialog stays open and advances through each one.
-                        </p>
-                      ) : (
-                        <p className="text-xs text-zinc-500">
-                          Your wallet will ask for one action to execute this{" "}
-                          {prepared.mode === "pay" ? "payment" : "balance addition"}.
-                        </p>
-                      )}
-
-                      <ol className="space-y-1 rounded border border-melon-200 bg-melon-50 p-3 text-xs">
-                        {walletActionSteps(prepared).map((step, index) => (
-                          <li key={step} className="flex items-center gap-2">
-                            <span
-                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-                                activeStepIndex(prepared, phase) === index
-                                  ? "border-teal-600 bg-teal-50 text-teal-700"
-                                  : activeStepIndex(prepared, phase) > index
-                                    ? "border-teal-500 bg-teal-500 text-white"
-                                    : "border-zinc-300 text-zinc-400"
-                              }`}
-                            >
-                              {activeStepIndex(prepared, phase) > index ? "✓" : index + 1}
-                            </span>
-                            <span
-                              className={
-                                activeStepIndex(prepared, phase) === index
-                                  ? "font-medium text-zinc-900"
-                                  : "text-zinc-500"
-                              }
-                            >
-                              {step}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
+                      <TxSteps
+                        steps={walletActionSteps(prepared).map((title) => ({ title }))}
+                        activeIndex={activeStepIndex(prepared, phase)}
+                        intro={
+                          walletActionCount(prepared) > 1
+                            ? `Your wallet will ask for ${walletActionCount(prepared)} actions. This dialog stays open and advances through each one.`
+                            : `Your wallet will ask for one action to execute this ${prepared.mode === "pay" ? "payment" : "balance addition"}.`
+                        }
+                      />
 
                       <p className="border border-peel-200 bg-peel-25 p-3 text-sm leading-relaxed text-peel-800">
                         This is the exact wallet action that will be sent to your wallet. Review it

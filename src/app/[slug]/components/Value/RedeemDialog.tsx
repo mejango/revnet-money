@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TxSteps } from "@/components/ui/TxSteps";
 import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
@@ -290,6 +291,48 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
       routerAllowance[0] < redeemAmountBN ||
       Number(routerAllowance[1]) <= Math.floor(Date.now() / 1000) + 1_800);
 
+  // A cleared approval stops being "needed", so the queue is built from the
+  // approvals this sale ever required — otherwise a finished step disappears
+  // instead of ticking over to done.
+  const [requiredApprovals, setRequiredApprovals] = useState<("erc20" | "router")[]>([]);
+  useEffect(() => {
+    setRequiredApprovals((current) => {
+      const next: ("erc20" | "router")[] = directSell
+        ? [
+            ...(needsErc20Approval || current.includes("erc20") ? (["erc20"] as const) : []),
+            ...(needsRouterApproval || current.includes("router") ? (["router"] as const) : []),
+          ]
+        : [];
+      return next.join() === current.join() ? current : next;
+    });
+  }, [directSell, needsErc20Approval, needsRouterApproval]);
+
+  // Each approval is its own wallet prompt and its own click, so the whole
+  // queue is named before the first one.
+  const cashOutSteps = [
+    ...requiredApprovals.map((kind) =>
+      kind === "erc20"
+        ? {
+            key: "erc20",
+            title: "Approve your tokens for the swap router",
+            detail: "Permit2 cannot move your tokens without this allowance.",
+          }
+        : {
+            key: "router",
+            title: "Authorize the swap router",
+            detail: "A capped allowance that expires in 30 days.",
+          },
+    ),
+    { key: "cashout", title: directSell ? "Sell on the pool" : "Cash out" },
+  ];
+  const cashOutActiveIndex = isSuccess
+    ? cashOutSteps.length
+    : needsErc20Approval
+      ? requiredApprovals.indexOf("erc20")
+      : needsRouterApproval
+        ? requiredApprovals.indexOf("router")
+        : requiredApprovals.length;
+
   useEffect(() => {
     if (!approvalConfirmed) return;
     setIsApproving(false);
@@ -494,6 +537,13 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
               )}
             </div>
           </DialogDescription>
+          {cashOutSteps.length > 1 && !isSuccess ? (
+            <TxSteps
+              steps={cashOutSteps}
+              activeIndex={cashOutActiveIndex}
+              className="mb-3 rounded border border-melon-200 bg-melon-50 p-3 text-xs"
+            />
+          ) : null}
           <DialogFooter>
             {!isSuccess ? (
               <ButtonWithWallet

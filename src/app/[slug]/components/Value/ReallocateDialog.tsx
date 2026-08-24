@@ -1,4 +1,5 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { TxSteps } from "@/components/ui/TxSteps";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ export function ReallocateDialog({
     showChart,
     showInfo,
     borrowStatus,
+    grantsPermission,
     collateralAmount,
     cashOutChainId,
     prepaidPercent,
@@ -363,6 +365,21 @@ export function ReallocateDialog({
               )}
             </>
           )}
+
+          {grantsPermission ? (
+            <TxSteps
+              steps={[
+                {
+                  key: "permission",
+                  title: "Let REVLoans burn your collateral",
+                  detail: "A one-off permission so the loan can hold your tokens.",
+                },
+                { key: "borrow", title: "Reallocate the loan" },
+              ]}
+              activeIndex={borrowStatus === "granting-permission" ? 0 : 1}
+              className="rounded border border-melon-200 bg-melon-50 p-3 text-xs"
+            />
+          ) : null}
 
           {/* Status and Action */}
           {collateralToTransfer > 0 && (
