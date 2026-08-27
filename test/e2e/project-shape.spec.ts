@@ -323,7 +323,9 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
     () => page.getByRole("button", { name: "Set project handle", exact: true }).click(),
     page.getByRole("dialog"),
   );
-  await expect(page.getByRole("dialog").getByRole("link", { name: projectUrl })).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText(
+    `You’ll be able to find your project at ${projectUrl}`,
+  );
   await expectContained(page, ["nav", "main"]);
   await expectNoBlockingAccessibilityFindings(page);
 
