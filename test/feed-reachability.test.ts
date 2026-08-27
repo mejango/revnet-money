@@ -10,8 +10,8 @@ import {
   requiredFeedPairs,
 } from "@/app/create/helpers/feedReachability";
 import { ETH_CURRENCY_ID, JB_CHAINS, NATIVE_TOKEN, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
-import { NATIVE_TOKEN_CURRENCY_ID, tokenCurrencyId } from "@bananapus/nana-sdk-core/v6";
 import { JBCenterRequestError, JBCenterTimeoutError } from "@bananapus/nana-sdk-core/jbcenter";
+import { NATIVE_TOKEN_CURRENCY_ID, tokenCurrencyId } from "@bananapus/nana-sdk-core/v6";
 import { ContractFunctionRevertedError, type PublicClient } from "viem";
 import { sepolia } from "viem/chains";
 import { describe, expect, it, vi } from "vitest";

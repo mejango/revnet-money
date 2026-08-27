@@ -222,7 +222,7 @@ describe("project handle ENS authorization", () => {
     expect(source).toContain("if (busyAction) event.preventDefault()");
     // The future URL is announced, not linked: the handle is not live until
     // the second transaction lands.
-    expect(source).not.toContain('href={projectRoute}');
+    expect(source).not.toContain("href={projectRoute}");
     expect(source).toContain('<span className="break-all">');
     expect(source).toContain("void setupQuery.refetch()");
   });

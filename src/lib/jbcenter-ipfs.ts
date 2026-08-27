@@ -56,7 +56,9 @@ export function createJBCenterIpfsClient(options: BrowserClientOptions = {}): JB
     }
     const pin = await request;
     if (pin.cid === EMPTY_FILE_CID) {
-      throw new Error(`"${file.name || "file"}" uploaded as empty. Choose the file again and retry.`);
+      throw new Error(
+        `"${file.name || "file"}" uploaded as empty. Choose the file again and retry.`,
+      );
     }
     return pin;
   };
