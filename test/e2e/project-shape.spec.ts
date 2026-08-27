@@ -282,17 +282,20 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
       exact: false,
     },
   );
-  await expect(projectHandleDialog.getByRole("link", { name: projectUrl })).toBeVisible();
+  // The future URL is announced, never linked: the handle is not live until
+  // the second transaction lands.
+  await expect(projectHandleDialog.getByRole("link", { name: projectUrl })).toHaveCount(0);
   await expect(projectUrlPreview).toHaveText(
     `You’ll be able to find your project at ${projectUrl}`,
   );
   await projectHandleDialog.getByLabel("Your .eth name").fill("FIXTURE-REVNET.ETH");
-  await expect(projectHandleDialog.getByRole("link", { name: projectUrl })).toBeVisible();
+  await expect(projectUrlPreview).toHaveText(
+    `You’ll be able to find your project at ${projectUrl}`,
+  );
   await projectHandleDialog.getByLabel("Your .eth name").fill("");
   await expect(projectUrlPreview).toHaveText(
     `You’ll be able to find your project at ${projectOrigin}/@<handle>`,
   );
-  await expect(projectHandleDialog.getByRole("link", { name: projectUrl })).toHaveCount(0);
   await projectHandleDialog.getByRole("button", { name: "Close" }).click();
   await expect(projectHandleDialog).toBeHidden();
   const secondaryActions = [
