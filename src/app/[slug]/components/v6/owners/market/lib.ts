@@ -207,24 +207,10 @@ async function projectBuybackHook(
   chainId: JBChainId,
   projectId: bigint,
 ): Promise<{ hook: Address | null; info: DataHookInfo | null }> {
-  const registry = v6Address(JBBuybackHookContracts.JBBuybackHookRegistry, chainId);
-  // Issued alongside the ruleset read rather than after it: the registry is
-  // the common case, and the result is only consumed once the data hook is
-  // recognized as the registry.
-  const registryHook = registry
-    ? client
-        .readContract({
-          address: registry,
-          abi: jbBuybackHookRegistryAbi,
-          functionName: "hookOf",
-          args: [projectId],
-        })
-        .then((hook) => (hook && hook !== zeroAddress ? hook : null))
-        .catch(() => null)
-    : Promise.resolve(null);
   const info = await projectDataHook(client, chainId, projectId).catch(() => null);
   if (!info || info.dataHook === zeroAddress) return { hook: null, info };
 
+  const registry = v6Address(JBBuybackHookContracts.JBBuybackHookRegistry, chainId);
   const revOwner = v6Address(RevnetCoreContracts.REVOwner, chainId);
   const omni = v6Address(JBOmnichainDeployerContracts.JBOmnichainDeployer, chainId);
   const concrete = v6Address(JBBuybackHookContracts.JBBuybackHook, chainId);
@@ -232,7 +218,19 @@ async function projectBuybackHook(
 
   const recognize = async (dataHook: Address): Promise<Address | null> => {
     const d = dataHook.toLowerCase();
-    if (registry && (d === lc(registry) || d === lc(revOwner))) return registryHook;
+    if (registry && (d === lc(registry) || d === lc(revOwner))) {
+      try {
+        const hook = await client.readContract({
+          address: registry,
+          abi: jbBuybackHookRegistryAbi,
+          functionName: "hookOf",
+          args: [projectId],
+        });
+        return hook && hook !== zeroAddress ? hook : null;
+      } catch {
+        return null;
+      }
+    }
     if (concrete && d === lc(concrete)) return dataHook;
     return null;
   };
