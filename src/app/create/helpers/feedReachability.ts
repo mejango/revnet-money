@@ -20,6 +20,7 @@ import {
   NATIVE_TOKEN,
   USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
+import { JBCenterRequestError, JBCenterTimeoutError } from "@bananapus/nana-sdk-core/jbcenter";
 import {
   BASE_CURRENCY_ETH,
   BASE_CURRENCY_USD,
@@ -28,7 +29,6 @@ import {
   type JBAccountingContext,
   type JBFeedPair,
 } from "@bananapus/nana-sdk-core/v6";
-import { JBCenterRequestError, JBCenterTimeoutError } from "@bananapus/nana-sdk-core/jbcenter";
 import { BaseError, ContractFunctionRevertedError, PublicClient } from "viem";
 
 /** Structurally the SDK's `JBAccountingContext`. */

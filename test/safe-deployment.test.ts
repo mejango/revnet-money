@@ -1,9 +1,9 @@
 import {
   RECOGNIZED_SAFE_RELEASES,
-  safeSingletonsAreEquivalent,
   SAFE_CANONICAL_PAYMENT_RECEIVER,
   SAFE_L1_L2_SINGLETON_PAIRS,
   SAFE_TO_L2_SETUP_ADDRESS,
+  safeSingletonsAreEquivalent,
   type SafeAuthorityIdentity,
 } from "@/lib/cross-chain-authority";
 import {

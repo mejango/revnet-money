@@ -21,10 +21,10 @@ import {
   pairedSafeL2Singleton,
   readCrossChainHandleAuthority,
   recognizedSafeVersionForSingleton,
-  safeSingletonsAreEquivalent,
   SAFE_CANONICAL_PAYMENT_RECEIVER,
   SAFE_TO_L2_SETUP_ADDRESS,
   SAFE_TO_L2_SETUP_CODE_HASH,
+  safeSingletonsAreEquivalent,
   type CrossChainHandleAuthority,
   type SafeAuthorityIdentity,
 } from "./cross-chain-authority";

@@ -17,9 +17,13 @@ const PARA_PACKAGES = [
 // audited under GHSA-848j-6mx2-7j84 (compressing a public key, never signing).
 // A bump that keeps both passes; one that changes either fails closed.
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
-const paraVersions = new Set(PARA_PACKAGES.map((dependency) => packageJson.dependencies?.[dependency]));
+const paraVersions = new Set(
+  PARA_PACKAGES.map((dependency) => packageJson.dependencies?.[dependency]),
+);
 if (paraVersions.size !== 1 || paraVersions.has(undefined)) {
-  throw new Error(`Para packages must share one exact version; found ${[...paraVersions].join(", ")}.`);
+  throw new Error(
+    `Para packages must share one exact version; found ${[...paraVersions].join(", ")}.`,
+  );
 }
 const [paraVersion] = paraVersions;
 if (!/^\d+\.\d+\.\d+$/.test(paraVersion)) {
