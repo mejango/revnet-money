@@ -844,17 +844,10 @@ export function ProjectHandleEditor({
             {siteOrigin ? (
               <p className="min-w-0 break-words text-xs text-zinc-500">
                 You’ll be able to find your project at{" "}
-                {routeHandle ? (
-                  <a className="break-all underline" href={projectRoute}>
-                    {siteOrigin}
-                    {projectRoute}
-                  </a>
-                ) : (
-                  <span className="break-all">
-                    {siteOrigin}
-                    {projectRoute}
-                  </span>
-                )}
+                <span className="break-all">
+                  {siteOrigin}
+                  {projectRoute}
+                </span>
               </p>
             ) : null}
 

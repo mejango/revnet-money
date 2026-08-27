@@ -226,8 +226,6 @@ export function MarketPriceChart({
       queryKey: ["v6AmmStates", chainProjectsKey(chains)],
       enabled: chains.length > 0,
       staleTime: 60_000,
-      refetchInterval: PRICE_REFRESH_MS,
-      refetchOnWindowFocus: true,
       queryFn: () => fetchAmmStates(chains),
     }),
   );

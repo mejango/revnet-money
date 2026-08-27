@@ -207,10 +207,24 @@ async function projectBuybackHook(
   chainId: JBChainId,
   projectId: bigint,
 ): Promise<{ hook: Address | null; info: DataHookInfo | null }> {
+  const registry = v6Address(JBBuybackHookContracts.JBBuybackHookRegistry, chainId);
+  // Issued alongside the ruleset read rather than after it: the registry is
+  // the common case, and the result is only consumed once the data hook is
+  // recognized as the registry.
+  const registryHook = registry
+    ? client
+        .readContract({
+          address: registry,
+          abi: jbBuybackHookRegistryAbi,
+          functionName: "hookOf",
+          args: [projectId],
+        })
+        .then((hook) => (hook && hook !== zeroAddress ? hook : null))
+        .catch(() => null)
+    : Promise.resolve(null);
   const info = await projectDataHook(client, chainId, projectId).catch(() => null);
   if (!info || info.dataHook === zeroAddress) return { hook: null, info };
 
-  const registry = v6Address(JBBuybackHookContracts.JBBuybackHookRegistry, chainId);
   const revOwner = v6Address(RevnetCoreContracts.REVOwner, chainId);
   const omni = v6Address(JBOmnichainDeployerContracts.JBOmnichainDeployer, chainId);
   const concrete = v6Address(JBBuybackHookContracts.JBBuybackHook, chainId);
@@ -218,19 +232,7 @@ async function projectBuybackHook(
 
   const recognize = async (dataHook: Address): Promise<Address | null> => {
     const d = dataHook.toLowerCase();
-    if (registry && (d === lc(registry) || d === lc(revOwner))) {
-      try {
-        const hook = await client.readContract({
-          address: registry,
-          abi: jbBuybackHookRegistryAbi,
-          functionName: "hookOf",
-          args: [projectId],
-        });
-        return hook && hook !== zeroAddress ? hook : null;
-      } catch {
-        return null;
-      }
-    }
+    if (registry && (d === lc(registry) || d === lc(revOwner))) return registryHook;
     if (concrete && d === lc(concrete)) return dataHook;
     return null;
   };
@@ -314,10 +316,13 @@ export async function readPoolSnapshot(
 ): Promise<{ hook: Address | null; pool: PoolSnapshot | null }> {
   const client = providedClient ?? (getViemPublicClient(chainId) as PublicClient);
   const poolManager = POOL_MANAGER_BY_CHAIN[Number(chainId)];
-  const { hook } = await projectBuybackHook(client, chainId, projectId);
+  // The pair token comes from the accounting contexts, not the hook, so both
+  // resolve concurrently.
+  const [{ hook }, pair] = await Promise.all([
+    projectBuybackHook(client, chainId, projectId),
+    pairTokenFor(client, chainId, projectId),
+  ]);
   if (!hook || !poolManager) return { hook: hook ?? null, pool: null };
-
-  const pair = await pairTokenFor(client, chainId, projectId);
   if (!pair) return { hook, pool: null };
 
   let key: PoolKey;
@@ -471,7 +476,7 @@ async function scanKnownPoolRange(
  * the pool's Initialize event, then valuing each surviving range at the current
  * price. Null when the RPC can't return the complete history.
  */
-async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition | null> {
+export async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition | null> {
   const client = getViemPublicClient(pool.chainId) as PublicClient;
   const cacheKey = `${pool.chainId}:${pool.poolId}`;
   const latest = await client.getBlockNumber();
@@ -1480,29 +1485,14 @@ export async function fetchAmmReferences(
   );
 }
 
+/**
+ * Snapshot + reference prices per chain. Composition is deliberately left
+ * null: the pool-history log scan is paid only by the Liquidity card, through
+ * its own `fetchPoolComposition` query, so the chart and Pool card never wait
+ * on it.
+ */
 export async function fetchAmmStates(chains: ChainProject[]): Promise<AmmChainState[]> {
-  return Promise.all(
-    chains.map(async ({ chainId, projectId }): Promise<AmmChainState> => {
-      try {
-        const { hook, pool } = await readPoolSnapshot(chainId, projectId);
-        const [composition, reference] = await Promise.all([
-          pool ? fetchPoolComposition(pool).catch(() => null) : null,
-          pool
-            ? readMarketReferencePrices(pool, projectId).catch(() => EMPTY_REFERENCE)
-            : EMPTY_REFERENCE,
-        ]);
-        return { chainId, hook, pool, composition, reference };
-      } catch {
-        return {
-          chainId,
-          hook: null,
-          pool: null,
-          composition: null,
-          reference: EMPTY_REFERENCE,
-        };
-      }
-    }),
-  );
+  return fetchAmmReferences(await fetchAmmPresence(chains));
 }
 
 // ── LP split hook (JBP6FeeLPSplitHook / JBUniswapV4LPSplitHook) ───────────────
