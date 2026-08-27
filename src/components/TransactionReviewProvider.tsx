@@ -197,7 +197,7 @@ function ReviewModal({
       >
         <header className="flex items-start justify-between border-b border-melon-300 bg-melon-50 p-4 sm:p-6">
           <div>
-            <p className="text-xs font-bold uppercase text-peel-600">Transaction safety check</p>
+            <p className="text-xs font-bold uppercase text-amber-700">Transaction safety check</p>
             <DialogTitle className="mt-1 text-xl font-bold">
               {pending.request.title ??
                 (authorization ? "Review authorization" : "Review transaction")}
@@ -213,7 +213,7 @@ function ReviewModal({
           </button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-          <p className="border border-peel-200 bg-peel-25 p-3 text-sm leading-relaxed text-peel-800">
+          <p className="border border-amber-300 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900">
             {description}
           </p>
           <button

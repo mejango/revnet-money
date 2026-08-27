@@ -59,6 +59,7 @@ import {
   AmmChainState,
   encodeAddLiquidityCall,
   fetchAmmStates,
+  fetchPoolComposition,
   lpDeadline,
   PERMIT2_ABI,
   PERMIT2_ADDRESS,
@@ -522,7 +523,14 @@ function LiquidityVisualization({
 }
 
 function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
-  const { pool, composition } = state;
+  const { pool } = state;
+  const compositionQuery = useQuery({
+    queryKey: ["v6PoolComposition", state.chainId, pool?.poolId],
+    enabled: !!pool,
+    staleTime: 60_000,
+    queryFn: () => fetchPoolComposition(pool!),
+  });
+  const composition = compositionQuery.data ?? null;
   return (
     <div className="border-b border-zinc-50 py-3 last:border-b-0">
       <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
@@ -533,6 +541,8 @@ function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; token
         <p className="mt-1 text-sm text-zinc-400">No buyback hook configured on this chain.</p>
       ) : !pool ? (
         <p className="mt-1 text-sm text-zinc-400">This pool is not initialized yet.</p>
+      ) : compositionQuery.isLoading ? (
+        <SkeletonLines lines={3} className="mt-2" />
       ) : composition == null ? (
         <p className="mt-2 text-sm text-zinc-400">
           The RPC could not return the complete pool history, so liquidity is unavailable.

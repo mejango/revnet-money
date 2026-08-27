@@ -215,7 +215,6 @@ const Toast = React.forwardRef<HTMLDivElement, ToastRootProps>(
             onPointerDown?.(event);
             if (event.defaultPrevented || event.button !== 0) return;
             pointerStart.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
-            event.currentTarget.setPointerCapture?.(event.pointerId);
             clearCloseTimer();
           }}
           onPointerMove={(event) => {
@@ -223,6 +222,10 @@ const Toast = React.forwardRef<HTMLDivElement, ToastRootProps>(
             if (event.defaultPrevented || pointerStart.current?.id !== event.pointerId) return;
             const delta = getDirectionalDelta(event);
             if (delta * direction < 0) return;
+            // Capture only once a swipe is underway. Capturing on every press
+            // retargets the click to the toast root, so the close button never
+            // receives it.
+            (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
             setSwipe("move");
             setSwipeDelta(delta);
           }}
