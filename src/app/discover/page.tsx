@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { getDiscoverProjects } from "@/lib/discoverProjects.server";
+import { pageMetadata } from "@/lib/pageMetadata";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -9,14 +10,7 @@ const title = "Discover revnets";
 const description =
   "Every indexed revnet on Ethereum, Optimism, Base and Arbitrum, with what each one funds.";
 
-export const metadata: Metadata = {
-  title,
-  description,
-  // Without its own card this page inherited the site-wide one, so /discover and the
-  // homepage shared a title, a description and a preview image.
-  openGraph: { title, description },
-  twitter: { title, description },
-};
+export const metadata: Metadata = pageMetadata({ title, description });
 
 // The catalogue changes when a revnet launches, not by the minute.
 export const revalidate = 300;

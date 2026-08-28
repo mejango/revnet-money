@@ -1,5 +1,6 @@
 import { AuditPromptActions } from "@/components/AuditPromptActions";
 import { Nav } from "@/components/layout/Nav";
+import { pageMetadata } from "@/lib/pageMetadata";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -7,14 +8,7 @@ const title = "Audit Revnet";
 const description =
   "Inspect the Revnet V6 contracts, Juicebox V6 protocol, and Revnet Money webclient.";
 
-export const metadata: Metadata = {
-  title,
-  description,
-  // Without its own card this page inherited the site-wide one, so sharing a guide
-  // link unfurled as the generic homepage.
-  openGraph: { title, description },
-  twitter: { title, description },
-};
+export const metadata: Metadata = pageMetadata({ title, description });
 
 const CODE_LINKS = [
   { label: "Revnet contracts", href: "https://github.com/rev-net/revnet-core-v6" },
