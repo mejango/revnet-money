@@ -10,9 +10,11 @@ import {
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
 import { shouldShowCashOutAsymptote } from "@/lib/minimumCashOutPrice";
+import { useJBTokenContext } from "@/lib/nana/project";
 import { formatDecimals } from "@/lib/number";
 import { cachedQuery } from "@/lib/query-persist";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
+import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
@@ -21,10 +23,6 @@ import { ChartToggleButton } from "./ChartToggleButton";
 import { getTokenPriceChartData } from "./getTokenPriceChartData";
 import { PriceChartTooltip } from "./PriceChartTooltip";
 import { priceConcept } from "./priceConcepts";
-import { fetchPoolComposition, readPoolSnapshot } from "../v6/owners/market/lib";
-import { fmtUnits } from "../v6/owners/settlement/lib";
-import { useJBTokenContext } from "@/lib/nana/project";
-import { formatTokenSymbol } from "@/lib/utils";
 
 const TIME_RANGES: RangeOption<TimeRange>[] = [
   { value: "1h", label: "1 hour" },
@@ -88,27 +86,9 @@ export function TokenPriceChart({
 
   const hasPool = data?.hasPool ?? false;
 
-  // Same key as AmmCard's composition row so the page reads the pool once.
   const { token: projectToken } = useJBTokenContext();
-  const { data: pool } = useQuery({
-    queryKey: ["v6PoolSnapshot", chainId, projectId],
-    enabled: hasPool,
-    staleTime: 60_000,
-    queryFn: async () => (await readPoolSnapshot(chainId, BigInt(projectId))).pool,
-  });
-  const { data: composition } = useQuery({
-    queryKey: ["v6PoolComposition", chainId, pool?.poolId],
-    enabled: !!pool,
-    staleTime: 60_000,
-    queryFn: () => fetchPoolComposition(pool!),
-  });
-  const poolLiquidity =
-    pool && composition && (composition.tokenAmount > 0n || composition.pairAmount > 0n)
-      ? `on ${fmtUnits(composition.tokenAmount, 18)} ${formatTokenSymbol(projectToken)} + ${fmtUnits(
-          composition.pairAmount,
-          pool.pair.decimals,
-        )} ${pool.pair.symbol} liq`
-      : undefined;
+  const projectTokenSymbol = formatTokenSymbol(projectToken);
+  const poolLiquidity = data?.poolLiquidity ?? null;
   const hasAmmData = chartData.some((d) => d.ammPrice !== undefined);
   const hasFloorData = chartData.some((d) => d.floorPrice !== undefined);
   const currentPricePoint = [...chartData]
@@ -254,7 +234,6 @@ export function TokenPriceChart({
               disabled={!hasAmmData}
               colorVar="--chart-4"
               note={priceConcept("pool", { baseSymbol: axisSymbol })}
-              detail={poolLiquidity}
               onClick={() => setShowAmm(!showAmm)}
             />
           )}
@@ -309,6 +288,8 @@ export function TokenPriceChart({
               baseTokenSymbol={tokenSymbol}
               baseTokenDecimals={tokenDecimals}
               range={range}
+              poolLiquidity={showAmm ? poolLiquidity : null}
+              projectTokenSymbol={projectTokenSymbol}
             />
           )}
         />

@@ -12,8 +12,6 @@ interface Props {
   /** What this price MEANS. Carried by the button itself so the whole target reveals it; the
    *  (?) beside the label is the affordance saying so. */
   note?: string;
-  /** Small second line under the label, e.g. the pooled liquidity behind a pool price. */
-  detail?: string;
 }
 
 export function ChartToggleButton({
@@ -23,7 +21,6 @@ export function ChartToggleButton({
   colorVar,
   onClick,
   note,
-  detail,
 }: Props) {
   const isActive = active && !disabled;
 
@@ -32,7 +29,7 @@ export function ChartToggleButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex min-h-11 flex-wrap items-center gap-x-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
+        "flex min-h-11 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
         disabled && "cursor-not-allowed",
         isActive
           ? `bg-[${colorVar}]/10 text-[${colorVar}] ring-1 ring-[${colorVar}]/30`
@@ -53,9 +50,6 @@ export function ChartToggleButton({
         style={isActive ? { backgroundColor: `var(${colorVar})` } : undefined}
       />
       {note ? <ConceptTerm note={note}>{label}</ConceptTerm> : label}
-      {detail ? (
-        <span className="basis-full text-[11px] font-normal text-zinc-500">{detail}</span>
-      ) : null}
     </button>
   );
 }

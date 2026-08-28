@@ -19,6 +19,9 @@ interface Props {
   baseTokenSymbol: string;
   baseTokenDecimals: number;
   range: TimeRange;
+  /** Current pool reserves; shown under the prices so a reader can weigh the pool price. */
+  poolLiquidity?: { tokenAmount: bigint; pairAmount: bigint } | null;
+  projectTokenSymbol?: string;
 }
 
 export function PriceChartTooltip({
@@ -27,6 +30,8 @@ export function PriceChartTooltip({
   baseTokenSymbol,
   baseTokenDecimals,
   range,
+  poolLiquidity,
+  projectTokenSymbol,
 }: Props) {
   const hasFloorPrice = series.some((entry) => entry.key === "floorPrice");
   const showFloorDebug = hasFloorPrice && datum.totalSupply && datum.totalBalance;
@@ -51,6 +56,17 @@ export function PriceChartTooltip({
           </span>
         </div>
       ))}
+      {poolLiquidity && (poolLiquidity.tokenAmount > 0n || poolLiquidity.pairAmount > 0n) ? (
+        <div className="mt-2 flex justify-between gap-4 whitespace-nowrap border-t border-zinc-700 pt-2 text-xs text-zinc-500">
+          <span>Pool liquidity now:</span>
+          <span className="font-mono">
+            {formatCompact(formatUnits(poolLiquidity.tokenAmount, JB_TOKEN_DECIMALS))}{" "}
+            {projectTokenSymbol ?? "tokens"} +{" "}
+            {formatCompact(formatUnits(poolLiquidity.pairAmount, baseTokenDecimals))}{" "}
+            {baseTokenSymbol}
+          </span>
+        </div>
+      ) : null}
       {showFloorDebug && (
         <div className="mt-2 pt-2 border-t border-zinc-700 text-xs text-zinc-500 space-y-1">
           <div className="flex justify-between gap-4 whitespace-nowrap">
