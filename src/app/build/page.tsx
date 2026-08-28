@@ -130,7 +130,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Start here",
     title: "Read the revnet",
     summary:
-      "Use an indexer to find and display revnets. Use the chain for anything a signature depends on, and read it again right before signing.",
+      "Use the index (next section) to find and display revnets. Use the chain for anything a signature depends on, and read it again right before signing.",
     table: {
       label: "What to read, and where",
       rows: [
@@ -171,6 +171,95 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
     ],
     note: "Show cached names, logos, and facts while the chain refreshes. Treat state you could not read as unknown, never as zero, empty, or permitted.",
+  },
+  {
+    id: "indexed-data",
+    part: "Start here",
+    title: "Indexed data: Bendystraw",
+    summary:
+      "Bendystraw is the Juicebox indexer. It is where this site's discover page, activity feeds, price charts, holder tables, and LP positions come from, and it is public.",
+    paragraphs: [
+      "A Ponder service watches every V6 contract on every supported chain and serves the results over GraphQL. Use it for anything a person reads. Use the chain for anything a wallet signs, and re-read that state right before building the transaction: the index can lag the chain by a few blocks, and a lagging index looks like empty data, not an error.",
+    ],
+    table: {
+      label: "Endpoints",
+      rows: [
+        [
+          "Mainnets",
+          "https://bendystraw.up.railway.app/graphql — Ethereum, Optimism, Base, Arbitrum; no API key",
+        ],
+        ["Testnets", "https://testnet.bendystraw.xyz/graphql — Sepolia and the L2 Sepolias"],
+        ["Schema", "…/schema opens a playground; POST an introspection query for codegen"],
+      ],
+    },
+    codePoints: [
+      {
+        title: "What a revnet page asks for",
+        details: [
+          {
+            key: "The revnet",
+            value: "project(chainId, projectId, version: 6) → name, balance, owner, suckerGroupId",
+          },
+          { key: "Its chains", value: "projects(where: { suckerGroupId })" },
+          {
+            key: "Activity",
+            value: "activityEvents / payEvents / cashOutTokensEvents by projectId or suckerGroupId",
+          },
+          { key: "Holders", value: "participants" },
+          {
+            key: "Market",
+            value: "buybackPools → swapEvents (post-trade sqrtPriceX96) → buybackPoolPositions",
+          },
+          { key: "Loans", value: "loans, borrowLoanEvents" },
+          { key: "Cross-chain", value: "suckerTransactions and their status" },
+        ],
+        code: [
+          'import { requestBendystraw, selectBendystrawEndpoint } from "@bananapus/nana-sdk-core";',
+          "",
+          "const endpoint = selectBendystrawEndpoint(",
+          '  { mainnet: "https://bendystraw.up.railway.app/graphql", testnet: "https://testnet.bendystraw.xyz/graphql" },',
+          "  { chainId },",
+          ");",
+          "",
+          "const { project } = await requestBendystraw(",
+          "  endpoint,",
+          "  `query Revnet($chainId: Float!, $projectId: Float!) {",
+          "     project(chainId: $chainId, projectId: $projectId, version: 6) {",
+          "       name balance owner suckerGroupId",
+          "     }",
+          "   }`,",
+          "  { chainId, projectId: Number(projectId) },",
+          ");",
+        ].join("\n"),
+        links: [
+          { href: "https://github.com/peripheralist/bendystraw", label: "Bendystraw source" },
+          { href: "https://bendystraw.up.railway.app/schema", label: "Playground" },
+          {
+            href: `${REFERENCE_ROOT}/src/lib/bendystraw/operations.ts`,
+            label: "This site's queries",
+          },
+        ],
+      },
+    ],
+    points: [
+      {
+        key: "Key by chain",
+        text: "chainId + projectId, never projectId alone — the same number exists on every chain. Filter V6 rows with version: 6.",
+      },
+      {
+        key: "Float, not Int",
+        text: "numeric arguments on singular queries are Float! (Ponder's choice); an Int! variable fails validation with no data.",
+      },
+      {
+        key: "Page to the end",
+        text: "lists take limit and offset and return totalCount; loop rather than trusting one page.",
+      },
+      {
+        key: "suckerGroupId is as-of-event",
+        text: "rows written before chains were linked keep the old group id; query every project in the group for full history.",
+      },
+    ],
+    note: "Building with an agent? The jb-bendystraw skill carries the schema, these query patterns, and the gotchas. Hand it over before asking for a feed, chart, or holder table.",
   },
   {
     id: "deploy-a-revnet",
