@@ -1,6 +1,7 @@
 import { RevnetGuide, RevnetGuideSection } from "@/components/guides/RevnetGuide";
 import { Nav } from "@/components/layout/Nav";
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Learn revnets",
@@ -169,6 +170,20 @@ export default function LearnPage() {
         title="Get to know the engine under the hood"
         introduction="Revnets turn payments, token issuance, cash outs, loans, markets, and multichain settlement into a public agreement that nobody can later amend or rewrite."
         sections={SECTIONS}
+        afterIntroduction={
+          <p className="text-base text-zinc-600">
+            Revnets are built on Juicebox. Start with{" "}
+            <Link
+              href="https://juicebox.money/learn"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-melon-400 underline-offset-4"
+            >
+              how Juicebox works
+            </Link>{" "}
+            for the protocol every revnet runs on.
+          </p>
+        }
         companion={{
           href: "/build",
           label: "Build with revnets",

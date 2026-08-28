@@ -137,6 +137,10 @@ async function resolveSymbol(
   nativeSymbol: string,
 ): Promise<string> {
   if (token.toLowerCase() === NATIVE_TOKEN.toLowerCase()) return nativeSymbol;
+  // Known USDC needs no read: a failed `symbol()` would otherwise leave a truncated address
+  // that never matches "USDC", and the buy-first prompt then names ETH.
+  if (Object.values(USDC_ADDRESSES).some((usdc) => usdc?.toLowerCase() === token.toLowerCase()))
+    return "USDC";
   try {
     return await client.readContract({ address: token, abi: erc20Abi, functionName: "symbol" });
   } catch {

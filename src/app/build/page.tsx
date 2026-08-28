@@ -518,9 +518,23 @@ export default function BuildPage() {
         introduction="Connect your product to revnet deployment, payments, cash outs, loans, shops, operator controls, and multichain settlement with the same code paths users can inspect and verify."
         sections={SECTIONS}
         afterIntroduction={
-          <p className="text-base text-zinc-600">
-            Building with an agent? <CopyRevnetBuildPrompt />.
-          </p>
+          <>
+            <p className="text-base text-zinc-600">
+              Revnets are built on Juicebox, so the protocol-level operations are documented in the{" "}
+              <Link
+                href="https://juicebox.money/build"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-melon-400 underline-offset-4"
+              >
+                Juicebox build guide
+              </Link>
+              .
+            </p>
+            <p className="text-base text-zinc-600">
+              Building with an agent? <CopyRevnetBuildPrompt />.
+            </p>
+          </>
         }
         afterSections={
           <p className="leading-relaxed text-zinc-700">
