@@ -16,24 +16,24 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "The basics",
     title: "What a revnet is",
     summary:
-      "A revnet is a business whose money rules are written down at launch and enforced by open contracts. Nobody, including whoever launched it, can change them afterwards.",
+      "A revnet is a Juicebox project whose owner is a contract instead of a person. That contract holds the project to one narrow intent, written down at launch: take payments, issue tokens, hold the balance, honour cash outs and loans, and never change the terms.",
     paragraphs: [
       "Customers and supporters pay the revnet. Every payment issues the revnet's token to the payer, and the money stays in the revnet's balance, where it backs those tokens. Token holders can cash out for a share of the balance, borrow against their tokens, or sell them on an open market.",
-      "That is the whole deal. A revnet does not have an owner who can pause it, raise prices in secret, or take the money out. It has a schedule, and the schedule runs.",
+      "That is the whole deal. Because the owner is a contract, nobody can pause the revnet, raise prices in secret, or take the money out. It has a schedule, and the schedule runs.",
       "Revnets are for open source projects, protocols, and any group that wants to share revenue with its contributors and customers without asking anyone to trust a treasury manager.",
     ],
-    diagrams: [
-      {
-        label: "Project vs revnet",
-        lines: [
-          "  JUICEBOX PROJECT                 REVNET",
-          "  ────────────────                 ──────",
-          "  owner sets and changes rules     rules fixed at launch",
-          "  owner can pay funds out          balance only leaves via cash outs and loans",
-          "  good for: teams, DAOs, funds     good for: tokens, protocols, open businesses",
+    compare: {
+      label: "Juicebox project vs revnet",
+      columns: ["Juicebox project", "Revnet"],
+      rows: [
+        [
+          "Owned by a person or multisig, who can change the rules",
+          "Owned by a contract that never changes the economics",
         ],
-      },
-    ],
+        ["Owner can pay funds out", "Balance only leaves through cash outs and loans"],
+        ["Good for teams, DAOs, funds", "Good for tokens, protocols, open businesses"],
+      ],
+    },
     note: "The tradeoff is on purpose. A normal project keeps its flexibility; a revnet gives it up so that everyone can rely on the published terms, the way Bitcoin's supply schedule is relied on.",
     links: [
       { href: "/discover", label: "Explore live revnets" },
@@ -94,9 +94,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       {
         label: "Where the market price can go",
         lines: [
-          "  issuance price  ───────────────────────────  ceiling",
-          "                     ▲ market price moves here",
-          "  cash out price  ───────────────────────────  floor",
+          "  CEILING   issuance price   the pool cannot sell above this",
+          "            ▲",
+          "            market price moves in here",
+          "            ▼",
+          "  FLOOR     cash out price   the pool cannot buy below this",
           "",
           "  above the ceiling → people pay the revnet instead of the pool",
           "  below the floor   → people cash out instead of selling",
@@ -288,7 +290,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Under the hood",
     title: "Built on Juicebox",
     summary:
-      "Under the hood a revnet is a Juicebox V6 project owned by a contract that refuses to change the rules. Everything Juicebox can do, a revnet can do, minus the owner's discretion.",
+      "Under the hood a revnet is a Juicebox V6 project whose owner is the REVOwner contract. Everything Juicebox can do, a revnet can do; what the contract removes is the owner's discretion.",
     paragraphs: [
       "Juicebox supplies payments, tokens, rulesets, splits, cash outs, hooks, and cross-chain suckers. The Revnet contracts add the stage schedule, the cash out and loan economics, and the operator's limited permissions on top.",
       "If you want to understand rulesets, terminals, hooks, and fees at the protocol level, the Juicebox guide covers them in the same plain style.",

@@ -20,22 +20,19 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     title: "When to use a revnet",
     summary:
       "Use a revnet when your product earns revenue and you want that revenue to back a token nobody has to trust you with. Use a plain Juicebox project when you need an owner who can change course.",
-    diagrams: [
-      {
-        label: "Pick the model",
-        lines: [
-          "  You need to…                              Use…",
-          "  ─────────────                             ────",
-          "  pay contributors from revenue, forever    revnet (split share)",
-          "  let customers hold a stake they can exit  revnet (cash outs, loans)",
-          "  run a token with a published schedule     revnet (stages)",
-          "  pay out a budget to a team each month     Juicebox project (payouts)",
-          "  change the rules after launch             Juicebox project (rulesets)",
-        ],
-      },
-    ],
+    compare: {
+      label: "Pick the model",
+      columns: ["You need to", "Use"],
+      rows: [
+        ["Pay contributors from revenue, forever", "Revnet (split share)"],
+        ["Let customers hold a stake they can exit", "Revnet (cash outs, loans)"],
+        ["Run a token with a published schedule", "Revnet (stages)"],
+        ["Pay out a budget to a team each month", "Juicebox project (payouts)"],
+        ["Change the rules after launch", "Juicebox project (rulesets)"],
+      ],
+    },
     paragraphs: [
-      "A revnet is a Juicebox V6 project on each chain plus the Revnet contracts: a deployer that writes the stage schedule, an owner contract that refuses to change it, loans, and a narrowly scoped operator. From your product's side it looks like a project whose rules you can read once and rely on.",
+      "A revnet is a Juicebox V6 project whose owner is a contract (REVOwner) that narrows the project to one intent and never changes its economics. Around it sit a deployer that writes the stage schedule, loans, and a narrowly scoped operator. From your product's side it is a project whose rules you can read once and rely on.",
       "Everything below assumes you have read how a revnet works. The concepts are short; the code is what takes care.",
     ],
     links: [
@@ -543,20 +540,15 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     title: "Move across chains",
     summary:
       "A cross-chain move is a state machine with several transactions: prepare, send, prove, claim, and separately sync accounting.",
-    diagrams: [
-      {
-        label: "Sucker sequence",
-        lines: [
-          "  source chain                          destination chain",
-          "  ────────────                          ─────────────────",
-          "  1. prepare   burn tokens, queue leaf",
-          "  2. toRemote  send the root  ──────▶   (bridge delivers)",
-          "                                        3. claim   prove leaf, mint tokens",
-          "",
-          "  syncAccountingData  push the local balance snapshot to the peer",
-        ],
-      },
-    ],
+    table: {
+      label: "Sucker sequence",
+      rows: [
+        ["1. prepare (source)", "burn the tokens and queue a leaf"],
+        ["2. toRemote (source)", "send the tree root through the bridge"],
+        ["3. claim (destination)", "prove the leaf and mint the tokens"],
+        ["syncAccountingData", "push the local balance snapshot to the peer, separately"],
+      ],
+    },
     paragraphs: [
       "A prepared move is not delivered value. Track its source sucker, peer sucker, token mapping, leaf index, beneficiary, proof, transport, fees, and status. CCIP and native bridges need different value and take different times; discover the payable value by simulating the exact call.",
       "Accounting sync changes the displayed group backing without moving any local balance. Keep queued, in transit, claimable, claimed, failed, and retriable distinct.",
@@ -605,13 +597,13 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       {
         label: "Build → simulate → decode → review → write → confirm",
         lines: [
-          "  fresh reads ─▶ pure builder ─▶ simulateContract(account)",
-          "                                   │",
-          "                    encode + decode calldata, show it to the user",
-          "                                   │",
-          "                          writeContract ─▶ waitForTransactionReceipt",
-          "                                   │",
-          '            success only on receipt.status === "success"',
+          "  fresh reads",
+          "    → pure builder",
+          "      → simulateContract with the real account",
+          "        → encode and decode the calldata, show it to the user",
+          "          → writeContract",
+          "            → waitForTransactionReceipt",
+          '              → success only on receipt.status === "success"',
         ],
       },
     ],

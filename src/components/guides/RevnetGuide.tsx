@@ -22,6 +22,12 @@ export type RevnetGuideSection = {
   diagrams?: readonly { label: string; lines: readonly string[] }[];
   /** Plain two-column reference rows, without the "code point" framing. */
   table?: { label: string; rows: readonly (readonly [string, string])[] };
+  /** Side-by-side comparison: two named columns, one row per point. */
+  compare?: {
+    label: string;
+    columns: readonly [string, string];
+    rows: readonly (readonly [string, string])[];
+  };
   codePoints?: readonly RevnetGuideCodePoint[];
   note?: string;
   links?: readonly { href: string; label: string }[];
@@ -153,6 +159,38 @@ export function RevnetGuide({
                     </pre>
                   </figure>
                 ))}
+
+                {section.compare ? (
+                  <div className="border border-melon-300">
+                    <p className="border-b border-melon-200 bg-melon-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
+                      {section.compare.label}
+                    </p>
+                    <div className="grid grid-cols-2 text-sm sm:text-base">
+                      {section.compare.columns.map((column, i) => (
+                        <p
+                          key={column}
+                          className={`border-b border-melon-200 px-4 py-2 font-semibold text-zinc-900 ${i === 0 ? "border-r" : ""}`}
+                        >
+                          {column}
+                        </p>
+                      ))}
+                      {section.compare.rows.map(([left, right], i) => (
+                        <div key={left} className="contents">
+                          <p
+                            className={`border-r border-melon-200 px-4 py-2 text-zinc-700 ${i < section.compare!.rows.length - 1 ? "border-b" : ""}`}
+                          >
+                            {left}
+                          </p>
+                          <p
+                            className={`border-melon-200 px-4 py-2 text-zinc-700 ${i < section.compare!.rows.length - 1 ? "border-b" : ""}`}
+                          >
+                            {right}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 {section.table ? (
                   <div className="border border-melon-300">
