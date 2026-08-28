@@ -201,13 +201,17 @@ function HeroColumn() {
         className="mb-3 h-auto max-h-[260px] min-w-0 max-w-full translate-y-12 object-contain"
       />
       <div className="w-full min-w-0 max-w-full">
-        <Image
-          src="/assets/img/revnet-full-bw.svg"
-          alt="Revnet"
-          width={1509}
-          height={140}
-          className="mx-auto h-auto min-w-0 max-w-full object-contain"
-        />
+        {/* The wordmark is the page's heading, so say so. Without this the homepage
+            shipped no h1 at all and its first heading was an h2 further down. */}
+        <h1>
+          <Image
+            src="/assets/img/revnet-full-bw.svg"
+            alt="Revnet"
+            width={1509}
+            height={140}
+            className="mx-auto h-auto min-w-0 max-w-full object-contain"
+          />
+        </h1>
         <p className="mt-7 max-w-full break-words text-xl font-medium">
           An investible business model <span className="whitespace-nowrap">for the open web.</span>
         </p>

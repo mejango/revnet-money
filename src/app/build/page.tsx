@@ -4,10 +4,17 @@ import { Nav } from "@/components/layout/Nav";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+const title = "Build with Revnet V6";
+const description =
+  "Implement Revnet V6 reads and operations with exact SDK builders, contract calls, safety bounds, and reference source code.";
+
 export const metadata: Metadata = {
-  title: "Build with Revnet V6",
-  description:
-    "Implement Revnet V6 reads and operations with exact SDK builders, contract calls, safety bounds, and reference source code.",
+  title,
+  description,
+  // Without its own card this page inherited the site-wide one, so sharing a guide
+  // link unfurled as the generic homepage.
+  openGraph: { title, description },
+  twitter: { title, description },
 };
 
 const REFERENCE_ROOT = "https://github.com/mejango/revnet-money/blob/main";

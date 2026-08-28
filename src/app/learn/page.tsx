@@ -2,10 +2,17 @@ import { RevnetGuide, RevnetGuideSection } from "@/components/guides/RevnetGuide
 import { Nav } from "@/components/layout/Nav";
 import type { Metadata } from "next";
 
+const title = "Learn revnets";
+const description =
+  "Understand revnet stages, issuance, cash outs, backing, loans, operators, markets, and multichain settlement.";
+
 export const metadata: Metadata = {
-  title: "Learn revnets",
-  description:
-    "Understand revnet stages, issuance, cash outs, backing, loans, operators, markets, and multichain settlement.",
+  title,
+  description,
+  // Without its own card this page inherited the site-wide one, so sharing a guide
+  // link unfurled as the generic homepage.
+  openGraph: { title, description },
+  twitter: { title, description },
 };
 
 const SECTIONS: readonly RevnetGuideSection[] = [

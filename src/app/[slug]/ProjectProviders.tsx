@@ -14,6 +14,7 @@ export function ProjectProviders(
     project: {
       name: string | null;
       logoUri: string | null;
+      description?: string | null;
     };
     projects: readonly {
       chainId: number;
@@ -21,10 +22,14 @@ export function ProjectProviders(
     }[];
   }>,
 ) {
+  // Seed the description too, not just the name: without it the About section renders
+  // nothing until the browser has fetched metadata from IPFS, so every crawler that
+  // does not run JS sees a project page with no description on it.
   const initialProject: InitialProjectData = {
     metadata: {
       name: props.project.name ?? "",
       ...(props.project.logoUri ? { logoUri: props.project.logoUri } : {}),
+      ...(props.project.description ? { description: props.project.description } : {}),
     },
   };
   const initialSuckers = props.projects
