@@ -12,10 +12,16 @@ type RevnetGuideCodePoint = {
 
 export type RevnetGuideSection = {
   id: string;
+  /** Group label. A new value starts a part header in the body and the contents list. */
+  part?: string;
   title: string;
   summary: string;
   paragraphs?: readonly string[];
   points?: readonly RevnetGuidePoint[];
+  /** Monospace sketches: a flow, a comparison, a worked number. */
+  diagrams?: readonly { label: string; lines: readonly string[] }[];
+  /** Plain two-column reference rows, without the "code point" framing. */
+  table?: { label: string; rows: readonly (readonly [string, string])[] };
   codePoints?: readonly RevnetGuideCodePoint[];
   note?: string;
   links?: readonly { href: string; label: string }[];
@@ -76,6 +82,11 @@ export function RevnetGuide({
           <ol className="mt-4 space-y-3 text-sm leading-snug">
             {sections.map((section, index) => (
               <li key={section.id}>
+                {section.part && section.part !== sections[index - 1]?.part ? (
+                  <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-melon-700 first:mt-0">
+                    {section.part}
+                  </p>
+                ) : null}
                 <a
                   href={`#${section.id}`}
                   className="grid grid-cols-[1.7rem_1fr] gap-1 underline-offset-4 hover:text-melon-700 hover:underline"
@@ -95,6 +106,11 @@ export function RevnetGuide({
               id={section.id}
               className="scroll-mt-6 border-t border-melon-200 py-10 first:border-t-0 first:pt-0"
             >
+              {section.part && section.part !== sections[index - 1]?.part ? (
+                <p className="mb-6 text-sm font-semibold uppercase tracking-[0.16em] text-melon-700">
+                  {section.part}
+                </p>
+              ) : null}
               <div className="flex items-start gap-4">
                 <span className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center border border-melon-300 bg-melon-100 text-sm font-semibold text-melon-800">
                   {index + 1}
@@ -125,6 +141,37 @@ export function RevnetGuide({
                       </li>
                     ))}
                   </ul>
+                ) : null}
+
+                {section.diagrams?.map((diagram) => (
+                  <figure key={diagram.label} className="border border-melon-300 bg-melon-50">
+                    <figcaption className="border-b border-melon-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
+                      {diagram.label}
+                    </figcaption>
+                    <pre className="overflow-x-auto p-4 font-mono text-sm leading-6 text-zinc-800">
+                      {diagram.lines.join("\n")}
+                    </pre>
+                  </figure>
+                ))}
+
+                {section.table ? (
+                  <div className="border border-melon-300">
+                    <p className="border-b border-melon-200 bg-melon-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
+                      {section.table.label}
+                    </p>
+                    <dl className="grid text-sm sm:grid-cols-[minmax(10rem,auto)_minmax(0,1fr)] sm:text-base">
+                      {section.table.rows.map(([key, value]) => (
+                        <div key={key} className="contents">
+                          <dt className="border-b border-melon-200 px-4 py-2 font-mono text-sm text-zinc-900 last:border-b-0 sm:border-r">
+                            {key}
+                          </dt>
+                          <dd className="border-b border-melon-200 px-4 py-2 text-zinc-700 last:border-b-0">
+                            {value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
                 ) : null}
 
                 {section.codePoints?.length ? (
