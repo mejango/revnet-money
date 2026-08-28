@@ -10,8 +10,18 @@ type RevnetGuideCodePoint = {
   links?: readonly { href: string; label: string }[];
 };
 
+export type RevnetGuideAudience = "founders" | "frontend" | "contracts";
+
+export const AUDIENCE_LABEL: Record<RevnetGuideAudience, string> = {
+  founders: "Project builders",
+  frontend: "App builders",
+  contracts: "Contract builders",
+};
+
 export type RevnetGuideSection = {
   id: string;
+  /** Who the section is for. Omitted = everyone. */
+  audience?: readonly RevnetGuideAudience[];
   /** Group label. A new value starts a part header in the body and the contents list. */
   part?: string;
   title: string;
@@ -123,6 +133,18 @@ export function RevnetGuide({
                 </span>
                 <div className="min-w-0">
                   <h2 className="text-2xl font-semibold sm:text-3xl">{section.title}</h2>
+                  {section.audience?.length ? (
+                    <p className="mt-2 flex flex-wrap gap-2">
+                      {section.audience.map((audience) => (
+                        <span
+                          key={audience}
+                          className="border border-melon-300 bg-melon-50 px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-melon-800"
+                        >
+                          {AUDIENCE_LABEL[audience]}
+                        </span>
+                      ))}
+                    </p>
+                  ) : null}
                   <p className="mt-3 text-lg leading-relaxed text-zinc-700">{section.summary}</p>
                 </div>
               </div>
