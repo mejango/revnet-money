@@ -7,7 +7,7 @@ const SKILLS_URL = "https://github.com/mejango/juicebox-skills";
 export function AgentSkillsNote({ skills }: { skills: readonly string[] }) {
   return (
     <p className="text-base text-zinc-600">
-      Working with an AI agent? Install the{" "}
+      Working with an AI agent? Give it the{" "}
       <a
         href={SKILLS_URL}
         target="_blank"
@@ -15,18 +15,15 @@ export function AgentSkillsNote({ skills }: { skills: readonly string[] }) {
         className="underline decoration-melon-400 underline-offset-4"
       >
         Juicebox V6 skills
-      </a>{" "}
-      (a Claude Code plugin:{" "}
-      <code className="text-sm">/plugin marketplace add mejango/juicebox-skills</code>
-      ). The revnet ones are{" "}
+      </a>
+      , which carry the deployed addresses, ABIs, and economics. The revnet ones:{" "}
       {skills.map((skill, i) => (
         <span key={skill}>
-          {i > 0 ? (i === skills.length - 1 ? " and " : ", ") : ""}
+          {i > 0 ? ", " : ""}
           <code className="text-sm">{skill}</code>
         </span>
       ))}
-      ; they carry the deployed addresses, ABIs, and economics so the agent does not work from
-      memory.
+      .
     </p>
   );
 }

@@ -68,7 +68,7 @@ export function RevnetGuide({
         </p>
         <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-6xl">{title}</h1>
         <p className="mt-6 text-lg leading-relaxed text-zinc-700 sm:text-xl">{introduction}</p>
-        {afterIntroduction ? <div className="mt-5">{afterIntroduction}</div> : null}
+        {afterIntroduction ? <div className="mt-6 space-y-3">{afterIntroduction}</div> : null}
       </header>
 
       <div className="mt-12 grid gap-10 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
