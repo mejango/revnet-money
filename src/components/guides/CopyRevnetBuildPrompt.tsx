@@ -25,7 +25,7 @@ export function CopyRevnetBuildPrompt() {
       onClick={copy}
       className="text-left font-semibold underline decoration-melon-400 underline-offset-4 hover:text-melon-700"
     >
-      {copied ? "Revnet build prompt copied" : "Copy the Revnet build prompt"}
+      {copied ? "prompt copied" : "copy the Revnet build prompt"}
     </button>
   );
 }

@@ -621,9 +621,6 @@ export default function BuildPage() {
               </Link>{" "}
               covers the protocol-level calls, hooks, and permissions.
             </p>
-            <p className="text-base text-zinc-600">
-              Building with an agent? <CopyRevnetBuildPrompt />.
-            </p>
             <AgentSkillsNote
               skills={[
                 "jb-revnet-deploy",
@@ -632,6 +629,7 @@ export default function BuildPage() {
                 "jb-suckers",
                 "jb-tx-safety",
               ]}
+              prompt={<CopyRevnetBuildPrompt />}
             />
           </>
         }
