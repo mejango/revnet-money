@@ -145,7 +145,10 @@ export function HomepageActivityFeed({
         const isIn =
           activity.type === "in" || activity.type === "addToBalance" || activity.type === "swapBuy";
         const isOut = activity.type === "out" || activity.type === "swapSell";
-        const symbol = project.tokenSymbol?.replace(/^\$+/, "") ?? "tokens";
+        // The project ERC-20's ticker. `project.tokenSymbol` names the ACCOUNTING
+        // token (ETH, USDC) — labelling a project-token count with it reads as
+        // "bought 23.29 ETH" for a revnet that issues MARKEE.
+        const symbol = event.tokenTicker?.replace(/^\$+/, "") ?? "tokens";
         return (
           <li key={event.id} className="relative h-28 overflow-hidden px-4 py-3">
             <IssuanceFingerprint values={event.issuanceFingerprint} />
