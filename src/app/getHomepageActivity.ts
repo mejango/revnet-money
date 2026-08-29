@@ -1,9 +1,6 @@
 import "server-only";
 
-import {
-  ActivityEventsOperation,
-  ProjectErc20TickersOperation,
-} from "@/lib/bendystraw/operations";
+import { ActivityEventsOperation, ProjectErc20TickersOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { ActivityEventsQuery } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
