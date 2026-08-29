@@ -10,9 +10,11 @@ import {
 import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
 import { shouldShowCashOutAsymptote } from "@/lib/minimumCashOutPrice";
+import { useJBTokenContext } from "@/lib/nana/project";
 import { formatDecimals } from "@/lib/number";
 import { cachedQuery } from "@/lib/query-persist";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
+import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
@@ -83,6 +85,10 @@ export function TokenPriceChart({
   const hasData = chartData.length > 0;
 
   const hasPool = data?.hasPool ?? false;
+
+  const { token: projectToken } = useJBTokenContext();
+  const projectTokenSymbol = formatTokenSymbol(projectToken);
+  const poolLiquidity = data?.poolLiquidity ?? null;
   const hasAmmData = chartData.some((d) => d.ammPrice !== undefined);
   const hasFloorData = chartData.some((d) => d.floorPrice !== undefined);
   const currentPricePoint = [...chartData]
@@ -282,6 +288,8 @@ export function TokenPriceChart({
               baseTokenSymbol={tokenSymbol}
               baseTokenDecimals={tokenDecimals}
               range={range}
+              poolLiquidity={showAmm ? poolLiquidity : null}
+              projectTokenSymbol={projectTokenSymbol}
             />
           )}
         />

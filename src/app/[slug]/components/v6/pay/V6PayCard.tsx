@@ -1490,7 +1490,7 @@ export function V6PayCard() {
               </div>
             ) : mode === "addbalance" ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
-                Adds to the project balance — no tokens are minted.
+                Adds to the project balance — you get no {projectTokenLabel}.
               </p>
             ) : null}
 

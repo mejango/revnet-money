@@ -1,18 +1,63 @@
 import { usdRateOf } from "@/lib/baseCurrencyRate";
 import {
   IndexedBuybackPoolsOperation,
+  IndexedLpPositionsOperation,
   IndexedPoolSwapsOperation,
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { IndexedBuybackPoolsQuery, IndexedPoolSwapsQuery } from "@/lib/bendystraw/types";
 import { downsampleTimeSeries, JBChainId } from "@bananapus/nana-sdk-core";
-import { uniswapV4PriceFromSqrtPriceX96 } from "@bananapus/nana-sdk-core/v6";
+import {
+  uniswapV4AmountsForLiquidity,
+  uniswapV4PriceFromSqrtPriceX96,
+  uniswapV4SqrtPriceX96AtTick,
+} from "@bananapus/nana-sdk-core/v6";
 import type { PriceDataPoint } from "./getTokenPriceChartData";
 
 const PAGE_SIZE = 1000;
 const MAX_DISPLAY_POINTS = 3000;
 
 type RawPool = IndexedBuybackPoolsQuery["buybackPoolEvents"]["items"][number];
+
+/** What the pool holds right now: exact reserves at the latest indexed price, fees excluded. */
+export type PoolLiquidity = { tokenAmount: bigint; pairAmount: bigint };
+
+/**
+ * Reserves from the indexed positions, valued at `sqrtPriceX96`. Null when the index has no
+ * positions for this pool — which reads the same as an empty pool, so callers show nothing
+ * rather than "0".
+ */
+async function indexedPoolLiquidity(
+  chainId: JBChainId,
+  poolId: string,
+  sqrtPriceX96: bigint,
+  projectTokenIsCurrency0: boolean,
+): Promise<PoolLiquidity | null> {
+  const result = await queryBendystraw(chainId, IndexedLpPositionsOperation, {
+    chainId: Number(chainId),
+    poolId,
+    limit: 250,
+  });
+  const items = result.buybackPoolPositions?.items ?? [];
+  if (!items.length) return null;
+  let amount0 = 0n;
+  let amount1 = 0n;
+  for (const item of items) {
+    const liquidity = BigInt(item.liquidity);
+    if (liquidity <= 0n) continue;
+    const amounts = uniswapV4AmountsForLiquidity(
+      sqrtPriceX96,
+      uniswapV4SqrtPriceX96AtTick(item.tickLower),
+      uniswapV4SqrtPriceX96AtTick(item.tickUpper),
+      liquidity,
+    );
+    amount0 += amounts.amount0;
+    amount1 += amounts.amount1;
+  }
+  return projectTokenIsCurrency0
+    ? { tokenAmount: amount0, pairAmount: amount1 }
+    : { tokenAmount: amount1, pairAmount: amount0 };
+}
 type RawSwap = IndexedPoolSwapsQuery["swapEvents"]["items"][number];
 
 function v4PriceFromSqrtPriceX96(
@@ -45,7 +90,7 @@ export async function getV4AmmPriceHistory({
   terminalDecimals: number;
   /** Selects the pool directly when the caller already read it onchain. */
   poolId?: string;
-}): Promise<{ data: PriceDataPoint[]; hasPool: boolean }> {
+}): Promise<{ data: PriceDataPoint[]; hasPool: boolean; liquidity: PoolLiquidity | null }> {
   const variables = {
     projectId: Number(projectId),
     chainId: Number(chainId),
@@ -67,7 +112,7 @@ export async function getV4AmmPriceHistory({
   const pool = poolId
     ? pools.find((item) => item.poolId.toLowerCase() === poolId.toLowerCase())
     : pools.find((item) => item.terminalToken.toLowerCase() === terminalToken?.toLowerCase());
-  if (!pool) return { data: [], hasPool: false };
+  if (!pool) return { data: [], hasPool: false, liquidity: null };
 
   const swaps: RawSwap[] = [];
   let totalCount = 0;
@@ -121,6 +166,27 @@ export async function getV4AmmPriceHistory({
   }
 
   data.sort((a, b) => a.timestamp - b.timestamp);
+
+  // The latest price the index saw: the last trade's, else the pool's initial one.
+  const lastTrade = [...swaps]
+    .reverse()
+    .find(
+      (swap) =>
+        swap.direction !== "mint" &&
+        swap.poolId?.toLowerCase() === pool.poolId.toLowerCase() &&
+        swap.sqrtPriceX96,
+    );
+  const latestSqrtPriceX96 = lastTrade?.sqrtPriceX96 ?? pool.initialSqrtPriceX96;
+  const liquidity =
+    latestSqrtPriceX96 && pool.projectTokenIsCurrency0 !== null
+      ? await indexedPoolLiquidity(
+          chainId,
+          pool.poolId,
+          BigInt(latestSqrtPriceX96),
+          pool.projectTokenIsCurrency0,
+        ).catch(() => null)
+      : null;
+
   return {
     data: downsampleTimeSeries(
       data,
@@ -129,5 +195,6 @@ export async function getV4AmmPriceHistory({
       (point) => point.ammPrice ?? 0,
     ),
     hasPool: true,
+    liquidity,
   };
 }

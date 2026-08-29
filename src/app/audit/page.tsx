@@ -33,6 +33,19 @@ export default function AuditPage() {
           transaction.
         </p>
         <p className="mt-4 max-w-2xl leading-relaxed text-zinc-600">
+          Revnets are built on Juicebox, so a review covers both. The protocol&apos;s own audits and
+          prompts are on the{" "}
+          <Link
+            href="https://juicebox.money/audit"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-melon-400 underline-offset-4"
+          >
+            Juicebox audit page
+          </Link>
+          .
+        </p>
+        <p className="mt-4 max-w-2xl leading-relaxed text-zinc-600">
           Defenders who manage to steal funds and return them are encouraged to keep 10% as a
           reward, paid by all projects together.
         </p>

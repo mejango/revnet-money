@@ -158,7 +158,7 @@ export function V6PayConfirmDialog({
       }}
     >
       <DialogContent className="max-w-lg">
-        <DialogHeader>
+        <DialogHeader className="text-left">
           <DialogTitle>
             {phase === "success"
               ? mode === "pay"

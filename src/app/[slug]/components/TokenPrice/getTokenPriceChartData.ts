@@ -166,6 +166,8 @@ export async function getTokenPriceChartData(params: {
     chartData: data.filter(inSelectedRange),
     tradeChartData: tradeData.filter(inSelectedRange),
     hasPool: !!v4History?.hasPool,
+    /** Current pool reserves from the index; null when there is no pool or no positions. */
+    poolLiquidity: v4History?.liquidity ?? null,
     /** The axis unit: the ruleset's base currency, which issuance is denominated in. */
     baseCurrency,
     /**
