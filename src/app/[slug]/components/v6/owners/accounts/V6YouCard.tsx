@@ -388,29 +388,25 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
       )}
 
       <div className="flex flex-wrap gap-2 mt-4">
-        {hasErc20 && primaryNativeTerminal.data ? (
-          <RedeemDialog projectId={projectId} tokenSymbol={tokenSymbol}>
-            <Button
-              variant="outline"
-              disabled={totalBalance === 0n}
-              className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
-            >
-              Cash out
-            </Button>
-          </RedeemDialog>
-        ) : null}
+        <RedeemDialog projectId={projectId} tokenSymbol={tokenSymbol}>
+          <Button
+            variant="outline"
+            disabled={totalBalance === 0n || !hasErc20 || !primaryNativeTerminal.data}
+            className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
+          >
+            Cash out
+          </Button>
+        </RedeemDialog>
 
-        {hasErc20 && primaryNativeTerminal.data ? (
-          <BorrowDialog projectId={projectId} tokenSymbol={tokenSymbol}>
-            <Button
-              variant="outline"
-              disabled={totalBalance === 0n}
-              className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
-            >
-              Get a loan
-            </Button>
-          </BorrowDialog>
-        ) : null}
+        <BorrowDialog projectId={projectId} tokenSymbol={tokenSymbol}>
+          <Button
+            variant="outline"
+            disabled={totalBalance === 0n || !hasErc20 || !primaryNativeTerminal.data}
+            className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
+          >
+            Get a loan
+          </Button>
+        </BorrowDialog>
 
         {projects.length > 1 && (
           <BridgeDialog projects={projects}>
@@ -435,10 +431,13 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
           </V6ClaimCreditsDialog>
         )}
 
-        {pooledAmmStates.length > 0 ? (
+        {ammChains.length > 0 ? (
           <Button
             type="button"
             variant="outline"
+            // Rendered from the start and only enabled once the pool probe
+            // resolves, so the row never gains a button mid-load.
+            disabled={pooledAmmStates.length === 0}
             className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
             onClick={() => openLiquidity()}
           >
