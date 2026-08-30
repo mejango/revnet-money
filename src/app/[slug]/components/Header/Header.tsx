@@ -333,7 +333,7 @@ export function Header(props: Props) {
                                   name: projectName ?? tokenSymbol ?? `Project ${pair.projectId}`,
                                   logoUri: logoUri ?? null,
                                 }}
-                                className="relative inline-flex px-1 transition-opacity before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] hover:opacity-70"
+                                className="relative inline-flex translate-y-[2px] px-1 transition-opacity before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] hover:opacity-70"
                               >
                                 <ChainLogo
                                   chainId={pair.peerChainId as JBChainId}
