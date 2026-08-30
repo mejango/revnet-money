@@ -269,6 +269,12 @@ const cachedReserves = unstable_cache(
       ])
       .sort((a, b) => a.timestamp - b.timestamp);
 
+    // A project with no moments only ever gets its synthetic current-balance
+    // point, so its history would silently read as zero. Only break out per-chain
+    // values when every project either reported moments or holds nothing.
+    const chainHistoryIsComplete = projectHistories.every(
+      (project) => project.moments.length > 0 || project.currentAmount === 0,
+    );
     const latest = new Map<string, number>();
     const latestVolume = new Map<string, number>();
     const latestProjects = new Map<string, { chainId: number; symbol: string; amount: number }>();
@@ -326,18 +332,17 @@ const cachedReserves = unstable_cache(
           volumeUsd += volume;
         }
       }
-      const chains =
-        latestProjects.size === historicalProjects.length
-          ? RESERVE_CHAIN_IDS.map((chainId) => ({
-              chainId,
-              valueUsd: [...latestProjects.values()].reduce((sum, project) => {
-                if (project.chainId !== chainId) return sum;
-                if (project.symbol === "ETH") return sum + project.amount * (ethPrice ?? 0);
-                if (project.symbol === "USDC") return sum + project.amount;
-                return sum;
-              }, 0),
-            }))
-          : [];
+      const chains = chainHistoryIsComplete
+        ? RESERVE_CHAIN_IDS.map((chainId) => ({
+            chainId,
+            valueUsd: [...latestProjects.values()].reduce((sum, project) => {
+              if (project.chainId !== chainId) return sum;
+              if (project.symbol === "ETH") return sum + project.amount * (ethPrice ?? 0);
+              if (project.symbol === "USDC") return sum + project.amount;
+              return sum;
+            }, 0),
+          }))
+        : [];
       raw.push({ timestamp: event.timestamp, valueUsd, chains });
       rawVolumePoints.push({ timestamp: event.timestamp, valueUsd: volumeUsd, chains: [] });
     }
