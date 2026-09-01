@@ -465,7 +465,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
               ) : (
                 "your connected wallet"
               )}{" "}
-              in the project&apos;s market pools, across its chains.
+              in the project&apos;s market pools.
             </p>
             {dialogAmmStates ? (
               <LiquidityManager
