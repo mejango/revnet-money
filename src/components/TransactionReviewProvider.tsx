@@ -1,5 +1,6 @@
 "use client";
 
+import { CallRow, ExactCallCard } from "@/components/ExactCallCard";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { resumePendingRelayrBundles, waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
@@ -368,49 +369,41 @@ function PrettyCall({
   const contract = knownContract(call);
   const chain = JB_CHAINS[call.chainId as JBChainId];
   return (
-    <section className="border border-melon-300 bg-melon-25 p-4">
-      <div className="flex flex-wrap justify-between gap-2 text-xs uppercase text-melon-700">
-        <span>{total > 1 ? `Call ${index + 1} of ${total}` : "Exact call"}</span>
-        <span>
-          {chain?.name ?? `Chain ${call.chainId}`} | {call.chainId}
-        </span>
-      </div>
-      {call.label ? (
-        <h3 className="mt-3 text-base font-bold text-melon-950">{call.label}</h3>
-      ) : null}
-      <dl className="mt-3 space-y-3 text-xs">
-        {call.from ? (
-          <div>
-            <dt className="text-melon-700">From</dt>
-            <dd className="mt-1 break-all font-mono">{call.from}</dd>
-          </div>
-        ) : null}
-        <div>
-          <dt className="text-melon-700">Destination{contract ? ` | ${contract}` : ""}</dt>
-          <dd className="mt-1 break-all font-mono">{call.to}</dd>
-        </div>
-        <div>
-          <dt className="text-melon-700">Native value</dt>
-          <dd className="mt-1 font-mono">
-            {formatEther(call.value ?? 0n)} native | {(call.value ?? 0n).toString()} wei
-          </dd>
-        </div>
+    <ExactCallCard
+      eyebrow={`${total > 1 ? `Call ${index + 1} of ${total}` : "Exact call"} | ${chain?.name ?? `Chain ${call.chainId}`} | ${call.chainId}`}
+      destination={contract ? `${contract} | ${call.to}` : call.to}
+      title={call.label ?? fn?.name ?? `Selector ${call.data.slice(0, 10)}`}
+      raw={json({
+        chainId: call.chainId,
+        from: call.from,
+        to: call.to,
+        value: call.value ?? 0n,
+        functionName: call.functionName,
+        args: call.args,
+        data: call.data,
+      })}
+      auditRequest={{ title: call.label ?? fn?.name, calls: [call] }}
+    >
+      <dl className="mt-2 space-y-1">
+        {call.from ? <CallRow label="From">{call.from}</CallRow> : null}
+        <CallRow label="Native value">
+          {formatEther(call.value ?? 0n)} native | {(call.value ?? 0n).toString()} wei
+        </CallRow>
         {call.safeTxGas !== undefined ? (
-          <div>
-            <dt className="text-melon-700">Safe transaction gas</dt>
-            <dd className="mt-1 font-mono">{call.safeTxGas.toString()} (signed envelope)</dd>
-          </div>
+          <CallRow label="Safe transaction gas">
+            {call.safeTxGas.toString()} (signed envelope)
+          </CallRow>
         ) : null}
       </dl>
       {fn ? (
-        <div className="mt-4 border-t border-melon-200 pt-3">
-          <p className="text-xs text-melon-700">Contract function</p>
-          <p className="mt-1 break-all font-mono text-sm font-bold">
+        <div className="mt-3 border-t border-melon-200 pt-2">
+          <p className="text-zinc-500">Contract function</p>
+          <p className="mt-1 break-all font-mono text-sm font-bold text-zinc-900">
             {fn.name}({fn.inputs.map((input) => input.type).join(", ")})
           </p>
           <div className="mt-3 space-y-2">
             {fn.inputs.map((input, argumentIndex) => (
-              <div key={`${input.name}-${argumentIndex}`} className="bg-melon-50 p-3 text-xs">
+              <div key={`${input.name}-${argumentIndex}`} className="bg-melon-25 p-3">
                 <p className="font-bold text-melon-800">
                   {input.name || `argument ${argumentIndex + 1}`}{" "}
                   <span className="font-normal">{input.type}</span>
@@ -431,12 +424,12 @@ function PrettyCall({
           </div>
         </div>
       ) : (
-        <div className="mt-4 border border-peel-200 bg-peel-25 p-3 text-xs text-peel-800">
+        <div className="mt-3 border border-peel-200 bg-peel-25 p-3 text-peel-800">
           ABI unavailable in this flow. Verify selector {call.data.slice(0, 10)} and complete
           calldata in Raw.
         </div>
       )}
-    </section>
+    </ExactCallCard>
   );
 }
 
@@ -494,25 +487,32 @@ function ReviewModal({
           <p className="border border-amber-300 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900">
             {description}
           </p>
-          <button
-            type="button"
-            className="mt-4 border border-melon-600 bg-melon-100 px-4 py-2 text-xs font-bold hover:bg-melon-200"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(buildTransactionReviewPrompt(pending.request));
-                setCopyState("copied");
-              } catch {
-                setCopyState("failed");
-              }
-              window.setTimeout(() => setCopyState("idle"), 2200);
-            }}
-          >
-            {copyState === "copied"
-              ? "Prompt copied — paste into your LLM"
-              : copyState === "failed"
-                ? "Could not copy prompt"
-                : "[copy tx audit prompt]"}
-          </button>
+          {/* Single-call requests carry the audit prompt and raw data on the
+              card itself (the same chrome the pay flow uses); the request-wide
+              versions only add value when there is more than one call. */}
+          {pending.request.calls.length !== 1 ? (
+            <button
+              type="button"
+              className="mt-4 border border-melon-600 bg-melon-100 px-4 py-2 text-xs font-bold hover:bg-melon-200"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(
+                    buildTransactionReviewPrompt(pending.request),
+                  );
+                  setCopyState("copied");
+                } catch {
+                  setCopyState("failed");
+                }
+                window.setTimeout(() => setCopyState("idle"), 2200);
+              }}
+            >
+              {copyState === "copied"
+                ? "Prompt copied — paste into your LLM"
+                : copyState === "failed"
+                  ? "Could not copy prompt"
+                  : "[copy tx audit prompt]"}
+            </button>
+          ) : null}
           <div className="mt-4 space-y-4">
             {pending.request.calls.map((call, index) => (
               <PrettyCall
@@ -523,14 +523,16 @@ function ReviewModal({
               />
             ))}
           </div>
-          <details className="mt-4 border border-melon-300 bg-melon-50">
-            <summary className="cursor-pointer px-4 py-3 text-sm font-bold">
-              Raw transaction payload
-            </summary>
-            <pre className="max-h-96 overflow-auto border-t border-melon-300 bg-melon-950 p-4 text-[11px] leading-relaxed text-melon-25">
-              {transactionReviewJson(pending.request)}
-            </pre>
-          </details>
+          {pending.request.calls.length !== 1 ? (
+            <details className="mt-4 border border-melon-300 bg-melon-50">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-bold">
+                Raw transaction payload
+              </summary>
+              <pre className="max-h-96 overflow-auto border-t border-melon-300 bg-melon-950 p-4 text-[11px] leading-relaxed text-melon-25">
+                {transactionReviewJson(pending.request)}
+              </pre>
+            </details>
+          ) : null}
         </div>
         <footer className="border-t border-melon-300 bg-melon-50 p-4 sm:p-6">
           <label className="flex items-start gap-3 border border-melon-300 bg-melon-25 p-3 text-sm">

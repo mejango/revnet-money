@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CallRow, ExactCallCard } from "@/components/ExactCallCard";
 import { TxSteps } from "@/components/ui/TxSteps";
 import {
   PERMIT2_ADDRESS,
@@ -16,14 +17,10 @@ import {
   type DirectSwapQuote,
   type Permit2SignatureAuthorization,
 } from "@/lib/directPaySwap";
-import {
-  buildTransactionReviewPrompt,
-  type TransactionReviewRequest,
-} from "@/lib/transaction-review";
+import { type TransactionReviewRequest } from "@/lib/transaction-review";
 import { etherscanLink } from "@/lib/utils";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
-import { useState } from "react";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
@@ -373,7 +370,6 @@ function PreparedPaymentReview({
   projectTokenSymbol: string;
   beneficiary: Address | undefined;
 }) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   if (action.kind === "router-signature") {
     return (
       <Permit2SignatureReview
@@ -403,111 +399,61 @@ function PreparedPaymentReview({
     ],
   };
   return (
-    <div className="rounded border border-melon-200 bg-melon-50 p-3 text-xs">
-      <div>
-        <p className="uppercase tracking-wide text-zinc-500">{chainLabel}</p>
-        <p className="mt-1 break-all text-zinc-600">{destination}</p>
-        <p className="mt-2 text-sm font-medium text-zinc-900">{action.label}</p>
-      </div>
+    <ExactCallCard
+      eyebrow={chainLabel}
+      destination={destination}
+      title={action.label}
+      raw={preparedPaymentJson(prepared, action, chainLabel)}
+      auditRequest={reviewRequest}
+    >
       <dl className="mt-2 space-y-1">
-        <div className="flex items-start gap-1">
-          <dt className="shrink-0 text-zinc-500">
-            {action.kind === "payment" ? "Amount in:" : "Amount authorized:"}
-          </dt>
-          <dd className="min-w-0 text-zinc-800">
-            {formatPayAmount(prepared.amount, prepared.token.decimals)} {prepared.token.symbol}
-          </dd>
-        </div>
+        <CallRow
+          label={action.kind === "payment" ? "Amount in" : "Amount authorized"}
+          mono={false}
+        >
+          {formatPayAmount(prepared.amount, prepared.token.decimals)} {prepared.token.symbol}
+        </CallRow>
         {action.kind === "token-approval" ? (
-          <div className="flex items-start gap-1">
-            <dt className="shrink-0 text-zinc-500">Spender:</dt>
-            <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">
-              {knownDestination(String(request.args[0]) as Address, prepared)}
-            </dd>
-          </div>
+          <CallRow label="Spender">
+            {knownDestination(String(request.args[0]) as Address, prepared)}
+          </CallRow>
         ) : null}
         {action.kind === "router-approval" ? (
           <>
-            <div className="flex items-start gap-1">
-              <dt className="shrink-0 text-zinc-500">Token:</dt>
-              <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">
-                {knownTokenAddress(request.args[0], prepared.chainId)}
-              </dd>
-            </div>
-            <div className="flex items-start gap-1">
-              <dt className="shrink-0 text-zinc-500">Spender:</dt>
-              <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">
-                {knownDestination(String(request.args[1]) as Address, prepared)}
-              </dd>
-            </div>
-            <div className="flex items-start gap-1">
-              <dt className="shrink-0 text-zinc-500">Expires:</dt>
-              <dd className="min-w-0 text-zinc-800">
-                {new Date(Number(request.args[3]) * 1000).toLocaleString()}
-              </dd>
-            </div>
+            <CallRow label="Token">
+              {knownTokenAddress(request.args[0], prepared.chainId)}
+            </CallRow>
+            <CallRow label="Spender">
+              {knownDestination(String(request.args[1]) as Address, prepared)}
+            </CallRow>
+            <CallRow label="Expires" mono={false}>
+              {new Date(Number(request.args[3]) * 1000).toLocaleString()}
+            </CallRow>
           </>
         ) : null}
         {prepared.mode === "pay" && action.kind === "payment" ? (
           <>
             {prepared.swapInputRoute && prepared.swapInputRoute.kind !== "single-v4" ? (
-              <div className="flex items-start gap-1">
-                <dt className="shrink-0 text-zinc-500">Route:</dt>
-                <dd className="min-w-0 text-zinc-800">
-                  {prepared.token.symbol} → {prepared.swapInputRoute.bridgeTokenSymbol} →{" "}
-                  {projectTokenSymbol}
-                </dd>
-              </div>
+              <CallRow label="Route" mono={false}>
+                {prepared.token.symbol} → {prepared.swapInputRoute.bridgeTokenSymbol} →{" "}
+                {projectTokenSymbol}
+              </CallRow>
             ) : null}
-            <div className="flex items-start gap-1">
-              <dt className="shrink-0 text-zinc-500">Minimum received:</dt>
-              <dd className="min-w-0 text-zinc-800">
-                {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
-              </dd>
-            </div>
+            <CallRow label="Minimum received" mono={false}>
+              {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
+            </CallRow>
           </>
         ) : null}
         {beneficiary && prepared.mode === "pay" && action.kind === "payment" ? (
-          <div className="flex items-start gap-1">
-            <dt className="shrink-0 text-zinc-500">Beneficiary:</dt>
-            <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">{beneficiary}</dd>
-          </div>
+          <CallRow label="Beneficiary">{beneficiary}</CallRow>
         ) : null}
         {prepared.memo && action.kind === "payment" ? (
-          <div className="flex items-start gap-1">
-            <dt className="shrink-0 text-zinc-500">Note:</dt>
-            <dd className="min-w-0 break-words text-zinc-800">{prepared.memo}</dd>
-          </div>
+          <CallRow label="Note" mono={false}>
+            {prepared.memo}
+          </CallRow>
         ) : null}
       </dl>
-      <details className="mt-3 border-t border-melon-200 pt-2">
-        <summary className="cursor-pointer select-none text-zinc-500">Show raw data</summary>
-        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all border border-melon-300 bg-melon-100 p-3 font-mono text-xs leading-relaxed text-melon-950">
-          {preparedPaymentJson(prepared, action, chainLabel)}
-        </pre>
-      </details>
-      <div className="mt-3 flex justify-end">
-        <button
-          type="button"
-          className="border border-melon-500 bg-melon-100 px-3 py-2 text-xs font-medium hover:bg-melon-200"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(buildTransactionReviewPrompt(reviewRequest));
-              setCopyState("copied");
-            } catch {
-              setCopyState("failed");
-            }
-            window.setTimeout(() => setCopyState("idle"), 2200);
-          }}
-        >
-          {copyState === "copied"
-            ? "Prompt copied — paste into your LLM"
-            : copyState === "failed"
-              ? "Could not copy prompt"
-              : "[copy tx audit prompt]"}
-        </button>
-      </div>
-    </div>
+    </ExactCallCard>
   );
 }
 
@@ -520,7 +466,6 @@ function Permit2SignatureReview({
   chainLabel: string;
   amount: string;
 }) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const typedData = permit2TypedData(action.authorization);
   const reviewRequest: TransactionReviewRequest = {
     title: action.label,
@@ -529,74 +474,35 @@ function Permit2SignatureReview({
     authorization: typedData,
   };
   return (
-    <div className="rounded border border-melon-200 bg-melon-50 p-3 text-xs">
-      <div>
-        <p className="uppercase tracking-wide text-zinc-500">{chainLabel}</p>
-        <p className="mt-1 break-all text-zinc-600">Permit2 | {PERMIT2_ADDRESS}</p>
-        <p className="mt-2 text-sm font-medium text-zinc-900">{action.label}</p>
-      </div>
+    <ExactCallCard
+      eyebrow={chainLabel}
+      destination={`Permit2 | ${PERMIT2_ADDRESS}`}
+      title={action.label}
+      raw={JSON.stringify(
+        typedData,
+        (_, value) => (typeof value === "bigint" ? value.toString() : value),
+        2,
+      )}
+      auditRequest={reviewRequest}
+    >
       <dl className="mt-2 space-y-1">
-        <div className="flex items-start gap-1">
-          <dt className="shrink-0 text-zinc-500">Token:</dt>
-          <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">
-            {knownTokenAddress(action.authorization.token, action.authorization.chainId)}
-          </dd>
-        </div>
-        <div className="flex items-start gap-1">
-          <dt className="shrink-0 text-zinc-500">Spender:</dt>
-          <dd className="min-w-0 break-all font-mono text-xs text-zinc-800">
-            Uniswap Universal Router | {action.authorization.spender}
-          </dd>
-        </div>
-        <div className="flex items-start gap-1">
-          <dt className="shrink-0 text-zinc-500">Amount:</dt>
-          <dd className="min-w-0 text-zinc-800">{amount}</dd>
-        </div>
-        <div className="flex items-start gap-1">
-          <dt className="shrink-0 text-zinc-500">Expires:</dt>
-          <dd className="min-w-0 text-zinc-800">
-            {new Date(action.authorization.expiration * 1000).toLocaleString()}
-          </dd>
-        </div>
-        <div className="flex items-start gap-1">
-          <dt className="shrink-0 text-zinc-500">Gas:</dt>
-          <dd className="min-w-0 text-zinc-800">
-            No transaction fee — this is an EIP-712 signature
-          </dd>
-        </div>
+        <CallRow label="Token">
+          {knownTokenAddress(action.authorization.token, action.authorization.chainId)}
+        </CallRow>
+        <CallRow label="Spender">
+          Uniswap Universal Router | {action.authorization.spender}
+        </CallRow>
+        <CallRow label="Amount" mono={false}>
+          {amount}
+        </CallRow>
+        <CallRow label="Expires" mono={false}>
+          {new Date(action.authorization.expiration * 1000).toLocaleString()}
+        </CallRow>
+        <CallRow label="Gas" mono={false}>
+          No transaction fee — this is an EIP-712 signature
+        </CallRow>
       </dl>
-      <details className="mt-3 border-t border-melon-200 pt-2">
-        <summary className="cursor-pointer select-none text-zinc-500">Show raw data</summary>
-        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all border border-melon-300 bg-melon-100 p-3 font-mono text-xs leading-relaxed text-melon-950">
-          {JSON.stringify(
-            typedData,
-            (_, value) => (typeof value === "bigint" ? value.toString() : value),
-            2,
-          )}
-        </pre>
-      </details>
-      <div className="mt-3 flex justify-end">
-        <button
-          type="button"
-          className="border border-melon-500 bg-melon-100 px-3 py-2 text-xs font-medium hover:bg-melon-200"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(buildTransactionReviewPrompt(reviewRequest));
-              setCopyState("copied");
-            } catch {
-              setCopyState("failed");
-            }
-            window.setTimeout(() => setCopyState("idle"), 2200);
-          }}
-        >
-          {copyState === "copied"
-            ? "Prompt copied — paste into your LLM"
-            : copyState === "failed"
-              ? "Could not copy prompt"
-              : "[copy tx audit prompt]"}
-        </button>
-      </div>
-    </div>
+    </ExactCallCard>
   );
 }
 
