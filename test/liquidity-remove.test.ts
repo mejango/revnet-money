@@ -199,8 +199,7 @@ describe("Review-dialog V4 plan decoding", () => {
       ticks: { lower: plan.mint.tickLower, upper: plan.mint.tickUpper },
       liquidity: plan.mint.liquidity,
     });
-    expect(steps[2]).toMatchObject({ action: "CLOSE_CURRENCY" });
-    expect(String((steps[2] as { currency: string }).currency)).toContain("native ETH");
+    expect(steps[2]).toMatchObject({ action: "CLOSE_CURRENCY", currency: zeroAddress });
     expect(steps[3]).toMatchObject({ action: "CLOSE_CURRENCY" });
     // Unknown actions must fall back to the raw view, never a partial story.
     expect(describeV4UnlockData("0xdead")).toBeNull();
