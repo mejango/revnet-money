@@ -172,3 +172,28 @@ describe("Revnet LP move", () => {
     expect(band.maximumPrice).toBeCloseTo(1.0001 ** 60, 6);
   });
 });
+
+describe("Review-dialog V4 plan decoding", () => {
+  it("renders a move plan as readable burn/mint/close steps", async () => {
+    const { describeV4UnlockData } = await import("@/components/TransactionReviewProvider");
+    const plan = prepareMoveLiquidity(
+      { ...pool, sqrtP: 2n ** 96n },
+      {
+        ...position,
+        pairAmount: 1_000_000_000_000_000_000n,
+        tokenAmount: 1_000_000_000_000_000_000n,
+      },
+      { minimumPrice: 0.25, maximumPrice: 4 },
+      recipient,
+    );
+    const text = describeV4UnlockData(plan.unlockData)!;
+    expect(text).toContain("1. BURN_POSITION — burn position #42");
+    expect(text).toContain(`at least ${plan.pairMinimum} of currency0 + ${plan.tokenMinimum} of currency1`);
+    expect(text).toContain("2. MINT_POSITION — a new position owned by " + recipient);
+    expect(text).toContain(`ticks ${plan.mint.tickLower} → ${plan.mint.tickUpper}`);
+    expect(text).toContain("3. CLOSE_CURRENCY — settle the net native ETH");
+    expect(text).toContain("4. CLOSE_CURRENCY");
+    // Unknown actions must fall back to the raw view, never a partial story.
+    expect(describeV4UnlockData("0xdead")).toBeNull();
+  });
+});

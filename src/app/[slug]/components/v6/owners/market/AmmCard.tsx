@@ -31,7 +31,7 @@ import {
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   erc20Abi,
@@ -1226,13 +1226,13 @@ function ChainPositionRows({
     position: UserLpPosition;
     plan: ReturnType<typeof prepareRemoveLiquidity>;
   } | null>(null);
-  // The move flow: the position being re-banded, the editable band, and the
-  // reviewed plan (cleared by any band edit so what's confirmed is what's sent).
+  // The move flow: the position being re-banded and its editable band. One
+  // click builds the plan and goes straight to the transaction confirm —
+  // there is no separate inline review step.
   const [moving, setMoving] = useState<{
     position: UserLpPosition;
     minText: string;
     maxText: string;
-    plan: MoveLiquidityPlan | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
@@ -1251,12 +1251,20 @@ function ChainPositionRows({
     },
   });
   const receipt = useWaitForTransactionReceipt({ hash });
+  // The plan is built inside the click handler, so the confirm modal's copy
+  // comes from this MUTATED object — the hook reads it when the modal opens.
+  const moveReview = useRef({
+    title: "Review liquidity move",
+    confirmLabel: "Agree & move liquidity",
+    description: "",
+  });
+  const movePlan = useRef<MoveLiquidityPlan | null>(null);
   const moveWrite = useWriteContract({
-    transactionReview: {
-      title: "Review liquidity move",
-      description:
-        "Burn this Uniswap V4 position and re-mint what it holds into the new price band, all in one transaction. The reviewed burn minimums and mint maximums are enforced onchain; if any leg falls short the whole move reverts.",
-      confirmLabel: "Agree & move liquidity",
+    transactionReview: moveReview.current,
+    // Runs AFTER the confirm modal, so however long it sat open, drift beyond
+    // the reviewed maxima still aborts before the wallet asks.
+    reverify: async () => {
+      if (pool && movePlan.current) await reverifyAddLiquidity(pool, movePlan.current.mint);
     },
   });
   const moveReceipt = useWaitForTransactionReceipt({ hash: moveWrite.data });
@@ -1335,28 +1343,23 @@ function ChainPositionRows({
     }
   };
 
-  // Open the move panel seeded with the position's current band, so "Move"
-  // starts from where the liquidity already sits rather than a blank range.
-  const beginMove = async (position: UserLpPosition) => {
+  // Open the move panel seeded with the position's current band. A position's
+  // ticks never change onchain, so no read is needed until review — the panel
+  // opens instantly.
+  const beginMove = (position: UserLpPosition) => {
     setError(null);
-    setRefreshing(position.tokenId);
-    try {
-      const fresh = await refreshUserLpPosition(pool, position.tokenId, address);
-      const band = lpBandPrices(pool, fresh.tickLower, fresh.tickUpper);
-      setMoving({
-        position: fresh,
-        minText: String(Number(band.minimumPrice.toPrecision(6))),
-        maxText: String(Number(band.maximumPrice.toPrecision(6))),
-        plan: null,
-      });
-    } catch (cause) {
-      setError(txMessage(cause, "Could not refresh this position."));
-    } finally {
-      setRefreshing(null);
-    }
+    const band = lpBandPrices(pool, position.tickLower, position.tickUpper);
+    setMoving({
+      position,
+      minText: String(Number(band.minimumPrice.toPrecision(6))),
+      maxText: String(Number(band.maximumPrice.toPrecision(6))),
+    });
   };
 
-  const reviewMove = async () => {
+  // One click: refresh the position, build the plan from live amounts, and go
+  // straight to the transaction confirm — the plan's numbers land in the
+  // confirm modal's copy via the mutable review object.
+  const move = async () => {
     if (!moving) return;
     setError(null);
     setRefreshing(moving.position.tokenId);
@@ -1368,34 +1371,30 @@ function ChainPositionRows({
         { minimumPrice: Number(moving.minText), maximumPrice: Number(moving.maxText) },
         address,
       );
-      setMoving((current) => (current ? { ...current, position: fresh, plan } : current));
-    } catch (cause) {
-      setError(txMessage(cause, "Could not prepare the move."));
-    } finally {
+      movePlan.current = plan;
+      const band = lpBandPrices(pool, plan.mint.tickLower, plan.mint.tickUpper);
+      moveReview.current.description =
+        `Move position #${fresh.tokenId.toString()} on ${chainName(state.chainId)} to the ` +
+        `${formatPrice(band.minimumPrice)} – ${formatPrice(band.maximumPrice)} ` +
+        `${pool.pair.symbol}/${tokenSymbol} band.\n\n` +
+        `About ${fmtUnits(plan.mint.tokenMaximum, 18)} ${tokenSymbol} + ` +
+        `${fmtUnits(plan.mint.pairMaximum, pool.pair.decimals)} ${pool.pair.symbol} goes into ` +
+        `the new band; unclaimed fees and anything that doesn't fit return to your wallet.\n\n` +
+        `One transaction, funded by burning the old position — nothing is pulled from your ` +
+        `wallet. If prices shift too much before it lands, the whole move reverts and your ` +
+        `current position stays untouched.`;
       setRefreshing(null);
-    }
-  };
-
-  const move = async () => {
-    if (!moving?.plan) return;
-    setError(null);
-    try {
-      const fresh = await refreshUserLpPosition(pool, moving.position.tokenId, address);
-      if (fresh.liquidity < moving.position.liquidity) {
-        throw new Error("This position changed. Review the move again before sending it.");
-      }
-      // The mint half re-verifies against the live price the same way an add
-      // does: drift beyond the reviewed maxima aborts before the wallet asks.
-      await reverifyAddLiquidity(pool, moving.plan.mint);
       await moveWrite.writeContractAsync({
         chainId,
         address: positionManager,
         abi: POSITION_MANAGER_ABI,
         functionName: "modifyLiquidities",
-        args: [moving.plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
+        args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
       });
     } catch (cause) {
       setError(txMessage(cause, "Could not move liquidity."));
+    } finally {
+      setRefreshing(null);
     }
   };
 
@@ -1551,9 +1550,9 @@ function ChainPositionRows({
                   type="button"
                   className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
                   disabled={busy}
-                  onClick={() => void beginMove(position)}
+                  onClick={() => beginMove(position)}
                 >
-                  {refreshing === position.tokenId && moving === null ? "Refreshing…" : "Move"}
+                  Move
                 </button>
                 <button
                   type="button"
@@ -1633,7 +1632,6 @@ function ChainPositionRows({
                                 ? {
                                     ...current,
                                     [edge === "minimum" ? "minText" : "maxText"]: String(value),
-                                    plan: null,
                                   }
                                 : current,
                             )
@@ -1651,7 +1649,7 @@ function ChainPositionRows({
                         onChange={(event) =>
                           setMoving((current) =>
                             current
-                              ? { ...current, minText: event.target.value, plan: null }
+                              ? { ...current, minText: event.target.value }
                               : current,
                           )
                         }
@@ -1668,77 +1666,35 @@ function ChainPositionRows({
                         onChange={(event) =>
                           setMoving((current) =>
                             current
-                              ? { ...current, maxText: event.target.value, plan: null }
+                              ? { ...current, maxText: event.target.value }
                               : current,
                           )
                         }
                       />
                     </label>
                   </div>
-                  {moving.plan ? (
-                    <div className="mt-2 border border-amber-200 bg-amber-50 p-2">
-                      {(() => {
-                        const band = lpBandPrices(
-                          pool,
-                          moving.plan.mint.tickLower,
-                          moving.plan.mint.tickUpper,
-                        );
-                        return (
-                          <p className="font-medium">
-                            Move your liquidity to the {formatPrice(band.minimumPrice)} –{" "}
-                            {formatPrice(band.maximumPrice)} {pool.pair.symbol}/{tokenSymbol}{" "}
-                            band.
-                          </p>
-                        );
-                      })()}
-                      <p className="mt-1 text-zinc-500">
-                        About {fmtUnits(moving.plan.mint.tokenMaximum, 18)} {tokenSymbol} +{" "}
-                        {fmtUnits(moving.plan.mint.pairMaximum, pool.pair.decimals)}{" "}
-                        {pool.pair.symbol} goes into the new band. Unclaimed fees and anything
-                        that doesn&apos;t fit return to your wallet.
-                      </p>
-                      <p className="mt-1 text-zinc-500">
-                        One transaction. If prices shift too much before it lands, it cancels
-                        itself and your current position stays untouched.
-                      </p>
-                      <div className="mt-2 flex gap-2">
-                        <button
-                          type="button"
-                          className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
-                          disabled={moveWrite.isPending}
-                          onClick={() => void move()}
-                        >
-                          {moveWrite.isPending ? "Submitting…" : "Confirm & move"}
-                        </button>
-                        <button
-                          type="button"
-                          className="border border-zinc-300 px-2 py-1"
-                          disabled={moveWrite.isPending}
-                          onClick={() => setMoving(null)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        type="button"
-                        className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
-                        disabled={refreshing !== null}
-                        onClick={() => void reviewMove()}
-                      >
-                        {refreshing !== null ? "Checking…" : "Review move"}
-                      </button>
-                      <button
-                        type="button"
-                        className="border border-zinc-300 px-2 py-1"
-                        onClick={() => setMoving(null)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
+                      disabled={refreshing !== null || moveWrite.isPending}
+                      onClick={() => void move()}
+                    >
+                      {refreshing === moving.position.tokenId
+                        ? "Checking…"
+                        : moveWrite.isPending
+                          ? "Submitting…"
+                          : "Move liquidity"}
+                    </button>
+                    <button
+                      type="button"
+                      className="border border-zinc-300 px-2 py-1"
+                      disabled={moveWrite.isPending}
+                      onClick={() => setMoving(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               ) : null}
               {receipt.isSuccess ? (
