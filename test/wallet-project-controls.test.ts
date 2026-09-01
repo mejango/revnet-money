@@ -127,12 +127,24 @@ const actionExpectations: Array<{
         contains: [
           '"hashedEncodedConfigurationOf"',
           "buildSuckerExtensionWrites",
-          "runSequentialWrites",
+          "runWrites",
         ],
       },
       {
         file: "src/app/[slug]/components/v6/operator/operatorLib.ts",
-        contains: ["simulateContract", "writeContractAsync"],
+        contains: ["simulateContract", "writeContractAsync", "operatorWriteRoute"],
+      },
+      {
+        // A signer of an operator Safe proposes the exact call to that chain's
+        // Safe queue (simulated FROM the Safe first) instead of sending it.
+        file: "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
+        contains: [
+          "operatorWriteRoute",
+          "account: route.safe",
+          "signSafeTransactionAsync",
+          "proposeSafeTransaction",
+          "submitSafeConfirmation",
+        ],
       },
     ],
   },

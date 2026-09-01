@@ -39,6 +39,7 @@ import {
   v6ContractAddress,
 } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
+import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
 import { useOperatorWrites } from "./useOperatorWrites";
 
 type BuybackChainState = ChainProjectRow & {
@@ -292,7 +293,22 @@ const ACTIONS: Record<
  * against the registries, run per selected chain as sequential simulate-first
  * transactions.
  */
-export function BuybackRouterCard({ rows }: { rows: ChainProjectRow[] }) {
+export function BuybackRouterCard({
+  rows,
+  fallbackOperator,
+  fallbackProject,
+}: {
+  rows: ChainProjectRow[];
+  /** Server-resolved operator candidate for the page chain; always live-checked. */
+  fallbackOperator?: string;
+  fallbackProject?: ChainProjectRow;
+}) {
+  // Each chain's live operator is the account the writes must come from: an
+  // EOA sends them itself, a Safe gets them proposed by the connected signer.
+  const { operatorByChain } = useLiveRevnetOperators(
+    rows,
+    fallbackProject ? { ...fallbackProject, address: fallbackOperator } : undefined,
+  );
   const stateQuery = useQuery({
     queryKey: [
       "v6-buyback-router-state",
@@ -310,8 +326,9 @@ export function BuybackRouterCard({ rows }: { rows: ChainProjectRow[] }) {
       <div>
         <p className="text-sm text-zinc-500">
           Wire up the project&apos;s buyback hook and swap router, initialize its Uniswap pool, and
-          tune the pool&apos;s TWAP window. Pick one chain and the operator&apos;s wallet signs it
-          directly; pick several and they run as one Relayr bundle.
+          tune the pool&apos;s TWAP window. An operator wallet signs one chain directly and runs
+          several as one Relayr bundle. When the operator is a Safe, a connected signer proposes the
+          call to each chain&apos;s Safe queue for the other signers to confirm.
         </p>
         {stateQuery.isLoading ? (
           <SkeletonLines lines={4} className="mt-3" />
@@ -319,10 +336,15 @@ export function BuybackRouterCard({ rows }: { rows: ChainProjectRow[] }) {
           <p className="text-sm text-red-600 mt-3">Could not read the buyback registries.</p>
         ) : (
           <div className="mt-3 divide-y divide-melon-200 bg-melon-50 px-4">
-            <ActionRow kind="hook" states={states} onDone={() => stateQuery.refetch()} />
-            <ActionRow kind="terminal" states={states} onDone={() => stateQuery.refetch()} />
-            <ActionRow kind="pool" states={states} onDone={() => stateQuery.refetch()} />
-            <ActionRow kind="twap" states={states} onDone={() => stateQuery.refetch()} />
+            {(["hook", "terminal", "pool", "twap"] as const).map((kind) => (
+              <ActionRow
+                key={kind}
+                kind={kind}
+                states={states}
+                authorityByChain={operatorByChain}
+                onDone={() => stateQuery.refetch()}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -346,10 +368,12 @@ function unavailableNote(kind: ActionKind, everywhere: boolean): string {
 function ActionRow({
   kind,
   states,
+  authorityByChain,
   onDone,
 }: {
   kind: ActionKind;
   states: BuybackChainState[];
+  authorityByChain: ReadonlyMap<number, Address>;
   onDone: () => void;
 }) {
   const action = ACTIONS[kind];
@@ -462,6 +486,7 @@ function ActionRow({
             <BuybackActionForm
               kind={kind}
               available={available}
+              authorityByChain={authorityByChain}
               onBusyChange={setBusy}
               onDone={() => {
                 setOpen(false);
@@ -477,14 +502,38 @@ function ActionRow({
 
 const DIGITS = /^\d+$/;
 
+/** What a signer should do next once the call sits in the Safe queue(s). */
+function describeSafeOutcome(
+  title: string,
+  result: { chains: number; safeQueued: number; safeConfirmed: number },
+): string {
+  const parts: string[] = [];
+  if (result.safeQueued) {
+    parts.push(
+      `${title} proposed to the operator Safe on ${result.safeQueued} chain${result.safeQueued === 1 ? "" : "s"}`,
+    );
+  }
+  if (result.safeConfirmed) {
+    parts.push(
+      `your confirmation added to the identical proposal already queued on ${result.safeConfirmed} chain${result.safeConfirmed === 1 ? "" : "s"}`,
+    );
+  }
+  if (result.chains) {
+    parts.push(`executed directly on ${result.chains} chain${result.chains === 1 ? "" : "s"}`);
+  }
+  return `${parts.join("; ")}. Nothing changes until the Safe's signers confirm and execute it — from the Safe queue card above or the Safe app.`;
+}
+
 function BuybackActionForm({
   kind,
   available,
+  authorityByChain,
   onBusyChange,
   onDone,
 }: {
   kind: ActionKind;
   available: BuybackChainState[];
+  authorityByChain: ReadonlyMap<number, Address>;
   onBusyChange: (busy: boolean) => void;
   onDone: () => void;
 }) {
@@ -604,6 +653,7 @@ function BuybackActionForm({
         }
         const target = input as Address;
         const projectId = BigInt(state.projectId);
+        const authority = authorityByChain.get(state.chainId);
         if (kind === "hook") {
           if (!state.buybackRegistry)
             throw new Error(`${chainName(state.chainId)}: no buyback registry.`);
@@ -614,6 +664,7 @@ function BuybackActionForm({
             functionName: "setHookFor",
             args: [projectId, target],
             contractName: "JBBuybackHookRegistry",
+            authority,
           };
         }
         if (kind === "terminal") {
@@ -626,6 +677,7 @@ function BuybackActionForm({
             functionName: "setTerminalFor",
             args: [projectId, target],
             contractName: "JBRouterTerminalRegistry",
+            authority,
           };
         }
         if (kind === "twap") {
@@ -639,6 +691,7 @@ function BuybackActionForm({
             functionName: "setTwapWindowOf",
             args: [projectId, target, BigInt(newTwapWindow)],
             contractName: "JBBuybackHook",
+            authority,
           };
         }
         if (!state.buybackRegistry || !poolValues)
@@ -657,6 +710,7 @@ function BuybackActionForm({
             poolValues.sqrtPriceX96,
           ],
           contractName: "JBBuybackHookRegistry",
+          authority,
         };
       });
 
@@ -673,6 +727,10 @@ function BuybackActionForm({
           title: "Safe payment proposal submitted",
           description: `${action.title} is not applied yet — complete the Relayr payment in Safe.`,
         });
+      } else if (result.safeQueued || result.safeConfirmed) {
+        const message = describeSafeOutcome(action.title, result);
+        setStatus(message);
+        toast({ title: "Proposed to the operator Safe", description: message });
       } else {
         setStatus(
           `${action.title} completed on ${result.chains} chain${result.chains === 1 ? "" : "s"}.`,

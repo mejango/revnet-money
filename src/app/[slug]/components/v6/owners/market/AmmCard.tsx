@@ -31,7 +31,7 @@ import {
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   erc20Abi,
@@ -50,6 +50,7 @@ import {
   explorerAddressUrl,
   fmtUnits,
 } from "../settlement/lib";
+import { EditPositionPanel } from "./EditPositionPanel";
 import {
   describeAddLiquidityPlan,
   liquidityFormView,
@@ -61,7 +62,6 @@ import {
   encodeAddLiquidityCall,
   fetchAmmStates,
   fetchPoolComposition,
-  lpBandPrices,
   lpDeadline,
   PERMIT2_ABI,
   PERMIT2_ADDRESS,
@@ -71,7 +71,6 @@ import {
   POSITION_MANAGER_BY_CHAIN,
   prepareAddLiquidity,
   prepareCollectLpFees,
-  prepareMoveLiquidity,
   prepareRemoveLiquidity,
   readLpPositionFees,
   readPoolLpPositions,
@@ -79,7 +78,6 @@ import {
   refreshUserLpPosition,
   reverifyAddLiquidity,
   type AddLiquidityPlan,
-  type MoveLiquidityPlan,
   type PoolComposition,
   type PoolSnapshot,
   type UserLpPosition,
@@ -241,8 +239,8 @@ function LiquidityProviders({ pool, tokenSymbol }: { pool: PoolSnapshot; tokenSy
   const totalPair = owners.reduce((sum, owner) => sum + owner.pair, 0n);
 
   return (
-    <div className="mb-6">
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(280px,0.72fr)_minmax(360px,1.28fr)]">
+    <div className="mb-6 @container">
+      <div className="grid items-start gap-8 @2xl:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
         <div className="min-w-0">
           <ParticipantsPieChart
             participants={participants}
@@ -627,6 +625,18 @@ export function AddLiquidityForm({
       return String(Number(seeded.min.toPrecision(6)));
     });
   }, [pool?.poolId, pool?.price, state.reference.cashOut, state.reference.issuance]);
+
+  const tokenBalance = useQuery({
+    queryKey: ["v6LpTokenBalance", chainId, pool?.projectToken, address],
+    enabled: !!address && !!pool && !!publicClient,
+    queryFn: () =>
+      publicClient!.readContract({
+        address: pool!.projectToken,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address!],
+      }),
+  });
 
   if (!pool || !POSITION_MANAGER_BY_CHAIN[chainId]) return null;
 
@@ -1020,6 +1030,11 @@ export function AddLiquidityForm({
               setReviewed(null);
             }}
           />
+          {tokenBalance.data != null ? (
+            <span className="mt-1 block text-right text-zinc-400">
+              {fmtUnits(tokenBalance.data, 18)} {tokenSymbol} in wallet
+            </span>
+          ) : null}
         </label>
         <label className="text-[11px] text-zinc-500">
           <span className="flex items-center justify-between">
@@ -1134,7 +1149,7 @@ export function LiquidityManager({
   // Per-chain scan outcomes reported up by the row groups, so the aggregate
   // empty state is knowable without lifting each chain's queries out of them.
   const [scan, setScan] = useState<Record<number, number | "loading" | "error">>({});
-  // The move/remove panels portal here, BELOW the scroll wrapper — inside the
+  // The edit/remove panels portal here, BELOW the scroll wrapper — inside the
   // table they'd inherit its full scrollable width and get cut off.
   const [panelHost, setPanelHost] = useState<HTMLDivElement | null>(null);
   const onStatus = useCallback((chainId: number, status: number | "loading" | "error") => {
@@ -1144,8 +1159,7 @@ export function LiquidityManager({
   }, []);
 
   if (!pooled.length) return null;
-  const allEmpty =
-    pooled.length > 0 && pooled.every((state) => scan[Number(state.chainId)] === 0);
+  const allEmpty = pooled.length > 0 && pooled.every((state) => scan[Number(state.chainId)] === 0);
 
   return (
     // min-w-0: as a grid item of the dialog panel this must be allowed to
@@ -1209,7 +1223,7 @@ function ChainPositionRows({
   state: AmmChainState;
   tokenSymbol: string;
   onStatus: (chainId: number, status: number | "loading" | "error") => void;
-  /** Where the move/remove panels render, below the table's scroll wrapper. */
+  /** Where the edit/remove panels render, below the table's scroll wrapper. */
   panelHost: HTMLDivElement | null;
 }) {
   const { address } = useAccount();
@@ -1221,14 +1235,9 @@ function ChainPositionRows({
     position: UserLpPosition;
     plan: ReturnType<typeof prepareRemoveLiquidity>;
   } | null>(null);
-  // The move flow: the position being re-banded and its editable band. One
-  // click builds the plan and goes straight to the transaction confirm —
-  // there is no separate inline review step.
-  const [moving, setMoving] = useState<{
-    position: UserLpPosition;
-    minText: string;
-    maxText: string;
-  } | null>(null);
+  // The position whose holdings/band are being edited in the panel below.
+  const [editing, setEditing] = useState<UserLpPosition | null>(null);
+  const [edited, setEdited] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
   const [claiming, setClaiming] = useState<bigint | null>(null);
@@ -1246,23 +1255,6 @@ function ChainPositionRows({
     },
   });
   const receipt = useWaitForTransactionReceipt({ hash });
-  // The plan is built inside the click handler, so the confirm modal's copy
-  // comes from this MUTATED object — the hook reads it when the modal opens.
-  const moveReview = useRef({
-    title: "Review liquidity move",
-    confirmLabel: "Agree & move liquidity",
-    description: "",
-  });
-  const movePlan = useRef<MoveLiquidityPlan | null>(null);
-  const moveWrite = useWriteContract({
-    transactionReview: moveReview.current,
-    // Runs AFTER the confirm modal, so however long it sat open, drift beyond
-    // the reviewed maxima still aborts before the wallet asks.
-    reverify: async () => {
-      if (pool && movePlan.current) await reverifyAddLiquidity(pool, movePlan.current.mint);
-    },
-  });
-  const moveReceipt = useWaitForTransactionReceipt({ hash: moveWrite.data });
   const positions = useQuery({
     queryKey: ["revnetWalletLpPositions", state.chainId, pool?.poolId, address?.toLowerCase()],
     enabled: Boolean(pool && positionManager && address),
@@ -1311,15 +1303,6 @@ function ChainPositionRows({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt.isSuccess]);
 
-  useEffect(() => {
-    if (moveReceipt.isSuccess) {
-      setMoving(null);
-      void positions.refetch();
-      void fees.refetch();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moveReceipt.isSuccess]);
-
   if (!pool || !positionManager || !address) return null;
 
   const beginReview = async (position: UserLpPosition) => {
@@ -1333,61 +1316,6 @@ function ChainPositionRows({
       });
     } catch (cause) {
       setError(txMessage(cause, "Could not refresh this position."));
-    } finally {
-      setRefreshing(null);
-    }
-  };
-
-  // Open the move panel seeded with the position's current band. A position's
-  // ticks never change onchain, so no read is needed until review — the panel
-  // opens instantly.
-  const beginMove = (position: UserLpPosition) => {
-    setError(null);
-    const band = lpBandPrices(pool, position.tickLower, position.tickUpper);
-    setMoving({
-      position,
-      minText: String(Number(band.minimumPrice.toPrecision(6))),
-      maxText: String(Number(band.maximumPrice.toPrecision(6))),
-    });
-  };
-
-  // One click: refresh the position, build the plan from live amounts, and go
-  // straight to the transaction confirm — the plan's numbers land in the
-  // confirm modal's copy via the mutable review object.
-  const move = async () => {
-    if (!moving) return;
-    setError(null);
-    setRefreshing(moving.position.tokenId);
-    try {
-      const fresh = await refreshUserLpPosition(pool, moving.position.tokenId, address);
-      const plan = prepareMoveLiquidity(
-        pool,
-        fresh,
-        { minimumPrice: Number(moving.minText), maximumPrice: Number(moving.maxText) },
-        address,
-      );
-      movePlan.current = plan;
-      const band = lpBandPrices(pool, plan.mint.tickLower, plan.mint.tickUpper);
-      moveReview.current.description =
-        `Move position #${fresh.tokenId.toString()} on ${chainName(state.chainId)} to the ` +
-        `${formatPrice(band.minimumPrice)} – ${formatPrice(band.maximumPrice)} ` +
-        `${pool.pair.symbol}/${tokenSymbol} band.\n\n` +
-        `About ${fmtUnits(plan.mint.tokenMaximum, 18)} ${tokenSymbol} + ` +
-        `${fmtUnits(plan.mint.pairMaximum, pool.pair.decimals)} ${pool.pair.symbol} goes into ` +
-        `the new band; unclaimed fees and anything that doesn't fit return to your wallet.\n\n` +
-        `One transaction, funded by burning the old position — nothing is pulled from your ` +
-        `wallet. If prices shift too much before it lands, the whole move reverts and your ` +
-        `current position stays untouched.`;
-      setRefreshing(null);
-      await moveWrite.writeContractAsync({
-        chainId,
-        address: positionManager,
-        abi: POSITION_MANAGER_ABI,
-        functionName: "modifyLiquidities",
-        args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
-      });
-    } catch (cause) {
-      setError(txMessage(cause, "Could not move liquidity."));
     } finally {
       setRefreshing(null);
     }
@@ -1478,11 +1406,10 @@ function ChainPositionRows({
         const nothingOwed = !owed || (owed.pairFees <= 0n && owed.tokenFees <= 0n);
         const busy =
           isPending ||
-          moveWrite.isPending ||
           claiming !== null ||
           refreshing !== null ||
           reviewed !== null ||
-          moving !== null;
+          editing !== null;
         return (
           <TableRow key={position.tokenId.toString()} className="align-top">
             {chainCell}
@@ -1545,9 +1472,13 @@ function ChainPositionRows({
                   type="button"
                   className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
                   disabled={busy}
-                  onClick={() => beginMove(position)}
+                  onClick={() => {
+                    setError(null);
+                    setEdited(null);
+                    setEditing(position);
+                  }}
                 >
-                  Move
+                  Edit
                 </button>
                 <button
                   type="button"
@@ -1599,107 +1530,30 @@ function ChainPositionRows({
                   </div>
                 </div>
               ) : null}
-              {moving ? (
-                <div className="mt-2 border border-zinc-200 p-2 text-xs text-zinc-700">
-                  <p className="font-medium">
-                    Move position #{moving.position.tokenId.toString()} on{" "}
-                    {chainName(state.chainId)}
-                  </p>
-                  <p className="mt-1 text-zinc-500">
-                    The position is burned and everything it holds is re-minted into the new
-                    price band, all in one transaction. Unclaimed fees and anything the new band
-                    doesn&apos;t use return to your wallet.
-                  </p>
-                  <LiquidityRangePreview
-                    floor={state.reference.cashOut}
-                    ceiling={state.reference.issuance}
-                    current={pool.price}
-                    minimum={Number(moving.minText) || 0}
-                    maximum={Number(moving.maxText) || 0}
-                    pairSymbol={pool.pair.symbol}
-                    tokenSymbol={tokenSymbol}
-                    onRangeChange={
-                      moveWrite.isPending
-                        ? undefined
-                        : (edge, value) =>
-                            setMoving((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    [edge === "minimum" ? "minText" : "maxText"]: String(value),
-                                  }
-                                : current,
-                            )
-                    }
-                  />
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <label className="text-[11px] text-zinc-500">
-                      Min price
-                      <input
-                        className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
-                        type="number"
-                        min="0"
-                        value={moving.minText}
-                        disabled={moveWrite.isPending}
-                        onChange={(event) =>
-                          setMoving((current) =>
-                            current
-                              ? { ...current, minText: event.target.value }
-                              : current,
-                          )
-                        }
-                      />
-                    </label>
-                    <label className="text-[11px] text-zinc-500">
-                      Max price
-                      <input
-                        className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
-                        type="number"
-                        min="0"
-                        value={moving.maxText}
-                        disabled={moveWrite.isPending}
-                        onChange={(event) =>
-                          setMoving((current) =>
-                            current
-                              ? { ...current, maxText: event.target.value }
-                              : current,
-                          )
-                        }
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      type="button"
-                      className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
-                      disabled={refreshing !== null || moveWrite.isPending}
-                      onClick={() => void move()}
-                    >
-                      {refreshing === moving.position.tokenId
-                        ? "Checking…"
-                        : moveWrite.isPending
-                          ? "Submitting…"
-                          : "Move liquidity"}
-                    </button>
-                    <button
-                      type="button"
-                      className="border border-zinc-300 px-2 py-1"
-                      disabled={moveWrite.isPending}
-                      onClick={() => setMoving(null)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
+              {editing ? (
+                <EditPositionPanel
+                  key={editing.tokenId.toString()}
+                  state={state}
+                  pool={pool}
+                  position={editing}
+                  tokenSymbol={tokenSymbol}
+                  onClose={() => setEditing(null)}
+                  onDone={(hash) => {
+                    setEditing(null);
+                    setEdited(
+                      hash
+                        ? "Position updated. The table above reflects it."
+                        : "Position edit proposed to Safe. The table updates once it executes.",
+                    );
+                    void positions.refetch();
+                    void fees.refetch();
+                  }}
+                />
               ) : null}
               {receipt.isSuccess ? (
                 <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
               ) : null}
-              {moveReceipt.isSuccess ? (
-                <p className="mt-2 text-xs text-green-700">
-                  Liquidity moved. The new position is listed above.
-                </p>
-              ) : null}
+              {edited ? <p className="mt-2 text-xs text-green-700">{edited}</p> : null}
               {error ? (
                 <p className="mt-2 wrap-anywhere text-xs text-red-600" role="alert">
                   {error}

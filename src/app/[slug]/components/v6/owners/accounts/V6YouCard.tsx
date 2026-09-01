@@ -443,7 +443,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
             className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
             onClick={() => openLiquidity()}
           >
-            Manage market liquidity
+            Add liquidity
           </Button>
         ) : null}
 
@@ -485,7 +485,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
           <DialogContent className="max-w-lg">
             <DialogTitle className="text-base font-medium">Market liquidity</DialogTitle>
             <p className="text-sm text-zinc-500">
-              Add liquidity or manage positions owned by your connected wallet.
+              Add liquidity from your connected wallet.
             </p>
             <div className="flex flex-wrap gap-1">
               {pooledAmmStates.map((state) => (
@@ -510,16 +510,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
             })()}
             {/* Existing positions live in the positions-first "Your liquidity"
                 dialog (the You table's LP cell); this dialog only adds. */}
-            <button
-              type="button"
-              className="justify-self-start border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50"
-              onClick={() => {
-                setLiquidityChain(null);
-                setPositionsOpen(true);
-              }}
-            >
-              Manage your positions
-            </button>
           </DialogContent>
         </Dialog>
       ) : null}

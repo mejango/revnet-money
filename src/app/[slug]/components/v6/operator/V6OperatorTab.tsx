@@ -49,7 +49,7 @@ export function V6OperatorTab({
         fallbackOperator={operator}
       />
       <SuckerExtensionCard rows={rows} />
-      <BuybackRouterCard rows={rows} />
+      <BuybackRouterCard rows={rows} fallbackOperator={operator} fallbackProject={handleProject} />
       <PermissionsCard rows={rows} />
     </div>
   );

@@ -236,3 +236,93 @@ export function describeAddLiquidityPlan(plan: {
     detail: `Uniswap V4 mint | ticks ${plan.tickLower} → ${plan.tickUpper}.`,
   };
 }
+
+/**
+ * Plain words for a reviewed position edit: what moves between the wallet and
+ * the position, what the position holds afterwards, and what the wallet
+ * authorizes. `band` is the resulting band on the display axis, already
+ * formatted, for a move.
+ */
+export function describeEditLiquidityPlan(plan: {
+  kind: "increase" | "decrease" | "move" | "remove";
+  tokenId: bigint;
+  tickLower: number;
+  tickUpper: number;
+  pairHolding: bigint;
+  tokenHolding: bigint;
+  pairFlow: bigint;
+  tokenFlow: bigint;
+  pairFunding: bigint;
+  tokenFunding: bigint;
+  pairMinimum: bigint;
+  tokenMinimum: bigint;
+  tokenSymbol: string;
+  pairSymbol: string;
+  pairDecimals: number;
+  pairIsNative: boolean;
+  band?: string;
+}): { lead: string; detail: string; tech: string } {
+  const token = (amount: bigint) => `${fmtUnits(amount, 18)} ${plan.tokenSymbol}`;
+  const pair = (amount: bigint) => `${fmtUnits(amount, plan.pairDecimals)} ${plan.pairSymbol}`;
+  const both = (tokenAmount: bigint, pairAmount: bigint) =>
+    `${token(tokenAmount)} + ${pair(pairAmount)}`;
+  const id = `#${plan.tokenId.toString()}`;
+  const holds = `about ${both(plan.tokenHolding, plan.pairHolding)}`;
+  const authorizing =
+    plan.tokenFunding > 0n || plan.pairFunding > 0n
+      ? `Your wallet authorizes up to ${[
+          plan.tokenFunding > 0n ? token(plan.tokenFunding) : null,
+          plan.pairFunding > 0n ? pair(plan.pairFunding) : null,
+        ]
+          .filter(Boolean)
+          .join(" and ")} — 1% price headroom${
+          plan.pairIsNative && plan.pairFunding > 0n
+            ? `; unused ${plan.pairSymbol} is refunded`
+            : ""
+        }.`
+      : null;
+  const floors = `At least ${both(plan.tokenMinimum, plan.pairMinimum)} is enforced onchain (95% floors).`;
+  const fees = "Unclaimed fees return to your wallet in the same transaction.";
+
+  switch (plan.kind) {
+    case "increase":
+      return {
+        lead: `Adds about ${both(plan.tokenFlow, plan.pairFlow)} from your wallet; position ${id} then holds ${holds}.`,
+        detail: `${authorizing ?? ""} Unclaimed fees offset what your wallet pays.`.trim(),
+        tech: `Uniswap V4 increase | ticks ${plan.tickLower} → ${plan.tickUpper}.`,
+      };
+    case "decrease":
+      return {
+        lead: `Frees about ${both(-plan.tokenFlow, -plan.pairFlow)} to your wallet; position ${id} keeps ${holds}.`,
+        detail: `${floors} ${fees}`,
+        tech: `Uniswap V4 decrease | ticks ${plan.tickLower} → ${plan.tickUpper}.`,
+      };
+    case "move": {
+      const flows = [
+        plan.tokenFlow > 0n
+          ? `pulls about ${token(plan.tokenFlow)}`
+          : plan.tokenFlow < 0n
+            ? `gets back about ${token(-plan.tokenFlow)}`
+            : null,
+        plan.pairFlow > 0n
+          ? `pulls about ${pair(plan.pairFlow)}`
+          : plan.pairFlow < 0n
+            ? `gets back about ${pair(-plan.pairFlow)}`
+            : null,
+      ].filter(Boolean);
+      return {
+        lead:
+          `Burns position ${id} and mints a new one${plan.band ? ` in the ${plan.band} band` : ""} holding ${holds}.` +
+          (flows.length ? ` Your wallet ${flows.join(" and ")}.` : ""),
+        detail: `${authorizing ? `${authorizing} ` : ""}The burn funds the mint inside one transaction; ${floors.charAt(0).toLowerCase()}${floors.slice(1)} ${fees}`,
+        tech: `Uniswap V4 burn + mint | ticks ${plan.tickLower} → ${plan.tickUpper}.`,
+      };
+    }
+    case "remove":
+      return {
+        lead: `Burns position ${id} and returns everything it holds — about ${both(-plan.tokenFlow, -plan.pairFlow)} — to your wallet.`,
+        detail: `${floors} ${fees}`,
+        tech: "Uniswap V4 burn + take.",
+      };
+  }
+}

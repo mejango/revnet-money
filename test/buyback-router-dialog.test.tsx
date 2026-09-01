@@ -34,6 +34,10 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
 vi.mock("@/app/[slug]/components/v6/operator/useOperatorWrites", () => ({
   useOperatorWrites: () => ({ runWrites: vi.fn() }),
 }));
+// The live operator read needs bendystraw + RPC; the shell test has neither.
+vi.mock("@/app/[slug]/components/v6/operator/useLiveRevnetOperators", () => ({
+  useLiveRevnetOperators: () => ({ operatorByChain: new Map(), isLoading: false }),
+}));
 // ENS lookups need a wagmi provider this test has no business standing up.
 vi.mock("@/components/EthereumAddress", () => ({
   EthereumAddress: ({ address }: { address: string }) => <span>{address}</span>,

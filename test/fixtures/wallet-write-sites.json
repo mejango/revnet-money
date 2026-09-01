@@ -148,9 +148,27 @@
           "getRelayrTxQuote",
           1
         ],
-        ["reviewed-write", "src/app/create/page.tsx", "deployProject", "writeContractAsync", 1],
-        ["reviewed-relayr-quote-hook", "src/app/create/page.tsx", "Page", "useGetRelayrTxQuote", 1],
-        ["reviewed-write-hook", "src/app/create/page.tsx", "Page", "useWriteContract", 1]
+        [
+          "reviewed-write",
+          "src/app/create/page.tsx",
+          "deployProject",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-relayr-quote-hook",
+          "src/app/create/page.tsx",
+          "Page",
+          "useGetRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/create/page.tsx",
+          "Page",
+          "useWriteContract",
+          1
+        ]
       ]
     },
     {
@@ -185,8 +203,20 @@
           "useWriteContract",
           1
         ],
-        ["reviewed-write", "src/hooks/useAllowance.ts", "ensureAllowance", "writeContractAsync", 1],
-        ["reviewed-write-hook", "src/hooks/useAllowance.ts", "useAllowance", "useWriteContract", 1]
+        [
+          "reviewed-write",
+          "src/hooks/useAllowance.ts",
+          "ensureAllowance",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/hooks/useAllowance.ts",
+          "useAllowance",
+          "useWriteContract",
+          1
+        ]
       ]
     },
     {
@@ -310,13 +340,6 @@
           "execute",
           "writeContractAsync",
           2
-        ],
-        [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-          "LiquidityManager",
-          "useWriteContract",
-          1
         ],
         [
           "reviewed-write",
@@ -457,6 +480,27 @@
           "claimFees",
           "writeContractAsync",
           1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "ChainPositionRows",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
+          "EditPositionPanel",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
+          "execute",
+          "writeContractAsync",
+          2
         ]
       ]
     },
@@ -546,20 +590,6 @@
           "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
           "setEnsRecord",
           "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/operator/OperatorAccountCard.tsx",
-          "TransferOperatorFlow",
-          "useWriteContract",
-          1
-        ],
-        [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/operator/SuckerExtensionCard.tsx",
-          "SuckerExtensionCard",
-          "useWriteContract",
           1
         ],
         [
@@ -701,6 +731,20 @@
           "useOperatorWrites",
           "useWriteContract",
           1
+        ],
+        [
+          "reviewed-safe-signature-hook",
+          "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
+          "useOperatorWrites",
+          "useReviewedSafeSignature",
+          1
+        ],
+        [
+          "reviewed-safe-signature",
+          "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
+          "runWrites",
+          "signSafeTransactionAsync",
+          2
         ]
       ]
     }
@@ -709,134 +753,228 @@
     {
       "id": "reviewed-write-boundary",
       "risk": "boundary",
-      "files": ["src/hooks/useReviewedWriteContract.ts"],
-      "tests": ["test/reviewed-write-contract.test.ts", "test/reviewed-write-hook.test.tsx"]
+      "files": [
+        "src/hooks/useReviewedWriteContract.ts"
+      ],
+      "tests": [
+        "test/reviewed-write-contract.test.ts",
+        "test/reviewed-write-hook.test.tsx"
+      ]
     },
     {
       "id": "relayr-boundary",
       "risk": "boundary",
-      "files": ["src/hooks/useReviewedRelayr.ts"],
-      "tests": ["test/reviewed-relayr.test.ts", "test/reviewed-relayr-hooks.test.tsx"]
+      "files": [
+        "src/hooks/useReviewedRelayr.ts"
+      ],
+      "tests": [
+        "test/reviewed-relayr.test.ts",
+        "test/reviewed-relayr-hooks.test.tsx"
+      ]
     },
     {
       "id": "safe-signature-boundary",
       "risk": "boundary",
-      "files": ["src/hooks/useReviewedSafeSignature.ts"],
-      "tests": ["test/reviewed-safe-signature.test.tsx"]
+      "files": [
+        "src/hooks/useReviewedSafeSignature.ts"
+      ],
+      "tests": [
+        "test/reviewed-safe-signature.test.tsx"
+      ]
     },
     {
       "id": "permit2-signature-boundary",
       "risk": "boundary",
-      "files": ["src/hooks/useReviewedPermit2Signature.ts"],
-      "tests": ["test/reviewed-permit2-signature.test.tsx"]
+      "files": [
+        "src/hooks/useReviewedPermit2Signature.ts"
+      ],
+      "tests": [
+        "test/reviewed-permit2-signature.test.tsx"
+      ]
     },
     {
       "id": "create-revnet",
       "risk": "money",
-      "files": ["src/app/create/buttons/PayAndDeploy.tsx", "src/app/create/page.tsx"],
-      "tests": ["test/deploy-encoding.test.ts"]
+      "files": [
+        "src/app/create/buttons/PayAndDeploy.tsx",
+        "src/app/create/page.tsx"
+      ],
+      "tests": [
+        "test/deploy-encoding.test.ts"
+      ]
     },
     {
       "id": "pay",
       "risk": "money",
-      "files": ["src/app/[slug]/components/v6/pay/V6PayCard.tsx"],
-      "tests": ["test/pay-route.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/pay/V6PayCard.tsx"
+      ],
+      "tests": [
+        "test/pay-route.test.ts"
+      ]
     },
     {
       "id": "allowance",
       "risk": "money",
-      "files": ["src/hooks/useAllowance.ts"],
-      "tests": ["test/allowance-hook.test.tsx"]
+      "files": [
+        "src/hooks/useAllowance.ts"
+      ],
+      "tests": [
+        "test/allowance-hook.test.tsx"
+      ]
     },
     {
       "id": "bridge-prepare",
       "risk": "money",
-      "files": ["src/app/[slug]/components/Value/BridgeDialog.tsx"],
-      "tests": ["test/bridge-prepare.test.ts"]
+      "files": [
+        "src/app/[slug]/components/Value/BridgeDialog.tsx"
+      ],
+      "tests": [
+        "test/bridge-prepare.test.ts"
+      ]
     },
     {
       "id": "loans",
       "risk": "money",
-      "files": ["src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx"],
-      "tests": ["test/loan-transactions.test.ts"]
+      "files": [
+        "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx"
+      ],
+      "tests": [
+        "test/loan-transactions.test.ts"
+      ]
     },
     {
       "id": "cash-out",
       "risk": "money",
-      "files": ["src/app/[slug]/components/Value/RedeemDialog.tsx"],
-      "tests": ["test/cash-out-quote.test.ts", "test/direct-sell-route.test.ts"]
+      "files": [
+        "src/app/[slug]/components/Value/RedeemDialog.tsx"
+      ],
+      "tests": [
+        "test/cash-out-quote.test.ts",
+        "test/direct-sell-route.test.ts"
+      ]
     },
     {
       "id": "repay",
       "risk": "money",
-      "files": ["src/app/[slug]/components/Value/RepayDialog.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/components/Value/RepayDialog.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "claim-credits",
       "risk": "money",
-      "files": ["src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "burn-tokens",
       "risk": "money",
-      "files": ["src/app/[slug]/components/v6/owners/accounts/V6BurnTokensDialog.tsx"],
-      "tests": ["test/burn-tokens.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/owners/accounts/V6BurnTokensDialog.tsx"
+      ],
+      "tests": [
+        "test/burn-tokens.test.ts"
+      ]
     },
     {
       "id": "liquidity-management",
       "risk": "money",
-      "files": ["src/app/[slug]/components/v6/owners/market/AmmCard.tsx"],
-      "tests": ["test/liquidity-remove.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+        "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx"
+      ],
+      "tests": [
+        "test/liquidity-remove.test.ts"
+      ]
     },
     {
       "id": "split-hook",
       "risk": "project-control",
-      "files": ["src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "auto-issuance",
       "risk": "project-control",
-      "files": ["src/app/[slug]/components/v6/owners/V6AutoIssuanceSubtab.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/owners/V6AutoIssuanceSubtab.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "token-admin",
       "risk": "project-control",
-      "files": ["src/app/[slug]/components/v6/owners/V6TokenPanel.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "reserved-distribution",
       "risk": "project-control",
-      "files": ["src/app/[slug]/owners/components/DistributeReservedTokensButton.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/owners/components/DistributeReservedTokensButton.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "split-groups",
       "risk": "project-control",
-      "files": ["src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "metadata",
       "risk": "project-control",
-      "files": ["src/app/[slug]/about/components/EditMetadataDialog.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/about/components/EditMetadataDialog.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "project-payer",
       "risk": "project-control",
-      "files": ["src/app/[slug]/components/v6/extras/PayerDeployForm.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/extras/PayerDeployForm.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "project-handle",
       "risk": "project-control",
-      "files": ["src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts", "test/project-handles.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts",
+        "test/project-handles.test.ts"
+      ]
     },
     {
       "id": "operator-writes",
@@ -848,25 +986,40 @@
         "src/app/[slug]/components/v6/operator/operatorLib.ts",
         "src/app/[slug]/components/v6/operator/useOperatorWrites.ts"
       ],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "tests": [
+        "test/wallet-project-controls.test.ts",
+        "test/operator-safe-route.test.ts"
+      ]
     },
     {
       "id": "safe-queue",
       "risk": "project-control",
-      "files": ["src/app/[slug]/components/v6/operator/SafeQueueCard.tsx"],
-      "tests": ["test/safe-queue.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx"
+      ],
+      "tests": [
+        "test/safe-queue.test.ts"
+      ]
     },
     {
       "id": "settlement-sync",
       "risk": "project-control",
-      "files": ["src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "queued-movements",
       "risk": "money",
-      "files": ["src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "files": [
+        "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx"
+      ],
+      "tests": [
+        "test/wallet-project-controls.test.ts"
+      ]
     },
     {
       "id": "shop-items",
@@ -875,7 +1028,10 @@
         "src/app/[slug]/components/v6/shop/AddItemsModal.tsx",
         "src/app/[slug]/components/v6/shop/MintItemModal.tsx"
       ],
-      "tests": ["test/wallet-project-controls.test.ts", "test/mint-item-modal.test.ts"]
+      "tests": [
+        "test/wallet-project-controls.test.ts",
+        "test/mint-item-modal.test.ts"
+      ]
     }
   ]
 }

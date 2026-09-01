@@ -2,6 +2,7 @@ import { chainSortIndex } from "@/app/constants";
 import { requireOnchainExecution } from "@/hooks/useReviewedWriteContract";
 import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import type { PermissionHolder, PermissionHolderFilter } from "@/lib/bendystraw/types";
+import type { AuthorityIdentity } from "@/lib/cross-chain-authority";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
@@ -136,6 +137,12 @@ export type ChainWrite = {
   args: readonly unknown[];
   /** Shown in the review dialog when the write is bundled through Relayr. */
   contractName?: string;
+  /**
+   * The account the call must come from on this chain (the revnet operator).
+   * When the connected wallet co-signs it as a Safe, the write is proposed to
+   * that Safe instead of being sent directly.
+   */
+  authority?: Address;
 };
 
 /**
@@ -187,4 +194,48 @@ export async function runSequentialWrites({
     done += 1;
   }
   return done;
+}
+
+// ── Who signs an operator write ───────────────────────────────────────────────
+
+export type OperatorWriteRoute =
+  /** The connected account is the authority itself (an EOA operator, or the Safe via its app). */
+  | { kind: "direct" }
+  /** The authority is a Safe the connected account co-signs: propose to it, don't call it. */
+  | { kind: "safe-signer"; safe: Address; owners: Address[]; threshold: number };
+
+/**
+ * Decide how the connected account can act for a chain's operator. An
+ * unknown authority keeps the historical direct path (the simulation still
+ * guards it); a known one must be the account itself or a Safe it co-signs,
+ * otherwise the write is refused with the reason instead of a bare revert.
+ */
+export function operatorWriteRoute({
+  account,
+  authority,
+  identity,
+}: {
+  account: Address;
+  authority: Address | undefined;
+  identity: AuthorityIdentity | null | undefined;
+}): OperatorWriteRoute {
+  if (!authority || account.toLowerCase() === authority.toLowerCase()) return { kind: "direct" };
+  if (identity?.kind === "safe") {
+    if (identity.owners.some((owner) => owner.toLowerCase() === account.toLowerCase())) {
+      return {
+        kind: "safe-signer",
+        safe: authority,
+        owners: identity.owners,
+        threshold: identity.threshold,
+      };
+    }
+    throw new Error(
+      `The connected wallet ${account} is not a signer of the operator Safe ${authority}. Connect one of its signers.`,
+    );
+  }
+  throw new Error(
+    `The connected wallet ${account} is not this revnet's operator (${authority}). Connect the operator${
+      identity?.kind === "contract" ? " — it is a contract this app cannot act for" : ""
+    }.`,
+  );
 }
