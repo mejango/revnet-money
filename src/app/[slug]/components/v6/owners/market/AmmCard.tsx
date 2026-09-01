@@ -31,7 +31,7 @@ import {
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   erc20Abi,
   formatUnits,
@@ -60,6 +60,7 @@ import {
   encodeAddLiquidityCall,
   fetchAmmStates,
   fetchPoolComposition,
+  lpBandPrices,
   lpDeadline,
   PERMIT2_ABI,
   PERMIT2_ADDRESS,
@@ -69,6 +70,7 @@ import {
   POSITION_MANAGER_BY_CHAIN,
   prepareAddLiquidity,
   prepareCollectLpFees,
+  prepareMoveLiquidity,
   prepareRemoveLiquidity,
   readLpPositionFees,
   readPoolLpPositions,
@@ -76,6 +78,7 @@ import {
   refreshUserLpPosition,
   reverifyAddLiquidity,
   type AddLiquidityPlan,
+  type MoveLiquidityPlan,
   type PoolComposition,
   type PoolSnapshot,
   type UserLpPosition,
@@ -1110,25 +1113,117 @@ export function AddLiquidityForm({
   );
 }
 
+/**
+ * Every LP position the connected wallet holds across the project's chains, in
+ * one table (the same hierarchy juicescan and juicebox.money use): Chain |
+ * Position | Holdings | Unclaimed fees | Lifetime fees | actions. Each chain
+ * contributes its own row group so one slow or failing RPC never blanks the
+ * others; the aggregate "no positions" note only appears once every chain has
+ * reported an empty scan.
+ */
 export function LiquidityManager({
-  state,
+  states,
   tokenSymbol,
 }: {
-  state: AmmChainState;
+  states: AmmChainState[];
   tokenSymbol: string;
 }) {
   const { address } = useAccount();
+  const pooled = states.filter(
+    (state) => state.pool && POSITION_MANAGER_BY_CHAIN[Number(state.chainId)],
+  );
+  // Per-chain scan outcomes reported up by the row groups, so the aggregate
+  // empty state is knowable without lifting each chain's queries out of them.
+  const [scan, setScan] = useState<Record<number, number | "loading" | "error">>({});
+  const onStatus = useCallback((chainId: number, status: number | "loading" | "error") => {
+    setScan((current) =>
+      current[chainId] === status ? current : { ...current, [chainId]: status },
+    );
+  }, []);
+
+  if (!pooled.length) return null;
+  const allEmpty =
+    pooled.length > 0 && pooled.every((state) => scan[Number(state.chainId)] === 0);
+
+  return (
+    <div className="mt-3 border-t border-zinc-100 pt-3">
+      <div className="text-xs font-medium text-zinc-600">Your liquidity</div>
+      {!address ? (
+        <p className="mt-1 text-xs text-zinc-400">Connect a wallet to manage its LP positions.</p>
+      ) : (
+        <>
+          {allEmpty ? (
+            <p className="mt-1 text-xs text-zinc-400">
+              No positions owned by this wallet on any chain.
+            </p>
+          ) : null}
+          {/* Hidden rather than unmounted while empty so the per-chain queries
+              keep watching for a position minted from the form above. */}
+          <div className={allEmpty ? "hidden" : "mt-2 w-full min-w-0 overflow-auto"}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Chain</TableHead>
+                  <TableHead>Position</TableHead>
+                  <TableHead className="text-right">Holdings</TableHead>
+                  <TableHead className="text-right">Unclaimed fees</TableHead>
+                  <TableHead className="text-right">Lifetime fees</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pooled.map((state) => (
+                  <ChainPositionRows
+                    key={state.chainId}
+                    state={state}
+                    tokenSymbol={tokenSymbol}
+                    onStatus={onStatus}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One chain's row group in the spanning positions table: the wallet's
+ * positions in that chain's pool, each with claim/move/remove. The move and
+ * remove flows render as full-width panel rows anchored under their position.
+ */
+function ChainPositionRows({
+  state,
+  tokenSymbol,
+  onStatus,
+}: {
+  state: AmmChainState;
+  tokenSymbol: string;
+  onStatus: (chainId: number, status: number | "loading" | "error") => void;
+}) {
+  const { address } = useAccount();
   const wagmiConfig = useConfig();
+  const chainId = Number(state.chainId);
   const pool = state.pool;
-  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(state.chainId)];
+  const positionManager = POSITION_MANAGER_BY_CHAIN[chainId];
   const [reviewed, setReviewed] = useState<{
     position: UserLpPosition;
     plan: ReturnType<typeof prepareRemoveLiquidity>;
   } | null>(null);
+  // The move flow: the position being re-banded, the editable band, and the
+  // reviewed plan (cleared by any band edit so what's confirmed is what's sent).
+  const [moving, setMoving] = useState<{
+    position: UserLpPosition;
+    minText: string;
+    maxText: string;
+    plan: MoveLiquidityPlan | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
   const [claiming, setClaiming] = useState<bigint | null>(null);
-  const client = usePublicClient({ chainId: Number(state.chainId) }) as PublicClient | undefined;
+  const client = usePublicClient({ chainId }) as PublicClient | undefined;
   const {
     writeContractAsync,
     data: hash,
@@ -1142,6 +1237,15 @@ export function LiquidityManager({
     },
   });
   const receipt = useWaitForTransactionReceipt({ hash });
+  const moveWrite = useWriteContract({
+    transactionReview: {
+      title: "Review liquidity move",
+      description:
+        "Burn this Uniswap V4 position and re-mint what it holds into the new price band, all in one transaction. The reviewed burn minimums and mint maximums are enforced onchain; if any leg falls short the whole move reverts.",
+      confirmLabel: "Agree & move liquidity",
+    },
+  });
+  const moveReceipt = useWaitForTransactionReceipt({ hash: moveWrite.data });
   const positions = useQuery({
     queryKey: ["revnetWalletLpPositions", state.chainId, pool?.poolId, address?.toLowerCase()],
     enabled: Boolean(pool && positionManager && address),
@@ -1174,6 +1278,13 @@ export function LiquidityManager({
   });
 
   useEffect(() => {
+    onStatus(
+      chainId,
+      positions.isLoading ? "loading" : positions.isError ? "error" : (positions.data?.length ?? 0),
+    );
+  }, [chainId, onStatus, positions.isLoading, positions.isError, positions.data?.length]);
+
+  useEffect(() => {
     if (receipt.isSuccess) {
       setReviewed(null);
       void positions.refetch();
@@ -1183,10 +1294,18 @@ export function LiquidityManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt.isSuccess]);
 
-  if (!pool || !positionManager) return null;
+  useEffect(() => {
+    if (moveReceipt.isSuccess) {
+      setMoving(null);
+      void positions.refetch();
+      void fees.refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moveReceipt.isSuccess]);
+
+  if (!pool || !positionManager || !address) return null;
 
   const beginReview = async (position: UserLpPosition) => {
-    if (!address) return;
     setError(null);
     setRefreshing(position.tokenId);
     try {
@@ -1202,17 +1321,80 @@ export function LiquidityManager({
     }
   };
 
+  // Open the move panel seeded with the position's current band, so "Move"
+  // starts from where the liquidity already sits rather than a blank range.
+  const beginMove = async (position: UserLpPosition) => {
+    setError(null);
+    setRefreshing(position.tokenId);
+    try {
+      const fresh = await refreshUserLpPosition(pool, position.tokenId, address);
+      const band = lpBandPrices(pool, fresh.tickLower, fresh.tickUpper);
+      setMoving({
+        position: fresh,
+        minText: String(Number(band.minimumPrice.toPrecision(6))),
+        maxText: String(Number(band.maximumPrice.toPrecision(6))),
+        plan: null,
+      });
+    } catch (cause) {
+      setError(txMessage(cause, "Could not refresh this position."));
+    } finally {
+      setRefreshing(null);
+    }
+  };
+
+  const reviewMove = async () => {
+    if (!moving) return;
+    setError(null);
+    setRefreshing(moving.position.tokenId);
+    try {
+      const fresh = await refreshUserLpPosition(pool, moving.position.tokenId, address);
+      const plan = prepareMoveLiquidity(
+        pool,
+        fresh,
+        { minimumPrice: Number(moving.minText), maximumPrice: Number(moving.maxText) },
+        address,
+      );
+      setMoving((current) => (current ? { ...current, position: fresh, plan } : current));
+    } catch (cause) {
+      setError(txMessage(cause, "Could not prepare the move."));
+    } finally {
+      setRefreshing(null);
+    }
+  };
+
+  const move = async () => {
+    if (!moving?.plan) return;
+    setError(null);
+    try {
+      const fresh = await refreshUserLpPosition(pool, moving.position.tokenId, address);
+      if (fresh.liquidity < moving.position.liquidity) {
+        throw new Error("This position changed. Review the move again before sending it.");
+      }
+      // The mint half re-verifies against the live price the same way an add
+      // does: drift beyond the reviewed maxima aborts before the wallet asks.
+      await reverifyAddLiquidity(pool, moving.plan.mint);
+      await moveWrite.writeContractAsync({
+        chainId,
+        address: positionManager,
+        abi: POSITION_MANAGER_ABI,
+        functionName: "modifyLiquidities",
+        args: [moving.plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
+      });
+    } catch (cause) {
+      setError(txMessage(cause, "Could not move liquidity."));
+    }
+  };
+
   // Claim fees only. Nothing is swapped and the position is untouched, so
   // there is no reviewed amount to re-verify — only the wallet's ownership,
   // which the PositionManager enforces itself.
   const claimFees = async (position: UserLpPosition) => {
-    if (!address) return;
     setError(null);
     setClaiming(position.tokenId);
     try {
       const plan = prepareCollectLpFees(pool, position, address, isSafeConnection(wagmiConfig));
       await writeContractAsync({
-        chainId: Number(state.chainId),
+        chainId,
         address: positionManager,
         abi: POSITION_MANAGER_ABI,
         functionName: "modifyLiquidities",
@@ -1226,7 +1408,7 @@ export function LiquidityManager({
   };
 
   const remove = async () => {
-    if (!reviewed || !address) return;
+    if (!reviewed) return;
     setError(null);
     try {
       const fresh = await refreshUserLpPosition(pool, reviewed.position.tokenId, address);
@@ -1234,7 +1416,7 @@ export function LiquidityManager({
         throw new Error("This position changed. Review its current return before removing it.");
       }
       await writeContractAsync({
-        chainId: Number(state.chainId),
+        chainId,
         address: positionManager,
         abi: POSITION_MANAGER_ABI,
         functionName: "modifyLiquidities",
@@ -1248,129 +1430,325 @@ export function LiquidityManager({
     }
   };
 
-  return (
-    <div className="mt-3 border-t border-zinc-100 pt-3">
-      <div className="text-xs font-medium text-zinc-600">Your liquidity</div>
-      {!address ? (
-        <p className="mt-1 text-xs text-zinc-400">Connect a wallet to manage its LP positions.</p>
-      ) : positions.isLoading ? (
-        <p className="mt-1 text-xs text-zinc-400">Reading your positions…</p>
-      ) : positions.isError ? (
-        <p className="mt-1 text-xs text-red-600">
+  const chainCell = (
+    <TableCell className="whitespace-nowrap">
+      <span className="inline-flex items-center gap-1.5">
+        <ChainLogo chainId={state.chainId} width={14} height={14} />
+        {chainName(state.chainId)}
+      </span>
+    </TableCell>
+  );
+
+  if (positions.isLoading) {
+    return (
+      <TableRow>
+        {chainCell}
+        <TableCell colSpan={5} className="text-xs text-zinc-400">
+          Reading your positions…
+        </TableCell>
+      </TableRow>
+    );
+  }
+  // An incomplete log scan must not read as "you have no positions".
+  if (positions.isError) {
+    return (
+      <TableRow>
+        {chainCell}
+        <TableCell colSpan={5} className="text-xs text-red-600">
           Could not verify the complete position history. Nothing has been hidden as an empty
           result.
-        </p>
-      ) : !positions.data?.length ? (
-        <p className="mt-1 text-xs text-zinc-400">
-          No positions owned by this wallet in this pool.
-        </p>
-      ) : (
-        <div className="mt-2 space-y-2">
-          {positions.data.map((position) => (
-            <div
-              key={position.tokenId.toString()}
-              className="flex flex-wrap items-center justify-between gap-2 border border-zinc-100 p-2 text-xs"
-            >
-              <span>
-                #{position.tokenId.toString()} | {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}{" "}
-                + {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
-                <span className="block text-zinc-500">
-                  {(() => {
-                    const owed = fees.data?.[position.tokenId.toString()];
-                    if (fees.isLoading || owed === undefined) return "unclaimed fees: reading…";
-                    if (!owed) return "unclaimed fees: unavailable on this chain";
-                    if (owed.pairFees <= 0n && owed.tokenFees <= 0n)
-                      return "unclaimed fees: none yet";
-                    return `unclaimed fees: ${fmtUnits(owed.tokenFees, 18)} ${tokenSymbol} + ${fmtUnits(owed.pairFees, pool.pair.decimals)} ${pool.pair.symbol}`;
-                  })()}
+        </TableCell>
+      </TableRow>
+    );
+  }
+  if (!positions.data?.length) return null;
+
+  return (
+    <>
+      {positions.data.map((position) => {
+        const owed = fees.data?.[position.tokenId.toString()];
+        const nothingOwed = !owed || (owed.pairFees <= 0n && owed.tokenFees <= 0n);
+        const busy =
+          isPending ||
+          moveWrite.isPending ||
+          claiming !== null ||
+          refreshing !== null ||
+          reviewed !== null ||
+          moving !== null;
+        return (
+          <Fragment key={position.tokenId.toString()}>
+            <TableRow className="align-top">
+              {chainCell}
+              <TableCell className="font-mono text-xs">#{position.tokenId.toString()}</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}
+                <span className="block text-xs text-zinc-500">
+                  {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
                 </span>
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {fees.isLoading || owed === undefined ? (
+                  <span className="text-zinc-400">Reading…</span>
+                ) : !owed ? (
+                  <span className="text-zinc-400">Unavailable</span>
+                ) : nothingOwed ? (
+                  <span className="text-zinc-400">None yet</span>
+                ) : (
+                  <>
+                    {fmtUnits(owed.tokenFees, 18)} {tokenSymbol}
+                    <span className="block text-xs text-zinc-500">
+                      {fmtUnits(owed.pairFees, pool.pair.decimals)} {pool.pair.symbol}
+                    </span>
+                  </>
+                )}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
                 {(() => {
                   // The pool forgets what a position already took, so lifetime is
                   // only knowable where the index has been accumulating it.
-                  const owed = fees.data?.[position.tokenId.toString()];
-                  if (position.claimedPairFees === undefined || !owed) return null;
+                  if (position.claimedPairFees === undefined || !owed) {
+                    return <span className="text-zinc-400">—</span>;
+                  }
                   const lifetimeToken = position.claimedTokenFees! + owed.tokenFees;
                   const lifetimePair = position.claimedPairFees + owed.pairFees;
-                  if (lifetimeToken <= 0n && lifetimePair <= 0n) return null;
+                  if (lifetimeToken <= 0n && lifetimePair <= 0n) {
+                    return <span className="text-zinc-400">None yet</span>;
+                  }
                   return (
-                    <span className="block text-zinc-500">
-                      lifetime fees: {fmtUnits(lifetimeToken, 18)} {tokenSymbol} +{" "}
-                      {fmtUnits(lifetimePair, pool.pair.decimals)} {pool.pair.symbol}
-                    </span>
+                    <>
+                      {fmtUnits(lifetimeToken, 18)} {tokenSymbol}
+                      <span className="block text-xs text-zinc-500">
+                        {fmtUnits(lifetimePair, pool.pair.decimals)} {pool.pair.symbol}
+                      </span>
+                    </>
                   );
                 })()}
-              </span>
-              <span className="flex gap-2">
-                <button
-                  type="button"
-                  className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
-                  disabled={(() => {
-                    const owed = fees.data?.[position.tokenId.toString()];
-                    return (
-                      isPending ||
-                      claiming !== null ||
-                      refreshing !== null ||
-                      reviewed !== null ||
-                      !owed ||
-                      (owed.pairFees <= 0n && owed.tokenFees <= 0n)
-                    );
-                  })()}
-                  onClick={() => void claimFees(position)}
-                >
-                  {claiming === position.tokenId ? "Claiming…" : "Claim fees"}
-                </button>
-                <button
-                  type="button"
-                  className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
-                  disabled={isPending || refreshing !== null || reviewed !== null}
-                  onClick={() => void beginReview(position)}
-                >
-                  {refreshing === position.tokenId ? "Refreshing…" : "Remove"}
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      {reviewed ? (
-        <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
-          <p>
-            Burn position #{reviewed.position.tokenId.toString()} for at least{" "}
-            {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-            {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol}.
-          </p>
-          <p className="mt-1 text-zinc-500">
-            These 95% minimums are sent in the exact burn call; a larger adverse move reverts.
-          </p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
-              disabled={isPending}
-              onClick={() => void remove()}
-            >
-              {isPending ? "Submitting…" : "Confirm & remove"}
-            </button>
-            <button
-              type="button"
-              className="border border-zinc-300 px-2 py-1"
-              disabled={isPending}
-              onClick={() => setReviewed(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+              </TableCell>
+              <TableCell className="text-right">
+                <span className="inline-flex gap-2">
+                  <button
+                    type="button"
+                    className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                    disabled={busy || nothingOwed}
+                    onClick={() => void claimFees(position)}
+                  >
+                    {claiming === position.tokenId ? "Claiming…" : "Claim fees"}
+                  </button>
+                  <button
+                    type="button"
+                    className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => void beginMove(position)}
+                  >
+                    {refreshing === position.tokenId && moving === null ? "Refreshing…" : "Move"}
+                  </button>
+                  <button
+                    type="button"
+                    className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => void beginReview(position)}
+                  >
+                    {refreshing === position.tokenId ? "Refreshing…" : "Remove"}
+                  </button>
+                </span>
+              </TableCell>
+            </TableRow>
+            {reviewed && reviewed.position.tokenId === position.tokenId ? (
+              <TableRow>
+                <TableCell colSpan={6}>
+                  <div className="border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
+                    <p>
+                      Burn position #{reviewed.position.tokenId.toString()} for at least{" "}
+                      {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
+                      {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol}.
+                    </p>
+                    <p className="mt-1 text-zinc-500">
+                      These 95% minimums are sent in the exact burn call; a larger adverse move
+                      reverts.
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
+                        disabled={isPending}
+                        onClick={() => void remove()}
+                      >
+                        {isPending ? "Submitting…" : "Confirm & remove"}
+                      </button>
+                      <button
+                        type="button"
+                        className="border border-zinc-300 px-2 py-1"
+                        disabled={isPending}
+                        onClick={() => setReviewed(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : null}
+            {moving && moving.position.tokenId === position.tokenId ? (
+              <TableRow>
+                <TableCell colSpan={6}>
+                  <div className="border border-zinc-200 p-2 text-xs text-zinc-700">
+                    <p className="font-medium">
+                      Move position #{moving.position.tokenId.toString()}
+                    </p>
+                    <p className="mt-1 text-zinc-500">
+                      Burn it and re-mint what it holds into a new price band, all in one
+                      transaction. Unclaimed fees and anything the new band doesn&apos;t use
+                      return to your wallet.
+                    </p>
+                    <LiquidityRangePreview
+                      floor={state.reference.cashOut}
+                      ceiling={state.reference.issuance}
+                      current={pool.price}
+                      minimum={Number(moving.minText) || 0}
+                      maximum={Number(moving.maxText) || 0}
+                      pairSymbol={pool.pair.symbol}
+                      tokenSymbol={tokenSymbol}
+                      onRangeChange={
+                        moveWrite.isPending
+                          ? undefined
+                          : (edge, value) =>
+                              setMoving((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      [edge === "minimum" ? "minText" : "maxText"]: String(value),
+                                      plan: null,
+                                    }
+                                  : current,
+                              )
+                      }
+                    />
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <label className="text-[11px] text-zinc-500">
+                        Min price
+                        <input
+                          className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+                          type="number"
+                          min="0"
+                          value={moving.minText}
+                          disabled={moveWrite.isPending}
+                          onChange={(event) =>
+                            setMoving((current) =>
+                              current
+                                ? { ...current, minText: event.target.value, plan: null }
+                                : current,
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="text-[11px] text-zinc-500">
+                        Max price
+                        <input
+                          className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+                          type="number"
+                          min="0"
+                          value={moving.maxText}
+                          disabled={moveWrite.isPending}
+                          onChange={(event) =>
+                            setMoving((current) =>
+                              current
+                                ? { ...current, maxText: event.target.value, plan: null }
+                                : current,
+                            )
+                          }
+                        />
+                      </label>
+                    </div>
+                    {moving.plan ? (
+                      <div className="mt-2 border border-amber-200 bg-amber-50 p-2">
+                        {(() => {
+                          const band = lpBandPrices(
+                            pool,
+                            moving.plan.mint.tickLower,
+                            moving.plan.mint.tickUpper,
+                          );
+                          return (
+                            <p>
+                              Mint up to {fmtUnits(moving.plan.mint.tokenMaximum, 18)}{" "}
+                              {tokenSymbol} +{" "}
+                              {fmtUnits(moving.plan.mint.pairMaximum, pool.pair.decimals)}{" "}
+                              {pool.pair.symbol} between {formatPrice(band.minimumPrice)} and{" "}
+                              {formatPrice(band.maximumPrice)} {pool.pair.symbol}/{tokenSymbol}.
+                            </p>
+                          );
+                        })()}
+                        <p className="mt-1 text-zinc-500">
+                          The burn is guaranteed at least{" "}
+                          {fmtUnits(moving.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
+                          {fmtUnits(moving.plan.pairMinimum, pool.pair.decimals)}{" "}
+                          {pool.pair.symbol}. One transaction: if any leg falls short, the whole
+                          move reverts and the old position stays.
+                        </p>
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
+                            disabled={moveWrite.isPending}
+                            onClick={() => void move()}
+                          >
+                            {moveWrite.isPending ? "Submitting…" : "Confirm & move"}
+                          </button>
+                          <button
+                            type="button"
+                            className="border border-zinc-300 px-2 py-1"
+                            disabled={moveWrite.isPending}
+                            onClick={() => setMoving(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
+                          disabled={refreshing !== null}
+                          onClick={() => void reviewMove()}
+                        >
+                          {refreshing !== null ? "Checking…" : "Review move"}
+                        </button>
+                        <button
+                          type="button"
+                          className="border border-zinc-300 px-2 py-1"
+                          onClick={() => setMoving(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </Fragment>
+        );
+      })}
+      {receipt.isSuccess || moveReceipt.isSuccess || error ? (
+        <TableRow>
+          <TableCell colSpan={6}>
+            {receipt.isSuccess ? (
+              <p className="text-xs text-green-700">Liquidity removal confirmed.</p>
+            ) : null}
+            {moveReceipt.isSuccess ? (
+              <p className="text-xs text-green-700">
+                Liquidity moved. The new position is listed above.
+              </p>
+            ) : null}
+            {error ? (
+              <p className="wrap-anywhere text-xs text-red-600" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </TableCell>
+        </TableRow>
       ) : null}
-      {receipt.isSuccess ? (
-        <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
-      ) : null}
-      {error ? (
-        <p className="mt-2 wrap-anywhere text-xs text-red-600" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </div>
+    </>
   );
 }
 

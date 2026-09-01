@@ -1,7 +1,9 @@
 import {
+  lpBandPrices,
   lpDeadline,
   prepareAddLiquidity,
   prepareCollectLpFees,
+  prepareMoveLiquidity,
   prepareRemoveLiquidity,
   type PoolSnapshot,
   type UserLpPosition,
@@ -113,5 +115,60 @@ describe("Revnet LP entry", () => {
       plan.unlockData,
     );
     expect(actions).toBe("0x02121214");
+  });
+});
+
+describe("Revnet LP move", () => {
+  // wallet-action:move-liquidity
+  it("composes burn + mint + closes in one plan, funded by the burn credit", () => {
+    const livePool = { ...pool, sqrtP: 2n ** 96n };
+    const richPosition = {
+      ...position,
+      pairAmount: 1_000_000_000_000_000_000n,
+      tokenAmount: 1_000_000_000_000_000_000n,
+    };
+    const plan = prepareMoveLiquidity(
+      livePool,
+      richPosition,
+      { minimumPrice: 0.25, maximumPrice: 4 },
+      recipient,
+    );
+
+    const [actions, params] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      plan.unlockData,
+    );
+    expect(actions).toBe("0x03021212");
+    expect(params).toHaveLength(4);
+
+    // Burn: the old tokenId with 95% output floors.
+    const [tokenId, amount0Minimum, amount1Minimum] = decodeAbiParameters(
+      [{ type: "uint256" }, { type: "uint128" }, { type: "uint128" }, { type: "bytes" }],
+      params[0],
+    );
+    expect(tokenId).toBe(42n);
+    expect(amount0Minimum).toBe(plan.pairMinimum);
+    expect(amount1Minimum).toBe(plan.tokenMinimum);
+    expect(plan.pairMinimum).toBe((richPosition.pairAmount * 9_500n) / 10_000n);
+
+    // Mint: sized inside the burn's proceeds so the credit always covers it.
+    expect(plan.mint.liquidity).toBeGreaterThan(0n);
+    expect(plan.mint.pairMaximum).toBeLessThanOrEqual(richPosition.pairAmount);
+    expect(plan.mint.tokenMaximum).toBeLessThanOrEqual(richPosition.tokenAmount);
+
+    // The embedded mint parameters are byte-identical to the add plan's.
+    const [, addParams] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      plan.mint.unlockData,
+    );
+    expect(params[1]).toBe(addParams[0]);
+  });
+
+  it("maps a position's ticks back to display prices with min below max", () => {
+    // pairIsC0 flips the axis: the lower tick is the HIGHER display price.
+    const band = lpBandPrices(pool, -60, 60);
+    expect(band.minimumPrice).toBeLessThan(band.maximumPrice);
+    expect(band.minimumPrice).toBeCloseTo(1.0001 ** -60, 6);
+    expect(band.maximumPrice).toBeCloseTo(1.0001 ** 60, 6);
   });
 });

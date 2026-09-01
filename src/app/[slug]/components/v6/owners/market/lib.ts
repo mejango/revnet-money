@@ -44,6 +44,7 @@ import {
 } from "@bananapus/nana-sdk-core/v6";
 import {
   Address,
+  decodeAbiParameters,
   decodeFunctionData,
   encodeAbiParameters,
   encodeFunctionData,
@@ -1198,6 +1199,96 @@ export function prepareAddLiquidity(
     erc20Sides,
     recipient,
   };
+}
+
+// ── Move liquidity ───────────────────────────────────────────────────────────
+
+const ACTION_BURN_POSITION = "03";
+
+export interface MoveLiquidityPlan {
+  /** The tokenId being burned. */
+  tokenId: bigint;
+  /** The mint half, sized from the burned position's holdings. */
+  mint: AddLiquidityPlan;
+  /** Burn floors: the move reverts unless the old position returns at least these. */
+  pairMinimum: bigint;
+  tokenMinimum: bigint;
+  unlockData: Hex;
+}
+
+/**
+ * Renegotiate a position's band in ONE transaction: burn the old position and
+ * mint a new one at the given range inside the same unlock, so the burn's
+ * credit funds the mint — no Permit2 approvals and no wallet capital involved.
+ * Unclaimed fees and whatever the new band doesn't consume are returned to the
+ * recipient by the closes. The mint is sized from 99% of the position's
+ * current holdings so ~1% of price drift between review and execution still
+ * fits; a larger move leaves a close short against an empty credit and the
+ * whole transaction reverts with the old position untouched.
+ */
+export function prepareMoveLiquidity(
+  pool: PoolSnapshot,
+  position: UserLpPosition,
+  range: { minimumPrice: number; maximumPrice: number },
+  recipient: Address,
+): MoveLiquidityPlan {
+  const budget = (amount: bigint) => amount - amount / 100n;
+  const mint = prepareAddLiquidity(
+    pool,
+    { pairAmount: budget(position.pairAmount), tokenAmount: budget(position.tokenAmount) },
+    range,
+    recipient,
+  );
+  const pairMinimum = retainedFloor(position.pairAmount);
+  const tokenMinimum = retainedFloor(position.tokenAmount);
+  const burn = encodeAbiParameters(
+    [{ type: "uint256" }, { type: "uint128" }, { type: "uint128" }, { type: "bytes" }],
+    [
+      position.tokenId,
+      pool.pairIsC0 ? pairMinimum : tokenMinimum,
+      pool.pairIsC0 ? tokenMinimum : pairMinimum,
+      "0x",
+    ],
+  );
+  // The mint's parameters are already encoded inside the add plan; lift them
+  // out rather than re-encoding the tuple here.
+  const [, mintParameters] = decodeAbiParameters(
+    [{ type: "bytes" }, { type: "bytes[]" }],
+    mint.unlockData,
+  );
+  const close0 = encodeAbiParameters([{ type: "address" }], [pool.key.currency0]);
+  const close1 = encodeAbiParameters([{ type: "address" }], [pool.key.currency1]);
+  return {
+    tokenId: position.tokenId,
+    mint,
+    pairMinimum,
+    tokenMinimum,
+    unlockData: encodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      [
+        `0x${ACTION_BURN_POSITION}${ACTION_MINT_POSITION}${ACTION_CLOSE_CURRENCY}${ACTION_CLOSE_CURRENCY}`,
+        [burn, mintParameters[0], close0, close1],
+      ],
+    ),
+  };
+}
+
+/** A position's band on the card's display axis (pair per token), min < max
+ *  regardless of which currency the pool sorts first. */
+export function lpBandPrices(
+  pool: PoolSnapshot,
+  tickLower: number,
+  tickUpper: number,
+): { minimumPrice: number; maximumPrice: number } {
+  const display = (tick: number) => {
+    const raw = Math.pow(1.0001, tick);
+    return pool.pairIsC0
+      ? 10 ** (18 - pool.pair.decimals) / raw
+      : raw * 10 ** (18 - pool.pair.decimals);
+  };
+  const a = display(tickLower);
+  const b = display(tickUpper);
+  return { minimumPrice: Math.min(a, b), maximumPrice: Math.max(a, b) };
 }
 
 export async function permit2AllowanceCovers(
