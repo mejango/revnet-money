@@ -134,7 +134,12 @@ export function V6PayCard() {
   // Every wallet action confirms through the one transaction safety check —
   // the same shell every multi-step flow uses. The confirm dialog only shows
   // the intent summary and the step queue.
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useWriteContract({
+    transactionReview: {
+      title: "Review the payment",
+      confirmLabel: "Agree & send",
+    },
+  });
   const { signPermit2Async } = useReviewedPermit2Signature();
   const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId);
 
