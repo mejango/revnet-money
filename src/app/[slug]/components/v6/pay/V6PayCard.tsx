@@ -131,11 +131,12 @@ export function V6PayCard() {
 
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId });
-  const { writeContractAsync } = useWriteContract({ reviewedInParent: true });
-  const { signPermit2Async } = useReviewedPermit2Signature({ reviewedInParent: true });
-  const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId, {
-    reviewedInParent: true,
-  });
+  // Every wallet action confirms through the one transaction safety check —
+  // the same shell every multi-step flow uses. The confirm dialog only shows
+  // the intent summary and the step queue.
+  const { writeContractAsync } = useWriteContract();
+  const { signPermit2Async } = useReviewedPermit2Signature();
+  const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId);
 
   const projectToken = useJBTokenContext().token.data;
   const projectTokenLabel = projectToken?.symbol

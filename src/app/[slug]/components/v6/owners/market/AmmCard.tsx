@@ -1052,11 +1052,6 @@ export function AddLiquidityForm({
           <TxSteps
             steps={reviewSteps}
             activeIndex={busy ? stepIndex : -1}
-            intro={
-              reviewSteps.length > 1
-                ? `Your wallet will ask for ${reviewSteps.length} actions. This form stays open and advances through each one.`
-                : "Your wallet will ask for one action."
-            }
             className="mt-2 rounded border border-melon-200 bg-melon-50 p-3 text-xs"
           />
           <div className="mt-2 flex gap-2">

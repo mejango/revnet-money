@@ -9,18 +9,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { CallRow, ExactCallCard } from "@/components/ExactCallCard";
 import { TxSteps } from "@/components/ui/TxSteps";
 import {
-  PERMIT2_ADDRESS,
-  permit2TypedData,
   type DirectSwapQuote,
   type Permit2SignatureAuthorization,
 } from "@/lib/directPaySwap";
-import { type TransactionReviewRequest } from "@/lib/transaction-review";
 import { etherscanLink } from "@/lib/utils";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
-import { JB_CHAINS, JBChainId, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
+import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
@@ -254,27 +250,12 @@ export function V6PayConfirmDialog({
                         </SummaryRow>
                       ) : null}
                       {prepared.memo ? <SummaryRow label="Note">{prepared.memo}</SummaryRow> : null}
+                      {/* Each action's exact payload is reviewed in the one
+                          transaction safety check, the same shell every
+                          multi-step flow uses. */}
                       <TxSteps
                         steps={walletActionSteps(prepared).map((title) => ({ title }))}
                         activeIndex={activeStepIndex(prepared, phase)}
-                        intro={
-                          walletActionCount(prepared) > 1
-                            ? `Your wallet will ask for ${walletActionCount(prepared)} actions. This dialog stays open and advances through each one.`
-                            : `Your wallet will ask for one action to execute this ${prepared.mode === "pay" ? "payment" : "balance addition"}.`
-                        }
-                      />
-
-                      <p className="border border-peel-200 bg-peel-25 p-3 text-sm leading-relaxed text-peel-800">
-                        This is the exact wallet action that will be sent to your wallet. Review it
-                        before signing.
-                      </p>
-
-                      <PreparedPaymentReview
-                        prepared={prepared}
-                        action={activeWalletAction(prepared, phase)}
-                        chainLabel={chainMeta?.name ?? String(prepared.chainId)}
-                        projectTokenSymbol={projectTokenSymbol}
-                        beneficiary={address}
                       />
 
                       {busy ? (
@@ -340,9 +321,6 @@ function walletActionSteps(prepared: PreparedV6Pay): string[] {
   return steps;
 }
 
-function walletActionCount(prepared: PreparedV6Pay): number {
-  return walletActionSteps(prepared).length;
-}
 
 function activeStepIndex(prepared: PreparedV6Pay, phase: V6PayPhase): number {
   const steps = walletActionSteps(prepared);
@@ -357,239 +335,3 @@ function activeStepIndex(prepared: PreparedV6Pay, phase: V6PayPhase): number {
   return steps.length - 1;
 }
 
-function PreparedPaymentReview({
-  prepared,
-  action,
-  chainLabel,
-  projectTokenSymbol,
-  beneficiary,
-}: {
-  prepared: PreparedV6Pay;
-  action: PreparedV6WalletAction;
-  chainLabel: string;
-  projectTokenSymbol: string;
-  beneficiary: Address | undefined;
-}) {
-  if (action.kind === "router-signature") {
-    return (
-      <Permit2SignatureReview
-        action={action}
-        chainLabel={chainLabel}
-        amount={`${formatPayAmount(prepared.amount, prepared.token.decimals)} ${prepared.token.symbol}`}
-      />
-    );
-  }
-  const request = action.request;
-  const destination = knownDestination(request.address, prepared);
-  const reviewRequest: TransactionReviewRequest = {
-    title: action.label,
-    calls: [
-      {
-        chainId: prepared.chainId,
-        to: request.address,
-        from: beneficiary,
-        value: request.value,
-        data: action.calldata,
-        abi: request.abi,
-        functionName: request.functionName,
-        args: request.args,
-        label: action.label,
-        contractName: destination.split(" | ")[0],
-      },
-    ],
-  };
-  return (
-    <ExactCallCard
-      eyebrow={chainLabel}
-      destination={destination}
-      title={action.label}
-      raw={preparedPaymentJson(prepared, action, chainLabel)}
-      auditRequest={reviewRequest}
-    >
-      <dl className="mt-2 space-y-1">
-        <CallRow
-          label={action.kind === "payment" ? "Amount in" : "Amount authorized"}
-          mono={false}
-        >
-          {formatPayAmount(prepared.amount, prepared.token.decimals)} {prepared.token.symbol}
-        </CallRow>
-        {action.kind === "token-approval" ? (
-          <CallRow label="Spender">
-            {knownDestination(String(request.args[0]) as Address, prepared)}
-          </CallRow>
-        ) : null}
-        {action.kind === "router-approval" ? (
-          <>
-            <CallRow label="Token">
-              {knownTokenAddress(request.args[0], prepared.chainId)}
-            </CallRow>
-            <CallRow label="Spender">
-              {knownDestination(String(request.args[1]) as Address, prepared)}
-            </CallRow>
-            <CallRow label="Expires" mono={false}>
-              {new Date(Number(request.args[3]) * 1000).toLocaleString()}
-            </CallRow>
-          </>
-        ) : null}
-        {prepared.mode === "pay" && action.kind === "payment" ? (
-          <>
-            {prepared.swapInputRoute && prepared.swapInputRoute.kind !== "single-v4" ? (
-              <CallRow label="Route" mono={false}>
-                {prepared.token.symbol} → {prepared.swapInputRoute.bridgeTokenSymbol} →{" "}
-                {projectTokenSymbol}
-              </CallRow>
-            ) : null}
-            <CallRow label="Minimum received" mono={false}>
-              {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
-            </CallRow>
-          </>
-        ) : null}
-        {beneficiary && prepared.mode === "pay" && action.kind === "payment" ? (
-          <CallRow label="Beneficiary">{beneficiary}</CallRow>
-        ) : null}
-        {prepared.memo && action.kind === "payment" ? (
-          <CallRow label="Note" mono={false}>
-            {prepared.memo}
-          </CallRow>
-        ) : null}
-      </dl>
-    </ExactCallCard>
-  );
-}
-
-function Permit2SignatureReview({
-  action,
-  chainLabel,
-  amount,
-}: {
-  action: PreparedV6SignatureAction;
-  chainLabel: string;
-  amount: string;
-}) {
-  const typedData = permit2TypedData(action.authorization);
-  const reviewRequest: TransactionReviewRequest = {
-    title: action.label,
-    calls: [],
-    kind: "authorization",
-    authorization: typedData,
-  };
-  return (
-    <ExactCallCard
-      eyebrow={chainLabel}
-      destination={`Permit2 | ${PERMIT2_ADDRESS}`}
-      title={action.label}
-      raw={JSON.stringify(
-        typedData,
-        (_, value) => (typeof value === "bigint" ? value.toString() : value),
-        2,
-      )}
-      auditRequest={reviewRequest}
-    >
-      <dl className="mt-2 space-y-1">
-        <CallRow label="Token">
-          {knownTokenAddress(action.authorization.token, action.authorization.chainId)}
-        </CallRow>
-        <CallRow label="Spender">
-          Uniswap Universal Router | {action.authorization.spender}
-        </CallRow>
-        <CallRow label="Amount" mono={false}>
-          {amount}
-        </CallRow>
-        <CallRow label="Expires" mono={false}>
-          {new Date(action.authorization.expiration * 1000).toLocaleString()}
-        </CallRow>
-        <CallRow label="Gas" mono={false}>
-          No transaction fee — this is an EIP-712 signature
-        </CallRow>
-      </dl>
-    </ExactCallCard>
-  );
-}
-
-function knownDestination(address: Address, prepared: PreparedV6Pay | null): string {
-  if (
-    prepared?.directSwapRoute &&
-    address.toLowerCase() === prepared.request.address.toLowerCase()
-  ) {
-    return `Uniswap Universal Router | ${address}`;
-  }
-  if (prepared && address.toLowerCase() === prepared.token.token.toLowerCase()) {
-    return `${prepared.token.symbol} token | ${address}`;
-  }
-  if (prepared && address.toLowerCase() === prepared.terminal.toLowerCase()) {
-    return `${prepared.viaRouterRoute ? "Juicebox Router Terminal" : "Juicebox Multi Terminal"} | ${address}`;
-  }
-  if (address.toLowerCase() === "0x000000000022d473030f116ddee9f6b43ac78ba3") {
-    return `Permit2 | ${address}`;
-  }
-  return address;
-}
-
-function knownTokenAddress(value: unknown, chainId: JBChainId): string {
-  const address = typeof value === "string" ? value : String(value ?? "");
-  const name = USDC_ADDRESSES[chainId]?.toLowerCase() === address.toLowerCase() ? "USDC" : null;
-  return name ? `${name} | ${address}` : address;
-}
-
-function activeWalletAction(prepared: PreparedV6Pay, phase: V6PayPhase): PreparedV6WalletAction {
-  if (
-    (phase === "ready" || phase === "approving-token") &&
-    prepared.tokenApproval &&
-    !prepared.tokenApprovalComplete
-  ) {
-    return prepared.tokenApproval;
-  }
-  if (
-    (phase === "ready" || phase === "approving-router") &&
-    (!prepared.tokenApproval || prepared.tokenApprovalComplete) &&
-    !prepared.routerAuthorizationComplete &&
-    (prepared.routerSignature || prepared.routerApproval)
-  ) {
-    return prepared.routerSignature ?? prepared.routerApproval!;
-  }
-  if (
-    phase === "approving-router" &&
-    prepared.routerSignature &&
-    !prepared.routerAuthorizationComplete
-  ) {
-    return prepared.routerSignature;
-  }
-  if (
-    phase === "approving-router" &&
-    prepared.routerApproval &&
-    !prepared.routerAuthorizationComplete
-  ) {
-    return prepared.routerApproval;
-  }
-  return {
-    kind: "payment",
-    label: prepared.directSwapRoute
-      ? "Execute the swap"
-      : prepared.mode === "pay"
-        ? "Execute the payment"
-        : "Add to the project balance",
-    request: prepared.request,
-    calldata: prepared.calldata,
-  };
-}
-
-function preparedPaymentJson(
-  prepared: PreparedV6Pay,
-  action: PreparedV6TransactionAction,
-  chainLabel: string,
-): string {
-  return JSON.stringify(
-    {
-      chain: chainLabel,
-      chainId: prepared.chainId,
-      contract: knownDestination(action.request.address, prepared).split(" | ")[0],
-      address: action.request.address,
-      function: action.request.functionName,
-      args: action.request.args,
-      value: action.request.value,
-      calldata: action.calldata,
-    },
-    (_, value) => (typeof value === "bigint" ? value.toString() : value),
-    2,
-  );
-}
