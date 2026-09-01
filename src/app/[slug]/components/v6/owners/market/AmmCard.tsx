@@ -31,7 +31,8 @@ import {
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   erc20Abi,
   formatUnits,
@@ -1138,6 +1139,9 @@ export function LiquidityManager({
   // Per-chain scan outcomes reported up by the row groups, so the aggregate
   // empty state is knowable without lifting each chain's queries out of them.
   const [scan, setScan] = useState<Record<number, number | "loading" | "error">>({});
+  // The move/remove panels portal here, BELOW the scroll wrapper — inside the
+  // table they'd inherit its full scrollable width and get cut off.
+  const [panelHost, setPanelHost] = useState<HTMLDivElement | null>(null);
   const onStatus = useCallback((chainId: number, status: number | "loading" | "error") => {
     setScan((current) =>
       current[chainId] === status ? current : { ...current, [chainId]: status },
@@ -1183,11 +1187,13 @@ export function LiquidityManager({
                     state={state}
                     tokenSymbol={tokenSymbol}
                     onStatus={onStatus}
+                    panelHost={panelHost}
                   />
                 ))}
               </TableBody>
             </Table>
           </div>
+          <div ref={setPanelHost} className="min-w-0" />
         </>
       )}
     </div>
@@ -1203,10 +1209,13 @@ function ChainPositionRows({
   state,
   tokenSymbol,
   onStatus,
+  panelHost,
 }: {
   state: AmmChainState;
   tokenSymbol: string;
   onStatus: (chainId: number, status: number | "loading" | "error") => void;
+  /** Where the move/remove panels render, below the table's scroll wrapper. */
+  panelHost: HTMLDivElement | null;
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
@@ -1481,278 +1490,274 @@ function ChainPositionRows({
           reviewed !== null ||
           moving !== null;
         return (
-          <Fragment key={position.tokenId.toString()}>
-            <TableRow className="align-top">
-              {chainCell}
-              <TableCell className="font-mono text-xs">#{position.tokenId.toString()}</TableCell>
-              <TableCell className="text-right tabular-nums">
-                {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}
-                <span className="block text-xs text-zinc-500">
-                  {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
-                </span>
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {fees.isLoading || owed === undefined ? (
-                  <span className="text-zinc-400">Reading…</span>
-                ) : !owed ? (
-                  <span className="text-zinc-400">Unavailable</span>
-                ) : nothingOwed ? (
-                  <span className="text-zinc-400">None yet</span>
-                ) : (
+          <TableRow key={position.tokenId.toString()} className="align-top">
+            {chainCell}
+            <TableCell className="font-mono text-xs">#{position.tokenId.toString()}</TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">
+              {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}
+              <span className="block text-xs text-zinc-500">
+                {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
+              </span>
+            </TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">
+              {fees.isLoading || owed === undefined ? (
+                <span className="text-zinc-400">Reading…</span>
+              ) : !owed ? (
+                <span className="text-zinc-400">Unavailable</span>
+              ) : nothingOwed ? (
+                <span className="text-zinc-400">None yet</span>
+              ) : (
+                <>
+                  {fmtUnits(owed.tokenFees, 18)} {tokenSymbol}
+                  <span className="block text-xs text-zinc-500">
+                    {fmtUnits(owed.pairFees, pool.pair.decimals)} {pool.pair.symbol}
+                  </span>
+                </>
+              )}
+            </TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">
+              {(() => {
+                // The pool forgets what a position already took, so lifetime is
+                // only knowable where the index has been accumulating it.
+                if (position.claimedPairFees === undefined || !owed) {
+                  return <span className="text-zinc-400">—</span>;
+                }
+                const lifetimeToken = position.claimedTokenFees! + owed.tokenFees;
+                const lifetimePair = position.claimedPairFees + owed.pairFees;
+                if (lifetimeToken <= 0n && lifetimePair <= 0n) {
+                  return <span className="text-zinc-400">None yet</span>;
+                }
+                return (
                   <>
-                    {fmtUnits(owed.tokenFees, 18)} {tokenSymbol}
+                    {fmtUnits(lifetimeToken, 18)} {tokenSymbol}
                     <span className="block text-xs text-zinc-500">
-                      {fmtUnits(owed.pairFees, pool.pair.decimals)} {pool.pair.symbol}
+                      {fmtUnits(lifetimePair, pool.pair.decimals)} {pool.pair.symbol}
                     </span>
                   </>
-                )}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {(() => {
-                  // The pool forgets what a position already took, so lifetime is
-                  // only knowable where the index has been accumulating it.
-                  if (position.claimedPairFees === undefined || !owed) {
-                    return <span className="text-zinc-400">—</span>;
-                  }
-                  const lifetimeToken = position.claimedTokenFees! + owed.tokenFees;
-                  const lifetimePair = position.claimedPairFees + owed.pairFees;
-                  if (lifetimeToken <= 0n && lifetimePair <= 0n) {
-                    return <span className="text-zinc-400">None yet</span>;
-                  }
-                  return (
-                    <>
-                      {fmtUnits(lifetimeToken, 18)} {tokenSymbol}
-                      <span className="block text-xs text-zinc-500">
-                        {fmtUnits(lifetimePair, pool.pair.decimals)} {pool.pair.symbol}
-                      </span>
-                    </>
-                  );
-                })()}
-              </TableCell>
-              <TableCell className="text-right">
-                <span className="inline-flex gap-2">
-                  <button
-                    type="button"
-                    className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
-                    disabled={busy || nothingOwed}
-                    onClick={() => void claimFees(position)}
-                  >
-                    {claiming === position.tokenId ? "Claiming…" : "Claim fees"}
-                  </button>
-                  <button
-                    type="button"
-                    className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
-                    disabled={busy}
-                    onClick={() => void beginMove(position)}
-                  >
-                    {refreshing === position.tokenId && moving === null ? "Refreshing…" : "Move"}
-                  </button>
-                  <button
-                    type="button"
-                    className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
-                    disabled={busy}
-                    onClick={() => void beginReview(position)}
-                  >
-                    {refreshing === position.tokenId ? "Refreshing…" : "Remove"}
-                  </button>
-                </span>
-              </TableCell>
-            </TableRow>
-            {reviewed && reviewed.position.tokenId === position.tokenId ? (
-              <TableRow>
-                <TableCell colSpan={6}>
-                  <div className="border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
-                    <p>
-                      Burn position #{reviewed.position.tokenId.toString()} for at least{" "}
-                      {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-                      {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol}.
-                    </p>
-                    <p className="mt-1 text-zinc-500">
-                      These 95% minimums are sent in the exact burn call; a larger adverse move
-                      reverts.
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        type="button"
-                        className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
-                        disabled={isPending}
-                        onClick={() => void remove()}
-                      >
-                        {isPending ? "Submitting…" : "Confirm & remove"}
-                      </button>
-                      <button
-                        type="button"
-                        className="border border-zinc-300 px-2 py-1"
-                        disabled={isPending}
-                        onClick={() => setReviewed(null)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                );
+              })()}
+            </TableCell>
+            <TableCell className="whitespace-nowrap text-right">
+              <span className="inline-flex gap-2">
+                <button
+                  type="button"
+                  className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                  disabled={busy || nothingOwed}
+                  onClick={() => void claimFees(position)}
+                >
+                  {claiming === position.tokenId ? "Claiming…" : "Claim fees"}
+                </button>
+                <button
+                  type="button"
+                  className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() => void beginMove(position)}
+                >
+                  {refreshing === position.tokenId && moving === null ? "Refreshing…" : "Move"}
+                </button>
+                <button
+                  type="button"
+                  className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() => void beginReview(position)}
+                >
+                  {refreshing === position.tokenId ? "Refreshing…" : "Remove"}
+                </button>
+              </span>
+            </TableCell>
+          </TableRow>
+        );
+      })}
+      {/* The panels live OUTSIDE the scroll wrapper — as table rows they would
+          inherit the table's full scrollable width and get cut off. */}
+      {panelHost
+        ? createPortal(
+            <>
+              {reviewed ? (
+                <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
+                  <p>
+                    Burn position #{reviewed.position.tokenId.toString()} on{" "}
+                    {chainName(state.chainId)} for at least{" "}
+                    {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
+                    {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol}.
+                  </p>
+                  <p className="mt-1 text-zinc-500">
+                    These 95% minimums are sent in the exact burn call; a larger adverse move
+                    reverts.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
+                      disabled={isPending}
+                      onClick={() => void remove()}
+                    >
+                      {isPending ? "Submitting…" : "Confirm & remove"}
+                    </button>
+                    <button
+                      type="button"
+                      className="border border-zinc-300 px-2 py-1"
+                      disabled={isPending}
+                      onClick={() => setReviewed(null)}
+                    >
+                      Cancel
+                    </button>
                   </div>
-                </TableCell>
-              </TableRow>
-            ) : null}
-            {moving && moving.position.tokenId === position.tokenId ? (
-              <TableRow>
-                <TableCell colSpan={6}>
-                  <div className="border border-zinc-200 p-2 text-xs text-zinc-700">
-                    <p className="font-medium">
-                      Move position #{moving.position.tokenId.toString()}
-                    </p>
-                    <p className="mt-1 text-zinc-500">
-                      Burn it and re-mint what it holds into a new price band, all in one
-                      transaction. Unclaimed fees and anything the new band doesn&apos;t use
-                      return to your wallet.
-                    </p>
-                    <LiquidityRangePreview
-                      floor={state.reference.cashOut}
-                      ceiling={state.reference.issuance}
-                      current={pool.price}
-                      minimum={Number(moving.minText) || 0}
-                      maximum={Number(moving.maxText) || 0}
-                      pairSymbol={pool.pair.symbol}
-                      tokenSymbol={tokenSymbol}
-                      onRangeChange={
-                        moveWrite.isPending
-                          ? undefined
-                          : (edge, value) =>
-                              setMoving((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      [edge === "minimum" ? "minText" : "maxText"]: String(value),
-                                      plan: null,
-                                    }
-                                  : current,
-                              )
-                      }
-                    />
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <label className="text-[11px] text-zinc-500">
-                        Min price
-                        <input
-                          className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
-                          type="number"
-                          min="0"
-                          value={moving.minText}
-                          disabled={moveWrite.isPending}
-                          onChange={(event) =>
+                </div>
+              ) : null}
+              {moving ? (
+                <div className="mt-2 border border-zinc-200 p-2 text-xs text-zinc-700">
+                  <p className="font-medium">
+                    Move position #{moving.position.tokenId.toString()} on{" "}
+                    {chainName(state.chainId)}
+                  </p>
+                  <p className="mt-1 text-zinc-500">
+                    The position is burned and everything it holds is re-minted into the new
+                    price band, all in one transaction. Unclaimed fees and anything the new band
+                    doesn&apos;t use return to your wallet.
+                  </p>
+                  <LiquidityRangePreview
+                    floor={state.reference.cashOut}
+                    ceiling={state.reference.issuance}
+                    current={pool.price}
+                    minimum={Number(moving.minText) || 0}
+                    maximum={Number(moving.maxText) || 0}
+                    pairSymbol={pool.pair.symbol}
+                    tokenSymbol={tokenSymbol}
+                    onRangeChange={
+                      moveWrite.isPending
+                        ? undefined
+                        : (edge, value) =>
                             setMoving((current) =>
                               current
-                                ? { ...current, minText: event.target.value, plan: null }
+                                ? {
+                                    ...current,
+                                    [edge === "minimum" ? "minText" : "maxText"]: String(value),
+                                    plan: null,
+                                  }
                                 : current,
                             )
-                          }
-                        />
-                      </label>
-                      <label className="text-[11px] text-zinc-500">
-                        Max price
-                        <input
-                          className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
-                          type="number"
-                          min="0"
-                          value={moving.maxText}
-                          disabled={moveWrite.isPending}
-                          onChange={(event) =>
-                            setMoving((current) =>
-                              current
-                                ? { ...current, maxText: event.target.value, plan: null }
-                                : current,
-                            )
-                          }
-                        />
-                      </label>
-                    </div>
-                    {moving.plan ? (
-                      <div className="mt-2 border border-amber-200 bg-amber-50 p-2">
-                        {(() => {
-                          const band = lpBandPrices(
-                            pool,
-                            moving.plan.mint.tickLower,
-                            moving.plan.mint.tickUpper,
-                          );
-                          return (
-                            <p>
-                              Mint up to {fmtUnits(moving.plan.mint.tokenMaximum, 18)}{" "}
-                              {tokenSymbol} +{" "}
-                              {fmtUnits(moving.plan.mint.pairMaximum, pool.pair.decimals)}{" "}
-                              {pool.pair.symbol} between {formatPrice(band.minimumPrice)} and{" "}
-                              {formatPrice(band.maximumPrice)} {pool.pair.symbol}/{tokenSymbol}.
-                            </p>
-                          );
-                        })()}
-                        <p className="mt-1 text-zinc-500">
-                          The burn is guaranteed at least{" "}
-                          {fmtUnits(moving.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-                          {fmtUnits(moving.plan.pairMinimum, pool.pair.decimals)}{" "}
-                          {pool.pair.symbol}. One transaction: if any leg falls short, the whole
-                          move reverts and the old position stays.
-                        </p>
-                        <div className="mt-2 flex gap-2">
-                          <button
-                            type="button"
-                            className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
-                            disabled={moveWrite.isPending}
-                            onClick={() => void move()}
-                          >
-                            {moveWrite.isPending ? "Submitting…" : "Confirm & move"}
-                          </button>
-                          <button
-                            type="button"
-                            className="border border-zinc-300 px-2 py-1"
-                            disabled={moveWrite.isPending}
-                            onClick={() => setMoving(null)}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
+                    }
+                  />
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="text-[11px] text-zinc-500">
+                      Min price
+                      <input
+                        className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+                        type="number"
+                        min="0"
+                        value={moving.minText}
+                        disabled={moveWrite.isPending}
+                        onChange={(event) =>
+                          setMoving((current) =>
+                            current
+                              ? { ...current, minText: event.target.value, plan: null }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="text-[11px] text-zinc-500">
+                      Max price
+                      <input
+                        className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+                        type="number"
+                        min="0"
+                        value={moving.maxText}
+                        disabled={moveWrite.isPending}
+                        onChange={(event) =>
+                          setMoving((current) =>
+                            current
+                              ? { ...current, maxText: event.target.value, plan: null }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                  {moving.plan ? (
+                    <div className="mt-2 border border-amber-200 bg-amber-50 p-2">
+                      {(() => {
+                        const band = lpBandPrices(
+                          pool,
+                          moving.plan.mint.tickLower,
+                          moving.plan.mint.tickUpper,
+                        );
+                        return (
+                          <p className="font-medium">
+                            Move your liquidity to the {formatPrice(band.minimumPrice)} –{" "}
+                            {formatPrice(band.maximumPrice)} {pool.pair.symbol}/{tokenSymbol}{" "}
+                            band.
+                          </p>
+                        );
+                      })()}
+                      <p className="mt-1 text-zinc-500">
+                        About {fmtUnits(moving.plan.mint.tokenMaximum, 18)} {tokenSymbol} +{" "}
+                        {fmtUnits(moving.plan.mint.pairMaximum, pool.pair.decimals)}{" "}
+                        {pool.pair.symbol} goes into the new band. Unclaimed fees and anything
+                        that doesn&apos;t fit return to your wallet.
+                      </p>
+                      <p className="mt-1 text-zinc-500">
+                        One transaction. If prices shift too much before it lands, it cancels
+                        itself and your current position stays untouched.
+                      </p>
                       <div className="mt-2 flex gap-2">
                         <button
                           type="button"
-                          className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
-                          disabled={refreshing !== null}
-                          onClick={() => void reviewMove()}
+                          className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
+                          disabled={moveWrite.isPending}
+                          onClick={() => void move()}
                         >
-                          {refreshing !== null ? "Checking…" : "Review move"}
+                          {moveWrite.isPending ? "Submitting…" : "Confirm & move"}
                         </button>
                         <button
                           type="button"
                           className="border border-zinc-300 px-2 py-1"
+                          disabled={moveWrite.isPending}
                           onClick={() => setMoving(null)}
                         >
                           Cancel
                         </button>
                       </div>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : null}
-          </Fragment>
-        );
-      })}
-      {receipt.isSuccess || moveReceipt.isSuccess || error ? (
-        <TableRow>
-          <TableCell colSpan={6}>
-            {receipt.isSuccess ? (
-              <p className="text-xs text-green-700">Liquidity removal confirmed.</p>
-            ) : null}
-            {moveReceipt.isSuccess ? (
-              <p className="text-xs text-green-700">
-                Liquidity moved. The new position is listed above.
-              </p>
-            ) : null}
-            {error ? (
-              <p className="wrap-anywhere text-xs text-red-600" role="alert">
-                {error}
-              </p>
-            ) : null}
-          </TableCell>
-        </TableRow>
-      ) : null}
+                    </div>
+                  ) : (
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
+                        disabled={refreshing !== null}
+                        onClick={() => void reviewMove()}
+                      >
+                        {refreshing !== null ? "Checking…" : "Review move"}
+                      </button>
+                      <button
+                        type="button"
+                        className="border border-zinc-300 px-2 py-1"
+                        onClick={() => setMoving(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+              {receipt.isSuccess ? (
+                <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
+              ) : null}
+              {moveReceipt.isSuccess ? (
+                <p className="mt-2 text-xs text-green-700">
+                  Liquidity moved. The new position is listed above.
+                </p>
+              ) : null}
+              {error ? (
+                <p className="mt-2 wrap-anywhere text-xs text-red-600" role="alert">
+                  {error}
+                </p>
+              ) : null}
+            </>,
+            panelHost,
+          )
+        : null}
     </>
   );
 }

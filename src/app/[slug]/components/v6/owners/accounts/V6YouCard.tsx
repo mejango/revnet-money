@@ -1,6 +1,7 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -105,7 +106,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   // The positions-first view the You table's LP cell opens — the same
   // hierarchy as juicebox.money's "Your liquidity" modal.
   const [positionsOpen, setPositionsOpen] = useState(false);
-  const { chainId: walletChainId } = useAccount();
+  const { chainId: walletChainId, address: connectedAddress } = useAccount();
   const openLiquidity = useCallback(
     (target?: JBChainId) => {
       const pooled = pooledAmmStates.find((state) => state.chainId === (target ?? walletChainId));
@@ -455,11 +456,16 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
       {positionsOpen && pooledAmmStates.length > 0 ? (
         <Dialog open onOpenChange={(next) => !next && setPositionsOpen(false)}>
-          <DialogContent className="max-w-4xl">
+          <DialogContent className="max-w-2xl">
             <DialogTitle className="text-base font-medium">Your liquidity</DialogTitle>
             <p className="text-sm text-zinc-500">
-              Positions owned by your connected wallet in the project&apos;s market pools, across
-              its chains.
+              Positions owned by{" "}
+              {connectedAddress ? (
+                <EthereumAddress address={connectedAddress} short withEnsName />
+              ) : (
+                "your connected wallet"
+              )}{" "}
+              in the project&apos;s market pools, across its chains.
             </p>
             {dialogAmmStates ? (
               <LiquidityManager
