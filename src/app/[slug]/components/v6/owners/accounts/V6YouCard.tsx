@@ -102,6 +102,9 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   // Network selection comes first so a wallet on Base never lands on a
   // Mainnet form by default.
   const [liquidityChain, setLiquidityChain] = useState<JBChainId | null>(null);
+  // The positions-first view the You table's LP cell opens — the same
+  // hierarchy as juicebox.money's "Your liquidity" modal.
+  const [positionsOpen, setPositionsOpen] = useState(false);
   const { chainId: walletChainId } = useAccount();
   const openLiquidity = useCallback(
     (target?: JBChainId) => {
@@ -112,7 +115,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   );
   const { data: dialogAmmStates } = useQuery({
     queryKey: ["v6AmmReferences", chainProjectsKey(ammChains)],
-    enabled: liquidityChain != null && pooledAmmStates.length > 0,
+    enabled: (liquidityChain != null || positionsOpen) && pooledAmmStates.length > 0,
     staleTime: 60_000,
     queryFn: () => fetchAmmReferences(pooledAmmStates),
   });
@@ -340,7 +343,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                   isRevnet={projectData?.project?.isRevnet ?? undefined}
                   onQuote={reportQuote}
                   ammState={ammPresence?.find((state) => state.chainId === b.chainId)}
-                  onManage={() => openLiquidity(b.chainId as JBChainId)}
+                  onManage={() => setPositionsOpen(true)}
                 />
               ))}
             </TableBody>
@@ -450,9 +453,40 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
         )}
       </div>
 
+      {positionsOpen && pooledAmmStates.length > 0 ? (
+        <Dialog open onOpenChange={(next) => !next && setPositionsOpen(false)}>
+          <DialogContent className="max-w-4xl">
+            <DialogTitle className="text-base font-medium">Your liquidity</DialogTitle>
+            <p className="text-sm text-zinc-500">
+              Positions owned by your connected wallet in the project&apos;s market pools, across
+              its chains.
+            </p>
+            {dialogAmmStates ? (
+              <LiquidityManager
+                states={dialogAmmStates}
+                tokenSymbol={tokenSymbol}
+                heading={null}
+              />
+            ) : (
+              <SkeletonLines lines={3} />
+            )}
+            <button
+              type="button"
+              className="justify-self-start border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50"
+              onClick={() => {
+                setPositionsOpen(false);
+                openLiquidity();
+              }}
+            >
+              Add market liquidity
+            </button>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
       {liquidityChain != null && pooledAmmStates.length > 0 ? (
         <Dialog open onOpenChange={(next) => !next && setLiquidityChain(null)}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-lg">
             <DialogTitle className="text-base font-medium">Market liquidity</DialogTitle>
             <p className="text-sm text-zinc-500">
               Add liquidity or manage positions owned by your connected wallet.
@@ -478,11 +512,18 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                 </div>
               );
             })()}
-            {/* The positions table spans every chain (chain column per row);
-                only ADDING liquidity needs the chain selected above. */}
-            {dialogAmmStates ? (
-              <LiquidityManager states={dialogAmmStates} tokenSymbol={tokenSymbol} />
-            ) : null}
+            {/* Existing positions live in the positions-first "Your liquidity"
+                dialog (the You table's LP cell); this dialog only adds. */}
+            <button
+              type="button"
+              className="justify-self-start border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50"
+              onClick={() => {
+                setLiquidityChain(null);
+                setPositionsOpen(true);
+              }}
+            >
+              Manage your positions
+            </button>
           </DialogContent>
         </Dialog>
       ) : null}

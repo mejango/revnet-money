@@ -1124,9 +1124,12 @@ export function AddLiquidityForm({
 export function LiquidityManager({
   states,
   tokenSymbol,
+  heading = "Your liquidity",
 }: {
   states: AmmChainState[];
   tokenSymbol: string;
+  /** Section heading; null when a dialog title already names the view. */
+  heading?: string | null;
 }) {
   const { address } = useAccount();
   const pooled = states.filter(
@@ -1146,8 +1149,10 @@ export function LiquidityManager({
     pooled.length > 0 && pooled.every((state) => scan[Number(state.chainId)] === 0);
 
   return (
-    <div className="mt-3 border-t border-zinc-100 pt-3">
-      <div className="text-xs font-medium text-zinc-600">Your liquidity</div>
+    // min-w-0: as a grid item of the dialog panel this must be allowed to
+    // shrink, or the table's intrinsic width inflates the whole dialog.
+    <div className={heading ? "mt-3 min-w-0 border-t border-zinc-100 pt-3" : "min-w-0"}>
+      {heading ? <div className="text-xs font-medium text-zinc-600">{heading}</div> : null}
       {!address ? (
         <p className="mt-1 text-xs text-zinc-400">Connect a wallet to manage its LP positions.</p>
       ) : (
