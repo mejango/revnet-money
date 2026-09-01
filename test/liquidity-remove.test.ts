@@ -186,13 +186,22 @@ describe("Review-dialog V4 plan decoding", () => {
       { minimumPrice: 0.25, maximumPrice: 4 },
       recipient,
     );
-    const text = describeV4UnlockData(plan.unlockData)!;
-    expect(text).toContain("1. BURN_POSITION — burn position #42");
-    expect(text).toContain(`at least ${plan.pairMinimum} of currency0 + ${plan.tokenMinimum} of currency1`);
-    expect(text).toContain("2. MINT_POSITION — a new position owned by " + recipient);
-    expect(text).toContain(`ticks ${plan.mint.tickLower} → ${plan.mint.tickUpper}`);
-    expect(text).toContain("3. CLOSE_CURRENCY — settle the net native ETH");
-    expect(text).toContain("4. CLOSE_CURRENCY");
+    const steps = describeV4UnlockData(plan.unlockData)! as Array<Record<string, unknown>>;
+    expect(steps).toHaveLength(4);
+    expect(steps[0]).toMatchObject({
+      action: "BURN_POSITION",
+      position: "#42",
+      minimumOut: { currency0: plan.pairMinimum, currency1: plan.tokenMinimum },
+    });
+    expect(steps[1]).toMatchObject({
+      action: "MINT_POSITION",
+      owner: recipient,
+      ticks: { lower: plan.mint.tickLower, upper: plan.mint.tickUpper },
+      liquidity: plan.mint.liquidity,
+    });
+    expect(steps[2]).toMatchObject({ action: "CLOSE_CURRENCY" });
+    expect(String((steps[2] as { currency: string }).currency)).toContain("native ETH");
+    expect(steps[3]).toMatchObject({ action: "CLOSE_CURRENCY" });
     // Unknown actions must fall back to the raw view, never a partial story.
     expect(describeV4UnlockData("0xdead")).toBeNull();
   });
