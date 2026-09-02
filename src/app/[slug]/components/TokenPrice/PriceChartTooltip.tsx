@@ -14,9 +14,15 @@ type PriceTooltipDatum = {
 };
 
 // The pool's reserves, as two tints of the pool line: the pair side darker, the token side lighter.
-// Shared with the chart's bars so the tooltip's squares match them.
-export const POOL_PAIR_FILL = "color-mix(in srgb, var(--chart-4) 30%, transparent)";
-export const POOL_TOKEN_FILL = "color-mix(in srgb, var(--chart-4) 14%, transparent)";
+// The bars are translucent over the page; the tooltip sits on near-black, so its squares carry
+// the colour the bars actually show — the same tint composited onto the page background.
+const POOL_PAIR_TINT = 30;
+const POOL_TOKEN_TINT = 14;
+export const POOL_PAIR_FILL = `color-mix(in srgb, var(--chart-4) ${POOL_PAIR_TINT}%, transparent)`;
+export const POOL_TOKEN_FILL = `color-mix(in srgb, var(--chart-4) ${POOL_TOKEN_TINT}%, transparent)`;
+const PAGE_BACKGROUND = "var(--color-melon-25, #F6FEF9)";
+const POOL_PAIR_SWATCH = `color-mix(in srgb, var(--chart-4) ${POOL_PAIR_TINT}%, ${PAGE_BACKGROUND})`;
+const POOL_TOKEN_SWATCH = `color-mix(in srgb, var(--chart-4) ${POOL_TOKEN_TINT}%, ${PAGE_BACKGROUND})`;
 
 interface Props {
   datum: PriceTooltipDatum;
@@ -65,10 +71,10 @@ export function PriceChartTooltip({
         <div className="mt-2 flex justify-between gap-4 whitespace-nowrap border-t border-zinc-700 pt-2 text-xs text-zinc-500">
           <span>Pool liquidity now:</span>
           <span className="flex items-center gap-1.5 font-mono">
-            <span className="h-2 w-2 shrink-0" style={{ backgroundColor: POOL_TOKEN_FILL }} />
+            <span className="h-2 w-2 shrink-0" style={{ backgroundColor: POOL_TOKEN_SWATCH }} />
             {formatCompact(formatUnits(poolLiquidity.tokenAmount, JB_TOKEN_DECIMALS))}{" "}
             {projectTokenSymbol ?? "tokens"} +{" "}
-            <span className="h-2 w-2 shrink-0" style={{ backgroundColor: POOL_PAIR_FILL }} />
+            <span className="h-2 w-2 shrink-0" style={{ backgroundColor: POOL_PAIR_SWATCH }} />
             {formatCompact(formatUnits(poolLiquidity.pairAmount, baseTokenDecimals))}{" "}
             {baseTokenSymbol}
           </span>
