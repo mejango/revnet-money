@@ -18,6 +18,7 @@ import { getHomepageActivityPage } from "./getHomepageActivity";
 import { getHomepageReserves } from "./getHomepageReserves";
 import { HomepageActivityFeed } from "./HomepageActivityFeed";
 import { HomepageDiscoveryLayout } from "./HomepageDiscoveryLayout";
+import { RotatingTagline } from "./RotatingTagline";
 import { SecuredReserves } from "./SecuredReserves";
 import { TopProjectsTable } from "./TopProjectsTable";
 
@@ -209,7 +210,7 @@ function HeroColumn() {
           className="mx-auto h-auto min-w-0 max-w-full object-contain"
         />
         <p className="mt-7 max-w-full break-words text-xl font-medium">
-          An investible <span className="whitespace-nowrap">business model</span> <span className="whitespace-nowrap">for the open web.</span>
+          An investible <RotatingTagline /> <span className="whitespace-nowrap">for the open web.</span>
         </p>
         <Link
           href="/create"
