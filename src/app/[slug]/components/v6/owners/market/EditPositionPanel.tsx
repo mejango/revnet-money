@@ -413,7 +413,7 @@ export function EditPositionPanel({
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <label className="text-[11px] text-zinc-500">
-          {tokenSymbol} to hold
+          {tokenSymbol} in position
           <input
             className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
             type="number"
@@ -426,7 +426,7 @@ export function EditPositionPanel({
           {inWallet(balances.data?.token, 18, tokenSymbol)}
         </label>
         <label className="text-[11px] text-zinc-500">
-          {pool.pair.symbol} to hold
+          {pool.pair.symbol} in position
           <input
             className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
             type="number"
