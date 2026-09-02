@@ -68,7 +68,7 @@ export default function Page() {
   return (
     <>
       <Nav />
-      <div className="mx-auto mt-12 max-w-[1800px] px-6 sm:mt-16 sm:px-8">
+      <div className="mx-auto mt-4 max-w-[1800px] px-6 sm:mt-16 sm:px-8">
         <Suspense fallback={<div className="min-h-[520px] animate-pulse" />}>
           <HomepageDiscovery />
         </Suspense>
@@ -88,7 +88,10 @@ export default function Page() {
             loading="lazy"
             alt="A classical draped figure"
           />
-          <h2 id="how-revnets-work" className="text-2xl font-semibold md:text-3xl">
+          <h2
+            id="how-revnets-work"
+            className="text-center text-2xl font-semibold md:text-left md:text-3xl"
+          >
             Guarantees that stand the test of time.
           </h2>
           <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 sm:ml-10">
@@ -124,7 +127,10 @@ export default function Page() {
             loading="lazy"
             alt="A broad fig tree bearing fruit"
           />
-          <h2 id="why-revnets" className="text-2xl font-semibold md:text-3xl">
+          <h2
+            id="why-revnets"
+            className="text-center text-2xl font-semibold md:text-left md:text-3xl"
+          >
             <span className="block">Simple enough for startups.</span>
             <span className="block">Powerful enough for global organizations.</span>
           </h2>
@@ -148,7 +154,7 @@ export default function Page() {
             loading="lazy"
             alt="Butterflies"
           />
-          <h2 id="join-us" className="text-2xl font-semibold md:text-3xl">
+          <h2 id="join-us" className="text-center text-2xl font-semibold md:text-left md:text-3xl">
             Join us
           </h2>
           <p className="mt-4">

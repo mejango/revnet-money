@@ -30,7 +30,9 @@ export function Nav({ wide = false }: { wide?: boolean }) {
           </Link>
           <div
             aria-label="Revnet guides"
-            className="flex min-h-11 items-center gap-1 whitespace-nowrap text-xs leading-normal text-zinc-600 sm:gap-2 sm:text-sm"
+            // Stacked under the logo on phones, the links sit tight against it so
+            // the two lines read as one block centered on the search bar.
+            className="-mt-2 flex items-center gap-1 whitespace-nowrap text-xs leading-normal text-zinc-600 sm:gap-2 sm:text-sm md:mt-0 md:min-h-11"
           >
             <Link href="/learn" className="underline-offset-4 hover:underline hover:text-zinc-900">
               Learn
