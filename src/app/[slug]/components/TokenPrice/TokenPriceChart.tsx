@@ -27,7 +27,7 @@ import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ChartToggleButton } from "./ChartToggleButton";
 import { getTokenPriceChartData } from "./getTokenPriceChartData";
-import { PriceChartTooltip } from "./PriceChartTooltip";
+import { POOL_PAIR_FILL, POOL_TOKEN_FILL, PriceChartTooltip } from "./PriceChartTooltip";
 import { priceConcept } from "./priceConcepts";
 
 const TIME_RANGES: RangeOption<TimeRange>[] = [
@@ -43,9 +43,6 @@ const TIME_RANGES: RangeOption<TimeRange>[] = [
 
 const NOW_COLOR = "#EE6F3A"; // peel-400
 const PRICE_REFRESH_MS = 15_000;
-// The pool's reserves, as two tints of the pool line: the pair side darker, the token side above it.
-const POOL_PAIR_FILL = "color-mix(in srgb, var(--chart-4) 30%, transparent)";
-const POOL_TOKEN_FILL = "color-mix(in srgb, var(--chart-4) 14%, transparent)";
 const POOL_RESERVE_BARS = 48;
 
 interface Props {
@@ -151,6 +148,8 @@ export function TokenPriceChart({
       color: "var(--chart-4)",
       value: (point) => point.ammPrice,
       curve: marketPriceView === "trades" ? "linear" : "monotone",
+      // The price people actually trade at, so it carries the chart; the other two are bounds.
+      width: 5,
     });
   }
   if (showFloor && hasFloorData) {
@@ -257,7 +256,7 @@ export function TokenPriceChart({
           />
           {hasPool && (
             <ChartToggleButton
-              label="Pool Price"
+              label="Pool price & liquidity"
               active={showAmm}
               disabled={!hasAmmData}
               colorVar="--chart-4"

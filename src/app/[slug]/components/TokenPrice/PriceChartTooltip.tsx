@@ -13,6 +13,11 @@ type PriceTooltipDatum = {
   cashOutChangeReason?: string;
 };
 
+// The pool's reserves, as two tints of the pool line: the pair side darker, the token side lighter.
+// Shared with the chart's bars so the tooltip's squares match them.
+export const POOL_PAIR_FILL = "color-mix(in srgb, var(--chart-4) 30%, transparent)";
+export const POOL_TOKEN_FILL = "color-mix(in srgb, var(--chart-4) 14%, transparent)";
+
 interface Props {
   datum: PriceTooltipDatum;
   series: readonly ChartTooltipSeries<PriceTooltipDatum>[];
@@ -59,9 +64,11 @@ export function PriceChartTooltip({
       {poolLiquidity && (poolLiquidity.tokenAmount > 0n || poolLiquidity.pairAmount > 0n) ? (
         <div className="mt-2 flex justify-between gap-4 whitespace-nowrap border-t border-zinc-700 pt-2 text-xs text-zinc-500">
           <span>Pool liquidity now:</span>
-          <span className="font-mono">
+          <span className="flex items-center gap-1.5 font-mono">
+            <span className="h-2 w-2 shrink-0" style={{ backgroundColor: POOL_TOKEN_FILL }} />
             {formatCompact(formatUnits(poolLiquidity.tokenAmount, JB_TOKEN_DECIMALS))}{" "}
             {projectTokenSymbol ?? "tokens"} +{" "}
+            <span className="h-2 w-2 shrink-0" style={{ backgroundColor: POOL_PAIR_FILL }} />
             {formatCompact(formatUnits(poolLiquidity.pairAmount, baseTokenDecimals))}{" "}
             {baseTokenSymbol}
           </span>

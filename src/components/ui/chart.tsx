@@ -446,7 +446,15 @@ export function CartesianChart<T extends ChartDatum>({
                 );
                 if (!(tallest > 0)) return null;
                 const unit = ((plotBottom - plotTop) * barsHeight) / tallest;
-                const barWidth = Math.max(1, ((plotRight - plotLeft) / bars.length) * 0.7);
+                // Size from the tightest gap between bars, not their count: a series that
+                // starts partway through the domain has fewer bars than slots, and translucent
+                // bars wider than a slot overlap into a third shade.
+                const xs = bars.map((bar) => scaleX(bar.x)).sort((a, b) => a - b);
+                const slot = xs.reduce(
+                  (min, x, index) => (index === 0 ? min : Math.min(min, x - xs[index - 1])),
+                  plotRight - plotLeft,
+                );
+                const barWidth = Math.max(1, slot * 0.7);
                 return bars.map((bar) => {
                   let top = plotBottom;
                   return (
