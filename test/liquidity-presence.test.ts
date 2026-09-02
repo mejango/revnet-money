@@ -7,7 +7,7 @@ import {
   type PoolSnapshot,
 } from "@/app/[slug]/components/v6/owners/market/lib";
 
-// The "Manage market liquidity" button must gate on a cheap pool-existence
+// The "Add liquidity" button must gate on a cheap pool-existence
 // probe: one snapshot read per chain, never the getLogs composition scan or
 // reference-price quotes. These tests pin the probe's shape and its fail-soft
 // behavior via injected readers.

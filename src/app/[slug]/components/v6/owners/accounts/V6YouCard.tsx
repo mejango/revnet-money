@@ -1,6 +1,7 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -39,14 +40,12 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PublicClient } from "viem";
-import { useAccount, usePublicClient, useReadContract, useReadContracts } from "wagmi";
+import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { ProjectItem } from "../../shared";
 import { AddLiquidityForm, LiquidityManager } from "../market/AmmCard";
 import {
   fetchAmmPresence,
   fetchAmmReferences,
-  readLpPositionFees,
   readUserLpPositions,
   type AmmPresence,
 } from "../market/lib";
@@ -104,7 +103,10 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   // Network selection comes first so a wallet on Base never lands on a
   // Mainnet form by default.
   const [liquidityChain, setLiquidityChain] = useState<JBChainId | null>(null);
-  const { chainId: walletChainId } = useAccount();
+  // The positions-first view the You table's LP cell opens — the same
+  // hierarchy as juicebox.money's "Your liquidity" modal.
+  const [positionsOpen, setPositionsOpen] = useState(false);
+  const { chainId: walletChainId, address: connectedAddress } = useAccount();
   const openLiquidity = useCallback(
     (target?: JBChainId) => {
       const pooled = pooledAmmStates.find((state) => state.chainId === (target ?? walletChainId));
@@ -114,7 +116,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   );
   const { data: dialogAmmStates } = useQuery({
     queryKey: ["v6AmmReferences", chainProjectsKey(ammChains)],
-    enabled: liquidityChain != null && pooledAmmStates.length > 0,
+    enabled: (liquidityChain != null || positionsOpen) && pooledAmmStates.length > 0,
     staleTime: 60_000,
     queryFn: () => fetchAmmReferences(pooledAmmStates),
   });
@@ -342,7 +344,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                   isRevnet={projectData?.project?.isRevnet ?? undefined}
                   onQuote={reportQuote}
                   ammState={ammPresence?.find((state) => state.chainId === b.chainId)}
-                  onManage={() => openLiquidity(b.chainId as JBChainId)}
+                  onManage={() => setPositionsOpen(true)}
                 />
               ))}
             </TableBody>
@@ -441,7 +443,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
             className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
             onClick={() => openLiquidity()}
           >
-            Manage market liquidity
+            Add liquidity
           </Button>
         ) : null}
 
@@ -452,12 +454,38 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
         )}
       </div>
 
+      {positionsOpen && pooledAmmStates.length > 0 ? (
+        <Dialog open onOpenChange={(next) => !next && setPositionsOpen(false)}>
+          <DialogContent className="max-w-2xl">
+            <DialogTitle className="text-base font-medium">Your liquidity</DialogTitle>
+            <p className="text-sm text-zinc-500">
+              Positions owned by{" "}
+              {connectedAddress ? (
+                <EthereumAddress address={connectedAddress} short withEnsName />
+              ) : (
+                "your connected wallet"
+              )}{" "}
+              in the project&apos;s market pools.
+            </p>
+            {dialogAmmStates ? (
+              <LiquidityManager
+                states={dialogAmmStates}
+                tokenSymbol={tokenSymbol}
+                heading={null}
+              />
+            ) : (
+              <SkeletonLines lines={3} />
+            )}
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
       {liquidityChain != null && pooledAmmStates.length > 0 ? (
         <Dialog open onOpenChange={(next) => !next && setLiquidityChain(null)}>
           <DialogContent className="max-w-lg">
             <DialogTitle className="text-base font-medium">Market liquidity</DialogTitle>
             <p className="text-sm text-zinc-500">
-              Add liquidity or manage positions owned by your connected wallet.
+              Add liquidity from your connected wallet.
             </p>
             <div className="flex flex-wrap gap-1">
               {pooledAmmStates.map((state) => (
@@ -477,10 +505,11 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
               return (
                 <div key={state.chainId}>
                   <AddLiquidityForm state={state} tokenSymbol={tokenSymbol} />
-                  <LiquidityManager state={state} tokenSymbol={tokenSymbol} />
                 </div>
               );
             })()}
+            {/* Existing positions live in the positions-first "Your liquidity"
+                dialog (the You table's LP cell); this dialog only adds. */}
           </DialogContent>
         </Dialog>
       ) : null}
@@ -554,24 +583,20 @@ function LiquidityChainPill({
 }
 
 /**
- * The wallet's LP standing on one chain: how many positions it owns and what
- * they have earned, revealing the card's own Market liquidity section to claim
+ * The wallet's LP standing on one chain: how many positions it owns, revealing
+ * the card's own Market liquidity section to see earned fees, claim,
  * or exit. "—" where the chain has no pool or the wallet has no position; an
  * unreadable scan says so rather than reading as "none".
  */
 function YourLpCell({
   ammState,
-  tokenSymbol,
   onManage,
 }: {
   ammState: AmmPresence | undefined;
-  tokenSymbol: string;
   onManage: () => void;
 }) {
   const { address } = useViewedAccount();
   const pool = ammState?.pool ?? null;
-  const client = usePublicClient({ chainId: Number(pool?.chainId ?? 1) }) as
-    PublicClient | undefined;
 
   const positions = useQuery({
     queryKey: ["revnetWalletLpPositions", pool?.chainId, pool?.poolId, address?.toLowerCase()],
@@ -579,35 +604,6 @@ function YourLpCell({
     retry: 0,
     staleTime: 30_000,
     queryFn: () => readUserLpPositions(pool!, address!),
-  });
-
-  const fees = useQuery({
-    queryKey: [
-      "revnetWalletLpFeeTotals",
-      pool?.chainId,
-      pool?.poolId,
-      (positions.data ?? []).map((position) => position.tokenId.toString()).join(","),
-    ],
-    enabled: Boolean(pool && client && positions.data?.length),
-    retry: 0,
-    staleTime: 30_000,
-    queryFn: async () => {
-      const owed = await Promise.all(
-        (positions.data ?? []).map((position) =>
-          readLpPositionFees(client!, pool!, position).catch(() => null),
-        ),
-      );
-      return owed.reduce<{ pairFees: bigint; tokenFees: bigint }>(
-        (sum, entry) =>
-          entry
-            ? {
-                pairFees: sum.pairFees + entry.pairFees,
-                tokenFees: sum.tokenFees + entry.tokenFees,
-              }
-            : sum,
-        { pairFees: 0n, tokenFees: 0n },
-      );
-    },
   });
 
   if (!address || !pool) return <>—</>;
@@ -624,12 +620,6 @@ function YourLpCell({
   }
   if (!positions.data?.length) return <>—</>;
 
-  const owed = fees.data;
-  const owedLabel =
-    owed && (owed.pairFees > 0n || owed.tokenFees > 0n)
-      ? `${formatUnits(owed.tokenFees, 18, { fractionDigits: 4 })} ${tokenSymbol} + ${formatUnits(owed.pairFees, pool.pair.decimals, { fractionDigits: 4 })} ${pool.pair.symbol} fees`
-      : null;
-
   return (
     <button
       type="button"
@@ -637,7 +627,6 @@ function YourLpCell({
       className="underline decoration-dotted underline-offset-2 hover:text-zinc-900"
     >
       {positions.data.length} {positions.data.length === 1 ? "position" : "positions"}
-      {owedLabel ? <span className="block text-xs text-zinc-500">{owedLabel}</span> : null}
     </button>
   );
 }
@@ -745,7 +734,7 @@ function YouChainRow({
       </TableCell>
       <TableCell className="text-right tabular-nums whitespace-nowrap">{loanCell()}</TableCell>
       <TableCell className="text-right whitespace-nowrap">
-        <YourLpCell ammState={ammState} tokenSymbol={tokenSymbol} onManage={onManage} />
+        <YourLpCell ammState={ammState} onManage={onManage} />
       </TableCell>
     </TableRow>
   );

@@ -119,4 +119,23 @@ describe("ParaAuthSheet verification", () => {
     await waitFor(() => expect(para.waitForWalletCreation).toHaveBeenCalled());
     open.mockRestore();
   });
+
+  it("keeps a user-initiated passkey button when Para's first popup is blocked", async () => {
+    para.authPhase = "waiting_for_session";
+    para.authStateInfo = {
+      passkeyUrl: "https://app.getpara.com/v2/login/passkey",
+    };
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+
+    render(<ParaAuthSheet entry="me@example.com" onEntryChange={() => {}} onClose={() => {}} />);
+
+    const passkeyButton = await screen.findByRole("button", { name: "Open passkey" });
+    fireEvent.click(passkeyButton);
+    expect(open).toHaveBeenLastCalledWith(
+      "https://app.getpara.com/v2/login/passkey",
+      "ParaAuth",
+      "popup,width=420,height=560",
+    );
+    open.mockRestore();
+  });
 });

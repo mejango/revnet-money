@@ -772,6 +772,30 @@ export type IndexedLpPositionsQuery = {
   } | null;
 };
 
+export type IndexedPoolLiquidityEventsQueryVariables = IndexedBuybackPoolsQueryVariables & {
+  limit: number;
+  offset: number;
+};
+/** One ModifyLiquidity in a project's buyback pool, in the order it happened. */
+export type IndexedPoolLiquidityEventsQuery = {
+  buybackPoolLiquidityEvents: {
+    items: Array<{
+      chainId: number;
+      projectId: number;
+      version: number;
+      timestamp: number;
+      poolId: string;
+      tokenId: string;
+      tickLower: number;
+      tickUpper: number;
+      liquidityDelta: string;
+      liquidityAfter: string;
+      sqrtPriceX96: string | null;
+    }>;
+    totalCount: number;
+  };
+};
+
 export type IndexedPoolSwapsQueryVariables = IndexedBuybackPoolsQueryVariables & {
   limit: number;
   offset: number;

@@ -343,3 +343,100 @@ export function safeExecutionArgs(tx: SafeQueuedTransaction, allowedOwners?: rea
     signatures,
   ] as const;
 }
+
+// ── Proposing a new transaction ───────────────────────────────────────────────
+
+/** The zero-gas SafeTx shape this app proposes: a plain CALL with no refund parameters. */
+export function safeProposalFor(
+  call: { to: Address; data: Hex; value?: bigint },
+  nonce: number,
+): SafeQueuedTransaction {
+  return {
+    to: getAddress(call.to),
+    value: (call.value ?? 0n).toString(),
+    data: call.data,
+    operation: 0,
+    safeTxGas: "0",
+    baseGas: "0",
+    gasPrice: "0",
+    gasToken: zeroAddress,
+    refundReceiver: zeroAddress,
+    nonce,
+    confirmations: [],
+  };
+}
+
+/** Whether a queued transaction is this exact call (target, calldata, value, plain CALL). */
+export function queuedTransactionMatchesCall(
+  tx: SafeQueuedTransaction,
+  call: { to: Address; data: Hex; value?: bigint },
+): boolean {
+  return (
+    isAddressEqual(tx.to, call.to) &&
+    (tx.data ?? "0x").toLowerCase() === call.data.toLowerCase() &&
+    BigInt(tx.value ?? 0) === (call.value ?? 0n) &&
+    Number(tx.operation ?? 0) === 0
+  );
+}
+
+/**
+ * The nonce a new proposal takes: right after everything already queued, and
+ * never below the Safe's own nonce. Reusing a queued nonce would silently
+ * offer a REPLACEMENT of that transaction, which is never what an operator
+ * adding a new call means.
+ */
+export function nextProposalNonce(
+  currentNonce: number,
+  pending: readonly SafeQueuedTransaction[],
+): number {
+  const highest = pending.reduce(
+    (value, tx) => Math.max(value, Number(tx.nonce)),
+    currentNonce - 1,
+  );
+  return Math.max(currentNonce, highest + 1);
+}
+
+/**
+ * Queue a signed proposal with the Safe Transaction Service so the Safe's
+ * other signers can confirm and execute it (here, or in the Safe app). The
+ * hash is recomputed from the exact payload rather than trusted from anywhere
+ * else, and every address is checksummed — the service rejects lowercase.
+ */
+export async function proposeSafeTransaction(
+  chainId: number,
+  safe: Address,
+  tx: SafeQueuedTransaction,
+  sender: Address,
+  signature: Hex,
+): Promise<Hex> {
+  const base = serviceBase(chainId);
+  if (!base) throw new Error("Safe queue service is unavailable on this chain.");
+  const safeTxHash = safeTransactionHash(chainId, safe, tx);
+  const response = await fetch(`${base}/api/v1/safes/${getAddress(safe)}/multisig-transactions/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: getAddress(tx.to),
+      value: String(tx.value ?? 0),
+      data: tx.data ?? "0x",
+      operation: Number(tx.operation ?? 0),
+      safeTxGas: String(tx.safeTxGas ?? 0),
+      baseGas: String(tx.baseGas ?? 0),
+      gasPrice: String(tx.gasPrice ?? 0),
+      gasToken: tx.gasToken ?? zeroAddress,
+      refundReceiver: tx.refundReceiver ?? zeroAddress,
+      nonce: String(tx.nonce),
+      contractTransactionHash: safeTxHash,
+      sender: getAddress(sender),
+      signature,
+      origin: "revnet.money",
+    }),
+  });
+  if (!response.ok && response.status !== 201) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      `Safe proposal service returned ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}.`,
+    );
+  }
+  return safeTxHash;
+}

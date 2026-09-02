@@ -71,3 +71,38 @@ export function smoothPriceSeries(points: PriceSeriesPoint[], maxBuckets = 96): 
   smoothed.push({ timestamp: end, value: latest.value });
   return smoothed;
 }
+
+/** Both sides of the pool at one moment, each in whole pair tokens (the token side at that moment's pool price). */
+export type PoolReservePoint = {
+  timestamp: number;
+  pairValue: number;
+  tokenValue: number;
+};
+
+/**
+ * The pool's reserves resampled onto `count` even buckets across [start, end], each taking the
+ * last observation at or before its centre — so the bars sit on a regular grid whatever the
+ * trade cadence. Buckets before the first observation are omitted rather than drawn empty.
+ */
+export function bucketPoolReserves(
+  points: readonly PoolReservePoint[],
+  start: number,
+  end: number,
+  count: number,
+): PoolReservePoint[] {
+  const observed = [...points].sort((a, b) => a.timestamp - b.timestamp);
+  if (!observed.length || !(end > start) || count < 1) return [];
+  const width = (end - start) / count;
+  const buckets: PoolReservePoint[] = [];
+  let index = 0;
+  let current: PoolReservePoint | undefined;
+  for (let bucket = 0; bucket < count; bucket += 1) {
+    const timestamp = start + (bucket + 0.5) * width;
+    while (index < observed.length && observed[index].timestamp <= timestamp) {
+      current = observed[index++];
+    }
+    if (!current) continue;
+    buckets.push({ ...current, timestamp });
+  }
+  return buckets;
+}

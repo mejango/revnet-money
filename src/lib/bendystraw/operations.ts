@@ -21,6 +21,8 @@ import type {
   IndexedBuybackPoolsQueryVariables,
   IndexedLpPositionsQuery,
   IndexedLpPositionsQueryVariables,
+  IndexedPoolLiquidityEventsQuery,
+  IndexedPoolLiquidityEventsQueryVariables,
   IndexedPoolSwapsQuery,
   IndexedPoolSwapsQueryVariables,
   IndexedProjectsQuery,
@@ -450,6 +452,20 @@ export const IndexedPoolSwapsOperation = operation<
   }),
   hasIdentityItems("swapEvents"),
 );
+export const IndexedPoolLiquidityEventsOperation = operation<
+  IndexedPoolLiquidityEventsQuery,
+  IndexedPoolLiquidityEventsQueryVariables
+>(
+  "indexed-pool-liquidity-events.v1",
+  variablesWith({
+    projectId: isNumber,
+    chainId: isNumber,
+    version: isNumber,
+    limit: positiveLimit,
+    offset,
+  }),
+  hasIdentityItems("buybackPoolLiquidityEvents"),
+);
 export const OwnedNftsOperation = operation<OwnedNftsQuery, OwnedNftsQueryVariables>(
   "owned-nfts.v1",
   variablesWith({ where: filter, limit: positiveLimit, offset }),
@@ -503,6 +519,7 @@ export const BENDYSTRAW_OPERATIONS = [
   IndexedBuybackPoolsOperation,
   IndexedLpPositionsOperation,
   IndexedPoolSwapsOperation,
+  IndexedPoolLiquidityEventsOperation,
   OwnedNftsOperation,
   MintNftEventsOperation,
   ShieldProjectOperation,

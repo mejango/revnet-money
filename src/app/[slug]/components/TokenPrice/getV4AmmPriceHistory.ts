@@ -1,11 +1,16 @@
 import { usdRateOf } from "@/lib/baseCurrencyRate";
 import {
   IndexedBuybackPoolsOperation,
-  IndexedLpPositionsOperation,
+  IndexedPoolLiquidityEventsOperation,
   IndexedPoolSwapsOperation,
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import type { IndexedBuybackPoolsQuery, IndexedPoolSwapsQuery } from "@/lib/bendystraw/types";
+import type {
+  IndexedBuybackPoolsQuery,
+  IndexedPoolLiquidityEventsQuery,
+  IndexedPoolSwapsQuery,
+} from "@/lib/bendystraw/types";
+import type { PoolReservePoint } from "@/lib/priceSeries";
 import { downsampleTimeSeries, JBChainId } from "@bananapus/nana-sdk-core";
 import {
   uniswapV4AmountsForLiquidity,
@@ -22,34 +27,36 @@ type RawPool = IndexedBuybackPoolsQuery["buybackPoolEvents"]["items"][number];
 /** What the pool holds right now: exact reserves at the latest indexed price, fees excluded. */
 export type PoolLiquidity = { tokenAmount: bigint; pairAmount: bigint };
 
-/**
- * Reserves from the indexed positions, valued at `sqrtPriceX96`. Null when the index has no
- * positions for this pool — which reads the same as an empty pool, so callers show nothing
- * rather than "0".
- */
-async function indexedPoolLiquidity(
-  chainId: JBChainId,
-  poolId: string,
+type RawLiquidityEvent = IndexedPoolLiquidityEventsQuery["buybackPoolLiquidityEvents"]["items"][number];
+type Position = { lower: bigint; upper: bigint; liquidity: bigint };
+
+/** Applies one liquidity change to the set of open positions, keyed by NFT id. */
+function applyLiquidityEvent(positions: Map<string, Position>, event: RawLiquidityEvent) {
+  const liquidity = BigInt(event.liquidityAfter);
+  if (liquidity > 0n) {
+    positions.set(event.tokenId, {
+      lower: uniswapV4SqrtPriceX96AtTick(event.tickLower),
+      upper: uniswapV4SqrtPriceX96AtTick(event.tickUpper),
+      liquidity,
+    });
+  } else {
+    positions.delete(event.tokenId);
+  }
+}
+
+function poolAmountsAt(
+  positions: Iterable<Position>,
   sqrtPriceX96: bigint,
   projectTokenIsCurrency0: boolean,
-): Promise<PoolLiquidity | null> {
-  const result = await queryBendystraw(chainId, IndexedLpPositionsOperation, {
-    chainId: Number(chainId),
-    poolId,
-    limit: 250,
-  });
-  const items = result.buybackPoolPositions?.items ?? [];
-  if (!items.length) return null;
+): PoolLiquidity {
   let amount0 = 0n;
   let amount1 = 0n;
-  for (const item of items) {
-    const liquidity = BigInt(item.liquidity);
-    if (liquidity <= 0n) continue;
+  for (const position of positions) {
     const amounts = uniswapV4AmountsForLiquidity(
       sqrtPriceX96,
-      uniswapV4SqrtPriceX96AtTick(item.tickLower),
-      uniswapV4SqrtPriceX96AtTick(item.tickUpper),
-      liquidity,
+      position.lower,
+      position.upper,
+      position.liquidity,
     );
     amount0 += amounts.amount0;
     amount1 += amounts.amount1;
@@ -58,6 +65,70 @@ async function indexedPoolLiquidity(
     ? { tokenAmount: amount0, pairAmount: amount1 }
     : { tokenAmount: amount1, pairAmount: amount0 };
 }
+
+/** What the pool holds after every indexed change, at `sqrtPriceX96`. Null when it never held anything. */
+function livePoolLiquidity(
+  events: RawLiquidityEvent[],
+  sqrtPriceX96: bigint,
+  projectTokenIsCurrency0: boolean,
+): PoolLiquidity | null {
+  if (!events.length) return null;
+  const positions = new Map<string, Position>();
+  for (const event of events) applyLiquidityEvent(positions, event);
+  return poolAmountsAt(positions.values(), sqrtPriceX96, projectTokenIsCurrency0);
+}
+
+/**
+ * Both sides of the pool over time, for the faint bars under the pool line: every liquidity
+ * change replayed in order, with the reserves re-read at each change (at the price the index
+ * recorded there) and at each trade's exact post-swap price. Values are only ever compared
+ * with each other, so they stay in the pair token's units and off the chart's axis.
+ */
+function replayPoolReserves(
+  events: RawLiquidityEvent[],
+  prices: { timestamp: number; sqrtPriceX96: string }[],
+  projectTokenIsCurrency0: boolean,
+  terminalDecimals: number,
+): PoolReservePoint[] {
+  const positions = new Map<string, Position>();
+  const reservesAt = (timestamp: number, sqrtPriceX96: bigint): PoolReservePoint[] => {
+    const ammPrice = v4PriceFromSqrtPriceX96(sqrtPriceX96, projectTokenIsCurrency0, terminalDecimals);
+    if (!ammPrice) return [];
+    const { tokenAmount, pairAmount } = poolAmountsAt(
+      positions.values(),
+      sqrtPriceX96,
+      projectTokenIsCurrency0,
+    );
+    return [
+      {
+        timestamp,
+        pairValue: Number(pairAmount) / 10 ** terminalDecimals,
+        tokenValue: (Number(tokenAmount) / 1e18) * ammPrice,
+      },
+    ];
+  };
+
+  // One ordered timeline; a liquidity change in the same second as a trade applies first,
+  // so the trade's point already reflects it. Trades before the first change carry nothing.
+  const timeline = [
+    ...events.map((event) => ({ at: Number(event.timestamp), order: 0, event })),
+    ...prices.map((price) => ({ at: price.timestamp, order: 1, price })),
+  ].sort((a, b) => a.at - b.at || a.order - b.order);
+
+  const out: PoolReservePoint[] = [];
+  let seenLiquidity = false;
+  for (const item of timeline) {
+    if ("event" in item) {
+      applyLiquidityEvent(positions, item.event);
+      seenLiquidity = true;
+      if (item.event.sqrtPriceX96) out.push(...reservesAt(item.at, BigInt(item.event.sqrtPriceX96)));
+    } else if (seenLiquidity) {
+      out.push(...reservesAt(item.at, BigInt(item.price.sqrtPriceX96)));
+    }
+  }
+  return out;
+}
+
 type RawSwap = IndexedPoolSwapsQuery["swapEvents"]["items"][number];
 
 function v4PriceFromSqrtPriceX96(
@@ -90,7 +161,12 @@ export async function getV4AmmPriceHistory({
   terminalDecimals: number;
   /** Selects the pool directly when the caller already read it onchain. */
   poolId?: string;
-}): Promise<{ data: PriceDataPoint[]; hasPool: boolean; liquidity: PoolLiquidity | null }> {
+}): Promise<{
+  data: PriceDataPoint[];
+  hasPool: boolean;
+  liquidity: PoolLiquidity | null;
+  reserves: PoolReservePoint[];
+}> {
   const variables = {
     projectId: Number(projectId),
     chainId: Number(chainId),
@@ -112,7 +188,7 @@ export async function getV4AmmPriceHistory({
   const pool = poolId
     ? pools.find((item) => item.poolId.toLowerCase() === poolId.toLowerCase())
     : pools.find((item) => item.terminalToken.toLowerCase() === terminalToken?.toLowerCase());
-  if (!pool) return { data: [], hasPool: false, liquidity: null };
+  if (!pool) return { data: [], hasPool: false, liquidity: null, reserves: [] };
 
   const swaps: RawSwap[] = [];
   let totalCount = 0;
@@ -128,14 +204,34 @@ export async function getV4AmmPriceHistory({
     if (items.length === 0 || swaps.length >= totalCount) break;
   }
 
+  const liquidityEvents: RawLiquidityEvent[] = [];
+  let liquidityTotal = 0;
+  do {
+    const page = await queryBendystraw(chainId, IndexedPoolLiquidityEventsOperation, {
+      ...variables,
+      limit: PAGE_SIZE,
+      offset: liquidityEvents.length,
+    });
+    const items = page.buybackPoolLiquidityEvents?.items ?? [];
+    liquidityTotal = page.buybackPoolLiquidityEvents?.totalCount ?? items.length;
+    liquidityEvents.push(...items);
+    if (!items.length) break;
+  } while (liquidityEvents.length < liquidityTotal);
+
   const data: PriceDataPoint[] = [];
+  // Every exact pool price the index saw, for the reserves replay below.
+  const pricePoints: { timestamp: number; sqrtPriceX96: string }[] = [];
   if (pool.initialSqrtPriceX96 && pool.projectTokenIsCurrency0 !== null) {
     const ammPrice = v4PriceFromSqrtPriceX96(
       pool.initialSqrtPriceX96,
       pool.projectTokenIsCurrency0,
       terminalDecimals,
     );
-    if (ammPrice) data.push({ timestamp: Number(pool.timestamp), ammPrice });
+    const timestamp = Number(pool.timestamp);
+    if (ammPrice) {
+      data.push({ timestamp, ammPrice });
+      pricePoints.push({ timestamp, sqrtPriceX96: pool.initialSqrtPriceX96 });
+    }
   }
 
   for (const swap of swaps) {
@@ -157,15 +253,28 @@ export async function getV4AmmPriceHistory({
       ammPrice = projectAmount > 0 ? terminalAmount / projectAmount : null;
     }
     if (ammPrice && Number.isFinite(ammPrice)) {
+      const timestamp = Number(swap.timestamp);
       data.push({
-        timestamp: Number(swap.timestamp),
+        timestamp,
         ammPrice,
         accountingTokenUsdRate: usdRateOf(swap.accountingTokenUsdRate),
       });
+      if (swap.sqrtPriceX96) {
+        pricePoints.push({ timestamp, sqrtPriceX96: swap.sqrtPriceX96 });
+      }
     }
   }
 
   data.sort((a, b) => a.timestamp - b.timestamp);
+  pricePoints.sort((a, b) => a.timestamp - b.timestamp);
+
+  const poolEvents = liquidityEvents.filter(
+    (event) => event.poolId.toLowerCase() === pool.poolId.toLowerCase(),
+  );
+  const reserves =
+    pool.projectTokenIsCurrency0 === null
+      ? []
+      : replayPoolReserves(poolEvents, pricePoints, pool.projectTokenIsCurrency0, terminalDecimals);
 
   // The latest price the index saw: the last trade's, else the pool's initial one.
   const lastTrade = [...swaps]
@@ -179,12 +288,11 @@ export async function getV4AmmPriceHistory({
   const latestSqrtPriceX96 = lastTrade?.sqrtPriceX96 ?? pool.initialSqrtPriceX96;
   const liquidity =
     latestSqrtPriceX96 && pool.projectTokenIsCurrency0 !== null
-      ? await indexedPoolLiquidity(
-          chainId,
-          pool.poolId,
+      ? livePoolLiquidity(
+          poolEvents,
           BigInt(latestSqrtPriceX96),
           pool.projectTokenIsCurrency0,
-        ).catch(() => null)
+        )
       : null;
 
   return {
@@ -196,5 +304,6 @@ export async function getV4AmmPriceHistory({
     ),
     hasPool: true,
     liquidity,
+    reserves,
   };
 }

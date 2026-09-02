@@ -47,6 +47,16 @@ type ChartBand = {
   fill: string;
 };
 
+/**
+ * One stacked bar on its own hidden scale, sized against the tallest bar; context under the
+ * series rather than a plotted value. Segments stack from the plot's bottom edge, in order.
+ */
+export type ChartBar = {
+  key: string;
+  x: number;
+  segments: readonly { value: number; fill: string }[];
+};
+
 export type ChartReferenceLine = {
   key: string;
   x: number;
@@ -108,6 +118,9 @@ export type CartesianChartProps<T extends ChartDatum> = {
   yAxisLabel?: string;
   grid?: "horizontal" | "both" | "none";
   bands?: readonly ChartBand[];
+  bars?: readonly ChartBar[];
+  /** The tallest bar's share of the plot height. */
+  barsHeight?: number;
   referenceLines?: readonly ChartReferenceLine[];
   tooltip: (context: ChartTooltipContext<T>) => ReactNode;
   activeIndex?: number | null;
@@ -136,6 +149,8 @@ export function CartesianChart<T extends ChartDatum>({
   yAxisLabel,
   grid = "horizontal",
   bands = [],
+  bars = [],
+  barsHeight = 0.28,
   referenceLines = [],
   tooltip,
   activeIndex: controlledActiveIndex,
@@ -422,6 +437,38 @@ export function CartesianChart<T extends ChartDatum>({
                   strokeDasharray="3 3"
                 />
               ))
+            : null}
+
+          {bars.length > 0
+            ? (() => {
+                const tallest = Math.max(
+                  ...bars.map((bar) => bar.segments.reduce((sum, s) => sum + s.value, 0)),
+                );
+                if (!(tallest > 0)) return null;
+                const unit = ((plotBottom - plotTop) * barsHeight) / tallest;
+                const barWidth = Math.max(1, ((plotRight - plotLeft) / bars.length) * 0.7);
+                return bars.map((bar) => {
+                  let top = plotBottom;
+                  return (
+                    <g key={bar.key}>
+                      {bar.segments.map((segment, index) => {
+                        const height = Math.max(0, segment.value) * unit;
+                        top -= height;
+                        return (
+                          <rect
+                            key={index}
+                            x={scaleX(bar.x) - barWidth / 2}
+                            y={top}
+                            width={barWidth}
+                            height={height}
+                            fill={segment.fill}
+                          />
+                        );
+                      })}
+                    </g>
+                  );
+                });
+              })()
             : null}
 
           {referenceLines.map((line) => {

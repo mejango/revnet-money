@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
-import { isSafeProposalPendingError, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { readAuthorityIdentity } from "@/lib/cross-chain-authority";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
@@ -20,11 +20,11 @@ import {
   ChainWrite,
   chainName,
   publicClientFor,
-  runSequentialWrites,
   v6ContractAddress,
 } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
 import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
+import { useOperatorWrites } from "./useOperatorWrites";
 
 type AccountRow = ChainProjectRow & {
   operator: Address | null;
@@ -221,7 +221,7 @@ export function OperatorAccountCard({
 
 function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: () => void }) {
   const { address } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const { runWrites } = useOperatorWrites();
   const { toast } = useToast();
 
   const [open, setOpen] = useState(false);
@@ -255,17 +255,30 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
           abi: revOwnerAbi,
           functionName: "setOperatorOf",
           args: [BigInt(row.projectId), to as Address],
+          contractName: "REVOwner",
+          authority: (group.operator as Address | null) ?? undefined,
         };
       });
-      const done = await runSequentialWrites({
+      const result = await runWrites({
         writes,
         account: address,
-        writeContractAsync,
+        label: "Transfer revnet operator",
         onProgress: setStatus,
       });
-      setStatus(`Revnet operator transferred on ${done} chain${done === 1 ? "" : "s"}.`);
-      toast({ title: "Revnet operator transferred" });
-      setOpen(false);
+      if (result.safeQueued || result.safeConfirmed) {
+        const queued = result.safeQueued + result.safeConfirmed;
+        const message =
+          `Transfer proposed to the operator Safe on ${queued} chain${queued === 1 ? "" : "s"}. ` +
+          "Nothing changes until its signers confirm and execute it from the Safe queue card above or the Safe app.";
+        setStatus(message);
+        toast({ title: "Proposed to the operator Safe", description: message });
+      } else {
+        setStatus(
+          `Revnet operator transferred on ${result.chains} chain${result.chains === 1 ? "" : "s"}.`,
+        );
+        toast({ title: "Revnet operator transferred" });
+        setOpen(false);
+      }
       onDone();
     } catch (e) {
       const message = formatWalletError(e) || "Could not transfer the revnet operator.";
@@ -313,7 +326,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
       {!isCurrentOperator ? (
         <p className="text-xs text-amber-700 mt-2">
           Only the current revnet operator ({group.operator}) can transfer this role — connect that
-          account to proceed. The transaction is simulated first and will not send otherwise.
+          account, or one of its signers if it is a Safe, and the change is proposed to the Safe.
+          The transaction is simulated first and will not send otherwise.
         </p>
       ) : null}
       <div className="mt-2">

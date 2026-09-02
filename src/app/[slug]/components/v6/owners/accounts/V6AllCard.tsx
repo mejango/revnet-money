@@ -66,7 +66,7 @@ export function V6AllCard() {
     : null;
 
   return (
-    <div>
+    <div className="@container">
       <p className="text-md text-black font-light italic mb-2">
         {formatTokenSymbol(token)} owners are accounts who either paid in, received splits, received
         auto issuance, or traded for them on the secondary market.
@@ -74,7 +74,7 @@ export function V6AllCard() {
       {participantsQuery.isError ? (
         <p className="mb-3 text-sm text-red-600">Owner balances are temporarily unavailable.</p>
       ) : null}
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(280px,0.72fr)_minmax(560px,1.28fr)]">
+      <div className="grid items-start gap-8 @4xl:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
         <div className="min-w-0">
           <ParticipantsPieChart
             participants={participants}

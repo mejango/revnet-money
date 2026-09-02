@@ -314,7 +314,7 @@ export function Header(props: Props) {
                       </span>
                     ) : null}
                     {suckers?.length ? (
-                      <span ref={chainsRef} className="relative inline-flex items-center">
+                      <span ref={chainsRef} className="relative inline-flex items-baseline">
                         {joinedMetadata.chains ? (
                           <span
                             aria-hidden
@@ -322,7 +322,7 @@ export function Header(props: Props) {
                           />
                         ) : null}
                         <span className="text-zinc-500">On:</span>
-                        <span className="ml-0.5 inline-flex items-center">
+                        <span className="ml-0.5 inline-flex">
                           {suckers.map((pair) => {
                             const networkSlug = JB_CHAINS[pair.peerChainId].slug;
                             return (
@@ -333,7 +333,7 @@ export function Header(props: Props) {
                                   name: projectName ?? tokenSymbol ?? `Project ${pair.projectId}`,
                                   logoUri: logoUri ?? null,
                                 }}
-                                className="inline-flex min-h-11 items-center justify-center px-1 transition-opacity hover:opacity-70 sm:min-h-0"
+                                className="relative inline-flex translate-y-[2px] px-1 transition-opacity before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] hover:opacity-70"
                               >
                                 <ChainLogo
                                   chainId={pair.peerChainId as JBChainId}

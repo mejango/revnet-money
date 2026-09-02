@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { isSafeProposalPendingError, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { clearExtensionSalt, saltForExtension } from "@/lib/suckerExtensionSalt";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -24,19 +24,15 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { useAccount } from "wagmi";
-import {
-  chainName,
-  ChainProjectRow,
-  publicClientFor,
-  runSequentialWrites,
-  v6ContractAddress,
-} from "./operatorLib";
+import { chainName, ChainProjectRow, publicClientFor, v6ContractAddress } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
 import {
   assetsFromAccountingContexts,
   buildSuckerExtensionWrites,
   extensionCandidateChains,
 } from "./suckerExtensionLib";
+import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
+import { useOperatorWrites } from "./useOperatorWrites";
 
 const ZERO_HASH = `0x${"0".repeat(64)}`;
 
@@ -54,7 +50,8 @@ const ZERO_HASH = `0x${"0".repeat(64)}`;
  */
 export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
   const { address } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const { runWrites } = useOperatorWrites();
+  const { operatorByChain } = useLiveRevnetOperators(rows);
   const { toast } = useToast();
 
   const [open, setOpen] = useState(false);
@@ -146,17 +143,27 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
         targetProjectId: projectId,
         assets,
         salt,
-      });
+      }).map((write) => ({ ...write, authority: operatorByChain.get(write.chainId) }));
 
-      const done = await runSequentialWrites({
+      const result = await runWrites({
         writes,
         account: address,
-        writeContractAsync,
+        label: "Deploy suckers",
         onProgress: setStatus,
       });
+      if (result.safeQueued || result.safeConfirmed) {
+        // The proposals carry this salt; a retry must find them, not mint a new one.
+        const queued = result.safeQueued + result.safeConfirmed;
+        const message =
+          `Sucker deployment proposed to the operator Safe on ${queued} chain${queued === 1 ? "" : "s"}. ` +
+          "Every chain's proposal must execute for the peers to pair; the Safe queue card above lists them.";
+        setStatus(message);
+        toast({ title: "Proposed to the operator Safe", description: message });
+        return;
+      }
       // Every chain landed, so the next extension should start from a new salt.
       clearExtensionSalt(address, projectId, target);
-      setStatus(`Suckers deployed on ${done} chain${done === 1 ? "" : "s"}.`);
+      setStatus(`Suckers deployed on ${result.chains} chain${result.chains === 1 ? "" : "s"}.`);
       toast({ title: `Extended to ${chainName(target)}` });
       setOpen(false);
     } catch (e) {

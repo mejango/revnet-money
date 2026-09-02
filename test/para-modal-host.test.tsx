@@ -245,7 +245,7 @@ describe("ParaModalHost", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(true));
     await waitFor(() => expect(hostDialog().open).toBe(true));
     expect(para.state.openModalCalls).toEqual([]);
-    expect(screen.getByText(/You will receive a code/)).toBeTruthy();
+    expect(screen.getByText(/Use your passkey, or receive a code/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(1));
@@ -380,7 +380,9 @@ describe("ParaModalHost", () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByText(/You will receive a code/)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/Use your passkey, or receive a code/)).toBeTruthy(),
+    );
     expect(para.state.onRampCalls).toEqual([]);
     expect(para.state.openModalCalls).toEqual([]);
   });

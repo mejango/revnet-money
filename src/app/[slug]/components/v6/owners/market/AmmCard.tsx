@@ -31,7 +31,8 @@ import {
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   erc20Abi,
   formatUnits,
@@ -49,6 +50,7 @@ import {
   explorerAddressUrl,
   fmtUnits,
 } from "../settlement/lib";
+import { EditPositionPanel } from "./EditPositionPanel";
 import {
   describeAddLiquidityPlan,
   liquidityFormView,
@@ -237,8 +239,8 @@ function LiquidityProviders({ pool, tokenSymbol }: { pool: PoolSnapshot; tokenSy
   const totalPair = owners.reduce((sum, owner) => sum + owner.pair, 0n);
 
   return (
-    <div className="mb-6">
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(280px,0.72fr)_minmax(360px,1.28fr)]">
+    <div className="mb-6 @container">
+      <div className="grid items-start gap-8 @2xl:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
         <div className="min-w-0">
           <ParticipantsPieChart
             participants={participants}
@@ -623,6 +625,18 @@ export function AddLiquidityForm({
       return String(Number(seeded.min.toPrecision(6)));
     });
   }, [pool?.poolId, pool?.price, state.reference.cashOut, state.reference.issuance]);
+
+  const tokenBalance = useQuery({
+    queryKey: ["v6LpTokenBalance", chainId, pool?.projectToken, address],
+    enabled: !!address && !!pool && !!publicClient,
+    queryFn: () =>
+      publicClient!.readContract({
+        address: pool!.projectToken,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address!],
+      }),
+  });
 
   if (!pool || !POSITION_MANAGER_BY_CHAIN[chainId]) return null;
 
@@ -1016,6 +1030,11 @@ export function AddLiquidityForm({
               setReviewed(null);
             }}
           />
+          {tokenBalance.data != null ? (
+            <span className="mt-1 block text-right text-zinc-400">
+              {fmtUnits(tokenBalance.data, 18)} {tokenSymbol} in wallet
+            </span>
+          ) : null}
         </label>
         <label className="text-[11px] text-zinc-500">
           <span className="flex items-center justify-between">
@@ -1048,11 +1067,6 @@ export function AddLiquidityForm({
           <TxSteps
             steps={reviewSteps}
             activeIndex={busy ? stepIndex : -1}
-            intro={
-              reviewSteps.length > 1
-                ? `Your wallet will ask for ${reviewSteps.length} actions. This form stays open and advances through each one.`
-                : "Your wallet will ask for one action."
-            }
             className="mt-2 rounded border border-melon-200 bg-melon-50 p-3 text-xs"
           />
           <div className="mt-2 flex gap-2">
@@ -1110,25 +1124,124 @@ export function AddLiquidityForm({
   );
 }
 
+/**
+ * Every LP position the connected wallet holds across the project's chains, in
+ * one table (the same hierarchy juicescan and juicebox.money use): Chain |
+ * Position | Holdings | Unclaimed fees | Lifetime fees | actions. Each chain
+ * contributes its own row group so one slow or failing RPC never blanks the
+ * others; the aggregate "no positions" note only appears once every chain has
+ * reported an empty scan.
+ */
 export function LiquidityManager({
+  states,
+  tokenSymbol,
+  heading = "Your liquidity",
+}: {
+  states: AmmChainState[];
+  tokenSymbol: string;
+  /** Section heading; null when a dialog title already names the view. */
+  heading?: string | null;
+}) {
+  const { address } = useAccount();
+  const pooled = states.filter(
+    (state) => state.pool && POSITION_MANAGER_BY_CHAIN[Number(state.chainId)],
+  );
+  // Per-chain scan outcomes reported up by the row groups, so the aggregate
+  // empty state is knowable without lifting each chain's queries out of them.
+  const [scan, setScan] = useState<Record<number, number | "loading" | "error">>({});
+  // The edit/remove panels portal here, BELOW the scroll wrapper — inside the
+  // table they'd inherit its full scrollable width and get cut off.
+  const [panelHost, setPanelHost] = useState<HTMLDivElement | null>(null);
+  const onStatus = useCallback((chainId: number, status: number | "loading" | "error") => {
+    setScan((current) =>
+      current[chainId] === status ? current : { ...current, [chainId]: status },
+    );
+  }, []);
+
+  if (!pooled.length) return null;
+  const allEmpty = pooled.length > 0 && pooled.every((state) => scan[Number(state.chainId)] === 0);
+
+  return (
+    // min-w-0: as a grid item of the dialog panel this must be allowed to
+    // shrink, or the table's intrinsic width inflates the whole dialog.
+    <div className={heading ? "mt-3 min-w-0 border-t border-zinc-100 pt-3" : "min-w-0"}>
+      {heading ? <div className="text-xs font-medium text-zinc-600">{heading}</div> : null}
+      {!address ? (
+        <p className="mt-1 text-xs text-zinc-400">Connect a wallet to manage its LP positions.</p>
+      ) : (
+        <>
+          {allEmpty ? (
+            <p className="mt-1 text-xs text-zinc-400">
+              No positions owned by this wallet on any chain.
+            </p>
+          ) : null}
+          {/* Hidden rather than unmounted while empty so the per-chain queries
+              keep watching for a position minted from the form above. */}
+          <div className={allEmpty ? "hidden" : "mt-2 w-full min-w-0 overflow-auto"}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Chain</TableHead>
+                  <TableHead>Position</TableHead>
+                  <TableHead className="text-right">Holdings</TableHead>
+                  <TableHead className="text-right">Unclaimed fees</TableHead>
+                  <TableHead className="text-right">Lifetime fees</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pooled.map((state) => (
+                  <ChainPositionRows
+                    key={state.chainId}
+                    state={state}
+                    tokenSymbol={tokenSymbol}
+                    onStatus={onStatus}
+                    panelHost={panelHost}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div ref={setPanelHost} className="min-w-0" />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One chain's row group in the spanning positions table: the wallet's
+ * positions in that chain's pool, each with claim/move/remove. The move and
+ * remove flows render as full-width panel rows anchored under their position.
+ */
+function ChainPositionRows({
   state,
   tokenSymbol,
+  onStatus,
+  panelHost,
 }: {
   state: AmmChainState;
   tokenSymbol: string;
+  onStatus: (chainId: number, status: number | "loading" | "error") => void;
+  /** Where the edit/remove panels render, below the table's scroll wrapper. */
+  panelHost: HTMLDivElement | null;
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
+  const chainId = Number(state.chainId);
   const pool = state.pool;
-  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(state.chainId)];
+  const positionManager = POSITION_MANAGER_BY_CHAIN[chainId];
   const [reviewed, setReviewed] = useState<{
     position: UserLpPosition;
     plan: ReturnType<typeof prepareRemoveLiquidity>;
   } | null>(null);
+  // The position whose holdings/band are being edited in the panel below.
+  const [editing, setEditing] = useState<UserLpPosition | null>(null);
+  const [edited, setEdited] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
   const [claiming, setClaiming] = useState<bigint | null>(null);
-  const client = usePublicClient({ chainId: Number(state.chainId) }) as PublicClient | undefined;
+  const client = usePublicClient({ chainId }) as PublicClient | undefined;
   const {
     writeContractAsync,
     data: hash,
@@ -1174,6 +1287,13 @@ export function LiquidityManager({
   });
 
   useEffect(() => {
+    onStatus(
+      chainId,
+      positions.isLoading ? "loading" : positions.isError ? "error" : (positions.data?.length ?? 0),
+    );
+  }, [chainId, onStatus, positions.isLoading, positions.isError, positions.data?.length]);
+
+  useEffect(() => {
     if (receipt.isSuccess) {
       setReviewed(null);
       void positions.refetch();
@@ -1183,10 +1303,9 @@ export function LiquidityManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt.isSuccess]);
 
-  if (!pool || !positionManager) return null;
+  if (!pool || !positionManager || !address) return null;
 
   const beginReview = async (position: UserLpPosition) => {
-    if (!address) return;
     setError(null);
     setRefreshing(position.tokenId);
     try {
@@ -1206,13 +1325,12 @@ export function LiquidityManager({
   // there is no reviewed amount to re-verify — only the wallet's ownership,
   // which the PositionManager enforces itself.
   const claimFees = async (position: UserLpPosition) => {
-    if (!address) return;
     setError(null);
     setClaiming(position.tokenId);
     try {
       const plan = prepareCollectLpFees(pool, position, address, isSafeConnection(wagmiConfig));
       await writeContractAsync({
-        chainId: Number(state.chainId),
+        chainId,
         address: positionManager,
         abi: POSITION_MANAGER_ABI,
         functionName: "modifyLiquidities",
@@ -1226,7 +1344,7 @@ export function LiquidityManager({
   };
 
   const remove = async () => {
-    if (!reviewed || !address) return;
+    if (!reviewed) return;
     setError(null);
     try {
       const fresh = await refreshUserLpPosition(pool, reviewed.position.tokenId, address);
@@ -1234,7 +1352,7 @@ export function LiquidityManager({
         throw new Error("This position changed. Review its current return before removing it.");
       }
       await writeContractAsync({
-        chainId: Number(state.chainId),
+        chainId,
         address: positionManager,
         abi: POSITION_MANAGER_ABI,
         functionName: "modifyLiquidities",
@@ -1248,129 +1366,204 @@ export function LiquidityManager({
     }
   };
 
-  return (
-    <div className="mt-3 border-t border-zinc-100 pt-3">
-      <div className="text-xs font-medium text-zinc-600">Your liquidity</div>
-      {!address ? (
-        <p className="mt-1 text-xs text-zinc-400">Connect a wallet to manage its LP positions.</p>
-      ) : positions.isLoading ? (
-        <p className="mt-1 text-xs text-zinc-400">Reading your positions…</p>
-      ) : positions.isError ? (
-        <p className="mt-1 text-xs text-red-600">
+  const chainCell = (
+    <TableCell className="whitespace-nowrap">
+      <span className="inline-flex items-center gap-1.5">
+        <ChainLogo chainId={state.chainId} width={14} height={14} />
+        {chainName(state.chainId)}
+      </span>
+    </TableCell>
+  );
+
+  if (positions.isLoading) {
+    return (
+      <TableRow>
+        {chainCell}
+        <TableCell colSpan={5} className="text-xs text-zinc-400">
+          Reading your positions…
+        </TableCell>
+      </TableRow>
+    );
+  }
+  // An incomplete log scan must not read as "you have no positions".
+  if (positions.isError) {
+    return (
+      <TableRow>
+        {chainCell}
+        <TableCell colSpan={5} className="text-xs text-red-600">
           Could not verify the complete position history. Nothing has been hidden as an empty
           result.
-        </p>
-      ) : !positions.data?.length ? (
-        <p className="mt-1 text-xs text-zinc-400">
-          No positions owned by this wallet in this pool.
-        </p>
-      ) : (
-        <div className="mt-2 space-y-2">
-          {positions.data.map((position) => (
-            <div
-              key={position.tokenId.toString()}
-              className="flex flex-wrap items-center justify-between gap-2 border border-zinc-100 p-2 text-xs"
-            >
-              <span>
-                #{position.tokenId.toString()} | {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}{" "}
-                + {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
-                <span className="block text-zinc-500">
-                  {(() => {
-                    const owed = fees.data?.[position.tokenId.toString()];
-                    if (fees.isLoading || owed === undefined) return "unclaimed fees: reading…";
-                    if (!owed) return "unclaimed fees: unavailable on this chain";
-                    if (owed.pairFees <= 0n && owed.tokenFees <= 0n)
-                      return "unclaimed fees: none yet";
-                    return `unclaimed fees: ${fmtUnits(owed.tokenFees, 18)} ${tokenSymbol} + ${fmtUnits(owed.pairFees, pool.pair.decimals)} ${pool.pair.symbol}`;
-                  })()}
-                </span>
-                {(() => {
-                  // The pool forgets what a position already took, so lifetime is
-                  // only knowable where the index has been accumulating it.
-                  const owed = fees.data?.[position.tokenId.toString()];
-                  if (position.claimedPairFees === undefined || !owed) return null;
-                  const lifetimeToken = position.claimedTokenFees! + owed.tokenFees;
-                  const lifetimePair = position.claimedPairFees + owed.pairFees;
-                  if (lifetimeToken <= 0n && lifetimePair <= 0n) return null;
-                  return (
-                    <span className="block text-zinc-500">
-                      lifetime fees: {fmtUnits(lifetimeToken, 18)} {tokenSymbol} +{" "}
+        </TableCell>
+      </TableRow>
+    );
+  }
+  if (!positions.data?.length) return null;
+
+  return (
+    <>
+      {positions.data.map((position) => {
+        const owed = fees.data?.[position.tokenId.toString()];
+        const nothingOwed = !owed || (owed.pairFees <= 0n && owed.tokenFees <= 0n);
+        const busy =
+          isPending ||
+          claiming !== null ||
+          refreshing !== null ||
+          reviewed !== null ||
+          editing !== null;
+        return (
+          <TableRow key={position.tokenId.toString()} className="align-top">
+            {chainCell}
+            <TableCell className="font-mono text-xs">#{position.tokenId.toString()}</TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">
+              {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}
+              <span className="block text-xs text-zinc-500">
+                {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
+              </span>
+            </TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">
+              {fees.isLoading || owed === undefined ? (
+                <span className="text-zinc-400">Reading…</span>
+              ) : !owed ? (
+                <span className="text-zinc-400">Unavailable</span>
+              ) : nothingOwed ? (
+                <span className="text-zinc-400">None yet</span>
+              ) : (
+                <>
+                  {fmtUnits(owed.tokenFees, 18)} {tokenSymbol}
+                  <span className="block text-xs text-zinc-500">
+                    {fmtUnits(owed.pairFees, pool.pair.decimals)} {pool.pair.symbol}
+                  </span>
+                </>
+              )}
+            </TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">
+              {(() => {
+                // The pool forgets what a position already took, so lifetime is
+                // only knowable where the index has been accumulating it.
+                if (position.claimedPairFees === undefined || !owed) {
+                  return <span className="text-zinc-400">—</span>;
+                }
+                const lifetimeToken = position.claimedTokenFees! + owed.tokenFees;
+                const lifetimePair = position.claimedPairFees + owed.pairFees;
+                if (lifetimeToken <= 0n && lifetimePair <= 0n) {
+                  return <span className="text-zinc-400">None yet</span>;
+                }
+                return (
+                  <>
+                    {fmtUnits(lifetimeToken, 18)} {tokenSymbol}
+                    <span className="block text-xs text-zinc-500">
                       {fmtUnits(lifetimePair, pool.pair.decimals)} {pool.pair.symbol}
                     </span>
-                  );
-                })()}
-              </span>
-              <span className="flex gap-2">
+                  </>
+                );
+              })()}
+            </TableCell>
+            <TableCell className="whitespace-nowrap text-right">
+              <span className="inline-flex gap-2">
                 <button
                   type="button"
-                  className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
-                  disabled={(() => {
-                    const owed = fees.data?.[position.tokenId.toString()];
-                    return (
-                      isPending ||
-                      claiming !== null ||
-                      refreshing !== null ||
-                      reviewed !== null ||
-                      !owed ||
-                      (owed.pairFees <= 0n && owed.tokenFees <= 0n)
-                    );
-                  })()}
+                  className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                  disabled={busy || nothingOwed}
                   onClick={() => void claimFees(position)}
                 >
                   {claiming === position.tokenId ? "Claiming…" : "Claim fees"}
                 </button>
                 <button
                   type="button"
-                  className="border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
-                  disabled={isPending || refreshing !== null || reviewed !== null}
+                  className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() => {
+                    setError(null);
+                    setEdited(null);
+                    setEditing(position);
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                  disabled={busy}
                   onClick={() => void beginReview(position)}
                 >
                   {refreshing === position.tokenId ? "Refreshing…" : "Remove"}
                 </button>
               </span>
-            </div>
-          ))}
-        </div>
-      )}
-      {reviewed ? (
-        <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
-          <p>
-            Burn position #{reviewed.position.tokenId.toString()} for at least{" "}
-            {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-            {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol}.
-          </p>
-          <p className="mt-1 text-zinc-500">
-            These 95% minimums are sent in the exact burn call; a larger adverse move reverts.
-          </p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
-              disabled={isPending}
-              onClick={() => void remove()}
-            >
-              {isPending ? "Submitting…" : "Confirm & remove"}
-            </button>
-            <button
-              type="button"
-              className="border border-zinc-300 px-2 py-1"
-              disabled={isPending}
-              onClick={() => setReviewed(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {receipt.isSuccess ? (
-        <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
-      ) : null}
-      {error ? (
-        <p className="mt-2 wrap-anywhere text-xs text-red-600" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </div>
+            </TableCell>
+          </TableRow>
+        );
+      })}
+      {/* The panels live OUTSIDE the scroll wrapper — as table rows they would
+          inherit the table's full scrollable width and get cut off. */}
+      {panelHost
+        ? createPortal(
+            <>
+              {reviewed ? (
+                <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
+                  <p>
+                    Burn position #{reviewed.position.tokenId.toString()} on{" "}
+                    {chainName(state.chainId)} for at least{" "}
+                    {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
+                    {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol}.
+                  </p>
+                  <p className="mt-1 text-zinc-500">
+                    These 95% minimums are sent in the exact burn call; a larger adverse move
+                    reverts.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
+                      disabled={isPending}
+                      onClick={() => void remove()}
+                    >
+                      {isPending ? "Submitting…" : "Confirm & remove"}
+                    </button>
+                    <button
+                      type="button"
+                      className="border border-zinc-300 px-2 py-1"
+                      disabled={isPending}
+                      onClick={() => setReviewed(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {editing ? (
+                <EditPositionPanel
+                  key={editing.tokenId.toString()}
+                  state={state}
+                  pool={pool}
+                  position={editing}
+                  tokenSymbol={tokenSymbol}
+                  onClose={() => setEditing(null)}
+                  onDone={(hash) => {
+                    setEditing(null);
+                    setEdited(
+                      hash
+                        ? "Position updated. The table above reflects it."
+                        : "Position edit proposed to Safe. The table updates once it executes.",
+                    );
+                    void positions.refetch();
+                    void fees.refetch();
+                  }}
+                />
+              ) : null}
+              {receipt.isSuccess ? (
+                <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
+              ) : null}
+              {edited ? <p className="mt-2 text-xs text-green-700">{edited}</p> : null}
+              {error ? (
+                <p className="mt-2 wrap-anywhere text-xs text-red-600" role="alert">
+                  {error}
+                </p>
+              ) : null}
+            </>,
+            panelHost,
+          )
+        : null}
+    </>
   );
 }
 
