@@ -221,7 +221,7 @@ function HeroColumn() {
         >
           Create yours
         </Link>
-        <AuditPromptLink className="mt-4 whitespace-nowrap text-xs text-zinc-600 2xl:text-sm" />
+        <AuditPromptLink className="mt-4 text-xs text-zinc-600 sm:whitespace-nowrap 2xl:text-sm" />
       </div>
     </section>
   );

@@ -1,14 +1,20 @@
 "use client";
 
+import { useState } from "react";
+
 import { WalletButton } from "@/components/WalletButton";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { RevnetSearch } from "./RevnetSearch";
+import { Magnifier, RevnetSearch } from "./RevnetSearch";
 
 export function Nav({ wide = false }: { wide?: boolean }) {
   const pathname = usePathname();
   const isWide = wide || pathname === "/";
+  // On phones the search column can get too narrow for even the word "Search"
+  // once the wallet pill takes its share; then it collapses to an icon at the
+  // right, and tapping it opens the field across the logo's column.
+  const [searchOpen, setSearchOpen] = useState(false);
 
   return (
     <nav className="text-zinc-50 border-b border-zinc-100">
@@ -18,7 +24,11 @@ export function Nav({ wide = false }: { wide?: boolean }) {
           isWide ? "max-w-[1800px]" : "max-w-[1536px]"
         }`}
       >
-        <div className="col-start-1 row-start-1 flex flex-col items-start justify-self-start gap-y-1 md:flex-row md:items-center md:gap-x-4">
+        <div
+          className={`col-start-1 row-start-1 flex-col items-start justify-self-start gap-y-1 md:flex md:flex-row md:items-center md:gap-x-4 ${
+            searchOpen ? "hidden" : "flex"
+          }`}
+        >
           <Link href="/" className="inline-flex min-h-11 min-w-11 items-center italic">
             <Image
               src="/assets/img/small-bw.svg"
@@ -53,9 +63,36 @@ export function Nav({ wide = false }: { wide?: boolean }) {
         </div>
         <div
           data-site-nav-search
-          className="col-start-2 row-start-1 w-full min-w-0 max-w-lg justify-self-center"
+          className={`row-start-1 w-full min-w-0 max-w-lg @container ${
+            searchOpen
+              ? "col-span-2 col-start-1 justify-self-center md:col-span-1 md:col-start-2"
+              : "col-start-2 justify-self-end md:justify-self-center"
+          }`}
         >
-          <RevnetSearch />
+          {searchOpen ? (
+            <RevnetSearch
+              autoFocus
+              onFocusChange={(focused) => {
+                if (!focused) setSearchOpen(false);
+              }}
+            />
+          ) : (
+            <>
+              <div className="@max-[7.5rem]:hidden">
+                <RevnetSearch />
+              </div>
+              <div className="hidden justify-end @max-[7.5rem]:flex">
+                <button
+                  type="button"
+                  aria-label="Search"
+                  onClick={() => setSearchOpen(true)}
+                  className="flex h-11 w-11 items-center justify-center border border-zinc-200 bg-white text-zinc-500 hover:text-zinc-900"
+                >
+                  <Magnifier />
+                </button>
+              </div>
+            </>
+          )}
         </div>
         <div
           data-site-nav-wallet
