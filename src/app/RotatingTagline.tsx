@@ -26,9 +26,19 @@ export function RotatingTagline() {
     return () => clearInterval(id);
   }, []);
 
+  // Every phrase occupies the same grid cell, so the span is always as wide as
+  // the longest one and the line breaks around it never move.
   return (
-    <span key={index} className="animate-in fade-in-0 whitespace-nowrap duration-500">
-      {PHRASES[index]}
+    <span className="inline-grid whitespace-nowrap text-center">
+      {PHRASES.map((phrase, i) => (
+        <span
+          key={phrase}
+          aria-hidden={i !== index}
+          className={`col-start-1 row-start-1 ${i === index ? "animate-in fade-in-0 duration-500" : "invisible"}`}
+        >
+          {phrase}
+        </span>
+      ))}
     </span>
   );
 }
