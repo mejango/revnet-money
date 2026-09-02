@@ -1,6 +1,7 @@
 import type { ChartTooltipSeries } from "@/components/ui/chart";
 import { formatClock, formatShortDate } from "@/lib/date";
 import { formatCompact, formatDecimals } from "@/lib/number";
+import { poolReservesAt, type PoolReservePoint } from "@/lib/priceSeries";
 import { TimeRange } from "@/lib/timeRange";
 import { JB_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { formatUnits } from "viem";
@@ -30,8 +31,8 @@ interface Props {
   baseTokenSymbol: string;
   baseTokenDecimals: number;
   range: TimeRange;
-  /** Current pool reserves; shown under the prices so a reader can weigh the pool price. */
-  poolLiquidity?: { tokenAmount: bigint; pairAmount: bigint } | null;
+  /** The pool's reserves over time; the tooltip shows what it held at the hovered moment. */
+  poolReserves?: readonly PoolReservePoint[];
   projectTokenSymbol?: string;
 }
 
@@ -41,9 +42,10 @@ export function PriceChartTooltip({
   baseTokenSymbol,
   baseTokenDecimals,
   range,
-  poolLiquidity,
+  poolReserves = [],
   projectTokenSymbol,
 }: Props) {
+  const reserves = poolReservesAt(poolReserves, datum.timestamp);
   const hasFloorPrice = series.some((entry) => entry.key === "floorPrice");
   const showFloorDebug = hasFloorPrice && datum.totalSupply && datum.totalBalance;
 
@@ -67,16 +69,14 @@ export function PriceChartTooltip({
           </span>
         </div>
       ))}
-      {poolLiquidity && (poolLiquidity.tokenAmount > 0n || poolLiquidity.pairAmount > 0n) ? (
+      {reserves && (reserves.tokenAmount > 0 || reserves.pairAmount > 0) ? (
         <div className="mt-2 flex justify-between gap-4 whitespace-nowrap border-t border-zinc-700 pt-2 text-xs text-zinc-500">
-          <span>Pool liquidity now:</span>
+          <span>Pool liquidity:</span>
           <span className="flex items-center gap-1.5 font-mono">
             <span className="h-2 w-2 shrink-0" style={{ backgroundColor: POOL_TOKEN_SWATCH }} />
-            {formatCompact(formatUnits(poolLiquidity.tokenAmount, JB_TOKEN_DECIMALS))}{" "}
-            {projectTokenSymbol ?? "tokens"} +{" "}
+            {formatCompact(reserves.tokenAmount)} {projectTokenSymbol ?? "tokens"} +{" "}
             <span className="h-2 w-2 shrink-0" style={{ backgroundColor: POOL_PAIR_SWATCH }} />
-            {formatCompact(formatUnits(poolLiquidity.pairAmount, baseTokenDecimals))}{" "}
-            {baseTokenSymbol}
+            {formatCompact(reserves.pairAmount)} {baseTokenSymbol}
           </span>
         </div>
       ) : null}

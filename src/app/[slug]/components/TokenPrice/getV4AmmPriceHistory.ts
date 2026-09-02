@@ -24,8 +24,7 @@ const MAX_DISPLAY_POINTS = 3000;
 
 type RawPool = IndexedBuybackPoolsQuery["buybackPoolEvents"]["items"][number];
 
-/** What the pool holds right now: exact reserves at the latest indexed price, fees excluded. */
-export type PoolLiquidity = { tokenAmount: bigint; pairAmount: bigint };
+type PoolAmounts = { tokenAmount: bigint; pairAmount: bigint };
 
 type RawLiquidityEvent = IndexedPoolLiquidityEventsQuery["buybackPoolLiquidityEvents"]["items"][number];
 type Position = { lower: bigint; upper: bigint; liquidity: bigint };
@@ -48,7 +47,7 @@ function poolAmountsAt(
   positions: Iterable<Position>,
   sqrtPriceX96: bigint,
   projectTokenIsCurrency0: boolean,
-): PoolLiquidity {
+): PoolAmounts {
   let amount0 = 0n;
   let amount1 = 0n;
   for (const position of positions) {
@@ -66,23 +65,12 @@ function poolAmountsAt(
     : { tokenAmount: amount1, pairAmount: amount0 };
 }
 
-/** What the pool holds after every indexed change, at `sqrtPriceX96`. Null when it never held anything. */
-function livePoolLiquidity(
-  events: RawLiquidityEvent[],
-  sqrtPriceX96: bigint,
-  projectTokenIsCurrency0: boolean,
-): PoolLiquidity | null {
-  if (!events.length) return null;
-  const positions = new Map<string, Position>();
-  for (const event of events) applyLiquidityEvent(positions, event);
-  return poolAmountsAt(positions.values(), sqrtPriceX96, projectTokenIsCurrency0);
-}
-
 /**
- * Both sides of the pool over time, for the faint bars under the pool line: every liquidity
- * change replayed in order, with the reserves re-read at each change (at the price the index
- * recorded there) and at each trade's exact post-swap price. Values are only ever compared
- * with each other, so they stay in the pair token's units and off the chart's axis.
+ * Both sides of the pool over time, for the faint bars under the pool line and the tooltip's
+ * holdings at the hovered moment: every liquidity change replayed in order, with the reserves
+ * re-read at each change (at the price the index recorded there) and at each trade's exact
+ * post-swap price. The bar values are only ever compared with each other, so they stay in the
+ * pair token's units and off the chart's axis.
  */
 function replayPoolReserves(
   events: RawLiquidityEvent[],
@@ -99,13 +87,9 @@ function replayPoolReserves(
       sqrtPriceX96,
       projectTokenIsCurrency0,
     );
-    return [
-      {
-        timestamp,
-        pairValue: Number(pairAmount) / 10 ** terminalDecimals,
-        tokenValue: (Number(tokenAmount) / 1e18) * ammPrice,
-      },
-    ];
+    const pair = Number(pairAmount) / 10 ** terminalDecimals;
+    const token = Number(tokenAmount) / 1e18;
+    return [{ timestamp, pairAmount: pair, tokenAmount: token, pairValue: pair, tokenValue: token * ammPrice }];
   };
 
   // One ordered timeline; a liquidity change in the same second as a trade applies first,
@@ -164,7 +148,6 @@ export async function getV4AmmPriceHistory({
 }): Promise<{
   data: PriceDataPoint[];
   hasPool: boolean;
-  liquidity: PoolLiquidity | null;
   reserves: PoolReservePoint[];
 }> {
   const variables = {
@@ -188,7 +171,7 @@ export async function getV4AmmPriceHistory({
   const pool = poolId
     ? pools.find((item) => item.poolId.toLowerCase() === poolId.toLowerCase())
     : pools.find((item) => item.terminalToken.toLowerCase() === terminalToken?.toLowerCase());
-  if (!pool) return { data: [], hasPool: false, liquidity: null, reserves: [] };
+  if (!pool) return { data: [], hasPool: false, reserves: [] };
 
   const swaps: RawSwap[] = [];
   let totalCount = 0;
@@ -276,25 +259,6 @@ export async function getV4AmmPriceHistory({
       ? []
       : replayPoolReserves(poolEvents, pricePoints, pool.projectTokenIsCurrency0, terminalDecimals);
 
-  // The latest price the index saw: the last trade's, else the pool's initial one.
-  const lastTrade = [...swaps]
-    .reverse()
-    .find(
-      (swap) =>
-        swap.direction !== "mint" &&
-        swap.poolId?.toLowerCase() === pool.poolId.toLowerCase() &&
-        swap.sqrtPriceX96,
-    );
-  const latestSqrtPriceX96 = lastTrade?.sqrtPriceX96 ?? pool.initialSqrtPriceX96;
-  const liquidity =
-    latestSqrtPriceX96 && pool.projectTokenIsCurrency0 !== null
-      ? livePoolLiquidity(
-          poolEvents,
-          BigInt(latestSqrtPriceX96),
-          pool.projectTokenIsCurrency0,
-        )
-      : null;
-
   return {
     data: downsampleTimeSeries(
       data,
@@ -303,7 +267,6 @@ export async function getV4AmmPriceHistory({
       (point) => point.ammPrice ?? 0,
     ),
     hasPool: true,
-    liquidity,
     reserves,
   };
 }
