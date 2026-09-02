@@ -26,10 +26,10 @@ export function RotatingTagline() {
     return () => clearInterval(id);
   }, []);
 
-  // Every phrase occupies the same grid cell, so the span is always as wide as
-  // the longest one and the line breaks around it never move.
+  // Block-level grid: the phrase always sits on its own line, and every phrase
+  // shares one cell so the height never changes either.
   return (
-    <span className="inline-grid whitespace-nowrap text-center">
+    <span className="grid whitespace-nowrap text-center">
       {PHRASES.map((phrase, i) => (
         <span
           key={phrase}
