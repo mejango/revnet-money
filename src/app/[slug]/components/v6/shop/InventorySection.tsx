@@ -262,8 +262,8 @@ export function InventorySection({
                 ? "Fixed per item"
                 : shop.fixedTierTransferability === false
                   ? shop.transfersPaused == null
-                    ? "Stage-controlled (legacy)"
-                    : `Stage-controlled (legacy) — ${shop.transfersPaused ? "paused" : "allowed"} now`
+                    ? "Set by each stage"
+                    : `Set by each stage — transfers ${shop.transfersPaused ? "paused" : "allowed"} now`
                   : "Status unavailable"}
             </dd>
           </div>

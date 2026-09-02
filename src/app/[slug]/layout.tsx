@@ -1,6 +1,6 @@
 import { Nav } from "@/components/layout/Nav";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
-import { projectPreviewSlogan } from "@/lib/project-link-preview";
+import { formatProjectPreviewBalance, projectPreviewSlogan } from "@/lib/project-link-preview";
 import { PROJECT_HANDLE_CHAIN_ID, readExactProjectHandle } from "@/lib/projectHandles";
 import { decodeProjectRouteSlug, slugFor } from "@/lib/slug";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
@@ -131,9 +131,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const { projectId, chainId } = route;
   const project = projectId ? await getProject(projectId, chainId) : null;
+  // Scrapers cache og:image by URL, so bake the numbers into it: the card refreshes
+  // whenever the balance or payment count moves.
+  const suckerGroup =
+    project?.suckerGroupId ? await getSuckerGroup(project.suckerGroupId, chainId) : null;
+  const version = `${suckerGroup?.paymentsCount ?? 0}-${formatProjectPreviewBalance(
+    suckerGroup?.projects?.items ?? [],
+  ).replace(/\D/gu, "")}`;
   const imageUrl =
     project && projectId
-      ? new URL(`/api/project-og/${chainId}/${projectId}`, assetOrigin).href
+      ? new URL(`/api/project-og/${chainId}/${projectId}?v=${version}`, assetOrigin).href
       : new URL("/assets/img/revnet-social.png", assetOrigin).href;
 
   // The handle is always canonical when present, no matter which of the

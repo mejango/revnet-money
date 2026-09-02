@@ -22,6 +22,26 @@ import { getParaClient, PARA_PORTAL_THEME } from "./para-config";
 /** Not exported by the SDK on its own, but reachable through the snapshot. */
 type AuthPhase = StateSnapshot["authPhase"];
 
+type CredentialMethod = "passkey" | "password" | "PIN";
+
+type CredentialStep = {
+  method: CredentialMethod;
+  url: string;
+};
+
+type CredentialUrls = {
+  passkeyUrl?: string | null;
+  passwordUrl?: string | null;
+  pinUrl?: string | null;
+};
+
+function credentialStepOf(info: CredentialUrls): CredentialStep | null {
+  if (info.passkeyUrl) return { method: "passkey", url: info.passkeyUrl };
+  if (info.passwordUrl) return { method: "password", url: info.passwordUrl };
+  if (info.pinUrl) return { method: "PIN", url: info.pinUrl };
+  return null;
+}
+
 /** Every method Para can broker. `TWITTER` is the wire value — Para never
  *  renamed the enum after X did, so the label and the value differ. */
 const OAUTH_METHODS: { method: TOAuthMethod; label: string }[] = [
@@ -129,7 +149,7 @@ export default function ParaAuthSheet({
   const [hostedVerifyUrl, setHostedVerifyUrl] = useState<string | null>(null);
   // Set when the account's key is being created on Para's own origin. A blocked popup looks
   // exactly like a slow one, so the sheet says which window to look for and offers it again.
-  const [walletSetupUrl, setWalletSetupUrl] = useState<string | null>(null);
+  const [credentialStep, setCredentialStep] = useState<CredentialStep | null>(null);
 
   const popupRef = useRef<Window | null>(null);
 
@@ -211,18 +231,20 @@ export default function ParaAuthSheet({
         popupRef.current?.close();
         popupRef.current = null;
       }
-      const next = info.passkeyUrl ?? info.passwordUrl ?? info.pinUrl ?? null;
-      if (next && next !== lastUrlRef.current) {
-        lastUrlRef.current = next;
-        setWalletSetupUrl(next);
-        sendPopupTo(next);
+      const next = credentialStepOf(info);
+      if (next && next.url !== lastUrlRef.current) {
+        lastUrlRef.current = next.url;
+        setCredentialStep((current) =>
+          current?.url === next.url && current.method === next.method ? current : next,
+        );
+        sendPopupTo(next.url);
       }
       // Closing is what settles the flow: the host reports the transition,
       // which is what tells Wagmi to pick the new Para session up.
       if (snapshot.corePhase === "authenticated" && !settledRef.current) {
         settledRef.current = true;
         setHostedVerifyUrl(null);
-        setWalletSetupUrl(null);
+        setCredentialStep(null);
         popupRef.current?.close();
         onClose();
       }
@@ -320,11 +342,11 @@ export default function ParaAuthSheet({
         verificationCode: code.trim(),
         portalTheme: PARA_PORTAL_THEME,
       });
-      const setupUrl = signup?.passkeyUrl ?? signup?.passwordUrl ?? signup?.pinUrl ?? null;
-      if (!setupUrl) return;
-      lastUrlRef.current = setupUrl;
-      setWalletSetupUrl(setupUrl);
-      sendPopupTo(setupUrl);
+      const setup = credentialStepOf(signup);
+      if (!setup) return;
+      lastUrlRef.current = setup.url;
+      setCredentialStep(setup);
+      sendPopupTo(setup.url);
       // Key generation runs on Para's side; this settles when it lands, and the state stream
       // then reports `authenticated` and closes the sheet.
       await para.waitForWalletCreation({
@@ -411,6 +433,39 @@ export default function ParaAuthSheet({
     );
   }
 
+  // Para's passkey page has to run on Para's origin. Its URL only arrives
+  // after the identifier request, so browsers are allowed to block the first
+  // best-effort popup as no longer user initiated. Keep a real button in our
+  // sheet: the second open is directly tied to a click and therefore works
+  // even under strict popup blocking.
+  if (credentialStep && !awaitingCode) {
+    return (
+      <div className="w-full">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium text-zinc-900">
+              Continue with your {credentialStep.method}
+            </h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              Finish signing in securely with Para.
+            </p>
+          </div>
+          {closeButton}
+        </div>
+        <Button
+          type="button"
+          className="mt-5 w-full"
+          onClick={() => sendPopupTo(credentialStep.url)}
+        >
+          Open {credentialStep.method}
+        </Button>
+        <p className="mt-3 text-xs leading-relaxed text-zinc-600">
+          Para opens a secure window because passkeys cannot be used inside this page.
+        </p>
+      </div>
+    );
+  }
+
   if (awaitingCode) {
     return (
       <div className="w-full">
@@ -456,14 +511,14 @@ export default function ParaAuthSheet({
             {verifying ? "Confirming\u2026" : "Confirm"}
           </Button>
         </div>
-        {walletSetupUrl ? (
+        {credentialStep ? (
           <p className="mt-3 text-xs leading-relaxed text-zinc-600">
             Finish setting up your account in the window we opened.{" "}
             <button
               type="button"
               onClick={() => {
                 popupRef.current = window.open(
-                  walletSetupUrl,
+                  credentialStep.url,
                   "ParaAuth",
                   "popup,width=420,height=560",
                 );
@@ -483,7 +538,7 @@ export default function ParaAuthSheet({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-medium text-zinc-900">Sign in</h2>
-          <p className="mt-1 text-sm text-zinc-600">You will receive a code.</p>
+          <p className="mt-1 text-sm text-zinc-600">Use your passkey, or receive a code.</p>
         </div>
         {closeButton}
       </div>

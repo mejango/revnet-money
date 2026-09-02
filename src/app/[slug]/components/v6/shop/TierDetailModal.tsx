@@ -138,10 +138,10 @@ export function TierDetailModal({
         : shop.fixedTierTransferability === null
           ? "Transfer policy unavailable"
           : shop.transfersPaused == null
-            ? "Legacy stage-controlled; current status unavailable"
+            ? "Set by each stage; current status unavailable"
             : shop.transfersPaused
-              ? "Paused by the current legacy stage"
-              : "Transferable in the current legacy stage";
+              ? "Not transferable in this stage"
+              : "Transferable in this stage";
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>

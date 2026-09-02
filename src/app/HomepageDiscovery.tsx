@@ -209,7 +209,7 @@ function HeroColumn() {
           className="mx-auto h-auto min-w-0 max-w-full object-contain"
         />
         <p className="mt-7 max-w-full break-words text-xl font-medium">
-          An investible business model <span className="whitespace-nowrap">for the open web.</span>
+          An investible <span className="whitespace-nowrap">business model</span> <span className="whitespace-nowrap">for the open web.</span>
         </p>
         <Link
           href="/create"

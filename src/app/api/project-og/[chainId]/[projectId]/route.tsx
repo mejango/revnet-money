@@ -78,7 +78,7 @@ export async function GET(
         <div
           style={{
             display: "flex",
-            fontSize: name.length > 28 ? 48 : 58,
+            fontSize: name.length > 28 ? 56 : 68,
             fontWeight: 700,
             lineHeight: 1.05,
           }}
@@ -87,9 +87,9 @@ export async function GET(
         </div>
         <div
           style={{
-            color: "#476357",
+            color: "#2c3f36",
             display: "flex",
-            fontSize: 27,
+            fontSize: 32,
             lineHeight: 1.3,
             marginTop: "22px",
           }}
@@ -97,42 +97,26 @@ export async function GET(
           {tagline}
         </div>
 
-        <div style={{ display: "flex", gap: 22, marginTop: "auto" }}>
-          <div
-            style={{
-              background: "#ffffff",
-              border: "2px solid #d7e9df",
-              borderRadius: 18,
-              display: "flex",
-              flex: 1,
-              flexDirection: "column",
-              padding: "18px 22px",
-            }}
-          >
-            <div style={{ color: "#668075", display: "flex", fontSize: 19 }}>Balance</div>
-            <div style={{ display: "flex", fontSize: 29, fontWeight: 700, marginTop: 7 }}>
+        <div style={{ display: "flex", gap: 48, marginTop: "auto" }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ color: "#4d6459", display: "flex", fontSize: 26 }}>Balance</div>
+            <div
+              style={{
+                display: "flex",
+                fontSize: balance.length > 14 ? 48 : 60,
+                fontWeight: 700,
+                marginTop: 6,
+              }}
+            >
               {balance}
             </div>
           </div>
-          <div
-            style={{
-              background: "#ffffff",
-              border: "2px solid #d7e9df",
-              borderRadius: 18,
-              display: "flex",
-              flexDirection: "column",
-              minWidth: 190,
-              padding: "18px 22px",
-            }}
-          >
-            <div style={{ color: "#668075", display: "flex", fontSize: 19 }}>Payments</div>
-            <div style={{ display: "flex", fontSize: 29, fontWeight: 700, marginTop: 7 }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ color: "#4d6459", display: "flex", fontSize: 26 }}>Payments</div>
+            <div style={{ display: "flex", fontSize: 60, fontWeight: 700, marginTop: 6 }}>
               {paymentsCount.toLocaleString("en-US")}
             </div>
           </div>
-        </div>
-        <div style={{ color: "#668075", display: "flex", fontSize: 18, marginTop: 18 }}>
-          REVNET | autonomous, open-source businesses
         </div>
       </div>
     </div>,
