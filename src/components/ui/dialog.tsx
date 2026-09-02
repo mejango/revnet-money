@@ -232,6 +232,9 @@ function useNativeModalDialog({
 
     // `showModal()` throws on a dialog that is already open.
     if (!dialog.open) dialog.showModal();
+    // `showModal()` hands focus to the first focusable descendant, the close button, and its focus
+    // ring lit up on every open. Start on the dialog itself (it carries tabIndex -1) instead.
+    dialog.focus({ preventScroll: true });
     const releaseTopLayer = registerOpenDialog(dialog);
     lockBody();
 
@@ -298,7 +301,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
         aria-labelledby={context.hasTitle ? context.titleId : undefined}
         aria-describedby={context.hasDescription ? context.descriptionId : undefined}
         tabIndex={-1}
-        className="ui-dialog"
+        className="ui-dialog focus:outline-none"
         onPointerDown={(event) => {
           if (event.target === event.currentTarget) context.onOpenChange(false);
         }}

@@ -67,7 +67,7 @@ export function SignInShell({
       </div>
 
       <p className="mb-2 mt-5 text-xs text-zinc-500">Or, use socials</p>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="scroll-row flex gap-1.5 overflow-x-auto">
         {OAUTH_METHODS.map(({ method, label }) => (
           <Button
             key={method}
@@ -76,7 +76,7 @@ export function SignInShell({
             disabled
             title={label}
             aria-label={label}
-            className="flex h-10 w-10 items-center justify-center px-0"
+            className="flex h-10 w-10 shrink-0 items-center justify-center px-0"
           >
             <BrandMark method={method} className="h-5 w-5 shrink-0" />
           </Button>
@@ -84,7 +84,7 @@ export function SignInShell({
       </div>
 
       <p className="mb-2 mt-4 text-xs text-zinc-500">... or, a wallet.</p>
-      <div className="flex min-h-10 flex-wrap gap-1.5">
+      <div className="scroll-row flex min-h-10 gap-1.5 overflow-x-auto">
         {connectors.map((connector) => (
           <Button
             key={connector.id}
@@ -93,7 +93,7 @@ export function SignInShell({
             disabled
             title={connector.name}
             aria-label={connector.name}
-            className="flex h-10 w-10 items-center justify-center px-0"
+            className="flex h-10 w-10 shrink-0 items-center justify-center px-0"
           >
             {connector.icon ? (
               // eslint-disable-next-line @next/next/no-img-element
