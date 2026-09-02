@@ -1,6 +1,7 @@
 "use client";
 
 import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
+import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { ExternalLink } from "@/components/ExternalLink";
@@ -51,38 +52,55 @@ import {
   fmtUnits,
 } from "../settlement/lib";
 import { EditPositionPanel } from "./EditPositionPanel";
-import {
-  describeAddLiquidityPlan,
-  liquidityFormView,
-  type LiquidityFormMode,
-  type LiquidityFormSide,
-} from "./formView";
+import { liquidityFormView, type LiquidityFormMode, type LiquidityFormSide } from "./formView";
 import {
   AmmChainState,
-  encodeAddLiquidityCall,
   fetchAmmStates,
   fetchPoolComposition,
+  groupMarketPositions,
+  lpBandPrices,
   lpDeadline,
   PERMIT2_ABI,
   PERMIT2_ADDRESS,
-  permit2AllowanceCovers,
-  permit2ApprovalArgs,
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
   prepareAddLiquidity,
   prepareCollectLpFees,
+  prepareCollectMarketFees,
+  prepareMarketLiquidity,
   prepareRemoveLiquidity,
   readLpPositionFees,
   readPoolLpPositions,
   readUserLpPositions,
   refreshUserLpPosition,
   reverifyAddLiquidity,
+  reverifyMarketLiquidity,
   type AddLiquidityPlan,
+  type MarketLiquidityPlan,
+  type MarketSides,
   type PoolComposition,
   type PoolSnapshot,
+  type PositionGroup,
   type UserLpPosition,
 } from "./lib";
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
+import {
+  approvalStepsFor,
+  runApprovalStep,
+  SummaryRow,
+  type LiquidityStep,
+} from "./liquidityWrite";
+import { MarketEditPanel } from "./MarketEditPanel";
+
+/** A plan's band on the display axis, "min – max PAIR/TOKEN". */
+function bandLabel(
+  pool: PoolSnapshot,
+  tokenSymbol: string,
+  plan: { tickLower: number; tickUpper: number },
+): string {
+  const band = lpBandPrices(pool, plan.tickLower, plan.tickUpper);
+  return `${formatPrice(band.minimumPrice)} – ${formatPrice(band.maximumPrice)} ${pool.pair.symbol}/${tokenSymbol}`;
+}
 
 function formatPrice(price: number): string {
   if (!isFinite(price) || price <= 0) return "—";
@@ -566,16 +584,9 @@ function txMessage(cause: unknown, fallback: string): string {
   return error?.shortMessage || error?.message || fallback;
 }
 
-/**
- * A wallet prompt this add will actually raise. Deciding the sequence while
- * reviewing — not while executing — is what lets the signer see the whole queue
- * before the first prompt, and keeps the list from naming approvals it skips.
- */
-type LiquidityStep = {
-  title: string;
-  detail: string;
-  approval?: { kind: "erc20" | "permit2"; currency: Address; max: bigint };
-};
+/** What a review froze: one position, or the two sides of a market. */
+type ReviewedPlan =
+  { kind: "single"; plan: AddLiquidityPlan } | { kind: "market"; plan: MarketLiquidityPlan };
 
 export function AddLiquidityForm({
   state,
@@ -590,14 +601,18 @@ export function AddLiquidityForm({
   const publicClient = usePublicClient({ chainId });
   const { ensureAllowance, isApproving } = useAllowance(chainId);
   const { writeContractAsync, isPending } = useWriteContract();
-  const [mode, setMode] = useState<LiquidityFormMode>("amounts");
+  // Revnets have a corridor to make a market in; anything without both edges
+  // falls back to the solved single band.
+  const [mode, setMode] = useState<LiquidityFormMode>(
+    state.reference.cashOut && state.reference.issuance ? "market" : "amounts",
+  );
   const [minText, setMinText] = useState("");
   const [maxText, setMaxText] = useState("");
   const [pairText, setPairText] = useState("");
   const [tokenText, setTokenText] = useState("");
   const [driver, setDriver] = useState<LiquidityFormSide>("token");
   const [reviewed, setReviewed] = useState<{
-    plan: AddLiquidityPlan;
+    reviewed: ReviewedPlan;
     steps: LiquidityStep[];
     snapshot: string;
   } | null>(null);
@@ -654,7 +669,7 @@ export function AddLiquidityForm({
   });
 
   const snapshot = [mode, minText, maxText, pairText, tokenText, driver].join("|");
-  const review = reviewed?.snapshot === snapshot ? reviewed.plan : null;
+  const review = reviewed?.snapshot === snapshot ? reviewed.reviewed : null;
   const reviewSteps = reviewed?.snapshot === snapshot ? reviewed.steps : [];
 
   // Typed amounts submit from their exact text; derived ones from the solved
@@ -681,17 +696,6 @@ export function AddLiquidityForm({
     return side === "token" ? tokenText : pairText;
   };
 
-  const planText = review
-    ? describeAddLiquidityPlan({
-        tokenMaximum: review.tokenMaximum,
-        pairMaximum: review.pairMaximum,
-        tickLower: review.tickLower,
-        tickUpper: review.tickUpper,
-        tokenSymbol,
-        pairSymbol: pool.pair.symbol,
-        pairDecimals: pool.pair.decimals,
-      })
-    : null;
   const prepare = async () => {
     if (!address || !publicClient) {
       setStatus("Connect a wallet first.");
@@ -706,15 +710,28 @@ export function AddLiquidityForm({
     setMinted(null);
     setStatus("Reading fresh pool and wallet balances…");
     try {
-      const plan = prepareAddLiquidity(
-        pool,
-        { pairAmount: sideUnits("pair"), tokenAmount: sideUnits("token") },
-        {
-          minimumPrice: view.minPrice,
-          maximumPrice: view.maxPrice,
-        },
-        address,
-      );
+      const amounts = { pairAmount: sideUnits("pair"), tokenAmount: sideUnits("token") };
+      const built: ReviewedPlan =
+        mode === "market"
+          ? {
+              kind: "market",
+              plan: prepareMarketLiquidity(
+                pool,
+                amounts,
+                { floor: view.minPrice, ceiling: view.maxPrice },
+                address,
+              ),
+            }
+          : {
+              kind: "single",
+              plan: prepareAddLiquidity(
+                pool,
+                amounts,
+                { minimumPrice: view.minPrice, maximumPrice: view.maxPrice },
+                address,
+              ),
+            };
+      const plan = built.plan;
       const [tokenBalance, pairBalance] = await Promise.all([
         publicClient.readContract({
           address: pool.projectToken,
@@ -744,38 +761,26 @@ export function AddLiquidityForm({
       }
       const symbolOf = (currency: Address) =>
         currency.toLowerCase() === pool.projectToken.toLowerCase() ? tokenSymbol : pool.pair.symbol;
-      const approvals: LiquidityStep[] = [];
-      for (const side of plan.erc20Sides) {
-        const symbol = symbolOf(side.currency);
-        const allowance = await publicClient.readContract({
-          address: side.currency,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, PERMIT2_ADDRESS],
-        });
-        if (allowance < side.max) {
-          approvals.push({
-            title: `Approve ${symbol} access`,
-            detail: `Permit2 is what moves your ${symbol} into the pool.`,
-            approval: { kind: "erc20", currency: side.currency, max: side.max },
-          });
-        }
-        if (!(await permit2AllowanceCovers(state.chainId, address, side.currency, side.max))) {
-          approvals.push({
-            title: `Authorize the Uniswap position manager for ${symbol}`,
-            detail: `A capped, expiring ${symbol} allowance — not an open-ended one.`,
-            approval: { kind: "permit2", currency: side.currency, max: side.max },
-          });
-        }
-      }
+      const approvals = await approvalStepsFor({
+        publicClient: publicClient as PublicClient,
+        chainId: state.chainId,
+        address,
+        erc20Sides: plan.erc20Sides,
+        symbolOf,
+      });
       setReviewed({
-        plan,
+        reviewed: built,
         steps: [
           ...approvals,
-          {
-            title: "Mint the position",
-            detail: "Deposits both sides into your chosen price range.",
-          },
+          built.kind === "market"
+            ? {
+                title: "Mint the market",
+                detail: "Two positions, one on each side of the current price.",
+              }
+            : {
+                title: "Mint the position",
+                detail: "Deposits both sides into your chosen price range.",
+              },
         ],
         snapshot,
       });
@@ -801,53 +806,45 @@ export function AddLiquidityForm({
 
   const execute = async () => {
     if (!address || !publicClient || !reviewed || reviewed.snapshot !== snapshot) return;
-    const { plan, steps } = reviewed;
+    const { reviewed: built, steps } = reviewed;
+    const plan = built.plan;
     setBusy(true);
     setStatus(null);
     try {
       for (const [index, step] of steps.entries()) {
         setStepIndex(index);
-        if (step.approval?.kind === "erc20") {
-          await ensureAllowance(step.approval.currency, PERMIT2_ADDRESS, step.approval.max);
-          continue;
-        }
-        if (step.approval?.kind === "permit2") {
-          // Re-checked rather than trusted: the review's reading can age out.
-          const covered = await permit2AllowanceCovers(
-            state.chainId,
+        if (step.approval) {
+          const outcome = await runApprovalStep(step, {
+            chainId: state.chainId,
             address,
-            step.approval.currency,
-            step.approval.max,
-          );
-          if (covered) continue;
-          const approvalHash = await writeContractAsync({
-            chainId,
-            address: PERMIT2_ADDRESS,
-            abi: PERMIT2_ABI,
-            functionName: "approve",
-            args: permit2ApprovalArgs(state.chainId, step.approval.currency, step.approval.max),
+            publicClient: publicClient as PublicClient,
+            ensureAllowance,
+            approvePermit2: (args) =>
+              writeContractAsync({
+                chainId,
+                address: PERMIT2_ADDRESS,
+                abi: PERMIT2_ABI,
+                functionName: "approve",
+                args,
+              }),
           });
-          if (submittedViaSafe(approvalHash)) {
+          if (outcome === "safe-proposed") {
             setStatus(
               "Permit2 authorization was proposed to Safe. Execute it, then review liquidity again.",
             );
             setReviewed(null);
             return;
           }
-          const receipt = await waitForReceiptWithRetry(publicClient, approvalHash);
-          if (receipt.status !== "success") {
-            throw new Error(`Permit2 authorization ${approvalHash} reverted.`);
-          }
           continue;
         }
-        await reverifyAddLiquidity(pool, plan);
-        const call = encodeAddLiquidityCall(plan, lpDeadline(isSafeConnection(wagmiConfig)));
+        if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
+        else await reverifyAddLiquidity(pool, built.plan);
         const hash = await writeContractAsync({
           chainId,
           address: POSITION_MANAGER_BY_CHAIN[chainId]!,
           abi: POSITION_MANAGER_ABI,
           functionName: "modifyLiquidities",
-          args: call.args,
+          args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
           value: plan.value,
         });
         if (submittedViaSafe(hash)) {
@@ -885,98 +882,77 @@ export function AddLiquidityForm({
           Current ~{pool.price?.toPrecision(6) ?? "—"} {pool.pair.symbol}/{tokenSymbol}
         </span>
       </div>
-      <div className="mt-2 flex gap-1 text-[11px]">
-        <button
-          type="button"
-          className={
-            mode === "amounts"
-              ? "bg-zinc-900 px-2 py-1 text-white"
-              : "border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
-          }
-          disabled={disabled}
-          onClick={() => {
-            if (mode === "amounts") return;
-            // Materialize the derived amount so it stays editable text.
-            if (view.derived === "pair" && view.pairAmount != null) {
-              setPairText(String(Number(view.pairAmount.toPrecision(6))));
-            } else if (view.derived === "token" && view.tokenAmount != null) {
-              setTokenText(String(Number(view.tokenAmount.toPrecision(6))));
+      <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
+        {(
+          [
+            ["market", "Make the market"],
+            ["amounts", "By amounts"],
+            ["range", "By price range"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={
+              mode === id
+                ? "bg-zinc-900 px-2 py-1 text-white"
+                : "border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
             }
-            setMode("amounts");
-            setReviewed(null);
-          }}
-        >
-          By amounts
-        </button>
-        <button
-          type="button"
-          className={
-            mode === "full"
-              ? "bg-zinc-900 px-2 py-1 text-white"
-              : "border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
-          }
-          disabled={disabled}
-          onClick={() => {
-            if (mode === "full") return;
-            setMode("full");
-            setReviewed(null);
-          }}
-        >
-          Full range
-        </button>
-        <button
-          type="button"
-          className={
-            mode === "range"
-              ? "bg-zinc-900 px-2 py-1 text-white"
-              : "border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
-          }
-          disabled={disabled}
-          onClick={() => {
-            if (mode === "range") return;
-            // Carry the solved range over so fine-tuning starts from it; a
-            // full-range span is no starting point, so re-seed the economic
-            // corridor instead.
-            if (mode === "full") {
-              if (pool.price && pool.price > 0) {
-                const seeded = uniswapV4DefaultPriceRange(
-                  pool.price,
-                  state.reference.cashOut ?? 0,
-                  state.reference.issuance ?? 0,
-                );
-                setMinText(String(Number(seeded.min.toPrecision(6))));
-                setMaxText(String(Number(seeded.max.toPrecision(6))));
-              }
-            } else if (view.minPrice != null && view.maxPrice != null) {
-              setMinText(String(Number(view.minPrice.toPrecision(6))));
-              setMaxText(String(Number(view.maxPrice.toPrecision(6))));
-            }
-            setMode("range");
-            setReviewed(null);
-          }}
-        >
-          By price range
-        </button>
-      </div>
-      {mode !== "full" ? (
-        <LiquidityRangePreview
-          floor={state.reference.cashOut}
-          ceiling={state.reference.issuance}
-          current={pool.price}
-          minimum={view.minPrice ?? 0}
-          maximum={view.maxPrice ?? 0}
-          pairSymbol={pool.pair.symbol}
-          tokenSymbol={tokenSymbol}
-          onRangeChange={
-            mode === "range" && !disabled
-              ? (edge, value) => {
-                  (edge === "minimum" ? setMinText : setMaxText)(String(value));
-                  setReviewed(null);
+            disabled={disabled}
+            onClick={() => {
+              if (mode === id) return;
+              if (id === "amounts") {
+                // Materialize the derived amount so it stays editable text.
+                if (view.derived === "pair" && view.pairAmount != null) {
+                  setPairText(String(Number(view.pairAmount.toPrecision(6))));
+                } else if (view.derived === "token" && view.tokenAmount != null) {
+                  setTokenText(String(Number(view.tokenAmount.toPrecision(6))));
                 }
-              : undefined
-          }
-        />
-      ) : null}
+              }
+              if (id === "range") {
+                // Carry the solved band over so fine-tuning starts from it; the
+                // market's corridor is no single band, so re-seed the economic
+                // corridor instead.
+                if (mode === "market") {
+                  if (pool.price && pool.price > 0) {
+                    const seeded = uniswapV4DefaultPriceRange(
+                      pool.price,
+                      state.reference.cashOut ?? 0,
+                      state.reference.issuance ?? 0,
+                    );
+                    setMinText(String(Number(seeded.min.toPrecision(6))));
+                    setMaxText(String(Number(seeded.max.toPrecision(6))));
+                  }
+                } else if (view.minPrice != null && view.maxPrice != null) {
+                  setMinText(String(Number(view.minPrice.toPrecision(6))));
+                  setMaxText(String(Number(view.maxPrice.toPrecision(6))));
+                }
+              }
+              setMode(id);
+              setReviewed(null);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <LiquidityRangePreview
+        floor={state.reference.cashOut}
+        ceiling={state.reference.issuance}
+        current={pool.price}
+        minimum={view.minPrice ?? 0}
+        maximum={view.maxPrice ?? 0}
+        pairSymbol={pool.pair.symbol}
+        tokenSymbol={tokenSymbol}
+        onRangeChange={
+          mode === "range" && !disabled
+            ? (edge, value) => {
+                (edge === "minimum" ? setMinText : setMaxText)(String(value));
+                setReviewed(null);
+              }
+            : undefined
+        }
+      />
       {mode === "range" ? (
         <div className="mt-2 grid grid-cols-2 gap-2">
           <label className="text-[11px] text-zinc-500">
@@ -1012,7 +988,7 @@ export function AddLiquidityForm({
       <div className="mt-2 grid grid-cols-2 gap-2">
         <label className="text-[11px] text-zinc-500">
           <span className="flex items-center justify-between">
-            {tokenSymbol}
+            {mode === "market" ? `${tokenSymbol} to sell above the price` : tokenSymbol}
             {mode !== "amounts" && view.derived === "token" ? (
               <span className="text-zinc-400">≈ auto</span>
             ) : null}
@@ -1038,7 +1014,9 @@ export function AddLiquidityForm({
         </label>
         <label className="text-[11px] text-zinc-500">
           <span className="flex items-center justify-between">
-            {pool.pair.symbol}
+            {mode === "market"
+              ? `${pool.pair.symbol} to buy with below the price`
+              : pool.pair.symbol}
             {mode !== "amounts" && view.derived === "pair" ? (
               <span className="text-zinc-400">≈ auto</span>
             ) : null}
@@ -1060,32 +1038,64 @@ export function AddLiquidityForm({
       </div>
       {view.summary ? <p className="mt-2 text-xs text-zinc-600">{view.summary}</p> : null}
       {view.note ? <p className="mt-1 text-[11px] text-zinc-500">{view.note}</p> : null}
-      {review && planText ? (
-        <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
-          <p className="font-medium">{planText.lead}</p>
-          <p className="mt-1 text-[11px] text-zinc-500">{planText.detail}</p>
-          <TxSteps
-            steps={reviewSteps}
-            activeIndex={busy ? stepIndex : -1}
-            className="mt-2 rounded border border-melon-200 bg-melon-50 p-3 text-xs"
-          />
-          <div className="mt-2 flex gap-2">
+      {review ? (
+        <div className="mt-3 space-y-3">
+          <div className="space-y-1">
+            {review.kind === "market" ? (
+              <>
+                {review.plan.tokenSide ? (
+                  <SummaryRow label="Sells above the price">
+                    up to {fmtUnits(review.plan.tokenSide.tokenMaximum, 18)} {tokenSymbol} ·{" "}
+                    {bandLabel(pool, tokenSymbol, review.plan.tokenSide)}
+                  </SummaryRow>
+                ) : null}
+                {review.plan.pairSide ? (
+                  <SummaryRow label="Buys below the price">
+                    up to {fmtUnits(review.plan.pairSide.pairMaximum, pool.pair.decimals)}{" "}
+                    {pool.pair.symbol} · {bandLabel(pool, tokenSymbol, review.plan.pairSide)}
+                  </SummaryRow>
+                ) : null}
+                <SummaryRow label="Positions">
+                  {[review.plan.tokenSide, review.plan.pairSide].filter(Boolean).length}, one each
+                  side of the price
+                </SummaryRow>
+              </>
+            ) : (
+              <>
+                <SummaryRow label="Adds up to">
+                  {fmtUnits(review.plan.tokenMaximum, 18)} {tokenSymbol} +{" "}
+                  {fmtUnits(review.plan.pairMaximum, pool.pair.decimals)} {pool.pair.symbol}
+                </SummaryRow>
+                <SummaryRow label="Band">{bandLabel(pool, tokenSymbol, review.plan)}</SummaryRow>
+              </>
+            )}
+            <SummaryRow label="Headroom">
+              1% over the exact requirement
+              {pool.pair.addr === zeroAddress ? `; unused ${pool.pair.symbol} is refunded` : ""}
+            </SummaryRow>
+          </div>
+          {/* Each action's exact payload is reviewed in the one transaction
+              safety check, the same shell every multi-step flow uses. */}
+          <TxSteps steps={reviewSteps} activeIndex={busy ? stepIndex : -1} />
+          <div className="flex justify-end gap-2">
             <button
               type="button"
-              className="bg-zinc-900 px-3 py-1.5 text-white disabled:opacity-50"
-              disabled={disabled}
-              onClick={() => void execute()}
-            >
-              Confirm & add
-            </button>
-            <button
-              type="button"
-              className="border border-zinc-300 px-3 py-1.5"
+              className="border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50"
               disabled={disabled}
               onClick={() => setReviewed(null)}
             >
-              Cancel
+              Back
             </button>
+            <ButtonWithWallet
+              targetChainId={state.chainId}
+              loading={disabled}
+              disabled={disabled}
+              onClick={() => void execute()}
+              connectWalletText="Connect Wallet"
+              className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+            >
+              {review.kind === "market" ? "Make the market" : "Add liquidity"}
+            </ButtonWithWallet>
           </div>
         </div>
       ) : (
@@ -1095,7 +1105,7 @@ export function AddLiquidityForm({
           disabled={disabled || !address || !view.ready}
           onClick={() => void prepare()}
         >
-          {disabled ? "Checking…" : address ? "Review add liquidity" : "Connect to add liquidity"}
+          {disabled ? "Checking…" : address ? "Review" : "Connect to add liquidity"}
         </button>
       )}
       {minted ? (
@@ -1235,8 +1245,13 @@ function ChainPositionRows({
     position: UserLpPosition;
     plan: ReturnType<typeof prepareRemoveLiquidity>;
   } | null>(null);
-  // The position whose holdings/band are being edited in the panel below.
+  // The position whose holdings/band are being edited in the panel below, or
+  // the market (two sides) being edited or removed.
   const [editing, setEditing] = useState<UserLpPosition | null>(null);
+  const [editingMarket, setEditingMarket] = useState<{
+    sides: MarketSides;
+    startEmpty: boolean;
+  } | null>(null);
   const [edited, setEdited] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
@@ -1324,17 +1339,25 @@ function ChainPositionRows({
   // Claim fees only. Nothing is swapped and the position is untouched, so
   // there is no reviewed amount to re-verify — only the wallet's ownership,
   // which the PositionManager enforces itself.
-  const claimFees = async (position: UserLpPosition) => {
+  const claimFees = async (positions: UserLpPosition[]) => {
     setError(null);
-    setClaiming(position.tokenId);
+    setClaiming(positions[0].tokenId);
     try {
-      const plan = prepareCollectLpFees(pool, position, address, isSafeConnection(wagmiConfig));
+      const unlockData =
+        positions.length === 1
+          ? prepareCollectLpFees(pool, positions[0], address, isSafeConnection(wagmiConfig))
+              .unlockData
+          : prepareCollectMarketFees(
+              pool,
+              positions.map((position) => position.tokenId),
+              address,
+            ).unlockData;
       await writeContractAsync({
         chainId,
         address: positionManager,
         abi: POSITION_MANAGER_ABI,
         functionName: "modifyLiquidities",
-        args: [plan.unlockData, plan.deadline],
+        args: [unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
       });
     } catch (cause) {
       setError(txMessage(cause, "Could not claim fees."));
@@ -1399,136 +1422,293 @@ function ChainPositionRows({
   }
   if (!positions.data?.length) return null;
 
+  const groups = groupMarketPositions(pool, positions.data);
+  const anyBusy =
+    isPending ||
+    claiming !== null ||
+    refreshing !== null ||
+    reviewed !== null ||
+    editing !== null ||
+    editingMarket !== null;
+
+  const renderSingle = (position: UserLpPosition) => {
+    const owed = fees.data?.[position.tokenId.toString()];
+    const nothingOwed = !owed || (owed.pairFees <= 0n && owed.tokenFees <= 0n);
+    const busy =
+      isPending ||
+      claiming !== null ||
+      refreshing !== null ||
+      reviewed !== null ||
+      editing !== null ||
+      editingMarket !== null;
+    return (
+      <TableRow key={position.tokenId.toString()} className="align-top">
+        {chainCell}
+        <TableCell className="font-mono text-xs">#{position.tokenId.toString()}</TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums">
+          {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}
+          <span className="block text-xs text-zinc-500">
+            {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
+          </span>
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums">
+          {fees.isLoading || owed === undefined ? (
+            <span className="text-zinc-400">Reading…</span>
+          ) : !owed ? (
+            <span className="text-zinc-400">Unavailable</span>
+          ) : nothingOwed ? (
+            <span className="text-zinc-400">None yet</span>
+          ) : (
+            <>
+              {fmtUnits(owed.tokenFees, 18)} {tokenSymbol}
+              <span className="block text-xs text-zinc-500">
+                {fmtUnits(owed.pairFees, pool.pair.decimals)} {pool.pair.symbol}
+              </span>
+            </>
+          )}
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums">
+          {(() => {
+            // The pool forgets what a position already took, so lifetime is
+            // only knowable where the index has been accumulating it.
+            if (position.claimedPairFees === undefined || !owed) {
+              return <span className="text-zinc-400">—</span>;
+            }
+            const lifetimeToken = position.claimedTokenFees! + owed.tokenFees;
+            const lifetimePair = position.claimedPairFees + owed.pairFees;
+            if (lifetimeToken <= 0n && lifetimePair <= 0n) {
+              return <span className="text-zinc-400">None yet</span>;
+            }
+            return (
+              <>
+                {fmtUnits(lifetimeToken, 18)} {tokenSymbol}
+                <span className="block text-xs text-zinc-500">
+                  {fmtUnits(lifetimePair, pool.pair.decimals)} {pool.pair.symbol}
+                </span>
+              </>
+            );
+          })()}
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-right">
+          <span className="inline-flex gap-2">
+            <button
+              type="button"
+              className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+              disabled={busy || nothingOwed}
+              onClick={() => void claimFees([position])}
+            >
+              {claiming === position.tokenId ? "Claiming…" : "Claim fees"}
+            </button>
+            <button
+              type="button"
+              className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+              disabled={busy}
+              onClick={() => {
+                setError(null);
+                setEdited(null);
+                setEditing(position);
+              }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+              disabled={busy}
+              onClick={() => void beginReview(position)}
+            >
+              {refreshing === position.tokenId ? "Refreshing…" : "Remove"}
+            </button>
+          </span>
+        </TableCell>
+      </TableRow>
+    );
+  };
+
+  // A market: two positions that meet at the price. Holdings and fees are the
+  // two sides added up; every action covers both.
+  const renderMarket = (group: Extract<PositionGroup, { kind: "market" }>) => {
+    const sides = [group.tokenSide, group.pairSide];
+    const owedSides = sides.map((side) => fees.data?.[side.tokenId.toString()]);
+    const feesKnown = owedSides.every((owed) => owed !== undefined);
+    const feesUsable = owedSides.every((owed) => !!owed);
+    const owedToken = owedSides.reduce((sum, owed) => sum + (owed?.tokenFees ?? 0n), 0n);
+    const owedPair = owedSides.reduce((sum, owed) => sum + (owed?.pairFees ?? 0n), 0n);
+    const nothingOwed = !feesUsable || (owedToken <= 0n && owedPair <= 0n);
+    const tokenHeld = sides.reduce((sum, side) => sum + side.tokenAmount, 0n);
+    const pairHeld = sides.reduce((sum, side) => sum + side.pairAmount, 0n);
+    const lifetimeKnown = feesUsable && sides.every((side) => side.claimedPairFees !== undefined);
+    const lifetimeToken = lifetimeKnown
+      ? sides.reduce((sum, side) => sum + side.claimedTokenFees!, 0n) + owedToken
+      : 0n;
+    const lifetimePair = lifetimeKnown
+      ? sides.reduce((sum, side) => sum + side.claimedPairFees!, 0n) + owedPair
+      : 0n;
+    const key = `market:${group.tokenSide.tokenId.toString()}:${group.pairSide.tokenId.toString()}`;
+    const pending = sides.some((side) => claiming === side.tokenId);
+    return (
+      <TableRow key={key} className="align-top">
+        {chainCell}
+        <TableCell className="whitespace-nowrap font-mono text-xs">
+          Market
+          <span className="block text-zinc-500">
+            #{group.tokenSide.tokenId.toString()} · #{group.pairSide.tokenId.toString()}
+          </span>
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums">
+          {fmtUnits(tokenHeld, 18)} {tokenSymbol}
+          <span className="block text-xs text-zinc-500">
+            {fmtUnits(pairHeld, pool.pair.decimals)} {pool.pair.symbol}
+          </span>
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums">
+          {fees.isLoading || !feesKnown ? (
+            <span className="text-zinc-400">Reading…</span>
+          ) : !feesUsable ? (
+            <span className="text-zinc-400">Unavailable</span>
+          ) : nothingOwed ? (
+            <span className="text-zinc-400">None yet</span>
+          ) : (
+            <>
+              {fmtUnits(owedToken, 18)} {tokenSymbol}
+              <span className="block text-xs text-zinc-500">
+                {fmtUnits(owedPair, pool.pair.decimals)} {pool.pair.symbol}
+              </span>
+            </>
+          )}
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums">
+          {!lifetimeKnown ? (
+            <span className="text-zinc-400">—</span>
+          ) : lifetimeToken <= 0n && lifetimePair <= 0n ? (
+            <span className="text-zinc-400">None yet</span>
+          ) : (
+            <>
+              {fmtUnits(lifetimeToken, 18)} {tokenSymbol}
+              <span className="block text-xs text-zinc-500">
+                {fmtUnits(lifetimePair, pool.pair.decimals)} {pool.pair.symbol}
+              </span>
+            </>
+          )}
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-right">
+          <span className="inline-flex gap-2">
+            <button
+              type="button"
+              className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+              disabled={anyBusy || nothingOwed}
+              onClick={() => void claimFees(sides)}
+            >
+              {pending ? "Claiming…" : "Claim fees"}
+            </button>
+            <button
+              type="button"
+              className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+              disabled={anyBusy}
+              onClick={() => {
+                setError(null);
+                setEdited(null);
+                setEditingMarket({ sides: group, startEmpty: false });
+              }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+              disabled={anyBusy}
+              onClick={() => {
+                setError(null);
+                setEdited(null);
+                setEditingMarket({ sides: group, startEmpty: true });
+              }}
+            >
+              Remove
+            </button>
+          </span>
+        </TableCell>
+      </TableRow>
+    );
+  };
+
   return (
     <>
-      {positions.data.map((position) => {
-        const owed = fees.data?.[position.tokenId.toString()];
-        const nothingOwed = !owed || (owed.pairFees <= 0n && owed.tokenFees <= 0n);
-        const busy =
-          isPending ||
-          claiming !== null ||
-          refreshing !== null ||
-          reviewed !== null ||
-          editing !== null;
-        return (
-          <TableRow key={position.tokenId.toString()} className="align-top">
-            {chainCell}
-            <TableCell className="font-mono text-xs">#{position.tokenId.toString()}</TableCell>
-            <TableCell className="whitespace-nowrap text-right tabular-nums">
-              {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}
-              <span className="block text-xs text-zinc-500">
-                {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
-              </span>
-            </TableCell>
-            <TableCell className="whitespace-nowrap text-right tabular-nums">
-              {fees.isLoading || owed === undefined ? (
-                <span className="text-zinc-400">Reading…</span>
-              ) : !owed ? (
-                <span className="text-zinc-400">Unavailable</span>
-              ) : nothingOwed ? (
-                <span className="text-zinc-400">None yet</span>
-              ) : (
-                <>
-                  {fmtUnits(owed.tokenFees, 18)} {tokenSymbol}
-                  <span className="block text-xs text-zinc-500">
-                    {fmtUnits(owed.pairFees, pool.pair.decimals)} {pool.pair.symbol}
-                  </span>
-                </>
-              )}
-            </TableCell>
-            <TableCell className="whitespace-nowrap text-right tabular-nums">
-              {(() => {
-                // The pool forgets what a position already took, so lifetime is
-                // only knowable where the index has been accumulating it.
-                if (position.claimedPairFees === undefined || !owed) {
-                  return <span className="text-zinc-400">—</span>;
-                }
-                const lifetimeToken = position.claimedTokenFees! + owed.tokenFees;
-                const lifetimePair = position.claimedPairFees + owed.pairFees;
-                if (lifetimeToken <= 0n && lifetimePair <= 0n) {
-                  return <span className="text-zinc-400">None yet</span>;
-                }
-                return (
-                  <>
-                    {fmtUnits(lifetimeToken, 18)} {tokenSymbol}
-                    <span className="block text-xs text-zinc-500">
-                      {fmtUnits(lifetimePair, pool.pair.decimals)} {pool.pair.symbol}
-                    </span>
-                  </>
-                );
-              })()}
-            </TableCell>
-            <TableCell className="whitespace-nowrap text-right">
-              <span className="inline-flex gap-2">
-                <button
-                  type="button"
-                  className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
-                  disabled={busy || nothingOwed}
-                  onClick={() => void claimFees(position)}
-                >
-                  {claiming === position.tokenId ? "Claiming…" : "Claim fees"}
-                </button>
-                <button
-                  type="button"
-                  className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
-                  disabled={busy}
-                  onClick={() => {
-                    setError(null);
-                    setEdited(null);
-                    setEditing(position);
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
-                  disabled={busy}
-                  onClick={() => void beginReview(position)}
-                >
-                  {refreshing === position.tokenId ? "Refreshing…" : "Remove"}
-                </button>
-              </span>
-            </TableCell>
-          </TableRow>
-        );
-      })}
+      {groups.map((group) =>
+        group.kind === "single" ? renderSingle(group.position) : renderMarket(group),
+      )}
       {/* The panels live OUTSIDE the scroll wrapper — as table rows they would
           inherit the table's full scrollable width and get cut off. */}
       {panelHost
         ? createPortal(
             <>
               {reviewed ? (
-                <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-xs text-zinc-700">
-                  <p>
-                    Burn position #{reviewed.position.tokenId.toString()} on{" "}
-                    {chainName(state.chainId)} for at least{" "}
-                    {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-                    {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol}.
-                  </p>
-                  <p className="mt-1 text-zinc-500">
-                    These 95% minimums are sent in the exact burn call; a larger adverse move
-                    reverts.
-                  </p>
-                  <div className="mt-2 flex gap-2">
+                <div className="mt-3 space-y-3">
+                  <div className="space-y-1">
+                    <SummaryRow label="Position">
+                      #{reviewed.position.tokenId.toString()} on {chainName(state.chainId)}
+                    </SummaryRow>
+                    <SummaryRow label="Back to your wallet">
+                      ~{fmtUnits(reviewed.position.tokenAmount, 18)} {tokenSymbol} +{" "}
+                      {fmtUnits(reviewed.position.pairAmount, pool.pair.decimals)}{" "}
+                      {pool.pair.symbol} + unclaimed fees
+                    </SummaryRow>
+                    <SummaryRow label="Enforced onchain">
+                      At least {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
+                      {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol}{" "}
+                      back (95% floors)
+                    </SummaryRow>
+                  </div>
+                  <TxSteps
+                    steps={[
+                      {
+                        title: "Remove the position",
+                        detail: "Burns it and returns both sides to your wallet.",
+                      },
+                    ]}
+                    activeIndex={isPending ? 0 : -1}
+                  />
+                  <div className="flex justify-end gap-2">
                     <button
                       type="button"
-                      className="bg-zinc-900 px-2 py-1 text-white disabled:opacity-50"
-                      disabled={isPending}
-                      onClick={() => void remove()}
-                    >
-                      {isPending ? "Submitting…" : "Confirm & remove"}
-                    </button>
-                    <button
-                      type="button"
-                      className="border border-zinc-300 px-2 py-1"
+                      className="border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50"
                       disabled={isPending}
                       onClick={() => setReviewed(null)}
                     >
-                      Cancel
+                      Back
                     </button>
+                    <ButtonWithWallet
+                      targetChainId={state.chainId}
+                      loading={isPending}
+                      disabled={isPending}
+                      onClick={() => void remove()}
+                      connectWalletText="Connect Wallet"
+                      className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+                    >
+                      Remove the position
+                    </ButtonWithWallet>
                   </div>
                 </div>
+              ) : null}
+              {editingMarket ? (
+                <MarketEditPanel
+                  key={`${editingMarket.sides.tokenSide?.tokenId ?? "-"}:${editingMarket.sides.pairSide?.tokenId ?? "-"}`}
+                  state={state}
+                  pool={pool}
+                  sides={editingMarket.sides}
+                  tokenSymbol={tokenSymbol}
+                  startEmpty={editingMarket.startEmpty}
+                  onClose={() => setEditingMarket(null)}
+                  onDone={(hash) => {
+                    setEditingMarket(null);
+                    setEdited(
+                      hash
+                        ? "Market updated. The table above reflects it."
+                        : "Market edit proposed to Safe. The table updates once it executes.",
+                    );
+                    void positions.refetch();
+                    void fees.refetch();
+                  }}
+                />
               ) : null}
               {editing ? (
                 <EditPositionPanel

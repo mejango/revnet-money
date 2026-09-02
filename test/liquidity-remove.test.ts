@@ -1,10 +1,14 @@
 import { describeEditLiquidityPlan } from "@/app/[slug]/components/v6/owners/market/formView";
 import {
+  groupMarketPositions,
   lpBandPrices,
   lpDeadline,
   prepareAddLiquidity,
   prepareCollectLpFees,
+  prepareCollectMarketFees,
   prepareEditLiquidity,
+  prepareMarketEdit,
+  prepareMarketLiquidity,
   prepareRemoveLiquidity,
   type PoolSnapshot,
   type UserLpPosition,
@@ -401,6 +405,230 @@ describe("Revnet LP edit", () => {
     expect(move.lead).toMatch(/in the 0.5 – 2 ETH\/ART band/);
     expect(move.lead).toMatch(/pulls about 1 ART and gets back about 1 ETH/);
     expect(words("remove", [-(10n ** 18n), -(10n ** 18n)]).lead).toMatch(/^Burns position #42/);
+  });
+});
+
+// A market at price 1: the token side sits in the ticks BELOW spot (pairIsC0
+// flips the axis, so lower ticks are higher display prices) and the pair side
+// in the ticks above it, with spot's own slot skipped between them.
+const marketPool = { ...pool, sqrtP, price: 1 } as PoolSnapshot;
+const tokenSideHeld = uniswapV4AmountsForLiquidity(
+  sqrtP,
+  uniswapV4SqrtPriceX96AtTick(-600),
+  uniswapV4SqrtPriceX96AtTick(0),
+  10n ** 18n,
+);
+const pairSideHeld = uniswapV4AmountsForLiquidity(
+  sqrtP,
+  uniswapV4SqrtPriceX96AtTick(60),
+  uniswapV4SqrtPriceX96AtTick(600),
+  10n ** 18n,
+);
+const tokenSide: UserLpPosition = {
+  ...position,
+  tokenId: 7n,
+  tickLower: -600,
+  tickUpper: 0,
+  liquidity: 10n ** 18n,
+  pairAmount: tokenSideHeld.amount0,
+  tokenAmount: tokenSideHeld.amount1,
+};
+const pairSide: UserLpPosition = {
+  ...position,
+  tokenId: 8n,
+  tickLower: 60,
+  tickUpper: 600,
+  liquidity: 10n ** 18n,
+  pairAmount: pairSideHeld.amount0,
+  tokenAmount: pairSideHeld.amount1,
+};
+const corridor = { floor: 0.5, ceiling: 2 };
+
+describe("Revnet LP market", () => {
+  // wallet-action:liquidity-management
+  it("mints both sides of the corridor in one unlock with independent amounts", () => {
+    const plan = prepareMarketLiquidity(
+      marketPool,
+      { tokenAmount: 10n ** 18n, pairAmount: 5n * 10n ** 17n },
+      corridor,
+      recipient,
+    );
+    expect(plan.tokenSide).not.toBeNull();
+    expect(plan.pairSide).not.toBeNull();
+    // Token side above spot on the display axis = ticks below spot here; pair side the other way.
+    expect(plan.tokenSide!.tickUpper).toBeLessThanOrEqual(0);
+    expect(plan.pairSide!.tickLower).toBeGreaterThan(0);
+    // Each side uses ITS amount in full (single-sided), not a ratio of the two.
+    expect(plan.tokenSide!.tokenMaximum).toBeGreaterThanOrEqual(10n ** 18n);
+    expect(plan.pairSide!.pairMaximum).toBeGreaterThanOrEqual(5n * 10n ** 17n);
+    expect(plan.tokenSide!.pairMaximum).toBeLessThanOrEqual(1n);
+    expect(plan.pairSide!.tokenMaximum).toBeLessThanOrEqual(1n);
+    // Native pair funds via msg.value, the project token via one merged Permit2 allowance.
+    expect(plan.value).toBe(plan.tokenSide!.value + plan.pairSide!.value);
+    expect(plan.value).toBeGreaterThanOrEqual(plan.pairSide!.pairMaximum);
+    expect(plan.erc20Sides).toEqual([
+      { currency: projectToken, max: plan.tokenSide!.tokenMaximum },
+    ]);
+
+    const [actions, params] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      plan.unlockData,
+    );
+    // MINT, MINT, CLOSE ×2, SWEEP.
+    expect(actions).toBe("0x0202121214");
+    expect(params).toHaveLength(5);
+    const [, tokenMint] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      plan.tokenSide!.unlockData,
+    );
+    const [, pairMint] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      plan.pairSide!.unlockData,
+    );
+    expect(params[0]).toBe(tokenMint[0]);
+    expect(params[1]).toBe(pairMint[0]);
+  });
+
+  it("omits the side spot has left and refuses an empty market", () => {
+    const aboveSpot = prepareMarketLiquidity(
+      marketPool,
+      { tokenAmount: 10n ** 18n, pairAmount: 5n * 10n ** 17n },
+      { floor: 2, ceiling: 4 },
+      recipient,
+    );
+    expect(aboveSpot.tokenSide).not.toBeNull();
+    expect(aboveSpot.pairSide).toBeNull();
+    expect(() =>
+      prepareMarketLiquidity(marketPool, { tokenAmount: 0n, pairAmount: 0n }, corridor, recipient),
+    ).toThrow(/at least one side/);
+    expect(() =>
+      prepareMarketLiquidity(
+        marketPool,
+        { tokenAmount: 0n, pairAmount: 10n ** 18n },
+        { floor: 2, ceiling: 4 },
+        recipient,
+      ),
+    ).toThrow(/outside the pair side/);
+  });
+
+  it("claims both sides' fees with one take", () => {
+    const [actions, params] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      prepareCollectMarketFees(marketPool, [7n, 8n], recipient).unlockData,
+    );
+    expect(actions).toBe("0x010111");
+    expect(params).toHaveLength(3);
+    expect(decodeAbiParameters(modifyParams, params[1])[0]).toBe(8n);
+    expect(decodeAbiParameters(modifyParams, params[1])[1]).toBe(0n);
+  });
+
+  it("groups two bands that meet at spot into one market and leaves the rest alone", () => {
+    const lone: UserLpPosition = { ...position, tokenId: 9n, tickLower: 1200, tickUpper: 1800 };
+    const groups = groupMarketPositions(marketPool, [pairSide, lone, tokenSide]);
+    expect(groups).toEqual([
+      { kind: "market", tokenSide, pairSide },
+      { kind: "single", position: lone },
+    ]);
+    // A gap wider than one tick spacing is two unrelated positions.
+    const far: UserLpPosition = { ...pairSide, tokenId: 10n, tickLower: 120 };
+    expect(groupMarketPositions(marketPool, [tokenSide, far]).map((g) => g.kind)).toEqual([
+      "single",
+      "single",
+    ]);
+  });
+
+  it("edits each side in place under one settlement", () => {
+    const plan = prepareMarketEdit(
+      marketPool,
+      { tokenSide, pairSide },
+      { tokenAmount: tokenSide.tokenAmount * 2n, pairAmount: pairSide.pairAmount / 2n },
+      corridor,
+      false,
+      recipient,
+    );
+    expect(plan.token?.kind).toBe("increase");
+    expect(plan.pair?.kind).toBe("decrease");
+    expect(plan.token?.tokenId).toBe(7n);
+    expect(plan.pair?.tokenId).toBe(8n);
+    expect(plan.tokenFlow).toBeGreaterThan(0n);
+    expect(plan.pairFlow).toBeLessThan(0n);
+    expect(plan.pairMinimum).toBe((-plan.pairFlow * 9_500n) / 10_000n);
+    expect(plan.erc20Sides).toEqual([{ currency: projectToken, max: plan.tokenFunding }]);
+    const [actions, params] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      plan.unlockData,
+    );
+    // INCREASE (token side), DECREASE (pair side), CLOSE ×2, SWEEP (the increase's 1-wei native max).
+    expect(actions).toBe("0x0001121214");
+    expect(params).toHaveLength(5);
+  });
+
+  it("re-fits both sides to a moved corridor by burning and re-minting each", () => {
+    const plan = prepareMarketEdit(
+      marketPool,
+      { tokenSide, pairSide },
+      { tokenAmount: tokenSide.tokenAmount, pairAmount: pairSide.pairAmount },
+      { floor: 0.25, ceiling: 4 },
+      true,
+      recipient,
+    );
+    expect(plan.refit).toBe(true);
+    expect(plan.token?.kind).toBe("move");
+    expect(plan.pair?.kind).toBe("move");
+    // Sized inside each burn's credit, so nothing but dust headroom is pulled.
+    expect(plan.tokenFunding).toBe(0n);
+    expect(plan.tokenFlow).toBeLessThanOrEqual(0n);
+    expect(plan.pairFlow).toBeLessThanOrEqual(0n);
+    const [actions, params] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      plan.unlockData,
+    );
+    expect(actions.startsWith("0x03020302")).toBe(true);
+    expect(params.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("removes one side, keeps an unchanged side, and mints a missing side", () => {
+    const removeToken = prepareMarketEdit(
+      marketPool,
+      { tokenSide, pairSide },
+      { tokenAmount: 0n, pairAmount: pairSide.pairAmount },
+      corridor,
+      false,
+      recipient,
+    );
+    expect(removeToken.token?.kind).toBe("remove");
+    expect(removeToken.pair?.kind).toBe("keep");
+    expect(removeToken.pairFlow).toBe(0n);
+    expect(
+      decodeAbiParameters([{ type: "bytes" }, { type: "bytes[]" }], removeToken.unlockData)[0],
+    ).toBe("0x031212");
+
+    const mintToken = prepareMarketEdit(
+      marketPool,
+      { tokenSide: null, pairSide },
+      { tokenAmount: 10n ** 18n, pairAmount: pairSide.pairAmount },
+      corridor,
+      false,
+      recipient,
+    );
+    expect(mintToken.token?.kind).toBe("mint");
+    expect(mintToken.token?.tokenId).toBeNull();
+    expect(mintToken.pair?.kind).toBe("keep");
+    expect(mintToken.erc20Sides).toEqual([{ currency: projectToken, max: mintToken.tokenFunding }]);
+    expect(
+      decodeAbiParameters([{ type: "bytes" }, { type: "bytes[]" }], mintToken.unlockData)[0],
+    ).toBe("0x02121214");
+
+    expect(() =>
+      prepareMarketEdit(
+        marketPool,
+        { tokenSide, pairSide },
+        { tokenAmount: tokenSide.tokenAmount, pairAmount: pairSide.pairAmount },
+        corridor,
+        false,
+        recipient,
+      ),
+    ).toThrow(/as it is/);
   });
 });
 

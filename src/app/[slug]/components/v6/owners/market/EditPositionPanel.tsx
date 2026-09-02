@@ -11,7 +11,7 @@ import {
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
-import { erc20Abi, formatUnits, parseUnits, zeroAddress, type Address, type Hex } from "viem";
+import { erc20Abi, formatUnits, zeroAddress, type Hex, type PublicClient } from "viem";
 import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { chainName, fmtUnits } from "../settlement/lib";
 import { describeEditLiquidityPlan } from "./formView";
@@ -20,8 +20,6 @@ import {
   lpDeadline,
   PERMIT2_ABI,
   PERMIT2_ADDRESS,
-  permit2AllowanceCovers,
-  permit2ApprovalArgs,
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
   prepareEditLiquidity,
@@ -34,13 +32,13 @@ import {
   type UserLpPosition,
 } from "./lib";
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
-
-/** A wallet prompt this edit will raise, decided while reviewing so the signer sees the whole queue first. */
-type EditStep = {
-  title: string;
-  detail: string;
-  approval?: { kind: "erc20" | "permit2"; currency: Address; max: bigint };
-};
+import {
+  approvalStepsFor,
+  parseAmountText,
+  runApprovalStep,
+  SummaryRow,
+  type LiquidityStep,
+} from "./liquidityWrite";
 
 const FINAL_STEP: Record<EditLiquidityPlan["kind"], { title: string; detail: string }> = {
   increase: {
@@ -120,7 +118,7 @@ export function EditPositionPanel({
   const [reviewed, setReviewed] = useState<{
     pool: PoolSnapshot;
     plan: EditLiquidityPlan;
-    steps: EditStep[];
+    steps: LiquidityStep[];
     snapshot: string;
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -265,32 +263,16 @@ export function EditPositionPanel({
       if (plan.pairFlow > held.pair) {
         throw new Error(`That's more ${pool.pair.symbol} than your balance.`);
       }
-      const symbolOf = (currency: Address) =>
-        currency.toLowerCase() === pool.projectToken.toLowerCase() ? tokenSymbol : pool.pair.symbol;
-      const approvals: EditStep[] = [];
-      for (const side of plan.erc20Sides) {
-        const symbol = symbolOf(side.currency);
-        const allowance = await publicClient.readContract({
-          address: side.currency,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, PERMIT2_ADDRESS],
-        });
-        if (allowance < side.max) {
-          approvals.push({
-            title: `Approve ${symbol} access`,
-            detail: `Permit2 is what moves your ${symbol} into the pool.`,
-            approval: { kind: "erc20", currency: side.currency, max: side.max },
-          });
-        }
-        if (!(await permit2AllowanceCovers(state.chainId, address, side.currency, side.max))) {
-          approvals.push({
-            title: `Authorize the Uniswap position manager for ${symbol}`,
-            detail: `A capped, expiring ${symbol} allowance — not an open-ended one.`,
-            approval: { kind: "permit2", currency: side.currency, max: side.max },
-          });
-        }
-      }
+      const approvals = await approvalStepsFor({
+        publicClient: publicClient as PublicClient,
+        chainId: state.chainId,
+        address,
+        erc20Sides: plan.erc20Sides,
+        symbolOf: (currency) =>
+          currency.toLowerCase() === pool.projectToken.toLowerCase()
+            ? tokenSymbol
+            : pool.pair.symbol,
+      });
       setReviewed({
         pool: fresh.pool,
         plan,
@@ -323,36 +305,27 @@ export function EditPositionPanel({
     try {
       for (const [index, step] of steps.entries()) {
         setStepIndex(index);
-        if (step.approval?.kind === "erc20") {
-          await ensureAllowance(step.approval.currency, PERMIT2_ADDRESS, step.approval.max);
-          continue;
-        }
-        if (step.approval?.kind === "permit2") {
-          // Re-checked rather than trusted: the review's reading can age out.
-          const covered = await permit2AllowanceCovers(
-            state.chainId,
+        if (step.approval) {
+          const outcome = await runApprovalStep(step, {
+            chainId: state.chainId,
             address,
-            step.approval.currency,
-            step.approval.max,
-          );
-          if (covered) continue;
-          const approvalHash = await writeContractAsync({
-            chainId,
-            address: PERMIT2_ADDRESS,
-            abi: PERMIT2_ABI,
-            functionName: "approve",
-            args: permit2ApprovalArgs(state.chainId, step.approval.currency, step.approval.max),
+            publicClient: publicClient as PublicClient,
+            ensureAllowance,
+            approvePermit2: (args) =>
+              writeContractAsync({
+                chainId,
+                address: PERMIT2_ADDRESS,
+                abi: PERMIT2_ABI,
+                functionName: "approve",
+                args,
+              }),
           });
-          if (submittedViaSafe(approvalHash)) {
+          if (outcome === "safe-proposed") {
             setStatus(
               "Permit2 authorization was proposed to Safe. Execute it, then review the edit again.",
             );
             setReviewed(null);
             return;
-          }
-          const receipt = await waitForReceiptWithRetry(publicClient, approvalHash);
-          if (receipt.status !== "success") {
-            throw new Error(`Permit2 authorization ${approvalHash} reverted.`);
           }
           continue;
         }
@@ -619,18 +592,6 @@ export function EditPositionPanel({
   );
 }
 
-function parseAmountText(text: string, decimals: number, symbol: string): bigint {
-  const trimmed = text.trim();
-  if (trimmed === "") return 0n;
-  try {
-    const amount = parseUnits(trimmed, decimals);
-    if (amount < 0n) throw new Error();
-    return amount;
-  } catch {
-    throw new Error(`Enter a valid ${symbol} amount.`);
-  }
-}
-
 /**
  * Which typed side the band cannot fully use, if any: the other side is the
  * binding one (its holding lands on its target) while this one is cut well
@@ -660,15 +621,6 @@ function cappedSide(
         side: "pair",
         needed: fmtUnits((preview.pairAmount * tokenHolding) / pairHolding, 18),
       };
-}
-
-function SummaryRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="shrink-0 text-sm text-zinc-500">{label}</span>
-      <span className="text-right text-sm text-zinc-900">{children}</span>
-    </div>
-  );
 }
 
 /** The three review lines for a plan, sized against the pool it was built on. */

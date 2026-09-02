@@ -171,41 +171,65 @@ describe("liquidityFormView — range mode", () => {
   });
 });
 
-describe("liquidityFormView — full-range mode", () => {
-  it("derives the v2 pool-ratio counterpart from the token side", () => {
+describe("liquidityFormView — make-the-market mode", () => {
+  it("places each side on its half of the corridor with independent amounts", () => {
     const view = liquidityFormView({
       ...base,
-      mode: "full",
-      tokenText: "8000",
-      driver: "token",
+      mode: "market",
+      tokenText: "20000000",
+      pairText: "8000",
     });
     expect(view.ready).toBe(true);
-    expect(view.derived).toBe("pair");
-    // v2 ratio: pair = token · price, within the finite-bounds tolerance.
-    expect(view.pairAmount!).toBeCloseTo(8000 * PRICE, 6);
-    expect(view.minPrice).toBeCloseTo(PRICE / 1e9, 20);
-    expect(view.maxPrice).toBeCloseTo(PRICE * 1e9, 2);
+    expect(view.minPrice).toBe(REFERENCE.cashOut);
+    expect(view.maxPrice).toBe(REFERENCE.issuance);
+    // Nothing is derived: both amounts are used as typed.
+    expect(view.derived).toBeNull();
+    expect(view.tokenAmount).toBe(20000000);
+    expect(view.pairAmount).toBe(8000);
     expect(view.disabled).toEqual({ token: false, pair: false });
-    expect(view.note).toContain("every price");
-    expect(view.summary).toContain("8000 MARKEE");
+    expect(view.summary).toContain("20000000 MARKEE selling between");
+    expect(view.summary).toContain("8000 ETH buying between");
+    expect(view.note).toContain("independent");
   });
 
-  it("derives the token side when the pair drives", () => {
+  it("works with one side only", () => {
+    const view = liquidityFormView({ ...base, mode: "market", tokenText: "5" });
+    expect(view.ready).toBe(true);
+    expect(view.pairAmount).toBe(0);
+    expect(view.summary).not.toContain("ETH buying");
+  });
+
+  it("disables the side spot has no room for and explains it", () => {
     const view = liquidityFormView({
       ...base,
-      mode: "full",
-      pairText: "0.08",
-      driver: "pair",
+      mode: "market",
+      price: REFERENCE.issuance * 1.1,
+      tokenText: "5",
+      pairText: "1",
     });
+    expect(view.disabled).toEqual({ token: true, pair: false });
+    expect(view.tokenAmount).toBe(0);
     expect(view.ready).toBe(true);
-    expect(view.derived).toBe("token");
-    expect(view.tokenAmount!).toBeCloseTo(0.08 / PRICE, 0);
+    expect(view.note).toContain("at or above the ceiling");
+    const tokenOnly = liquidityFormView({
+      ...base,
+      mode: "market",
+      price: REFERENCE.issuance * 1.1,
+      tokenText: "5",
+    });
+    expect(tokenOnly.ready).toBe(false);
+    expect(tokenOnly.note).toContain("no room to sell");
   });
 
-  it("is not ready until an amount is entered, and says why", () => {
-    const view = liquidityFormView({ ...base, mode: "full" });
+  it("is not available without a floor and ceiling", () => {
+    const view = liquidityFormView({
+      ...base,
+      mode: "market",
+      reference: { cashOut: null, issuance: null },
+      tokenText: "5",
+    });
     expect(view.ready).toBe(false);
-    expect(view.note).toContain("every price");
+    expect(view.note).toContain("no floor and ceiling");
   });
 });
 

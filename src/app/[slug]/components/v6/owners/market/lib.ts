@@ -1041,6 +1041,41 @@ export function prepareCollectLpFees(
   return { unlockData, deadline };
 }
 
+/**
+ * Claim the fees of several positions (a market's two sides) in one unlock:
+ * a zero-liquidity decrease per position, then one take of both currencies.
+ * Same shape as the single collect, just repeated before the take.
+ */
+export function prepareCollectMarketFees(
+  pool: PoolSnapshot,
+  tokenIds: readonly bigint[],
+  recipient: Address,
+): { unlockData: Hex } {
+  if (!tokenIds.length) throw new Error("No positions to claim from.");
+  const decreases = tokenIds.map((tokenId) =>
+    encodeAbiParameters(
+      [
+        { type: "uint256" },
+        { type: "uint256" },
+        { type: "uint128" },
+        { type: "uint128" },
+        { type: "bytes" },
+      ],
+      [tokenId, 0n, 0n, 0n, "0x"],
+    ),
+  );
+  const takePair = encodeAbiParameters(
+    [{ type: "address" }, { type: "address" }, { type: "address" }],
+    [pool.key.currency0, pool.key.currency1, recipient],
+  );
+  return {
+    unlockData: encodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      [`0x${"01".repeat(tokenIds.length)}11` as Hex, [...decreases, takePair]],
+    ),
+  };
+}
+
 // ── Add liquidity ────────────────────────────────────────────────────────────
 
 const ACTION_MINT_POSITION = "02";
@@ -1224,75 +1259,89 @@ const ACTION_TAKE_PAIR = "11";
 
 export type EditLiquidityKind = "increase" | "decrease" | "move" | "remove";
 
-export interface EditLiquidityPlan {
+/**
+ * One position's edit as bare V4 actions, before settlement. The single-position
+ * flow settles it alone; a market edit strings several sides' operations
+ * together under one pair of closes.
+ */
+interface EditOperations {
   kind: EditLiquidityKind;
-  tokenId: bigint;
-  unlockData: Hex;
-  /** The band the position covers after the edit — its current one unless moved. */
+  /** Action bytes (hex pairs, no 0x) and their parameters, settlement excluded. */
+  actions: string;
+  parameters: Hex[];
   tickLower: number;
   tickUpper: number;
-  /** The position's liquidity before the edit, so a stale review is caught before sending. */
   liquidityBefore: bigint;
-  /** The position's liquidity after the edit; 0 once removed. */
   liquidity: bigint;
-  /** The liquidity added (increase) or freed (decrease); 0 for a move or removal. */
   liquidityDelta: bigint;
-  /** What the position holds after the edit, at the reviewed price. */
   pairHolding: bigint;
   tokenHolding: bigint;
-  /**
-   * The expected wallet flow per side at the reviewed price: positive is
-   * pulled from the wallet, negative returns to it. Unclaimed fees come back
-   * on top and are not counted here.
-   */
   pairFlow: bigint;
   tokenFlow: bigint;
-  /** The most the wallet can be asked for per side — the expected pull plus 1% price headroom; 0 when nothing is pulled. */
   pairFunding: bigint;
   tokenFunding: bigint;
-  /** msg.value: the native side's funding, swept back if unused. */
   value: bigint;
-  /** ERC-20 sides the wallet funds; each needs a Permit2 allowance of `max`. */
   erc20Sides: Array<{ currency: Address; max: bigint }>;
-  /** Floors enforced onchain: 95% of what the burn (move, removal) or the freed portion (decrease) returns; 0 for an increase. */
   pairMinimum: bigint;
   tokenMinimum: bigint;
-  /** The mint half of a move, for the live-price recheck before sending. */
   mint: AddLiquidityPlan | null;
-  /** The maxima in currency order an increase or move is held to; 0 otherwise. */
   amount0Max: bigint;
   amount1Max: bigint;
 }
 
-/**
- * Edit a position in ONE transaction: set what it should hold and, optionally,
- * the band it covers. Target amounts are ceilings — the band and the current
- * price fix the ratio, so the position ends up holding at most the target on
- * each side. Which V4 actions run depends on what changed:
- *
- * - Same band, more liquidity → INCREASE_LIQUIDITY + CLOSE×2 [+ SWEEP]: the
- *   wallet funds the difference (1% price headroom in the maxima); unclaimed
- *   fees offset what it pays.
- * - Same band, less liquidity → DECREASE_LIQUIDITY + TAKE_PAIR: the freed
- *   share and unclaimed fees return to the wallet, behind 95% floors.
- * - New band → BURN_POSITION + MINT_POSITION + CLOSE×2 [+ SWEEP]: the burn's
- *   credit funds the mint inside the unlock; only the difference touches the
- *   wallet, in either direction. The part of each target the old position
- *   already covers is shaved 1% so ~1% of price drift between review and
- *   execution still fits without wallet funding, matching the plain move.
- * - Nothing on either side → the full-exit removal.
- *
- * Every path reverts as a whole if the live price outruns the reviewed
- * maxima/floors, leaving the position untouched.
- */
-export function prepareEditLiquidity(
+export interface EditLiquidityPlan extends EditOperations {
+  tokenId: bigint;
+  unlockData: Hex;
+}
+
+/** The three closing actions every wallet-funded plan ends with: settle both currencies, refund unused native value. */
+function closeActions(pool: PoolSnapshot, recipient: Address, value: bigint) {
+  const parameters: Hex[] = [
+    encodeAbiParameters([{ type: "address" }], [pool.key.currency0]),
+    encodeAbiParameters([{ type: "address" }], [pool.key.currency1]),
+  ];
+  let actions = `${ACTION_CLOSE_CURRENCY}${ACTION_CLOSE_CURRENCY}`;
+  if (value > 0n) {
+    parameters.push(
+      encodeAbiParameters([{ type: "address" }, { type: "address" }], [pool.pair.addr, recipient]),
+    );
+    actions += ACTION_SWEEP;
+  }
+  return { actions, parameters };
+}
+
+function encodeUnlock(actions: string, parameters: Hex[]): Hex {
+  return encodeAbiParameters(
+    [{ type: "bytes" }, { type: "bytes[]" }],
+    [`0x${actions}` as Hex, parameters],
+  );
+}
+
+/** Merge per-currency wallet funding from several operations into one allowance list. */
+function mergeErc20Sides(
+  lists: Array<Array<{ currency: Address; max: bigint }>>,
+): Array<{ currency: Address; max: bigint }> {
+  const byCurrency = new Map<string, { currency: Address; max: bigint }>();
+  for (const list of lists) {
+    for (const side of list) {
+      const key = side.currency.toLowerCase();
+      const current = byCurrency.get(key);
+      byCurrency.set(key, {
+        currency: side.currency,
+        max: (current?.max ?? 0n) + side.max,
+      });
+    }
+  }
+  return [...byCurrency.values()];
+}
+
+function editOperations(
   pool: PoolSnapshot,
   position: UserLpPosition,
   target: { pairAmount: bigint; tokenAmount: bigint },
-  /** null keeps the position's own band, exactly; a range re-mints it. */
   range: { minimumPrice: number; maximumPrice: number } | null,
   recipient: Address,
-): EditLiquidityPlan {
+): EditOperations {
   if (target.pairAmount < 0n || target.tokenAmount < 0n) throw new Error("Enter a valid amount.");
   const byCurrency = (pair: bigint, token: bigint) =>
     pool.pairIsC0 ? { amount0: pair, amount1: token } : { amount0: token, amount1: pair };
@@ -1303,19 +1352,14 @@ export function prepareEditLiquidity(
   const pairIsNative = pool.pair.addr === zeroAddress;
   const nativeIsC0 = pool.pairIsC0 && pairIsNative;
   const nativeIsC1 = !pool.pairIsC0 && pairIsNative;
-  const close0 = encodeAbiParameters([{ type: "address" }], [pool.key.currency0]);
-  const close1 = encodeAbiParameters([{ type: "address" }], [pool.key.currency1]);
-  const sweep = encodeAbiParameters(
-    [{ type: "address" }, { type: "address" }],
-    [pool.pair.addr, recipient],
-  );
-  const encodePlan = (actions: string, parameters: Hex[]): Hex =>
-    encodeAbiParameters(
-      [{ type: "bytes" }, { type: "bytes[]" }],
-      [`0x${actions}` as Hex, parameters],
-    );
+  const modifyParams = [
+    { type: "uint256" },
+    { type: "uint256" },
+    { type: "uint128" },
+    { type: "uint128" },
+    { type: "bytes" },
+  ] as const;
   const base = {
-    tokenId: position.tokenId,
     liquidityBefore: position.liquidity,
     pairFunding: 0n,
     tokenFunding: 0n,
@@ -1328,12 +1372,23 @@ export function prepareEditLiquidity(
     amount1Max: 0n,
   };
 
-  const removal = (): EditLiquidityPlan => {
-    const plan = prepareRemoveLiquidity(pool, position, recipient);
+  const removal = (): EditOperations => {
+    const pairMinimum = retainedFloor(position.pairAmount);
+    const tokenMinimum = retainedFloor(position.tokenAmount);
+    const burn = encodeAbiParameters(
+      [{ type: "uint256" }, { type: "uint128" }, { type: "uint128" }, { type: "bytes" }],
+      [
+        position.tokenId,
+        pool.pairIsC0 ? pairMinimum : tokenMinimum,
+        pool.pairIsC0 ? tokenMinimum : pairMinimum,
+        "0x",
+      ],
+    );
     return {
       ...base,
       kind: "remove",
-      unlockData: plan.unlockData,
+      actions: ACTION_BURN_POSITION,
+      parameters: [burn],
       tickLower: position.tickLower,
       tickUpper: position.tickUpper,
       liquidity: 0n,
@@ -1342,8 +1397,8 @@ export function prepareEditLiquidity(
       tokenHolding: 0n,
       pairFlow: -position.pairAmount,
       tokenFlow: -position.tokenAmount,
-      pairMinimum: plan.pairMinimum,
-      tokenMinimum: plan.tokenMinimum,
+      pairMinimum,
+      tokenMinimum,
     };
   };
   if (target.pairAmount <= 0n && target.tokenAmount <= 0n) return removal();
@@ -1392,28 +1447,20 @@ export function prepareEditLiquidity(
       if (!nativeIsC1 && amount1Max > 1n) {
         erc20Sides.push({ currency: pool.key.currency1, max: amount1Max });
       }
-      const increase = encodeAbiParameters(
-        [
-          { type: "uint256" },
-          { type: "uint256" },
-          { type: "uint128" },
-          { type: "uint128" },
-          { type: "bytes" },
-        ],
-        [position.tokenId, delta, amount0Max, amount1Max, "0x"],
-      );
-      const parameters: Hex[] = [increase, close0, close1];
-      let actions = `${ACTION_INCREASE_LIQUIDITY}${ACTION_CLOSE_CURRENCY}${ACTION_CLOSE_CURRENCY}`;
-      if (value > 0n) {
-        parameters.push(sweep);
-        actions += ACTION_SWEEP;
-      }
+      const increase = encodeAbiParameters(modifyParams, [
+        position.tokenId,
+        delta,
+        amount0Max,
+        amount1Max,
+        "0x",
+      ]);
       const pull = byPair(required);
       const funding = byPair({ amount0: amount0Max, amount1: amount1Max });
       return {
         ...base,
         kind: "increase",
-        unlockData: encodePlan(actions, parameters),
+        actions: ACTION_INCREASE_LIQUIDITY,
+        parameters: [increase],
         tickLower: position.tickLower,
         tickUpper: position.tickUpper,
         liquidity: targetLiquidity,
@@ -1434,29 +1481,20 @@ export function prepareEditLiquidity(
     const freed = uniswapV4AmountsForLiquidity(pool.sqrtP, sqrtA, sqrtB, delta);
     const amount0Minimum = retainedFloor(freed.amount0);
     const amount1Minimum = retainedFloor(freed.amount1);
-    const decrease = encodeAbiParameters(
-      [
-        { type: "uint256" },
-        { type: "uint256" },
-        { type: "uint128" },
-        { type: "uint128" },
-        { type: "bytes" },
-      ],
-      [position.tokenId, delta, amount0Minimum, amount1Minimum, "0x"],
-    );
-    const takePair = encodeAbiParameters(
-      [{ type: "address" }, { type: "address" }, { type: "address" }],
-      [pool.key.currency0, pool.key.currency1, recipient],
-    );
+    const decrease = encodeAbiParameters(modifyParams, [
+      position.tokenId,
+      delta,
+      amount0Minimum,
+      amount1Minimum,
+      "0x",
+    ]);
     const returned = byPair(freed);
     const minimum = byPair({ amount0: amount0Minimum, amount1: amount1Minimum });
     return {
       ...base,
       kind: "decrease",
-      unlockData: encodePlan(`${ACTION_DECREASE_LIQUIDITY}${ACTION_TAKE_PAIR}`, [
-        decrease,
-        takePair,
-      ]),
+      actions: ACTION_DECREASE_LIQUIDITY,
+      parameters: [decrease],
       tickLower: position.tickLower,
       tickUpper: position.tickUpper,
       liquidity: targetLiquidity,
@@ -1494,9 +1532,11 @@ export function prepareEditLiquidity(
       mint.liquidity,
     ),
   );
-  const atLeastZero = (amount: bigint) => (amount > 0n ? amount : 0n);
-  const pairFunding = atLeastZero(mint.pairMaximum - position.pairAmount);
-  const tokenFunding = atLeastZero(mint.tokenMaximum - position.tokenAmount);
+  // A single-sided mint carries a 1-wei maximum on its empty side; that dust
+  // is not wallet funding and must not raise an allowance step.
+  const beyondDust = (amount: bigint) => (amount > 1n ? amount : 0n);
+  const pairFunding = beyondDust(mint.pairMaximum - position.pairAmount);
+  const tokenFunding = beyondDust(mint.tokenMaximum - position.tokenAmount);
   const funding0 = pool.pairIsC0 ? pairFunding : tokenFunding;
   const funding1 = pool.pairIsC0 ? tokenFunding : pairFunding;
   const value = nativeIsC0 ? funding0 : nativeIsC1 ? funding1 : 0n;
@@ -1523,16 +1563,11 @@ export function prepareEditLiquidity(
     [{ type: "bytes" }, { type: "bytes[]" }],
     mint.unlockData,
   );
-  const parameters: Hex[] = [burn, mintParameters[0], close0, close1];
-  let actions = `${ACTION_BURN_POSITION}${ACTION_MINT_POSITION}${ACTION_CLOSE_CURRENCY}${ACTION_CLOSE_CURRENCY}`;
-  if (value > 0n) {
-    parameters.push(sweep);
-    actions += ACTION_SWEEP;
-  }
   return {
     ...base,
     kind: "move",
-    unlockData: encodePlan(actions, parameters),
+    actions: `${ACTION_BURN_POSITION}${ACTION_MINT_POSITION}`,
+    parameters: [burn, mintParameters[0]],
     tickLower: mint.tickLower,
     tickUpper: mint.tickUpper,
     liquidity: mint.liquidity,
@@ -1551,6 +1586,53 @@ export function prepareEditLiquidity(
     amount0Max: mint.amount0Max,
     amount1Max: mint.amount1Max,
   };
+}
+
+/**
+ * Edit a position in ONE transaction: set what it should hold and, optionally,
+ * the band it covers. Target amounts are ceilings — the band and the current
+ * price fix the ratio, so the position ends up holding at most the target on
+ * each side. Which V4 actions run depends on what changed:
+ *
+ * - Same band, more liquidity → INCREASE_LIQUIDITY + CLOSE×2 [+ SWEEP]: the
+ *   wallet funds the difference (1% price headroom in the maxima); unclaimed
+ *   fees offset what it pays.
+ * - Same band, less liquidity → DECREASE_LIQUIDITY + TAKE_PAIR: the freed
+ *   share and unclaimed fees return to the wallet, behind 95% floors.
+ * - New band → BURN_POSITION + MINT_POSITION + CLOSE×2 [+ SWEEP]: the burn's
+ *   credit funds the mint inside the unlock; only the difference touches the
+ *   wallet, in either direction. The part of each target the old position
+ *   already covers is shaved 1% so ~1% of price drift between review and
+ *   execution still fits without wallet funding, matching the plain move.
+ * - Nothing on either side → the full-exit removal.
+ *
+ * Every path reverts as a whole if the live price outruns the reviewed
+ * maxima/floors, leaving the position untouched.
+ */
+export function prepareEditLiquidity(
+  pool: PoolSnapshot,
+  position: UserLpPosition,
+  target: { pairAmount: bigint; tokenAmount: bigint },
+  /** null keeps the position's own band, exactly; a range re-mints it. */
+  range: { minimumPrice: number; maximumPrice: number } | null,
+  recipient: Address,
+): EditLiquidityPlan {
+  const ops = editOperations(pool, position, target, range, recipient);
+  let unlockData: Hex;
+  if (ops.kind === "decrease" || ops.kind === "remove") {
+    const takePair = encodeAbiParameters(
+      [{ type: "address" }, { type: "address" }, { type: "address" }],
+      [pool.key.currency0, pool.key.currency1, recipient],
+    );
+    unlockData = encodeUnlock(`${ops.actions}${ACTION_TAKE_PAIR}`, [...ops.parameters, takePair]);
+  } else {
+    const close = closeActions(pool, recipient, ops.value);
+    unlockData = encodeUnlock(`${ops.actions}${close.actions}`, [
+      ...ops.parameters,
+      ...close.parameters,
+    ]);
+  }
+  return { ...ops, tokenId: position.tokenId, unlockData };
 }
 
 /**
@@ -1576,6 +1658,432 @@ export async function reverifyEditLiquidity(
   );
   if (required.amount0 > plan.amount0Max || required.amount1 > plan.amount1Max) {
     throw new Error("The pool price moved beyond the reviewed range. Review fresh amounts.");
+  }
+}
+
+// ── Make the market ──────────────────────────────────────────────────────────
+//
+// A revnet's market lives between the cash-out floor and the issuance ceiling.
+// Making it means two single-sided positions: project tokens sold from spot up
+// to the ceiling, pair tokens buying from spot down to the floor. Each side has
+// its own liquidity, so the two amounts are independent — unlike one position,
+// whose single liquidity number couples them.
+
+/** The corridor on the display axis (pair per token). */
+export interface MarketCorridor {
+  floor: number;
+  ceiling: number;
+}
+
+export interface MarketLiquidityPlan {
+  poolId: Hex;
+  unlockData: Hex;
+  /** Project tokens placed from spot up to the ceiling; null when spot is at or above it or nothing was given. */
+  tokenSide: AddLiquidityPlan | null;
+  /** Pair tokens placed from the floor up to spot; null when spot is at or below it or nothing was given. */
+  pairSide: AddLiquidityPlan | null;
+  value: bigint;
+  erc20Sides: Array<{ currency: Address; max: bigint }>;
+  recipient: Address;
+  tokenMaximum: bigint;
+  pairMaximum: bigint;
+}
+
+function requireCorridor(pool: PoolSnapshot, corridor: MarketCorridor): number {
+  const price = pool.price;
+  if (!price || !(price > 0)) throw new Error("The pool has no price yet.");
+  if (!(corridor.floor > 0) || !(corridor.ceiling > corridor.floor)) {
+    throw new Error("This revnet has no usable floor and ceiling to make a market between.");
+  }
+  return price;
+}
+
+/** The token side's band: spot to the ceiling, or null when spot sits at or above it. */
+function tokenSideRange(price: number, corridor: MarketCorridor) {
+  return price < corridor.ceiling ? { minimumPrice: price, maximumPrice: corridor.ceiling } : null;
+}
+
+/** The pair side's band: the floor to spot, or null when spot sits at or below it. */
+function pairSideRange(price: number, corridor: MarketCorridor) {
+  return price > corridor.floor ? { minimumPrice: corridor.floor, maximumPrice: price } : null;
+}
+
+/**
+ * Mint the market in ONE transaction: MINT (token side) + MINT (pair side) +
+ * CLOSE×2 [+ SWEEP]. Each side is a standard single-sided add, so the
+ * price-side tick nudge keeps spot just outside both bands and the maxima
+ * carry the usual 1% headroom. A side whose amount is zero, or whose half of
+ * the corridor spot has left, is simply omitted.
+ */
+export function prepareMarketLiquidity(
+  pool: PoolSnapshot,
+  amounts: { pairAmount: bigint; tokenAmount: bigint },
+  corridor: MarketCorridor,
+  recipient: Address,
+): MarketLiquidityPlan {
+  const price = requireCorridor(pool, corridor);
+  const tokenRange = tokenSideRange(price, corridor);
+  const pairRange = pairSideRange(price, corridor);
+  const tokenSide =
+    amounts.tokenAmount > 0n && tokenRange
+      ? prepareAddLiquidity(
+          pool,
+          { pairAmount: 0n, tokenAmount: amounts.tokenAmount },
+          tokenRange,
+          recipient,
+        )
+      : null;
+  const pairSide =
+    amounts.pairAmount > 0n && pairRange
+      ? prepareAddLiquidity(
+          pool,
+          { pairAmount: amounts.pairAmount, tokenAmount: 0n },
+          pairRange,
+          recipient,
+        )
+      : null;
+  if (!tokenSide && !pairSide) {
+    throw new Error(
+      amounts.tokenAmount <= 0n && amounts.pairAmount <= 0n
+        ? "Enter an amount for at least one side."
+        : `Spot is outside the ${amounts.tokenAmount > 0n ? "token" : "pair"} side of the corridor, so that side has nowhere to go.`,
+    );
+  }
+  const sides = [tokenSide, pairSide].filter((side): side is AddLiquidityPlan => side !== null);
+  const value = sides.reduce((sum, side) => sum + side.value, 0n);
+  const parameters: Hex[] = sides.map((side) => {
+    const [, mintParameters] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      side.unlockData,
+    );
+    return mintParameters[0];
+  });
+  const close = closeActions(pool, recipient, value);
+  return {
+    poolId: pool.poolId,
+    unlockData: encodeUnlock(`${ACTION_MINT_POSITION.repeat(sides.length)}${close.actions}`, [
+      ...parameters,
+      ...close.parameters,
+    ]),
+    tokenSide,
+    pairSide,
+    value,
+    erc20Sides: mergeErc20Sides(sides.map((side) => side.erc20Sides)),
+    recipient,
+    tokenMaximum: tokenSide?.tokenMaximum ?? 0n,
+    pairMaximum: pairSide?.pairMaximum ?? 0n,
+  };
+}
+
+/** Abort a reviewed market mint when the live price moved beyond either side's maxima. */
+export async function reverifyMarketLiquidity(
+  pool: PoolSnapshot,
+  plan: MarketLiquidityPlan,
+): Promise<void> {
+  for (const side of [plan.tokenSide, plan.pairSide]) {
+    if (side) await reverifyAddLiquidity(pool, side);
+  }
+}
+
+/** Two adjacent single-sided positions that together make the market, or one position on its own. */
+export type PositionGroup =
+  | { kind: "market"; tokenSide: UserLpPosition; pairSide: UserLpPosition }
+  | { kind: "single"; position: UserLpPosition };
+
+/**
+ * Pair up positions whose bands meet: the mint-time spot tick sits between
+ * them (its own slot may be skipped, hence a gap of up to one spacing). The
+ * side with the higher display prices is the token side. Anything else lists
+ * on its own.
+ */
+export function groupMarketPositions(
+  pool: PoolSnapshot,
+  positions: readonly UserLpPosition[],
+): PositionGroup[] {
+  const spacing = Number(pool.key.tickSpacing);
+  const sorted = [...positions].sort((a, b) => a.tickLower - b.tickLower);
+  const used = new Set<bigint>();
+  const groups: PositionGroup[] = [];
+  for (const lower of sorted) {
+    if (used.has(lower.tokenId)) continue;
+    const upper = sorted.find(
+      (candidate) =>
+        !used.has(candidate.tokenId) &&
+        candidate.tokenId !== lower.tokenId &&
+        candidate.tickLower >= lower.tickUpper &&
+        candidate.tickLower - lower.tickUpper <= spacing,
+    );
+    if (!upper) {
+      used.add(lower.tokenId);
+      groups.push({ kind: "single", position: lower });
+      continue;
+    }
+    used.add(lower.tokenId);
+    used.add(upper.tokenId);
+    const lowerBand = lpBandPrices(pool, lower.tickLower, lower.tickUpper);
+    const upperBand = lpBandPrices(pool, upper.tickLower, upper.tickUpper);
+    const lowerIsToken = lowerBand.minimumPrice >= upperBand.maximumPrice;
+    groups.push({
+      kind: "market",
+      tokenSide: lowerIsToken ? lower : upper,
+      pairSide: lowerIsToken ? upper : lower,
+    });
+  }
+  return groups;
+}
+
+/** A market's two sides; either may be missing (never minted, or removed). */
+export interface MarketSides {
+  tokenSide: UserLpPosition | null;
+  pairSide: UserLpPosition | null;
+}
+
+export type MarketSideEditKind = EditLiquidityKind | "mint" | "keep";
+
+export interface MarketSideEdit {
+  kind: MarketSideEditKind;
+  tokenId: bigint | null;
+  liquidityBefore: bigint;
+  /** What this side holds after the edit, in its own currency. */
+  holding: bigint;
+  /** Wallet flow in this side's currency: positive pulled, negative returned. */
+  flow: bigint;
+  /** The most the wallet can be asked for on this side. */
+  funding: bigint;
+  /** The 95% floor on what a burn or decrease returns. */
+  minimum: bigint;
+  /** For mint / move / increase: the band and maxima the live-price recheck holds it to. */
+  tickLower: number;
+  tickUpper: number;
+  liquidity: bigint;
+  liquidityDelta: bigint;
+  amount0Max: bigint;
+  amount1Max: bigint;
+}
+
+export interface MarketEditPlan {
+  unlockData: Hex;
+  token: MarketSideEdit | null;
+  pair: MarketSideEdit | null;
+  value: bigint;
+  erc20Sides: Array<{ currency: Address; max: bigint }>;
+  tokenFlow: bigint;
+  pairFlow: bigint;
+  tokenFunding: bigint;
+  pairFunding: bigint;
+  tokenMinimum: bigint;
+  pairMinimum: bigint;
+  tokenHolding: bigint;
+  pairHolding: bigint;
+  /** Whether both sides were re-banded to the corridor given. */
+  refit: boolean;
+}
+
+function sideEdit(
+  kind: MarketSideEditKind,
+  tokenId: bigint | null,
+  ops: EditOperations,
+  own: "token" | "pair",
+): MarketSideEdit {
+  return {
+    kind,
+    tokenId,
+    liquidityBefore: ops.liquidityBefore,
+    holding: own === "token" ? ops.tokenHolding : ops.pairHolding,
+    flow: own === "token" ? ops.tokenFlow : ops.pairFlow,
+    funding: own === "token" ? ops.tokenFunding : ops.pairFunding,
+    minimum: own === "token" ? ops.tokenMinimum : ops.pairMinimum,
+    tickLower: ops.tickLower,
+    tickUpper: ops.tickUpper,
+    liquidity: ops.liquidity,
+    liquidityDelta: ops.liquidityDelta,
+    amount0Max: ops.amount0Max,
+    amount1Max: ops.amount1Max,
+  };
+}
+
+/** A fresh single-sided mint as operations, so a missing side can join a market edit. */
+function mintOperations(mint: AddLiquidityPlan, pool: PoolSnapshot): EditOperations {
+  const [, mintParameters] = decodeAbiParameters(
+    [{ type: "bytes" }, { type: "bytes[]" }],
+    mint.unlockData,
+  );
+  const holding = uniswapV4AmountsForLiquidity(
+    pool.sqrtP,
+    uniswapV4SqrtPriceX96AtTick(mint.tickLower),
+    uniswapV4SqrtPriceX96AtTick(mint.tickUpper),
+    mint.liquidity,
+  );
+  const pairHolding = pool.pairIsC0 ? holding.amount0 : holding.amount1;
+  const tokenHolding = pool.pairIsC0 ? holding.amount1 : holding.amount0;
+  return {
+    kind: "move",
+    actions: ACTION_MINT_POSITION,
+    parameters: [mintParameters[0]],
+    tickLower: mint.tickLower,
+    tickUpper: mint.tickUpper,
+    liquidityBefore: 0n,
+    liquidity: mint.liquidity,
+    liquidityDelta: 0n,
+    pairHolding,
+    tokenHolding,
+    pairFlow: pairHolding,
+    tokenFlow: tokenHolding,
+    pairFunding: mint.pairMaximum > 1n ? mint.pairMaximum : 0n,
+    tokenFunding: mint.tokenMaximum > 1n ? mint.tokenMaximum : 0n,
+    value: mint.value,
+    erc20Sides: mint.erc20Sides,
+    pairMinimum: 0n,
+    tokenMinimum: 0n,
+    mint,
+    amount0Max: mint.amount0Max,
+    amount1Max: mint.amount1Max,
+  };
+}
+
+/**
+ * Edit a market in ONE transaction. Each side is its own position, so each
+ * side's target maps to its own operation — increase or decrease in place,
+ * burn when set to zero, mint when the side did not exist — and the whole
+ * set settles under one pair of closes. With `refit`, both existing sides are
+ * burned and re-minted at the corridor given (the stage moved the floor or
+ * ceiling), funded by their own burn credits plus whatever the targets add.
+ */
+export function prepareMarketEdit(
+  pool: PoolSnapshot,
+  sides: MarketSides,
+  targets: { tokenAmount: bigint; pairAmount: bigint },
+  corridor: MarketCorridor,
+  refit: boolean,
+  recipient: Address,
+): MarketEditPlan {
+  const price = requireCorridor(pool, corridor);
+  const tokenRange = tokenSideRange(price, corridor);
+  const pairRange = pairSideRange(price, corridor);
+
+  const plan = (
+    own: "token" | "pair",
+    position: UserLpPosition | null,
+    target: bigint,
+    range: { minimumPrice: number; maximumPrice: number } | null,
+  ): { edit: MarketSideEdit; ops: EditOperations | null } | null => {
+    const amounts =
+      own === "token"
+        ? { pairAmount: 0n, tokenAmount: target }
+        : { pairAmount: target, tokenAmount: 0n };
+    if (position) {
+      if (target <= 0n) {
+        const ops = editOperations(pool, position, amounts, null, recipient);
+        return { edit: sideEdit("remove", position.tokenId, ops, own), ops };
+      }
+      if (refit) {
+        if (!range) {
+          throw new Error(
+            `Spot has left the ${own} side of the corridor, so that side cannot be re-fit; set it to 0 to remove it.`,
+          );
+        }
+        const ops = editOperations(pool, position, amounts, range, recipient);
+        return { edit: sideEdit("move", position.tokenId, ops, own), ops };
+      }
+      try {
+        const ops = editOperations(pool, position, amounts, null, recipient);
+        return { edit: sideEdit(ops.kind, position.tokenId, ops, own), ops };
+      } catch (cause) {
+        if (cause instanceof Error && /as it is/.test(cause.message)) {
+          const held = own === "token" ? position.tokenAmount : position.pairAmount;
+          return {
+            edit: {
+              kind: "keep",
+              tokenId: position.tokenId,
+              liquidityBefore: position.liquidity,
+              holding: held,
+              flow: 0n,
+              funding: 0n,
+              minimum: 0n,
+              tickLower: position.tickLower,
+              tickUpper: position.tickUpper,
+              liquidity: position.liquidity,
+              liquidityDelta: 0n,
+              amount0Max: 0n,
+              amount1Max: 0n,
+            },
+            ops: null,
+          };
+        }
+        throw cause;
+      }
+    }
+    if (target <= 0n) return null;
+    if (!range) {
+      throw new Error(
+        `Spot is outside the ${own} side of the corridor, so that side has nowhere to go.`,
+      );
+    }
+    const ops = mintOperations(prepareAddLiquidity(pool, amounts, range, recipient), pool);
+    return { edit: sideEdit("mint", null, ops, own), ops };
+  };
+
+  const token = plan("token", sides.tokenSide, targets.tokenAmount, tokenRange);
+  const pair = plan("pair", sides.pairSide, targets.pairAmount, pairRange);
+  const operations = [token?.ops, pair?.ops].filter((ops): ops is EditOperations => !!ops);
+  if (!operations.length) throw new Error("This leaves the market as it is.");
+
+  const value = operations.reduce((sum, ops) => sum + ops.value, 0n);
+  const close = closeActions(pool, recipient, value);
+  const sum = (pick: (ops: EditOperations) => bigint) =>
+    operations.reduce((total, ops) => total + pick(ops), 0n);
+  const holdingOf = (side: { edit: MarketSideEdit } | null) => side?.edit.holding ?? 0n;
+  return {
+    unlockData: encodeUnlock(`${operations.map((ops) => ops.actions).join("")}${close.actions}`, [
+      ...operations.flatMap((ops) => ops.parameters),
+      ...close.parameters,
+    ]),
+    token: token?.edit ?? null,
+    pair: pair?.edit ?? null,
+    value,
+    erc20Sides: mergeErc20Sides(operations.map((ops) => ops.erc20Sides)),
+    tokenFlow: sum((ops) => ops.tokenFlow),
+    pairFlow: sum((ops) => ops.pairFlow),
+    tokenFunding: sum((ops) => ops.tokenFunding),
+    pairFunding: sum((ops) => ops.pairFunding),
+    tokenMinimum: sum((ops) => ops.tokenMinimum),
+    pairMinimum: sum((ops) => ops.pairMinimum),
+    tokenHolding: holdingOf(token),
+    pairHolding: holdingOf(pair),
+    refit,
+  };
+}
+
+/**
+ * Abort a reviewed market edit when either side's position changed, or the
+ * live price moved beyond the maxima a mint or increase was sized with.
+ */
+export async function reverifyMarketEdit(
+  pool: PoolSnapshot,
+  plan: MarketEditPlan,
+  account: Address,
+): Promise<void> {
+  let sqrtP = pool.sqrtP;
+  for (const side of [plan.token, plan.pair]) {
+    if (!side || side.tokenId === null) continue;
+    const fresh = await refreshPoolAndPosition(pool, side.tokenId, account);
+    sqrtP = fresh.pool.sqrtP;
+    if (fresh.position.liquidity !== side.liquidityBefore) {
+      throw new Error("A position in this market changed. Review it again before sending.");
+    }
+  }
+  for (const side of [plan.token, plan.pair]) {
+    if (!side || (side.kind !== "mint" && side.kind !== "move" && side.kind !== "increase"))
+      continue;
+    const required = uniswapV4AmountsForLiquidity(
+      sqrtP,
+      uniswapV4SqrtPriceX96AtTick(side.tickLower),
+      uniswapV4SqrtPriceX96AtTick(side.tickUpper),
+      side.kind === "increase" ? side.liquidityDelta : side.liquidity,
+    );
+    if (required.amount0 > side.amount0Max || required.amount1 > side.amount1Max) {
+      throw new Error("The pool price moved beyond the reviewed range. Review fresh amounts.");
+    }
   }
 }
 
