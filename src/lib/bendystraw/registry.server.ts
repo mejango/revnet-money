@@ -12,6 +12,7 @@ import {
   HasPermissionOperation,
   IndexedBuybackPoolsOperation,
   IndexedLpPositionsOperation,
+  IndexedPoolLiquidityEventsOperation,
   IndexedPoolSwapsOperation,
   IndexedProjectsOperation,
   IndexedSuckerGroupOperation,
@@ -860,6 +861,39 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           poolId
           initialSqrtPriceX96
           projectTokenIsCurrency0
+        }
+      }
+    }`,
+  },
+  [IndexedPoolLiquidityEventsOperation.id]: {
+    operationName: "IndexedPoolLiquidityEvents",
+    query: `query IndexedPoolLiquidityEvents(
+      $projectId: Int!
+      $chainId: Int!
+      $version: Int!
+      $limit: Int!
+      $offset: Int!
+    ) {
+      buybackPoolLiquidityEvents(
+        where: { projectId: $projectId, chainId: $chainId, version: $version }
+        orderBy: "timestamp"
+        orderDirection: "asc"
+        limit: $limit
+        offset: $offset
+      ) {
+        totalCount
+        items {
+          chainId
+          projectId
+          version
+          timestamp
+          poolId
+          tokenId
+          tickLower
+          tickUpper
+          liquidityDelta
+          liquidityAfter
+          sqrtPriceX96
         }
       }
     }`,

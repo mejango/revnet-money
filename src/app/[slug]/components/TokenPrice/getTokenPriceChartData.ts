@@ -168,6 +168,8 @@ export async function getTokenPriceChartData(params: {
     hasPool: !!v4History?.hasPool,
     /** Current pool reserves from the index; null when there is no pool or no positions. */
     poolLiquidity: v4History?.liquidity ?? null,
+    /** Both sides of the pool over time, for the faint bars under the pool line. */
+    poolReserves: v4History?.reserves ?? [],
     /** The axis unit: the ruleset's base currency, which issuance is denominated in. */
     baseCurrency,
     /**

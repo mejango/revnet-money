@@ -1,7 +1,12 @@
 "use client";
 
 import { ChartSkeleton } from "@/components/loading/LoadingSkeletons";
-import { CartesianChart, type ChartReferenceLine, type ChartSeries } from "@/components/ui/chart";
+import {
+  CartesianChart,
+  type ChartBar,
+  type ChartReferenceLine,
+  type ChartSeries,
+} from "@/components/ui/chart";
 import { InfoTip } from "@/components/ui/InfoTip";
 import {
   MarketPriceViewToggle,
@@ -12,6 +17,7 @@ import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
 import { shouldShowCashOutAsymptote } from "@/lib/minimumCashOutPrice";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { formatDecimals } from "@/lib/number";
+import { bucketPoolReserves } from "@/lib/priceSeries";
 import { cachedQuery } from "@/lib/query-persist";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
 import { formatTokenSymbol } from "@/lib/utils";
@@ -37,6 +43,10 @@ const TIME_RANGES: RangeOption<TimeRange>[] = [
 
 const NOW_COLOR = "#EE6F3A"; // peel-400
 const PRICE_REFRESH_MS = 15_000;
+// The pool's reserves, as two tints of the pool line: the pair side darker, the token side above it.
+const POOL_PAIR_FILL = "color-mix(in srgb, var(--chart-4) 30%, transparent)";
+const POOL_TOKEN_FILL = "color-mix(in srgb, var(--chart-4) 14%, transparent)";
+const POOL_RESERVE_BARS = 48;
 
 interface Props {
   projectId: string;
@@ -184,6 +194,24 @@ export function TokenPriceChart({
       labelColor: NOW_COLOR,
     });
   }
+  const reserveBars: ChartBar[] =
+    showAmm && firstTimestamp !== undefined && lastTimestamp !== undefined
+      ? bucketPoolReserves(
+          data?.poolReserves ?? [],
+          firstTimestamp,
+          lastTimestamp,
+          POOL_RESERVE_BARS,
+        ).map(
+          (bucket) => ({
+            key: `reserves-${bucket.timestamp}`,
+            x: bucket.timestamp,
+            segments: [
+              { value: bucket.pairValue, fill: POOL_PAIR_FILL },
+              { value: bucket.tokenValue, fill: POOL_TOKEN_FILL },
+            ],
+          }),
+        )
+      : [];
   const maxVisiblePrice = filteredData.reduce(
     (max, point) =>
       Math.max(
@@ -233,7 +261,12 @@ export function TokenPriceChart({
               active={showAmm}
               disabled={!hasAmmData}
               colorVar="--chart-4"
-              note={priceConcept("pool", { baseSymbol: axisSymbol })}
+              note={
+                priceConcept("pool", { baseSymbol: axisSymbol }) +
+                (reserveBars.length
+                  ? ` The faint bars show what the pool held: ${tokenSymbol} in the darker shade, ${projectTokenSymbol} in the lighter one, both valued in ${tokenSymbol}.`
+                  : "")
+              }
               onClick={() => setShowAmm(!showAmm)}
             />
           )}
@@ -281,6 +314,7 @@ export function TokenPriceChart({
           formatXTick={(timestamp) => formatXAxis(timestamp, range)}
           formatYTick={(value) => formatDecimals(value, 6)}
           referenceLines={referenceLines}
+          bars={reserveBars}
           tooltip={({ datum, series }) => (
             <PriceChartTooltip
               datum={datum}
