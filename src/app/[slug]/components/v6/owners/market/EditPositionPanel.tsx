@@ -9,7 +9,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { erc20Abi, formatUnits, parseUnits, zeroAddress, type Address, type Hex } from "viem";
 import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { chainName, fmtUnits } from "../settlement/lib";
@@ -26,6 +26,7 @@ import {
   prepareEditLiquidity,
   refreshPoolAndPosition,
   reverifyEditLiquidity,
+  solveRangeFromAmounts,
   type AmmChainState,
   type EditLiquidityPlan,
   type PoolSnapshot,
@@ -172,16 +173,57 @@ export function EditPositionPanel({
   const current = reviewed?.snapshot === snapshot ? reviewed : null;
   const editing = busy || current !== null;
 
-  const parseSide = (text: string, decimals: number, symbol: string): bigint => {
-    const trimmed = text.trim();
-    if (trimmed === "") return 0n;
+  const parseSide = (text: string, decimals: number, symbol: string): bigint =>
+    parseAmountText(text, decimals, symbol);
+
+  // What the typed targets actually produce at this band and price, computed
+  // locally as they type. The band and price fix the ratio, so one side is
+  // usually the binding one and the other is capped — say so before Review,
+  // and offer the band that would use both amounts in full.
+  const preview = useMemo(() => {
+    let tokenAmount: bigint;
+    let pairAmount: bigint;
     try {
-      const amount = parseUnits(trimmed, decimals);
-      if (amount < 0n) throw new Error();
-      return amount;
+      tokenAmount = parseAmountText(tokenText, 18, tokenSymbol);
+      pairAmount = parseAmountText(pairText, pool.pair.decimals, pool.pair.symbol);
     } catch {
-      throw new Error(`Enter a valid ${symbol} amount.`);
+      return null;
     }
+    const minimumPrice = Number(minText);
+    const maximumPrice = Number(maxText);
+    if (rangeTouched && (!(minimumPrice > 0) || !(maximumPrice > minimumPrice))) return null;
+    try {
+      const plan = prepareEditLiquidity(
+        pool,
+        position,
+        { pairAmount, tokenAmount },
+        rangeTouched ? { minimumPrice, maximumPrice } : null,
+        address ?? zeroAddress,
+      );
+      return { plan, tokenAmount, pairAmount };
+    } catch {
+      return null;
+    }
+  }, [tokenText, pairText, minText, maxText, rangeTouched, pool, position, address, tokenSymbol]);
+  const cappedRaw = preview ? cappedSide(preview, pool.pair.decimals) : null;
+  const capped = cappedRaw
+    ? { ...cappedRaw, binding: cappedRaw.side === "token" ? pool.pair.symbol : tokenSymbol }
+    : null;
+
+  const fitBand = () => {
+    if (!preview || !pool.price) return;
+    const solved = solveRangeFromAmounts({
+      price: pool.price,
+      tokenAmount: Number(formatUnits(preview.tokenAmount, 18)),
+      pairAmount: Number(formatUnits(preview.pairAmount, pool.pair.decimals)),
+      floorHint: state.reference.cashOut,
+      ceilingHint: state.reference.issuance,
+    });
+    if (!solved) return;
+    setMinText(formatPrice(solved.minPrice));
+    setMaxText(formatPrice(solved.maxPrice));
+    setRangeTouched(true);
+    setReviewed(null);
   };
 
   const prepare = async () => {
@@ -439,6 +481,31 @@ export function EditPositionPanel({
           {inWallet(balances.data?.pair, pool.pair.decimals, pool.pair.symbol)}
         </label>
       </div>
+      {preview && preview.plan.kind !== "remove" ? (
+        <p className="mt-1 text-[11px] text-zinc-600" role="status">
+          At this band it holds about {fmtUnits(preview.plan.tokenHolding, 18)} {tokenSymbol} +{" "}
+          {fmtUnits(preview.plan.pairHolding, pool.pair.decimals)} {pool.pair.symbol}.
+          {capped ? (
+            <>
+              {" "}
+              {capped.binding} limits it here: holding the full{" "}
+              {capped.side === "token"
+                ? `${fmtUnits(preview.tokenAmount, 18)} ${tokenSymbol}`
+                : `${fmtUnits(preview.pairAmount, pool.pair.decimals)} ${pool.pair.symbol}`}{" "}
+              at this band takes about {capped.needed} {capped.binding}.{" "}
+              {pool.price && !editing ? (
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-zinc-900"
+                  onClick={fitBand}
+                >
+                  Fit the band to these amounts
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </p>
+      ) : null}
       <p className="mt-1 text-[11px] text-zinc-500">
         Set both to 0 to remove the position. Keep the band and raise or lower the amounts to top up
         or free part of it without a new position id.
@@ -499,6 +566,49 @@ export function EditPositionPanel({
       ) : null}
     </div>
   );
+}
+
+function parseAmountText(text: string, decimals: number, symbol: string): bigint {
+  const trimmed = text.trim();
+  if (trimmed === "") return 0n;
+  try {
+    const amount = parseUnits(trimmed, decimals);
+    if (amount < 0n) throw new Error();
+    return amount;
+  } catch {
+    throw new Error(`Enter a valid ${symbol} amount.`);
+  }
+}
+
+/**
+ * Which typed side the band cannot fully use, if any: the other side is the
+ * binding one (its holding lands on its target) while this one is cut well
+ * short. Returns which side is capped and how much of the binding side the
+ * full target on the capped side would take at this band's ratio.
+ */
+function cappedSide(
+  preview: {
+    plan: { tokenHolding: bigint; pairHolding: bigint };
+    tokenAmount: bigint;
+    pairAmount: bigint;
+  },
+  pairDecimals: number,
+): { side: "token" | "pair"; needed: string } | null {
+  const { tokenHolding, pairHolding } = preview.plan;
+  if (tokenHolding <= 0n || pairHolding <= 0n) return null;
+  const short = (holding: bigint, target: bigint) => target > 0n && holding * 100n < target * 99n;
+  const tokenShort = short(tokenHolding, preview.tokenAmount);
+  const pairShort = short(pairHolding, preview.pairAmount);
+  if (tokenShort === pairShort) return null;
+  return tokenShort
+    ? {
+        side: "token",
+        needed: fmtUnits((preview.tokenAmount * pairHolding) / tokenHolding, pairDecimals),
+      }
+    : {
+        side: "pair",
+        needed: fmtUnits((preview.pairAmount * tokenHolding) / pairHolding, 18),
+      };
 }
 
 /** The three review lines for a plan, sized against the pool it was built on. */
