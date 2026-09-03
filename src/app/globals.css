@@ -590,3 +590,15 @@ input[type="range"]::-moz-range-thumb {
     cursor: pointer;
   }
 }
+
+/* Icon rows (sign-in socials, wallets): one line that scrolls sideways instead of wrapping, scrollbar
+   hidden, bled to the panel edge so the last icon can scroll fully into view. */
+.scroll-row {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  margin-right: -1.5rem;
+  padding-right: 1.5rem;
+}
+.scroll-row::-webkit-scrollbar {
+  display: none;
+}

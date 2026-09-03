@@ -2,7 +2,7 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { TxSteps } from "@/components/ui/TxSteps";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
   Dialog,
   DialogContent,
@@ -44,7 +44,7 @@ import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { PropsWithChildren, useCallback, useMemo, useState } from "react";
+import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
 import { erc20Abi, formatUnits, getAddress, parseUnits } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 
@@ -65,6 +65,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const { ensureAllowance, isApproving } = useAllowance(sourceChainId);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [review, setReview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { address } = useAccount();
   const router = useRouter();
   const publicClient = usePublicClient({ chainId: sourceChainId });
@@ -159,6 +161,35 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
 
   const isDisabled = isSubmitting || isLoading || isSuccess;
 
+  useEffect(() => {
+    if (hash) setReview(false);
+  }, [hash]);
+
+  // The approval is its own wallet prompt, so it is named before the confirm
+  // opens rather than discovered mid-flow.
+  const reviewMove = useCallback(async () => {
+    if (!address || amountValue === undefined || !publicClient || !suckerPair) return;
+    setIsSubmitting(true);
+    try {
+      const tokenAddress = await getTokenAddress(sourceChainId, project.projectId);
+      const allowance = tokenAddress
+        ? await publicClient.readContract({
+            address: tokenAddress,
+            abi: erc20Abi,
+            functionName: "allowance",
+            args: [address, suckerPair.local],
+          })
+        : 0n;
+      setNeedsApproval(allowance < amountValue);
+      setError(null);
+      setReview(true);
+    } catch (cause) {
+      toast({ variant: "destructive", title: "Error", description: formatWalletError(cause) });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [address, amountValue, publicClient, suckerPair, sourceChainId, project.projectId]);
+
   const moveTokens = useCallback(async () => {
     try {
       setIsSubmitting(true);
@@ -228,11 +259,13 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       await writeContractAsync({ ...request, chainId: sourceChainId });
     } catch (error) {
       console.error(error);
-      toast(
-        isSafeProposalPendingError(error)
-          ? { title: "Safe proposal submitted", description: formatWalletError(error) }
-          : { variant: "destructive", title: "Error", description: formatWalletError(error) },
-      );
+      if (isSafeProposalPendingError(error)) {
+        setReview(false);
+        toast({ title: "Safe proposal submitted", description: formatWalletError(error) });
+      } else {
+        setError(formatWalletError(error));
+        toast({ variant: "destructive", title: "Error", description: formatWalletError(error) });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -273,7 +306,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            moveTokens();
+            void reviewMove();
           }}
         >
           <fieldset className="grid grid-cols-2 gap-4">
@@ -464,21 +497,6 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             </div>
           </fieldset>
 
-          {needsApproval ? (
-            <TxSteps
-              steps={[
-                {
-                  key: "approve",
-                  title: "Approve the bridge for your tokens",
-                  detail: "The sucker cannot take custody of them without this allowance.",
-                },
-                { key: "prepare", title: "Queue the bridge" },
-              ]}
-              activeIndex={isApproving ? 0 : isLoading || isSuccess ? 1 : -1}
-              className="rounded border border-melon-200 bg-melon-50 p-3 text-xs"
-            />
-          ) : null}
-
           <DialogFooter className="flex items-center sm:justify-between w-full gap-4">
             <div
               className={cn("text-sm text-zinc-700", {
@@ -500,10 +518,56 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 amountValue > balance.value
               }
             >
-              Move {tokenSymbol}
+              Review
             </ButtonWithWallet>
           </DialogFooter>
         </form>
+        {review && targetChainId && prepareQuote.data ? (
+          <TxConfirmDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setReview(false);
+            }}
+            title="Confirm move"
+            chainId={sourceChainId}
+            steps={[
+              ...(needsApproval
+                ? [
+                    {
+                      key: "approve",
+                      title: "Approve the bridge for your tokens",
+                      detail: "The sucker cannot take custody of them without this allowance.",
+                    },
+                  ]
+                : []),
+              {
+                key: "prepare",
+                title: "Queue the bridge",
+                detail: "Cashes out here and sends the backing to the other chain.",
+              },
+            ]}
+            activeIndex={isApproving ? 0 : isSubmitting ? (needsApproval ? 1 : 0) : -1}
+            action={`Move ${tokenSymbol}`}
+            onConfirm={() => void moveTokens()}
+            busy={isSubmitting}
+            error={error}
+          >
+            <SummaryRow label="Move">
+              {amount} {tokenSymbol}
+            </SummaryRow>
+            <SummaryRow label="From">{JB_CHAINS[sourceChainId].name}</SummaryRow>
+            <SummaryRow label="To">{JB_CHAINS[targetChainId].name}</SummaryRow>
+            <SummaryRow label="Backing received">
+              ~{formatUnits(prepareQuote.data.netReclaimAmount, prepareQuote.data.tokenDecimals)}{" "}
+              {backingTokenSymbol}
+            </SummaryRow>
+            <SummaryRow label="Enforced onchain">
+              At least{" "}
+              {formatUnits(prepareQuote.data.minTokensReclaimed, prepareQuote.data.tokenDecimals)}{" "}
+              {backingTokenSymbol}
+            </SummaryRow>
+          </TxConfirmDialog>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

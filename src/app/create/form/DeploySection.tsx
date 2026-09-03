@@ -1,5 +1,9 @@
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { isSafeConnector } from "@/hooks/useReviewedWriteContract";
+import { hasErrors } from "@/lib/forms";
 import { wagmiConfig } from "@/lib/wagmiConfig";
+import { JB_CHAINS } from "@bananapus/nana-sdk-core";
+import { useState } from "react";
 import { useAccount } from "wagmi";
 import { QuoteButton } from "../buttons/QuoteButton";
 import { formatFormErrors } from "../helpers/formatFormErrors";
@@ -12,8 +16,17 @@ export function DeploySection({
   disabled?: boolean;
   validBundle?: boolean;
 }) {
-  const { revnetTokenSymbol, values, submitForm, isSubmitting, isValid, errors, submitCount } =
-    useCreateForm();
+  const {
+    revnetTokenSymbol,
+    reserveAssetSymbol,
+    values,
+    submitForm,
+    isSubmitting,
+    isValid,
+    errors,
+    submitCount,
+  } = useCreateForm();
+  const [review, setReview] = useState(false);
   // The explicit config keeps this section renderable outside a WagmiProvider.
   const { connector } = useAccount({ config: wagmiConfig });
 
@@ -21,6 +34,8 @@ export function DeploySection({
   // 1's start time now. REVDeployer locks cash-outs and loans for 7 days when
   // that start is already past at execution, so warn before proposing.
   const deploysViaSafe = isSafeConnector(connector) && values.chainIds.length === 1;
+  const singleChain = values.chainIds.length === 1;
+  const chainNames = values.chainIds.map((chainId) => JB_CHAINS[chainId].name);
 
   return (
     <>
@@ -49,9 +64,49 @@ export function DeploySection({
           validBundle={validBundle}
           disabled={disabled}
           onSubmit={() => {
-            void submitForm();
+            if (hasErrors(errors)) void submitForm();
+            else setReview(true);
           }}
         />
+        {review && values.chainIds[0] ? (
+          <TxConfirmDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setReview(false);
+            }}
+            title={singleChain ? "Confirm deployment" : "Confirm deploy request"}
+            chainId={values.chainIds[0]}
+            steps={
+              singleChain
+                ? [
+                    {
+                      title: `Deploy ${values.name || "the revnet"} on ${chainNames[0]}`,
+                      detail: "Pays the project creation fee with the deployment.",
+                    },
+                  ]
+                : values.chainIds.map((chainId) => ({
+                    key: String(chainId),
+                    title: `Sign the authorization for ${JB_CHAINS[chainId].name}`,
+                  }))
+            }
+            stepsIntro={
+              singleChain
+                ? undefined
+                : `Your wallet will ask for ${values.chainIds.length} signatures. The relay payment comes after the quote.`
+            }
+            activeIndex={isSubmitting ? 0 : -1}
+            action={singleChain ? "Deploy the revnet" : "Sign and get quote"}
+            onConfirm={() => {
+              void submitForm().finally(() => setReview(false));
+            }}
+            busy={isSubmitting}
+          >
+            <SummaryRow label="Revnet">{values.name || "Unnamed"}</SummaryRow>
+            <SummaryRow label="Token">${revnetTokenSymbol}</SummaryRow>
+            <SummaryRow label="On">{chainNames.join(", ")}</SummaryRow>
+            <SummaryRow label="Backed by">{reserveAssetSymbol}</SummaryRow>
+          </TxConfirmDialog>
+        ) : null}
         {submitCount > 0 && !isValid ? (
           <div className="mt-3 max-w-xl border-l-2 border-red-500 pl-3" role="alert">
             <p className="text-sm font-semibold text-red-700">Please fix these details:</p>

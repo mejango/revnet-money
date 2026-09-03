@@ -72,12 +72,30 @@ export function smoothPriceSeries(points: PriceSeriesPoint[], maxBuckets = 96): 
   return smoothed;
 }
 
-/** Both sides of the pool at one moment, each in whole pair tokens (the token side at that moment's pool price). */
+/**
+ * Both sides of the pool at one moment: the raw holdings in whole tokens, and each side valued in
+ * pair tokens at that moment's pool price (the token side converted) for the bars.
+ */
 export type PoolReservePoint = {
   timestamp: number;
+  pairAmount: number;
+  tokenAmount: number;
   pairValue: number;
   tokenValue: number;
 };
+
+/** The last reserves observed at or before `timestamp`; undefined before the pool first held anything. */
+export function poolReservesAt(
+  points: readonly PoolReservePoint[],
+  timestamp: number,
+): PoolReservePoint | undefined {
+  let found: PoolReservePoint | undefined;
+  for (const point of points) {
+    if (point.timestamp > timestamp) break;
+    found = point;
+  }
+  return found;
+}
 
 /**
  * The pool's reserves resampled onto `count` even buckets across [start, end], each taking the

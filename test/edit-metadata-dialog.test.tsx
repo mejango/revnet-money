@@ -23,6 +23,13 @@ vi.mock("@/lib/nana/project", () => ({
   useJBContractContext: () => ({
     contractAddress: () => `0x${"11".repeat(20)}`,
   }),
+  useJBChainId: () => 11155111,
+}));
+
+vi.mock("@/components/ButtonWithWallet", () => ({
+  ButtonWithWallet: ({ children, ...props }: { children: React.ReactNode }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
@@ -53,6 +60,7 @@ vi.mock("wagmi/actions", () => ({
 
 vi.mock("wagmi", () => ({
   useAccount: () => ({ address: `0x${"22".repeat(20)}`, chainId: 11155111 }),
+  useChainId: () => 11155111,
   useSwitchChain: () => ({ switchChainAsync: mocks.switchChainAsync }),
 }));
 
@@ -101,7 +109,7 @@ async function prefilledAdvancedTextarea() {
 }
 
 async function save() {
-  fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+  fireEvent.click(screen.getByRole("button", { name: /review changes/i }));
 }
 
 async function pinnedMetadata() {
@@ -143,13 +151,13 @@ describe("EditMetadataDialog advanced custom properties", () => {
     await openDialog();
 
     expect(screen.getByText(/loading current metadata/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /review changes/i })).toBeDisabled();
     expect(screen.queryByLabelText(/custom properties/i)).not.toBeInTheDocument();
 
     resolveMetadata({ data: CURRENT_METADATA });
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /save changes/i })).not.toBeDisabled(),
+      expect(screen.getByRole("button", { name: /review changes/i })).not.toBeDisabled(),
     );
   });
 
@@ -187,6 +195,15 @@ describe("EditMetadataDialog advanced custom properties", () => {
     expect(pinned.leagueID).toBe("l-1");
     expect(pinned.tags).toEqual(["defi"]);
     expect(pinned.name).toBe("Current name");
+
+    // Nothing is written until the confirm dialog's action is pressed.
+    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: /^save changes$/i }));
+    await waitFor(() => expect(mocks.writeContractAsync).toHaveBeenCalledTimes(1));
+    expect(mocks.writeContractAsync.mock.calls[0][0]).toMatchObject({
+      functionName: "setUriOf",
+      chainId: 11155111,
+    });
   });
 
   it("edits, adds, and deletes custom properties", async () => {

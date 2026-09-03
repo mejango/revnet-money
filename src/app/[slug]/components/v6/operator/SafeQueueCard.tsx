@@ -1,5 +1,6 @@
 "use client";
 
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import {
@@ -37,6 +38,7 @@ import {
 } from "@/lib/transaction-activity";
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { encodeFunctionData, isAddressEqual, type Hex } from "viem";
@@ -170,6 +172,12 @@ export function SafeQueueCard({
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [review, setReview] = useState<{
+    kind: "sign" | "execute";
+    row: QueueRow;
+    tx: SafeQueuedTransaction;
+    handleBinding: QueuedProjectHandleBinding | null;
+  } | null>(null);
   const reviewedExecution = useRef<ReviewedExecution | null>(null);
   const operators = useLiveRevnetOperators(rows, {
     ...fallbackProject,
@@ -356,6 +364,7 @@ export function SafeQueueCard({
       await verifyLiveQueuedTransaction(row, tx);
       await submitSafeConfirmation(row.chainId, tx, signature);
       setNotice(`Signed Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`);
+      setReview(null);
       await queue.refetch();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not sign the Safe transaction.");
@@ -463,6 +472,7 @@ export function SafeQueueCard({
       setNotice(
         `${handleBinding ? "Executed" : "Submitted"} Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`,
       );
+      setReview(null);
       await queue.refetch();
     } catch (cause) {
       if (handleExecutionHash) {
@@ -553,7 +563,10 @@ export function SafeQueueCard({
                             type="button"
                             className="border border-melon-500 px-3 py-1 disabled:opacity-50"
                             disabled={busy !== null || !address}
-                            onClick={() => void sign(row, tx)}
+                            onClick={() => {
+                              setError(null);
+                              setReview({ kind: "sign", row, tx, handleBinding });
+                            }}
                           >
                             {busy === `sign:${row.chainId}:${tx.nonce}` ? "Signing…" : "Sign"}
                           </button>
@@ -566,7 +579,10 @@ export function SafeQueueCard({
                             title={
                               current ? undefined : `Nonce ${row.policy.nonce} must execute first.`
                             }
-                            onClick={() => void execute(row, tx)}
+                            onClick={() => {
+                              setError(null);
+                              setReview({ kind: "execute", row, tx, handleBinding });
+                            }}
                           >
                             {busy === `execute:${row.chainId}:${tx.nonce}`
                               ? "Executing…"
@@ -583,10 +599,59 @@ export function SafeQueueCard({
         ))}
       </div>
       {notice ? <p className="mt-3 text-sm text-melon-800">{notice}</p> : null}
-      {error ? (
+      {error && !review ? (
         <p className="mt-3 text-sm text-peel-700" role="alert">
           {error}
         </p>
+      ) : null}
+      {review ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setReview(null);
+          }}
+          title={review.kind === "sign" ? "Confirm signature" : "Confirm execution"}
+          chainId={review.row.chainId as JBChainId}
+          steps={[
+            review.kind === "sign"
+              ? {
+                  title: `Sign Safe transaction #${review.tx.nonce}`,
+                  detail: "Adds your confirmation to the Safe queue.",
+                }
+              : {
+                  title: `Execute Safe transaction #${review.tx.nonce}`,
+                  detail: "Runs the queued call from the Safe.",
+                },
+          ]}
+          activeIndex={busy ? 0 : -1}
+          action={review.kind === "sign" ? "Sign" : "Execute"}
+          onConfirm={() =>
+            void (review.kind === "sign"
+              ? sign(review.row, review.tx)
+              : execute(review.row, review.tx))
+          }
+          busy={busy !== null}
+          error={error}
+        >
+          <SummaryRow label="Safe transaction">
+            #{review.tx.nonce} on {chainName(review.row.chainId)}
+          </SummaryRow>
+          {review.handleBinding ? (
+            <SummaryRow label="Handle">
+              {review.handleBinding.kind === "ens-text"
+                ? `ENS juicebox record → ${review.handleBinding.value}`
+                : `Publish @${review.handleBinding.handle.handle} → ${review.handleBinding.source.chainId}:${review.handleBinding.source.projectId}`}
+            </SummaryRow>
+          ) : null}
+          <SummaryRow label="To">
+            <span className="break-all font-mono text-xs">{review.tx.to}</span>
+          </SummaryRow>
+          <SummaryRow label="Value">{String(review.tx.value ?? 0)} wei</SummaryRow>
+          <SummaryRow label="Signatures">
+            {usableSafeConfirmations(review.tx, review.row.policy.owners).length}/
+            {review.row.policy.threshold}
+          </SummaryRow>
+        </TxConfirmDialog>
       ) : null}
     </OperatorSection>
   );

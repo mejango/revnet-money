@@ -13,6 +13,13 @@
           1
         ],
         [
+          "raw-wallet-import",
+          "src/hooks/useReviewedWriteContract.ts",
+          "<module>",
+          "@wagmi/core:sendCalls",
+          1
+        ],
+        [
           "raw-wallet-hook",
           "src/hooks/useReviewedWriteContract.ts",
           "useWriteContract",
@@ -31,6 +38,13 @@
           "src/hooks/useReviewedWriteContract.ts",
           "submitReviewedCall",
           "writeContractAsync",
+          1
+        ],
+        [
+          "raw-wallet-call",
+          "src/hooks/useReviewedWriteContract.ts",
+          "submit",
+          "sendCalls",
           1
         ]
       ]
@@ -329,41 +343,6 @@
         ],
         [
           "reviewed-write-hook",
-          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-          "AddLiquidityForm",
-          "useWriteContract",
-          1
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-          "execute",
-          "writeContractAsync",
-          2
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-          "remove",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
-          "HookActionButton",
-          "useWriteContract",
-          1
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
-          "HookActionButton",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write-hook",
           "src/app/[slug]/components/v6/owners/V6AutoIssuanceSubtab.tsx",
           "V6AutoIssuanceSubtab",
           "useWriteContract",
@@ -475,9 +454,16 @@
           1
         ],
         [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "AddLiquidityForm",
+          "useWriteContract",
+          1
+        ],
+        [
           "reviewed-write",
           "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-          "claimFees",
+          "approvePermit2",
           "writeContractAsync",
           1
         ],
@@ -486,6 +472,34 @@
           "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
           "ChainPositionRows",
           "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "claimFees",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "execute",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "remove",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
+          "approvePermit2",
+          "writeContractAsync",
           1
         ],
         [
@@ -500,7 +514,42 @@
           "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
           "execute",
           "writeContractAsync",
-          2
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
+          "approvePermit2",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
+          "execute",
+          "writeContractAsync",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
+          "MarketEditPanel",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
+          "HookActionButton",
+          "useWriteContract",
+          1
+        ],
+        [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
+          "HookActionButton",
+          "writeContractAsync",
+          1
         ]
       ]
     },
@@ -889,7 +938,9 @@
       "risk": "money",
       "files": [
         "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-        "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx"
+        "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
+        "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
+        "src/app/[slug]/components/v6/owners/market/liquidityWrite.tsx"
       ],
       "tests": [
         "test/liquidity-remove.test.ts"

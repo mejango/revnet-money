@@ -3,6 +3,7 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { PERSIST } from "@/lib/query-persist";
@@ -24,6 +25,7 @@ import {
   GossipLevel,
   GossipPeerRow,
   timeAgo,
+  viemChainOf,
 } from "./lib";
 
 function StatusBadge({ level, label }: { level: GossipLevel; label: string }) {
@@ -52,82 +54,139 @@ function StatusBadge({ level, label }: { level: GossipLevel; label: string }) {
  */
 function SyncButton({
   peerChainId,
+  toChainId,
   syncSucker,
   onSynced,
 }: {
   peerChainId: JBChainId;
+  toChainId: JBChainId;
   syncSucker: Address;
   onSynced: () => void;
 }) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: peerChainId });
   const { writeContractAsync } = useWriteContract();
-  const [state, setState] = useState<"idle" | "working" | "sent">("idle");
+  const [state, setState] = useState<"idle" | "finding" | "working" | "sent">("idle");
+  const [review, setReview] = useState<{ value: bigint } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const nativeSymbol = viemChainOf(peerChainId)?.nativeCurrency.symbol ?? "ETH";
 
   return (
-    <ButtonWithWallet
-      targetChainId={peerChainId}
-      size="sm"
-      variant="outline"
-      forceChildren
-      loading={state === "working"}
-      disabled={state === "sent"}
-      onClick={async () => {
-        try {
-          setState("working");
-          const value = await findSyncValue(peerChainId, syncSucker, address);
-          if (value == null) {
-            throw new Error(
-              "Could not determine the bridge messaging fee — the sync simulation did not succeed at any budget. Try again shortly.",
-            );
-          }
-          const request = buildSyncAccountingDataTx({
-            chainId: peerChainId,
-            sucker: syncSucker,
-            value,
-          });
-          // Simulate the exact tx (account + value) before prompting the wallet.
-          await publicClient?.simulateContract({
-            account: address,
-            ...request,
-          });
-          const hash = await writeContractAsync(request);
-          if (submittedViaSafe(hash)) {
-            setState("sent");
+    <>
+      <ButtonWithWallet
+        targetChainId={peerChainId}
+        size="sm"
+        variant="outline"
+        forceChildren
+        loading={state === "finding" || state === "working"}
+        disabled={state === "sent"}
+        onClick={async () => {
+          try {
+            setState("finding");
+            setError(null);
+            const value = await findSyncValue(peerChainId, syncSucker, address);
+            if (value == null) {
+              throw new Error(
+                "Could not determine the bridge messaging fee — the sync simulation did not succeed at any budget. Try again shortly.",
+              );
+            }
+            setReview({ value });
+            setState("idle");
+          } catch (cause) {
+            console.error(cause);
+            setState("idle");
             toast({
-              title: "Safe proposal submitted",
-              description: `The sync is awaiting Safe approvals and execution on ${chainName(peerChainId)}.`,
+              variant: "destructive",
+              title: "Sync failed",
+              description: formatWalletError(cause),
             });
-            return;
           }
-          if (!publicClient) throw new Error("Public client unavailable.");
-          const receipt = await waitForReceiptWithRetry(publicClient, hash);
-          if (receipt.status !== "success") {
-            throw new Error(`Accounting sync ${hash} reverted onchain.`);
-          }
-          setState("sent");
-          toast({
-            title: "Sync confirmed",
-            description: `${chainName(peerChainId)} is pushing its accounting snapshot over the bridge — it lands in a few minutes.`,
-          });
-          onSynced();
-        } catch (error) {
-          console.error(error);
-          setState("idle");
-          toast({
-            variant: "destructive",
-            title: "Sync failed",
-            description: formatWalletError(error),
-          });
-        }
-      }}
-    >
-      {state === "sent" ? "Sent" : "Sync"}
-    </ButtonWithWallet>
+        }}
+      >
+        {state === "sent" ? "Sent" : "Sync"}
+      </ButtonWithWallet>
+      {review ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReview(null);
+          }}
+          title="Confirm sync"
+          chainId={peerChainId}
+          steps={[
+            {
+              title: "Sync accounting",
+              detail: "Re-pushes this chain's accounting snapshot over the bridge.",
+            },
+          ]}
+          activeIndex={state === "working" ? 0 : -1}
+          action="Sync"
+          busy={state === "working"}
+          error={error}
+          onConfirm={async () => {
+            try {
+              setState("working");
+              setError(null);
+              const request = buildSyncAccountingDataTx({
+                chainId: peerChainId,
+                sucker: syncSucker,
+                value: review.value,
+              });
+              // Simulate the exact tx (account + value) before prompting the wallet.
+              await publicClient?.simulateContract({
+                account: address,
+                ...request,
+              });
+              const hash = await writeContractAsync(request);
+              if (submittedViaSafe(hash)) {
+                setState("sent");
+                setReview(null);
+                toast({
+                  title: "Safe proposal submitted",
+                  description: `The sync is awaiting Safe approvals and execution on ${chainName(peerChainId)}.`,
+                });
+                return;
+              }
+              if (!publicClient) throw new Error("Public client unavailable.");
+              const receipt = await waitForReceiptWithRetry(publicClient, hash);
+              if (receipt.status !== "success") {
+                throw new Error(`Accounting sync ${hash} reverted onchain.`);
+              }
+              setState("sent");
+              setReview(null);
+              toast({
+                title: "Sync confirmed",
+                description: `${chainName(peerChainId)} is pushing its accounting snapshot over the bridge — it lands in a few minutes.`,
+              });
+              onSynced();
+            } catch (cause) {
+              console.error(cause);
+              setState("idle");
+              setError(formatWalletError(cause));
+            }
+          }}
+        >
+          <SummaryRow label="On">{chainName(peerChainId)}</SummaryRow>
+          <SummaryRow label="Pushes to">{chainName(toChainId)}</SummaryRow>
+          <SummaryRow label="Bridge fee">
+            {fmtUnits(review.value, 18)} {nativeSymbol}
+            <span className="block text-xs text-zinc-500">Found by simulation</span>
+          </SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
+    </>
   );
 }
 
-function PeerRow({ peer, onSynced }: { peer: GossipPeerRow; onSynced: () => void }) {
+function PeerRow({
+  peer,
+  toChainId,
+  onSynced,
+}: {
+  peer: GossipPeerRow;
+  toChainId: JBChainId;
+  onSynced: () => void;
+}) {
   const cell = "p-4 align-middle text-sm text-zinc-700";
   const showSync = peer.syncSucker != null && peer.level !== "synced" && peer.level !== "unknown";
   return (
@@ -158,6 +217,7 @@ function PeerRow({ peer, onSynced }: { peer: GossipPeerRow; onSynced: () => void
         {showSync && peer.syncSucker && (
           <SyncButton
             peerChainId={peer.peerChainId}
+            toChainId={toChainId}
             syncSucker={peer.syncSucker}
             onSynced={onSynced}
           />
@@ -221,6 +281,7 @@ export function GossipCard({ chains }: { chains: ChainProject[] }) {
                     <PeerRow
                       key={peer.peerChainId}
                       peer={peer}
+                      toChainId={view.chainId}
                       onSynced={() => {
                         // The push rides the bridge for minutes — re-read a few times so
                         // the row clears on its own once the snapshot lands.

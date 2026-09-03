@@ -3,14 +3,14 @@ import { uniswapV4CounterpartAmount } from "@bananapus/nana-sdk-core/v6";
 import { fmtUnits } from "../settlement/lib";
 import { solveRangeFromAmounts, type MarketReferencePrices } from "./lib";
 
-export type LiquidityFormMode = "amounts" | "range" | "full";
-
 /**
- * "Full range" spans nine orders of magnitude either side of spot — beyond any
- * price a market can realistically reach, so the deposit ratio matches a
- * classic v2 pool to within ~0.01% while staying inside usable tick bounds.
+ * "market": two single-sided positions spanning the revnet's corridor — the
+ * project token sold from spot up to the issuance ceiling, the pair token
+ * buying from spot down to the cash-out floor — with independent amounts.
+ * "amounts": one position whose band is solved from both amounts.
+ * "range": one position with a typed band; the amounts follow its ratio.
  */
-export const FULL_RANGE_FACTOR = 1e9;
+export type LiquidityFormMode = "market" | "amounts" | "range";
 export type LiquidityFormSide = "token" | "pair";
 
 export interface LiquidityFormViewInputs {
@@ -74,6 +74,63 @@ export function liquidityFormView(inputs: LiquidityFormViewInputs): LiquidityFor
   const { price, tokenSymbol, pairSymbol } = inputs;
   if (!Number.isFinite(price) || price <= 0) return EMPTY_VIEW;
 
+  if (inputs.mode === "market") {
+    const floor = inputs.reference.cashOut;
+    const ceiling = inputs.reference.issuance;
+    if (!floor || !ceiling || !(ceiling > floor)) {
+      return {
+        ...EMPTY_VIEW,
+        note: "This revnet has no floor and ceiling to make a market between yet. Use By amounts.",
+      };
+    }
+    const tokenAmount = parseAmountText(inputs.tokenText);
+    const pairAmount = parseAmountText(inputs.pairText);
+    if (Number.isNaN(tokenAmount) || Number.isNaN(pairAmount)) {
+      return { ...EMPTY_VIEW, note: "Amounts must be plain numbers." };
+    }
+    // Each side needs room on its half of the corridor: the token side sells
+    // above spot, the pair side buys below it.
+    const tokenRoom = price < ceiling;
+    const pairRoom = price > floor;
+    const usesToken = tokenAmount > 0 && tokenRoom;
+    const usesPair = pairAmount > 0 && pairRoom;
+    const disabled = { token: !tokenRoom, pair: !pairRoom };
+    const shape = `${tokenSymbol} sells from the current price up to the ceiling; ${pairSymbol} buys from the current price down to the floor. Two positions, one each side of the price, so the amounts are independent and used in full.`;
+    if (!usesToken && !usesPair) {
+      let note = `Enter what to place on each side. ${shape}`;
+      if (tokenAmount > 0 && !tokenRoom) {
+        note = `The price is at or above the ceiling, so there is no room to sell ${tokenSymbol} above it. Only ${pairSymbol} can be placed right now.`;
+      } else if (pairAmount > 0 && !pairRoom) {
+        note = `The price is at or below the floor, so there is no room to buy with ${pairSymbol} below it. Only ${tokenSymbol} can be placed right now.`;
+      }
+      return { ...EMPTY_VIEW, minPrice: floor, maxPrice: ceiling, disabled, note };
+    }
+    const sides = [
+      usesToken
+        ? `${trim(tokenAmount)} ${tokenSymbol} selling between ${trim(price)} and ${trim(ceiling)}`
+        : null,
+      usesPair
+        ? `${trim(pairAmount)} ${pairSymbol} buying between ${trim(floor)} and ${trim(price)}`
+        : null,
+    ].filter(Boolean);
+    return {
+      minPrice: floor,
+      maxPrice: ceiling,
+      tokenAmount: usesToken ? tokenAmount : 0,
+      pairAmount: usesPair ? pairAmount : 0,
+      derived: null,
+      disabled,
+      anchor: null,
+      note: !tokenRoom
+        ? `The price is at or above the ceiling, so only the ${pairSymbol} side can be placed right now.`
+        : !pairRoom
+          ? `The price is at or below the floor, so only the ${tokenSymbol} side can be placed right now.`
+          : shape,
+      summary: `Makes the market: ${sides.join(", ")} ${pairSymbol} per ${tokenSymbol}.`,
+      ready: true,
+    };
+  }
+
   if (inputs.mode === "amounts") {
     const tokenAmount = parseAmountText(inputs.tokenText);
     const pairAmount = parseAmountText(inputs.pairText);
@@ -123,35 +180,6 @@ export function liquidityFormView(inputs: LiquidityFormViewInputs): LiquidityFor
       note,
       summary: `Uses your ${trim(tokenAmount)} ${tokenSymbol} + ${trim(pairAmount)} ${pairSymbol} between ${trim(solved.minPrice)} and ${trim(solved.maxPrice)} ${pairSymbol} per ${tokenSymbol}.`,
       ready: true,
-    };
-  }
-
-  if (inputs.mode === "full") {
-    const minPrice = price / FULL_RANGE_FACTOR;
-    const maxPrice = price * FULL_RANGE_FACTOR;
-    const driverIsPair = inputs.driver === "pair";
-    const driverAmount = parseAmountText(driverIsPair ? inputs.pairText : inputs.tokenText);
-    const counterpart =
-      Number.isNaN(driverAmount) || driverAmount <= 0
-        ? null
-        : uniswapV4CounterpartAmount(driverAmount, driverIsPair, price, minPrice, maxPrice);
-    const tokenAmount = driverIsPair ? counterpart : driverAmount;
-    const pairAmount = driverIsPair ? driverAmount : counterpart;
-    const ready = counterpart !== null && driverAmount > 0;
-    return {
-      minPrice,
-      maxPrice,
-      tokenAmount,
-      pairAmount,
-      derived: counterpart === null ? null : driverIsPair ? "token" : "pair",
-      disabled: { token: false, pair: false },
-      anchor: null,
-      note: `Your liquidity works at every price, like a classic v2 pool. Enter either amount; the other follows at the pool price.`,
-      summary:
-        ready && tokenAmount != null && pairAmount != null
-          ? `Spreads ${trim(tokenAmount)} ${tokenSymbol} + ${trim(pairAmount)} ${pairSymbol} across every price (v2-style).`
-          : null,
-      ready,
     };
   }
 

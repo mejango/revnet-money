@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TxSteps } from "@/components/ui/TxSteps";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import {
   requireOnchainExecution,
@@ -487,58 +487,77 @@ export function PayerDeployForm({
             </div>
           ) : null}
 
-          {review ? (
-            <div className="mt-4 border border-zinc-200 bg-zinc-50 text-xs p-3 rounded space-y-1">
-              <p>
-                Deploys a payer address on{" "}
-                {review.calls.map((c) => JB_CHAINS[c.chainId]?.name ?? c.chainId).join(", ")} that{" "}
-                {review.addToBalance
-                  ? "adds every ETH transfer to the project balance without minting tokens"
-                  : "pays the project with every ETH transfer"}
-                .
-              </p>
-              {review.calls.map((call) => (
-                <p key={call.chainId} className="font-mono break-all">
-                  {JB_CHAINS[call.chainId]?.name ?? call.chainId}: project #{call.projectId}
-                  {!review.addToBalance
-                    ? ` | tokens to ${call.request.args[1] === zeroAddress ? "the sender" : call.request.args[1]}`
-                    : ""}
-                  {` | admin ${call.request.args[5] === zeroAddress ? "none (immutable)" : call.request.args[5]}`}
-                </p>
-              ))}
-              {review.memo ? <p>Memo: {review.memo}</p> : null}
-              <TxSteps
-                steps={review.calls.map((call) => ({
-                  key: String(call.chainId),
-                  title: `Deploy on ${JB_CHAINS[call.chainId]?.name ?? call.chainId}`,
-                }))}
-                activeIndex={busy ? deployed.length : -1}
-                intro={
-                  review.calls.length > 1
-                    ? `One deploy per chain, in order — your wallet will ask ${review.calls.length} times and switch networks between them.`
-                    : "Your wallet will ask for one action."
-                }
-                className="mt-2 rounded border border-melon-200 bg-melon-50 p-3 text-xs"
-              />
-            </div>
-          ) : null}
-
           <div className="mt-4">
             <ButtonWithWallet
-              targetChainId={review?.calls[0]?.chainId ?? selectedRows[0]?.chainId}
+              targetChainId={selectedRows[0]?.chainId}
               connectWalletText="Connect wallet to deploy"
               loading={busy}
               disabled={busy || selectedRows.length === 0}
-              onClick={review ? submitDeploys : buildReview}
+              onClick={buildReview}
             >
-              {review
-                ? `Deploy payer address${review.calls.length > 1 ? "es" : ""}`
-                : "Review deploy"}
+              Review deploy
             </ButtonWithWallet>
           </div>
 
-          {status ? <p className="mt-2 wrap-anywhere text-xs text-zinc-500">{status}</p> : null}
-          {error ? <p className="mt-2 wrap-anywhere text-xs text-red-600">{error}</p> : null}
+          {review ? (
+            <TxConfirmDialog
+              open
+              onOpenChange={(open) => {
+                if (!open) setReview(null);
+              }}
+              title="Confirm payer address"
+              chainId={review.calls[0]!.chainId}
+              steps={review.calls.map((call) => ({
+                key: String(call.chainId),
+                title: `Deploy on ${JB_CHAINS[call.chainId]?.name ?? call.chainId}`,
+              }))}
+              activeIndex={busy ? deployed.length : -1}
+              stepsIntro={
+                review.calls.length > 1
+                  ? `One deploy per chain, in order — your wallet will ask ${review.calls.length} times and switch networks between them.`
+                  : undefined
+              }
+              action={`Deploy payer address${review.calls.length > 1 ? "es" : ""}`}
+              onConfirm={() => void submitDeploys()}
+              busy={busy}
+              status={status}
+              error={error}
+            >
+              <SummaryRow label="Every ETH transfer">
+                {review.addToBalance
+                  ? "Adds to the project balance without minting tokens"
+                  : "Pays the project and mints its tokens"}
+              </SummaryRow>
+              {review.calls.map((call) => (
+                <SummaryRow
+                  key={call.chainId}
+                  label={String(JB_CHAINS[call.chainId]?.name ?? call.chainId)}
+                >
+                  Project #{call.projectId}
+                  {!review.addToBalance ? (
+                    <span className="block text-xs text-zinc-500 break-all">
+                      Tokens to{" "}
+                      {call.request.args[1] === zeroAddress ? "the sender" : call.request.args[1]}
+                    </span>
+                  ) : null}
+                  <span className="block text-xs text-zinc-500 break-all">
+                    Admin{" "}
+                    {call.request.args[5] === zeroAddress
+                      ? "none (immutable)"
+                      : call.request.args[5]}
+                  </span>
+                </SummaryRow>
+              ))}
+              {review.memo ? <SummaryRow label="Memo">{review.memo}</SummaryRow> : null}
+            </TxConfirmDialog>
+          ) : null}
+
+          {status && !review ? (
+            <p className="mt-2 wrap-anywhere text-xs text-zinc-500">{status}</p>
+          ) : null}
+          {error && !review ? (
+            <p className="mt-2 wrap-anywhere text-xs text-red-600">{error}</p>
+          ) : null}
 
           {deployed.length > 0 ? (
             <div className="mt-4 border border-zinc-200 p-3 rounded">

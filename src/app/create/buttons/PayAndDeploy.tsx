@@ -10,16 +10,18 @@ import {
   FastForward,
   SquareArrowOutUpRightIcon,
 } from "@/components/ui/icons";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxBundle, useSendRelayrTx } from "@/hooks/useReviewedRelayr";
 import { submittedViaSafe } from "@/hooks/useReviewedWriteContract";
 import { useTokenA } from "@/hooks/useTokenA";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
-import { formatWalletError } from "@/lib/utils";
+import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { twMerge } from "tailwind-merge";
 import { Hash } from "viem";
+import { useCreateForm } from "../form/useCreateForm";
 import { ensureFreshQuote, type QuotedStageStart } from "../helpers/staleQuote";
 import { GoToProjectButton } from "./GoToProjectButton";
 
@@ -49,6 +51,9 @@ export function PayAndDeploy({
 }: PaymentAndDeploySectionProps) {
   const [selectedPayment, selectPayment] = useState<ChainPayment | null>(null);
   const [payIsProcessing, setPayIsProcessing] = useState(false);
+  const [review, setReview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { values } = useCreateForm();
   const { sendRelayrTx } = useSendRelayrTx();
   const { startPolling, response: bundleResponse, isComplete, hasFailed } = useGetRelayrTxBundle();
   const { toast } = useToast();
@@ -67,10 +72,47 @@ export function PayAndDeploy({
         <Button
           type="submit"
           size="lg"
-          disabled={payIsProcessing}
+          disabled={payIsProcessing || !selectedPayment}
           className="disabled:text-black disabled:bg-transparent disabled:border disabled:border-black disabled:bg-gray-100 bg-teal-500 text-melon-950 hover:bg-teal-600"
-          onClick={async () => {
+          onClick={() => {
+            setError(null);
+            setReview(true);
+          }}
+        >
+          Pay and ship
+          {isComplete ? (
+            <CheckCircle className={"h-4 w-4 ml-2 fill-none text-emerald-500"} />
+          ) : (
+            <FastForward
+              className={twMerge(
+                "h-4 w-4 fill-melon-950 ml-2",
+                payIsProcessing ? "animate-spin" : "animate-pulse",
+              )}
+            />
+          )}
+        </Button>
+      </div>
+      {review && selectedPayment ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReview(false);
+          }}
+          title="Confirm payment"
+          chainId={selectedPayment.chain}
+          steps={[
+            {
+              title: `Pay ${formatHexEther(selectedPayment.amount)} ${symbol ?? ""} to relay`,
+              detail: "Relayr then deploys on every chain; no further prompts.",
+            },
+          ]}
+          activeIndex={payIsProcessing ? 0 : -1}
+          action="Pay and ship"
+          busy={payIsProcessing}
+          error={error}
+          onConfirm={async () => {
             setPayIsProcessing(true);
+            setError(null);
             try {
               if (!selectedPayment || !sendRelayrTx) throw new Error("No payment selected");
               const { bundle, payment } = await ensureFreshQuote({
@@ -89,6 +131,7 @@ export function PayAndDeploy({
               const hash = await sendRelayrTx(payment);
               if (submittedViaSafe(hash)) {
                 setPayIsProcessing(false);
+                setReview(false);
                 toast({
                   title: "Safe payment proposal submitted",
                   description:
@@ -96,9 +139,11 @@ export function PayAndDeploy({
                 });
                 return;
               }
+              setReview(false);
               startPolling(bundle.bundle_uuid);
             } catch (e: any) {
               setPayIsProcessing(false);
+              setError(formatWalletError(e));
               toast({
                 title: "Error",
                 description: formatWalletError(e),
@@ -107,19 +152,18 @@ export function PayAndDeploy({
             }
           }}
         >
-          Pay and ship
-          {isComplete ? (
-            <CheckCircle className={"h-4 w-4 ml-2 fill-none text-emerald-500"} />
-          ) : (
-            <FastForward
-              className={twMerge(
-                "h-4 w-4 fill-melon-950 ml-2",
-                payIsProcessing ? "animate-spin" : "animate-pulse",
-              )}
-            />
-          )}
-        </Button>
-      </div>
+          <SummaryRow label="Pays">
+            {formatHexEther(selectedPayment.amount)} {symbol ?? ""}
+          </SummaryRow>
+          <SummaryRow label="On">{JB_CHAINS[selectedPayment.chain].name}</SummaryRow>
+          <SummaryRow label="Deploys on">
+            {values.chainIds.map((chainId) => JB_CHAINS[chainId].name).join(", ")}
+          </SummaryRow>
+          <SummaryRow label="Revnet">
+            {values.name || "Unnamed"} (${revnetTokenSymbol})
+          </SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
       {!!bundleResponse && (
         <div className="mt-10 flex flex-col space-y-2">
           <div className="text-left text-zinc-500 mb-2">

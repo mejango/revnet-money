@@ -15,6 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import {
   useGetRelayrTxQuote,
@@ -28,15 +29,15 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { useTokenA } from "@/hooks/useTokenA";
 import type { Project } from "@/lib/bendystraw/types";
-import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
 import { FormProvider, type FormHelpers } from "@/lib/forms";
+import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
 import { gasWithHeadroom } from "@/lib/gas";
 import { ipfsUri } from "@/lib/ipfs";
 import { useJBContractContext, useJBProjectMetadataContext } from "@/lib/nana/project";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
-import { formatWalletError } from "@/lib/utils";
+import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
+import { JB_CHAINS, JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { encodeFunctionData } from "viem";
@@ -132,6 +133,9 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
   const [selectedPayment, selectPayment] = useState<ChainPayment | null>(null);
 
   const { writeContractAsync, isPending, data: txHash } = useWriteContract();
+  const [reviewed, setReviewed] = useState<{ metadataUri: string; name: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // The metadata JSON this edit is merged on top of. The context value can be a
   // server-provided subset (name/logo/description only), so it is re-fetched
@@ -186,9 +190,15 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     resetRelayr();
   }, [resetRelayr, selectPayment, setRelayrQuote]);
 
+  const closeReview = useCallback(() => {
+    setReviewed(null);
+    setError(null);
+    resetQuote();
+  }, [resetQuote]);
+
   const onSuccess = useCallback(() => {
     setOpen(false);
-    resetQuote();
+    closeReview();
 
     toast({
       title: "Metadata updated!",
@@ -198,7 +208,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       void metadata.refetch?.();
       router.refresh();
     }, 5000);
-  }, [toast, metadata, router, resetQuote]);
+  }, [toast, metadata, router, closeReview]);
 
   useEffect(() => {
     if (!open || !isSuccess || callbackCalled) return;
@@ -206,7 +216,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     setCallbackCalled(true);
   }, [isSuccess, open, callbackCalled, onSuccess]);
 
-  const handleSubmit = async (
+  const review = async (
     values: MetadataFormData,
     { setSubmitting }: FormHelpers<MetadataFormData>,
   ) => {
@@ -229,7 +239,26 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
         mergeProjectMetadata(authoritative, values, customProperties.value),
       );
 
-      const metadataUri = ipfsUri(metadataCid);
+      setError(null);
+      setReviewed({ metadataUri: ipfsUri(metadataCid), name: values.name.trim() });
+    } catch (e: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: formatWalletError(e) || "Failed to update metadata",
+      });
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!address || !reviewed) return;
+    const { metadataUri } = reviewed;
+    setBusy(true);
+    setError(null);
+    try {
       setCallbackCalled(false);
 
       // Single chain - use direct writeContract
@@ -304,20 +333,19 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       setRelayrQuote(quote);
       selectPayment(quote.payment_info[0]);
     } catch (e: unknown) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: formatWalletError(e) || "Failed to update metadata",
-      });
+      const message = formatWalletError(e) || "Failed to update metadata";
+      setError(message);
+      toast({ variant: "destructive", title: "Error", description: message });
       console.error(e);
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   };
 
   const handlePayAndSubmit = async () => {
     if (!relayrQuote || !selectedPayment || !sendRelayrTx) return;
-
+    setBusy(true);
+    setError(null);
     try {
       const hash = await sendRelayrTx(selectedPayment);
       if (submittedViaSafe(hash)) {
@@ -336,21 +364,29 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       });
       onSuccess();
     } catch (e: unknown) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: formatWalletError(e) || "Failed to submit transaction",
-      });
+      const message = formatWalletError(e) || "Failed to submit transaction";
+      setError(message);
+      toast({ variant: "destructive", title: "Error", description: message });
       console.error(e);
+    } finally {
+      setBusy(false);
     }
   };
+
+  const multiChain = projects.length > 1;
+  const chainNames = projects
+    .map((project) => JB_CHAINS[project.chainId as JBChainId]?.name ?? String(project.chainId))
+    .join(", ");
+  const relayFee = selectedPayment
+    ? `${formatHexEther(selectedPayment.amount)} ${tokenSymbol ?? ""}`.trim()
+    : null;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(isOpen) => {
         setOpen(isOpen);
-        resetQuote();
+        closeReview();
       }}
     >
       <DialogTrigger asChild>
@@ -373,7 +409,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             customProperties: formatCustomProperties(currentMetadata),
           }}
           validate={withSchema(metadataSchema)}
-          onSubmit={handleSubmit}
+          onSubmit={review}
           enableReinitialize
         >
           {({ handleSubmit, setFieldValue, isSubmitting, values }) => {
@@ -505,18 +541,6 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                   </details>
                 </div>
 
-                {relayrQuote && tokenSymbol && (
-                  <div className="py-4">
-                    <RelayrPaymentSelect
-                      payments={relayrQuote.payment_info}
-                      tokenSymbol={tokenSymbol}
-                      selectedPayment={selectedPayment}
-                      onSelectPayment={selectPayment}
-                      disabled={isLoading}
-                    />
-                  </div>
-                )}
-
                 <DialogFooter>
                   <Button
                     type="button"
@@ -526,29 +550,58 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                   >
                     Cancel
                   </Button>
-                  {relayrQuote ? (
-                    <Button
-                      type="button"
-                      onClick={handlePayAndSubmit}
-                      loading={isLoading}
-                      disabled={isLoading}
-                    >
-                      Pay and submit
-                    </Button>
-                  ) : (
-                    <Button
-                      type="submit"
-                      loading={isLoading}
-                      disabled={isLoading || !metadataReady}
-                    >
-                      {projects.length > 1 ? "Get quote" : "Save changes"}
-                    </Button>
-                  )}
+                  <Button type="submit" loading={isLoading} disabled={isLoading || !metadataReady}>
+                    Review changes
+                  </Button>
                 </DialogFooter>
               </form>
             );
           }}
         </FormProvider>
+        {reviewed ? (
+          <TxConfirmDialog
+            open
+            onOpenChange={(next) => {
+              if (!next) closeReview();
+            }}
+            title="Confirm metadata"
+            chainId={projects[0].chainId as JBChainId}
+            steps={
+              multiChain
+                ? [
+                    {
+                      title: "Sign the authorization",
+                      detail: `Lets Relayr update the metadata on ${projects.length} chains.`,
+                    },
+                    { title: relayFee ? `Pay ${relayFee} to relay` : "Pay to relay" },
+                  ]
+                : [{ title: "Save changes" }]
+            }
+            activeIndex={
+              !busy && !isPending && !isTxLoading ? -1 : multiChain && relayrQuote ? 1 : 0
+            }
+            action={multiChain ? (relayrQuote ? "Pay and submit" : "Get quote") : "Save changes"}
+            onConfirm={() => void (relayrQuote ? handlePayAndSubmit() : handleSubmit())}
+            busy={busy || isPending || isTxLoading}
+            status={isTxLoading ? "Submitted. Waiting for confirmation…" : null}
+            error={error}
+          >
+            <SummaryRow label="Name">{reviewed.name}</SummaryRow>
+            <SummaryRow label="On">{chainNames}</SummaryRow>
+            <SummaryRow label="Metadata">
+              <span className="break-all font-mono text-xs">{reviewed.metadataUri}</span>
+            </SummaryRow>
+            {relayrQuote && tokenSymbol ? (
+              <RelayrPaymentSelect
+                payments={relayrQuote.payment_info}
+                tokenSymbol={tokenSymbol}
+                selectedPayment={selectedPayment}
+                onSelectPayment={selectPayment}
+                disabled={busy}
+              />
+            ) : null}
+          </TxConfirmDialog>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

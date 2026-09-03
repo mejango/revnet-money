@@ -19,7 +19,9 @@ export function AuditPromptLink({ className }: { className?: string }) {
       100% open source,{" "}
       <button
         type="button"
-        className="inline-flex min-h-11 items-center underline underline-offset-2 hover:text-zinc-900"
+        // The 44px tap target comes from padding cancelled by negative margins,
+        // so a wrapped link keeps the paragraph's own line spacing.
+        className="-my-3 inline-block py-3 underline underline-offset-2 hover:text-zinc-900"
         onClick={async () => {
           try {
             await navigator.clipboard.writeText(REVNET_AUDIT_PROMPT);

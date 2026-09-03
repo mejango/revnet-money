@@ -6,6 +6,7 @@ import { EthereumAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { readAuthorityIdentity } from "@/lib/cross-chain-authority";
@@ -228,12 +229,25 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
   const [destination, setDestination] = useState("");
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [review, setReview] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isCurrentOperator =
     !!address && !!group.operator && address.toLowerCase() === group.operator.toLowerCase();
   const relinquishing = destination.trim().toLowerCase() === zeroAddress;
+  const chains = group.rows.map((row) => chainName(row.chainId)).join(", ");
+
+  const beginReview = () => {
+    if (busy || !ack) return;
+    if (!isAddress(destination.trim())) {
+      setError("Enter a valid destination address.");
+      return;
+    }
+    setError(null);
+    setStatus(null);
+    setReview(true);
+  };
 
   const submit = async () => {
     if (busy || !address) return;
@@ -279,6 +293,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         toast({ title: "Revnet operator transferred" });
         setOpen(false);
       }
+      setReview(false);
       onDone();
     } catch (e) {
       const message = formatWalletError(e) || "Could not transfer the revnet operator.";
@@ -342,9 +357,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
           aria-label="New revnet operator"
         />
       </div>
-      <p className="text-xs text-zinc-500 mt-1">
-        Applies on {group.rows.map((row) => chainName(row.chainId)).join(", ")}.
-      </p>
+      <p className="text-xs text-zinc-500 mt-1">Applies on {chains}.</p>
       <label className="mt-3 flex items-start gap-2 border border-red-300 bg-red-50 rounded p-3">
         <input
           type="checkbox"
@@ -366,12 +379,49 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         className="mt-3"
         loading={busy}
         disabled={busy || !ack || !destination.trim()}
-        onClick={submit}
+        onClick={beginReview}
       >
-        Transfer revnet operator
+        Review transfer
       </ButtonWithWallet>
-      {status ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
-      {error ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+      {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
+      {error && !review ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+      {review ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setReview(false);
+          }}
+          title="Confirm transfer"
+          chainId={group.rows[0].chainId}
+          steps={[
+            {
+              title: "Transfer revnet operator",
+              detail:
+                group.rows.length > 1
+                  ? "One Relayr bundle from the operator wallet, or one Safe proposal per chain from a signer."
+                  : "From the operator wallet, or proposed to the operator Safe from a signer.",
+            },
+          ]}
+          activeIndex={busy ? 0 : -1}
+          action="Transfer revnet operator"
+          onConfirm={() => void submit()}
+          busy={busy}
+          status={status}
+          error={error}
+        >
+          <SummaryRow label="Operator becomes">
+            {relinquishing ? (
+              "No one (relinquished)"
+            ) : (
+              <span className="break-all font-mono text-xs">{destination.trim()}</span>
+            )}
+          </SummaryRow>
+          <SummaryRow label="Replaces">
+            <span className="break-all font-mono text-xs">{group.operator}</span>
+          </SummaryRow>
+          <SummaryRow label="On">{chains}</SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
     </div>
   );
 }

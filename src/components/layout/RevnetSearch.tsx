@@ -51,7 +51,7 @@ function looksLikeEnsName(value: string) {
   return value.includes(".") && ENS_NAME_PATTERN.test(value);
 }
 
-function Magnifier() {
+export function Magnifier() {
   return (
     <svg
       viewBox="0 0 20 20"
@@ -68,7 +68,15 @@ function Magnifier() {
   );
 }
 
-export function RevnetSearch() {
+export function RevnetSearch({
+  autoFocus = false,
+  onFocusChange,
+}: {
+  /** Focus the field on mount — the phone header opens it from an icon. */
+  autoFocus?: boolean;
+  /** Reports focus entering or leaving the whole search, results included. */
+  onFocusChange?: (focused: boolean) => void;
+} = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -194,7 +202,16 @@ export function RevnetSearch() {
   };
 
   return (
-    <div ref={containerRef} className="relative min-w-0 w-full">
+    <div
+      ref={containerRef}
+      className="relative min-w-0 w-full"
+      onFocusCapture={() => onFocusChange?.(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          onFocusChange?.(false);
+        }
+      }}
+    >
       <form
         role="search"
         action={handleRoute ?? undefined}
@@ -224,6 +241,7 @@ export function RevnetSearch() {
           </span>
           <input
             type="search"
+            autoFocus={autoFocus}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onFocus={() => {

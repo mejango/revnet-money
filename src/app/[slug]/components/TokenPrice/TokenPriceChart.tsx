@@ -95,7 +95,6 @@ export function TokenPriceChart({
 
   const { token: projectToken } = useJBTokenContext();
   const projectTokenSymbol = formatTokenSymbol(projectToken);
-  const poolLiquidity = data?.poolLiquidity ?? null;
   const hasAmmData = chartData.some((d) => d.ammPrice !== undefined);
   const hasFloorData = chartData.some((d) => d.floorPrice !== undefined);
   const currentPricePoint = [...chartData]
@@ -321,7 +320,7 @@ export function TokenPriceChart({
               baseTokenSymbol={tokenSymbol}
               baseTokenDecimals={tokenDecimals}
               range={range}
-              poolLiquidity={showAmm ? poolLiquidity : null}
+              poolReserves={showAmm ? (data?.poolReserves ?? []) : []}
               projectTokenSymbol={projectTokenSymbol}
             />
           )}

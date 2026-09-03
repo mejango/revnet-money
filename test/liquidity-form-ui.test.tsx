@@ -50,10 +50,34 @@ const render = (ui: React.ReactElement) =>
   rtlRender(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
 
 describe("AddLiquidityForm", () => {
-  it("defaults to amounts mode and explains the solved range", () => {
+  it("defaults to making the market with independent amounts on each side of the price", () => {
     render(<AddLiquidityForm state={state} tokenSymbol="MARKEE" />);
 
-    expect(screen.getByRole("button", { name: "By amounts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Make the market" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Full range" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Min price")).not.toBeInTheDocument();
+    expect(screen.getByText("MARKEE to sell above the price")).toBeInTheDocument();
+    expect(screen.getByText("ETH to buy with below the price")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: /MARKEE/ }), {
+      target: { value: "20000000" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: /^ETH/ }), {
+      target: { value: "0.08" },
+    });
+
+    // Both amounts are used in full: nothing is derived from the other side.
+    expect(
+      screen.getByText(/Makes the market: 20000000 MARKEE selling between/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/0\.08 ETH buying between/)).toBeInTheDocument();
+    expect(screen.getByText(/independent and used in full/)).toBeInTheDocument();
+  });
+
+  it("still offers the solved single band under By amounts", () => {
+    render(<AddLiquidityForm state={state} tokenSymbol="MARKEE" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "By amounts" }));
     expect(screen.queryByText("Min price")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("spinbutton", { name: /MARKEE/ }), {
@@ -67,26 +91,10 @@ describe("AddLiquidityForm", () => {
     expect(screen.getByText(/issuance price/)).toBeInTheDocument();
   });
 
-  it("offers a v2-style full-range mode that derives the pool-ratio counterpart", () => {
-    render(<AddLiquidityForm state={state} tokenSymbol="MARKEE" />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Full range" }));
-    fireEvent.change(screen.getByRole("spinbutton", { name: /^ETH/ }), {
-      target: { value: "0.08" },
-    });
-
-    // 0.08 ETH at spot 1e-5 pairs with ~8,000 MARKEE across the whole curve.
-    const tokenInput = screen.getByRole("spinbutton", { name: /MARKEE/ }) as HTMLInputElement;
-    expect(Number(tokenInput.value)).toBeCloseTo(8000, -1);
-    expect(
-      screen.getByText(/Spreads 8000 MARKEE \+ 0\.08 ETH across every price/),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/like a classic v2 pool/)).toBeInTheDocument();
-  });
-
   it("switches to range mode with the solved range carried over and a derived amount", () => {
     render(<AddLiquidityForm state={state} tokenSymbol="MARKEE" />);
 
+    fireEvent.click(screen.getByRole("button", { name: "By amounts" }));
     fireEvent.change(screen.getByRole("spinbutton", { name: /MARKEE/ }), {
       target: { value: "1000" },
     });

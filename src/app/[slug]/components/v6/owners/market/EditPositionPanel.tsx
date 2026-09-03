@@ -1,7 +1,6 @@
 "use client";
 
-import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { TxSteps } from "@/components/ui/TxSteps";
+import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
   isSafeConnection,
@@ -11,7 +10,7 @@ import {
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
-import { erc20Abi, formatUnits, parseUnits, zeroAddress, type Address, type Hex } from "viem";
+import { erc20Abi, formatUnits, zeroAddress, type Hex, type PublicClient } from "viem";
 import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { chainName, fmtUnits } from "../settlement/lib";
 import { describeEditLiquidityPlan } from "./formView";
@@ -20,8 +19,6 @@ import {
   lpDeadline,
   PERMIT2_ABI,
   PERMIT2_ADDRESS,
-  permit2AllowanceCovers,
-  permit2ApprovalArgs,
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
   prepareEditLiquidity,
@@ -34,13 +31,13 @@ import {
   type UserLpPosition,
 } from "./lib";
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
-
-/** A wallet prompt this edit will raise, decided while reviewing so the signer sees the whole queue first. */
-type EditStep = {
-  title: string;
-  detail: string;
-  approval?: { kind: "erc20" | "permit2"; currency: Address; max: bigint };
-};
+import {
+  approvalStepsFor,
+  parseAmountText,
+  runApprovalStep,
+  SummaryRow,
+  type LiquidityStep,
+} from "./liquidityWrite";
 
 const FINAL_STEP: Record<EditLiquidityPlan["kind"], { title: string; detail: string }> = {
   increase: {
@@ -120,7 +117,7 @@ export function EditPositionPanel({
   const [reviewed, setReviewed] = useState<{
     pool: PoolSnapshot;
     plan: EditLiquidityPlan;
-    steps: EditStep[];
+    steps: LiquidityStep[];
     snapshot: string;
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -265,32 +262,16 @@ export function EditPositionPanel({
       if (plan.pairFlow > held.pair) {
         throw new Error(`That's more ${pool.pair.symbol} than your balance.`);
       }
-      const symbolOf = (currency: Address) =>
-        currency.toLowerCase() === pool.projectToken.toLowerCase() ? tokenSymbol : pool.pair.symbol;
-      const approvals: EditStep[] = [];
-      for (const side of plan.erc20Sides) {
-        const symbol = symbolOf(side.currency);
-        const allowance = await publicClient.readContract({
-          address: side.currency,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, PERMIT2_ADDRESS],
-        });
-        if (allowance < side.max) {
-          approvals.push({
-            title: `Approve ${symbol} access`,
-            detail: `Permit2 is what moves your ${symbol} into the pool.`,
-            approval: { kind: "erc20", currency: side.currency, max: side.max },
-          });
-        }
-        if (!(await permit2AllowanceCovers(state.chainId, address, side.currency, side.max))) {
-          approvals.push({
-            title: `Authorize the Uniswap position manager for ${symbol}`,
-            detail: `A capped, expiring ${symbol} allowance — not an open-ended one.`,
-            approval: { kind: "permit2", currency: side.currency, max: side.max },
-          });
-        }
-      }
+      const approvals = await approvalStepsFor({
+        publicClient: publicClient as PublicClient,
+        chainId: state.chainId,
+        address,
+        erc20Sides: plan.erc20Sides,
+        symbolOf: (currency) =>
+          currency.toLowerCase() === pool.projectToken.toLowerCase()
+            ? tokenSymbol
+            : pool.pair.symbol,
+      });
       setReviewed({
         pool: fresh.pool,
         plan,
@@ -323,36 +304,27 @@ export function EditPositionPanel({
     try {
       for (const [index, step] of steps.entries()) {
         setStepIndex(index);
-        if (step.approval?.kind === "erc20") {
-          await ensureAllowance(step.approval.currency, PERMIT2_ADDRESS, step.approval.max);
-          continue;
-        }
-        if (step.approval?.kind === "permit2") {
-          // Re-checked rather than trusted: the review's reading can age out.
-          const covered = await permit2AllowanceCovers(
-            state.chainId,
+        if (step.approval) {
+          const outcome = await runApprovalStep(step, {
+            chainId: state.chainId,
             address,
-            step.approval.currency,
-            step.approval.max,
-          );
-          if (covered) continue;
-          const approvalHash = await writeContractAsync({
-            chainId,
-            address: PERMIT2_ADDRESS,
-            abi: PERMIT2_ABI,
-            functionName: "approve",
-            args: permit2ApprovalArgs(state.chainId, step.approval.currency, step.approval.max),
+            publicClient: publicClient as PublicClient,
+            ensureAllowance,
+            approvePermit2: (args) =>
+              writeContractAsync({
+                chainId,
+                address: PERMIT2_ADDRESS,
+                abi: PERMIT2_ABI,
+                functionName: "approve",
+                args,
+              }),
           });
-          if (submittedViaSafe(approvalHash)) {
+          if (outcome === "safe-proposed") {
             setStatus(
               "Permit2 authorization was proposed to Safe. Execute it, then review the edit again.",
             );
             setReviewed(null);
             return;
-          }
-          const receipt = await waitForReceiptWithRetry(publicClient, approvalHash);
-          if (receipt.status !== "success") {
-            throw new Error(`Permit2 authorization ${approvalHash} reverted.`);
           }
           continue;
         }
@@ -523,112 +495,86 @@ export function EditPositionPanel({
         Set both to 0 to remove the position. Keep the band and raise or lower the amounts to top up
         or free part of it without a new position id.
       </p>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          className="bg-zinc-900 px-3 py-1.5 text-white disabled:opacity-50"
+          disabled={busy}
+          onClick={() => void prepare()}
+        >
+          {busy ? "Checking…" : "Review edit"}
+        </button>
+        <button
+          type="button"
+          className="border border-zinc-300 px-3 py-1.5 disabled:opacity-50"
+          disabled={busy}
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+      </div>
       {current ? (
-        <div className="mt-3 space-y-3">
-          <div className="space-y-1">
-            <SummaryRow label="Position">
-              #{position.tokenId.toString()} on {chainName(state.chainId)}
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReviewed(null);
+          }}
+          title="Confirm position edit"
+          chainId={state.chainId}
+          steps={current.steps}
+          activeIndex={busy ? stepIndex : -1}
+          action={FINAL_STEP[current.plan.kind].title}
+          onConfirm={() => void execute()}
+          busy={busy}
+          status={status}
+        >
+          <SummaryRow label="Position">
+            #{position.tokenId.toString()} on {chainName(state.chainId)}
+          </SummaryRow>
+          <SummaryRow label="Band">
+            {bandText(current.pool, current.plan)}
+            {current.plan.kind === "move" ? " (new position)" : " (kept)"}
+          </SummaryRow>
+          {current.plan.kind !== "remove" ? (
+            <SummaryRow label="Holds after">
+              ~{fmtUnits(current.plan.tokenHolding, 18)} {tokenSymbol} +{" "}
+              {fmtUnits(current.plan.pairHolding, pool.pair.decimals)} {pool.pair.symbol}
             </SummaryRow>
-            <SummaryRow label="Band">
-              {bandText(current.pool, current.plan)}
-              {current.plan.kind === "move" ? " (new position)" : " (kept)"}
+          ) : null}
+          {current.plan.tokenFlow > 0n || current.plan.pairFlow > 0n ? (
+            <SummaryRow label="From your wallet">
+              {amountsText(positive(current.plan.tokenFlow), positive(current.plan.pairFlow))}
             </SummaryRow>
-            {current.plan.kind !== "remove" ? (
-              <SummaryRow label="Holds after">
-                ~{fmtUnits(current.plan.tokenHolding, 18)} {tokenSymbol} +{" "}
-                {fmtUnits(current.plan.pairHolding, pool.pair.decimals)} {pool.pair.symbol}
-              </SummaryRow>
-            ) : null}
-            {current.plan.tokenFlow > 0n || current.plan.pairFlow > 0n ? (
-              <SummaryRow label="From your wallet">
-                {amountsText(positive(current.plan.tokenFlow), positive(current.plan.pairFlow))}
-              </SummaryRow>
-            ) : null}
-            {current.plan.tokenFlow < 0n || current.plan.pairFlow < 0n ? (
-              <SummaryRow label="Back to your wallet">
-                {amountsText(positive(-current.plan.tokenFlow), positive(-current.plan.pairFlow))} +
-                unclaimed fees
-              </SummaryRow>
-            ) : (
-              <SummaryRow label="Back to your wallet">Unclaimed fees</SummaryRow>
-            )}
-            {current.plan.tokenFunding > 0n || current.plan.pairFunding > 0n ? (
-              <SummaryRow label="Authorizes up to">
-                {amountsText(current.plan.tokenFunding, current.plan.pairFunding)} (1% price
-                headroom)
-              </SummaryRow>
-            ) : null}
-            {current.plan.tokenMinimum > 0n || current.plan.pairMinimum > 0n ? (
-              <SummaryRow label="Enforced onchain">
-                At least {fmtUnits(current.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-                {fmtUnits(current.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol} back
-                (95% floors)
-              </SummaryRow>
-            ) : null}
-          </div>
-          {/* Each action's exact payload is reviewed in the one transaction
-              safety check, the same shell every multi-step flow uses. */}
-          <TxSteps steps={current.steps} activeIndex={busy ? stepIndex : -1} />
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              className="border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50"
-              disabled={busy}
-              onClick={() => setReviewed(null)}
-            >
-              Back
-            </button>
-            <ButtonWithWallet
-              targetChainId={state.chainId}
-              loading={busy}
-              disabled={busy}
-              onClick={() => void execute()}
-              connectWalletText="Connect Wallet"
-              className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-            >
-              {FINAL_STEP[current.plan.kind].title}
-            </ButtonWithWallet>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            className="bg-zinc-900 px-3 py-1.5 text-white disabled:opacity-50"
-            disabled={busy}
-            onClick={() => void prepare()}
-          >
-            {busy ? "Checking…" : "Review edit"}
-          </button>
-          <button
-            type="button"
-            className="border border-zinc-300 px-3 py-1.5 disabled:opacity-50"
-            disabled={busy}
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-      {status ? (
+          ) : null}
+          {current.plan.tokenFlow < 0n || current.plan.pairFlow < 0n ? (
+            <SummaryRow label="Back to your wallet">
+              {amountsText(positive(-current.plan.tokenFlow), positive(-current.plan.pairFlow))} +
+              unclaimed fees
+            </SummaryRow>
+          ) : (
+            <SummaryRow label="Back to your wallet">Unclaimed fees</SummaryRow>
+          )}
+          {current.plan.tokenFunding > 0n || current.plan.pairFunding > 0n ? (
+            <SummaryRow label="Authorizes up to">
+              {amountsText(current.plan.tokenFunding, current.plan.pairFunding)} (1% price headroom)
+            </SummaryRow>
+          ) : null}
+          {current.plan.tokenMinimum > 0n || current.plan.pairMinimum > 0n ? (
+            <SummaryRow label="Enforced onchain">
+              At least {fmtUnits(current.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
+              {fmtUnits(current.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol} back (95%
+              floors)
+            </SummaryRow>
+          ) : null}
+        </TxConfirmDialog>
+      ) : null}
+      {status && !current ? (
         <p className="mt-2 wrap-anywhere text-[11px] text-zinc-600" role="status">
           {status}
         </p>
       ) : null}
     </div>
   );
-}
-
-function parseAmountText(text: string, decimals: number, symbol: string): bigint {
-  const trimmed = text.trim();
-  if (trimmed === "") return 0n;
-  try {
-    const amount = parseUnits(trimmed, decimals);
-    if (amount < 0n) throw new Error();
-    return amount;
-  } catch {
-    throw new Error(`Enter a valid ${symbol} amount.`);
-  }
 }
 
 /**
@@ -660,15 +606,6 @@ function cappedSide(
         side: "pair",
         needed: fmtUnits((preview.pairAmount * tokenHolding) / pairHolding, 18),
       };
-}
-
-function SummaryRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="shrink-0 text-sm text-zinc-500">{label}</span>
-      <span className="text-right text-sm text-zinc-900">{children}</span>
-    </div>
-  );
 }
 
 /** The three review lines for a plan, sized against the pool it was built on. */

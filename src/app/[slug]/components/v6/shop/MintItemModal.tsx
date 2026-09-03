@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
   requireOnchainExecution,
   submittedViaSafe,
@@ -83,24 +84,30 @@ export function MintItemModal({
   const [phase, setPhase] = useState<
     "form" | "simulating" | "sending" | "confirming" | "safe-proposed" | "done"
   >("form");
+  const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
   const maxQuantity = Math.max(0, Math.min(50, remaining));
   const busy = phase === "simulating" || phase === "sending" || phase === "confirming";
 
-  const submit = async () => {
-    if (!address || !publicClient || busy) return;
+  const validate = () => {
     const recipient = beneficiary.trim();
     const count = Number(quantity);
     if (!isAddress(recipient) || recipient.toLowerCase() === zeroAddress) {
       setError("Enter a valid, non-zero beneficiary address.");
-      return;
+      return null;
     }
     if (!Number.isSafeInteger(count) || count < 1 || count > maxQuantity) {
       setError(`Choose between 1 and ${maxQuantity} items.`);
-      return;
+      return null;
     }
+    return { recipient, count };
+  };
 
+  const review = async () => {
+    if (!address || !publicClient || busy) return;
+    const input = validate();
+    if (!input) return;
     setError(null);
     try {
       setPhase("simulating");
@@ -110,9 +117,24 @@ export function MintItemModal({
         hook,
         operator: address,
         tierId,
-        quantity: count,
+        quantity: input.count,
       });
+      setPhase("form");
+      setReviewing(true);
+    } catch (cause) {
+      setPhase("form");
+      setError(cause instanceof Error ? cause.message : "Could not mint this item.");
+    }
+  };
 
+  const submit = async () => {
+    if (!address || !publicClient || busy) return;
+    const input = validate();
+    if (!input) return;
+    const { recipient, count } = input;
+
+    setError(null);
+    try {
       // Repeating a uint16 tier id is the hook's exact quantity encoding. The
       // reviewed-write boundary rechecks the live hook, permission, flag, and
       // inventory after review, then simulates this exact call before signing.
@@ -130,6 +152,7 @@ export function MintItemModal({
       setTxHash(hash);
       setPhase("confirming");
       if (submittedViaSafe(hash)) {
+        setReviewing(false);
         setPhase("safe-proposed");
         return;
       }
@@ -144,12 +167,16 @@ export function MintItemModal({
         queryClient.invalidateQueries({ queryKey: ["v6Shop721TierSupply"] }),
         queryClient.invalidateQueries({ queryKey: ["v6PayShop", chainId, projectId.toString()] }),
       ]);
+      setReviewing(false);
       setPhase("done");
     } catch (cause) {
       setPhase("form");
       setError(cause instanceof Error ? cause.message : "Could not mint this item.");
     }
   };
+
+  const status =
+    phase === "sending" ? "Confirm in wallet…" : phase === "confirming" ? "Confirming…" : null;
 
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
@@ -226,7 +253,7 @@ export function MintItemModal({
                 </p>
               </div>
             </div>
-            {error ? (
+            {error && !reviewing ? (
               <p role="alert" className="text-sm text-red-700">
                 {error}
               </p>
@@ -236,23 +263,48 @@ export function MintItemModal({
                 Cancel
               </Button>
               <ButtonWithWallet
-                onClick={() => void submit()}
+                onClick={() => void review()}
                 loading={busy}
                 disabled={maxQuantity === 0}
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                {phase === "simulating"
-                  ? "Checking…"
-                  : phase === "sending"
-                    ? "Confirm in wallet…"
-                    : phase === "confirming"
-                      ? "Confirming…"
-                      : "Review & mint"}
+                {phase === "simulating" ? "Checking…" : "Review & mint"}
               </ButtonWithWallet>
             </DialogFooter>
           </>
         )}
       </DialogContent>
+      {reviewing ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReviewing(false);
+          }}
+          title="Confirm mint"
+          chainId={chainId}
+          steps={[
+            {
+              title: `Mint ${quantity} × ${itemName}`,
+              detail: "Consumes inventory; nothing is paid.",
+            },
+          ]}
+          activeIndex={busy ? 0 : -1}
+          action="Mint"
+          onConfirm={() => void submit()}
+          busy={busy}
+          status={status}
+          error={error}
+        >
+          <SummaryRow label="Mints">
+            {quantity} × {itemName}
+            <span className="block text-xs text-zinc-500">Item #{tierId}, without payment</span>
+          </SummaryRow>
+          <SummaryRow label="On">{JB_CHAINS[chainId]?.name ?? "this chain"}</SummaryRow>
+          <SummaryRow label="To">
+            <span className="break-all font-mono text-xs">{beneficiary.trim()}</span>
+          </SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
     </Dialog>
   );
 }

@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { clearExtensionSalt, saltForExtension } from "@/lib/suckerExtensionSalt";
@@ -59,10 +60,28 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
   const [targetProjectId, setTargetProjectId] = useState("");
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [review, setReview] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const candidates = extensionCandidateChains(rows);
+  const existingChains = rows.map((row) => chainName(row.chainId)).join(", ");
+
+  const beginReview = () => {
+    if (busy || !ack) return;
+    const projectId = Number(targetProjectId.trim());
+    if (!targetChainId) {
+      setError("Pick the chain to extend to.");
+      return;
+    }
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      setError("Enter this revnet's project ID on the target chain.");
+      return;
+    }
+    setError(null);
+    setStatus(null);
+    setReview(true);
+  };
 
   const submit = async () => {
     if (busy || !address) return;
@@ -159,12 +178,14 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
           "Every chain's proposal must execute for the peers to pair; the Safe queue card above lists them.";
         setStatus(message);
         toast({ title: "Proposed to the operator Safe", description: message });
+        setReview(false);
         return;
       }
       // Every chain landed, so the next extension should start from a new salt.
       clearExtensionSalt(address, projectId, target);
       setStatus(`Suckers deployed on ${result.chains} chain${result.chains === 1 ? "" : "s"}.`);
       toast({ title: `Extended to ${chainName(target)}` });
+      setReview(false);
       setOpen(false);
     } catch (e) {
       const message = formatWalletError(e) || "Could not extend the revnet.";
@@ -274,12 +295,40 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
               className="mt-3"
               loading={busy}
               disabled={busy || !ack || !targetChainId || !targetProjectId.trim()}
-              onClick={submit}
+              onClick={beginReview}
             >
-              Deploy suckers
+              Review
             </ButtonWithWallet>
-            {status ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
-            {error ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+            {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
+            {error && !review ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+            {review ? (
+              <TxConfirmDialog
+                open
+                onOpenChange={(next) => {
+                  if (!next) setReview(false);
+                }}
+                title="Confirm suckers"
+                chainId={Number(targetChainId) as JBChainId}
+                steps={[
+                  {
+                    title: "Deploy suckers",
+                    detail: `One transaction on ${chainName(Number(targetChainId))} and one on each existing chain: a Relayr bundle from the operator wallet, or Safe proposals from a signer.`,
+                  },
+                ]}
+                activeIndex={busy ? 0 : -1}
+                action="Deploy suckers"
+                onConfirm={() => void submit()}
+                busy={busy}
+                status={status}
+                error={error}
+              >
+                <SummaryRow label="Extends to">
+                  {chainName(Number(targetChainId))} · project #{targetProjectId.trim()}
+                </SummaryRow>
+                <SummaryRow label="Pairs with">{existingChains}</SummaryRow>
+                <SummaryRow label="Transactions">{rows.length + 1}</SummaryRow>
+              </TxConfirmDialog>
+            ) : null}
           </div>
         )}
       </div>

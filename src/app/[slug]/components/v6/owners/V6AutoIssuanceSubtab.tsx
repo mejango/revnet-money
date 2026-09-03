@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { useAllRulesetsByChain } from "@/hooks/useAllRulesetsByChain";
 import {
@@ -69,6 +70,8 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
   });
 
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const { writeContractAsync, isPending, data: txHash } = useWriteContract();
   const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
@@ -111,8 +114,69 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
   }
   if (rows.length === 0) return <div className="text-center text-zinc-400">No auto issuances</div>;
 
+  const reviewing = rows.find((row) => row.id === reviewingId) ?? null;
+  const amountOf = (row: (typeof rows)[number]) =>
+    `${commaNumber(formatUnits(BigInt(row.count), 18))} ${tokenSymbol}`;
+
   return (
     <div>
+      {reviewing ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReviewingId(null);
+          }}
+          title="Confirm distribution"
+          chainId={reviewing.chainId as JBChainId}
+          steps={[
+            {
+              title: `Distribute ${amountOf(reviewing)}`,
+              detail: "Mints the preset amount to the preset account.",
+            },
+          ]}
+          activeIndex={isPending && pendingId === reviewing.id ? 0 : -1}
+          action="Distribute"
+          onConfirm={async () => {
+            setError(null);
+            setPendingId(reviewing.id);
+            try {
+              const hash = await writeContractAsync(
+                buildAutoIssueTx({
+                  chainId: reviewing.chainId as JBChainId,
+                  revnetId: BigInt(reviewing.projectId),
+                  stageId: BigInt(reviewing.stageId),
+                  beneficiary: reviewing.beneficiary as `0x${string}`,
+                }),
+              );
+              if (submittedViaSafe(hash)) {
+                toast({
+                  title: "Safe proposal submitted",
+                  description: "Auto issuance is awaiting Safe approvals and execution.",
+                });
+                setPendingId(null);
+              }
+              setReviewingId(null);
+            } catch (cause) {
+              setError(cause instanceof Error ? cause.message : "Unknown error");
+              setPendingId(null);
+            }
+          }}
+          busy={isPending && pendingId === reviewing.id}
+          error={error}
+        >
+          <SummaryRow label="Mints">{amountOf(reviewing)}</SummaryRow>
+          <SummaryRow label="To">
+            <EthereumAddress
+              address={reviewing.beneficiary as `0x${string}`}
+              chain={JB_CHAINS[reviewing.chainId as JBChainId]?.chain}
+              short
+              withEnsName
+            />
+          </SummaryRow>
+          <SummaryRow label="On">{JB_CHAINS[reviewing.chainId as JBChainId]?.name}</SummaryRow>
+          {reviewing.stage ? <SummaryRow label="Stage">{reviewing.stage}</SummaryRow> : null}
+        </TxConfirmDialog>
+      ) : null}
       <p className="text-md text-black font-light italic mb-2">
         Auto issuance mints a fixed amount to a preset account when a stage starts. Anyone can
         trigger the distribution once its unlock date passes.
@@ -170,33 +234,9 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
                         size="sm"
                         disabled={(row.startsAt ?? 0) >= now}
                         loading={(isPending || isTxLoading) && pendingId === row.id}
-                        onClick={async () => {
-                          setPendingId(row.id);
-                          try {
-                            const hash = await writeContractAsync(
-                              buildAutoIssueTx({
-                                chainId: row.chainId as JBChainId,
-                                revnetId: BigInt(row.projectId),
-                                stageId: BigInt(row.stageId),
-                                beneficiary: row.beneficiary as `0x${string}`,
-                              }),
-                            );
-                            if (submittedViaSafe(hash)) {
-                              toast({
-                                title: "Safe proposal submitted",
-                                description:
-                                  "Auto issuance is awaiting Safe approvals and execution.",
-                              });
-                              setPendingId(null);
-                            }
-                          } catch (error) {
-                            toast({
-                              variant: "destructive",
-                              title: "Could not distribute auto issuance",
-                              description: error instanceof Error ? error.message : "Unknown error",
-                            });
-                            setPendingId(null);
-                          }
+                        onClick={() => {
+                          setError(null);
+                          setReviewingId(row.id);
                         }}
                       >
                         {(row.startsAt ?? 0) >= now ? "Locked" : "Distribute"}

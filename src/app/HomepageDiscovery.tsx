@@ -18,6 +18,7 @@ import { getHomepageActivityPage } from "./getHomepageActivity";
 import { getHomepageReserves } from "./getHomepageReserves";
 import { HomepageActivityFeed } from "./HomepageActivityFeed";
 import { HomepageDiscoveryLayout } from "./HomepageDiscoveryLayout";
+import { RotatingTagline } from "./RotatingTagline";
 import { SecuredReserves } from "./SecuredReserves";
 import { TopProjectsTable } from "./TopProjectsTable";
 
@@ -192,13 +193,15 @@ function formatRecentVolume(project: IndexedProjectSummary) {
 
 function HeroColumn() {
   return (
-    <section className="flex min-h-[460px] min-w-0 max-w-full flex-col items-center overflow-hidden p-6 text-center xl:h-[calc(100svh-9rem)] xl:min-h-[570px] xl:overflow-y-auto">
+    <section className="flex min-h-[460px] min-w-0 max-w-full flex-col items-center overflow-hidden px-6 pb-6 pt-1 text-center sm:pt-6 xl:h-[calc(100svh-9rem)] xl:min-h-[570px] xl:overflow-y-auto">
       <Image
         src="/assets/img/hovercar-cutout.webp"
         alt=""
         width={1619}
         height={971}
-        className="mb-3 h-auto max-h-[260px] min-w-0 max-w-full translate-y-12 object-contain"
+        // Phones keep the rocket close under the header; wider screens let it
+        // drop toward the wordmark.
+        className="mb-3 h-auto max-h-[260px] min-w-0 max-w-full translate-y-2 object-contain sm:translate-y-12"
       />
       <div className="w-full min-w-0 max-w-full">
         {/* The wordmark is the page's heading, so say so. Without this the homepage
@@ -213,7 +216,8 @@ function HeroColumn() {
           />
         </h1>
         <p className="mt-7 max-w-full break-words text-xl font-medium">
-          An investible <span className="whitespace-nowrap">business model</span> <span className="whitespace-nowrap">for the open web.</span>
+          An investible <RotatingTagline />{" "}
+          <span className="whitespace-nowrap">for the open web.</span>
         </p>
         <Link
           href="/create"
@@ -221,7 +225,7 @@ function HeroColumn() {
         >
           Create yours
         </Link>
-        <AuditPromptLink className="mt-4 whitespace-nowrap text-xs text-zinc-600 2xl:text-sm" />
+        <AuditPromptLink className="mt-4 text-xs text-zinc-600 sm:whitespace-nowrap 2xl:text-sm" />
       </div>
     </section>
   );

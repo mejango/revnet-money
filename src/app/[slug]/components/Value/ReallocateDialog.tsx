@@ -1,5 +1,5 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { TxSteps } from "@/components/ui/TxSteps";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
   Dialog,
   DialogContent,
@@ -11,13 +11,26 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
-import { useEffect } from "react";
+import { JB_CHAINS, JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
+import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
 import { LoanFeeChart } from "./LoanFeeChart";
 import { SimulatedLoanCard } from "./SimulatedLoanCard";
 import { useBorrowDialog, type SelectedLoan } from "./hooks/useBorrowDialog";
+
+const REALLOCATE_STATUS_TEXT: Record<string, string> = {
+  checking: "Checking permissions...",
+  "granting-permission": "Granting permission...",
+  "permission-granted": "Permission granted. Reallocating loan...",
+  "waiting-signature": "Waiting for wallet confirmation...",
+  pending: "Reallocating loan...",
+  "reallocation-pending": "Reallocating loan...",
+  success: "Loan reallocated successfully!",
+  "error-permission-denied": "Permission was not granted. Please approve to proceed.",
+  "error-loan-canceled": "Loan reallocation was canceled.",
+  error: "Something went wrong during loan reallocation.",
+};
 
 export function ReallocateDialog({
   projectId,
@@ -39,6 +52,7 @@ export function ReallocateDialog({
     selectedLoan,
     defaultTab: "borrow",
   });
+  const [review, setReview] = useState(false);
 
   const {
     isDialogOpen,
@@ -119,6 +133,17 @@ export function ReallocateDialog({
   // the user's project-token input would sum two different units under one symbol.
   const additionalCollateral = Number(collateralAmount || 0);
   const newLoanCollateral = collateralToTransfer + additionalCollateral;
+
+  const busy =
+    loading ||
+    ["checking", "granting-permission", "permission-granted", "waiting-signature"].includes(
+      borrowStatus,
+    );
+  const statusText = REALLOCATE_STATUS_TEXT[borrowStatus];
+
+  useEffect(() => {
+    if (["pending", "reallocation-pending", "success"].includes(borrowStatus)) setReview(false);
+  }, [borrowStatus]);
 
   return (
     <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
@@ -366,46 +391,16 @@ export function ReallocateDialog({
             </>
           )}
 
-          {grantsPermission ? (
-            <TxSteps
-              steps={[
-                {
-                  key: "permission",
-                  title: "Let REVLoans burn your collateral",
-                  detail: "A one-off permission so the loan can hold your tokens.",
-                },
-                { key: "borrow", title: "Reallocate the loan" },
-              ]}
-              activeIndex={borrowStatus === "granting-permission" ? 0 : 1}
-              className="rounded border border-melon-200 bg-melon-50 p-3 text-xs"
-            />
-          ) : null}
-
           {/* Status and Action */}
           {collateralToTransfer > 0 && (
             <DialogFooter className="flex flex-row items-center justify-between w-full gap-4">
               <div className="flex-1 text-left">
-                {borrowStatus !== "idle" && (
-                  <p className="text-sm text-zinc-600">
-                    {borrowStatus === "checking" && "Checking permissions..."}
-                    {borrowStatus === "granting-permission" && "Granting permission..."}
-                    {borrowStatus === "permission-granted" &&
-                      "Permission granted. Reallocating loan..."}
-                    {borrowStatus === "waiting-signature" && "Waiting for wallet confirmation..."}
-                    {borrowStatus === "pending" && "Reallocating loan..."}
-                    {borrowStatus === "reallocation-pending" && "Reallocating loan..."}
-                    {borrowStatus === "success" && "Loan reallocated successfully!"}
-                    {borrowStatus === "error-permission-denied" &&
-                      "Permission was not granted. Please approve to proceed."}
-                    {borrowStatus === "error-loan-canceled" && "Loan reallocation was canceled."}
-                    {borrowStatus === "error" && "Something went wrong during loan reallocation."}
-                  </p>
-                )}
+                {statusText ? <p className="text-sm text-zinc-600">{statusText}</p> : null}
               </div>
               <ButtonWithWallet
                 targetChainId={cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined}
                 loading={loading}
-                onClick={handleBorrow}
+                onClick={() => setReview(true)}
                 disabled={
                   !collateralAmount ||
                   Number(collateralAmount) > Number(borrowableAmountFormatted) ||
@@ -413,10 +408,66 @@ export function ReallocateDialog({
                   minimumBorrowAmountPreview === undefined
                 }
               >
-                Reallocate Loan
+                Review
               </ButtonWithWallet>
             </DialogFooter>
           )}
+          {review && cashOutChainId ? (
+            <TxConfirmDialog
+              open
+              onOpenChange={(open) => {
+                if (!open) setReview(false);
+              }}
+              title="Confirm reallocation"
+              chainId={Number(cashOutChainId) as JBChainId}
+              steps={[
+                ...(grantsPermission
+                  ? [
+                      {
+                        key: "permission",
+                        title: "Let REVLoans burn your collateral",
+                        detail: "A one-off permission so the loan can hold your tokens.",
+                      },
+                    ]
+                  : []),
+                { key: "borrow", title: "Reallocate the loan" },
+              ]}
+              activeIndex={
+                borrowStatus === "granting-permission" ? 0 : busy ? (grantsPermission ? 1 : 0) : -1
+              }
+              action="Reallocate loan"
+              onConfirm={() => void handleBorrow()}
+              busy={busy}
+              status={busy ? statusText : null}
+              error={borrowStatus.startsWith("error") ? statusText : null}
+            >
+              <SummaryRow label="Loan">
+                #{selectedLoan?.id} on {JB_CHAINS[Number(cashOutChainId) as JBChainId].name}
+                <span className="block text-xs text-zinc-500">Replaced by a new loan id</span>
+              </SummaryRow>
+              <SummaryRow label="Adds collateral">
+                {collateralAmount || "0"} {tokenSymbol}
+                <span className="block text-xs text-zinc-500">
+                  Plus {collateralToTransfer.toFixed(6)} {tokenSymbol} of headroom moved over
+                </span>
+              </SummaryRow>
+              <SummaryRow label="New loan borrows">
+                ~
+                {newLoanBorrowableAmount
+                  ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)
+                  : "0"}{" "}
+                {selectedChainTokenSymbol}
+                {minimumBorrowAmountPreview !== undefined ? (
+                  <span className="block text-xs text-zinc-500">
+                    At least{" "}
+                    {Number(formatUnits(minimumBorrowAmountPreview, baseTokenDecimals)).toFixed(8)}{" "}
+                    {selectedChainTokenSymbol}, enforced onchain
+                  </span>
+                ) : null}
+              </SummaryRow>
+              <SummaryRow label="Prepaid fee">{prepaidPercent}%</SummaryRow>
+            </TxConfirmDialog>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

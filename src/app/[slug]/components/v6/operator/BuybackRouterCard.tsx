@@ -8,6 +8,7 @@ import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
@@ -576,147 +577,164 @@ function BuybackActionForm({
   };
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [review, setReview] = useState<ChainWrite[] | null>(null);
 
   const chosen = useMemo(
     () => available.filter((state) => selected.has(state.chainId)),
     [available, selected],
   );
 
-  const submit = async () => {
-    if (busy || !address || !ack) return;
-    setError(null);
-    try {
-      if (!chosen.length) throw new Error("Choose at least one available chain.");
-      let poolValues: {
-        fee: number;
-        tickSpacing: number;
-        twapWindow: bigint;
-        sqrtPriceX96: bigint;
-      } | null = null;
-      if (kind === "pool") {
-        if (![fee, tickSpacing, twapWindow, sqrtPriceX96].every((v) => DIGITS.test(v))) {
-          throw new Error("Fee, tick spacing, TWAP window, and price must be whole numbers.");
-        }
-        poolValues = {
-          fee: Number(fee),
-          tickSpacing: Number(tickSpacing),
-          twapWindow: BigInt(twapWindow),
-          sqrtPriceX96: BigInt(sqrtPriceX96),
-        };
-        if (poolValues.fee < 0 || poolValues.fee > 0xffffff) {
-          throw new Error("Fee must fit uint24.");
-        }
-        if (poolValues.tickSpacing < 1 || poolValues.tickSpacing > 0x7fffff) {
-          throw new Error("Tick spacing must be a positive int24 value.");
-        }
-        // The hook's own bounds, not uint32's. The old range accepted windows the hook
-        // rejects, so an operator could submit one that reverts at execution.
-        if (
-          poolValues.twapWindow < BigInt(MIN_TWAP_WINDOW) ||
-          poolValues.twapWindow > BigInt(MAX_TWAP_WINDOW)
-        ) {
-          throw new Error(
-            `The hook only accepts a TWAP window between ${MIN_TWAP_WINDOW} and ${MAX_TWAP_WINDOW} seconds.`,
-          );
-        }
-        // Registering with EXACTLY MAX_TWAP_WINDOW stores the 30-minute default instead
-        // (JBBuybackHook.sol:140-148) — immutable deployers bake MAX in as a sentinel meaning
-        // "no preference". Asking for MAX here silently gets 30 minutes, so say so rather than
-        // let the operator believe they set 2 days.
-        if (poolValues.twapWindow === BigInt(MAX_TWAP_WINDOW)) {
-          throw new Error(
-            `A pool registered with exactly ${MAX_TWAP_WINDOW}s stores the hook's 30-minute default instead (it is the "no preference" sentinel). ` +
-              `Use ${MAX_TWAP_WINDOW - 1} for the longest real window, or set 1800 deliberately.`,
-          );
-        }
-        if (poolValues.sqrtPriceX96 <= 0n || poolValues.sqrtPriceX96 >= 2n ** 160n) {
-          throw new Error("Initial price must be a positive uint160 value.");
-        }
+  const buildWrites = (): ChainWrite[] => {
+    if (!chosen.length) throw new Error("Choose at least one available chain.");
+    let poolValues: {
+      fee: number;
+      tickSpacing: number;
+      twapWindow: bigint;
+      sqrtPriceX96: bigint;
+    } | null = null;
+    if (kind === "pool") {
+      if (![fee, tickSpacing, twapWindow, sqrtPriceX96].every((v) => DIGITS.test(v))) {
+        throw new Error("Fee, tick spacing, TWAP window, and price must be whole numbers.");
       }
-      let newTwapWindow = 0;
-      if (kind === "twap") {
-        if (!DIGITS.test(twapWindow)) throw new Error("Enter the TWAP window in whole seconds.");
-        newTwapWindow = Number(twapWindow);
-        if (newTwapWindow < MIN_TWAP_WINDOW || newTwapWindow > MAX_TWAP_WINDOW) {
-          throw new Error(
-            `The hook only accepts a TWAP window between ${MIN_TWAP_WINDOW} and ${MAX_TWAP_WINDOW} seconds.`,
-          );
-        }
+      poolValues = {
+        fee: Number(fee),
+        tickSpacing: Number(tickSpacing),
+        twapWindow: BigInt(twapWindow),
+        sqrtPriceX96: BigInt(sqrtPriceX96),
+      };
+      if (poolValues.fee < 0 || poolValues.fee > 0xffffff) {
+        throw new Error("Fee must fit uint24.");
       }
+      if (poolValues.tickSpacing < 1 || poolValues.tickSpacing > 0x7fffff) {
+        throw new Error("Tick spacing must be a positive int24 value.");
+      }
+      // The hook's own bounds, not uint32's. The old range accepted windows the hook
+      // rejects, so an operator could submit one that reverts at execution.
+      if (
+        poolValues.twapWindow < BigInt(MIN_TWAP_WINDOW) ||
+        poolValues.twapWindow > BigInt(MAX_TWAP_WINDOW)
+      ) {
+        throw new Error(
+          `The hook only accepts a TWAP window between ${MIN_TWAP_WINDOW} and ${MAX_TWAP_WINDOW} seconds.`,
+        );
+      }
+      // Registering with EXACTLY MAX_TWAP_WINDOW stores the 30-minute default instead
+      // (JBBuybackHook.sol:140-148) — immutable deployers bake MAX in as a sentinel meaning
+      // "no preference". Asking for MAX here silently gets 30 minutes, so say so rather than
+      // let the operator believe they set 2 days.
+      if (poolValues.twapWindow === BigInt(MAX_TWAP_WINDOW)) {
+        throw new Error(
+          `A pool registered with exactly ${MAX_TWAP_WINDOW}s stores the hook's 30-minute default instead (it is the "no preference" sentinel). ` +
+            `Use ${MAX_TWAP_WINDOW - 1} for the longest real window, or set 1800 deliberately.`,
+        );
+      }
+      if (poolValues.sqrtPriceX96 <= 0n || poolValues.sqrtPriceX96 >= 2n ** 160n) {
+        throw new Error("Initial price must be a positive uint160 value.");
+      }
+    }
+    let newTwapWindow = 0;
+    if (kind === "twap") {
+      if (!DIGITS.test(twapWindow)) throw new Error("Enter the TWAP window in whole seconds.");
+      newTwapWindow = Number(twapWindow);
+      if (newTwapWindow < MIN_TWAP_WINDOW || newTwapWindow > MAX_TWAP_WINDOW) {
+        throw new Error(
+          `The hook only accepts a TWAP window between ${MIN_TWAP_WINDOW} and ${MAX_TWAP_WINDOW} seconds.`,
+        );
+      }
+    }
 
-      const writes: ChainWrite[] = chosen.map((state) => {
-        const input = (addresses[state.chainId] ?? "").trim();
-        if (!isAddress(input)) {
-          throw new Error(
-            `${chainName(state.chainId)}: enter a valid ${action.fieldLabel.toLowerCase()} address.`,
-          );
-        }
-        const target = input as Address;
-        const projectId = BigInt(state.projectId);
-        const authority = authorityByChain.get(state.chainId);
-        if (kind === "hook") {
-          if (!state.buybackRegistry)
-            throw new Error(`${chainName(state.chainId)}: no buyback registry.`);
-          return {
-            chainId: state.chainId,
-            address: state.buybackRegistry,
-            abi: jbBuybackHookRegistryAbi,
-            functionName: "setHookFor",
-            args: [projectId, target],
-            contractName: "JBBuybackHookRegistry",
-            authority,
-          };
-        }
-        if (kind === "terminal") {
-          if (!state.routerRegistry)
-            throw new Error(`${chainName(state.chainId)}: no router registry.`);
-          return {
-            chainId: state.chainId,
-            address: state.routerRegistry,
-            abi: jbRouterTerminalRegistryAbi,
-            functionName: "setTerminalFor",
-            args: [projectId, target],
-            contractName: "JBRouterTerminalRegistry",
-            authority,
-          };
-        }
-        if (kind === "twap") {
-          // The registry has no setTwapWindowOf forwarder — the write goes to
-          // the project's resolved hook.
-          if (!state.hook) throw new Error(`${chainName(state.chainId)}: no buyback hook set.`);
-          return {
-            chainId: state.chainId,
-            address: state.hook,
-            abi: jbBuybackHookAbi,
-            functionName: "setTwapWindowOf",
-            args: [projectId, target, BigInt(newTwapWindow)],
-            contractName: "JBBuybackHook",
-            authority,
-          };
-        }
-        if (!state.buybackRegistry || !poolValues)
+    const writes: ChainWrite[] = chosen.map((state) => {
+      const input = (addresses[state.chainId] ?? "").trim();
+      if (!isAddress(input)) {
+        throw new Error(
+          `${chainName(state.chainId)}: enter a valid ${action.fieldLabel.toLowerCase()} address.`,
+        );
+      }
+      const target = input as Address;
+      const projectId = BigInt(state.projectId);
+      const authority = authorityByChain.get(state.chainId);
+      if (kind === "hook") {
+        if (!state.buybackRegistry)
           throw new Error(`${chainName(state.chainId)}: no buyback registry.`);
         return {
           chainId: state.chainId,
           address: state.buybackRegistry,
           abi: jbBuybackHookRegistryAbi,
-          functionName: "initializePoolFor",
-          args: [
-            projectId,
-            poolValues.fee,
-            poolValues.tickSpacing,
-            poolValues.twapWindow,
-            target,
-            poolValues.sqrtPriceX96,
-          ],
+          functionName: "setHookFor",
+          args: [projectId, target],
           contractName: "JBBuybackHookRegistry",
           authority,
         };
-      });
+      }
+      if (kind === "terminal") {
+        if (!state.routerRegistry)
+          throw new Error(`${chainName(state.chainId)}: no router registry.`);
+        return {
+          chainId: state.chainId,
+          address: state.routerRegistry,
+          abi: jbRouterTerminalRegistryAbi,
+          functionName: "setTerminalFor",
+          args: [projectId, target],
+          contractName: "JBRouterTerminalRegistry",
+          authority,
+        };
+      }
+      if (kind === "twap") {
+        // The registry has no setTwapWindowOf forwarder — the write goes to
+        // the project's resolved hook.
+        if (!state.hook) throw new Error(`${chainName(state.chainId)}: no buyback hook set.`);
+        return {
+          chainId: state.chainId,
+          address: state.hook,
+          abi: jbBuybackHookAbi,
+          functionName: "setTwapWindowOf",
+          args: [projectId, target, BigInt(newTwapWindow)],
+          contractName: "JBBuybackHook",
+          authority,
+        };
+      }
+      if (!state.buybackRegistry || !poolValues)
+        throw new Error(`${chainName(state.chainId)}: no buyback registry.`);
+      return {
+        chainId: state.chainId,
+        address: state.buybackRegistry,
+        abi: jbBuybackHookRegistryAbi,
+        functionName: "initializePoolFor",
+        args: [
+          projectId,
+          poolValues.fee,
+          poolValues.tickSpacing,
+          poolValues.twapWindow,
+          target,
+          poolValues.sqrtPriceX96,
+        ],
+        contractName: "JBBuybackHookRegistry",
+        authority,
+      };
+    });
+    return writes;
+  };
 
+  const prepare = () => {
+    if (busy || !address || !ack) return;
+    setError(null);
+    setStatus(null);
+    try {
+      setReview(buildWrites());
+    } catch (e) {
+      const message = formatWalletError(e) || "Could not complete this action.";
+      setError(message);
+      toast({ variant: "destructive", title: "Error", description: message });
+    }
+  };
+
+  const submit = async () => {
+    if (busy || !address || !review) return;
+    setError(null);
+    try {
       setBusy(true);
       const result = await runWrites({
-        writes,
+        writes: review,
         account: address,
         label: action.title,
         onProgress: setStatus,
@@ -737,6 +755,7 @@ function BuybackActionForm({
         );
         toast({ title: action.title, description: "Transaction(s) confirmed." });
       }
+      setReview(null);
       onDone();
     } catch (e) {
       const message = formatWalletError(e) || "Could not complete this action.";
@@ -885,12 +904,66 @@ function BuybackActionForm({
         className="mt-3"
         loading={busy}
         disabled={busy || !ack || !chosen.length}
-        onClick={submit}
+        onClick={prepare}
       >
-        {action.title}
+        Review
       </ButtonWithWallet>
-      {status ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
-      {error ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+      {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
+      {error && !review ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+      {review ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setReview(null);
+          }}
+          title={action.title}
+          chainId={review[0].chainId}
+          steps={[
+            {
+              title: action.title,
+              detail:
+                review.length > 1
+                  ? "One Relayr bundle from the operator wallet, or one Safe proposal per chain from a signer."
+                  : "From the operator wallet, or proposed to the operator Safe from a signer.",
+            },
+          ]}
+          activeIndex={busy ? 0 : -1}
+          action={action.title}
+          onConfirm={() => void submit()}
+          busy={busy}
+          status={status}
+          error={error}
+        >
+          <SummaryRow label="On">
+            {review.map((write) => chainName(write.chainId)).join(", ")}
+          </SummaryRow>
+          <SummaryRow label={action.fieldLabel}>
+            {new Set(review.map((write) => (addresses[write.chainId] ?? "").trim())).size === 1 ? (
+              <span className="break-all font-mono text-xs">
+                {(addresses[review[0].chainId] ?? "").trim()}
+              </span>
+            ) : (
+              review.map((write) => (
+                <span key={write.chainId} className="block break-all font-mono text-xs">
+                  {chainName(write.chainId)}: {(addresses[write.chainId] ?? "").trim()}
+                </span>
+              ))
+            )}
+          </SummaryRow>
+          {kind === "pool" ? (
+            <>
+              <SummaryRow label="Fee">{fee} hundredths of a bip</SummaryRow>
+              <SummaryRow label="Tick spacing">{tickSpacing}</SummaryRow>
+              <SummaryRow label="Initial price">
+                <span className="break-all font-mono text-xs">{sqrtPriceX96}</span>
+              </SummaryRow>
+            </>
+          ) : null}
+          {kind === "pool" || kind === "twap" ? (
+            <SummaryRow label="TWAP window">{twapWindow}s</SummaryRow>
+          ) : null}
+        </TxConfirmDialog>
+      ) : null}
     </div>
   );
 }

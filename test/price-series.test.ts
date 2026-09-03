@@ -1,4 +1,4 @@
-import { bucketPoolReserves, smoothPriceSeries } from "@/lib/priceSeries";
+import { bucketPoolReserves, poolReservesAt, smoothPriceSeries } from "@/lib/priceSeries";
 import { describe, expect, it } from "vitest";
 
 describe("smoothPriceSeries", () => {
@@ -28,16 +28,29 @@ describe("bucketPoolReserves", () => {
   it("resamples onto even buckets, holding the last observation and skipping the pre-pool span", () => {
     const buckets = bucketPoolReserves(
       [
-        { timestamp: 70, pairValue: 3, tokenValue: 4 },
-        { timestamp: 50, pairValue: 1, tokenValue: 2 },
+        { timestamp: 70, pairAmount: 3, tokenAmount: 40, pairValue: 3, tokenValue: 4 },
+        { timestamp: 50, pairAmount: 1, tokenAmount: 20, pairValue: 1, tokenValue: 2 },
       ],
       0,
       100,
       4,
     );
     expect(buckets).toEqual([
-      { timestamp: 62.5, pairValue: 1, tokenValue: 2 },
-      { timestamp: 87.5, pairValue: 3, tokenValue: 4 },
+      { timestamp: 62.5, pairAmount: 1, tokenAmount: 20, pairValue: 1, tokenValue: 2 },
+      { timestamp: 87.5, pairAmount: 3, tokenAmount: 40, pairValue: 3, tokenValue: 4 },
     ]);
+  });
+});
+
+describe("poolReservesAt", () => {
+  const points = [
+    { timestamp: 50, pairAmount: 1, tokenAmount: 20, pairValue: 1, tokenValue: 2 },
+    { timestamp: 70, pairAmount: 3, tokenAmount: 40, pairValue: 3, tokenValue: 4 },
+  ];
+  it("holds the last observation at or before the moment, and nothing before the first", () => {
+    expect(poolReservesAt(points, 49)).toBeUndefined();
+    expect(poolReservesAt(points, 50)).toBe(points[0]);
+    expect(poolReservesAt(points, 69)).toBe(points[0]);
+    expect(poolReservesAt(points, 1000)).toBe(points[1]);
   });
 });
