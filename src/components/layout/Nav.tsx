@@ -68,7 +68,7 @@ export function Nav({ wide = false }: { wide?: boolean }) {
         {/* On phones the logo alone shares row one with the search and wallet,
             so it centers on them; the guide links hang underneath. */}
         {searchOpen ? null : (
-          <GuideLinks className="col-start-1 row-start-2 -mt-2 justify-self-start md:hidden" />
+          <GuideLinks className="col-start-1 row-start-2 justify-self-start md:hidden" />
         )}
         <div
           data-site-nav-search
