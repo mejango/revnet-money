@@ -105,14 +105,6 @@ export function liquidityFormView(inputs: LiquidityFormViewInputs): LiquidityFor
       }
       return { ...EMPTY_VIEW, minPrice: floor, maxPrice: ceiling, disabled, note };
     }
-    const sides = [
-      usesToken
-        ? `${trim(tokenAmount)} ${tokenSymbol} selling between ${trim(price)} and ${trim(ceiling)}`
-        : null,
-      usesPair
-        ? `${trim(pairAmount)} ${pairSymbol} buying between ${trim(floor)} and ${trim(price)}`
-        : null,
-    ].filter(Boolean);
     return {
       minPrice: floor,
       maxPrice: ceiling,
@@ -126,7 +118,7 @@ export function liquidityFormView(inputs: LiquidityFormViewInputs): LiquidityFor
         : !pairRoom
           ? `The price is at or below the floor, so only the ${tokenSymbol} side can be placed right now.`
           : shape,
-      summary: `Makes the market: ${sides.join(", ")} ${pairSymbol} per ${tokenSymbol}.`,
+      summary: null,
       ready: true,
     };
   }
