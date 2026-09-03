@@ -487,15 +487,16 @@ export function PayerDeployForm({
             </div>
           ) : null}
 
-          <div className="mt-4">
+          <div className="mt-4 flex justify-end">
             <ButtonWithWallet
               targetChainId={selectedRows[0]?.chainId}
               connectWalletText="Connect wallet to deploy"
               loading={busy}
               disabled={busy || selectedRows.length === 0}
               onClick={buildReview}
+              className="bg-teal-500 text-melon-950 hover:bg-teal-600"
             >
-              Review deploy
+              Deploy payer address{selectedRows.length > 1 ? "es" : ""}
             </ButtonWithWallet>
           </div>
 

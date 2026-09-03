@@ -1,3 +1,4 @@
+import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { isSafeConnector } from "@/hooks/useReviewedWriteContract";
 import { hasErrors } from "@/lib/forms";
@@ -5,7 +6,6 @@ import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { useAccount } from "wagmi";
-import { QuoteButton } from "../buttons/QuoteButton";
 import { formatFormErrors } from "../helpers/formatFormErrors";
 import { useCreateForm } from "./useCreateForm";
 
@@ -36,6 +36,7 @@ export function DeploySection({
   const deploysViaSafe = isSafeConnector(connector) && values.chainIds.length === 1;
   const singleChain = values.chainIds.length === 1;
   const chainNames = values.chainIds.map((chainId) => JB_CHAINS[chainId].name);
+  const action = singleChain ? "Deploy the revnet" : "Sign and get quote";
 
   return (
     <>
@@ -59,15 +60,22 @@ export function DeploySection({
             in the future, later than the Safe will execute.
           </p>
         )}
-        <QuoteButton
-          isLoading={isSubmitting}
-          validBundle={validBundle}
-          disabled={disabled}
-          onSubmit={() => {
-            if (hasErrors(errors)) void submitForm();
-            else setReview(true);
-          }}
-        />
+        <div className="flex justify-end">
+          <ButtonWithWallet
+            targetChainId={values.chainIds[0]}
+            size="lg"
+            loading={isSubmitting}
+            disabled={isSubmitting || disabled}
+            onClick={() => {
+              if (hasErrors(errors)) void submitForm();
+              else setReview(true);
+            }}
+            connectWalletText="Connect Wallet"
+            className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+          >
+            {validBundle ? "Quote complete" : action}
+          </ButtonWithWallet>
+        </div>
         {review && values.chainIds[0] ? (
           <TxConfirmDialog
             open
@@ -95,7 +103,7 @@ export function DeploySection({
                 : `Your wallet will ask for ${values.chainIds.length} signatures. The relay payment comes after the quote.`
             }
             activeIndex={isSubmitting ? 0 : -1}
-            action={singleChain ? "Deploy the revnet" : "Sign and get quote"}
+            action={action}
             onConfirm={() => {
               void submitForm().finally(() => setReview(false));
             }}

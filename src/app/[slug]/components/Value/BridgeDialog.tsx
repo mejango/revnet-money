@@ -63,7 +63,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const baseToken = useProjectBaseToken();
   const tokenSymbol = formatTokenSymbol(token);
   const { ensureAllowance, isApproving } = useAllowance(sourceChainId);
-  const [needsApproval, setNeedsApproval] = useState(false);
+  // Null until the allowance is read; the confirm prepares in the meantime.
+  const [needsApproval, setNeedsApproval] = useState<boolean | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,6 +171,9 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const reviewMove = useCallback(async () => {
     if (!address || amountValue === undefined || !publicClient || !suckerPair) return;
     setIsSubmitting(true);
+    setNeedsApproval(null);
+    setError(null);
+    setReview(true);
     try {
       const tokenAddress = await getTokenAddress(sourceChainId, project.projectId);
       const allowance = tokenAddress
@@ -181,9 +185,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
           })
         : 0n;
       setNeedsApproval(allowance < amountValue);
-      setError(null);
-      setReview(true);
     } catch (cause) {
+      setReview(false);
       toast({ variant: "destructive", title: "Error", description: formatWalletError(cause) });
     } finally {
       setIsSubmitting(false);
@@ -517,8 +520,9 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 amountValue === undefined ||
                 amountValue > balance.value
               }
+              className="bg-teal-500 text-melon-950 hover:bg-teal-600"
             >
-              Review
+              Move {tokenSymbol}
             </ButtonWithWallet>
           </DialogFooter>
         </form>
@@ -530,6 +534,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             }}
             title="Confirm move"
             chainId={sourceChainId}
+            preparing={needsApproval === null}
+            status={needsApproval === null ? "Reading your token allowance…" : null}
             steps={[
               ...(needsApproval
                 ? [

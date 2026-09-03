@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
@@ -203,6 +204,11 @@ export function EditPositionPanel({
       return null;
     }
   }, [tokenText, pairText, minText, maxText, rangeTouched, pool, position, address, tokenSymbol]);
+  const actionLabel = current
+    ? FINAL_STEP[current.plan.kind].title
+    : preview
+      ? FINAL_STEP[preview.plan.kind].title
+      : "Edit the position";
   const cappedRaw = preview ? cappedSide(preview, pool.pair.decimals) : null;
   const capped = cappedRaw
     ? { ...cappedRaw, binding: cappedRaw.side === "token" ? pool.pair.symbol : tokenSymbol }
@@ -495,15 +501,7 @@ export function EditPositionPanel({
         Set both to 0 to remove the position. Keep the band and raise or lower the amounts to top up
         or free part of it without a new position id.
       </p>
-      <div className="mt-2 flex gap-2">
-        <button
-          type="button"
-          className="bg-zinc-900 px-3 py-1.5 text-white disabled:opacity-50"
-          disabled={busy}
-          onClick={() => void prepare()}
-        >
-          {busy ? "Checking…" : "Review edit"}
-        </button>
+      <div className="mt-3 flex justify-end gap-2">
         <button
           type="button"
           className="border border-zinc-300 px-3 py-1.5 disabled:opacity-50"
@@ -512,8 +510,18 @@ export function EditPositionPanel({
         >
           Cancel
         </button>
+        <ButtonWithWallet
+          targetChainId={state.chainId}
+          loading={busy}
+          disabled={busy}
+          onClick={() => void prepare()}
+          connectWalletText="Connect Wallet"
+          className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+        >
+          {actionLabel}
+        </ButtonWithWallet>
       </div>
-      {current ? (
+      {current || busy ? (
         <TxConfirmDialog
           open
           onOpenChange={(open) => {
@@ -521,50 +529,56 @@ export function EditPositionPanel({
           }}
           title="Confirm position edit"
           chainId={state.chainId}
-          steps={current.steps}
+          preparing={!current}
+          steps={current?.steps ?? []}
           activeIndex={busy ? stepIndex : -1}
-          action={FINAL_STEP[current.plan.kind].title}
+          action={actionLabel}
           onConfirm={() => void execute()}
           busy={busy}
           status={status}
         >
-          <SummaryRow label="Position">
-            #{position.tokenId.toString()} on {chainName(state.chainId)}
-          </SummaryRow>
-          <SummaryRow label="Band">
-            {bandText(current.pool, current.plan)}
-            {current.plan.kind === "move" ? " (new position)" : " (kept)"}
-          </SummaryRow>
-          {current.plan.kind !== "remove" ? (
-            <SummaryRow label="Holds after">
-              ~{fmtUnits(current.plan.tokenHolding, 18)} {tokenSymbol} +{" "}
-              {fmtUnits(current.plan.pairHolding, pool.pair.decimals)} {pool.pair.symbol}
-            </SummaryRow>
-          ) : null}
-          {current.plan.tokenFlow > 0n || current.plan.pairFlow > 0n ? (
-            <SummaryRow label="From your wallet">
-              {amountsText(positive(current.plan.tokenFlow), positive(current.plan.pairFlow))}
-            </SummaryRow>
-          ) : null}
-          {current.plan.tokenFlow < 0n || current.plan.pairFlow < 0n ? (
-            <SummaryRow label="Back to your wallet">
-              {amountsText(positive(-current.plan.tokenFlow), positive(-current.plan.pairFlow))} +
-              unclaimed fees
-            </SummaryRow>
-          ) : (
-            <SummaryRow label="Back to your wallet">Unclaimed fees</SummaryRow>
-          )}
-          {current.plan.tokenFunding > 0n || current.plan.pairFunding > 0n ? (
-            <SummaryRow label="Authorizes up to">
-              {amountsText(current.plan.tokenFunding, current.plan.pairFunding)} (1% price headroom)
-            </SummaryRow>
-          ) : null}
-          {current.plan.tokenMinimum > 0n || current.plan.pairMinimum > 0n ? (
-            <SummaryRow label="Enforced onchain">
-              At least {fmtUnits(current.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-              {fmtUnits(current.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol} back (95%
-              floors)
-            </SummaryRow>
+          {current ? (
+            <>
+              <SummaryRow label="Position">
+                #{position.tokenId.toString()} on {chainName(state.chainId)}
+              </SummaryRow>
+              <SummaryRow label="Band">
+                {bandText(current.pool, current.plan)}
+                {current.plan.kind === "move" ? " (new position)" : " (kept)"}
+              </SummaryRow>
+              {current.plan.kind !== "remove" ? (
+                <SummaryRow label="Holds after">
+                  ~{fmtUnits(current.plan.tokenHolding, 18)} {tokenSymbol} +{" "}
+                  {fmtUnits(current.plan.pairHolding, pool.pair.decimals)} {pool.pair.symbol}
+                </SummaryRow>
+              ) : null}
+              {current.plan.tokenFlow > 0n || current.plan.pairFlow > 0n ? (
+                <SummaryRow label="From your wallet">
+                  {amountsText(positive(current.plan.tokenFlow), positive(current.plan.pairFlow))}
+                </SummaryRow>
+              ) : null}
+              {current.plan.tokenFlow < 0n || current.plan.pairFlow < 0n ? (
+                <SummaryRow label="Back to your wallet">
+                  {amountsText(positive(-current.plan.tokenFlow), positive(-current.plan.pairFlow))}{" "}
+                  + unclaimed fees
+                </SummaryRow>
+              ) : (
+                <SummaryRow label="Back to your wallet">Unclaimed fees</SummaryRow>
+              )}
+              {current.plan.tokenFunding > 0n || current.plan.pairFunding > 0n ? (
+                <SummaryRow label="Authorizes up to">
+                  {amountsText(current.plan.tokenFunding, current.plan.pairFunding)} (1% price
+                  headroom)
+                </SummaryRow>
+              ) : null}
+              {current.plan.tokenMinimum > 0n || current.plan.pairMinimum > 0n ? (
+                <SummaryRow label="Enforced onchain">
+                  At least {fmtUnits(current.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
+                  {fmtUnits(current.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol} back
+                  (95% floors)
+                </SummaryRow>
+              ) : null}
+            </>
           ) : null}
         </TxConfirmDialog>
       ) : null}

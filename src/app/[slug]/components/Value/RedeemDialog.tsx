@@ -555,8 +555,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   setError(null);
                   setReview(true);
                 }}
+                className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                Review
+                {directSell ? "Sell on pool" : "Cash out"}
               </ButtonWithWallet>
             ) : null}
           </DialogFooter>

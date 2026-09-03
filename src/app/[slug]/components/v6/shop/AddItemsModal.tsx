@@ -68,7 +68,14 @@ export function AddItemsModal({
 
   const [items, setItems] = useState<DraftItem[]>([newDraftItem()]);
   const [phase, setPhase] = useState<
-    "form" | "pinning" | "simulating" | "sending" | "confirming" | "safe-proposed" | "done"
+    | "form"
+    | "checking"
+    | "pinning"
+    | "simulating"
+    | "sending"
+    | "confirming"
+    | "safe-proposed"
+    | "done"
   >("form");
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +90,11 @@ export function AddItemsModal({
   );
 
   const busy =
-    phase === "pinning" || phase === "simulating" || phase === "sending" || phase === "confirming";
+    phase === "checking" ||
+    phase === "pinning" ||
+    phase === "simulating" ||
+    phase === "sending" ||
+    phase === "confirming";
 
   const updateItem = (index: number, patch: Partial<DraftItem>) => {
     setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)));
@@ -122,8 +133,9 @@ export function AddItemsModal({
     if (!address || !publicClient || busy) return;
     setError(null);
 
+    setReviewing(true);
     try {
-      setPhase("simulating");
+      setPhase("checking");
       const authorized = await canAdjust721Tiers(publicClient as PublicClient, {
         chainId,
         projectId,
@@ -146,9 +158,9 @@ export function AddItemsModal({
       const draftConfigs = buildTierConfigs(items, shop.pricing.decimals);
       if (typeof draftConfigs === "string") throw new Error(draftConfigs);
       setPhase("form");
-      setReviewing(true);
     } catch (err) {
       setPhase("form");
+      setReviewing(false);
       setError(shortError(err));
     }
   };
@@ -206,15 +218,17 @@ export function AddItemsModal({
   };
 
   const status =
-    phase === "pinning"
-      ? "Pinning metadata…"
-      : phase === "simulating"
-        ? "Simulating…"
-        : phase === "sending"
-          ? "Confirm in wallet…"
-          : phase === "confirming"
-            ? "Confirming…"
-            : null;
+    phase === "checking"
+      ? "Checking the shop and your permissions…"
+      : phase === "pinning"
+        ? "Pinning metadata…"
+        : phase === "simulating"
+          ? "Simulating…"
+          : phase === "sending"
+            ? "Confirm in wallet…"
+            : phase === "confirming"
+              ? "Confirming…"
+              : null;
 
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
@@ -321,9 +335,12 @@ export function AddItemsModal({
               <ButtonWithWallet
                 targetChainId={chainId}
                 loading={busy}
+                disabled={busy}
                 onClick={() => void review()}
+                connectWalletText="Connect Wallet"
+                className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                {phase === "simulating" ? "Checking…" : "Review items"}
+                Add items
               </ButtonWithWallet>
             </div>
           </>
@@ -337,6 +354,7 @@ export function AddItemsModal({
           }}
           title="Confirm items"
           chainId={chainId}
+          preparing={phase === "checking"}
           steps={[
             {
               title: `Add ${items.length} item${items.length === 1 ? "" : "s"}`,

@@ -372,17 +372,18 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
             : "I verified the new revnet operator. They receive every power attached to this role."}
         </span>
       </label>
-      <ButtonWithWallet
-        targetChainId={group.rows[0]?.chainId}
-        connectWalletText="Connect wallet to transfer"
-        size="sm"
-        className="mt-3"
-        loading={busy}
-        disabled={busy || !ack || !destination.trim()}
-        onClick={beginReview}
-      >
-        Review transfer
-      </ButtonWithWallet>
+      <div className="mt-3 flex justify-end">
+        <ButtonWithWallet
+          targetChainId={group.rows[0]?.chainId}
+          connectWalletText="Connect wallet to transfer"
+          loading={busy}
+          disabled={busy || !ack || !destination.trim()}
+          onClick={beginReview}
+          className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+        >
+          Transfer revnet operator
+        </ButtonWithWallet>
+      </div>
       {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
       {error && !review ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
       {review ? (

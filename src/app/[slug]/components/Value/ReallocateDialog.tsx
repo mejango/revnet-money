@@ -407,8 +407,9 @@ export function ReallocateDialog({
                   Number(collateralAmount) < 0 ||
                   minimumBorrowAmountPreview === undefined
                 }
+                className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                Review
+                Reallocate loan
               </ButtonWithWallet>
             </DialogFooter>
           )}

@@ -385,8 +385,9 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
               minimumBorrowAmountPreview === undefined
             }
             onClick={() => setReview(true)}
+            className="bg-teal-500 text-melon-950 hover:bg-teal-600"
           >
-            Review
+            {adjusting ? "Adjust loan" : "Open loan"}
           </ButtonWithWallet>
         </DialogFooter>
         {review && cashOutChainId && selectedChainTokenConfig ? (
