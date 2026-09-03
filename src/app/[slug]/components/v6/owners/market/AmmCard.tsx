@@ -1,6 +1,7 @@
 "use client";
 
 import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
+import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { ExternalLink } from "@/components/ExternalLink";
@@ -1091,22 +1092,27 @@ export function AddLiquidityForm({
       </div>
       {view.summary ? <p className="mt-2 text-xs text-zinc-600">{view.summary}</p> : null}
       {view.note ? <p className="mt-1 text-[11px] text-zinc-500">{view.note}</p> : null}
-      <button
-        type="button"
-        className="mt-2 border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-50"
-        disabled={disabled || !address || !view.ready}
-        onClick={() => void prepare()}
-      >
-        {disabled && !review ? "Checking…" : address ? "Review" : "Connect to add liquidity"}
-      </button>
-      {review ? (
+      <div className="mt-3 flex justify-end">
+        <ButtonWithWallet
+          targetChainId={state.chainId}
+          loading={disabled}
+          disabled={disabled || !view.ready}
+          onClick={() => void prepare()}
+          connectWalletText="Connect Wallet"
+          className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+        >
+          {mode === "market" ? "Make the market" : "Add liquidity"}
+        </ButtonWithWallet>
+      </div>
+      {review || (busy && !review) ? (
         <TxConfirmDialog
           open
           onOpenChange={(open) => {
             if (!open) setReviewed(null);
           }}
-          title={review.kind === "market" ? "Confirm market" : "Confirm liquidity"}
+          title={mode === "market" ? "Confirm market" : "Confirm liquidity"}
           chainId={state.chainId}
+          preparing={!review}
           steps={reviewSteps}
           activeIndex={busy ? stepIndex : -1}
           stepsIntro={
@@ -1114,12 +1120,12 @@ export function AddLiquidityForm({
               ? `Goes to your Safe as one batch of ${reviewSteps.length} calls: approved once, executed together.`
               : undefined
           }
-          action={review.kind === "market" ? "Make the market" : "Add liquidity"}
+          action={mode === "market" ? "Make the market" : "Add liquidity"}
           onConfirm={() => void execute()}
           busy={disabled}
           status={status}
         >
-          {review.kind === "market" ? (
+          {!review ? null : review.kind === "market" ? (
             <>
               {review.plan.tokenSide ? (
                 <SummaryRow label="Sells above the price">
@@ -1146,14 +1152,18 @@ export function AddLiquidityForm({
               </span>
             </SummaryRow>
           )}
-          <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
-          <SummaryRow label="Authorizes up to">
-            {amountsText(review.plan.tokenMaximum, review.plan.pairMaximum)}
-            <span className="block text-xs text-zinc-500">
-              1% price headroom, spent only if the price moves before the mint lands
-              {pool.pair.addr === zeroAddress ? `. Unused ${pool.pair.symbol} is refunded` : ""}
-            </span>
-          </SummaryRow>
+          {review ? (
+            <>
+              <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
+              <SummaryRow label="Authorizes up to">
+                {amountsText(review.plan.tokenMaximum, review.plan.pairMaximum)}
+                <span className="block text-xs text-zinc-500">
+                  1% price headroom, spent only if the price moves before the mint lands
+                  {pool.pair.addr === zeroAddress ? `. Unused ${pool.pair.symbol} is refunded` : ""}
+                </span>
+              </SummaryRow>
+            </>
+          ) : null}
         </TxConfirmDialog>
       ) : null}
       {minted ? (
