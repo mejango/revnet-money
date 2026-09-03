@@ -68,7 +68,7 @@ export function PayAndDeploy({
         onSelectPayment={selectPayment}
         disabled={payIsProcessing}
       />
-      <div className="flex md:col-span-3 mt-4">
+      <div className="flex justify-end md:col-span-3 mt-4">
         <Button
           type="submit"
           size="lg"

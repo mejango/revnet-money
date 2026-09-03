@@ -105,7 +105,7 @@ function SyncButton({
       >
         {state === "sent" ? "Sent" : "Sync"}
       </ButtonWithWallet>
-      {review ? (
+      {review || state === "finding" ? (
         <TxConfirmDialog
           open
           onOpenChange={(open) => {
@@ -113,6 +113,8 @@ function SyncButton({
           }}
           title="Confirm sync"
           chainId={peerChainId}
+          preparing={!review}
+          status={review ? null : "Simulating the bridge messaging fee…"}
           steps={[
             {
               title: "Sync accounting",
@@ -121,9 +123,10 @@ function SyncButton({
           ]}
           activeIndex={state === "working" ? 0 : -1}
           action="Sync"
-          busy={state === "working"}
+          busy={state !== "idle"}
           error={error}
           onConfirm={async () => {
+            if (!review) return;
             try {
               setState("working");
               setError(null);
@@ -168,10 +171,12 @@ function SyncButton({
         >
           <SummaryRow label="On">{chainName(peerChainId)}</SummaryRow>
           <SummaryRow label="Pushes to">{chainName(toChainId)}</SummaryRow>
-          <SummaryRow label="Bridge fee">
-            {fmtUnits(review.value, 18)} {nativeSymbol}
-            <span className="block text-xs text-zinc-500">Found by simulation</span>
-          </SummaryRow>
+          {review ? (
+            <SummaryRow label="Bridge fee">
+              {fmtUnits(review.value, 18)} {nativeSymbol}
+              <span className="block text-xs text-zinc-500">Found by simulation</span>
+            </SummaryRow>
+          ) : null}
         </TxConfirmDialog>
       ) : null}
     </>

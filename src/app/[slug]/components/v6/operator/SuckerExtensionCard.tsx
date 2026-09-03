@@ -288,17 +288,18 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                 belongs to this revnet. Every transaction is simulated before it sends.
               </span>
             </label>
-            <ButtonWithWallet
-              targetChainId={(Number(targetChainId) || rows[0]?.chainId) as JBChainId}
-              connectWalletText="Connect wallet to extend"
-              size="sm"
-              className="mt-3"
-              loading={busy}
-              disabled={busy || !ack || !targetChainId || !targetProjectId.trim()}
-              onClick={beginReview}
-            >
-              Review
-            </ButtonWithWallet>
+            <div className="mt-3 flex justify-end">
+              <ButtonWithWallet
+                targetChainId={(Number(targetChainId) || rows[0]?.chainId) as JBChainId}
+                connectWalletText="Connect wallet to extend"
+                loading={busy}
+                disabled={busy || !ack || !targetChainId || !targetProjectId.trim()}
+                onClick={beginReview}
+                className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+              >
+                Deploy suckers
+              </ButtonWithWallet>
+            </div>
             {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
             {error && !review ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
             {review ? (

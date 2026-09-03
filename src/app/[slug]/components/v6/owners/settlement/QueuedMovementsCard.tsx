@@ -216,7 +216,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
       >
         Execute
       </ButtonWithWallet>
-      {review ? (
+      {review || busy ? (
         <TxConfirmDialog
           open
           onOpenChange={(open) => {
@@ -224,6 +224,8 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
           }}
           title="Confirm execution"
           chainId={row.chainId}
+          preparing={!review}
+          status={review ? null : "Simulating the bridge messaging fee…"}
           steps={[
             {
               title: "Send the bridge message",
@@ -235,6 +237,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
           busy={busy}
           error={error}
           onConfirm={async () => {
+            if (!review) return;
             try {
               setBusy(true);
               setError(null);
@@ -284,10 +287,12 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
         >
           <SummaryRow label="On">{chainName(row.chainId)}</SummaryRow>
           <SummaryRow label="Delivers to">{chainName(row.peerChainId)}</SummaryRow>
-          <SummaryRow label="Bridge fee">
-            {fmtUnits(review.value, 18)} {nativeSymbol}
-            <span className="block text-xs text-zinc-500">Found by simulation</span>
-          </SummaryRow>
+          {review ? (
+            <SummaryRow label="Bridge fee">
+              {fmtUnits(review.value, 18)} {nativeSymbol}
+              <span className="block text-xs text-zinc-500">Found by simulation</span>
+            </SummaryRow>
+          ) : null}
         </TxConfirmDialog>
       ) : null}
     </>

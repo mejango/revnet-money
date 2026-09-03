@@ -109,7 +109,7 @@ async function prefilledAdvancedTextarea() {
 }
 
 async function save() {
-  fireEvent.click(screen.getByRole("button", { name: /review changes/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^save changes$/i }));
 }
 
 async function pinnedMetadata() {
@@ -151,13 +151,13 @@ describe("EditMetadataDialog advanced custom properties", () => {
     await openDialog();
 
     expect(screen.getByText(/loading current metadata/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /review changes/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^save changes$/i })).toBeDisabled();
     expect(screen.queryByLabelText(/custom properties/i)).not.toBeInTheDocument();
 
     resolveMetadata({ data: CURRENT_METADATA });
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /review changes/i })).not.toBeDisabled(),
+      expect(screen.getByRole("button", { name: /^save changes$/i })).not.toBeDisabled(),
     );
   });
 
@@ -198,7 +198,10 @@ describe("EditMetadataDialog advanced custom properties", () => {
 
     // Nothing is written until the confirm dialog's action is pressed.
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByRole("button", { name: /^save changes$/i }));
+    // The confirm opens at once and its action enables once the pin lands.
+    const confirm = await screen.findByRole("button", { name: /^save changes$/i });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
     await waitFor(() => expect(mocks.writeContractAsync).toHaveBeenCalledTimes(1));
     expect(mocks.writeContractAsync.mock.calls[0][0]).toMatchObject({
       functionName: "setUriOf",

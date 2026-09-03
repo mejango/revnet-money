@@ -1750,7 +1750,7 @@ function ChainPositionRows({
           </SummaryRow>
         </TxConfirmDialog>
       ) : null}
-      {reviewed ? (
+      {reviewed || refreshing !== null ? (
         <TxConfirmDialog
           open
           onOpenChange={(open) => {
@@ -1758,6 +1758,8 @@ function ChainPositionRows({
           }}
           title="Confirm removal"
           chainId={state.chainId}
+          preparing={!reviewed}
+          status={reviewed ? null : "Reading the live position…"}
           steps={[
             {
               title: "Remove the position",
@@ -1770,19 +1772,23 @@ function ChainPositionRows({
           busy={isPending}
           error={error}
         >
-          <SummaryRow label="Position">
-            #{reviewed.position.tokenId.toString()} on {chainName(state.chainId)}
-          </SummaryRow>
-          <SummaryRow label="Back to your wallet">
-            ~{fmtUnits(reviewed.position.tokenAmount, 18)} {tokenSymbol} +{" "}
-            {fmtUnits(reviewed.position.pairAmount, pool.pair.decimals)} {pool.pair.symbol} +
-            unclaimed fees
-          </SummaryRow>
-          <SummaryRow label="Enforced onchain">
-            At least {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-            {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol} back (95%
-            floors)
-          </SummaryRow>
+          {reviewed ? (
+            <>
+              <SummaryRow label="Position">
+                #{reviewed.position.tokenId.toString()} on {chainName(state.chainId)}
+              </SummaryRow>
+              <SummaryRow label="Back to your wallet">
+                ~{fmtUnits(reviewed.position.tokenAmount, 18)} {tokenSymbol} +{" "}
+                {fmtUnits(reviewed.position.pairAmount, pool.pair.decimals)} {pool.pair.symbol} +
+                unclaimed fees
+              </SummaryRow>
+              <SummaryRow label="Enforced onchain">
+                At least {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
+                {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol} back
+                (95% floors)
+              </SummaryRow>
+            </>
+          ) : null}
         </TxConfirmDialog>
       ) : null}
       {/* The panels live OUTSIDE the scroll wrapper — as table rows they would

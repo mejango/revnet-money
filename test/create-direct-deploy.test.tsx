@@ -19,6 +19,21 @@ vi.mock("wagmi", async (importOriginal) => ({
   useTransactionReceipt: mocks.useTransactionReceipt,
 }));
 
+vi.mock("@/components/ButtonWithWallet", () => ({
+  ButtonWithWallet: ({
+    children,
+    loading: _loading,
+    targetChainId: _chain,
+    connectWalletText: _connect,
+    ...props
+  }: {
+    children: React.ReactNode;
+    loading?: boolean;
+    targetChainId?: unknown;
+    connectWalletText?: string;
+  }) => <button {...props}>{children}</button>,
+}));
+
 import { DeployRevnetForm } from "@/app/create/form/DeployRevnetForm";
 
 const TX_HASH = `0x${"ab".repeat(32)}`;

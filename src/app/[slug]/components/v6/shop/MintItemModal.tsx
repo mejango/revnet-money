@@ -82,13 +82,13 @@ export function MintItemModal({
   const [beneficiary, setBeneficiary] = useState(address ?? "");
   const [quantity, setQuantity] = useState("1");
   const [phase, setPhase] = useState<
-    "form" | "simulating" | "sending" | "confirming" | "safe-proposed" | "done"
+    "form" | "checking" | "sending" | "confirming" | "safe-proposed" | "done"
   >("form");
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
   const maxQuantity = Math.max(0, Math.min(50, remaining));
-  const busy = phase === "simulating" || phase === "sending" || phase === "confirming";
+  const busy = phase === "checking" || phase === "sending" || phase === "confirming";
 
   const validate = () => {
     const recipient = beneficiary.trim();
@@ -109,8 +109,9 @@ export function MintItemModal({
     const input = validate();
     if (!input) return;
     setError(null);
+    setReviewing(true);
     try {
-      setPhase("simulating");
+      setPhase("checking");
       await assertCanMint721Tier(publicClient as PublicClient, {
         chainId,
         projectId,
@@ -120,9 +121,9 @@ export function MintItemModal({
         quantity: input.count,
       });
       setPhase("form");
-      setReviewing(true);
     } catch (cause) {
       setPhase("form");
+      setReviewing(false);
       setError(cause instanceof Error ? cause.message : "Could not mint this item.");
     }
   };
@@ -176,7 +177,13 @@ export function MintItemModal({
   };
 
   const status =
-    phase === "sending" ? "Confirm in wallet…" : phase === "confirming" ? "Confirming…" : null;
+    phase === "checking"
+      ? "Checking the shop and your permissions…"
+      : phase === "sending"
+        ? "Confirm in wallet…"
+        : phase === "confirming"
+          ? "Confirming…"
+          : null;
 
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
@@ -263,12 +270,14 @@ export function MintItemModal({
                 Cancel
               </Button>
               <ButtonWithWallet
+                targetChainId={chainId}
                 onClick={() => void review()}
                 loading={busy}
-                disabled={maxQuantity === 0}
+                disabled={busy || maxQuantity === 0}
+                connectWalletText="Connect Wallet"
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                {phase === "simulating" ? "Checking…" : "Review & mint"}
+                Mint
               </ButtonWithWallet>
             </DialogFooter>
           </>
@@ -282,6 +291,7 @@ export function MintItemModal({
           }}
           title="Confirm mint"
           chainId={chainId}
+          preparing={phase === "checking"}
           steps={[
             {
               title: `Mint ${quantity} × ${itemName}`,

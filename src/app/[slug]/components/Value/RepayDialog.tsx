@@ -855,8 +855,9 @@ export function RepayDialog({
                   (shouldRunSimulation && !!simulationError) ||
                   (isNativeBase === false && !hasSufficientAllowance)
                 }
+                className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                Review
+                Repay loan
               </ButtonWithWallet>
             )}
             {renderStatusMessage()}

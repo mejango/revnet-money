@@ -9,6 +9,22 @@ import { baseSepolia, mainnet, sepolia } from "viem/chains";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TEST_ACCOUNT, TEST_BENEFICIARY, validRevnetForm } from "./fixtures/revnet";
 
+// The deploy action is a wallet button; the section renders without a WagmiProvider here.
+vi.mock("@/components/ButtonWithWallet", () => ({
+  ButtonWithWallet: ({
+    children,
+    loading: _loading,
+    targetChainId: _chain,
+    connectWalletText: _connect,
+    ...props
+  }: {
+    children: React.ReactNode;
+    loading?: boolean;
+    targetChainId?: unknown;
+    connectWalletText?: string;
+  }) => <button {...props}>{children}</button>,
+}));
+
 function renderCreateForm(initialValues: RevnetFormData) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
@@ -134,7 +150,7 @@ describe("create form section order", () => {
     invalid.stages = [];
     renderCreateForm(invalid);
 
-    fireEvent.click(screen.getByRole("button", { name: /get quote/i }));
+    fireEvent.click(screen.getByRole("button", { name: /deploy the revnet|sign and get quote/i }));
 
     const message = screen.getByText("Please fix these details:");
     expect(message.closest('[role="alert"]')).toHaveTextContent("Name is required");

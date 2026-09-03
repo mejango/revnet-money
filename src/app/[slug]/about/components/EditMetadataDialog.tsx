@@ -3,6 +3,7 @@
 import { FieldGroup } from "@/app/create/form/Fields";
 import { MarkdownFieldGroup } from "@/app/create/form/MarkdownFieldGroup";
 import { pinProjectMetadata } from "@/app/create/helpers/pinProjectMetaData";
+import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { IpfsImageUploader } from "@/components/IpfsFileUploader";
 import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
 import { Button } from "@/components/ui/button";
@@ -134,6 +135,8 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
 
   const { writeContractAsync, isPending, data: txHash } = useWriteContract();
   const [reviewed, setReviewed] = useState<{ metadataUri: string; name: string } | null>(null);
+  // The confirm's line while the metadata pins and, on several chains, the relay quote loads.
+  const [preparing, setPreparing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -192,6 +195,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
 
   const closeReview = useCallback(() => {
     setReviewed(null);
+    setPreparing(null);
     setError(null);
     resetQuote();
   }, [resetQuote]);
@@ -229,6 +233,8 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       if (!customProperties.ok) throw new Error(customProperties.error);
 
       setSubmitting(true);
+      setError(null);
+      setPreparing("Pinning the metadata…");
 
       // Re-fetch the CURRENT metadata JSON before pinning. The context value can
       // be a server-provided subset (name/logo/description only), and merging on
@@ -239,8 +245,14 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
         mergeProjectMetadata(authoritative, values, customProperties.value),
       );
 
-      setError(null);
-      setReviewed({ metadataUri: ipfsUri(metadataCid), name: values.name.trim() });
+      const metadataUri = ipfsUri(metadataCid);
+      setReviewed({ metadataUri, name: values.name.trim() });
+      // Several chains go through Relayr: the quote (one signature) loads before the confirm
+      // shows its rows, so the dialog's one action is the relay payment.
+      if (projects.length > 1) {
+        setPreparing("Getting a relay quote… Your wallet will ask for a signature.");
+        if (!(await handleSubmit(metadataUri))) closeReview();
+      }
     } catch (e: unknown) {
       toast({
         variant: "destructive",
@@ -249,13 +261,13 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       });
       console.error(e);
     } finally {
+      setPreparing(null);
       setSubmitting(false);
     }
   };
 
-  const handleSubmit = async () => {
-    if (!address || !reviewed) return;
-    const { metadataUri } = reviewed;
+  const handleSubmit = async (metadataUri = reviewed?.metadataUri): Promise<boolean> => {
+    if (!address || !metadataUri) return false;
     setBusy(true);
     setError(null);
     try {
@@ -283,7 +295,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
           description: "Awaiting confirmation...",
         });
 
-        return;
+        return true;
       }
 
       // Multi-chain - use relayr
@@ -332,11 +344,13 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
 
       setRelayrQuote(quote);
       selectPayment(quote.payment_info[0]);
+      return true;
     } catch (e: unknown) {
       const message = formatWalletError(e) || "Failed to update metadata";
       setError(message);
       toast({ variant: "destructive", title: "Error", description: message });
       console.error(e);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -550,15 +564,22 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" loading={isLoading} disabled={isLoading || !metadataReady}>
-                    Review changes
-                  </Button>
+                  <ButtonWithWallet
+                    type="submit"
+                    targetChainId={projects[0].chainId as JBChainId}
+                    loading={isLoading}
+                    disabled={isLoading || !metadataReady}
+                    connectWalletText="Connect Wallet"
+                    className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+                  >
+                    Save changes
+                  </ButtonWithWallet>
                 </DialogFooter>
               </form>
             );
           }}
         </FormProvider>
-        {reviewed ? (
+        {reviewed || preparing ? (
           <TxConfirmDialog
             open
             onOpenChange={(next) => {
@@ -566,6 +587,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             }}
             title="Confirm metadata"
             chainId={projects[0].chainId as JBChainId}
+            preparing={!reviewed || (multiChain && !relayrQuote)}
             steps={
               multiChain
                 ? [
@@ -580,16 +602,16 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             activeIndex={
               !busy && !isPending && !isTxLoading ? -1 : multiChain && relayrQuote ? 1 : 0
             }
-            action={multiChain ? (relayrQuote ? "Pay and submit" : "Get quote") : "Save changes"}
+            action={multiChain ? "Pay and submit" : "Save changes"}
             onConfirm={() => void (relayrQuote ? handlePayAndSubmit() : handleSubmit())}
-            busy={busy || isPending || isTxLoading}
-            status={isTxLoading ? "Submitted. Waiting for confirmation…" : null}
+            busy={Boolean(preparing) || busy || isPending || isTxLoading}
+            status={preparing ?? (isTxLoading ? "Submitted. Waiting for confirmation…" : null)}
             error={error}
           >
-            <SummaryRow label="Name">{reviewed.name}</SummaryRow>
+            <SummaryRow label="Name">{reviewed?.name}</SummaryRow>
             <SummaryRow label="On">{chainNames}</SummaryRow>
             <SummaryRow label="Metadata">
-              <span className="break-all font-mono text-xs">{reviewed.metadataUri}</span>
+              <span className="break-all font-mono text-xs">{reviewed?.metadataUri}</span>
             </SummaryRow>
             {relayrQuote && tokenSymbol ? (
               <RelayrPaymentSelect

@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
 import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
@@ -476,6 +477,19 @@ function TokenEditDialog({
     }
   };
 
+  // The one main action: on several chains the relay quote (one signature) loads while the
+  // confirm prepares, so its action is the relay payment; on one chain the confirm shows at once.
+  const start = async () => {
+    setError(null);
+    if (quote) {
+      setConfirming("pay");
+      return;
+    }
+    setConfirming("submit");
+    if (states.length === 1) return;
+    setConfirming((await submit()) ? "pay" : null);
+  };
+
   const confirm = async () => {
     const ok = confirming === "pay" ? await payAndSubmit() : await submit();
     if (ok) setConfirming(null);
@@ -484,13 +498,8 @@ function TokenEditDialog({
   const permissionName = deployed ? "SET_TOKEN_METADATA" : "DEPLOY_ERC20";
   const chainNames = states.map((state) => JB_CHAINS[state.chainId].name).join(", ");
   const relayed = states.length > 1;
-  const actionLabel = relayed
-    ? confirming === "pay"
-      ? "Pay and submit"
-      : "Get quote"
-    : deployed
-      ? "Save token"
-      : "Deploy token";
+  const formAction = deployed ? "Save token" : "Deploy token";
+  const actionLabel = relayed ? "Pay and submit" : formAction;
   const confirmSteps = relayed
     ? [
         {
@@ -538,11 +547,17 @@ function TokenEditDialog({
               ? (selectedPayment.chain as JBChainId)
               : states[0].chainId
           }
+          preparing={relayed && confirming === "submit"}
           steps={confirmSteps}
           activeIndex={confirming === "pay" ? 1 : busy ? 0 : -1}
           action={actionLabel}
           onConfirm={() => void confirm()}
           busy={busy}
+          status={
+            relayed && confirming === "submit"
+              ? "Getting a relay quote… Your wallet will ask for a signature."
+              : null
+          }
           error={error}
         >
           <SummaryRow label="Name">{name.trim()}</SummaryRow>
@@ -558,8 +573,15 @@ function TokenEditDialog({
               {formatHexEther(selectedPayment.amount)} ETH on{" "}
               {JB_CHAINS[selectedPayment.chain as JBChainId]?.name ?? selectedPayment.chain}
             </SummaryRow>
-          ) : relayed ? (
-            <SummaryRow label="Relay fee">Quoted in ETH after you sign</SummaryRow>
+          ) : null}
+          {quote ? (
+            <RelayrPaymentSelect
+              payments={quote.payment_info}
+              tokenSymbol={symbol || "token"}
+              selectedPayment={selectedPayment}
+              onSelectPayment={setSelectedPayment}
+              disabled={busy}
+            />
           ) : null}
         </TxConfirmDialog>
       ) : null}
@@ -619,45 +641,22 @@ function TokenEditDialog({
           </label>
         </div>
 
-        {quote ? (
-          <RelayrPaymentSelect
-            payments={quote.payment_info}
-            tokenSymbol={symbol || "token"}
-            selectedPayment={selectedPayment}
-            onSelectPayment={setSelectedPayment}
-            disabled={busy}
-          />
-        ) : null}
+        {error && !confirming ? <p className="text-xs text-red-600">{error}</p> : null}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>
             Cancel
           </Button>
-          {quote ? (
-            <Button
-              type="button"
-              onClick={() => {
-                setError(null);
-                setConfirming("pay");
-              }}
-              loading={busy}
-              disabled={!selectedPayment || busy}
-            >
-              Pay and submit
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={() => {
-                setError(null);
-                setConfirming("submit");
-              }}
-              loading={busy}
-              disabled={!address || !canManage || busy}
-            >
-              {states.length > 1 ? "Get quote" : deployed ? "Save token" : "Deploy token"}
-            </Button>
-          )}
+          <ButtonWithWallet
+            targetChainId={states[0].chainId}
+            onClick={() => void start()}
+            loading={busy}
+            disabled={!address || !canManage || busy}
+            connectWalletText="Connect Wallet"
+            className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+          >
+            {formAction}
+          </ButtonWithWallet>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -897,17 +897,18 @@ function BuybackActionForm({
         </span>
       </label>
 
-      <ButtonWithWallet
-        targetChainId={chosen[0]?.chainId}
-        connectWalletText="Connect wallet to continue"
-        size="sm"
-        className="mt-3"
-        loading={busy}
-        disabled={busy || !ack || !chosen.length}
-        onClick={prepare}
-      >
-        Review
-      </ButtonWithWallet>
+      <div className="mt-3 flex justify-end">
+        <ButtonWithWallet
+          targetChainId={chosen[0]?.chainId}
+          connectWalletText="Connect wallet to continue"
+          loading={busy}
+          disabled={busy || !ack || !chosen.length}
+          onClick={prepare}
+          className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+        >
+          {action.title}
+        </ButtonWithWallet>
+      </div>
       {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
       {error && !review ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
       {review ? (

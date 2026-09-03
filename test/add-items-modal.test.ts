@@ -144,7 +144,7 @@ describe("revnet shop item editor", () => {
     }
 
     const source = readFileSync("src/app/[slug]/components/v6/shop/AddItemsModal.tsx", "utf8");
-    for (const label of ["Add on", "Review items"]) {
+    for (const label of ["Add on", "Add items"]) {
       expect(source).toContain(label);
     }
     // Nothing is pinned until the wallet is known to be authorized and the tiers are known to
