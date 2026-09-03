@@ -66,11 +66,9 @@ describe("AddLiquidityForm", () => {
       target: { value: "0.08" },
     });
 
-    // Both amounts are used in full: nothing is derived from the other side.
-    expect(
-      screen.getByText(/Makes the market: 20000000 MARKEE selling between/),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/0\.08 ETH buying between/)).toBeInTheDocument();
+    // Both amounts are used in full: nothing is derived from the other side,
+    // and the corridor line is the only guidance.
+    expect(screen.queryByText(/Makes the market/)).not.toBeInTheDocument();
     expect(screen.getByText(/independent and used in full/)).toBeInTheDocument();
   });
 

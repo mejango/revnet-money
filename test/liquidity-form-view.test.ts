@@ -187,8 +187,8 @@ describe("liquidityFormView — make-the-market mode", () => {
     expect(view.tokenAmount).toBe(20000000);
     expect(view.pairAmount).toBe(8000);
     expect(view.disabled).toEqual({ token: false, pair: false });
-    expect(view.summary).toContain("20000000 MARKEE selling between");
-    expect(view.summary).toContain("8000 ETH buying between");
+    // The corridor line is the only guidance: the amounts speak for themselves.
+    expect(view.summary).toBeNull();
     expect(view.note).toContain("independent");
   });
 
@@ -196,7 +196,7 @@ describe("liquidityFormView — make-the-market mode", () => {
     const view = liquidityFormView({ ...base, mode: "market", tokenText: "5" });
     expect(view.ready).toBe(true);
     expect(view.pairAmount).toBe(0);
-    expect(view.summary).not.toContain("ETH buying");
+    expect(view.summary).toBeNull();
   });
 
   it("disables the side spot has no room for and explains it", () => {
