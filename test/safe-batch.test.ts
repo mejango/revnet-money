@@ -11,13 +11,13 @@ const mocks = vi.hoisted(() => ({
   getAccount: vi.fn(),
   switchChain: vi.fn(),
   sendCalls: vi.fn(),
-  simulateCalls: vi.fn(),
+  simulateContract: vi.fn(),
 }));
 
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
-  getPublicClient: () => ({ simulateCalls: mocks.simulateCalls }),
-  simulateContract: vi.fn(),
+  getPublicClient: () => undefined,
+  simulateContract: mocks.simulateContract,
   switchChain: mocks.switchChain,
 }));
 vi.mock("@wagmi/core", () => ({ sendCalls: mocks.sendCalls }));
@@ -27,11 +27,7 @@ vi.mock("wagmi", () => ({
   useWriteContract: vi.fn(),
 }));
 
-import {
-  BatchSimulationUnavailableError,
-  proposeSafeBatch,
-  SafeProposalPendingError,
-} from "@/hooks/useReviewedWriteContract";
+import { proposeSafeBatch, SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { transactionActivitySnapshot } from "@/lib/transaction-activity";
 import {
   registerTransactionReviewHandler,
@@ -73,9 +69,7 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     mocks.account.connector = { id: "safe", name: "Safe" };
     mocks.getAccount.mockImplementation(() => mocks.account);
     mocks.sendCalls.mockReset().mockResolvedValue({ id: SAFE_TX_HASH });
-    mocks.simulateCalls
-      .mockReset()
-      .mockResolvedValue({ results: [{ status: "success" }, { status: "success" }] });
+    mocks.simulateContract.mockReset().mockResolvedValue({ request: {} });
     registerTransactionReviewHandler(async (request) => {
       seen = request;
       return approve;
@@ -97,7 +91,12 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     ).toEqual(expected);
     expect(seen!.calls.every((call) => call.from === ACCOUNT && call.safeTxGas === 0n)).toBe(true);
     expect(seen!.description).toContain("one batch");
-    expect(mocks.simulateCalls).toHaveBeenCalledWith({ account: ACCOUNT, calls: expected });
+    expect(mocks.simulateContract).toHaveBeenCalledTimes(2);
+    expect(mocks.simulateContract.mock.calls[0]![1]).toMatchObject({
+      account: ACCOUNT,
+      address: TOKEN,
+      functionName: "approve",
+    });
     expect(mocks.sendCalls).toHaveBeenCalledWith(mocks.config, { chainId: 8453, calls: expected });
     const activity = transactionActivitySnapshot().find((row) => row.hash === SAFE_TX_HASH);
     expect(activity?.status).toBe("safe-proposed");
@@ -110,24 +109,24 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses a batch whose sequence reverts in simulation", async () => {
-    mocks.simulateCalls.mockResolvedValue({
-      results: [{ status: "success" }, { status: "failure", error: new Error("allowance") }],
-    });
+  it("refuses a batch when a standalone call reverts, and skips calls that need a prior one", async () => {
+    mocks.simulateContract
+      .mockResolvedValueOnce({ request: {} })
+      .mockRejectedValueOnce(new Error("allowance"));
     await expect(
       proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
     ).rejects.toThrow("step 2");
     expect(seen).toBeNull();
     expect(mocks.sendCalls).not.toHaveBeenCalled();
-  });
 
-  it("hands back to the step-by-step path when the RPC cannot simulate a batch", async () => {
-    mocks.simulateCalls.mockRejectedValue(new Error("Method not found"));
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
-    ).rejects.toBeInstanceOf(BatchSimulationUnavailableError);
-    expect(seen).toBeNull();
-    expect(mocks.sendCalls).not.toHaveBeenCalled();
+    mocks.simulateContract.mockReset().mockResolvedValue({ request: {} });
+    const [first, second] = calls();
+    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", [
+      first!,
+      { ...second!, dependsOnPrior: true },
+    ]);
+    expect(mocks.simulateContract).toHaveBeenCalledTimes(1);
+    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 
   it("sends nothing when the review is closed", async () => {

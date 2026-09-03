@@ -7,10 +7,13 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  useEnclosingDialogPanel,
 } from "@/components/ui/dialog";
+import { X } from "@/components/ui/icons";
 import { TxSteps } from "@/components/ui/TxSteps";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
-import type { ComponentProps } from "react";
+import { useEffect, type ComponentProps } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * The Pay confirm's shell, for every write: a title, label/value rows, the
@@ -48,6 +51,65 @@ export function TxConfirmDialog({
   error?: string | null;
   children?: React.ReactNode;
 }) {
+  const body = (
+    <div className="text-left">
+      <div className="flex flex-col gap-3 py-2">
+        {children}
+        <TxSteps steps={steps} activeIndex={activeIndex} intro={stepsIntro} />
+        {status ? <p className="text-sm text-zinc-500">{status}</p> : null}
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      </div>
+      <div className="flex justify-end">
+        <ButtonWithWallet
+          targetChainId={chainId}
+          loading={busy}
+          disabled={busy}
+          onClick={onConfirm}
+          connectWalletText="Connect Wallet"
+          className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+        >
+          {action}
+        </ButtonWithWallet>
+      </div>
+    </div>
+  );
+
+  // While the confirm is mounted in a host dialog, the host shows nothing else.
+  const host = useEnclosingDialogPanel();
+  useEffect(() => {
+    if (!host || !open) return;
+    const hidden = Array.from(host.children).filter(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement && !child.hasAttribute("data-tx-confirm") && !child.hidden,
+    );
+    hidden.forEach((child) => (child.hidden = true));
+    return () => hidden.forEach((child) => (child.hidden = false));
+  }, [host, open]);
+
+  // Inside a dialog already, the confirm replaces that dialog's body in place:
+  // one scrim, one panel, and closing brings the form back.
+  if (host) {
+    if (!open) return null;
+    return createPortal(
+      <div data-tx-confirm className="text-left">
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">{title}</h2>
+          <button
+            type="button"
+            className="opacity-70 hover:opacity-100 disabled:pointer-events-none"
+            disabled={busy}
+            onClick={() => onOpenChange(false)}
+          >
+            <X aria-hidden="true" className="h-4 w-4" />
+            <span className="sr-only">Back</span>
+          </button>
+        </div>
+        {body}
+      </div>,
+      host,
+    );
+  }
+
   return (
     <Dialog
       open={open}
@@ -59,28 +121,7 @@ export function TxConfirmDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader className="text-left">
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription asChild>
-            <div className="text-left">
-              <div className="flex flex-col gap-3 py-2">
-                {children}
-                <TxSteps steps={steps} activeIndex={activeIndex} intro={stepsIntro} />
-                {status ? <p className="text-sm text-zinc-500">{status}</p> : null}
-                {error ? <p className="text-sm text-red-600">{error}</p> : null}
-              </div>
-              <div className="flex justify-end">
-                <ButtonWithWallet
-                  targetChainId={chainId}
-                  loading={busy}
-                  disabled={busy}
-                  onClick={onConfirm}
-                  connectWalletText="Connect Wallet"
-                  className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-                >
-                  {action}
-                </ButtonWithWallet>
-              </div>
-            </div>
-          </DialogDescription>
+          <DialogDescription asChild>{body}</DialogDescription>
         </DialogHeader>
       </DialogContent>
     </Dialog>

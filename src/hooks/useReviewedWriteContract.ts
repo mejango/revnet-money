@@ -114,15 +114,14 @@ async function watchSafeProposal(id: string, hash: Hex, chainId: number): Promis
  * execute together, in order. Reviewed as one request; tracked like any other
  * Safe proposal.
  */
-export class BatchSimulationUnavailableError extends Error {
-  readonly name = "BatchSimulationUnavailableError";
-}
-
 export async function proposeSafeBatch(
   config: ReturnType<typeof useConfig>,
   chainId: number,
   title: string,
-  calls: readonly Omit<ContractTransactionReviewCall, "chainId" | "account" | "safeTxGas">[],
+  calls: readonly (Omit<ContractTransactionReviewCall, "chainId" | "account" | "safeTxGas"> & {
+    /** Needs an earlier call's effect (an allowance), so it cannot simulate alone. */
+    dependsOnPrior?: boolean;
+  })[],
 ): Promise<Hex> {
   requireNoViewAs();
   const account = getAccount(config).address;
@@ -148,26 +147,29 @@ export async function proposeSafeBatch(
     );
     if (duplicate?.hash) throw new SafeProposalPendingError(duplicate.hash, title);
 
-    // The calls depend on each other (an allowance, then the spend), so they
-    // only simulate as a sequence. An RPC without eth_simulateV1 cannot vouch
-    // for the batch; the caller falls back to one reviewed step at a time.
-    const publicClient = getPublicClient(config, { chainId });
-    if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
-    const simulated = await publicClient
-      .simulateCalls({ account, calls: encoded })
-      .catch((cause: Error) => {
-        throw new BatchSimulationUnavailableError(
-          `This RPC cannot simulate the batch (${cause.message}).`,
+    // Each call that stands alone simulates as the Safe; one that needs an
+    // earlier call's effect (the mint after its approvals) is simulated by
+    // Safe itself, with the whole batch, before anyone signs.
+    for (const [index, call] of calls.entries()) {
+      if (call.dependsOnPrior) continue;
+      try {
+        await simulateContract(config, {
+          chainId,
+          account,
+          address: call.address,
+          abi: call.abi,
+          functionName: call.functionName,
+          args: call.args,
+          value: call.value,
+        } as Parameters<typeof simulateContract>[1]);
+      } catch (cause) {
+        throw new Error(
+          `${call.functionName} (step ${index + 1}) reverts in simulation: ${
+            (cause as { shortMessage?: string; message?: string }).shortMessage ??
+            (cause as Error).message
+          }`,
         );
-      });
-    const failed = simulated.results.findIndex((result) => result.status !== "success");
-    if (failed >= 0) {
-      const result = simulated.results[failed]!;
-      throw new Error(
-        `${calls[failed]!.functionName} (step ${failed + 1}) reverts in simulation${
-          "error" in result && result.error ? `: ${(result.error as Error).message}` : "."
-        }`,
-      );
+      }
     }
 
     await requireTransactionReview({
@@ -183,7 +185,7 @@ export async function proposeSafeBatch(
       })),
       title,
       confirmLabel: "Agree & propose to Safe",
-      description: `These ${calls.length} calls go to Safe as one batch that executes together, in this order, once the Safe's approvals are in.\n\n${SAFE_NONCE_GUIDANCE}`,
+      description: `These ${calls.length} calls go to Safe as one batch that executes together, in this order, once the Safe's approvals are in. Safe simulates the batch before signing.\n\n${SAFE_NONCE_GUIDANCE}`,
     });
     if (getAccount(config).address?.toLowerCase() !== account.toLowerCase()) {
       throw new Error("Connected account changed. Review the transaction again.");
