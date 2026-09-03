@@ -153,14 +153,13 @@ export async function proposeSafeBatch(
     // for the batch; the caller falls back to one reviewed step at a time.
     const publicClient = getPublicClient(config, { chainId });
     if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
-    let simulated: Awaited<ReturnType<typeof publicClient.simulateCalls>>;
-    try {
-      simulated = await publicClient.simulateCalls({ account, calls: encoded });
-    } catch (cause) {
-      throw new BatchSimulationUnavailableError(
-        `This RPC cannot simulate the batch (${(cause as Error).message}).`,
-      );
-    }
+    const simulated = await publicClient
+      .simulateCalls({ account, calls: encoded })
+      .catch((cause: Error) => {
+        throw new BatchSimulationUnavailableError(
+          `This RPC cannot simulate the batch (${cause.message}).`,
+        );
+      });
     const failed = simulated.results.findIndex((result) => result.status !== "success");
     if (failed >= 0) {
       const result = simulated.results[failed]!;
