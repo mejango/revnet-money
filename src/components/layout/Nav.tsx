@@ -8,6 +8,31 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Magnifier, RevnetSearch } from "./RevnetSearch";
 
+function GuideLinks({ className = "" }: { className?: string }) {
+  return (
+    <div
+      aria-label="Revnet guides"
+      className={`flex items-center gap-1 whitespace-nowrap text-xs leading-normal text-zinc-600 sm:gap-2 sm:text-sm ${className}`}
+    >
+      <Link href="/learn" className="underline-offset-4 hover:underline hover:text-zinc-900">
+        Learn
+      </Link>
+      <span aria-hidden className="text-zinc-400">
+        |
+      </span>
+      <Link href="/build" className="underline-offset-4 hover:underline hover:text-zinc-900">
+        Build
+      </Link>
+      <span aria-hidden className="text-zinc-400">
+        |
+      </span>
+      <Link href="/audit" className="underline-offset-4 hover:underline hover:text-zinc-900">
+        Audit
+      </Link>
+    </div>
+  );
+}
+
 export function Nav({ wide = false }: { wide?: boolean }) {
   const pathname = usePathname();
   const isWide = wide || pathname === "/";
@@ -20,12 +45,12 @@ export function Nav({ wide = false }: { wide?: boolean }) {
     <nav className="text-zinc-50 border-b border-zinc-100">
       <div
         data-site-nav-layout
-        className={`mx-auto grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-[clamp(0.5rem,1.5vw,2rem)] px-4 py-3 md:grid-cols-[minmax(max-content,1fr)_minmax(12rem,32rem)_minmax(max-content,1fr)] ${
+        className={`mx-auto grid w-full grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[auto_auto] items-center gap-x-[clamp(0.5rem,1.5vw,2rem)] px-4 py-3 md:grid-cols-[minmax(max-content,1fr)_minmax(12rem,32rem)_minmax(max-content,1fr)] md:grid-rows-1 ${
           isWide ? "max-w-[1800px]" : "max-w-[1536px]"
         }`}
       >
         <div
-          className={`col-start-1 row-start-1 flex-col items-start justify-self-start gap-y-1 md:flex md:flex-row md:items-center md:gap-x-4 ${
+          className={`col-start-1 row-start-1 items-center justify-self-start md:flex md:gap-x-4 ${
             searchOpen ? "hidden" : "flex"
           }`}
         >
@@ -38,29 +63,13 @@ export function Nav({ wide = false }: { wide?: boolean }) {
               alt="Revnet logo"
             />
           </Link>
-          <div
-            aria-label="Revnet guides"
-            // Stacked under the logo on phones, the links sit tight against it so
-            // the two lines read as one block centered on the search bar.
-            className="-mt-2 flex items-center gap-1 whitespace-nowrap text-xs leading-normal text-zinc-600 sm:gap-2 sm:text-sm md:mt-0 md:min-h-11"
-          >
-            <Link href="/learn" className="underline-offset-4 hover:underline hover:text-zinc-900">
-              Learn
-            </Link>
-            <span aria-hidden className="text-zinc-400">
-              |
-            </span>
-            <Link href="/build" className="underline-offset-4 hover:underline hover:text-zinc-900">
-              Build
-            </Link>
-            <span aria-hidden className="text-zinc-400">
-              |
-            </span>
-            <Link href="/audit" className="underline-offset-4 hover:underline hover:text-zinc-900">
-              Audit
-            </Link>
-          </div>
+          <GuideLinks className="hidden md:flex md:min-h-11" />
         </div>
+        {/* On phones the logo alone shares row one with the search and wallet,
+            so it centers on them; the guide links hang underneath. */}
+        {searchOpen ? null : (
+          <GuideLinks className="col-start-1 row-start-2 -mt-2 justify-self-start md:hidden" />
+        )}
         <div
           data-site-nav-search
           className={`row-start-1 w-full min-w-0 max-w-lg @container ${
