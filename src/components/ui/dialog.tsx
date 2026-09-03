@@ -15,6 +15,8 @@ type DialogContextValue = {
   hasTitle: boolean;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  /** The content panel, for a view that replaces the dialog's body in place. */
+  panelRef: React.RefObject<HTMLDivElement | null>;
   registerDescription: () => () => void;
   registerTitle: () => () => void;
   titleId: string;
@@ -71,6 +73,7 @@ function Dialog({
   });
   const reactId = React.useId().replace(/:/g, "");
   const triggerRef = React.useRef<HTMLElement>(null);
+  const panelRef = React.useRef<HTMLDivElement>(null);
   const [titleCount, setTitleCount] = React.useState(0);
   const [descriptionCount, setDescriptionCount] = React.useState(0);
   const registerTitle = React.useCallback(() => {
@@ -90,6 +93,7 @@ function Dialog({
       hasTitle: titleCount > 0,
       onOpenChange: setOpen,
       open,
+      panelRef,
       registerDescription,
       registerTitle,
       titleId: `dialog-title-${reactId}`,
@@ -307,7 +311,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
         }}
       >
         <div
-          ref={forwardedRef}
+          ref={composeRefs(forwardedRef, context.panelRef)}
           data-state="open"
           className={cn(DIALOG_PANEL_CLASS, className)}
           {...props}
@@ -388,6 +392,20 @@ const DialogDescription = React.forwardRef<HTMLElement, DialogTextProps>(
 );
 DialogDescription.displayName = "DialogDescription";
 
+/**
+ * The content panel of the dialog this component is rendered inside, or null
+ * when it is not inside one. A confirm view uses it to replace the body in
+ * place rather than open a second dialog over the first.
+ */
+function useEnclosingDialogPanel(): HTMLDivElement | null {
+  const context = React.useContext(DialogContext);
+  const [panel, setPanel] = React.useState<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    setPanel(context?.panelRef.current ?? null);
+  }, [context]);
+  return context ? panel : null;
+}
+
 export {
   Dialog,
   DialogContent,
@@ -396,4 +414,5 @@ export {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  useEnclosingDialogPanel,
 };

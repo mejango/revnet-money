@@ -17,7 +17,6 @@ import {
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
-  BatchSimulationUnavailableError,
   isSafeConnection,
   proposeSafeBatch,
   submittedViaSafe,
@@ -850,24 +849,20 @@ export function AddLiquidityForm({
                   functionName: "modifyLiquidities",
                   args: [plan.unlockData, lpDeadline(true)],
                   value: plan.value,
+                  dependsOnPrior: true,
                 },
         );
-        try {
-          await proposeSafeBatch(
-            wagmiConfig,
-            chainId,
-            built.kind === "market" ? "Make the market" : "Add liquidity",
-            calls,
-          );
-          setStatus(
-            "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity.",
-          );
-          setReviewed(null);
-          return;
-        } catch (cause) {
-          if (!(cause instanceof BatchSimulationUnavailableError)) throw cause;
-          setStatus("This RPC cannot simulate the batch, so each step is proposed on its own.");
-        }
+        await proposeSafeBatch(
+          wagmiConfig,
+          chainId,
+          built.kind === "market" ? "Make the market" : "Add liquidity",
+          calls,
+        );
+        setStatus(
+          "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity.",
+        );
+        setReviewed(null);
+        return;
       }
       for (const [index, step] of steps.entries()) {
         setStepIndex(index);
