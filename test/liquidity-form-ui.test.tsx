@@ -16,6 +16,21 @@ vi.mock("wagmi", async (importOriginal) => ({
   useConfig: () => ({}),
   usePublicClient: () => undefined,
 }));
+vi.mock("@/components/ButtonWithWallet", () => ({
+  ButtonWithWallet: ({
+    children,
+    loading: _loading,
+    targetChainId: _chain,
+    connectWalletText: _connect,
+    ...props
+  }: {
+    children: React.ReactNode;
+    loading?: boolean;
+    targetChainId?: unknown;
+    connectWalletText?: string;
+  }) => <button {...props}>{children}</button>,
+}));
+
 vi.mock("@/hooks/useAllowance", () => ({
   useAllowance: () => ({ ensureAllowance: vi.fn(), isApproving: false }),
 }));
@@ -53,7 +68,9 @@ describe("AddLiquidityForm", () => {
   it("defaults to making the market with independent amounts on each side of the price", () => {
     render(<AddLiquidityForm state={state} tokenSymbol="MARKEE" />);
 
-    expect(screen.getByRole("button", { name: "Make the market" })).toBeInTheDocument();
+    // The mode toggle and the main action share the name; there is no Review step.
+    expect(screen.getAllByRole("button", { name: "Make the market" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Review" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Full range" })).not.toBeInTheDocument();
     expect(screen.queryByText("Min price")).not.toBeInTheDocument();
     expect(screen.getByText("MARKEE to sell above the price")).toBeInTheDocument();

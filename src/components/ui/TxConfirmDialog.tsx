@@ -31,6 +31,7 @@ export function TxConfirmDialog({
   action,
   onConfirm,
   busy = false,
+  preparing = false,
   status,
   error,
   children,
@@ -47,18 +48,24 @@ export function TxConfirmDialog({
   action: string;
   onConfirm: () => void;
   busy?: boolean;
+  /** Rows and steps are still being read; `status` says what is happening. */
+  preparing?: boolean;
   status?: string | null;
   error?: string | null;
   children?: React.ReactNode;
 }) {
   const body = (
     <div className="text-left">
-      <div className="flex flex-col gap-3 py-2">
-        {children}
-        <TxSteps steps={steps} activeIndex={activeIndex} intro={stepsIntro} />
-        {status ? <p className="text-sm text-zinc-500">{status}</p> : null}
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      </div>
+      {preparing ? (
+        <p className="py-4 text-sm text-zinc-500">{status ?? "Preparing…"}</p>
+      ) : (
+        <div className="flex flex-col gap-3 py-2">
+          {children}
+          <TxSteps steps={steps} activeIndex={activeIndex} intro={stepsIntro} />
+          {status ? <p className="text-sm text-zinc-500">{status}</p> : null}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        </div>
+      )}
       <div className="flex justify-end">
         <ButtonWithWallet
           targetChainId={chainId}
