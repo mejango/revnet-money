@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import {
   useGetRelayrTxQuote,
@@ -35,7 +36,7 @@ import {
 } from "@/lib/nana/project";
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PERSIST } from "@/lib/query-persist";
-import { formatEthAddress, formatWalletError } from "@/lib/utils";
+import { formatEthAddress, formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
@@ -282,6 +283,8 @@ function TokenEditDialog({
   const [busy, setBusy] = useState(false);
   const [quote, setQuote] = useState<RelayrPostBundleResponse | null>(null);
   const [selectedPayment, setSelectedPayment] = useState<ChainPayment | null>(null);
+  const [confirming, setConfirming] = useState<"submit" | "pay" | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const { address, chainId: connectedChainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
@@ -347,16 +350,17 @@ function TokenEditDialog({
     const nextName = name.trim();
     const nextSymbol = symbol.trim();
     if (!nextName || !nextSymbol) {
-      toast({ variant: "destructive", title: "Enter a token name and symbol" });
-      return;
+      setError("Enter a token name and symbol.");
+      return false;
     }
     if (nextSymbol.length > 11) {
-      toast({ variant: "destructive", title: "The symbol can be at most 11 characters" });
-      return;
+      setError("The symbol can be at most 11 characters.");
+      return false;
     }
-    if (!address || !canManage) return;
+    if (!address || !canManage) return false;
 
     setBusy(true);
+    setError(null);
     try {
       if (states.length === 1) {
         const state = states[0];
@@ -382,7 +386,7 @@ function TokenEditDialog({
             title: "Safe proposal submitted",
             description: `The ${deployed ? "token update" : "token deployment"} is awaiting Safe approvals and execution.`,
           });
-          return;
+          return true;
         }
         requireOnchainExecution(hash, deployed ? "Token metadata update" : "Token deployment");
         const receipt = await waitForReceiptWithRetry(clientFor(state.chainId), hash);
@@ -390,7 +394,7 @@ function TokenEditDialog({
           throw new Error(`Token transaction ${hash} reverted onchain.`);
         }
         finish(deployed ? "The name and symbol are now updated." : "The ERC-20 is now deployed.");
-        return;
+        return true;
       }
 
       const transactions = await Promise.all(
@@ -436,20 +440,19 @@ function TokenEditDialog({
       if (!relayrQuote) throw new Error("Relayr did not return a quote.");
       setQuote(relayrQuote);
       setSelectedPayment(relayrQuote.payment_info[0] ?? null);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: deployed ? "Could not update the token" : "Could not deploy the token",
-        description: formatWalletError(error),
-      });
+      return true;
+    } catch (cause) {
+      setError(formatWalletError(cause));
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
   const payAndSubmit = async () => {
-    if (!quote || !selectedPayment || !sendRelayrTx) return;
+    if (!quote || !selectedPayment || !sendRelayrTx) return false;
     setBusy(true);
+    setError(null);
     try {
       const hash = await sendRelayrTx(selectedPayment);
       if (submittedViaSafe(hash)) {
@@ -458,25 +461,50 @@ function TokenEditDialog({
           description:
             "The Relayr bundle is not paid yet. Complete the payment proposal in Safe; do not submit another payment.",
         });
-        return;
+        return true;
       }
       await waitForRelayrBundle(quote.bundle_uuid);
       finish(
         `Relayr confirmed the ${deployed ? "update" : "deployment"} on ${states.length} chains.`,
       );
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Could not submit the Relayr payment",
-        description: formatWalletError(error),
-      });
+      return true;
+    } catch (cause) {
+      setError(formatWalletError(cause));
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
+  const confirm = async () => {
+    const ok = confirming === "pay" ? await payAndSubmit() : await submit();
+    if (ok) setConfirming(null);
+  };
+
   const permissionName = deployed ? "SET_TOKEN_METADATA" : "DEPLOY_ERC20";
   const chainNames = states.map((state) => JB_CHAINS[state.chainId].name).join(", ");
+  const relayed = states.length > 1;
+  const actionLabel = relayed
+    ? confirming === "pay"
+      ? "Pay and submit"
+      : "Get quote"
+    : deployed
+      ? "Save token"
+      : "Deploy token";
+  const confirmSteps = relayed
+    ? [
+        {
+          title: "Sign the authorization",
+          detail: `One signature covers all ${states.length} chains.`,
+        },
+        {
+          title: selectedPayment
+            ? `Pay ${formatHexEther(selectedPayment.amount)} ETH to relay`
+            : "Pay the relay fee",
+          detail: "Relayr then submits the transaction on each chain.",
+        },
+      ]
+    : [{ title: deployed ? "Update the name and symbol" : "Deploy the ERC-20" }];
 
   return (
     <Dialog
@@ -498,6 +526,43 @@ function TokenEditDialog({
           {deployed ? "Edit" : "Deploy ERC-20"}
         </button>
       </DialogTrigger>
+      {confirming ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setConfirming(null);
+          }}
+          title={deployed ? "Confirm token update" : "Confirm token deployment"}
+          chainId={
+            confirming === "pay" && selectedPayment
+              ? (selectedPayment.chain as JBChainId)
+              : states[0].chainId
+          }
+          steps={confirmSteps}
+          activeIndex={confirming === "pay" ? 1 : busy ? 0 : -1}
+          action={actionLabel}
+          onConfirm={() => void confirm()}
+          busy={busy}
+          error={error}
+        >
+          <SummaryRow label="Name">{name.trim()}</SummaryRow>
+          <SummaryRow label="Symbol">{symbol.trim()}</SummaryRow>
+          <SummaryRow label="On">{chainNames}</SummaryRow>
+          {deployed ? (
+            <SummaryRow label="Address">Unchanged</SummaryRow>
+          ) : (
+            <SummaryRow label="Address">Same deterministic address on every chain</SummaryRow>
+          )}
+          {confirming === "pay" && selectedPayment ? (
+            <SummaryRow label="Relay fee">
+              {formatHexEther(selectedPayment.amount)} ETH on{" "}
+              {JB_CHAINS[selectedPayment.chain as JBChainId]?.name ?? selectedPayment.chain}
+            </SummaryRow>
+          ) : relayed ? (
+            <SummaryRow label="Relay fee">Quoted in ETH after you sign</SummaryRow>
+          ) : null}
+        </TxConfirmDialog>
+      ) : null}
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>
@@ -571,7 +636,10 @@ function TokenEditDialog({
           {quote ? (
             <Button
               type="button"
-              onClick={payAndSubmit}
+              onClick={() => {
+                setError(null);
+                setConfirming("pay");
+              }}
               loading={busy}
               disabled={!selectedPayment || busy}
             >
@@ -580,7 +648,10 @@ function TokenEditDialog({
           ) : (
             <Button
               type="button"
-              onClick={submit}
+              onClick={() => {
+                setError(null);
+                setConfirming("submit");
+              }}
               loading={busy}
               disabled={!address || !canManage || busy}
             >

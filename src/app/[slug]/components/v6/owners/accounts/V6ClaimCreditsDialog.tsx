@@ -10,6 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { formatWalletError } from "@/lib/utils";
@@ -30,7 +31,7 @@ export interface CreditRow {
  * Claim credits → ERC-20 (website/ parity: buildClaimModal): mint the holder's
  * unclaimed credits as transferable tokens, one `JBController.claimTokensFor`
  * transaction per chain that has credits. Each claim is simulated before the
- * write so a would-be revert surfaces as a toast instead of a failed tx.
+ * write so a would-be revert surfaces in the confirm instead of a failed tx.
  */
 export function V6ClaimCreditsDialog({
   creditRows,
@@ -50,7 +51,7 @@ export function V6ClaimCreditsDialog({
         </DialogHeader>
         <div className="flex flex-col gap-2 mt-2">
           {creditRows.map((row) => (
-            <ClaimRow key={row.chainId} row={row} />
+            <ClaimRow key={row.chainId} row={row} tokenSymbol={tokenSymbol} />
           ))}
         </div>
       </DialogContent>
@@ -58,12 +59,16 @@ export function V6ClaimCreditsDialog({
   );
 }
 
-function ClaimRow({ row }: { row: CreditRow }) {
+function ClaimRow({ row, tokenSymbol }: { row: CreditRow; tokenSymbol: string }) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: row.chainId });
   const { writeContractAsync, isPending } = useWriteContract();
   const [txHash, setTxHash] = useState<`0x${string}`>();
   const [isSimulating, setIsSimulating] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const chainName = JB_CHAINS[row.chainId]?.name ?? String(row.chainId);
+  const creditLabel = formatUnits(row.credit, JB_TOKEN_DECIMALS, { fractionDigits: 4 });
   const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({
     hash: txHash,
     chainId: row.chainId,
@@ -88,6 +93,7 @@ function ClaimRow({ row }: { row: CreditRow }) {
       tokenCount: row.credit,
       beneficiary: address,
     });
+    setError(null);
     try {
       setIsSimulating(true);
       await publicClient?.simulateContract({
@@ -99,13 +105,10 @@ function ClaimRow({ row }: { row: CreditRow }) {
       });
       const hash = await writeContractAsync(tx);
       setTxHash(hash);
+      setReviewing(false);
     } catch (err) {
       console.error("Claim credits failed:", err);
-      toast({
-        variant: "destructive",
-        title: "Claim failed",
-        description: formatWalletError(err),
-      });
+      setError(formatWalletError(err));
     } finally {
       setIsSimulating(false);
     }
@@ -126,10 +129,38 @@ function ClaimRow({ row }: { row: CreditRow }) {
         size="sm"
         loading={isSimulating || isPending || isTxLoading}
         disabled={isSuccess}
-        onClick={claim}
+        onClick={() => {
+          setError(null);
+          setReviewing(true);
+        }}
       >
         {isSuccess ? "Claimed" : "Claim"}
       </ButtonWithWallet>
+      <TxConfirmDialog
+        open={reviewing}
+        onOpenChange={(next) => {
+          if (!next) setReviewing(false);
+        }}
+        title="Confirm claim"
+        chainId={row.chainId}
+        steps={[
+          {
+            title: `Claim ${creditLabel} credits`,
+            detail: "Mints them as transferable ERC-20 tokens to your wallet.",
+          },
+        ]}
+        activeIndex={isSimulating || isPending ? 0 : -1}
+        action="Claim"
+        onConfirm={() => void claim()}
+        busy={isSimulating || isPending}
+        error={error}
+      >
+        <SummaryRow label="Claims">{creditLabel} credits</SummaryRow>
+        <SummaryRow label="On">{chainName}</SummaryRow>
+        <SummaryRow label="You get">
+          {creditLabel} {tokenSymbol} ERC-20
+        </SummaryRow>
+      </TxConfirmDialog>
     </div>
   );
 }

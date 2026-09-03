@@ -1,7 +1,6 @@
 "use client";
 
-import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { TxSteps } from "@/components/ui/TxSteps";
+import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
   isSafeConnection,
@@ -452,96 +451,82 @@ export function MarketEditPanel({
       <p className="mt-1 text-[11px] text-zinc-500">
         Set a side to 0 to remove that position. Both at 0 removes the market.
       </p>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          className="bg-zinc-900 px-3 py-1.5 text-white disabled:opacity-50"
+          disabled={busy || !corridor}
+          onClick={() => void prepare()}
+        >
+          {busy ? "Checking…" : "Review edit"}
+        </button>
+        <button
+          type="button"
+          className="border border-zinc-300 px-3 py-1.5 disabled:opacity-50"
+          disabled={busy}
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+      </div>
       {current ? (
-        <div className="mt-3 space-y-3">
-          <div className="space-y-1">
-            <SummaryRow label="Market">
-              {ids} on {chainName(state.chainId)}
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReviewed(null);
+          }}
+          title="Confirm market edit"
+          chainId={state.chainId}
+          steps={current.steps}
+          activeIndex={busy ? stepIndex : -1}
+          action="Edit the market"
+          onConfirm={() => void execute()}
+          busy={busy}
+          status={status}
+        >
+          <SummaryRow label="Market">
+            {ids} on {chainName(state.chainId)}
+          </SummaryRow>
+          <SummaryRow label="Corridor">
+            {corridor
+              ? `${formatPrice(corridor.floor)} – ${formatPrice(corridor.ceiling)} ${pool.pair.symbol}/${tokenSymbol}`
+              : "—"}
+            {current.plan.refit ? " (re-fit)" : " (kept)"}
+          </SummaryRow>
+          {current.plan.token ? (
+            <SummaryRow label={`${tokenSymbol} side`}>
+              {sideLine(current.plan.token, "token")}
             </SummaryRow>
-            <SummaryRow label="Corridor">
-              {corridor
-                ? `${formatPrice(corridor.floor)} – ${formatPrice(corridor.ceiling)} ${pool.pair.symbol}/${tokenSymbol}`
-                : "—"}
-              {current.plan.refit ? " (re-fit)" : " (kept)"}
+          ) : null}
+          {current.plan.pair ? (
+            <SummaryRow label={`${pool.pair.symbol} side`}>
+              {sideLine(current.plan.pair, "pair")}
             </SummaryRow>
-            {current.plan.token ? (
-              <SummaryRow label={`${tokenSymbol} side`}>
-                {sideLine(current.plan.token, "token")}
-              </SummaryRow>
-            ) : null}
-            {current.plan.pair ? (
-              <SummaryRow label={`${pool.pair.symbol} side`}>
-                {sideLine(current.plan.pair, "pair")}
-              </SummaryRow>
-            ) : null}
-            {current.plan.tokenFlow > 0n || current.plan.pairFlow > 0n ? (
-              <SummaryRow label="From your wallet">
-                {amountsText(positive(current.plan.tokenFlow), positive(current.plan.pairFlow))}
-              </SummaryRow>
-            ) : null}
-            <SummaryRow label="Back to your wallet">
-              {current.plan.tokenFlow < 0n || current.plan.pairFlow < 0n
-                ? `${amountsText(positive(-current.plan.tokenFlow), positive(-current.plan.pairFlow))} + unclaimed fees`
-                : "Unclaimed fees"}
+          ) : null}
+          {current.plan.tokenFlow > 0n || current.plan.pairFlow > 0n ? (
+            <SummaryRow label="From your wallet">
+              {amountsText(positive(current.plan.tokenFlow), positive(current.plan.pairFlow))}
             </SummaryRow>
-            {current.plan.tokenFunding > 0n || current.plan.pairFunding > 0n ? (
-              <SummaryRow label="Authorizes up to">
-                {amountsText(current.plan.tokenFunding, current.plan.pairFunding)} (1% price
-                headroom)
-              </SummaryRow>
-            ) : null}
-            {current.plan.tokenMinimum > 0n || current.plan.pairMinimum > 0n ? (
-              <SummaryRow label="Enforced onchain">
-                At least {amountsText(current.plan.tokenMinimum, current.plan.pairMinimum)} back
-                (95% floors)
-              </SummaryRow>
-            ) : null}
-          </div>
-          {/* Each action's exact payload is reviewed in the one transaction
-              safety check, the same shell every multi-step flow uses. */}
-          <TxSteps steps={current.steps} activeIndex={busy ? stepIndex : -1} />
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              className="border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50"
-              disabled={busy}
-              onClick={() => setReviewed(null)}
-            >
-              Back
-            </button>
-            <ButtonWithWallet
-              targetChainId={state.chainId}
-              loading={busy}
-              disabled={busy}
-              onClick={() => void execute()}
-              connectWalletText="Connect Wallet"
-              className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-            >
-              Edit the market
-            </ButtonWithWallet>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            className="bg-zinc-900 px-3 py-1.5 text-white disabled:opacity-50"
-            disabled={busy || !corridor}
-            onClick={() => void prepare()}
-          >
-            {busy ? "Checking…" : "Review edit"}
-          </button>
-          <button
-            type="button"
-            className="border border-zinc-300 px-3 py-1.5 disabled:opacity-50"
-            disabled={busy}
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-      {status ? (
+          ) : null}
+          <SummaryRow label="Back to your wallet">
+            {current.plan.tokenFlow < 0n || current.plan.pairFlow < 0n
+              ? `${amountsText(positive(-current.plan.tokenFlow), positive(-current.plan.pairFlow))} + unclaimed fees`
+              : "Unclaimed fees"}
+          </SummaryRow>
+          {current.plan.tokenFunding > 0n || current.plan.pairFunding > 0n ? (
+            <SummaryRow label="Authorizes up to">
+              {amountsText(current.plan.tokenFunding, current.plan.pairFunding)} (1% price headroom)
+            </SummaryRow>
+          ) : null}
+          {current.plan.tokenMinimum > 0n || current.plan.pairMinimum > 0n ? (
+            <SummaryRow label="Enforced onchain">
+              At least {amountsText(current.plan.tokenMinimum, current.plan.pairMinimum)} back (95%
+              floors)
+            </SummaryRow>
+          ) : null}
+        </TxConfirmDialog>
+      ) : null}
+      {status && !current ? (
         <p className="mt-2 wrap-anywhere text-[11px] text-zinc-600" role="status">
           {status}
         </p>

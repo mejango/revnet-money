@@ -1,7 +1,6 @@
 "use client";
 
 import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
-import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { ExternalLink } from "@/components/ExternalLink";
@@ -15,10 +14,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TxSteps } from "@/components/ui/TxSteps";
+import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
+  BatchSimulationUnavailableError,
   isSafeConnection,
+  proposeSafeBatch,
   submittedViaSafe,
   useWaitForTransactionReceipt,
   useWriteContract,
@@ -62,6 +63,7 @@ import {
   lpDeadline,
   PERMIT2_ABI,
   PERMIT2_ADDRESS,
+  permit2ApprovalArgs,
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
   prepareAddLiquidity,
@@ -685,6 +687,14 @@ export function AddLiquidityForm({
       : parseUnits(amount.toFixed(decimals), decimals);
   };
 
+  const amountsText = (token: bigint, pair: bigint) =>
+    [
+      token > 0n ? `${fmtUnits(token, 18)} ${tokenSymbol}` : null,
+      pair > 0n ? `${fmtUnits(pair, pool.pair.decimals)} ${pool.pair.symbol}` : null,
+    ]
+      .filter(Boolean)
+      .join(" + ");
+
   // The derived side displays its computed counterpart; everything else shows
   // what the user typed.
   const amountValue = (side: LiquidityFormSide): string => {
@@ -811,6 +821,54 @@ export function AddLiquidityForm({
     setBusy(true);
     setStatus(null);
     try {
+      // ponytail: Safe app only; other EIP-5792 wallets keep the sequential path.
+      if (isSafeConnection(wagmiConfig) && steps.length > 1) {
+        if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
+        else await reverifyAddLiquidity(pool, built.plan);
+        const calls = steps.map((step) =>
+          step.approval?.kind === "erc20"
+            ? {
+                address: step.approval.currency,
+                abi: erc20Abi,
+                functionName: "approve",
+                args: [PERMIT2_ADDRESS, step.approval.max],
+              }
+            : step.approval
+              ? {
+                  address: PERMIT2_ADDRESS,
+                  abi: PERMIT2_ABI,
+                  functionName: "approve",
+                  args: permit2ApprovalArgs(
+                    state.chainId,
+                    step.approval.currency,
+                    step.approval.max,
+                  ),
+                }
+              : {
+                  address: POSITION_MANAGER_BY_CHAIN[chainId]!,
+                  abi: POSITION_MANAGER_ABI,
+                  functionName: "modifyLiquidities",
+                  args: [plan.unlockData, lpDeadline(true)],
+                  value: plan.value,
+                },
+        );
+        try {
+          await proposeSafeBatch(
+            wagmiConfig,
+            chainId,
+            built.kind === "market" ? "Make the market" : "Add liquidity",
+            calls,
+          );
+          setStatus(
+            "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity.",
+          );
+          setReviewed(null);
+          return;
+        } catch (cause) {
+          if (!(cause instanceof BatchSimulationUnavailableError)) throw cause;
+          setStatus("This RPC cannot simulate the batch, so each step is proposed on its own.");
+        }
+      }
       for (const [index, step] of steps.entries()) {
         setStepIndex(index);
         if (step.approval) {
@@ -1038,76 +1096,71 @@ export function AddLiquidityForm({
       </div>
       {view.summary ? <p className="mt-2 text-xs text-zinc-600">{view.summary}</p> : null}
       {view.note ? <p className="mt-1 text-[11px] text-zinc-500">{view.note}</p> : null}
+      <button
+        type="button"
+        className="mt-2 border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-50"
+        disabled={disabled || !address || !view.ready}
+        onClick={() => void prepare()}
+      >
+        {disabled && !review ? "Checking…" : address ? "Review" : "Connect to add liquidity"}
+      </button>
       {review ? (
-        <div className="mt-3 space-y-3">
-          <div className="space-y-1">
-            {review.kind === "market" ? (
-              <>
-                {review.plan.tokenSide ? (
-                  <SummaryRow label="Sells above the price">
-                    up to {fmtUnits(review.plan.tokenSide.tokenMaximum, 18)} {tokenSymbol} ·{" "}
-                    {bandLabel(pool, tokenSymbol, review.plan.tokenSide)}
-                  </SummaryRow>
-                ) : null}
-                {review.plan.pairSide ? (
-                  <SummaryRow label="Buys below the price">
-                    up to {fmtUnits(review.plan.pairSide.pairMaximum, pool.pair.decimals)}{" "}
-                    {pool.pair.symbol} · {bandLabel(pool, tokenSymbol, review.plan.pairSide)}
-                  </SummaryRow>
-                ) : null}
-                <SummaryRow label="Positions">
-                  {[review.plan.tokenSide, review.plan.pairSide].filter(Boolean).length}, one each
-                  side of the price
-                </SummaryRow>
-              </>
-            ) : (
-              <>
-                <SummaryRow label="Adds up to">
-                  {fmtUnits(review.plan.tokenMaximum, 18)} {tokenSymbol} +{" "}
-                  {fmtUnits(review.plan.pairMaximum, pool.pair.decimals)} {pool.pair.symbol}
-                </SummaryRow>
-                <SummaryRow label="Band">{bandLabel(pool, tokenSymbol, review.plan)}</SummaryRow>
-              </>
-            )}
-            <SummaryRow label="Headroom">
-              1% over the exact requirement
-              {pool.pair.addr === zeroAddress ? `; unused ${pool.pair.symbol} is refunded` : ""}
-            </SummaryRow>
-          </div>
-          {/* Each action's exact payload is reviewed in the one transaction
-              safety check, the same shell every multi-step flow uses. */}
-          <TxSteps steps={reviewSteps} activeIndex={busy ? stepIndex : -1} />
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              className="border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50"
-              disabled={disabled}
-              onClick={() => setReviewed(null)}
-            >
-              Back
-            </button>
-            <ButtonWithWallet
-              targetChainId={state.chainId}
-              loading={disabled}
-              disabled={disabled}
-              onClick={() => void execute()}
-              connectWalletText="Connect Wallet"
-              className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-            >
-              {review.kind === "market" ? "Make the market" : "Add liquidity"}
-            </ButtonWithWallet>
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          className="mt-2 border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-50"
-          disabled={disabled || !address || !view.ready}
-          onClick={() => void prepare()}
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReviewed(null);
+          }}
+          title={review.kind === "market" ? "Confirm market" : "Confirm liquidity"}
+          chainId={state.chainId}
+          steps={reviewSteps}
+          activeIndex={busy ? stepIndex : -1}
+          stepsIntro={
+            isSafeConnection(wagmiConfig) && reviewSteps.length > 1
+              ? `Goes to your Safe as one batch of ${reviewSteps.length} calls: approved once, executed together.`
+              : undefined
+          }
+          action={review.kind === "market" ? "Make the market" : "Add liquidity"}
+          onConfirm={() => void execute()}
+          busy={disabled}
+          status={status}
         >
-          {disabled ? "Checking…" : address ? "Review" : "Connect to add liquidity"}
-        </button>
-      )}
+          {review.kind === "market" ? (
+            <>
+              {review.plan.tokenSide ? (
+                <SummaryRow label="Sells above the price">
+                  {amountsText(sideUnits("token"), 0n)}
+                  <span className="block text-xs text-zinc-500">
+                    {bandLabel(pool, tokenSymbol, review.plan.tokenSide)}
+                  </span>
+                </SummaryRow>
+              ) : null}
+              {review.plan.pairSide ? (
+                <SummaryRow label="Buys below the price">
+                  {amountsText(0n, sideUnits("pair"))}
+                  <span className="block text-xs text-zinc-500">
+                    {bandLabel(pool, tokenSymbol, review.plan.pairSide)}
+                  </span>
+                </SummaryRow>
+              ) : null}
+            </>
+          ) : (
+            <SummaryRow label="Adds">
+              {amountsText(sideUnits("token"), sideUnits("pair"))}
+              <span className="block text-xs text-zinc-500">
+                {bandLabel(pool, tokenSymbol, review.plan)}
+              </span>
+            </SummaryRow>
+          )}
+          <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
+          <SummaryRow label="Authorizes up to">
+            {amountsText(review.plan.tokenMaximum, review.plan.pairMaximum)}
+            <span className="block text-xs text-zinc-500">
+              1% price headroom, spent only if the price moves before the mint lands
+              {pool.pair.addr === zeroAddress ? `. Unused ${pool.pair.symbol} is refunded` : ""}
+            </span>
+          </SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
       {minted ? (
         <div className="mt-2 border border-teal-300 bg-teal-50 p-2 text-xs" role="status">
           <p className="font-medium text-teal-800">Liquidity added.</p>
@@ -1125,7 +1178,7 @@ export function AddLiquidityForm({
           ) : null}
         </div>
       ) : null}
-      {status ? (
+      {status && !review ? (
         <p className="mt-2 wrap-anywhere text-xs text-zinc-500" role="status">
           {status}
         </p>
@@ -1256,6 +1309,7 @@ function ChainPositionRows({
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
   const [claiming, setClaiming] = useState<bigint | null>(null);
+  const [claimReview, setClaimReview] = useState<UserLpPosition[] | null>(null);
   const client = usePublicClient({ chainId }) as PublicClient | undefined;
   const {
     writeContractAsync,
@@ -1359,6 +1413,7 @@ function ChainPositionRows({
         functionName: "modifyLiquidities",
         args: [unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
       });
+      setClaimReview(null);
     } catch (cause) {
       setError(txMessage(cause, "Could not claim fees."));
     } finally {
@@ -1495,7 +1550,10 @@ function ChainPositionRows({
               type="button"
               className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
               disabled={busy || nothingOwed}
-              onClick={() => void claimFees([position])}
+              onClick={() => {
+                setError(null);
+                setClaimReview([position]);
+              }}
             >
               {claiming === position.tokenId ? "Claiming…" : "Claim fees"}
             </button>
@@ -1597,7 +1655,10 @@ function ChainPositionRows({
               type="button"
               className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
               disabled={anyBusy || nothingOwed}
-              onClick={() => void claimFees(sides)}
+              onClick={() => {
+                setError(null);
+                setClaimReview(sides);
+              }}
             >
               {pending ? "Claiming…" : "Claim fees"}
             </button>
@@ -1636,59 +1697,94 @@ function ChainPositionRows({
       {groups.map((group) =>
         group.kind === "single" ? renderSingle(group.position) : renderMarket(group),
       )}
+      {claimReview ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setClaimReview(null);
+          }}
+          title="Confirm fee claim"
+          chainId={state.chainId}
+          steps={[
+            {
+              title: "Claim fees",
+              detail: "The positions stay open; only the fees move to your wallet.",
+            },
+          ]}
+          activeIndex={isPending ? 0 : -1}
+          action="Claim fees"
+          onConfirm={() => void claimFees(claimReview)}
+          busy={isPending || claiming !== null}
+          error={error}
+        >
+          <SummaryRow label={claimReview.length === 1 ? "Position" : "Positions"}>
+            {claimReview.map((position) => `#${position.tokenId.toString()}`).join(" · ")}
+          </SummaryRow>
+          <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
+          <SummaryRow label="To your wallet">
+            {fmtUnits(
+              claimReview.reduce(
+                (sum, position) =>
+                  sum + (fees.data?.[position.tokenId.toString()]?.tokenFees ?? 0n),
+                0n,
+              ),
+              18,
+            )}{" "}
+            {tokenSymbol}
+            <span className="block text-xs text-zinc-500">
+              {fmtUnits(
+                claimReview.reduce(
+                  (sum, position) =>
+                    sum + (fees.data?.[position.tokenId.toString()]?.pairFees ?? 0n),
+                  0n,
+                ),
+                pool.pair.decimals,
+              )}{" "}
+              {pool.pair.symbol}
+            </span>
+          </SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
+      {reviewed ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReviewed(null);
+          }}
+          title="Confirm removal"
+          chainId={state.chainId}
+          steps={[
+            {
+              title: "Remove the position",
+              detail: "Burns it and returns both sides to your wallet.",
+            },
+          ]}
+          activeIndex={isPending ? 0 : -1}
+          action="Remove the position"
+          onConfirm={() => void remove()}
+          busy={isPending}
+          error={error}
+        >
+          <SummaryRow label="Position">
+            #{reviewed.position.tokenId.toString()} on {chainName(state.chainId)}
+          </SummaryRow>
+          <SummaryRow label="Back to your wallet">
+            ~{fmtUnits(reviewed.position.tokenAmount, 18)} {tokenSymbol} +{" "}
+            {fmtUnits(reviewed.position.pairAmount, pool.pair.decimals)} {pool.pair.symbol} +
+            unclaimed fees
+          </SummaryRow>
+          <SummaryRow label="Enforced onchain">
+            At least {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
+            {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol} back (95%
+            floors)
+          </SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
       {/* The panels live OUTSIDE the scroll wrapper — as table rows they would
           inherit the table's full scrollable width and get cut off. */}
       {panelHost
         ? createPortal(
             <>
-              {reviewed ? (
-                <div className="mt-3 space-y-3">
-                  <div className="space-y-1">
-                    <SummaryRow label="Position">
-                      #{reviewed.position.tokenId.toString()} on {chainName(state.chainId)}
-                    </SummaryRow>
-                    <SummaryRow label="Back to your wallet">
-                      ~{fmtUnits(reviewed.position.tokenAmount, 18)} {tokenSymbol} +{" "}
-                      {fmtUnits(reviewed.position.pairAmount, pool.pair.decimals)}{" "}
-                      {pool.pair.symbol} + unclaimed fees
-                    </SummaryRow>
-                    <SummaryRow label="Enforced onchain">
-                      At least {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-                      {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol}{" "}
-                      back (95% floors)
-                    </SummaryRow>
-                  </div>
-                  <TxSteps
-                    steps={[
-                      {
-                        title: "Remove the position",
-                        detail: "Burns it and returns both sides to your wallet.",
-                      },
-                    ]}
-                    activeIndex={isPending ? 0 : -1}
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      className="border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50"
-                      disabled={isPending}
-                      onClick={() => setReviewed(null)}
-                    >
-                      Back
-                    </button>
-                    <ButtonWithWallet
-                      targetChainId={state.chainId}
-                      loading={isPending}
-                      disabled={isPending}
-                      onClick={() => void remove()}
-                      connectWalletText="Connect Wallet"
-                      className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-                    >
-                      Remove the position
-                    </ButtonWithWallet>
-                  </div>
-                </div>
-              ) : null}
               {editingMarket ? (
                 <MarketEditPanel
                   key={`${editingMarket.sides.tokenSide?.tokenId ?? "-"}:${editingMarket.sides.pairSide?.tokenId ?? "-"}`}
@@ -1734,7 +1830,7 @@ function ChainPositionRows({
                 <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
               ) : null}
               {edited ? <p className="mt-2 text-xs text-green-700">{edited}</p> : null}
-              {error ? (
+              {error && !reviewed && !claimReview ? (
                 <p className="mt-2 wrap-anywhere text-xs text-red-600" role="alert">
                   {error}
                 </p>

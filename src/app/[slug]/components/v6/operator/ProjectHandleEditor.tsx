@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxStep, stepStatus } from "@/components/ui/TxSteps";
 import { useToast } from "@/components/ui/use-toast";
 import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
@@ -76,6 +77,7 @@ import {
 } from "viem";
 import { useAccount } from "wagmi";
 import {
+  chainName,
   isLiveRevnetOperator,
   permissionHoldersWhere,
   publicClientFor,
@@ -209,6 +211,7 @@ export function ProjectHandleEditor({
   const [input, setInput] = useState("");
   const [inputWasEdited, setInputWasEdited] = useState(false);
   const [busyAction, setBusyAction] = useState<"ens" | "deploy-safe" | "publish" | null>(null);
+  const [review, setReview] = useState<"step" | "deploy-safe" | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const siteOrigin = SITE_ORIGIN;
@@ -616,6 +619,7 @@ export function ProjectHandleEditor({
       setStatus(
         "The operator Safe is ready on Ethereum. Connect it through Safe and publish the handle.",
       );
+      setReview(null);
       toast({ title: "Operator Safe deployed on Ethereum" });
       await authorityQuery.refetch();
     } catch (cause) {
@@ -650,6 +654,7 @@ export function ProjectHandleEditor({
             ? "Both steps are already complete."
             : "Step 1 of 2 is already complete: ENS has the correct juicebox record.",
         );
+        setReview(null);
         await setupQuery.refetch();
         return;
       }
@@ -691,6 +696,7 @@ export function ProjectHandleEditor({
         );
       }
       toast({ title: "ENS project record set" });
+      setReview(null);
       const refreshed = await setupQuery.refetch();
       setStatus(
         refreshed.data?.verifiedHandle === parsed.handle.handle
@@ -738,6 +744,7 @@ export function ProjectHandleEditor({
       }
       if (fresh.verifiedHandle === parsed.handle.handle) {
         setStatus("Step 2 of 2 is already complete: the reverse claim is published.");
+        setReview(null);
         await setupQuery.refetch();
         return;
       }
@@ -783,6 +790,7 @@ export function ProjectHandleEditor({
         throw new Error("The transactions confirmed, but the two-way handle check did not verify.");
       }
       setStatus(`Both steps are complete. @${confirmed.verifiedHandle} is published and verified.`);
+      setReview(null);
       toast({ title: "Project handle published" });
       await Promise.all([setupQuery.refetch(), currentHandleQuery.refetch()]);
     } catch (cause) {
@@ -911,7 +919,11 @@ export function ProjectHandleEditor({
                         !safeCreationValidation?.valid ||
                         Boolean(address && !connectedIsSafeOwner)
                       }
-                      onClick={deploySafeOnMainnet}
+                      onClick={() => {
+                        setError(null);
+                        setStatus(null);
+                        setReview("deploy-safe");
+                      }}
                     >
                       Deploy operator Safe on Ethereum
                     </ButtonWithWallet>
@@ -1050,7 +1062,11 @@ export function ProjectHandleEditor({
                               !authorityAllowed ||
                               Boolean(address && !connectedIsOperator)))
                         }
-                        onClick={handleProgress.nextAction === "publish" ? publish : setEnsRecord}
+                        onClick={() => {
+                          setError(null);
+                          setStatus(null);
+                          setReview("step");
+                        }}
                       >
                         {handleProgress.nextAction === "publish"
                           ? `Publish /@${parsed.handle.handle}`
@@ -1062,11 +1078,89 @@ export function ProjectHandleEditor({
               </div>
             ) : null}
 
-            {status ? <p className="mt-3 text-xs text-green-700">{status}</p> : null}
-            {error ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
+            {status && !review ? <p className="mt-3 text-xs text-green-700">{status}</p> : null}
+            {error && !review ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
           </div>
         </DialogContent>
       </Dialog>
+      {review === "deploy-safe" || (review === "step" && handleProgress.nextAction) ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setReview(null);
+          }}
+          title={
+            review === "deploy-safe"
+              ? "Confirm Safe deployment"
+              : handleProgress.nextAction === "publish"
+                ? "Confirm handle"
+                : "Confirm ENS record"
+          }
+          chainId={PROJECT_HANDLE_CHAIN_ID as JBChainId}
+          steps={[
+            review === "deploy-safe"
+              ? {
+                  title: "Deploy operator Safe on Ethereum",
+                  detail: "Replays the Safe's original deployment at the same address.",
+                }
+              : handleProgress.nextAction === "publish"
+                ? {
+                    title: `Publish /@${parsed.handle?.handle ?? ""}`,
+                    detail: "Writes the reverse claim on JBProjectHandles from the operator.",
+                  }
+                : {
+                    title: `Set ${parsed.handle?.ensName ?? "ENS"} record`,
+                    detail: "Writes the juicebox text record on the name's ENS resolver.",
+                  },
+          ]}
+          activeIndex={busyAction ? 0 : -1}
+          action={
+            review === "deploy-safe"
+              ? "Deploy operator Safe on Ethereum"
+              : handleProgress.nextAction === "publish"
+                ? `Publish /@${parsed.handle?.handle ?? ""}`
+                : `Set ${parsed.handle?.ensName ?? "ENS"} record`
+          }
+          onConfirm={() =>
+            void (review === "deploy-safe"
+              ? deploySafeOnMainnet()
+              : (handleProgress.nextAction === "publish" ? publish : setEnsRecord)())
+          }
+          busy={Boolean(busyAction)}
+          status={status}
+          error={error}
+        >
+          {review === "deploy-safe" ? (
+            <>
+              <SummaryRow label="Safe">
+                <span className="break-all font-mono text-xs">{operator}</span>
+              </SummaryRow>
+              {sourceSafe ? (
+                <SummaryRow label="Policy">
+                  {sourceSafe.threshold} of {sourceSafe.owners.length} signatures
+                </SummaryRow>
+              ) : null}
+            </>
+          ) : handleProgress.nextAction === "publish" ? (
+            <>
+              <SummaryRow label="Handle">/@{parsed.handle?.handle}</SummaryRow>
+              <SummaryRow label="Project">
+                {chainName(project.chainId)} #{project.projectId}
+              </SummaryRow>
+            </>
+          ) : (
+            <>
+              <SummaryRow label="ENS name">{parsed.handle?.ensName}</SummaryRow>
+              <SummaryRow label="Record">
+                <span className="break-all font-mono text-xs">
+                  {PROJECT_HANDLE_TEXT_KEY}={expectedRecord}
+                </span>
+              </SummaryRow>
+            </>
+          )}
+          <SummaryRow label="On">Ethereum</SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
     </div>
   );
 }

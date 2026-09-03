@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TxSteps } from "@/components/ui/TxSteps";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
@@ -84,6 +84,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   );
   const chainId = useJBChainId();
   const [isApproving, setIsApproving] = useState(false);
+  const [review, setReview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const { data: suckers } = useSuckers();
   const { token } = useJBTokenContext();
@@ -334,6 +336,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         : requiredApprovals.length;
 
   useEffect(() => {
+    if (hash) setReview(false);
+  }, [hash]);
+
+  useEffect(() => {
     if (!approvalConfirmed) return;
     setIsApproving(false);
     void refetchErc20Allowance();
@@ -537,13 +543,6 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
               )}
             </div>
           </DialogDescription>
-          {cashOutSteps.length > 1 && !isSuccess ? (
-            <TxSteps
-              steps={cashOutSteps}
-              activeIndex={cashOutActiveIndex}
-              className="mb-3 rounded border border-melon-200 bg-melon-50 p-3 text-xs"
-            />
-          ) : null}
           <DialogFooter>
             {!isSuccess ? (
               <ButtonWithWallet
@@ -552,126 +551,177 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   loading || isApproving || (valid && (isQuoteFetching || directSellLoading))
                 }
                 disabled={valid && !cashOutRoute}
-                onClick={async () => {
-                  try {
-                    if (
-                      !cashOutTerminal ||
-                      !address ||
-                      !redeemAmountBN ||
-                      !cashOutRoute ||
-                      !tokenToReceive ||
-                      !writeContractAsync
-                    ) {
-                      console.error("Missing required data for cashout");
-                      throw new Error("Please try again");
-                    }
-
-                    if (directSell && projectTokenAddress && selectedChainId && deployment) {
-                      setIsApproving(needsErc20Approval || needsRouterApproval);
-                      if (needsErc20Approval) {
-                        await writeApprovalAsync({
-                          abi: erc20Abi,
-                          functionName: "approve",
-                          chainId: selectedChainId,
-                          address: projectTokenAddress,
-                          args: [PERMIT2_ADDRESS, redeemAmountBN],
-                        });
-                        return;
-                      }
-                      if (needsRouterApproval) {
-                        await writeApprovalAsync({
-                          abi: permit2Abi,
-                          functionName: "approve",
-                          chainId: selectedChainId,
-                          address: PERMIT2_ADDRESS,
-                          args: [
-                            projectTokenAddress,
-                            deployment.universalRouter!,
-                            redeemAmountBN,
-                            Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
-                          ],
-                        });
-                        return;
-                      }
-                      const refreshedCashOut = await refetchCashOutRoute();
-                      if (refreshedCashOut.isError || !refreshedCashOut.data) {
-                        throw new Error(
-                          "The cash-out quote is no longer available. Review and try again.",
-                        );
-                      }
-                      const pool = await readPoolSnapshot(selectedChainId, effectiveProjectId).then(
-                        (result) => result.pool,
-                      );
-                      const fresh = pool
-                        ? await quoteDirectSellSwap({
-                            client: publicClient!,
-                            chainId: selectedChainId,
-                            poolKey: pool.key,
-                            projectToken: projectTokenAddress,
-                            tokenToReclaim: tokenToReceive,
-                            amount: redeemAmountBN,
-                            cashOutRoute: refreshedCashOut.data,
-                            slippageBps,
-                          })
-                        : null;
-                      if (!fresh) {
-                        throw new Error(
-                          "The pool no longer beats cashing out. Review the refreshed quote.",
-                        );
-                      }
-                      await writeContractAsync(
-                        buildDirectSellSwapTx({
-                          chainId: selectedChainId,
-                          quote: fresh,
-                          amount: redeemAmountBN,
-                          recipient: address,
-                          deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
-                        }),
-                      );
-                      return;
-                    }
-
-                    const prepared = await prepareHookAwareCashOut(publicClient!, {
-                      chainId: selectedChainId!,
-                      projectId: effectiveProjectId,
-                      holder: address,
-                      cashOutCount: redeemAmountBN,
-                      tokenToReclaim: tokenToReceive,
-                      terminal: cashOutTerminal,
-                      beneficiary: address,
-                      slippageBps: BigInt(slippageBps),
-                    });
-                    if (prepared.route.expectedReturn <= 0n) {
-                      throw new Error(
-                        "The cash-out quote is no longer available. Review and try again.",
-                      );
-                    }
-
-                    await writeContractAsync(prepared.transaction);
-                  } catch (err) {
-                    setIsApproving(false);
-                    console.error("Cashout failed:", err);
-                    toast({
-                      variant: "destructive",
-                      title: "Cashout Failed",
-                      description: cashOutExecutionErrorMessage(err) ?? formatWalletError(err),
-                    });
-                  }
+                onClick={() => {
+                  setError(null);
+                  setReview(true);
                 }}
               >
-                {isApproving
-                  ? "Approving..."
-                  : needsErc20Approval
-                    ? "Approve tokens"
-                    : needsRouterApproval
-                      ? "Authorize swap router"
-                      : directSell
-                        ? "Sell on pool"
-                        : "Cash out"}
+                Review
               </ButtonWithWallet>
             ) : null}
           </DialogFooter>
         </DialogHeader>
+        {review && selectedChainId && cashOutRoute ? (
+          <TxConfirmDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setReview(false);
+            }}
+            title="Confirm cash out"
+            chainId={selectedChainId}
+            steps={cashOutSteps}
+            activeIndex={cashOutActiveIndex}
+            action={
+              isApproving
+                ? "Approving..."
+                : needsErc20Approval
+                  ? "Approve tokens"
+                  : needsRouterApproval
+                    ? "Authorize swap router"
+                    : directSell
+                      ? "Sell on pool"
+                      : "Cash out"
+            }
+            busy={loading || isApproving}
+            error={error}
+            onConfirm={async () => {
+              try {
+                if (
+                  !cashOutTerminal ||
+                  !address ||
+                  !redeemAmountBN ||
+                  !cashOutRoute ||
+                  !tokenToReceive ||
+                  !writeContractAsync
+                ) {
+                  console.error("Missing required data for cashout");
+                  throw new Error("Please try again");
+                }
+
+                if (directSell && projectTokenAddress && selectedChainId && deployment) {
+                  setIsApproving(needsErc20Approval || needsRouterApproval);
+                  if (needsErc20Approval) {
+                    await writeApprovalAsync({
+                      abi: erc20Abi,
+                      functionName: "approve",
+                      chainId: selectedChainId,
+                      address: projectTokenAddress,
+                      args: [PERMIT2_ADDRESS, redeemAmountBN],
+                    });
+                    return;
+                  }
+                  if (needsRouterApproval) {
+                    await writeApprovalAsync({
+                      abi: permit2Abi,
+                      functionName: "approve",
+                      chainId: selectedChainId,
+                      address: PERMIT2_ADDRESS,
+                      args: [
+                        projectTokenAddress,
+                        deployment.universalRouter!,
+                        redeemAmountBN,
+                        Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+                      ],
+                    });
+                    return;
+                  }
+                  const refreshedCashOut = await refetchCashOutRoute();
+                  if (refreshedCashOut.isError || !refreshedCashOut.data) {
+                    throw new Error(
+                      "The cash-out quote is no longer available. Review and try again.",
+                    );
+                  }
+                  const pool = await readPoolSnapshot(selectedChainId, effectiveProjectId).then(
+                    (result) => result.pool,
+                  );
+                  const fresh = pool
+                    ? await quoteDirectSellSwap({
+                        client: publicClient!,
+                        chainId: selectedChainId,
+                        poolKey: pool.key,
+                        projectToken: projectTokenAddress,
+                        tokenToReclaim: tokenToReceive,
+                        amount: redeemAmountBN,
+                        cashOutRoute: refreshedCashOut.data,
+                        slippageBps,
+                      })
+                    : null;
+                  if (!fresh) {
+                    throw new Error(
+                      "The pool no longer beats cashing out. Review the refreshed quote.",
+                    );
+                  }
+                  await writeContractAsync(
+                    buildDirectSellSwapTx({
+                      chainId: selectedChainId,
+                      quote: fresh,
+                      amount: redeemAmountBN,
+                      recipient: address,
+                      deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
+                    }),
+                  );
+                  return;
+                }
+
+                const prepared = await prepareHookAwareCashOut(publicClient!, {
+                  chainId: selectedChainId!,
+                  projectId: effectiveProjectId,
+                  holder: address,
+                  cashOutCount: redeemAmountBN,
+                  tokenToReclaim: tokenToReceive,
+                  terminal: cashOutTerminal,
+                  beneficiary: address,
+                  slippageBps: BigInt(slippageBps),
+                });
+                if (prepared.route.expectedReturn <= 0n) {
+                  throw new Error(
+                    "The cash-out quote is no longer available. Review and try again.",
+                  );
+                }
+
+                await writeContractAsync(prepared.transaction);
+              } catch (err) {
+                setIsApproving(false);
+                console.error("Cashout failed:", err);
+                setError(cashOutExecutionErrorMessage(err) ?? formatWalletError(err));
+                toast({
+                  variant: "destructive",
+                  title: "Cashout Failed",
+                  description: cashOutExecutionErrorMessage(err) ?? formatWalletError(err),
+                });
+              }
+            }}
+          >
+            <SummaryRow label="Cash out">
+              {redeemAmount} {tokenSymbol}
+            </SummaryRow>
+            <SummaryRow label="On">{JB_CHAINS[selectedChainId].name}</SummaryRow>
+            <SummaryRow label="You get">
+              ~
+              {formatDecimals(
+                directSell
+                  ? Number(formatUnits(directSell.quotedOutput, baseDecimals))
+                  : expectedReclaim,
+                5,
+              )}{" "}
+              {baseToken?.symbol}
+              <span className="block text-xs text-zinc-500">
+                Reverts below{" "}
+                {formatDecimals(
+                  directSell
+                    ? Number(formatUnits(directSell.minimumOutput, baseDecimals))
+                    : minimumReclaim,
+                  5,
+                )}{" "}
+                {baseToken?.symbol}
+              </span>
+            </SummaryRow>
+            <SummaryRow label="Route">
+              {directSell ? "Direct pool sale" : "Cash out from the treasury"}
+            </SummaryRow>
+            <SummaryRow label="Max slippage">{slippageBps / 100}%</SummaryRow>
+          </TxConfirmDialog>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

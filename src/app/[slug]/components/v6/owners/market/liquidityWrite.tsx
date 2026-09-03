@@ -6,6 +6,8 @@ import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { erc20Abi, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 import { PERMIT2_ADDRESS, permit2AllowanceCovers, permit2ApprovalArgs } from "./lib";
 
+export { SummaryRow } from "@/components/ui/TxConfirmDialog";
+
 /**
  * A wallet prompt a liquidity write will actually raise. Deciding the sequence
  * while reviewing — not while executing — is what lets the signer see the
@@ -117,14 +119,4 @@ export function parseAmountText(text: string, decimals: number, symbol: string):
   } catch {
     throw new Error(`Enter a valid ${symbol} amount.`);
   }
-}
-
-/** The pay confirm's row grammar: a label on the left, the value on the right. */
-export function SummaryRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="shrink-0 text-sm text-zinc-500">{label}</span>
-      <span className="text-right text-sm text-zinc-900">{children}</span>
-    </div>
-  );
 }

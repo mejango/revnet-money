@@ -155,7 +155,7 @@ function ownerOf(node) {
 
 function rawBoundariesFor(callee) {
   const name = callee.split(":").at(-1);
-  if (["useWriteContract", "writeContract", "writeContractAsync"].includes(name)) {
+  if (["useWriteContract", "writeContract", "writeContractAsync", "sendCalls"].includes(name)) {
     return [allowedRawBoundary.write];
   }
   if (

@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import {
   isSafeProposalPendingError,
@@ -18,7 +19,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
+import { getRevnetLoanContract, JB_CHAINS, revLoansAbi } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
 import {
@@ -28,6 +29,14 @@ import {
   useSimulateContract,
   useWalletClient,
 } from "wagmi";
+
+const REPAY_STATUS_TEXT: Record<string, string> = {
+  "waiting-signature": "Waiting for wallet confirmation...",
+  approving: "Approving token allowance...",
+  pending: "Repayment pending...",
+  success: "Repayment successful!",
+  error: "Something went wrong during repayment.",
+};
 
 export function RepayDialog({
   loanId,
@@ -54,6 +63,7 @@ export function RepayDialog({
   const [repayStatus, setRepayStatus] = useState("idle");
   const [repayTxHash, setRepayTxHash] = useState<`0x${string}` | undefined>();
   const [collateralError, setCollateralError] = useState<string>("");
+  const [review, setReview] = useState<"approve" | "repay" | null>(null);
 
   // ===== HOOKS =====
   const { address: userAddress } = useAccount();
@@ -401,8 +411,13 @@ export function RepayDialog({
       setRepayStatus("idle");
       setRepayTxHash(undefined);
       setCollateralError("");
+      setReview(null);
     }
   }, [open, loanData, projectTokenDecimals]);
+
+  useEffect(() => {
+    if (repayStatus === "pending" || repayStatus === "success") setReview(null);
+  }, [repayStatus]);
 
   // ===== EVENT HANDLERS =====
   const handleApproveAllowance = async () => {
@@ -606,21 +621,10 @@ export function RepayDialog({
     );
   };
 
-  const renderStatusMessage = () => {
-    if (repayStatus === "idle") return null;
-
-    const messages = {
-      "waiting-signature": "Waiting for wallet confirmation...",
-      approving: "Approving token allowance...",
-      pending: "Repayment pending...",
-      success: "Repayment successful!",
-      error: "Something went wrong during repayment.",
-    };
-
-    return (
-      <p className="text-sm text-zinc-600 mt-2">{messages[repayStatus as keyof typeof messages]}</p>
-    );
-  };
+  const statusText = REPAY_STATUS_TEXT[repayStatus];
+  const renderStatusMessage = () =>
+    statusText ? <p className="text-sm text-zinc-600 mt-2">{statusText}</p> : null;
+  const signing = isRepaying || repayStatus === "waiting-signature" || repayStatus === "approving";
 
   // ===== LOADING STATES =====
   // An unresolved token config is a LOADING state: without it the loan's base
@@ -818,7 +822,7 @@ export function RepayDialog({
                   <ButtonWithWallet
                     targetChainId={chainId as JBChainId}
                     loading={repayStatus === "approving"}
-                    onClick={handleApproveAllowance}
+                    onClick={() => setReview("approve")}
                     variant="outline"
                     size="sm"
                   >
@@ -839,7 +843,7 @@ export function RepayDialog({
                 loading={
                   isRepaying || repayStatus === "waiting-signature" || repayStatus === "pending"
                 }
-                onClick={handleRepay}
+                onClick={() => setReview("repay")}
                 disabled={
                   !finalRepayAmount ||
                   Number(finalRepayAmount) <= 0 ||
@@ -852,12 +856,79 @@ export function RepayDialog({
                   (isNativeBase === false && !hasSufficientAllowance)
                 }
               >
-                Repay loan
+                Review
               </ButtonWithWallet>
             )}
             {renderStatusMessage()}
           </div>
         </div>
+        {review && finalRepayAmount !== undefined ? (
+          <TxConfirmDialog
+            open
+            onOpenChange={(next) => {
+              if (!next) setReview(null);
+            }}
+            title={review === "approve" ? "Confirm approval" : "Confirm repayment"}
+            chainId={chainId}
+            steps={
+              review === "approve"
+                ? [
+                    {
+                      title: `Approve ${baseTokenSymbol}`,
+                      detail: "REVLoans can pull at most this amount; the surplus is refunded.",
+                    },
+                  ]
+                : [
+                    {
+                      title: "Repay the loan",
+                      detail: "Pays what is owed and returns the collateral to your wallet.",
+                    },
+                  ]
+            }
+            activeIndex={signing ? 0 : -1}
+            action={review === "approve" ? `Approve ${baseTokenSymbol}` : "Repay loan"}
+            onConfirm={() => {
+              if (review === "approve")
+                void handleApproveAllowance().finally(() => setReview(null));
+              else void handleRepay();
+            }}
+            busy={signing}
+            status={signing ? statusText : null}
+            error={repayStatus === "error" ? statusText : null}
+          >
+            {review === "repay" ? (
+              <>
+                <SummaryRow label="Returns">
+                  {collateralToReturn} {tokenSymbol}
+                </SummaryRow>
+                <SummaryRow label="On">{JB_CHAINS[chainId].name}</SummaryRow>
+                <SummaryRow label="Pays now">
+                  {amountToPayNow !== undefined
+                    ? `${formatUnits(amountToPayNow, baseTokenDecimals)} ${baseTokenSymbol}`
+                    : "Calculated by the contract"}
+                  {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
+                    <span className="block text-xs text-zinc-500">
+                      Includes {formatUnits(feeForThisRepay, baseTokenDecimals)} {baseTokenSymbol}{" "}
+                      source fee
+                    </span>
+                  ) : null}
+                </SummaryRow>
+                {repayPrincipal !== undefined && loanData.amount - repayPrincipal > 0n ? (
+                  <SummaryRow label="Rolled into a new loan">
+                    {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
+                    {baseTokenSymbol}
+                  </SummaryRow>
+                ) : null}
+              </>
+            ) : (
+              <SummaryRow label="On">{JB_CHAINS[chainId].name}</SummaryRow>
+            )}
+            <SummaryRow label="Authorizes up to">
+              {formatUnits(finalRepayAmount, baseTokenDecimals)} {baseTokenSymbol}
+              <span className="block text-xs text-zinc-500">The unused part is refunded</span>
+            </SummaryRow>
+          </TxConfirmDialog>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

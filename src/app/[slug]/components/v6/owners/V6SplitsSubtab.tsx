@@ -303,6 +303,8 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                   <DistributeReservedTokensButton
                     chainId={c.chainId}
                     projectId={BigInt(c.projectId)}
+                    pending={pending}
+                    tokenSymbol={tokenSymbol}
                   />
                 </div>
               )}

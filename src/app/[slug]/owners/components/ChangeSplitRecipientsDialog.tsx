@@ -12,10 +12,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Trash2 as TrashIcon } from "@/components/ui/icons";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
-import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
+import { withSchema } from "@/lib/formValidation";
 import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { useEffect, useMemo, useState } from "react";
 import { Address, zeroAddress } from "viem";
@@ -80,6 +81,7 @@ type Props = {
 export function ChangeSplitRecipientsDialog(props: Props) {
   const { stageIdx, initialChainId, splitLimit, triggerVariant = "outline" } = props;
   const [open, setOpen] = useState(false);
+  const [reviewing, setReviewing] = useState<ChainFormData[] | null>(null);
 
   const { hasPermission } = useUserPermissions();
   const { chainSplits, refetch } = useChainSplits(stageIdx);
@@ -88,6 +90,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
     onSuccess: (txHash) => {
       console.debug(`Transaction confirmed: ${txHash}`);
       toast({ title: "Splits updated successfully" });
+      setReviewing(null);
       setOpen(false);
       setTimeout(refetch, 4000); // Give it some time to index data
     },
@@ -150,8 +153,18 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       return;
     }
     if (blockMessageFor(values.chains)) return;
-    await submitSplits(selectedChains);
+    setReviewing(selectedChains);
   };
+
+  const confirmSubmit = async () => {
+    if (!reviewing) return;
+    const result = await submitSplits(reviewing);
+    if (result?.success && reviewing.length > 1) setReviewing(null);
+  };
+
+  const writing = isSubmitting || isPending || isTxLoading;
+  const relayed = (reviewing?.length ?? 0) > 1;
+  const chainNameOf = (chainId: JBChainId) => JB_CHAINS[chainId]?.name ?? `chain ${chainId}`;
 
   if (!hasPermission("SET_SPLIT_GROUPS")) {
     return null;
@@ -162,6 +175,61 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       <DialogTrigger asChild>
         <Button variant={triggerVariant}>Change split recipients</Button>
       </DialogTrigger>
+      {reviewing ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setReviewing(null);
+          }}
+          title="Confirm split recipients"
+          chainId={reviewing[0].chainId}
+          steps={
+            relayed
+              ? [
+                  {
+                    title: "Sign the authorization",
+                    detail: "One signature covers every selected chain.",
+                  },
+                  {
+                    title: "Pay the relay fee",
+                    detail: "Relayr then updates the recipients on each chain.",
+                  },
+                ]
+              : [{ title: `Update the recipients on ${chainNameOf(reviewing[0].chainId)}` }]
+          }
+          activeIndex={writing ? 0 : -1}
+          action="Save changes"
+          onConfirm={() => void confirmSubmit()}
+          busy={writing}
+        >
+          <SummaryRow label="Stage">{stageIdx + 1}</SummaryRow>
+          {reviewing.map((chain) => (
+            <SummaryRow key={chain.chainId} label={chainNameOf(chain.chainId)}>
+              {chain.splits.length === 0 ? (
+                "No recipients"
+              ) : (
+                <>
+                  {chain.splits.length} recipient{chain.splits.length === 1 ? "" : "s"}
+                  {chain.splits.map((split, index) => {
+                    const routing = splitRouting(split);
+                    return (
+                      <span key={index} className="block text-xs text-zinc-500">
+                        {trimTrailingZeros(Number(split.percentage).toFixed(7))}% to{" "}
+                        {routing
+                          ? routing.kind === "hook"
+                            ? `split hook ${routing.address}`
+                            : `project #${routing.projectId}`
+                          : split.beneficiary}
+                      </span>
+                    );
+                  })}
+                </>
+              )}
+            </SummaryRow>
+          ))}
+          {relayed ? <SummaryRow label="Relay fee">Quoted in ETH after you sign</SummaryRow> : null}
+        </TxConfirmDialog>
+      ) : null}
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Change split recipients</DialogTitle>

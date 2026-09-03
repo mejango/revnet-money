@@ -3,6 +3,7 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { PERSIST } from "@/lib/query-persist";
@@ -30,86 +31,113 @@ import {
 function HookActionButton({
   state,
   label,
+  confirmTitle,
   functionName,
   args,
   title,
+  rows,
   onDone,
 }: {
   state: SplitHookChainState;
   label: string;
+  confirmTitle: string;
   functionName: "deployPool" | "collectAndRouteLPFees";
   args: readonly [bigint, bigint] | readonly [bigint, `0x${string}`];
   title?: string;
+  rows: React.ReactNode;
   onDone: () => void;
 }) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: state.chainId });
   const { writeContractAsync } = useWriteContract();
   const [busy, setBusy] = useState(false);
+  const [review, setReview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
-    <ButtonWithWallet
-      targetChainId={state.chainId}
-      size="sm"
-      variant="outline"
-      forceChildren
-      loading={busy}
-      title={title}
-      onClick={async () => {
-        try {
-          setBusy(true);
-          if (!publicClient) throw new Error("Public client unavailable.");
-          // Two hook generations are live during the lp-split-hook rollout and their
-          // `deployPool` selectors differ. Ask the deployed bytecode which one it has rather
-          // than hard-coding one and reverting at simulate on the other.
-          let callAbi: readonly unknown[] = lpSplitHookAbi;
-          let callArgs = args;
-          if (functionName === "deployPool") {
-            const arity = await deployPoolArity(publicClient, state.hook);
-            if (arity === 1) {
-              callAbi = deployPoolSingleArgAbi;
-              callArgs = [args[0]] as unknown as typeof args;
+    <>
+      <ButtonWithWallet
+        targetChainId={state.chainId}
+        size="sm"
+        variant="outline"
+        forceChildren
+        loading={busy}
+        title={title}
+        onClick={() => {
+          setError(null);
+          setReview(true);
+        }}
+      >
+        {label}
+      </ButtonWithWallet>
+      <TxConfirmDialog
+        open={review}
+        onOpenChange={(open) => {
+          if (!open) setReview(false);
+        }}
+        title={confirmTitle}
+        chainId={state.chainId}
+        steps={[{ title: label, detail: title }]}
+        activeIndex={busy ? 0 : -1}
+        action={label}
+        busy={busy}
+        error={error}
+        onConfirm={async () => {
+          try {
+            setBusy(true);
+            setError(null);
+            if (!publicClient) throw new Error("Public client unavailable.");
+            // Two hook generations are live during the lp-split-hook rollout and their
+            // `deployPool` selectors differ. Ask the deployed bytecode which one it has rather
+            // than hard-coding one and reverting at simulate on the other.
+            let callAbi: readonly unknown[] = lpSplitHookAbi;
+            let callArgs = args;
+            if (functionName === "deployPool") {
+              const arity = await deployPoolArity(publicClient, state.hook);
+              if (arity === 1) {
+                callAbi = deployPoolSingleArgAbi;
+                callArgs = [args[0]] as unknown as typeof args;
+              }
             }
-          }
-          const sim = await publicClient?.simulateContract({
-            account: address,
-            address: state.hook,
-            abi: callAbi as never,
-            functionName,
-            args: callArgs as never,
-          });
-          if (!sim) throw new Error("Could not simulate the transaction.");
-          const hash = await writeContractAsync(sim.request);
-          if (submittedViaSafe(hash)) {
-            toast({
-              title: "Safe proposal submitted",
-              description: `${label} is awaiting Safe approvals and execution on ${chainName(state.chainId)}.`,
+            const sim = await publicClient?.simulateContract({
+              account: address,
+              address: state.hook,
+              abi: callAbi as never,
+              functionName,
+              args: callArgs as never,
             });
-            return;
+            if (!sim) throw new Error("Could not simulate the transaction.");
+            const hash = await writeContractAsync(sim.request);
+            if (submittedViaSafe(hash)) {
+              toast({
+                title: "Safe proposal submitted",
+                description: `${label} is awaiting Safe approvals and execution on ${chainName(state.chainId)}.`,
+              });
+              setReview(false);
+              return;
+            }
+            const receipt = await waitForReceiptWithRetry(publicClient, hash);
+            if (receipt.status !== "success") {
+              throw new Error(`${label} ${hash} reverted onchain.`);
+            }
+            toast({
+              title: `${label} confirmed`,
+              description: `${label} on ${chainName(state.chainId)}.`,
+            });
+            setReview(false);
+            onDone();
+          } catch (cause) {
+            console.error(cause);
+            setError(formatWalletError(cause));
+          } finally {
+            setBusy(false);
           }
-          const receipt = await waitForReceiptWithRetry(publicClient, hash);
-          if (receipt.status !== "success") {
-            throw new Error(`${label} ${hash} reverted onchain.`);
-          }
-          toast({
-            title: `${label} confirmed`,
-            description: `${label} on ${chainName(state.chainId)}.`,
-          });
-          onDone();
-        } catch (error) {
-          console.error(error);
-          toast({
-            variant: "destructive",
-            title: `${label} failed`,
-            description: formatWalletError(error),
-          });
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {label}
-    </ButtonWithWallet>
+        }}
+      >
+        <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
+        {rows}
+      </TxConfirmDialog>
+    </>
   );
 }
 
@@ -178,9 +206,21 @@ function SplitHookChainBlock({
             <HookActionButton
               state={state}
               label="Deploy pool"
+              confirmTitle="Confirm pool deployment"
               functionName="deployPool"
               args={[state.projectId, 0n] as const}
               title="Seed the Uniswap V4 pool from accumulated tokens (accepts any cash out return)"
+              rows={
+                <>
+                  <SummaryRow label="Seeds with">
+                    {fmtUnits(state.accumulated, 18)} {tokenSymbol}
+                    <span className="block text-xs text-zinc-500">
+                      Part is cashed out for {state.pairSymbol} to mint a two-sided position
+                    </span>
+                  </SummaryRow>
+                  <SummaryRow label="Minimum cash out return">None</SummaryRow>
+                </>
+              }
               onDone={onDone}
             />
             {state.deployGated && (
@@ -195,9 +235,18 @@ function SplitHookChainBlock({
           <HookActionButton
             state={state}
             label="Collect fees"
+            confirmTitle="Confirm fee collection"
             functionName="collectAndRouteLPFees"
             args={[state.projectId, state.terminalToken] as const}
             title="Collect LP trading fees and route them into the project's terminal balance (anyone can call this)"
+            rows={
+              <>
+                <SummaryRow label="Collects">
+                  {fmtUnits(state.claimableFees, state.pairDecimals)} {state.pairSymbol}
+                </SummaryRow>
+                <SummaryRow label="Routes to">The project&apos;s terminal balance</SummaryRow>
+              </>
+            }
             onDone={onDone}
           />
         )}

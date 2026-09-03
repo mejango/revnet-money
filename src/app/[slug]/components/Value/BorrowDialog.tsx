@@ -1,6 +1,6 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { TxSteps } from "@/components/ui/TxSteps";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { JB_CHAINS, JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
-import { PropsWithChildren, useCallback, useEffect, useMemo } from "react";
+import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
 import { LoanFeeChart } from "./LoanFeeChart";
@@ -33,9 +33,23 @@ interface Props {
   tokenSymbol: string;
 }
 
+const BORROW_STATUS_TEXT: Record<string, string> = {
+  checking: "Checking permissions...",
+  "granting-permission": "Granting permission...",
+  "permission-granted": "Permission granted. Creating loan...",
+  "waiting-signature": "Waiting for wallet confirmation...",
+  pending: "Creating loan...",
+  "reallocation-pending": "Adjusting loan...",
+  success: "Loan created successfully!",
+  "error-permission-denied": "Permission was not granted. Please approve to proceed.",
+  "error-loan-canceled": "Loan creation was canceled.",
+  error: "Something went wrong during loan creation.",
+};
+
 export function BorrowDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, children } = props;
   const borrowDialog = useBorrowDialog({ projectId });
+  const [review, setReview] = useState(false);
 
   const {
     isDialogOpen,
@@ -128,6 +142,32 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
   const maxCollateralAmount = selectedBalance
     ? Number(formatUnits(selectedBalance.balance.value, projectTokenDecimals))
     : 0;
+
+  // Calculate effectiveBorrowableAmount and simulation values
+  const effectiveBorrowableAmount =
+    internalSelectedLoan && selectedLoanReallocAmount
+      ? selectedLoanReallocAmount - BigInt(internalSelectedLoan.borrowAmount)
+      : estimatedBorrowFromInputOnly;
+
+  // Use correct decimals for the selected chain. `??`, not `||`: a legitimate
+  // 0-decimal accounting token must not be read as 18.
+  const tokenDecimals = selectedChainTokenConfig?.decimals ?? NATIVE_TOKEN_DECIMALS;
+  const simulatedAmountBorrowed = effectiveBorrowableAmount
+    ? Number(formatUnits(effectiveBorrowableAmount, tokenDecimals))
+    : 0;
+
+  const busy =
+    loading ||
+    ["checking", "granting-permission", "permission-granted", "waiting-signature"].includes(
+      borrowStatus,
+    );
+  const statusText = BORROW_STATUS_TEXT[borrowStatus];
+  const adjusting =
+    !!internalSelectedLoan && !!collateralAmount && !isNaN(Number(collateralAmount));
+
+  useEffect(() => {
+    if (["pending", "reallocation-pending", "success"].includes(borrowStatus)) setReview(false);
+  }, [borrowStatus]);
 
   return (
     <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
@@ -263,35 +303,17 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         </div>
 
         {/* --- Simulation state for loan preview, including reallocation --- */}
-        {(() => {
-          // Calculate effectiveBorrowableAmount and simulation values
-          const effectiveBorrowableAmount =
-            internalSelectedLoan && selectedLoanReallocAmount
-              ? selectedLoanReallocAmount - BigInt(internalSelectedLoan.borrowAmount)
-              : estimatedBorrowFromInputOnly;
-
-          // Use correct decimals for the selected chain. `??`, not `||`: a legitimate
-          // 0-decimal accounting token must not be read as 18.
-          const tokenDecimals = selectedChainTokenConfig?.decimals ?? NATIVE_TOKEN_DECIMALS;
-          const simulatedAmountBorrowed = effectiveBorrowableAmount
-            ? Number(formatUnits(effectiveBorrowableAmount, tokenDecimals))
-            : 0;
-
-          if (collateralAmount && !isNaN(Number(collateralAmount)) && selectedChainTokenSymbol) {
-            return (
-              <SimulatedLoanCard
-                collateralAmount={collateralAmount}
-                tokenSymbol={selectedChainTokenSymbol}
-                collateralTokenSymbol={tokenSymbol}
-                amountBorrowed={simulatedAmountBorrowed}
-                prepaidPercent={prepaidPercent}
-                feeData={feeData}
-                totalFixedFees={totalFixedFees}
-              />
-            );
-          }
-          return null;
-        })()}
+        {collateralAmount && !isNaN(Number(collateralAmount)) && selectedChainTokenSymbol ? (
+          <SimulatedLoanCard
+            collateralAmount={collateralAmount}
+            tokenSymbol={selectedChainTokenSymbol}
+            collateralTokenSymbol={tokenSymbol}
+            amountBorrowed={simulatedAmountBorrowed}
+            prepaidPercent={prepaidPercent}
+            feeData={feeData}
+            totalFixedFees={totalFixedFees}
+          />
+        ) : null}
         {minimumBorrowAmountPreview !== undefined && selectedChainTokenConfig ? (
           <div className="border border-melon-300 bg-melon-25 p-3 text-sm">
             <div className="flex justify-between gap-3">
@@ -348,37 +370,9 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           <ImportantInfo collateralAmount={collateralAmount} tokenSymbol={tokenSymbol} />
         )}
         {/* Borrow Button and Status Message - horizontally aligned */}
-        {grantsPermission ? (
-          <TxSteps
-            steps={[
-              {
-                key: "permission",
-                title: "Let REVLoans burn your collateral",
-                detail: "A one-off permission so the loan can hold your tokens.",
-              },
-              { key: "borrow", title: "Open the loan" },
-            ]}
-            activeIndex={borrowStatus === "granting-permission" ? 0 : 1}
-            className="rounded border border-melon-200 bg-melon-50 p-3 text-xs"
-          />
-        ) : null}
         <DialogFooter className="flex items-center justify-between w-full gap-4">
           <div className="flex-1 text-left">
-            {borrowStatus !== "idle" && (
-              <p className="text-sm text-zinc-600">
-                {borrowStatus === "checking" && "Checking permissions..."}
-                {borrowStatus === "granting-permission" && "Granting permission..."}
-                {borrowStatus === "permission-granted" && "Permission granted. Creating loan..."}
-                {borrowStatus === "waiting-signature" && "Waiting for wallet confirmation..."}
-                {borrowStatus === "pending" && "Creating loan..."}
-                {borrowStatus === "reallocation-pending" && "Adjusting loan..."}
-                {borrowStatus === "success" && "Loan created successfully!"}
-                {borrowStatus === "error-permission-denied" &&
-                  "Permission was not granted. Please approve to proceed."}
-                {borrowStatus === "error-loan-canceled" && "Loan creation was canceled."}
-                {borrowStatus === "error" && "Something went wrong during loan creation."}
-              </p>
-            )}
+            {statusText ? <p className="text-sm text-zinc-600">{statusText}</p> : null}
           </div>
           {/* Single borrow button for both reallocation and standard borrowing */}
           <ButtonWithWallet
@@ -390,15 +384,59 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
               Number(collateralAmount) <= 0 ||
               minimumBorrowAmountPreview === undefined
             }
-            onClick={() => {
-              handleBorrow();
-            }}
+            onClick={() => setReview(true)}
           >
-            {internalSelectedLoan && collateralAmount && !isNaN(Number(collateralAmount))
-              ? "Adjust loan"
-              : "Open loan"}
+            Review
           </ButtonWithWallet>
         </DialogFooter>
+        {review && cashOutChainId && selectedChainTokenConfig ? (
+          <TxConfirmDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setReview(false);
+            }}
+            title={adjusting ? "Confirm loan adjustment" : "Confirm loan"}
+            chainId={Number(cashOutChainId) as JBChainId}
+            steps={[
+              ...(grantsPermission
+                ? [
+                    {
+                      key: "permission",
+                      title: "Let REVLoans burn your collateral",
+                      detail: "A one-off permission so the loan can hold your tokens.",
+                    },
+                  ]
+                : []),
+              { key: "borrow", title: adjusting ? "Adjust the loan" : "Open the loan" },
+            ]}
+            activeIndex={
+              borrowStatus === "granting-permission" ? 0 : busy ? (grantsPermission ? 1 : 0) : -1
+            }
+            action={adjusting ? "Adjust loan" : "Open loan"}
+            onConfirm={() => void handleBorrow()}
+            busy={busy}
+            status={busy ? statusText : null}
+            error={borrowStatus.startsWith("error") ? statusText : null}
+          >
+            <SummaryRow label="Collateral">
+              {collateralAmount} {tokenSymbol}
+            </SummaryRow>
+            <SummaryRow label="On">
+              {JB_CHAINS[Number(cashOutChainId) as JBChainId].name}
+            </SummaryRow>
+            <SummaryRow label="Borrows">
+              ~{simulatedAmountBorrowed.toFixed(8)} {selectedChainTokenSymbol}
+              {minimumBorrowAmountPreview !== undefined ? (
+                <span className="block text-xs text-zinc-500">
+                  At least{" "}
+                  {formatUnits(minimumBorrowAmountPreview, selectedChainTokenConfig.decimals)}{" "}
+                  {selectedChainTokenSymbol}, enforced onchain
+                </span>
+              ) : null}
+            </SummaryRow>
+            <SummaryRow label="Prepaid fee">{prepaidPercent}%</SummaryRow>
+          </TxConfirmDialog>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

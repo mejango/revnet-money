@@ -4,6 +4,7 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { PERSIST } from "@/lib/query-persist";
@@ -52,56 +53,100 @@ function StatusBadge({ status }: { status: V6BridgeRow["status"] }) {
  * reconstructed + verified merkle proof. Simulate-first so a revert surfaces as
  * a readable error before the wallet prompt.
  */
-function ClaimButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }) {
+function ClaimButton({
+  row,
+  tokenSymbol,
+  onDone,
+}: {
+  row: V6BridgeRow & { tokenSymbol: string };
+  tokenSymbol: string;
+  onDone: () => void;
+}) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: row.peerChainId });
   const { writeContractAsync } = useWriteContract();
   const [busy, setBusy] = useState(false);
+  const [review, setReview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
-    <ButtonWithWallet
-      targetChainId={row.peerChainId}
-      size="sm"
-      variant="outline"
-      forceChildren
-      loading={busy}
-      onClick={async () => {
-        try {
-          setBusy(true);
-          const tx = buildV6ClaimTxFromRow(row);
-          await publicClient?.simulateContract({ account: address, ...tx });
-          const hash = await writeContractAsync(tx);
-          if (submittedViaSafe(hash)) {
+    <>
+      <ButtonWithWallet
+        targetChainId={row.peerChainId}
+        size="sm"
+        variant="outline"
+        forceChildren
+        loading={busy}
+        onClick={() => {
+          setError(null);
+          setReview(true);
+        }}
+      >
+        Claim
+      </ButtonWithWallet>
+      <TxConfirmDialog
+        open={review}
+        onOpenChange={(open) => {
+          if (!open) setReview(false);
+        }}
+        title="Confirm claim"
+        chainId={row.peerChainId}
+        steps={[{ title: "Claim", detail: "Proves the bridged leaf on the destination sucker." }]}
+        activeIndex={busy ? 0 : -1}
+        action="Claim"
+        busy={busy}
+        error={error}
+        onConfirm={async () => {
+          try {
+            setBusy(true);
+            setError(null);
+            const tx = buildV6ClaimTxFromRow(row);
+            await publicClient?.simulateContract({ account: address, ...tx });
+            const hash = await writeContractAsync(tx);
+            if (submittedViaSafe(hash)) {
+              setReview(false);
+              toast({
+                title: "Safe proposal submitted",
+                description: `The claim is awaiting Safe approvals and execution on ${chainName(row.peerChainId)}.`,
+              });
+              return;
+            }
+            if (!publicClient) throw new Error("Public client unavailable.");
+            const receipt = await waitForReceiptWithRetry(publicClient, hash);
+            if (receipt.status !== "success") {
+              throw new Error(`Claim ${hash} reverted onchain.`);
+            }
+            setReview(false);
             toast({
-              title: "Safe proposal submitted",
-              description: `The claim is awaiting Safe approvals and execution on ${chainName(row.peerChainId)}.`,
+              title: "Claimed",
+              description: `Tokens claimed on ${chainName(row.peerChainId)}.`,
             });
-            return;
+            onDone();
+          } catch (cause) {
+            console.error(cause);
+            setError(formatWalletError(cause));
+          } finally {
+            setBusy(false);
           }
-          if (!publicClient) throw new Error("Public client unavailable.");
-          const receipt = await waitForReceiptWithRetry(publicClient, hash);
-          if (receipt.status !== "success") {
-            throw new Error(`Claim ${hash} reverted onchain.`);
-          }
-          toast({
-            title: "Claimed",
-            description: `Tokens claimed on ${chainName(row.peerChainId)}.`,
-          });
-          onDone();
-        } catch (error) {
-          console.error(error);
-          toast({
-            variant: "destructive",
-            title: "Claim failed",
-            description: formatWalletError(error),
-          });
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      Claim
-    </ButtonWithWallet>
+        }}
+      >
+        <SummaryRow label="Claims">
+          {fmtUnits(row.projectTokenCount, 18)} {tokenSymbol}
+          <span className="block text-xs text-zinc-500">
+            {fmtUnits(row.terminalTokenAmount, row.tokenDecimals)} {row.tokenSymbol} backing
+          </span>
+        </SummaryRow>
+        <SummaryRow label="On">{chainName(row.peerChainId)}</SummaryRow>
+        <SummaryRow label="To">
+          <EthereumAddress
+            address={row.beneficiary}
+            short
+            withEnsName
+            chain={viemChainOf(row.peerChainId)}
+          />
+        </SummaryRow>
+      </TxConfirmDialog>
+    </>
   );
 }
 
@@ -116,7 +161,10 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
   const publicClient = usePublicClient({ chainId: row.chainId });
   const { writeContractAsync } = useWriteContract();
   const [busy, setBusy] = useState(false);
+  const [review, setReview] = useState<{ value: bigint } | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [feeUnavailable, setFeeUnavailable] = useState(false);
+  const nativeSymbol = viemChainOf(row.chainId)?.nativeCurrency.symbol ?? "ETH";
 
   if (feeUnavailable) {
     return (
@@ -130,69 +178,119 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
   }
 
   return (
-    <ButtonWithWallet
-      targetChainId={row.chainId}
-      size="sm"
-      variant="outline"
-      forceChildren
-      loading={busy}
-      onClick={async () => {
-        try {
-          setBusy(true);
-          const value = await findToRemoteValue(row.chainId, row.sourceSucker, row.token, address);
-          if (value == null) {
-            setFeeUnavailable(true);
-            throw new Error(
-              "Could not determine the bridge messaging fee — no budget simulated cleanly. Try again shortly.",
+    <>
+      <ButtonWithWallet
+        targetChainId={row.chainId}
+        size="sm"
+        variant="outline"
+        forceChildren
+        loading={busy}
+        onClick={async () => {
+          try {
+            setBusy(true);
+            setError(null);
+            const value = await findToRemoteValue(
+              row.chainId,
+              row.sourceSucker,
+              row.token,
+              address,
             );
-          }
-          await publicClient?.simulateContract({
-            account: address,
-            address: row.sourceSucker,
-            abi: jbSuckerV6Abi,
-            functionName: "toRemote",
-            args: [row.token],
-            value,
-          });
-          const hash = await writeContractAsync({
-            chainId: row.chainId,
-            address: row.sourceSucker,
-            abi: jbSuckerV6Abi,
-            functionName: "toRemote",
-            args: [row.token],
-            value,
-          });
-          if (submittedViaSafe(hash)) {
+            if (value == null) {
+              setFeeUnavailable(true);
+              throw new Error(
+                "Could not determine the bridge messaging fee — no budget simulated cleanly. Try again shortly.",
+              );
+            }
+            setReview({ value });
+          } catch (cause) {
+            console.error(cause);
             toast({
-              title: "Safe proposal submitted",
-              description: `The bridge message is awaiting Safe approvals and execution on ${chainName(row.chainId)}.`,
+              variant: "destructive",
+              title: "Execute failed",
+              description: formatWalletError(cause),
             });
-            return;
+          } finally {
+            setBusy(false);
           }
-          if (!publicClient) throw new Error("Public client unavailable.");
-          const receipt = await waitForReceiptWithRetry(publicClient, hash);
-          if (receipt.status !== "success") {
-            throw new Error(`Bridge transaction ${hash} reverted onchain.`);
-          }
-          toast({
-            title: "Bridge message confirmed",
-            description: `The queued outbox is on its way to ${chainName(row.peerChainId)} — rows flip to claimable once it lands.`,
-          });
-          onDone();
-        } catch (error) {
-          console.error(error);
-          toast({
-            variant: "destructive",
-            title: "Execute failed",
-            description: formatWalletError(error),
-          });
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      Execute
-    </ButtonWithWallet>
+        }}
+      >
+        Execute
+      </ButtonWithWallet>
+      {review ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReview(null);
+          }}
+          title="Confirm execution"
+          chainId={row.chainId}
+          steps={[
+            {
+              title: "Send the bridge message",
+              detail: "Delivers every queued move for this token, not just this row.",
+            },
+          ]}
+          activeIndex={busy ? 0 : -1}
+          action="Execute"
+          busy={busy}
+          error={error}
+          onConfirm={async () => {
+            try {
+              setBusy(true);
+              setError(null);
+              const value = review.value;
+              await publicClient?.simulateContract({
+                account: address,
+                address: row.sourceSucker,
+                abi: jbSuckerV6Abi,
+                functionName: "toRemote",
+                args: [row.token],
+                value,
+              });
+              const hash = await writeContractAsync({
+                chainId: row.chainId,
+                address: row.sourceSucker,
+                abi: jbSuckerV6Abi,
+                functionName: "toRemote",
+                args: [row.token],
+                value,
+              });
+              if (submittedViaSafe(hash)) {
+                setReview(null);
+                toast({
+                  title: "Safe proposal submitted",
+                  description: `The bridge message is awaiting Safe approvals and execution on ${chainName(row.chainId)}.`,
+                });
+                return;
+              }
+              if (!publicClient) throw new Error("Public client unavailable.");
+              const receipt = await waitForReceiptWithRetry(publicClient, hash);
+              if (receipt.status !== "success") {
+                throw new Error(`Bridge transaction ${hash} reverted onchain.`);
+              }
+              setReview(null);
+              toast({
+                title: "Bridge message confirmed",
+                description: `The queued outbox is on its way to ${chainName(row.peerChainId)} — rows flip to claimable once it lands.`,
+              });
+              onDone();
+            } catch (cause) {
+              console.error(cause);
+              setError(formatWalletError(cause));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <SummaryRow label="On">{chainName(row.chainId)}</SummaryRow>
+          <SummaryRow label="Delivers to">{chainName(row.peerChainId)}</SummaryRow>
+          <SummaryRow label="Bridge fee">
+            {fmtUnits(review.value, 18)} {nativeSymbol}
+            <span className="block text-xs text-zinc-500">Found by simulation</span>
+          </SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
+    </>
   );
 }
 
@@ -356,7 +454,7 @@ export function QueuedMovementsCard({
                   </td>
                   <td className={cell}>
                     {row.status === "claimable" ? (
-                      <ClaimButton row={row} onDone={() => refetch()} />
+                      <ClaimButton row={row} tokenSymbol={tokenSymbol} onDone={() => refetch()} />
                     ) : row.status === "pending" && row.canExecute ? (
                       <ExecuteButton row={row} onDone={() => refetch()} />
                     ) : row.status === "pending" ? (

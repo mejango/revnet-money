@@ -2,7 +2,6 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { ItemDraftFields } from "@/components/shop/ItemDraftFields";
 import {
   buildTierConfigs,
   MAX_MEDIA_BYTES,
@@ -10,6 +9,7 @@ import {
   pinDraftItems,
   type DraftItem,
 } from "@/components/shop/itemDraft";
+import { ItemDraftFields } from "@/components/shop/ItemDraftFields";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
   requireOnchainExecution,
   submittedViaSafe,
@@ -69,6 +70,7 @@ export function AddItemsModal({
   const [phase, setPhase] = useState<
     "form" | "pinning" | "simulating" | "sending" | "confirming" | "safe-proposed" | "done"
   >("form");
+  const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
   const mediaPreviews = useRef(new Set<string>());
@@ -116,7 +118,7 @@ export function AddItemsModal({
     setError(null);
   };
 
-  const submit = async () => {
+  const review = async () => {
     if (!address || !publicClient || busy) return;
     setError(null);
 
@@ -143,7 +145,19 @@ export function AddItemsModal({
       }
       const draftConfigs = buildTierConfigs(items, shop.pricing.decimals);
       if (typeof draftConfigs === "string") throw new Error(draftConfigs);
+      setPhase("form");
+      setReviewing(true);
+    } catch (err) {
+      setPhase("form");
+      setError(shortError(err));
+    }
+  };
 
+  const submit = async () => {
+    if (!address || !publicClient || busy) return;
+    setError(null);
+
+    try {
       setPhase("pinning");
       const preparedItems = await pinDraftItems(items, categories);
       const configs = buildTierConfigs(preparedItems, shop.pricing.decimals);
@@ -168,6 +182,7 @@ export function AddItemsModal({
 
       setPhase("confirming");
       if (submittedViaSafe(hash)) {
+        setReviewing(false);
         setPhase("safe-proposed");
         return;
       }
@@ -182,12 +197,24 @@ export function AddItemsModal({
         // media never refreshed after items were added.
         queryClient.invalidateQueries({ queryKey: ["v6Shop721TierMedia", chainId, shop.hook] }),
       ]);
+      setReviewing(false);
       setPhase("done");
     } catch (err) {
       setPhase("form");
       setError(shortError(err));
     }
   };
+
+  const status =
+    phase === "pinning"
+      ? "Pinning metadata…"
+      : phase === "simulating"
+        ? "Simulating…"
+        : phase === "sending"
+          ? "Confirm in wallet…"
+          : phase === "confirming"
+            ? "Confirming…"
+            : null;
 
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
@@ -281,7 +308,7 @@ export function AddItemsModal({
               </div>
             </div>
 
-            {error ? (
+            {error && !reviewing ? (
               <p role="alert" className="bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700">
                 {error}
               </p>
@@ -294,22 +321,46 @@ export function AddItemsModal({
               <ButtonWithWallet
                 targetChainId={chainId}
                 loading={busy}
-                onClick={() => void submit()}
+                onClick={() => void review()}
               >
-                {phase === "simulating"
-                  ? "Simulating…"
-                  : phase === "pinning"
-                    ? "Pinning metadata…"
-                    : phase === "sending"
-                      ? "Confirm in wallet…"
-                      : phase === "confirming"
-                        ? "Confirming…"
-                        : "Review items"}
+                {phase === "simulating" ? "Checking…" : "Review items"}
               </ButtonWithWallet>
             </div>
           </>
         )}
       </DialogContent>
+      {reviewing ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReviewing(false);
+          }}
+          title="Confirm items"
+          chainId={chainId}
+          steps={[
+            {
+              title: `Add ${items.length} item${items.length === 1 ? "" : "s"}`,
+              detail: "Metadata is pinned first; then one call on the shop hook.",
+            },
+          ]}
+          activeIndex={busy ? 0 : -1}
+          action="Add items"
+          onConfirm={() => void submit()}
+          busy={busy}
+          status={status}
+          error={error}
+        >
+          {items.map((item, index) => (
+            <SummaryRow key={index} label={item.name.trim() || `Item ${index + 1}`}>
+              {item.price.trim() ? `${item.price.trim()} ${shop.pricing.symbol}` : "Free"}
+              <span className="block text-xs text-zinc-500">
+                {item.supply.trim() ? `${item.supply.trim()} in stock` : "Unlimited stock"}
+              </span>
+            </SummaryRow>
+          ))}
+          <SummaryRow label="On">{JB_CHAINS[chainId].name}</SummaryRow>
+        </TxConfirmDialog>
+      ) : null}
     </Dialog>
   );
 }

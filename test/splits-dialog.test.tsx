@@ -1,5 +1,5 @@
 import { ChangeSplitRecipientsDialog } from "@/app/[slug]/owners/components/ChangeSplitRecipientsDialog";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type ChainSplit = {
@@ -13,6 +13,13 @@ type ChainSplit = {
 const state = vi.hoisted(() => ({
   chainSplits: [] as unknown[],
   submitSplits: vi.fn(),
+}));
+
+vi.mock("wagmi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("wagmi")>()),
+  useAccount: () => ({ isConnected: true, address: "0x1111111111111111111111111111111111111111" }),
+  useChainId: () => 8453,
+  useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
 }));
 
 vi.mock("@/hooks/useUserPermissions", () => ({
@@ -113,5 +120,27 @@ describe("ChangeSplitRecipientsDialog fallback-splits guard", () => {
     await openDialog(0);
 
     expect(screen.getByRole("button", { name: "Save changes" })).not.toBeDisabled();
+  });
+});
+
+describe("ChangeSplitRecipientsDialog confirm stage", () => {
+  it("reviews the recipients before the write", async () => {
+    state.submitSplits = vi.fn().mockResolvedValue({ success: true });
+    await openDialog(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    const confirm = (await screen.findAllByRole("dialog")).at(-1)!;
+    await waitFor(() => expect(confirm).toHaveTextContent("Confirm split recipients"));
+    expect(confirm).toHaveTextContent("1 recipient");
+    expect(confirm).toHaveTextContent(`100% to ${BENEFICIARY}`);
+    expect(confirm).toHaveTextContent("Your wallet will ask for one action.");
+    expect(state.submitSplits).not.toHaveBeenCalled();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(state.submitSplits).toHaveBeenCalledTimes(1));
+    expect(state.submitSplits.mock.calls[0][0]).toHaveLength(1);
+    expect(state.submitSplits.mock.calls[0][0][0].chainId).toBe(8453);
   });
 });

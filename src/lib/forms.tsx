@@ -136,7 +136,7 @@ export function setFormValue<Values>(root: Values, path: string, value: unknown)
   return update(root, 0) as Values;
 }
 
-function hasErrors(value: unknown): boolean {
+export function hasErrors(value: unknown): boolean {
   if (typeof value === "string") return value.length > 0;
   if (Array.isArray(value)) return value.some(hasErrors);
   if (value && typeof value === "object") return Object.values(value).some(hasErrors);

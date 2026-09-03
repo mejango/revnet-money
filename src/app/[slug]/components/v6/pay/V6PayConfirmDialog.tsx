@@ -9,11 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SummaryRow } from "@/components/ui/TxConfirmDialog";
 import { TxSteps } from "@/components/ui/TxSteps";
-import {
-  type DirectSwapQuote,
-  type Permit2SignatureAuthorization,
-} from "@/lib/directPaySwap";
+import { type DirectSwapQuote, type Permit2SignatureAuthorization } from "@/lib/directPaySwap";
 import { etherscanLink } from "@/lib/utils";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
@@ -290,15 +288,6 @@ export function V6PayConfirmDialog({
   );
 }
 
-function SummaryRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="shrink-0 text-sm text-zinc-500">{label}</span>
-      <span className="text-right text-sm text-zinc-900">{children}</span>
-    </div>
-  );
-}
-
 function walletActionSteps(prepared: PreparedV6Pay): string[] {
   const steps: string[] = [];
   if (prepared.needsApproval) {
@@ -321,7 +310,6 @@ function walletActionSteps(prepared: PreparedV6Pay): string[] {
   return steps;
 }
 
-
 function activeStepIndex(prepared: PreparedV6Pay, phase: V6PayPhase): number {
   const steps = walletActionSteps(prepared);
   if (phase === "approving-token") return 0;
@@ -334,4 +322,3 @@ function activeStepIndex(prepared: PreparedV6Pay, phase: V6PayPhase): number {
   }
   return steps.length - 1;
 }
-

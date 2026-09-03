@@ -13,6 +13,13 @@
           1
         ],
         [
+          "raw-wallet-import",
+          "src/hooks/useReviewedWriteContract.ts",
+          "<module>",
+          "@wagmi/core:sendCalls",
+          1
+        ],
+        [
           "raw-wallet-hook",
           "src/hooks/useReviewedWriteContract.ts",
           "useWriteContract",
@@ -31,6 +38,13 @@
           "src/hooks/useReviewedWriteContract.ts",
           "submitReviewedCall",
           "writeContractAsync",
+          1
+        ],
+        [
+          "raw-wallet-call",
+          "src/hooks/useReviewedWriteContract.ts",
+          "submit",
+          "sendCalls",
           1
         ]
       ]

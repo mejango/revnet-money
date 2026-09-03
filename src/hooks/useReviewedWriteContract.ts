@@ -11,11 +11,14 @@ import {
 } from "@/lib/transaction-activity";
 import {
   requireContractTransactionReview,
+  requireTransactionReview,
+  type ContractTransactionReviewCall,
   type TransactionReviewOptions,
 } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useQueryClient } from "@tanstack/react-query";
+import { sendCalls } from "@wagmi/core";
 import { useCallback, useMemo } from "react";
 import {
   encodeFunctionData,
@@ -103,6 +106,104 @@ async function watchSafeProposal(id: string, hash: Hex, chainId: number): Promis
   safeInflight.set(id, request);
   void request.finally(() => safeInflight.delete(id)).catch(() => undefined);
   return request;
+}
+
+/**
+ * A Safe connection can take a whole flow as ONE proposal: the Safe app folds
+ * `wallet_sendCalls` into a MultiSend, so signers approve once and the calls
+ * execute together, in order. Reviewed as one request; tracked like any other
+ * Safe proposal.
+ */
+export class BatchSimulationUnavailableError extends Error {
+  readonly name = "BatchSimulationUnavailableError";
+}
+
+export async function proposeSafeBatch(
+  config: ReturnType<typeof useConfig>,
+  chainId: number,
+  title: string,
+  calls: readonly Omit<ContractTransactionReviewCall, "chainId" | "account" | "safeTxGas">[],
+): Promise<Hex> {
+  requireNoViewAs();
+  const account = getAccount(config).address;
+  if (!account) throw new Error("Connect a wallet first.");
+  if (!isSafeConnection(config)) {
+    throw new Error("A batch can only be proposed through a Safe connection.");
+  }
+  const encoded = calls.map((call) => ({
+    to: call.address,
+    value: call.value,
+    data: encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args }),
+  }));
+  const callKey = `batch:${account.toLowerCase()}:${chainId}:${keccak256(
+    stringToHex(encoded.map((call) => `${call.to}:${call.value ?? 0n}:${call.data}`).join("|")),
+  )}`;
+  const submit = async () => {
+    const duplicate = refreshTransactionActivities().find(
+      (activity) =>
+        activity.callKey === callKey &&
+        (activity.status === "submitted" ||
+          activity.status === "pending" ||
+          activity.status === "safe-proposed"),
+    );
+    if (duplicate?.hash) throw new SafeProposalPendingError(duplicate.hash, title);
+
+    // The calls depend on each other (an allowance, then the spend), so they
+    // only simulate as a sequence. An RPC without eth_simulateV1 cannot vouch
+    // for the batch; the caller falls back to one reviewed step at a time.
+    const publicClient = getPublicClient(config, { chainId });
+    if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
+    let simulated: Awaited<ReturnType<typeof publicClient.simulateCalls>>;
+    try {
+      simulated = await publicClient.simulateCalls({ account, calls: encoded });
+    } catch (cause) {
+      throw new BatchSimulationUnavailableError(
+        `This RPC cannot simulate the batch (${(cause as Error).message}).`,
+      );
+    }
+    const failed = simulated.results.findIndex((result) => result.status !== "success");
+    if (failed >= 0) {
+      const result = simulated.results[failed]!;
+      throw new Error(
+        `${calls[failed]!.functionName} (step ${failed + 1}) reverts in simulation${
+          "error" in result && result.error ? `: ${(result.error as Error).message}` : "."
+        }`,
+      );
+    }
+
+    await requireTransactionReview({
+      calls: encoded.map((call, index) => ({
+        chainId,
+        from: account,
+        safeTxGas: 0n,
+        abi: calls[index]!.abi,
+        functionName: calls[index]!.functionName,
+        args: calls[index]!.args,
+        label: calls[index]!.functionName,
+        ...call,
+      })),
+      title,
+      confirmLabel: "Agree & propose to Safe",
+      description: `These ${calls.length} calls go to Safe as one batch that executes together, in this order, once the Safe's approvals are in.\n\n${SAFE_NONCE_GUIDANCE}`,
+    });
+    if (getAccount(config).address?.toLowerCase() !== account.toLowerCase()) {
+      throw new Error("Connected account changed. Review the transaction again.");
+    }
+    if (!isSafeConnection(config)) {
+      throw new Error("Wallet connection changed. Review the transaction again.");
+    }
+    if (getAccount(config).chainId !== chainId) {
+      await switchChain(config, { chainId } as Parameters<typeof switchChain>[1]);
+    }
+    const { id } = await sendCalls(config, { chainId, calls: encoded });
+    const hash = id as Hex;
+    followSubmission(config, hash, chainId, title, account, callKey, true, false);
+    return hash;
+  };
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  return locks
+    ? locks.request(`revnet:transaction:${keccak256(stringToHex(callKey))}`, submit)
+    : submit();
 }
 
 export function resumeSafeProposalTracking(): void {
