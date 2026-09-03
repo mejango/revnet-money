@@ -12,11 +12,12 @@ const mocks = vi.hoisted(() => ({
   switchChain: vi.fn(),
   sendCalls: vi.fn(),
   simulateContract: vi.fn(),
+  simulateCalls: vi.fn(),
 }));
 
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
-  getPublicClient: () => undefined,
+  getPublicClient: () => ({ simulateCalls: mocks.simulateCalls }),
   simulateContract: mocks.simulateContract,
   switchChain: mocks.switchChain,
 }));
@@ -70,6 +71,9 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     mocks.getAccount.mockImplementation(() => mocks.account);
     mocks.sendCalls.mockReset().mockResolvedValue({ id: SAFE_TX_HASH });
     mocks.simulateContract.mockReset().mockResolvedValue({ request: {} });
+    mocks.simulateCalls
+      .mockReset()
+      .mockResolvedValue({ results: [{ status: "success" }, { status: "success" }] });
     registerTransactionReviewHandler(async (request) => {
       seen = request;
       return approve;
@@ -91,12 +95,8 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     ).toEqual(expected);
     expect(seen!.calls.every((call) => call.from === ACCOUNT && call.safeTxGas === 0n)).toBe(true);
     expect(seen!.description).toContain("one batch");
-    expect(mocks.simulateContract).toHaveBeenCalledTimes(2);
-    expect(mocks.simulateContract.mock.calls[0]![1]).toMatchObject({
-      account: ACCOUNT,
-      address: TOKEN,
-      functionName: "approve",
-    });
+    expect(mocks.simulateCalls).toHaveBeenCalledWith({ account: ACCOUNT, calls: expected });
+    expect(mocks.simulateContract).not.toHaveBeenCalled();
     expect(mocks.sendCalls).toHaveBeenCalledWith(mocks.config, { chainId: 8453, calls: expected });
     const activity = transactionActivitySnapshot().find((row) => row.hash === SAFE_TX_HASH);
     expect(activity?.status).toBe("safe-proposed");
@@ -109,23 +109,38 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses a batch when a standalone call reverts, and skips calls that need a prior one", async () => {
-    mocks.simulateContract
-      .mockResolvedValueOnce({ request: {} })
-      .mockRejectedValueOnce(new Error("allowance"));
+  it("refuses a batch whose sequence reverts in simulation", async () => {
+    mocks.simulateCalls.mockResolvedValue({
+      results: [{ status: "success" }, { status: "failure", error: new Error("allowance") }],
+    });
     await expect(
       proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
     ).rejects.toThrow("step 2");
     expect(seen).toBeNull();
     expect(mocks.sendCalls).not.toHaveBeenCalled();
+  });
 
-    mocks.simulateContract.mockReset().mockResolvedValue({ request: {} });
+  it("simulates standalone calls one by one when the RPC lacks eth_simulateV1", async () => {
+    mocks.simulateCalls.mockRejectedValue(
+      Object.assign(new Error("JSON-RPC method is not allowed"), { code: -32601 }),
+    );
     const [first, second] = calls();
     await proposeSafeBatch(mocks.config as never, 8453, "Make the market", [
       first!,
       { ...second!, dependsOnPrior: true },
     ]);
     expect(mocks.simulateContract).toHaveBeenCalledTimes(1);
+    expect(mocks.simulateContract.mock.calls[0]![1]).toMatchObject({
+      account: ACCOUNT,
+      address: TOKEN,
+      functionName: "approve",
+    });
+    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
+
+    mocks.simulateContract.mockRejectedValueOnce(new Error("allowance"));
+    await expect(
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
+    ).rejects.toThrow("step 1");
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 

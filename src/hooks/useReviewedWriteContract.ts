@@ -147,10 +147,37 @@ export async function proposeSafeBatch(
     );
     if (duplicate?.hash) throw new SafeProposalPendingError(duplicate.hash, title);
 
-    // Each call that stands alone simulates as the Safe; one that needs an
-    // earlier call's effect (the mint after its approvals) is simulated by
-    // Safe itself, with the whole batch, before anyone signs.
+    // The calls depend on each other (an allowance, then the spend), so the
+    // batch simulates as one sequence where the RPC offers eth_simulateV1.
+    // Where it does not, each standalone call simulates on its own and the
+    // dependent one is left to Safe's batch simulation before signing.
+    const publicClient = getPublicClient(config, { chainId });
+    if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
+    const sequence = await publicClient
+      .simulateCalls({ account, calls: encoded })
+      .then((simulated) => simulated.results)
+      .catch((cause: { code?: number; message?: string }) => {
+        if (
+          cause.code === -32601 ||
+          cause.code === -32004 ||
+          /not (?:allowed|supported|found|implemented)/i.test(cause.message ?? "")
+        ) {
+          return null;
+        }
+        throw cause;
+      });
     for (const [index, call] of calls.entries()) {
+      if (sequence) {
+        const result = sequence[index];
+        if (result?.status === "success") continue;
+        throw new Error(
+          `${call.functionName} (step ${index + 1}) reverts in simulation${
+            result && "error" in result && result.error
+              ? `: ${(result.error as Error).message}`
+              : "."
+          }`,
+        );
+      }
       if (call.dependsOnPrior) continue;
       try {
         await simulateContract(config, {
@@ -185,7 +212,7 @@ export async function proposeSafeBatch(
       })),
       title,
       confirmLabel: "Agree & propose to Safe",
-      description: `These ${calls.length} calls go to Safe as one batch that executes together, in this order, once the Safe's approvals are in. Safe simulates the batch before signing.\n\n${SAFE_NONCE_GUIDANCE}`,
+      description: `These ${calls.length} calls go to Safe as one batch that executes together, in this order, once the Safe's approvals are in.\n\n${SAFE_NONCE_GUIDANCE}`,
     });
     if (getAccount(config).address?.toLowerCase() !== account.toLowerCase()) {
       throw new Error("Connected account changed. Review the transaction again.");
