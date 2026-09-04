@@ -14,12 +14,17 @@ export function IssuanceLadder({
   stages,
   symbol,
   baseSymbol,
+  defaultYears = 1,
+  viewHeight,
 }: {
   stages: ChartStage[];
   symbol: string;
   baseSymbol: string;
+  /** Initial range, in years (a CHART_RANGES value). */
+  defaultYears?: number;
+  viewHeight?: number;
 }) {
-  const [years, setYears] = useState(1);
+  const [years, setYears] = useState(defaultYears);
 
   const now = useMemo(() => Math.floor(Date.now() / 1000), []);
   const resolved = useMemo(() => resolveStages(stages), [stages]);
@@ -35,6 +40,7 @@ export function IssuanceLadder({
       baseSymbol={baseSymbol}
       ariaLabel={`Projected ${symbol} issuance price in ${baseSymbol} over time`}
       showNowMarker={now < t1}
+      viewHeight={viewHeight}
       header={
         <div className="flex justify-end">
           <ChartRangeSelect

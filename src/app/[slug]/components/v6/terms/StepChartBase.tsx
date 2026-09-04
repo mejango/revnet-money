@@ -26,7 +26,7 @@ const NOW_COLOR = "#EE6F3A"; // peel-400
 // Plot area gutters inside a 320×140 viewBox. Text lives in HTML overlays so
 // the gutters only pad the plot itself.
 const VW = 320;
-const VH = 140;
+const DEFAULT_VH = 140;
 const PL = 0;
 const PR = 0;
 const PT = 4;
@@ -100,6 +100,7 @@ export function StepChartBase({
   header,
   renderSeries,
   renderOverlay,
+  viewHeight = DEFAULT_VH,
 }: {
   resolved: ResolvedStage[];
   t0: number;
@@ -116,7 +117,10 @@ export function StepChartBase({
   renderSeries?: (geom: ChartGeom) => ReactNode;
   /** Extra marks drawn after the hover crosshair. */
   renderOverlay?: (geom: ChartGeom) => ReactNode;
+  /** viewBox height; the chart keeps full width, so smaller = shorter. */
+  viewHeight?: number;
 }) {
+  const VH = viewHeight;
   const [hoverT, setHoverT] = useState<number | null>(null);
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotWidth, setPlotWidth] = useState(0);
@@ -157,10 +161,14 @@ export function StepChartBase({
   /** viewBox x → CSS percentage, for constant-size HTML overlays. */
   const pct = (x: number) => `${((x / VW) * 100).toFixed(2)}%`;
 
+  // The ladder breaks where there is no issuance (rate 0) instead of drawing
+  // a line at a price that does not exist.
   const path = points
-    // No issuance has an infinite price; pin it to the top of the finite
-    // issuance-price range, matching website/'s chart.
-    .map(([t, v]) => `${X(t).toFixed(1)},${Y(v ?? maxV).toFixed(1)}`)
+    .map(([t, v], i) =>
+      v === null
+        ? ""
+        : `${i === 0 || points[i - 1][1] === null ? "M" : "L"}${X(t).toFixed(1)},${Y(v).toFixed(1)}`,
+    )
     .join(" ");
 
   const t = Math.min(t1, Math.max(t0, hoverT ?? Math.min(now, t1)));
@@ -253,8 +261,8 @@ export function StepChartBase({
               />
             ) : null}
             {/* The price ladder */}
-            <polyline
-              points={path}
+            <path
+              d={path}
               fill="none"
               stroke={ISSUANCE_COLOR}
               strokeWidth="2"
