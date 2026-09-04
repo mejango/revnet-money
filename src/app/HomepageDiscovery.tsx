@@ -82,7 +82,8 @@ export function HomepageDiscovery() {
           <Suspense
             fallback={
               <div className="px-4 py-4">
-                <ActivityFeedSkeleton rows={8} />
+                {/* Ghost rows must outrun the card, which fills the column on wide screens. */}
+                <ActivityFeedSkeleton rows={14} />
               </div>
             }
           >
@@ -91,10 +92,7 @@ export function HomepageDiscovery() {
         </DashboardColumn>
       }
       trending={
-        <DashboardColumn
-          title="Trending"
-          headingClassName="hidden xl:flex"
-        >
+        <DashboardColumn title="Trending" headingClassName="hidden xl:flex">
           <Suspense fallback={<ProjectRowsSkeleton rows={8} />}>
             <TrendingPanel />
           </Suspense>
@@ -170,9 +168,7 @@ async function NewPanel() {
       detail={(project) => (
         <span className="block">
           Launched:{" "}
-          <span className="tabular-nums text-zinc-600">
-            {formatLaunched(project.createdAt)}
-          </span>
+          <span className="tabular-nums text-zinc-600">{formatLaunched(project.createdAt)}</span>
         </span>
       )}
     />
