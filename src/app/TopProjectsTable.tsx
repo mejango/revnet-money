@@ -5,7 +5,11 @@ export async function TopProjectsTable() {
   const projects = await getTopProjects(9);
 
   if (projects.length === 0) {
-    return null;
+    return (
+      <p className="flex min-h-[420px] items-center justify-center px-6 text-center text-sm text-zinc-500">
+        Projects are temporarily unavailable.
+      </p>
+    );
   }
 
   return (

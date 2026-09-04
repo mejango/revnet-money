@@ -2,7 +2,9 @@ import { AuditPromptLink } from "@/components/AuditPromptLink";
 import { ChainLogo } from "@/components/ChainLogo";
 import { IpfsImage } from "@/components/IpfsImage";
 import { IssuanceFingerprint } from "@/components/IssuanceFingerprint";
+import { ActivityFeedSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ProjectLink } from "@/components/ProjectLink";
+import { Skeleton } from "@/components/ui/skeleton";
 import { IndexedProjectsOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { IndexedProjectSummary } from "@/lib/bendystraw/types";
@@ -12,7 +14,7 @@ import { formatCompact } from "@/lib/number";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import Image from "next/image";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { formatUnits } from "viem";
 import { getHomepageActivityPage } from "./getHomepageActivity";
 import { getHomepageReserves } from "./getHomepageReserves";
@@ -55,22 +57,31 @@ async function getHomepageProjects(): Promise<HomepageProject[]> {
   }
 }
 
-export async function HomepageDiscovery() {
-  const [activity, trending, reserves] = await Promise.all([
-    getHomepageActivityPage(9),
-    getHomepageProjects(),
-    getHomepageReserves(),
-  ]);
+/**
+ * The fold paints at once — hero, headings, panel frames — and each panel
+ * streams in behind its own Suspense boundary with a ghost of its rows, so a
+ * slow feed never blanks the page or holds the others back.
+ */
+export function HomepageDiscovery() {
   return (
     <HomepageDiscoveryLayout
       hero={<HeroColumn />}
-      summary={<SecuredReserves data={reserves} />}
+      summary={
+        <Suspense fallback={<ReservesSkeleton />}>
+          <ReservesPanel />
+        </Suspense>
+      }
       activity={
         <DashboardColumn title="Latest" headingClassName="hidden sm:flex">
-          <HomepageActivityFeed
-            initialEvents={activity.slice(0, 8)}
-            initialHasMore={activity.length > 8}
-          />
+          <Suspense
+            fallback={
+              <div className="px-4 py-4">
+                <ActivityFeedSkeleton rows={8} />
+              </div>
+            }
+          >
+            <ActivityPanel />
+          </Suspense>
         </DashboardColumn>
       }
       trending={
@@ -79,15 +90,67 @@ export async function HomepageDiscovery() {
           headingClassName="hidden xl:flex"
           panelClassName="xl:h-auto xl:flex-1"
         >
-          <ProjectRows projects={trending} />
+          <Suspense fallback={<ProjectRowsSkeleton rows={8} />}>
+            <TrendingPanel />
+          </Suspense>
         </DashboardColumn>
       }
       top={
         <DashboardColumn title="Top" headingClassName="hidden xl:flex">
-          <TopProjectsTable />
+          <Suspense fallback={<ProjectRowsSkeleton rows={9} />}>
+            <TopProjectsTable />
+          </Suspense>
         </DashboardColumn>
       }
     />
+  );
+}
+
+async function ReservesPanel() {
+  return <SecuredReserves data={await getHomepageReserves()} />;
+}
+
+async function ActivityPanel() {
+  const activity = await getHomepageActivityPage(9);
+  return (
+    <HomepageActivityFeed
+      initialEvents={activity.slice(0, 8)}
+      initialHasMore={activity.length > 8}
+    />
+  );
+}
+
+async function TrendingPanel() {
+  return <ProjectRows projects={await getHomepageProjects()} />;
+}
+
+function ReservesSkeleton() {
+  return (
+    <div role="status" aria-label="Loading reserves" className="space-y-3">
+      <span className="sr-only">Loading reserves</span>
+      <Skeleton className="h-10 w-48 sm:h-9" />
+      <Skeleton className="h-3 w-32" />
+    </div>
+  );
+}
+
+/** Ghost rows matching the project rows' geometry, so the fill is in place. */
+function ProjectRowsSkeleton({ rows }: { rows: number }) {
+  return (
+    <ol className="divide-y divide-teal-100" role="status" aria-label="Loading projects">
+      <span className="sr-only">Loading projects</span>
+      {Array.from({ length: rows }, (_, index) => (
+        <li key={index} className="flex h-28 items-center gap-3 px-4 py-3" aria-hidden="true">
+          <Skeleton className="h-3 w-3 shrink-0" />
+          <Skeleton className="size-10 shrink-0" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className={index % 2 === 0 ? "h-3 w-36" : "h-3 w-28"} />
+            <Skeleton className="h-2.5 w-24" />
+            <Skeleton className="h-2.5 w-32" />
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
