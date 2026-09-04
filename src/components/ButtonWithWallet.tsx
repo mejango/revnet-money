@@ -1,5 +1,6 @@
+import { chainDisplayName } from "@/app/constants";
 import { useJBChainId } from "@/lib/nana/project";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import React from "react";
 import { useAccount, useChainId, useSwitchChain } from "wagmi";
 import { WalletConnectButton } from "./WalletButton";
@@ -42,7 +43,7 @@ const ButtonWithWallet = React.forwardRef<
         }}
         loading={isPending}
       >
-        {forceChildren ? children : `Switch to ${JB_CHAINS[_targetChainId].name}`}
+        {forceChildren ? children : `Switch to ${chainDisplayName(_targetChainId)}`}
       </Button>
     );
   }

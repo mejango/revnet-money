@@ -1,9 +1,9 @@
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { isSafeConnector } from "@/hooks/useReviewedWriteContract";
 import { hasErrors } from "@/lib/forms";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { formatFormErrors } from "../helpers/formatFormErrors";
@@ -35,7 +35,7 @@ export function DeploySection({
   // that start is already past at execution, so warn before proposing.
   const deploysViaSafe = isSafeConnector(connector) && values.chainIds.length === 1;
   const singleChain = values.chainIds.length === 1;
-  const chainNames = values.chainIds.map((chainId) => JB_CHAINS[chainId].name);
+  const chainNames = values.chainIds.map((chainId) => chainDisplayName(chainId));
   const action = singleChain ? "Deploy the revnet" : "Sign and get quote";
 
   return (
@@ -94,7 +94,7 @@ export function DeploySection({
                   ]
                 : values.chainIds.map((chainId) => ({
                     key: String(chainId),
-                    title: `Sign the authorization for ${JB_CHAINS[chainId].name}`,
+                    title: `Sign the authorization for ${chainDisplayName(chainId)}`,
                   }))
             }
             stepsIntro={

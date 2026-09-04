@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import {
   Select,
   SelectContent,
@@ -9,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import type { ChainPayment } from "@/lib/nana/types";
 import { formatHexEther } from "@/lib/utils";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 
 interface Props {
   payments: ChainPayment[];
@@ -38,7 +39,7 @@ export function RelayrPaymentSelect(props: Props) {
               return (
                 <SelectItem value={payment.chain.toString()} key={payment.chain}>
                   {formatHexEther(payment.amount)} {tokenSymbol} on{" "}
-                  {JB_CHAINS[payment.chain as JBChainId].name}
+                  {chainDisplayName(payment.chain as JBChainId)}
                 </SelectItem>
               );
             })}

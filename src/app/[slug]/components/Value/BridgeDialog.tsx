@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
@@ -41,7 +42,7 @@ import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { getTokenAddress } from "@/lib/token";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
-import { JB_CHAINS, JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
+import { JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
@@ -330,7 +331,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                   <SelectValue placeholder="Select chain..." id="sourceChainId">
                     <div className="flex items-center gap-2">
                       <ChainLogo chainId={sourceChainId} />
-                      {JB_CHAINS[sourceChainId].name}
+                      {chainDisplayName(sourceChainId)}
                     </div>
                   </SelectValue>
                 </SelectTrigger>
@@ -344,7 +345,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                       >
                         <div className="flex items-center gap-2 grow">
                           <ChainLogo chainId={chainId} />
-                          {JB_CHAINS[chainId].name}
+                          {chainDisplayName(chainId)}
                         </div>
                         <span className="shrink-0 pl-2">
                           {balances?.find((b) => b.chainId === chainId)?.balance.format(2)}{" "}
@@ -373,7 +374,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                     {targetChainId && (
                       <div className="flex items-center gap-2">
                         <ChainLogo chainId={targetChainId} />
-                        {JB_CHAINS[targetChainId].name}
+                        {chainDisplayName(targetChainId)}
                       </div>
                     )}
                   </SelectValue>
@@ -390,7 +391,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                         >
                           <div className="flex items-center gap-2 grow">
                             <ChainLogo chainId={chainId as JBChainId} />
-                            {JB_CHAINS[chainId as JBChainId].name}
+                            {chainDisplayName(chainId as JBChainId)}
                           </div>
                           <span className="shrink-0 pl-2">
                             {balances?.find((b) => b.chainId === chainId)?.balance.format(2)}{" "}
@@ -561,8 +562,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             <SummaryRow label="Move">
               {amount} {tokenSymbol}
             </SummaryRow>
-            <SummaryRow label="From">{JB_CHAINS[sourceChainId].name}</SummaryRow>
-            <SummaryRow label="To">{JB_CHAINS[targetChainId].name}</SummaryRow>
+            <SummaryRow label="From">{chainDisplayName(sourceChainId)}</SummaryRow>
+            <SummaryRow label="To">{chainDisplayName(targetChainId)}</SummaryRow>
             <SummaryRow label="Backing received">
               ~{formatUnits(prepareQuote.data.netReclaimAmount, prepareQuote.data.tokenDecimals)}{" "}
               {backingTokenSymbol}

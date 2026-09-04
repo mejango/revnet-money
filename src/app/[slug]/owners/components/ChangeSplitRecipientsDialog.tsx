@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { Field } from "@/app/create/form/Fields";
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
@@ -265,7 +266,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                                 setFieldValue(`chains.${chainIdx}.selected`, e.target.checked)
                               }
                             />
-                            {JB_CHAINS[chain.chainId].name}
+                            {chainDisplayName(chain.chainId)}
                           </label>
                         ))}
                       </div>
@@ -288,7 +289,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                               <div className="flex items-center gap-2 mb-4">
                                 <ChainLogo chainId={chain.chainId} width={24} height={24} />
                                 <h3 className="text-md font-semibold">
-                                  {JB_CHAINS[chain.chainId].name}
+                                  {chainDisplayName(chain.chainId)}
                                 </h3>
                               </div>
 

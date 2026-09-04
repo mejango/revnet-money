@@ -1,3 +1,4 @@
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import {
@@ -364,7 +365,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     <div className="mt-1 border border-melon-300 p-3 bg-melon-25">
                       {balances?.map((balance) => (
                         <div key={balance.chainId} className="flex justify-between gap-2">
-                          {JB_CHAINS[balance.chainId as JBChainId].name}
+                          {chainDisplayName(balance.chainId as JBChainId)}
                           <span className="font-medium">
                             {balance.balance?.format(6)} {tokenSymbol}
                           </span>
@@ -400,7 +401,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                                 >
                                   <div className="flex items-center gap-2">
                                     <ChainLogo chainId={balance.chainId as JBChainId} />
-                                    {JB_CHAINS[balance.chainId as JBChainId].name}
+                                    {chainDisplayName(balance.chainId as JBChainId)}
                                   </div>
                                 </SelectItem>
                               ))}
@@ -451,7 +452,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   {redeemAmount && activeCashOutChainId && !valid ? (
                     <div className="text-red-500 mt-4">
                       Insufficient {tokenSymbol} on{" "}
-                      {JB_CHAINS[Number(activeCashOutChainId) as JBChainId].name}
+                      {chainDisplayName(Number(activeCashOutChainId) as JBChainId)}
                     </div>
                   ) : null}
 
@@ -696,7 +697,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
             <SummaryRow label="Cash out">
               {redeemAmount} {tokenSymbol}
             </SummaryRow>
-            <SummaryRow label="On">{JB_CHAINS[selectedChainId].name}</SummaryRow>
+            <SummaryRow label="On">{chainDisplayName(selectedChainId)}</SummaryRow>
             <SummaryRow label="You get">
               ~
               {formatDecimals(

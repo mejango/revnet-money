@@ -1,3 +1,4 @@
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
@@ -20,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
-import { JB_CHAINS, JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
+import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
@@ -181,7 +182,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           <div className="mt-1 border border-melon-300 p-3 bg-melon-25">
             {balances?.map((balance) => (
               <div key={balance.chainId} className="flex justify-between gap-2">
-                {JB_CHAINS[balance.chainId as JBChainId].name}
+                {chainDisplayName(balance.chainId as JBChainId)}
                 <span className="font-medium">
                   {balance.balance?.format(8)} {tokenSymbol}
                 </span>
@@ -201,7 +202,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                 <div className="flex h-10 w-full items-center border-2 border-melon-300 bg-melon-25 px-3 py-2 text-sm">
                   <div className="flex items-center gap-2">
                     <ChainLogo chainId={Number(cashOutChainId) as JBChainId} />
-                    <span>{JB_CHAINS[Number(cashOutChainId) as JBChainId].name}</span>
+                    <span>{chainDisplayName(Number(cashOutChainId) as JBChainId)}</span>
                   </div>
                 </div>
               ) : (
@@ -211,7 +212,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                       {cashOutChainId && (
                         <div className="flex items-center gap-2">
                           <ChainLogo chainId={Number(cashOutChainId) as JBChainId} />
-                          <span>{JB_CHAINS[Number(cashOutChainId) as JBChainId].name}</span>
+                          <span>{chainDisplayName(Number(cashOutChainId) as JBChainId)}</span>
                         </div>
                       )}
                     </SelectValue>
@@ -221,7 +222,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                       <SelectItem value={balance.chainId.toString()} key={balance.chainId}>
                         <div className="flex items-center gap-2">
                           <ChainLogo chainId={balance.chainId as JBChainId} />
-                          {JB_CHAINS[balance.chainId as JBChainId].name}
+                          {chainDisplayName(balance.chainId as JBChainId)}
                         </div>
                       </SelectItem>
                     ))}
@@ -423,7 +424,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
               {collateralAmount} {tokenSymbol}
             </SummaryRow>
             <SummaryRow label="On">
-              {JB_CHAINS[Number(cashOutChainId) as JBChainId].name}
+              {chainDisplayName(Number(cashOutChainId) as JBChainId)}
             </SummaryRow>
             <SummaryRow label="Borrows">
               ~{simulatedAmountBorrowed.toFixed(8)} {selectedChainTokenSymbol}

@@ -1,10 +1,11 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import type { DraftItem } from "@/components/shop/itemDraft";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
+import { type JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 
 /** Sentinel option value; a category id can never be this. */
@@ -132,10 +133,10 @@ export function ItemDraftFields({
                         <div key={chain} className="flex items-center gap-2">
                           <span className="flex w-36 shrink-0 items-center gap-2 text-xs text-zinc-500">
                             <ChainLogo chainId={chain} width={18} height={18} />
-                            {JB_CHAINS[chain].name}
+                            {chainDisplayName(chain)}
                           </span>
                           <Input
-                            aria-label={`${JB_CHAINS[chain].name} quantity`}
+                            aria-label={`${chainDisplayName(chain)} quantity`}
                             value={item.perChainSupply[chain] ?? ""}
                             onChange={(e) =>
                               onChange({

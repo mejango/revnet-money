@@ -1,6 +1,6 @@
+import { chainDisplayName } from "@/app/constants";
 import type { JBChainId } from "@/lib/nana/types";
 import { sortChains } from "@/lib/utils";
-import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { ChainLogo } from "./ChainLogo";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
@@ -27,7 +27,7 @@ export const ChainSelector = ({ value, onChange, disabled, options }: ChainSelec
           {value ? (
             <div className="flex items-center gap-2">
               <ChainLogo chainId={Number(value) as JBChainId} />
-              <span>{JB_CHAINS[value].name}</span>
+              <span>{chainDisplayName(value)}</span>
             </div>
           ) : (
             <span>Select chain</span>
@@ -39,7 +39,7 @@ export const ChainSelector = ({ value, onChange, disabled, options }: ChainSelec
           <SelectItem key={chainId} value={chainId.toString()} className="flex items-center gap-2">
             <div className="flex items-center gap-2">
               <ChainLogo chainId={chainId as JBChainId} />
-              <span>{JB_CHAINS[chainId as JBChainId].name}</span>
+              <span>{chainDisplayName(chainId as JBChainId)}</span>
             </div>
           </SelectItem>
         ))}

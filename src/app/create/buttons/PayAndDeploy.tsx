@@ -1,3 +1,4 @@
+import { chainDisplayName } from "@/app/constants";
 import EtherscanLink from "@/components/EtherscanLink";
 import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
 import { Button } from "@/components/ui/button";
@@ -155,9 +156,9 @@ export function PayAndDeploy({
           <SummaryRow label="Pays">
             {formatHexEther(selectedPayment.amount)} {symbol ?? ""}
           </SummaryRow>
-          <SummaryRow label="On">{JB_CHAINS[selectedPayment.chain].name}</SummaryRow>
+          <SummaryRow label="On">{chainDisplayName(selectedPayment.chain)}</SummaryRow>
           <SummaryRow label="Deploys on">
-            {values.chainIds.map((chainId) => JB_CHAINS[chainId].name).join(", ")}
+            {values.chainIds.map((chainId) => chainDisplayName(chainId)).join(", ")}
           </SummaryRow>
           <SummaryRow label="Revnet">
             {values.name || "Unnamed"} (${revnetTokenSymbol})
@@ -179,7 +180,7 @@ export function PayAndDeploy({
             (txn) =>
               txn?.status && (
                 <div key={txn?.tx_uuid} className="grid grid-cols-3 gap-4">
-                  <div>{JB_CHAINS[txn.request.chain as JBChainId].name}</div>
+                  <div>{chainDisplayName(txn.request.chain as JBChainId)}</div>
                   <div className="flex flex-row space-x-2 items-center justify-start">
                     <div>{statusToIcon(txn.status.state)}</div>
                     <div>{txn.status.state}</div>

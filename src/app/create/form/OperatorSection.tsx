@@ -1,8 +1,9 @@
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { useFormContext } from "@/lib/forms";
 import { OPERATOR_LIMITS, OPERATOR_POWERS } from "@/lib/protocolConcepts";
 import { sortChains } from "@/lib/utils";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useRef, useState } from "react";
 import { PERMANENTLY_DISABLED_OPERATOR } from "../constants";
 import { RevnetFormData } from "../types";
@@ -198,10 +199,10 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
                   <div key={chain} className="mt-3 flex items-center gap-2 text-md text-zinc-600">
                     <div className="flex w-40 shrink-0 items-center gap-2 text-sm">
                       <ChainLogo chainId={chain} width={20} height={20} />
-                      <span className="text-zinc-400">{JB_CHAINS[chain].name}</span>
+                      <span className="text-zinc-400">{chainDisplayName(chain)}</span>
                     </div>
                     <input
-                      aria-label={`${JB_CHAINS[chain].name} operator address`}
+                      aria-label={`${chainDisplayName(chain)} operator address`}
                       className={inputClassName}
                       placeholder="0x"
                       disabled={disabled}

@@ -1,4 +1,4 @@
-import { chainSortIndex } from "@/app/constants";
+import { chainDisplayName, chainSortIndex } from "@/app/constants";
 import { requireOnchainExecution } from "@/hooks/useReviewedWriteContract";
 import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import type { PermissionHolder, PermissionHolderFilter } from "@/lib/bendystraw/types";
@@ -31,7 +31,7 @@ export function chainProjectRows(projects: ProjectItem[]): ChainProjectRow[] {
 }
 
 export function chainName(chainId: number): string {
-  return JB_CHAINS[chainId as JBChainId]?.name ?? String(chainId);
+  return chainDisplayName(chainId);
 }
 
 /** A v6 contract's address on a chain, or undefined where it isn't deployed. */

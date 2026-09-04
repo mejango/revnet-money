@@ -1,6 +1,6 @@
 "use client";
 
-import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
+import { chainDisplayName, RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
@@ -197,7 +197,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
             <div key={c.chainId}>
               <div className="flex items-center gap-2 mb-2 text-sm font-medium">
                 <ChainLogo chainId={c.chainId} />
-                {JB_CHAINS[c.chainId].name}
+                {chainDisplayName(c.chainId)}
               </div>
               <div className="overflow-auto">
                 <div>

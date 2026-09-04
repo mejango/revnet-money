@@ -1,6 +1,5 @@
-import { chainIdToLogo } from "@/app/constants";
+import { chainDisplayName, chainIdToLogo } from "@/app/constants";
 import type { JBChainId } from "@/lib/nana/types";
-import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Image from "next/image";
 
 type ImageProps = React.ComponentProps<typeof Image>;
@@ -17,7 +16,7 @@ type Props = {
 
 export const ChainLogo = (props: Props) => {
   const { chainId, width, height, style, standalone, ...rest } = props;
-  const chainName = JB_CHAINS[chainId].name;
+  const chainName = chainDisplayName(chainId);
   const src = chainIdToLogo[chainId];
   const displayWidth = width ?? 20;
   const displayHeight = height ?? 20;
