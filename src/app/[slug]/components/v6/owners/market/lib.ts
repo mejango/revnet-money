@@ -1,5 +1,8 @@
 import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
-import { IndexedLpPositionsOperation } from "@/lib/bendystraw/operations";
+import {
+  IndexedLpPositionsOperation,
+  IndexedPoolLiquidityEventsOperation,
+} from "@/lib/bendystraw/operations";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   JBBuybackHookContracts,
@@ -267,6 +270,7 @@ interface PairToken {
 
 export interface PoolSnapshot {
   chainId: JBChainId;
+  projectId: number;
   hook: Address;
   key: PoolKey;
   poolId: Hex;
@@ -366,6 +370,7 @@ export async function readPoolSnapshot(
     hook,
     pool: {
       chainId,
+      projectId: Number(projectId),
       hook,
       key,
       poolId,
@@ -469,6 +474,82 @@ async function scanKnownPoolRange(
   return events;
 }
 
+/** Value the pool's live ranges at its current price. */
+function compositionFromRanges(
+  pool: PoolSnapshot,
+  ranges: { tickLower: number; tickUpper: number; liquidity: bigint }[],
+): PoolComposition {
+  const activeRanges = ranges
+    .filter((range) => range.liquidity > 0n)
+    .sort((a, b) => a.tickLower - b.tickLower || a.tickUpper - b.tickUpper);
+  let amount0 = 0n;
+  let amount1 = 0n;
+  for (const r of activeRanges) {
+    const amounts = uniswapV4AmountsForLiquidity(
+      pool.sqrtP,
+      uniswapV4SqrtPriceX96AtTick(r.tickLower),
+      uniswapV4SqrtPriceX96AtTick(r.tickUpper),
+      r.liquidity,
+    );
+    amount0 += amounts.amount0;
+    amount1 += amounts.amount1;
+  }
+  return {
+    pairAmount: pool.pairIsC0 ? amount0 : amount1,
+    tokenAmount: pool.pairIsC0 ? amount1 : amount0,
+    ranges: activeRanges,
+  };
+}
+
+/**
+ * The composition from bendystraw's ModifyLiquidity history: every indexed
+ * delta netted per tick range — a few small queries instead of a log scan.
+ * Null when the index has nothing for this pool, which reads the same as
+ * "not indexed yet", so the caller scans onchain rather than presenting an
+ * empty pool as fact.
+ */
+async function readIndexedPoolComposition(pool: PoolSnapshot): Promise<PoolComposition | null> {
+  try {
+    const ranges = new Map<string, { tickLower: number; tickUpper: number; liquidity: bigint }>();
+    let seen = 0;
+    let offset = 0;
+    let totalCount = 0;
+    do {
+      const result = await queryBendystrawFromBrowser(
+        IndexedPoolLiquidityEventsOperation,
+        {
+          projectId: pool.projectId,
+          chainId: Number(pool.chainId),
+          version: 6,
+          limit: 1000,
+          offset,
+        },
+        Number(pool.chainId),
+      );
+      const page = result.buybackPoolLiquidityEvents?.items ?? [];
+      totalCount = result.buybackPoolLiquidityEvents?.totalCount ?? page.length;
+      if (!page.length) break;
+      offset += page.length;
+      for (const item of page) {
+        if (item.poolId.toLowerCase() !== pool.poolId.toLowerCase()) continue;
+        seen++;
+        const key = `${item.tickLower}:${item.tickUpper}`;
+        const entry = ranges.get(key) ?? {
+          tickLower: item.tickLower,
+          tickUpper: item.tickUpper,
+          liquidity: 0n,
+        };
+        entry.liquidity += BigInt(item.liquidityDelta);
+        ranges.set(key, entry);
+      }
+    } while (offset < totalCount);
+    if (!seen) return null;
+    return compositionFromRanges(pool, [...ranges.values()]);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The pool's current reserves, reconstructed by netting every ModifyLiquidity
  * delta per tick range (all senders — composition covers the whole pool) back to
@@ -476,6 +557,9 @@ async function scanKnownPoolRange(
  * price. Null when the RPC can't return the complete history.
  */
 export async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition | null> {
+  const indexed = await readIndexedPoolComposition(pool);
+  if (indexed) return indexed;
+
   const client = getViemPublicClient(pool.chainId) as PublicClient;
   const cacheKey = `${pool.chainId}:${pool.poolId}`;
   const latest = await client.getBlockNumber();
@@ -578,26 +662,7 @@ export async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComp
     ranges.set(key, entry);
   }
 
-  const activeRanges = [...ranges.values()]
-    .filter((range) => range.liquidity > 0n)
-    .sort((a, b) => a.tickLower - b.tickLower || a.tickUpper - b.tickUpper);
-  let amount0 = 0n;
-  let amount1 = 0n;
-  for (const r of activeRanges) {
-    const amounts = uniswapV4AmountsForLiquidity(
-      pool.sqrtP,
-      uniswapV4SqrtPriceX96AtTick(r.tickLower),
-      uniswapV4SqrtPriceX96AtTick(r.tickUpper),
-      r.liquidity,
-    );
-    amount0 += amounts.amount0;
-    amount1 += amounts.amount1;
-  }
-  const value: PoolComposition = {
-    pairAmount: pool.pairIsC0 ? amount0 : amount1,
-    tokenAmount: pool.pairIsC0 ? amount1 : amount0,
-    ranges: activeRanges,
-  };
+  const value = compositionFromRanges(pool, [...ranges.values()]);
   return value;
 }
 

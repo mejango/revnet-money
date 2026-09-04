@@ -26,6 +26,7 @@ const projectToken = "0x2222222222222222222222222222222222222222";
 
 const pool = {
   chainId: 1,
+  projectId: 1,
   hook: "0x3333333333333333333333333333333333333333",
   key: {
     currency0: zeroAddress,
