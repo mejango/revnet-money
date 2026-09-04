@@ -207,6 +207,19 @@ function unlockBody() {
   document.body.style.overflow = originalBodyOverflow;
 }
 
+/**
+ * Dialogs replace rather than stack: the dialog below a newly opened one stays
+ * open in the top layer but paints nothing (see `[data-covered]` in
+ * globals.css) until the newer one closes. Returns the uncover.
+ */
+function coverDialogsBelow(dialog: HTMLDialogElement) {
+  const covered = Array.from(
+    document.querySelectorAll<HTMLDialogElement>("dialog[open]:not([data-covered])"),
+  ).filter((other) => other !== dialog);
+  covered.forEach((other) => other.setAttribute("data-covered", ""));
+  return () => covered.forEach((other) => other.removeAttribute("data-covered"));
+}
+
 function useNativeModalDialog({
   dialogRef,
   enabled,
@@ -240,6 +253,7 @@ function useNativeModalDialog({
     // ring lit up on every open. Start on the dialog itself (it carries tabIndex -1) instead.
     dialog.focus({ preventScroll: true });
     const releaseTopLayer = registerOpenDialog(dialog);
+    const uncover = coverDialogsBelow(dialog);
     lockBody();
 
     let closingForReact = false;
@@ -258,6 +272,7 @@ function useNativeModalDialog({
     return () => {
       dialog.removeEventListener("cancel", handleCancel);
       dialog.removeEventListener("close", handleClose);
+      uncover();
       releaseTopLayer();
       unlockBody();
       closingForReact = true;

@@ -147,6 +147,16 @@ dialog.ui-dialog::backdrop {
 }
 
 /*
+ * Dialogs replace rather than stack: while a newer dialog is open, the one
+ * below it stays open in the top layer but paints nothing, so there is one
+ * scrim at a time. The dialog shell sets and clears the attribute.
+ */
+dialog[data-covered],
+dialog[data-covered]::backdrop {
+  visibility: hidden;
+}
+
+/*
  * The Para sign-in overlay has to be usable above an open dialog, and the top
  * layer is the only place where that is true, so its host is a dialog too.
  * Para paints its own overlay inside the host, hence the transparent backdrop.

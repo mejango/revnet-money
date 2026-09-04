@@ -55,7 +55,6 @@ import {
   build721PayMetadata,
   buildPayTx,
   effectiveTierPrice,
-  PayPreview,
   previewPay,
   resolvePaymentTerminal,
 } from "@bananapus/nana-sdk-core/v6";
@@ -370,6 +369,8 @@ export function V6PayCard() {
     isFetching: previewLoading,
     isError: previewError,
     isPlaceholderData: previewIsPrevious,
+    isStale: previewIsStale,
+    refetch: refetchPreview,
   } = useQuery({
     queryKey: [
       "v6PayPreview",
@@ -548,7 +549,7 @@ export function V6PayCard() {
   // Preparing runs as an effect so the confirm dialog can open BEFORE a wallet
   // is connected (connect/switch-chain prompts live inside the dialog, old
   // PayDialog style) and re-prepares after an in-dialog connect or chain
-  // switch — always from a fresh route + preview, never a stale quote.
+  // switch. The card's quote is reused unless it is stale.
   useEffect(() => {
     if (!confirmOpen || phase !== "preparing") return;
     if (!address || !publicClient || !selected) return;
@@ -563,64 +564,25 @@ export function V6PayCard() {
 
       let next: PreparedV6Pay;
       if (mode === "pay") {
-        // Re-resolve the route at pay time with a fresh preview so the encoded
-        // minimum never comes from a stale or missing quote (fail closed).
-        let terminal: Address;
-        let routeType: "multi" | "swap";
-        let freshPreview: PayPreview;
-        let directSwap: Awaited<ReturnType<typeof quoteDirectPaySwap>> | null = null;
-        if (metadata) {
-          if (selected.viaRouter) {
-            throw new Error("Item checkout requires a directly accepted token.");
-          }
-          const resolved = await resolvePaymentTerminal(client, {
-            chainId,
-            projectId,
-            token: selected.token,
-          });
-          terminal = resolved.address;
-          routeType = resolved.isRouter ? "swap" : "multi";
-          freshPreview = await previewPay(client, {
-            chainId,
-            terminal,
-            projectId,
-            token: selected.token,
-            amount: amountRaw,
-            beneficiary: address,
-            metadata,
-          });
-        } else {
-          const route = await resolveBestV6PayRoute({
-            client,
-            chainId,
-            projectId,
-            token: selected.token,
-            amount: amountRaw,
-            beneficiary: address,
-          });
-          if (!route) {
-            throw new Error(
-              "Couldn't verify what this payment returns — not sending without a live quote.",
-            );
-          }
-          terminal = route.address;
-          routeType = route.type;
-          freshPreview = route.preview;
-          const pool = await readPoolSnapshot(chainId, projectId)
-            .then((result) => result.pool)
-            .catch(() => null);
-          directSwap = pool
-            ? await quoteDirectPaySwap({
-                client,
-                chainId,
-                poolKey: pool.key,
-                pairIsCurrency0: pool.pairIsC0,
-                paymentToken: selected.token,
-                amount: amountRaw,
-                payPreview: route.preview,
-              }).catch(() => null)
-            : null;
+        if (metadata && selected.viaRouter) {
+          throw new Error("Item checkout requires a directly accepted token.");
         }
+        // The card's live quote is the quote. Only a stale, missing, or
+        // previous-amount quote is refetched here (fail closed either way).
+        const quote =
+          preview && !previewIsPrevious && !previewError && !previewLoading && !previewIsStale
+            ? preview
+            : (await refetchPreview()).data;
+        if (cancelled) return;
+        if (!quote) {
+          throw new Error(
+            "Couldn't verify what this payment returns — not sending without a live quote.",
+          );
+        }
+        let terminal: Address = quote.terminal;
+        let routeType: "multi" | "swap" = quote.routeType;
+        const freshPreview = quote;
+        const directSwap = "directSwap" in quote ? quote.directSwap : null;
 
         // The direct swap quote already carries its 1% slippage floor. Terminal
         // payments derive the same floor from their fresh preview.
