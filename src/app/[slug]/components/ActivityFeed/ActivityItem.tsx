@@ -264,7 +264,7 @@ export function ActivityItemRow({
               </span>
             )}
             {isReserved && (
-              <span className="inline-flex h-5 min-w-7 items-center justify-center border border-amber-600 bg-amber-50 px-1 text-center text-[10px] leading-none text-amber-600">
+              <span className="inline-flex h-5 min-w-7 items-center justify-center border border-violet-600 bg-violet-50 px-1 text-center text-[10px] leading-none text-violet-600">
                 reserved distro
               </span>
             )}
