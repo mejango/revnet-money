@@ -104,11 +104,21 @@ const SAME_TX_ORDER: ActivityEvent["type"][] = [
   "swapSell",
   "mint",
   "autoIssue",
+  "reserved",
+  "reservedSplit",
 ];
 
 function sameTxRank(type: ActivityEvent["type"]): number {
   const rank = SAME_TX_ORDER.indexOf(type);
   return rank === -1 ? SAME_TX_ORDER.length : rank;
+}
+
+function rawTokenCount(event: ActivityEvent): bigint {
+  try {
+    return BigInt(event.rawTokenCount ?? "0");
+  } catch {
+    return 0n;
+  }
 }
 
 /**
@@ -134,7 +144,14 @@ export function groupSameTxEvents(events: ActivityEvent[]): ActivityEvent[] {
 /** Fold one same-tx group into its primary row, the rest carried in `also`. */
 export function foldSameTxActivities(group: ActivityEvent[]): ActivityEvent {
   if (group.length === 1) return group[0];
-  const ordered = [...group].sort((a, b) => sameTxRank(a.type) - sameTxRank(b.type));
+  const ordered = [...group].sort((a, b) => {
+    const byRank = sameTxRank(a.type) - sameTxRank(b.type);
+    if (byRank) return byRank;
+    // Reserved-split receipts read largest first.
+    const left = rawTokenCount(a);
+    const right = rawTokenCount(b);
+    return left < right ? 1 : left > right ? -1 : 0;
+  });
   const amountSource = ordered.find((entry) => entry.baseAmount) ?? ordered[0];
   return {
     ...ordered[0],
@@ -408,6 +425,30 @@ export function mapActivityEvents(
         beneficiary: e.from as Address,
         chainId,
         ...flowAmount(e.amountPaidOut, e.amountPaidOutUsd),
+      });
+    } else if (event.sendReservedTokensToSplitsEvent) {
+      const e = event.sendReservedTokensToSplitsEvent;
+      events.push({
+        id: event.id,
+        type: "reserved",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        beneficiary: e.from as Address,
+        chainId,
+        tokenCount: prettyNumber(new JBProjectToken(BigInt(e.tokenCount)).format(6)),
+      });
+    } else if (event.sendReservedTokensToSplitEvent) {
+      const e = event.sendReservedTokensToSplitEvent;
+      events.push({
+        id: event.id,
+        type: "reservedSplit",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        beneficiary: e.beneficiary as Address,
+        chainId,
+        tokenCount: prettyNumber(new JBProjectToken(BigInt(e.tokenCount)).format(6)),
+        rawTokenCount: String(e.tokenCount),
+        detail: e.splitProjectId > 0 ? `project #${e.splitProjectId}` : undefined,
       });
     }
   }

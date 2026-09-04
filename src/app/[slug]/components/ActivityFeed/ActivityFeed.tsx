@@ -39,7 +39,8 @@ type ActivityCategory =
   | "ruleset"
   | "payout"
   | "buybackSwap"
-  | "buybackPool";
+  | "buybackPool"
+  | "reserved";
 
 const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
   pay: "Payments",
@@ -54,6 +55,7 @@ const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
   payout: "Payouts",
   buybackSwap: "Buyback swaps",
   buybackPool: "Buyback pools",
+  reserved: "Reserved tokens",
 };
 
 export function activityCategory(event: ActivityEvent): ActivityCategory | null {
@@ -83,6 +85,9 @@ export function activityCategory(event: ActivityEvent): ActivityCategory | null 
       return "buybackSwap";
     case "buybackPool":
       return "buybackPool";
+    case "reserved":
+    case "reservedSplit":
+      return "reserved";
     case "operatorPermissionsSet":
       return null;
   }
@@ -232,9 +237,9 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
         {hasMore && (
           <button
             onClick={() => setVisibleCount((prev) => prev + LOAD_MORE_COUNT)}
-            className="w-full mt-3 py-2 text-sm font-medium text-zinc-600 border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors"
+            className="mt-3 min-h-8 text-xs font-medium text-zinc-500 underline underline-offset-2 hover:text-zinc-900"
           >
-            Load more
+            more
           </button>
         )}
       </ProfilesProvider>
