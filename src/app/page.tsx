@@ -1,7 +1,6 @@
 import { Nav } from "@/components/layout/Nav";
 import Image from "next/image";
 import Link from "next/link";
-import { Suspense } from "react";
 import { HomepageDiscovery } from "./HomepageDiscovery";
 
 const WHY_REVNET_POINTS = [
@@ -69,9 +68,7 @@ export default function Page() {
     <>
       <Nav />
       <div className="mx-auto mt-4 max-w-[1800px] px-6 sm:mt-16 sm:px-8">
-        <Suspense fallback={<div className="min-h-[520px] animate-pulse" />}>
-          <HomepageDiscovery />
-        </Suspense>
+        <HomepageDiscovery />
 
         <div className="border border-zinc-100 mt-20"></div>
 
