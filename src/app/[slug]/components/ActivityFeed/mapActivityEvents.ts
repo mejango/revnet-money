@@ -163,7 +163,9 @@ export function mapActivityEvents(
   // is the payer's actual receipt. Same idea for manual mints inside auto-issue txs.
   const mintCoveredTxs = new Set<string>();
   const autoIssueTxs = new Set<string>();
-  const buySwapAmountByTx = new Map<string, string | number>();
+  // Every buy swap in the tx, in order: a tx with two pays has two swaps and
+  // two remints, and each mint pairs with its own swap, not the last one.
+  const buySwapAmountsByTx = new Map<string, (string | number)[]>();
   for (const event of items) {
     if (!event) continue;
     const key = `${event.chainId}:${event.txHash}`;
@@ -173,7 +175,10 @@ export function mapActivityEvents(
     }
     if (event.autoIssueEvent) autoIssueTxs.add(key);
     if (event.swapEvent && event.swapEvent.direction.toLowerCase() !== "sell") {
-      buySwapAmountByTx.set(key, event.swapEvent.projectTokenAmount);
+      buySwapAmountsByTx.set(key, [
+        ...(buySwapAmountsByTx.get(key) ?? []),
+        event.swapEvent.projectTokenAmount,
+      ]);
     }
   }
 
@@ -271,7 +276,7 @@ export function mapActivityEvents(
       // Paired with a same-tx buyback swap, this mint is the reserved-rate
       // remint of the swap output — name the reserve instead of "minted".
       const reservePercent = reservePercentLabel(
-        buySwapAmountByTx.get(txKey),
+        buySwapAmountsByTx.get(txKey)?.shift(),
         e.beneficiaryTokenCount,
       );
       events.push({
@@ -291,7 +296,7 @@ export function mapActivityEvents(
       // The buyback remint arrives as a manual mint (a direct mintTokensOf
       // call) — same reserved-rate story as the mintTokensEvent branch.
       const reservePercent = reservePercentLabel(
-        buySwapAmountByTx.get(txKey),
+        buySwapAmountsByTx.get(txKey)?.shift(),
         e.beneficiaryTokenCount,
       );
       events.push({

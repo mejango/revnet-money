@@ -228,6 +228,51 @@ describe("mapActivityEvents", () => {
     expect(manualRow?.detail).toBe("after the 40% split");
     expect(manualRow?.tokenCount).toBe("17k");
   });
+
+  it("pairs each remint with its own swap when one tx holds two buyback pays", () => {
+    const swapOf = (id: string, projectTokenAmount: string): ActivityEventItem => ({
+      ...payItem({ payEvent: null }),
+      id,
+      swapEvent: {
+        txHash: "0xaaa",
+        timestamp: 1_700_000_000,
+        direction: "buy",
+        terminalTokenAmount: "1",
+        projectTokenAmount,
+        caller: "0x498581ff718922c3f8e6a244956af099b2652b2b",
+        from: "0x823b92d6a4b2aed4b15675c7917c9f922ea8adad",
+      },
+    });
+    const mintOf = (id: string, beneficiaryTokenCount: string): ActivityEventItem => ({
+      ...payItem({ payEvent: null }),
+      id,
+      mintTokensEvent: {
+        id: `${id}-event`,
+        txHash: "0xaaa",
+        timestamp: 1_700_000_000,
+        from: "0x2222222222222222222222222222222222222222",
+        caller: "0x2222222222222222222222222222222222222222",
+        beneficiary: "0x1111111111111111111111111111111111111111",
+        beneficiaryTokenCount,
+        memo: null,
+      },
+    });
+
+    // 100 → 62 and 200 → 124 are both a 38% reserve; pairing every mint with
+    // the last swap read the first one as 69%.
+    const events = mapActivityEvents(
+      [
+        swapOf("swap-1", "100000000000000000000"),
+        mintOf("mint-1", "62000000000000000000"),
+        swapOf("swap-2", "200000000000000000000"),
+        mintOf("mint-2", "124000000000000000000"),
+      ],
+      () => ({ tokenSymbol: "ETH", decimals: 18 }),
+    );
+
+    expect(events.find((event) => event.id === "mint-1")?.detail).toBe("after the 38% split");
+    expect(events.find((event) => event.id === "mint-2")?.detail).toBe("after the 38% split");
+  });
 });
 
 describe("projectFeedTokenContext", () => {

@@ -11,12 +11,13 @@ import type {
   IndexedPoolSwapsQuery,
 } from "@/lib/bendystraw/types";
 import type { PoolReservePoint } from "@/lib/priceSeries";
-import { downsampleTimeSeries, JBChainId } from "@bananapus/nana-sdk-core";
+import { downsampleTimeSeries, JBChainId, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import {
   uniswapV4AmountsForLiquidity,
   uniswapV4PriceFromSqrtPriceX96,
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
+import { zeroAddress } from "viem";
 import type { PriceDataPoint } from "./getTokenPriceChartData";
 
 const PAGE_SIZE = 1000;
@@ -26,7 +27,8 @@ type RawPool = IndexedBuybackPoolsQuery["buybackPoolEvents"]["items"][number];
 
 type PoolAmounts = { tokenAmount: bigint; pairAmount: bigint };
 
-type RawLiquidityEvent = IndexedPoolLiquidityEventsQuery["buybackPoolLiquidityEvents"]["items"][number];
+type RawLiquidityEvent =
+  IndexedPoolLiquidityEventsQuery["buybackPoolLiquidityEvents"]["items"][number];
 type Position = { lower: bigint; upper: bigint; liquidity: bigint };
 
 /** Applies one liquidity change to the set of open positions, keyed by NFT id. */
@@ -80,7 +82,11 @@ function replayPoolReserves(
 ): PoolReservePoint[] {
   const positions = new Map<string, Position>();
   const reservesAt = (timestamp: number, sqrtPriceX96: bigint): PoolReservePoint[] => {
-    const ammPrice = v4PriceFromSqrtPriceX96(sqrtPriceX96, projectTokenIsCurrency0, terminalDecimals);
+    const ammPrice = v4PriceFromSqrtPriceX96(
+      sqrtPriceX96,
+      projectTokenIsCurrency0,
+      terminalDecimals,
+    );
     if (!ammPrice) return [];
     const { tokenAmount, pairAmount } = poolAmountsAt(
       positions.values(),
@@ -89,7 +95,15 @@ function replayPoolReserves(
     );
     const pair = Number(pairAmount) / 10 ** terminalDecimals;
     const token = Number(tokenAmount) / 1e18;
-    return [{ timestamp, pairAmount: pair, tokenAmount: token, pairValue: pair, tokenValue: token * ammPrice }];
+    return [
+      {
+        timestamp,
+        pairAmount: pair,
+        tokenAmount: token,
+        pairValue: pair,
+        tokenValue: token * ammPrice,
+      },
+    ];
   };
 
   // One ordered timeline; a liquidity change in the same second as a trade applies first,
@@ -105,7 +119,8 @@ function replayPoolReserves(
     if ("event" in item) {
       applyLiquidityEvent(positions, item.event);
       seenLiquidity = true;
-      if (item.event.sqrtPriceX96) out.push(...reservesAt(item.at, BigInt(item.event.sqrtPriceX96)));
+      if (item.event.sqrtPriceX96)
+        out.push(...reservesAt(item.at, BigInt(item.event.sqrtPriceX96)));
     } else if (seenLiquidity) {
       out.push(...reservesAt(item.at, BigInt(item.price.sqrtPriceX96)));
     }
@@ -168,9 +183,16 @@ export async function getV4AmmPriceHistory({
     pools.push(...page);
     if (!page.length) break;
   } while (pools.length < poolTotalCount);
+  // The hook stores native ETH pools under address(0), while the project's
+  // accounting token is the 0xEEEe sentinel — normalize before matching or
+  // every ETH-accounting project reads as having no pool.
+  const wantedTerminalToken =
+    terminalToken?.toLowerCase() === NATIVE_TOKEN.toLowerCase()
+      ? zeroAddress
+      : terminalToken?.toLowerCase();
   const pool = poolId
     ? pools.find((item) => item.poolId.toLowerCase() === poolId.toLowerCase())
-    : pools.find((item) => item.terminalToken.toLowerCase() === terminalToken?.toLowerCase());
+    : pools.find((item) => item.terminalToken.toLowerCase() === wantedTerminalToken);
   if (!pool) return { data: [], hasPool: false, reserves: [] };
 
   const swaps: RawSwap[] = [];
