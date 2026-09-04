@@ -15,6 +15,11 @@ const SECURITY_HEADERS = [
 /** @type {import('next').NextConfig} */
 module.exports = {
   reactStrictMode: true,
+  // The git SHA is set at build and run time by the Dockerfile. Next appends it
+  // to asset URLs and navigation requests, and hard-navigates a tab whose
+  // deployment differs from the server's instead of failing on stale chunks
+  // and Server Action IDs.
+  deploymentId: process.env.NEXT_PUBLIC_VERSION,
   output: "standalone",
   outputFileTracingRoot: __dirname,
   // Compile the browser proof route only in deterministic browser builds. It

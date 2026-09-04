@@ -74,7 +74,11 @@ export function HomepageDiscovery() {
         </Suspense>
       }
       activity={
-        <DashboardColumn title="Latest" headingClassName="hidden sm:flex">
+        <DashboardColumn
+          title="Latest"
+          headingClassName="hidden sm:flex"
+          panelClassName="xl:h-auto xl:min-h-0 xl:flex-1"
+        >
           <Suspense
             fallback={
               <div className="px-4 py-4">
