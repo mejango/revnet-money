@@ -69,7 +69,7 @@ export function V6AllCard() {
     <div className="@container">
       <p className="text-md text-black font-light italic mb-2">
         {formatTokenSymbol(token)} owners are accounts who either paid in, received splits, received
-        auto issuance, or traded for them on the secondary market.
+        auto issuance, or traded for them on the market.
       </p>
       {participantsQuery.isError ? (
         <p className="mb-3 text-sm text-red-600">Owner balances are temporarily unavailable.</p>

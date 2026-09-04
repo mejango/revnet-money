@@ -18,7 +18,9 @@ export type Profile = {
   social?: { uid?: number; follower?: number; following?: number };
 };
 
-const priority: Record<string, number> = { farcaster: 3, ens: 2, ethereum: 1 };
+// ENS first: a name someone registered onchain is how the site addresses
+// them; a Farcaster handle is a fallback for accounts with no name.
+const priority: Record<string, number> = { ens: 3, farcaster: 2, ethereum: 1 };
 
 export async function fetchProfiles(addresses: string[], chunkSize = 10) {
   const uniqueAddresses = Array.from(new Set(addresses.map((a) => a.toLowerCase()))).sort();
