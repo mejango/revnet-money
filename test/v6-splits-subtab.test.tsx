@@ -135,10 +135,11 @@ describe("V6SplitsSubtab stage selection", () => {
   it("hands the change dialog the stage INDEX, not the ruleset id", () => {
     render(<V6SplitsSubtab projects={projects} />);
 
-    expect(dialogProps.last?.stageIdx).toBe(0);
-
-    fireEvent.click(screen.getByRole("button", { name: /^Stage 2/ }));
+    // Both fixture stages have started, so the tabs open on the current one.
     expect(dialogProps.last?.stageIdx).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Stage 1/ }));
+    expect(dialogProps.last?.stageIdx).toBe(0);
     expect(dialogProps.last).not.toHaveProperty("stageId");
   });
 });
@@ -146,6 +147,7 @@ describe("V6SplitsSubtab stage selection", () => {
 describe("V6SplitsSubtab split percentages", () => {
   it("keeps a fractional split limit intact", () => {
     render(<V6SplitsSubtab projects={projects} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Stage 1/ }));
 
     expect(screen.getByText(/The split limit for this stage is/)).toHaveTextContent("2.5%");
     // 100% of a 2.5% limit is 2.5% of issuance — not the 3% a rounded limit gives.
@@ -173,6 +175,7 @@ describe("V6SplitsSubtab per-chain stage resolution", () => {
     reads.extraChainStages = { 10: 1 };
 
     render(<V6SplitsSubtab projects={twoChains} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Stage 1/ }));
     expect(reads.splitsContracts).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: /^Stage 2/ }));
@@ -189,6 +192,7 @@ describe("V6SplitsSubtab per-chain stage resolution", () => {
     reads.extraChainStages = { 10: 0 };
 
     render(<V6SplitsSubtab projects={twoChains} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Stage 1/ }));
 
     expect(reads.splitsContracts).toHaveLength(1);
     expect(screen.getByText("This chain has no stage 1.")).toBeTruthy();

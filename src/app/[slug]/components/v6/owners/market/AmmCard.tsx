@@ -563,16 +563,24 @@ function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; token
         <p className="mt-1 text-sm text-zinc-400">No buyback hook configured on this chain.</p>
       ) : !pool ? (
         <p className="mt-1 text-sm text-zinc-400">This pool is not initialized yet.</p>
-      ) : compositionQuery.isLoading ? (
-        <SkeletonLines lines={3} className="mt-2" />
-      ) : composition == null ? (
-        <p className="mt-2 text-sm text-zinc-400">
-          The RPC could not return the complete pool history, so liquidity is unavailable.
-        </p>
       ) : (
         <>
+          {/* The provider table has its own (fast) source; only the depth
+              bands wait on the composition. */}
           <LiquidityProviders pool={pool} tokenSymbol={tokenSymbol} />
-          <LiquidityVisualization pool={pool} composition={composition} tokenSymbol={tokenSymbol} />
+          {compositionQuery.isLoading ? (
+            <SkeletonLines lines={3} className="mt-2" />
+          ) : composition == null ? (
+            <p className="mt-2 text-sm text-zinc-400">
+              The RPC could not return the complete pool history, so liquidity is unavailable.
+            </p>
+          ) : (
+            <LiquidityVisualization
+              pool={pool}
+              composition={composition}
+              tokenSymbol={tokenSymbol}
+            />
+          )}
         </>
       )}
     </div>

@@ -560,6 +560,7 @@ export const BROWSER_BENDYSTRAW_OPERATIONS = [
   OwnedNftsOperation,
   MintNftEventsOperation,
   IndexedLpPositionsOperation,
+  IndexedPoolLiquidityEventsOperation,
 ] as const;
 
 export type BrowserBendystrawOperation = (typeof BROWSER_BENDYSTRAW_OPERATIONS)[number];
