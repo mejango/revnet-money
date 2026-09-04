@@ -190,7 +190,7 @@ export function ActivityItemRow({
   const isInflow = isPayEvent || event.type === "addToBalance" || event.type === "swapBuy";
   const isOutflow = event.type === "out" || event.type === "swapSell";
   // A reserved distribution leads with the count the way value flows lead
-  // with the amount: "3.6M ART" tagged "reserved".
+  // with the amount: "3.6M ART" tagged "reserved distro".
   const isReserved = event.type === "reserved";
   const hasTitle = !!event.baseAmount || isInflow || isOutflow || isReserved;
   const distributed = distributesReserved(event);
@@ -265,7 +265,7 @@ export function ActivityItemRow({
             )}
             {isReserved && (
               <span className="inline-flex h-5 min-w-7 items-center justify-center border border-amber-600 bg-amber-50 px-1 text-center text-[10px] leading-none text-amber-600">
-                reserved
+                reserved distro
               </span>
             )}
             {/* No amount and no flow tag = nothing for the title slot; the

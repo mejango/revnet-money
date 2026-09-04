@@ -98,7 +98,7 @@ const ACTIVITY_EVENT_FIELDS = `
   }
   sendReservedTokensToSplitsEvent { txHash timestamp from tokenCount }
   sendReservedTokensToSplitEvent {
-    txHash timestamp from tokenCount beneficiary splitProjectId
+    id txHash timestamp from tokenCount beneficiary splitProjectId
   }
 `;
 
@@ -413,6 +413,26 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           from
           beneficiary
           count
+          project { projectId handle version chainId name tokenSymbol decimals }
+        }
+      }
+      beneficiarySendReservedTokensToSplitEvents: sendReservedTokensToSplitEvents(
+        where: { AND: [{ beneficiary: $address }, { version: 6 }] }
+        orderBy: "timestamp"
+        orderDirection: "desc"
+        limit: $limit
+        offset: $offset
+      ) {
+        totalCount
+        items {
+          id
+          chainId
+          txHash
+          timestamp
+          from
+          beneficiary
+          tokenCount
+          splitProjectId
           project { projectId handle version chainId name tokenSymbol decimals }
         }
       }

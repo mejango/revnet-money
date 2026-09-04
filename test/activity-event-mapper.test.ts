@@ -296,6 +296,7 @@ describe("reserved distributions", () => {
     id: "split-1",
     txHash: "0xreserved",
     sendReservedTokensToSplitEvent: {
+      id: "split-event-1",
       txHash: "0xreserved",
       timestamp: 1_700_000_000,
       from: "0x2222222222222222222222222222222222222222",
@@ -309,6 +310,7 @@ describe("reserved distributions", () => {
     id: "split-2",
     txHash: "0xreserved",
     sendReservedTokensToSplitEvent: {
+      id: "split-event-2",
       txHash: "0xreserved",
       timestamp: 1_700_000_000,
       from: "0x2222222222222222222222222222222222222222",

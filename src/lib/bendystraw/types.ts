@@ -310,7 +310,12 @@ export type ActivityEventsQuery = {
         | null;
       sendReservedTokensToSplitsEvent?: (ActivityBase & { tokenCount: BigNumberish }) | null;
       sendReservedTokensToSplitEvent?:
-        | (ActivityBase & { tokenCount: BigNumberish; beneficiary: string; splitProjectId: number })
+        | (ActivityBase & {
+            id: string;
+            tokenCount: BigNumberish;
+            beneficiary: string;
+            splitProjectId: number;
+          })
         | null;
     }>;
   };
@@ -369,6 +374,10 @@ export type AccountActivityEventsQuery = {
   beneficiaryAutoIssueEvents?: {
     totalCount?: number;
     items: BeneficiaryRow<"autoIssueEvent">[];
+  };
+  beneficiarySendReservedTokensToSplitEvents?: {
+    totalCount?: number;
+    items: BeneficiaryRow<"sendReservedTokensToSplitEvent">[];
   };
 };
 
