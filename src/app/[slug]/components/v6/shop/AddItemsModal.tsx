@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import {
@@ -26,7 +27,7 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { jb721TiersHookAbi, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { jb721TiersHookAbi, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { PublicClient } from "viem";
@@ -316,7 +317,7 @@ export function AddItemsModal({
                 >
                   <div className="inline-flex min-h-11 items-center gap-2 border border-teal-500 bg-teal-50 px-3 text-sm font-medium text-teal-800">
                     <ChainLogo chainId={chainId} width={22} height={22} />
-                    <span>{JB_CHAINS[chainId].name}</span>
+                    <span>{chainDisplayName(chainId)}</span>
                   </div>
                 </div>
               </div>
@@ -376,7 +377,7 @@ export function AddItemsModal({
               </span>
             </SummaryRow>
           ))}
-          <SummaryRow label="On">{JB_CHAINS[chainId].name}</SummaryRow>
+          <SummaryRow label="On">{chainDisplayName(chainId)}</SummaryRow>
         </TxConfirmDialog>
       ) : null}
     </Dialog>

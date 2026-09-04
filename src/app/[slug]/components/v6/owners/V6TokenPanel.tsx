@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
@@ -138,7 +139,7 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
           ]);
 
           if (!controller || controller === zeroAddress) {
-            throw new Error(`No controller is configured on ${JB_CHAINS[chainId].name}.`);
+            throw new Error(`No controller is configured on ${chainDisplayName(chainId)}.`);
           }
 
           let name: string | null = null;
@@ -496,7 +497,7 @@ function TokenEditDialog({
   };
 
   const permissionName = deployed ? "SET_TOKEN_METADATA" : "DEPLOY_ERC20";
-  const chainNames = states.map((state) => JB_CHAINS[state.chainId].name).join(", ");
+  const chainNames = states.map((state) => chainDisplayName(state.chainId)).join(", ");
   const relayed = states.length > 1;
   const formAction = deployed ? "Save token" : "Deploy token";
   const actionLabel = relayed ? "Pay and submit" : formAction;

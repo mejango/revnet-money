@@ -1,4 +1,4 @@
-import { MAINNET_CHAIN_IDS, TESTNET_CHAIN_IDS } from "@/app/constants";
+import { chainDisplayName, MAINNET_CHAIN_IDS, TESTNET_CHAIN_IDS } from "@/app/constants";
 import {
   Select,
   SelectContent,
@@ -130,7 +130,7 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
               chain.id as JBChainId,
             ),
           )
-          .map(({ chain, name }) => (
+          .map(({ chain }) => (
             <label key={chain.id} className="flex items-center gap-2">
               <FormField
                 type="checkbox"
@@ -143,7 +143,7 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
                   handleChainSelect(chain.id as JBChainId, e.target.checked);
                 }}
               />
-              {name}
+              {chainDisplayName(chain.id)}
             </label>
           ))}
       </div>

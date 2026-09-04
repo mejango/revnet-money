@@ -1,3 +1,4 @@
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { ChainSelector } from "@/components/ChainSelector";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
 import { cn, sortChains } from "@/lib/utils";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { defaultStageData, PERMANENTLY_DISABLED_OPERATOR } from "../constants";
 import { getResolvedIssuance } from "../helpers/calculatePickupIssuance";
@@ -453,11 +454,11 @@ export function AddStageDialog({
                                                     height={20}
                                                   />
                                                   <span className="text-zinc-400">
-                                                    {JB_CHAINS[chainId].name}
+                                                    {chainDisplayName(chainId)}
                                                   </span>
                                                 </div>
                                                 <input
-                                                  aria-label={`${JB_CHAINS[chainId].name} beneficiary`}
+                                                  aria-label={`${chainDisplayName(chainId)} beneficiary`}
                                                   className={perChainInputClassName}
                                                   placeholder="0x"
                                                   value={entry?.address ?? ""}

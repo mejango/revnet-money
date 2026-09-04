@@ -1,3 +1,4 @@
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { JB_CHAINS, JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
+import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
@@ -443,7 +444,7 @@ export function ReallocateDialog({
               error={borrowStatus.startsWith("error") ? statusText : null}
             >
               <SummaryRow label="Loan">
-                #{selectedLoan?.id} on {JB_CHAINS[Number(cashOutChainId) as JBChainId].name}
+                #{selectedLoan?.id} on {chainDisplayName(Number(cashOutChainId) as JBChainId)}
                 <span className="block text-xs text-zinc-500">Replaced by a new loan id</span>
               </SummaryRow>
               <SummaryRow label="Adds collateral">

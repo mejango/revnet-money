@@ -1,3 +1,4 @@
+import { chainDisplayName } from "@/app/constants";
 import {
   arbitrum,
   arbitrumSepolia,
@@ -11,7 +12,6 @@ import {
 import { etherscanLink } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
-  JB_CHAINS,
   JBChainId,
   jbContractAddress,
   jbControllerAbi,
@@ -83,7 +83,7 @@ export function viemChainOf(chainId: JBChainId): Chain | undefined {
 }
 
 export function chainName(chainId: JBChainId): string {
-  return JB_CHAINS[chainId]?.name ?? `Chain ${chainId}`;
+  return chainDisplayName(chainId);
 }
 
 export function explorerAddressUrl(chainId: JBChainId, address: string): string | null {

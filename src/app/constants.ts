@@ -53,6 +53,24 @@ export const SUPPORTED_CHAIN_IDS: readonly JBChainId[] = Object.values(JB_CHAINS
   .map((metadata) => metadata.chain.id as JBChainId)
   .sort((a, b) => chainSortIndex(a) - chainSortIndex(b));
 
+/**
+ * Chain name for the UI. The SDK keeps the chain definition's own name so it
+ * never drifts from wallets ("OP Mainnet", "Arbitrum One"); the site says the
+ * short everyday names instead.
+ */
+const CHAIN_DISPLAY_NAMES: Partial<Record<number, string>> = {
+  [optimism.id]: "Optimism",
+  [arbitrum.id]: "Arbitrum",
+  [optimismSepolia.id]: "Optimism Sepolia",
+  [arbitrumSepolia.id]: "Arbitrum Sepolia",
+};
+
+export function chainDisplayName(chainId: number): string {
+  return (
+    CHAIN_DISPLAY_NAMES[chainId] ?? JB_CHAINS[chainId as JBChainId]?.name ?? `Chain ${chainId}`
+  );
+}
+
 export function isSupportedChainId(chainId: number): chainId is JBChainId {
   return chainId in JB_CHAINS;
 }

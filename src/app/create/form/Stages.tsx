@@ -1,3 +1,5 @@
+import { IssuanceLadder } from "@/app/[slug]/components/v6/terms/IssuanceLadder";
+import type { ChartStage } from "@/app/[slug]/components/v6/terms/chartUtils";
 import { Button } from "@/components/ui/button";
 import {
   Lock as LockClosedIcon,
@@ -9,12 +11,40 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { FieldArray } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
+import { useMemo } from "react";
+import { parseUnits } from "viem";
 import { getCurrentStageDuration, getResolvedIssuance } from "../helpers/calculatePickupIssuance";
 import { AddStageDialog } from "./AddStageDialog";
 import { useCreateForm } from "./useCreateForm";
 
 export function Stages({ disabled = false }: { disabled?: boolean }) {
   const { values, revnetTokenSymbol, issuanceBaseCurrencySymbol } = useCreateForm();
+
+  // Pinned at mount so stage 1's start never drifts past the ladder's own "now".
+  const chartNow = useMemo(() => Math.floor(Date.now() / 1000), []);
+  // The stages as chart input, mirroring parseDeployData's start and cut math.
+  const chartStages: ChartStage[] = [];
+  values.stages.forEach((stage, index) => {
+    const futureStart = Number(values.stages[0].futureStartTimestamp);
+    const start =
+      index === 0
+        ? futureStart > 0
+          ? futureStart
+          : chartNow
+        : chartStages[index - 1].start +
+          Number(getCurrentStageDuration(stage, values.stages[index - 1])) * 86_400;
+    let weight = 0n;
+    try {
+      weight = parseUnits(stage.initialIssuance || "0", 18);
+    } catch {}
+    chartStages.push({
+      start,
+      duration: Math.floor(Number(stage.priceCeilingIncreaseFrequency) * 86_400) || 0,
+      weight,
+      weightCutPercent: Math.round((Number(stage.priceCeilingIncreasePercentage) || 0) * 1e7),
+      inheritsWeight: Boolean(stage.pickUpFromPrevious) && index > 0,
+    });
+  });
 
   const getDynamicDuration = (currentStageIndex: number): number => {
     if (currentStageIndex >= values.stages.length - 1) {
@@ -154,6 +184,23 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
                 Add stage <PlusIcon className="h-3 w-3" />
               </Button>
             </AddStageDialog>
+            {chartStages.some((stage) => stage.weight > 0n || stage.inheritsWeight) ? (
+              <div className="mt-6">
+                <p className="text-sm text-zinc-500">
+                  Preview {formatTokenSymbol(values.tokenSymbol) ?? "token"} issuance price over
+                  time with the above stages:
+                </p>
+                <div className="mt-2 border border-zinc-200 p-4">
+                  <IssuanceLadder
+                    stages={chartStages}
+                    symbol={formatTokenSymbol(values.tokenSymbol) ?? "tokens"}
+                    baseSymbol={issuanceBaseCurrencySymbol}
+                    defaultYears={91 / 365}
+                    viewHeight={70}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       />

@@ -1,3 +1,4 @@
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -19,7 +20,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { getRevnetLoanContract, JB_CHAINS, revLoansAbi } from "@bananapus/nana-sdk-core";
+import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
 import {
@@ -902,7 +903,7 @@ export function RepayDialog({
                 <SummaryRow label="Returns">
                   {collateralToReturn} {tokenSymbol}
                 </SummaryRow>
-                <SummaryRow label="On">{JB_CHAINS[chainId].name}</SummaryRow>
+                <SummaryRow label="On">{chainDisplayName(chainId)}</SummaryRow>
                 <SummaryRow label="Pays now">
                   {amountToPayNow !== undefined
                     ? `${formatUnits(amountToPayNow, baseTokenDecimals)} ${baseTokenSymbol}`
@@ -922,7 +923,7 @@ export function RepayDialog({
                 ) : null}
               </>
             ) : (
-              <SummaryRow label="On">{JB_CHAINS[chainId].name}</SummaryRow>
+              <SummaryRow label="On">{chainDisplayName(chainId)}</SummaryRow>
             )}
             <SummaryRow label="Authorizes up to">
               {formatUnits(finalRepayAmount, baseTokenDecimals)} {baseTokenSymbol}

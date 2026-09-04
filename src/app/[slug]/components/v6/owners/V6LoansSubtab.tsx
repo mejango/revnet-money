@@ -163,8 +163,8 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
       <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} />
 
       <p className="text-md text-black font-light italic mb-2">
-        Loans borrow against your {tokenSymbol} as collateral through REVLoans. Repay to reclaim
-        collateral, or refinance to borrow against appreciated collateral.
+        Loans borrow against your {tokenSymbol} as collateral through the revnet itself. Repay to
+        reclaim collateral, or refinance to borrow against appreciated collateral.
       </p>
 
       <LoanDetailsTable
