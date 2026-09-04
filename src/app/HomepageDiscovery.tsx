@@ -26,11 +26,13 @@ import { TopProjectsTable } from "./TopProjectsTable";
 
 type HomepageProject = IndexedProjectSummary & { issuanceFingerprint: number[] };
 
-async function getHomepageProjects(): Promise<HomepageProject[]> {
+async function getHomepageProjects(
+  orderBy: "trendingScore" | "createdAt",
+): Promise<HomepageProject[]> {
   try {
     const data = await queryBendystraw(mainnet.id, IndexedProjectsOperation, {
       where: { version: 6, isRevnet: true },
-      orderBy: "trendingScore",
+      orderBy,
       orderDirection: "desc",
       limit: 60,
       offset: 0,
@@ -88,7 +90,6 @@ export function HomepageDiscovery() {
         <DashboardColumn
           title="Trending"
           headingClassName="hidden xl:flex"
-          panelClassName="xl:h-auto xl:flex-1"
         >
           <Suspense fallback={<ProjectRowsSkeleton rows={8} />}>
             <TrendingPanel />
@@ -96,9 +97,24 @@ export function HomepageDiscovery() {
         </DashboardColumn>
       }
       top={
-        <DashboardColumn title="Top" headingClassName="hidden xl:flex">
+        <DashboardColumn
+          title="Top"
+          headingClassName="hidden xl:flex"
+          panelClassName="xl:h-auto xl:min-h-0 xl:flex-1"
+        >
           <Suspense fallback={<ProjectRowsSkeleton rows={9} />}>
             <TopProjectsTable />
+          </Suspense>
+        </DashboardColumn>
+      }
+      newProjects={
+        <DashboardColumn
+          title="New"
+          headingClassName="hidden xl:flex"
+          panelClassName="xl:h-auto xl:min-h-0 xl:flex-1"
+        >
+          <Suspense fallback={<ProjectRowsSkeleton rows={8} />}>
+            <NewPanel />
           </Suspense>
         </DashboardColumn>
       }
@@ -121,7 +137,42 @@ async function ActivityPanel() {
 }
 
 async function TrendingPanel() {
-  return <ProjectRows projects={await getHomepageProjects()} />;
+  return (
+    <ProjectRows
+      projects={await getHomepageProjects("trendingScore")}
+      detail={(project) => (
+        <>
+          <span className="block text-[10px] uppercase tracking-wide text-zinc-400">Recent</span>
+          <span className="block">
+            Payments:{" "}
+            <span className="tabular-nums text-zinc-600">
+              {(project.trendingPaymentsCount ?? 0).toLocaleString("en-US")}
+            </span>
+          </span>
+          <span className="block">
+            Volume:{" "}
+            <span className="tabular-nums text-zinc-600">{formatRecentVolume(project)}</span>
+          </span>
+        </>
+      )}
+    />
+  );
+}
+
+async function NewPanel() {
+  return (
+    <ProjectRows
+      projects={await getHomepageProjects("createdAt")}
+      detail={(project) => (
+        <span className="block">
+          Launched:{" "}
+          <span className="tabular-nums text-zinc-600">
+            {formatLaunched(project.createdAt)}
+          </span>
+        </span>
+      )}
+    />
+  );
 }
 
 function ReservesSkeleton() {
@@ -184,7 +235,13 @@ function DashboardColumn({
   );
 }
 
-function ProjectRows({ projects }: { projects: HomepageProject[] }) {
+function ProjectRows({
+  projects,
+  detail,
+}: {
+  projects: HomepageProject[];
+  detail: (project: HomepageProject) => ReactNode;
+}) {
   if (!projects.length)
     return (
       <p className="flex min-h-[420px] items-center justify-center px-6 text-center text-sm text-zinc-500">
@@ -221,21 +278,7 @@ function ProjectRows({ projects }: { projects: HomepageProject[] }) {
                   {name}
                 </span>
                 <span className="mt-0.5 block text-xs leading-snug text-zinc-500">
-                  <span className="block text-[10px] uppercase tracking-wide text-zinc-400">
-                    Recent
-                  </span>
-                  <span className="block">
-                    Payments:{" "}
-                    <span className="tabular-nums text-zinc-600">
-                      {(project.trendingPaymentsCount ?? 0).toLocaleString("en-US")}
-                    </span>
-                  </span>
-                  <span className="block">
-                    Volume:{" "}
-                    <span className="tabular-nums text-zinc-600">
-                      {formatRecentVolume(project)}
-                    </span>
-                  </span>
+                  {detail(project)}
                 </span>
               </span>
               <ChainLogo chainId={chainId} width={16} height={16} />
@@ -245,6 +288,15 @@ function ProjectRows({ projects }: { projects: HomepageProject[] }) {
       })}
     </ol>
   );
+}
+
+/** Compact enough for the mono column: "just now", "7m ago", "3h ago", "12d ago". */
+function formatLaunched(createdAt: number): string {
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000) - createdAt);
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 }
 
 function formatRecentVolume(project: IndexedProjectSummary) {

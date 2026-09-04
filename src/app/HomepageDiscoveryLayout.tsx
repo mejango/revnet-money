@@ -2,13 +2,14 @@
 
 import { useState, type ReactNode } from "react";
 
-type Feed = "activity" | "trending" | "top";
+type Feed = "activity" | "trending" | "top" | "new";
 type RankingFeed = Exclude<Feed, "activity">;
 
 const FEEDS: readonly { id: Feed; label: string }[] = [
   { id: "top", label: "Top" },
   { id: "trending", label: "Trending" },
   { id: "activity", label: "Latest" },
+  { id: "new", label: "New" },
 ];
 
 const RANKING_FEEDS = FEEDS.filter(
@@ -47,9 +48,9 @@ function FeedTabs({
           onClick={() => onChange(feed.id)}
           // These are section headings that happen to be selectable, so they
           // carry the same type scale as the standalone "Latest" heading.
-          // Phones spread the feeds edge to edge in equal thirds; wider screens
+          // Phones spread the four feeds edge to edge in a smaller mono size; wider screens
           // keep them as a left-aligned row.
-          className={`min-h-11 flex-1 shrink-0 border-b-2 text-center text-xl font-semibold transition-colors sm:flex-none sm:text-left md:text-2xl ${
+          className={`min-h-11 flex-1 shrink-0 border-b-2 text-center text-lg font-semibold transition-colors sm:flex-none sm:text-left sm:text-xl md:text-2xl ${
             active === feed.id
               ? "border-teal-600 text-teal-700"
               : "border-transparent text-zinc-500 hover:text-zinc-900"
@@ -68,12 +69,14 @@ export function HomepageDiscoveryLayout({
   activity,
   trending,
   top,
+  newProjects,
 }: {
   hero: ReactNode;
   summary: ReactNode;
   activity: ReactNode;
   trending: ReactNode;
   top: ReactNode;
+  newProjects: ReactNode;
 }) {
   const [activeFeed, setActiveFeed] = useState<Feed>("top");
   const [rankingFeed, setRankingFeed] = useState<RankingFeed>("top");
@@ -118,15 +121,30 @@ export function HomepageDiscoveryLayout({
           className="mb-4 hidden sm:flex xl:hidden"
         />
 
-        <div
-          id="home-top-panel"
-          role="tabpanel"
-          aria-labelledby="home-all-top-tab home-ranking-top-tab"
-          className={`${activeFeed === "top" ? "block" : "hidden"} ${
-            rankingFeed === "top" ? "sm:block" : "sm:hidden"
-          } min-w-0 xl:col-start-1 xl:row-start-2 xl:block`}
-        >
-          {top}
+        {/* Wide screens stack Top over New in one column, Top taking the
+            larger share; the column keeps the height a lone Top panel had. */}
+        <div className="contents xl:col-start-1 xl:row-start-2 xl:flex xl:h-[calc(100svh-8.25rem)] xl:flex-col xl:gap-5">
+          <div
+            id="home-top-panel"
+            role="tabpanel"
+            aria-labelledby="home-all-top-tab home-ranking-top-tab"
+            className={`${activeFeed === "top" ? "block" : "hidden"} ${
+              rankingFeed === "top" ? "sm:block" : "sm:hidden"
+            } min-w-0 xl:flex xl:min-h-0 xl:flex-[3] xl:flex-col`}
+          >
+            {top}
+          </div>
+
+          <div
+            id="home-new-panel"
+            role="tabpanel"
+            aria-labelledby="home-all-new-tab home-ranking-new-tab"
+            className={`${activeFeed === "new" ? "block" : "hidden"} ${
+              rankingFeed === "new" ? "sm:block" : "sm:hidden"
+            } min-w-0 xl:flex xl:min-h-0 xl:flex-[2] xl:flex-col`}
+          >
+            {newProjects}
+          </div>
         </div>
 
         <div
