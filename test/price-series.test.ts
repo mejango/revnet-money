@@ -36,9 +36,21 @@ describe("bucketPoolReserves", () => {
       4,
     );
     expect(buckets).toEqual([
-      { timestamp: 62.5, pairAmount: 1, tokenAmount: 20, pairValue: 1, tokenValue: 2 },
+      { timestamp: 37.5, pairAmount: 1, tokenAmount: 20, pairValue: 1, tokenValue: 2 },
+      { timestamp: 62.5, pairAmount: 3, tokenAmount: 40, pairValue: 3, tokenValue: 4 },
       { timestamp: 87.5, pairAmount: 3, tokenAmount: 40, pairValue: 3, tokenValue: 4 },
     ]);
+  });
+
+  it("shows a change landing in the last half of the final bucket", () => {
+    const latest = { timestamp: 99, pairAmount: 9, tokenAmount: 90, pairValue: 9, tokenValue: 9 };
+    const buckets = bucketPoolReserves(
+      [{ timestamp: 10, pairAmount: 1, tokenAmount: 20, pairValue: 1, tokenValue: 2 }, latest],
+      0,
+      100,
+      4,
+    );
+    expect(buckets.at(-1)).toEqual({ ...latest, timestamp: 87.5 });
   });
 });
 
