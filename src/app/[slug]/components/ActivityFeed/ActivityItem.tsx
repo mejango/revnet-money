@@ -4,6 +4,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { DateRelative } from "@/components/DateRelative";
 import EtherscanLink from "@/components/EtherscanLink";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { TxDebugPromptLink } from "@/components/TxDebugPromptLink";
 import { useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { formatTokenSymbol } from "@/lib/utils";
@@ -283,6 +284,7 @@ export function ActivityItemRow({
             </EtherscanLink>
             <span>on</span>
             <ChainLogo chainId={event.chainId} width={14} height={14} />
+            <TxDebugPromptLink calls={[{ chainId: event.chainId, txHash: event.txHash }]} />
           </span>
         </div>
         {hasTitle && (

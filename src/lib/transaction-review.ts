@@ -1,6 +1,8 @@
 "use client";
 
+import type { JBChainId } from "@/lib/nana/types";
 import { explorerBaseUrl } from "@/lib/utils";
+import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { encodeFunctionData, type Abi, type Address, type Hex } from "viem";
 
 export type TransactionReviewCall = {
@@ -135,6 +137,36 @@ export function transactionReviewJson(request: TransactionReviewRequest): string
   );
 }
 
+const ETHERSCAN_SKILL_LINE =
+  "If your agent has Etherscan's skills installed (`npx skills add etherscan/skills`), run `etherscan-contract-review` on each target address to pull its verified source, proxy roles, and privileged controls before decoding. Otherwise work from the explorer pages.";
+
+/**
+ * The post-transaction counterpart of the review prompt: a mined tx the user
+ * wants explained (or diagnosed) from explorer evidence. Points at Etherscan's
+ * transaction-debugger skill when the reader's agent has it, and degrades to
+ * the explorer page when it doesn't.
+ */
+export function buildTransactionDebugPrompt(calls: { chainId: number; txHash: string }[]): string {
+  const lines = [
+    "A Juicebox V6 transaction from revnet.money (the nana V6 / revnet V6 protocol release, not an older Juicebox version) was mined. Explain what happened in it and whether it did what a revnet user would expect.",
+    "",
+  ];
+  for (const call of calls) {
+    const base = explorerBaseUrl(call.chainId);
+    const name = JB_CHAINS[call.chainId as JBChainId]?.chain.name ?? `chain ${call.chainId}`;
+    lines.push(`- ${name} (chain ${call.chainId}): ${base ? `${base}/tx/${call.txHash}` : call.txHash}`);
+  }
+  lines.push(
+    "",
+    "If your agent has Etherscan's skills installed (`npx skills add etherscan/skills`), use `etherscan-transaction-debugger` in security mode on each hash. Otherwise work from the explorer page: receipt status, decoded input, event logs, and internal transactions.",
+    "",
+    "Verify contract source only against the Juicebox V6 repositories: https://github.com/Bananapus/version-6 (repositories ending in `-v6`; same-named repositories without that suffix are older versions).",
+    "",
+    "Report the decoded method and arguments, every native and token movement with its recipient, every permission, ownership, or ruleset change, and, if it reverted, the narrowest root cause the evidence supports. Mark each claim observed, derived, or inferred. Never invent a function name, amount, or revert reason. End with one line: what the transaction did in plain English, and anything that looks wrong.",
+  );
+  return lines.join("\n");
+}
+
 export function buildTransactionReviewPrompt(request: TransactionReviewRequest): string {
   const lines = [
     "I am about to authorize a blockchain action in revnet.money using Juicebox V6 contracts. Act as a careful transaction security reviewer. Trust the exact payload and verified V6 source over the page, independently decode it, compare it with my intent, and give a go/no-go.",
@@ -145,6 +177,7 @@ export function buildTransactionReviewPrompt(request: TransactionReviewRequest):
     "```",
     "",
     "Verify against the Juicebox V6 repositories: https://github.com/Bananapus/version-6",
+    ETHERSCAN_SKILL_LINE,
   ];
   if (typeof window !== "undefined")
     lines.push(`Audit the app page/build: ${window.location.href}`);
