@@ -26,21 +26,10 @@ export function ProfileAvatar({
   const profile = useProfile(address);
   const formattedAddress = short ? `${address.slice(0, 6)}...${address.slice(-4)}` : address;
 
-  const renderValue =
-    profile?.platform === "farcaster"
-      ? profile.identity || profile.displayName || formattedAddress
-      : profile?.displayName || profile?.identity || formattedAddress;
+  const renderValue = profile?.displayName || profile?.identity || formattedAddress;
 
   const avatarSize = avatarProps?.size ?? "md";
   const avatarDimensions = avatarSize === "md" ? 36 : 24;
-  const farcasterHandle =
-    profile?.links?.farcaster?.handle ??
-    (profile?.platform === "farcaster" ? profile.identity : null);
-  const farcasterProfileUrl = farcasterHandle
-    ? `https://farcaster.xyz/${encodeURIComponent(farcasterHandle.replace(/^@/, ""))}`
-    : profile?.platform === "farcaster" && profile.social?.uid
-      ? `https://farcaster.xyz/~/profiles/${profile.social.uid}`
-      : null;
 
   const fallbackSrc = ensAvatarUrlForAddress(address, { size: avatarDimensions });
   const src = profile?.avatar?.startsWith("http") ? profile.avatar : fallbackSrc;
@@ -60,7 +49,7 @@ export function ProfileAvatar({
       className={twMerge(
         "inline-block shrink-0 rounded-full bg-teal-600",
         avatarSize === "md" ? "h-9 w-9" : "h-6 w-6",
-        withAvatar && !profile?.social?.uid ? "mr-2" : "",
+        withAvatar ? "mr-2" : "",
       )}
     />
   ) : (
@@ -73,7 +62,7 @@ export function ProfileAvatar({
       className={twMerge(
         "inline-block shrink-0 rounded-full",
         avatarSize === "md" ? "w-9 h-9" : "w-6 h-6",
-        withAvatar && !profile?.social?.uid ? "mr-2" : "",
+        withAvatar ? "mr-2" : "",
       )}
       width={avatarDimensions}
       height={avatarDimensions}
@@ -91,19 +80,7 @@ export function ProfileAvatar({
 
   return (
     <div className={twMerge("inline-flex items-center", className)}>
-      {withAvatar && farcasterProfileUrl ? (
-        <a
-          href={farcasterProfileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`View ${renderValue} on Farcaster`}
-          className="mr-2 shrink-0"
-        >
-          {avatarElement}
-        </a>
-      ) : withAvatar ? (
-        avatarElement
-      ) : null}
+      {withAvatar ? avatarElement : null}
       <EtherscanLink value={address} chain={chain}>
         {renderValue}
       </EtherscanLink>

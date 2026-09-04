@@ -5,7 +5,6 @@ export type Profile = {
   displayName?: string;
   avatar?: string;
   address?: string;
-  fid?: number;
   description?: string;
   status?: string | null;
   createdAt?: string;
@@ -14,13 +13,11 @@ export type Profile = {
   header?: string | null;
   contenthash?: string | null;
   platform?: string;
-  links?: { farcaster?: { link?: string; handle?: string; sources?: string[] } };
-  social?: { uid?: number; follower?: number; following?: number };
 };
 
-// ENS first: a name someone registered onchain is how the site addresses
-// them; a Farcaster handle is a fallback for accounts with no name.
-const priority: Record<string, number> = { ens: 3, farcaster: 2, ethereum: 1 };
+// An ENS name is how the site addresses someone; the bare address record is
+// only a fallback for its avatar.
+const priority: Record<string, number> = { ens: 2, ethereum: 1 };
 
 export async function fetchProfiles(addresses: string[], chunkSize = 10) {
   const uniqueAddresses = Array.from(new Set(addresses.map((a) => a.toLowerCase()))).sort();
@@ -28,7 +25,7 @@ export async function fetchProfiles(addresses: string[], chunkSize = 10) {
 
   for (let i = 0; i < uniqueAddresses.length; i += chunkSize) {
     const chunk = uniqueAddresses.slice(i, i + chunkSize);
-    const ids = chunk.flatMap((addr) => [`farcaster,${addr}`, `ethereum,${addr}`, `ens,${addr}`]);
+    const ids = chunk.flatMap((addr) => [`ethereum,${addr}`, `ens,${addr}`]);
 
     try {
       const res = await fetch(
