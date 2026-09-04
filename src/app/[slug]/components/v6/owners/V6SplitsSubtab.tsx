@@ -58,7 +58,8 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
   const { token } = useJBTokenContext();
   const tokenSymbol = formatTokenSymbol(token);
 
-  const [selectedStageIdx, setSelectedStageIdx] = useState(0);
+  // null until the user picks a tab: the current stage is selected by default.
+  const [chosenStageIdx, setSelectedStageIdx] = useState<number | null>(null);
 
   const chains = projects
     .filter((p) => Boolean(JB_CHAINS[p.chainId as JBChainId]))
@@ -89,6 +90,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
 
   const homeRulesets = rulesetsByChain.get(Number(chainId)) ?? [];
   const currentStageIdx = currentStageIndex(homeRulesets);
+  const selectedStageIdx = chosenStageIdx ?? currentStageIdx;
 
   // Reserved percent (the stage's split limit) comes from the ruleset metadata:
   // bits 4-19 hold reservedPercent out of 10_000, so 2.5% is 250. It stays in
