@@ -47,6 +47,13 @@ export interface ActivityEvent {
   detail?: string;
   /** Other events from the same transaction, folded into this row's sentence. */
   also?: ActivityEvent[];
+  /** Set on a pay that shares its tx with other pays: who this one was for. */
+  payee?: Address;
+}
+
+/** A tx with several pays reads "<total> from <payer>" and names who got what. */
+function fansOut(entries: ActivityEvent[]): boolean {
+  return entries.filter((entry) => entry.type === "in").length > 1;
 }
 
 /**
@@ -60,9 +67,13 @@ export function describableEntries(event: ActivityEvent): ActivityEvent[] {
   // A reserved distribution's receipts name who got what — its own
   // "distributed" fragment adds nothing beside them.
   const hasReceipts = entries.some((entry) => entry.type === "reservedSplit");
+  // A fan-out's buyback swaps carry the payer, not the payee; the remint each
+  // one pairs with already names who got what.
+  const fanOut = fansOut(entries);
   const visible = entries.filter((entry) => {
     if (entry.type === "in") return !!entry.tokenCount && entry.tokenCount !== "0";
     if (entry.type === "reserved") return !hasReceipts;
+    if (entry.type === "swapBuy") return !fanOut;
     return true;
   });
   return visible.length ? visible : entries;
@@ -76,8 +87,9 @@ function distributesReserved(event: ActivityEvent): boolean {
 /** One sentence for a row and its same-tx companions: "bought …, and received …". */
 export function combinedDescription(event: ActivityEvent, projectTokenSymbol: string): string {
   const distributed = distributesReserved(event);
+  const fanOut = fansOut([event, ...(event.also ?? [])]);
   const fragments = describableEntries(event).map((entry) =>
-    eventDescription(entry, projectTokenSymbol, distributed),
+    eventDescription(entry, projectTokenSymbol, distributed, fanOut),
   );
   if (fragments.length === 1) return fragments[0];
   if (fragments.length === 2) return `${fragments[0]} and ${fragments[1]}`;
@@ -85,6 +97,8 @@ export function combinedDescription(event: ActivityEvent, projectTokenSymbol: st
 }
 
 type DescriptionParts = {
+  /** An address the sentence opens with ("<who> got …"), rendered as a profile link. */
+  lead?: Address;
   pre: string;
   /** The token amount, slightly emphasized when rendered (same color, heavier weight). */
   strong?: string;
@@ -97,6 +111,7 @@ function descriptionParts(
   event: ActivityEvent,
   projectTokenSymbol: string,
   distributed = false,
+  fanOut = false,
 ): DescriptionParts {
   const count = `${event.tokenCount} ${projectTokenSymbol}`;
   switch (event.type) {
@@ -105,6 +120,9 @@ function descriptionParts(
       // buyback fragment. A buyback-routed pay issues nothing itself — the
       // same-tx remint row carries the payer's receipt, so "bought 0" would
       // misread.
+      if (fanOut && event.tokenCount && event.tokenCount !== "0") {
+        return { lead: event.payee, pre: " got ", strong: count };
+      }
       return event.tokenCount && event.tokenCount !== "0"
         ? { pre: "bought ", strong: count, post: " from issuance" }
         : { pre: "paid in" };
@@ -114,6 +132,14 @@ function descriptionParts(
       return { pre: "added to balance" };
     case "mint":
       // `detail` marks the reserved-rate remint of a same-tx buyback swap.
+      if (fanOut) {
+        return {
+          lead: event.beneficiary,
+          pre: " got ",
+          strong: count,
+          post: event.detail ? ` ${event.detail}` : undefined,
+        };
+      }
       return event.detail
         ? { pre: "received ", strong: count, post: ` ${event.detail}` }
         : { pre: "minted ", strong: count };
@@ -153,12 +179,12 @@ function eventDescription(
   event: ActivityEvent,
   projectTokenSymbol: string,
   distributed = false,
+  fanOut = false,
 ): string {
-  const parts = descriptionParts(event, projectTokenSymbol, distributed);
-  const recipient = parts.recipient
-    ? `${parts.recipient.slice(0, 6)}…${parts.recipient.slice(-4)}`
-    : "";
-  return `${parts.pre}${parts.strong ?? ""}${parts.post ?? ""}${recipient}`;
+  const parts = descriptionParts(event, projectTokenSymbol, distributed, fanOut);
+  const shortAddress = (address?: Address) =>
+    address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "";
+  return `${shortAddress(parts.lead)}${parts.pre}${parts.strong ?? ""}${parts.post ?? ""}${shortAddress(parts.recipient)}`;
 }
 
 /** Project-page wrapper: reads the project token context for the symbol. */
@@ -194,11 +220,13 @@ export function ActivityItemRow({
   const isReserved = event.type === "reserved";
   const hasTitle = !!event.baseAmount || isInflow || isOutflow || isReserved;
   const distributed = distributesReserved(event);
+  const fanOut = fansOut([event, ...(event.also ?? [])]);
   // One fragment per same-tx event: a lone one reads inline, several read as bullets.
   const fragments = describableEntries(event).map((entry) => {
-    const parts = descriptionParts(entry, projectTokenSymbol, distributed);
+    const parts = descriptionParts(entry, projectTokenSymbol, distributed, fanOut);
     return (
       <>
+        {parts.lead ? <ProfileAvatar address={parts.lead} short chain={chain} /> : null}
         {parts.pre}
         {parts.strong ? <span className="font-medium">{parts.strong}</span> : null}
         {parts.post}

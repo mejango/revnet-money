@@ -180,24 +180,53 @@ export function mapActivityEvents(
   // is the payer's actual receipt. Same idea for manual mints inside auto-issue txs.
   const mintCoveredTxs = new Set<string>();
   const autoIssueTxs = new Set<string>();
-  // Every buy swap in the tx, in order: a tx with two pays has two swaps and
-  // two remints, and each mint pairs with its own swap, not the last one.
-  const buySwapAmountsByTx = new Map<string, (string | number)[]>();
+  // Every buy swap in the tx: a tx with two pays has two swaps and two
+  // remints, and each mint pairs with its own swap, not the last one. The
+  // indexer returns a tx's events in no particular order, so pairing goes by
+  // amount rank (largest swap ↔ largest remint): one reserve rate applies to
+  // every pay in a tx, which keeps the ranks aligned.
+  const buySwapAmountsByTx = new Map<string, bigint[]>();
+  const mintCountsByTx = new Map<string, bigint[]>();
+  const manualMintCountsByTx = new Map<string, bigint[]>();
+  const pushSorted = (map: Map<string, bigint[]>, key: string, value: bigint) => {
+    const list = map.get(key) ?? [];
+    list.push(value);
+    list.sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+    map.set(key, list);
+  };
+  // Several pays in one tx (a payer contract fanning out) read as one payment:
+  // the payer's total, then who got what.
+  const payTotalsByTx = new Map<string, { count: number; amount: bigint; usd: bigint }>();
   for (const event of items) {
     if (!event) continue;
     const key = `${event.chainId}:${event.txHash}`;
+    if (event.payEvent) {
+      const total = payTotalsByTx.get(key) ?? { count: 0, amount: 0n, usd: 0n };
+      total.count += 1;
+      total.amount += BigInt(event.payEvent.amount);
+      total.usd += BigInt(event.payEvent.amountUsd ?? 0);
+      payTotalsByTx.set(key, total);
+    }
     const payIssued = event.payEvent && BigInt(event.payEvent.newlyIssuedTokenCount) > 0n;
     if (payIssued || event.manualMintTokensEvent || event.autoIssueEvent) {
       mintCoveredTxs.add(key);
     }
     if (event.autoIssueEvent) autoIssueTxs.add(key);
     if (event.swapEvent && event.swapEvent.direction.toLowerCase() !== "sell") {
-      buySwapAmountsByTx.set(key, [
-        ...(buySwapAmountsByTx.get(key) ?? []),
-        event.swapEvent.projectTokenAmount,
-      ]);
+      pushSorted(buySwapAmountsByTx, key, BigInt(event.swapEvent.projectTokenAmount));
+    }
+    if (event.mintTokensEvent) {
+      pushSorted(mintCountsByTx, key, BigInt(event.mintTokensEvent.beneficiaryTokenCount));
+    }
+    if (event.manualMintTokensEvent) {
+      pushSorted(manualMintCountsByTx, key, BigInt(event.manualMintTokensEvent.beneficiaryTokenCount));
     }
   }
+  /** The buy swap whose output this remint is the reserved-rate share of, by amount rank. */
+  const pairedSwapAmount = (key: string, counts: Map<string, bigint[]>, count: bigint) => {
+    const rank = (counts.get(key) ?? []).indexOf(count);
+    return rank < 0 ? undefined : buySwapAmountsByTx.get(key)?.[rank]?.toString();
+  };
 
   const events: ActivityEvent[] = [];
   for (const event of items) {
@@ -244,15 +273,20 @@ export function mapActivityEvents(
       const tokenCount = prettyNumber(
         new JBProjectToken(BigInt(event.payEvent.newlyIssuedTokenCount)).format(6),
       );
+      const payTotal = payTotalsByTx.get(txKey);
+      const fanOut = !!payTotal && payTotal.count > 1;
 
       events.push({
         id: event.id,
         type: "in",
         txHash: event.payEvent.txHash,
         timestamp: event.payEvent.timestamp,
-        beneficiary: event.payEvent.beneficiary as Address,
+        beneficiary: (fanOut ? event.payEvent.from : event.payEvent.beneficiary) as Address,
         chainId,
-        ...flowAmount(event.payEvent.amount, event.payEvent.amountUsd),
+        ...(fanOut
+          ? flowAmount(payTotal.amount.toString(), payTotal.usd.toString())
+          : flowAmount(event.payEvent.amount, event.payEvent.amountUsd)),
+        payee: fanOut ? (event.payEvent.beneficiary as Address) : undefined,
         tokenCount,
         memo: event.payEvent.memo || undefined,
       });
@@ -293,7 +327,7 @@ export function mapActivityEvents(
       // Paired with a same-tx buyback swap, this mint is the reserved-rate
       // remint of the swap output — name the reserve instead of "minted".
       const reservePercent = reservePercentLabel(
-        buySwapAmountsByTx.get(txKey)?.shift(),
+        pairedSwapAmount(txKey, mintCountsByTx, BigInt(e.beneficiaryTokenCount)),
         e.beneficiaryTokenCount,
       );
       events.push({
@@ -313,7 +347,7 @@ export function mapActivityEvents(
       // The buyback remint arrives as a manual mint (a direct mintTokensOf
       // call) — same reserved-rate story as the mintTokensEvent branch.
       const reservePercent = reservePercentLabel(
-        buySwapAmountsByTx.get(txKey)?.shift(),
+        pairedSwapAmount(txKey, manualMintCountsByTx, BigInt(e.beneficiaryTokenCount)),
         e.beneficiaryTokenCount,
       );
       events.push({

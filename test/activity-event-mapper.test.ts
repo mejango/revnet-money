@@ -274,6 +274,78 @@ describe("mapActivityEvents", () => {
 
     expect(events.find((event) => event.id === "mint-1")?.detail).toBe("after the 38% split");
     expect(events.find((event) => event.id === "mint-2")?.detail).toBe("after the 38% split");
+
+    // The indexer returns a tx's events in no particular order: pairing goes
+    // by amount rank, so a shuffled tx labels every remint the same way.
+    const shuffled = mapActivityEvents(
+      [
+        mintOf("mint-1", "62000000000000000000"),
+        swapOf("swap-2", "200000000000000000000"),
+        mintOf("mint-2", "124000000000000000000"),
+        swapOf("swap-1", "100000000000000000000"),
+      ],
+      () => ({ tokenSymbol: "ETH", decimals: 18 }),
+    );
+    expect(shuffled.find((event) => event.id === "mint-1")?.detail).toBe("after the 38% split");
+    expect(shuffled.find((event) => event.id === "mint-2")?.detail).toBe("after the 38% split");
+  });
+
+  it("reads a fan-out (two pays in one tx) as the payer's total and who got what", () => {
+    const payer = "0x2222222222222222222222222222222222222222";
+    const other = "0x3333333333333333333333333333333333333333";
+    const payOf = (id: string, beneficiary: string, amount: string): ActivityEventItem =>
+      payItem({
+        id,
+        payEvent: { ...payItem().payEvent!, beneficiary, amount, from: payer, newlyIssuedTokenCount: "0" },
+      });
+    const swapOf = (id: string, projectTokenAmount: string): ActivityEventItem => ({
+      ...payItem({ payEvent: null }),
+      id,
+      swapEvent: {
+        txHash: "0xaaa",
+        timestamp: 1_700_000_000,
+        direction: "buy",
+        terminalTokenAmount: "1",
+        projectTokenAmount,
+        caller: payer,
+        from: payer,
+      },
+    });
+    const mintOf = (id: string, beneficiary: string, beneficiaryTokenCount: string): ActivityEventItem => ({
+      ...payItem({ payEvent: null }),
+      id,
+      mintTokensEvent: {
+        id: `${id}-event`,
+        txHash: "0xaaa",
+        timestamp: 1_700_000_000,
+        from: payer,
+        caller: payer,
+        beneficiary,
+        beneficiaryTokenCount,
+        memo: null,
+      },
+    });
+
+    const [row] = groupSameTxEvents(
+      mapActivityEvents(
+        [
+          payOf("pay-1", other, "4000000000000000"),
+          swapOf("swap-1", "100000000000000000000"),
+          mintOf("mint-1", other, "62000000000000000000"),
+          payOf("pay-2", payer, "6000000000000000"),
+          swapOf("swap-2", "200000000000000000000"),
+          mintOf("mint-2", payer, "124000000000000000000"),
+        ],
+        () => ({ tokenSymbol: "ETH", decimals: 18 }),
+      ),
+    );
+
+    // The row is the payment: the payer and the total, not the first payee and its share.
+    expect(row.beneficiary).toBe(payer);
+    expect(row.baseAmount).toBe("0.01");
+    expect(combinedDescription(row, "ART")).toBe(
+      "0x3333…3333 got 62 ART after the 38% split and 0x2222…2222 got 124 ART after the 38% split",
+    );
   });
 });
 
@@ -443,6 +515,13 @@ describe("formatCompact / exactNumber", () => {
   it("never collapses an order of magnitude the way a 0-decimal ladder does", () => {
     // The old formatter rendered both of these "12k".
     expect(formatCompact(12_300)).not.toBe(formatCompact(12_900));
+  });
+
+  it("shows a tiny amount's first significant figure instead of rounding it to 0", () => {
+    expect(formatCompact(0.000004586733)).toBe("0.000005");
+    expect(formatCompact(0.00004)).toBe("0.00004");
+    expect(formatCompact(0.0000099)).toBe("0.00001");
+    expect(formatCompact(0)).toBe("0");
   });
 
   it("leaves sub-thousand values unsuffixed and trims trailing zeros", () => {
