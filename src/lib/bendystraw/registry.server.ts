@@ -96,6 +96,10 @@ const ACTIVITY_EVENT_FIELDS = `
   sendPayoutsEvent {
     txHash timestamp from caller amount amountPaidOut amountPaidOutUsd
   }
+  sendReservedTokensToSplitsEvent { txHash timestamp from tokenCount }
+  sendReservedTokensToSplitEvent {
+    txHash timestamp from tokenCount beneficiary splitProjectId
+  }
 `;
 
 const PROJECT_FIELDS = `

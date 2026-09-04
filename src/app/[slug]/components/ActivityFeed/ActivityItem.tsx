@@ -24,7 +24,9 @@ type ActivityEventType =
   | "swapBuy"
   | "swapSell"
   | "buybackPool"
-  | "payout";
+  | "payout"
+  | "reserved"
+  | "reservedSplit";
 
 export interface ActivityEvent {
   id: string;
@@ -38,6 +40,8 @@ export interface ActivityEvent {
   exactAmount?: string;
   baseTokenSymbol?: string;
   tokenCount?: string;
+  /** The unformatted token count, for ordering same-tx reserved-split receipts. */
+  rawTokenCount?: string;
   memo?: string;
   /** Pre-formatted suffix detail, e.g. "ART" for deployErc20 or a truncated address for transfers. */
   detail?: string;
@@ -53,16 +57,27 @@ export interface ActivityEvent {
 export function describableEntries(event: ActivityEvent): ActivityEvent[] {
   const entries = [event, ...(event.also ?? [])];
   if (entries.length === 1) return entries;
-  const visible = entries.filter(
-    (entry) => !(entry.type === "in" && (!entry.tokenCount || entry.tokenCount === "0")),
-  );
+  // A reserved distribution's receipts name who got what — its own
+  // "distributed" fragment adds nothing beside them.
+  const hasReceipts = entries.some((entry) => entry.type === "reservedSplit");
+  const visible = entries.filter((entry) => {
+    if (entry.type === "in") return !!entry.tokenCount && entry.tokenCount !== "0";
+    if (entry.type === "reserved") return !hasReceipts;
+    return true;
+  });
   return visible.length ? visible : entries;
+}
+
+/** Whether the row's transaction distributed reserved tokens — its receipts then read "to <recipient>". */
+function distributesReserved(event: ActivityEvent): boolean {
+  return event.type === "reserved" || !!event.also?.some((entry) => entry.type === "reserved");
 }
 
 /** One sentence for a row and its same-tx companions: "bought …, and received …". */
 export function combinedDescription(event: ActivityEvent, projectTokenSymbol: string): string {
+  const distributed = distributesReserved(event);
   const fragments = describableEntries(event).map((entry) =>
-    eventDescription(entry, projectTokenSymbol),
+    eventDescription(entry, projectTokenSymbol, distributed),
   );
   if (fragments.length === 1) return fragments[0];
   if (fragments.length === 2) return `${fragments[0]} and ${fragments[1]}`;
@@ -74,9 +89,15 @@ type DescriptionParts = {
   /** The token amount, slightly emphasized when rendered (same color, heavier weight). */
   strong?: string;
   post?: string;
+  /** An address the sentence ends on, rendered as a profile link. */
+  recipient?: Address;
 };
 
-function descriptionParts(event: ActivityEvent, projectTokenSymbol: string): DescriptionParts {
+function descriptionParts(
+  event: ActivityEvent,
+  projectTokenSymbol: string,
+  distributed = false,
+): DescriptionParts {
   const count = `${event.tokenCount} ${projectTokenSymbol}`;
   switch (event.type) {
     case "in":
@@ -116,12 +137,28 @@ function descriptionParts(event: ActivityEvent, projectTokenSymbol: string): Des
       return { pre: "set the buyback pool" };
     case "payout":
       return { pre: "sent payouts" };
+    case "reserved":
+      return { pre: "distributed reserved ", strong: count };
+    case "reservedSplit":
+      // Under its distribution a receipt names who got what; on its own it
+      // is what the account received.
+      if (!distributed) return { pre: "received ", strong: count, post: " from a reserved split" };
+      return event.detail
+        ? { pre: "", strong: count, post: ` to ${event.detail}` }
+        : { pre: "", strong: count, post: " to ", recipient: event.beneficiary };
   }
 }
 
-function eventDescription(event: ActivityEvent, projectTokenSymbol: string): string {
-  const parts = descriptionParts(event, projectTokenSymbol);
-  return `${parts.pre}${parts.strong ?? ""}${parts.post ?? ""}`;
+function eventDescription(
+  event: ActivityEvent,
+  projectTokenSymbol: string,
+  distributed = false,
+): string {
+  const parts = descriptionParts(event, projectTokenSymbol, distributed);
+  const recipient = parts.recipient
+    ? `${parts.recipient.slice(0, 6)}…${parts.recipient.slice(-4)}`
+    : "";
+  return `${parts.pre}${parts.strong ?? ""}${parts.post ?? ""}${recipient}`;
 }
 
 /** Project-page wrapper: reads the project token context for the symbol. */
@@ -152,14 +189,20 @@ export function ActivityItemRow({
   const isPayEvent = event.type === "in";
   const isInflow = isPayEvent || event.type === "addToBalance" || event.type === "swapBuy";
   const isOutflow = event.type === "out" || event.type === "swapSell";
+  // A reserved distribution leads with the count the way value flows lead
+  // with the amount: "3.6M ART" tagged "reserved".
+  const isReserved = event.type === "reserved";
+  const hasTitle = !!event.baseAmount || isInflow || isOutflow || isReserved;
+  const distributed = distributesReserved(event);
   // One fragment per same-tx event: a lone one reads inline, several read as bullets.
   const fragments = describableEntries(event).map((entry) => {
-    const parts = descriptionParts(entry, projectTokenSymbol);
+    const parts = descriptionParts(entry, projectTokenSymbol, distributed);
     return (
       <>
         {parts.pre}
         {parts.strong ? <span className="font-medium">{parts.strong}</span> : null}
         {parts.post}
+        {parts.recipient ? <ProfileAvatar address={parts.recipient} short chain={chain} /> : null}
       </>
     );
   });
@@ -205,6 +248,11 @@ export function ActivityItemRow({
                   : event.baseAmount}
               </span>
             )}
+            {isReserved && (
+              <span className="truncate font-semibold text-zinc-800">
+                {event.tokenCount} {projectTokenSymbol}
+              </span>
+            )}
             {isInflow && (
               <span className="inline-flex h-5 min-w-7 items-center justify-center border border-teal-600 bg-teal-50 px-1 text-center text-[10px] leading-none text-teal-600">
                 in
@@ -215,10 +263,15 @@ export function ActivityItemRow({
                 out
               </span>
             )}
+            {isReserved && (
+              <span className="inline-flex h-5 min-w-7 items-center justify-center border border-amber-600 bg-amber-50 px-1 text-center text-[10px] leading-none text-amber-600">
+                reserved
+              </span>
+            )}
             {/* No amount and no flow tag = nothing for the title slot; the
                 actor takes its place (bare, no "to/from/by") instead of
                 leaving a blank line. */}
-            {!event.baseAmount && !isInflow && !isOutflow && (
+            {!hasTitle && (
               <span className="min-w-0 truncate text-xs">
                 <ProfileAvatar address={event.beneficiary} short chain={chain} />
               </span>
@@ -232,7 +285,7 @@ export function ActivityItemRow({
             <ChainLogo chainId={event.chainId} width={14} height={14} />
           </span>
         </div>
-        {(event.baseAmount || isInflow || isOutflow) && (
+        {hasTitle && (
           <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500">
             {isOutflow ? "to" : isInflow ? "from" : "by"}{" "}
             <span className="min-w-0 truncate">

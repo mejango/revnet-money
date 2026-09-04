@@ -1,4 +1,6 @@
+import { combinedDescription } from "@/app/[slug]/components/ActivityFeed/ActivityItem";
 import {
+  groupSameTxEvents,
   isProjectFeedActivityEvent,
   mapActivityEvents,
   projectFeedTokenContext,
@@ -272,6 +274,71 @@ describe("mapActivityEvents", () => {
 
     expect(events.find((event) => event.id === "mint-1")?.detail).toBe("after the 38% split");
     expect(events.find((event) => event.id === "mint-2")?.detail).toBe("after the 38% split");
+  });
+});
+
+// A reserved distribution: the total plus one receipt per split, all in one
+// tx. The row leads with the total and lists the recipients, largest first.
+describe("reserved distributions", () => {
+  const distribution: ActivityEventItem = {
+    ...payItem({ payEvent: null }),
+    id: "reserved-1",
+    txHash: "0xreserved",
+    sendReservedTokensToSplitsEvent: {
+      txHash: "0xreserved",
+      timestamp: 1_700_000_000,
+      from: "0x2222222222222222222222222222222222222222",
+      tokenCount: "3600000000000000000000000",
+    },
+  };
+  const toAddress: ActivityEventItem = {
+    ...payItem({ payEvent: null }),
+    id: "split-1",
+    txHash: "0xreserved",
+    sendReservedTokensToSplitEvent: {
+      txHash: "0xreserved",
+      timestamp: 1_700_000_000,
+      from: "0x2222222222222222222222222222222222222222",
+      tokenCount: "600000000000000000000000",
+      beneficiary: "0x3333333333333333333333333333333333333333",
+      splitProjectId: 0,
+    },
+  };
+  const toProject: ActivityEventItem = {
+    ...payItem({ payEvent: null }),
+    id: "split-2",
+    txHash: "0xreserved",
+    sendReservedTokensToSplitEvent: {
+      txHash: "0xreserved",
+      timestamp: 1_700_000_000,
+      from: "0x2222222222222222222222222222222222222222",
+      tokenCount: "3000000000000000000000000",
+      beneficiary: "0x0000000000000000000000000000000000000000",
+      splitProjectId: 7,
+    },
+  };
+  const context = () => ({ tokenSymbol: "ETH", decimals: 18 });
+
+  it("folds into one row: the total as headline, a fragment per recipient", () => {
+    const rows = groupSameTxEvents(
+      mapActivityEvents([toAddress, distribution, toProject], context),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      type: "reserved",
+      tokenCount: "3.6M",
+      beneficiary: "0x2222222222222222222222222222222222222222",
+    });
+    expect(rows[0].also?.map((entry) => entry.id)).toEqual(["split-2", "split-1"]);
+    expect(combinedDescription(rows[0], "ART")).toBe(
+      "3M ART to project #7 and 600k ART to 0x3333…3333",
+    );
+  });
+
+  it('keeps a receipt without its distribution as a "received" line', () => {
+    const [row] = mapActivityEvents([toAddress], context);
+    expect(row.type).toBe("reservedSplit");
+    expect(combinedDescription(row, "ART")).toBe("received 600k ART from a reserved split");
   });
 });
 

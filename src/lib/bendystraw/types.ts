@@ -308,6 +308,10 @@ export type ActivityEventsQuery = {
             amountPaidOutUsd: BigNumberish;
           })
         | null;
+      sendReservedTokensToSplitsEvent?: (ActivityBase & { tokenCount: BigNumberish }) | null;
+      sendReservedTokensToSplitEvent?:
+        | (ActivityBase & { tokenCount: BigNumberish; beneficiary: string; splitProjectId: number })
+        | null;
     }>;
   };
 };
