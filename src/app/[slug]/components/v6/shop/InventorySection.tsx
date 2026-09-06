@@ -151,9 +151,9 @@ export function InventorySection({
           ) : null}
         </div>
 
-        {address && (credits ?? 0n) > 0n ? (
+        {address && shop.tiers.length > 0 && (credits ?? 0n) > 0n ? (
           <p
-            className="mt-4 bg-teal-50 px-3 py-2 text-sm text-teal-800"
+            className="mt-4 text-sm text-teal-800"
             title="Overpayment becomes shop credit and is applied automatically to eligible items at checkout."
           >
             Your shop credit:{" "}

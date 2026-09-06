@@ -9,24 +9,37 @@ import { usePathname } from "next/navigation";
 import { Magnifier, RevnetSearch } from "./RevnetSearch";
 
 function GuideLinks({ className = "" }: { className?: string }) {
+  const pathname = usePathname();
   return (
     <div
       aria-label="Revnet guides"
       className={`flex items-center gap-1 whitespace-nowrap text-xs leading-normal text-zinc-600 sm:gap-2 sm:text-sm ${className}`}
     >
-      <Link href="/learn" className="underline-offset-4 hover:underline hover:text-zinc-900">
+      <Link
+        href="/learn"
+        aria-current={pathname === "/learn" ? "page" : undefined}
+        className="inline-flex min-h-11 min-w-11 items-center justify-center underline-offset-4 hover:underline hover:text-zinc-900 aria-[current=page]:text-zinc-900 aria-[current=page]:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-melon-800"
+      >
         Learn
       </Link>
       <span aria-hidden className="text-zinc-400">
         |
       </span>
-      <Link href="/build" className="underline-offset-4 hover:underline hover:text-zinc-900">
+      <Link
+        href="/build"
+        aria-current={pathname === "/build" ? "page" : undefined}
+        className="inline-flex min-h-11 min-w-11 items-center justify-center underline-offset-4 hover:underline hover:text-zinc-900 aria-[current=page]:text-zinc-900 aria-[current=page]:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-melon-800"
+      >
         Build
       </Link>
       <span aria-hidden className="text-zinc-400">
         |
       </span>
-      <Link href="/audit" className="underline-offset-4 hover:underline hover:text-zinc-900">
+      <Link
+        href="/audit"
+        aria-current={pathname === "/audit" ? "page" : undefined}
+        className="inline-flex min-h-11 min-w-11 items-center justify-center underline-offset-4 hover:underline hover:text-zinc-900 aria-[current=page]:text-zinc-900 aria-[current=page]:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-melon-800"
+      >
         Audit
       </Link>
     </div>
@@ -42,7 +55,15 @@ export function Nav({ wide = false }: { wide?: boolean }) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
-    <nav className="text-zinc-50 border-b border-zinc-100">
+    <nav aria-label="Main navigation" className="text-zinc-50 border-b border-zinc-100">
+      {pathname === "/learn" || pathname === "/build" ? (
+        <a
+          href="#guide-content"
+          className="sr-only fixed left-4 top-4 z-50 bg-white px-4 py-3 font-semibold text-melon-900 shadow-lg focus:not-sr-only focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-melon-800"
+        >
+          Skip to content
+        </a>
+      ) : null}
       <div
         data-site-nav-layout
         className={`mx-auto grid w-full grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[auto_auto] items-center gap-x-[clamp(0.5rem,1.5vw,2rem)] px-4 py-3 md:grid-cols-[minmax(max-content,1fr)_minmax(12rem,32rem)_minmax(max-content,1fr)] md:grid-rows-1 ${
@@ -68,7 +89,7 @@ export function Nav({ wide = false }: { wide?: boolean }) {
         {/* On phones the logo alone shares row one with the search and wallet,
             so it centers on them; the guide links hang underneath. */}
         {searchOpen ? null : (
-          <GuideLinks className="col-start-1 row-start-2 justify-self-start md:hidden" />
+          <GuideLinks className="col-span-3 col-start-1 row-start-2 justify-self-start md:hidden" />
         )}
         <div
           data-site-nav-search

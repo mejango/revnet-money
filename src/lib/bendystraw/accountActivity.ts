@@ -14,6 +14,8 @@ const EMPTY_SUB_EVENTS = {
   rulesetQueuedEvent: null,
   swapEvent: null,
   buybackPoolEvent: null,
+  sendReservedTokensToSplitsEvent: null,
+  sendReservedTokensToSplitEvent: null,
 } as const;
 
 /** The sub-event kinds that carry a beneficiary and get their own query root. */
@@ -23,6 +25,7 @@ const BENEFICIARY_ROOTS = [
   ["beneficiaryMintTokensEvents", "mintTokensEvent"],
   ["beneficiaryManualMintTokensEvents", "manualMintTokensEvent"],
   ["beneficiaryAutoIssueEvents", "autoIssueEvent"],
+  ["beneficiarySendReservedTokensToSplitEvents", "sendReservedTokensToSplitEvent"],
 ] as const;
 
 /**

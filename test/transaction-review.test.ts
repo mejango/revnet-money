@@ -158,3 +158,18 @@ describe("portable transaction review payload", () => {
     expect(json.transactions.map((call: { chainId: number }) => call.chainId)).toEqual([1, 10]);
   });
 });
+
+import { buildTransactionDebugPrompt as buildDebugPrompt } from "@/lib/transaction-review";
+
+describe("buildTransactionDebugPrompt", () => {
+  it("links each tx on its own explorer and points at the Etherscan debugger skill", () => {
+    const prompt = buildDebugPrompt([
+      { chainId: 1, txHash: "0xabc" },
+      { chainId: 8453, txHash: "0xdef" },
+    ]);
+    expect(prompt).toContain("https://etherscan.io/tx/0xabc");
+    expect(prompt).toContain("https://basescan.org/tx/0xdef");
+    expect(prompt).toContain("etherscan-transaction-debugger");
+    expect(prompt).toContain("Bananapus/version-6");
+  });
+});

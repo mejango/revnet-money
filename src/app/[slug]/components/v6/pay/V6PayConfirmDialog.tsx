@@ -88,7 +88,7 @@ export interface PreparedV6Pay {
 }
 
 const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "safe-proposed" | "success">, string> = {
-  preparing: "Getting a fresh quote…",
+  preparing: "Preparing…",
   "approving-token":
     "Confirm token access in your wallet. The payment will continue automatically…",
   "approving-router":

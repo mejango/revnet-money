@@ -175,25 +175,29 @@ export function HomepageActivityFeed({
               </ProjectLink>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
-                  <DateRelative timestamp={event.timestamp} />
-                  <div className="flex items-center gap-2">
+                  <span className="shrink-0 whitespace-nowrap">
+                    <DateRelative timestamp={event.timestamp} />
+                  </span>
+                  <div className="flex min-w-0 items-center gap-2">
                     {activity.baseAmount ? (
-                      <span title={activity.exactAmount}>
+                      <span className="truncate" title={activity.exactAmount}>
                         {activity.baseAmount}
                         {activity.baseTokenSymbol ? ` ${activity.baseTokenSymbol}` : ""}
                       </span>
                     ) : null}
                     {isIn ? (
-                      <span className="inline-flex h-5 min-w-7 items-center justify-center border border-teal-600 px-1 text-center text-[10px] leading-none text-teal-600">
+                      <span className="inline-flex h-5 min-w-7 shrink-0 items-center justify-center border border-teal-600 px-1 text-center text-[10px] leading-none text-teal-600">
                         in
                       </span>
                     ) : null}
                     {isOut ? (
-                      <span className="inline-flex h-5 min-w-7 items-center justify-center border border-orange-500 px-1 text-center text-[10px] leading-none text-orange-500">
+                      <span className="inline-flex h-5 min-w-7 shrink-0 items-center justify-center border border-orange-500 px-1 text-center text-[10px] leading-none text-orange-500">
                         out
                       </span>
                     ) : null}
-                    <ChainLogo chainId={chainId} width={14} height={14} />
+                    <span className="shrink-0">
+                      <ChainLogo chainId={chainId} width={14} height={14} />
+                    </span>
                   </div>
                 </div>
                 <ProjectLink

@@ -6,11 +6,19 @@ import { pageMetadata } from "@/lib/pageMetadata";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-const title = "Build with Revnet V6";
-const description =
-  "Implement Revnet V6 reads and operations with exact SDK builders, contract calls, safety bounds, and reference source code.";
+const socialMetadata = pageMetadata({
+  title: "Build with revnets",
+  description:
+    "Launch without code, connect an app with the V6 SDK, or build a Solidity integration. Choose a starting path and follow source-backed examples.",
+});
 
-export const metadata: Metadata = pageMetadata({ title, description });
+export const metadata: Metadata = {
+  ...socialMetadata,
+  description:
+    "Launch a revnet without code, connect an app with the V6 SDK, or build Solidity integrations. Practical starting paths, transaction examples, and source references.",
+  alternates: { canonical: "/build" },
+  openGraph: { ...socialMetadata.openGraph, url: "/build" },
+};
 
 const REFERENCE_ROOT = "https://github.com/mejango/revnet-money/blob/main";
 const REV_CORE = "https://github.com/rev-net/revnet-core-v6/blob/main/src";
@@ -24,24 +32,30 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Start here",
     title: "When to use a revnet",
     summary:
-      "Use a revnet when your product earns revenue and you want that revenue to back a token nobody has to trust you with. Use a plain Juicebox project when you need an owner who can change course.",
+      "Use a revnet when committed token economics fit your product and contributors can be paid in tokens. Use a configurable Juicebox project when a team needs direct payouts or the ability to change its economic rules.",
     compare: {
       label: "Pick the model",
       columns: ["You need to", "Use"],
       rows: [
-        ["Pay contributors from revenue, forever", "Revnet (split share)"],
-        ["Let customers hold a stake they can exit", "Revnet (cash outs, loans)"],
+        ["Allocate a share of token issuance to contributors", "Revnet (split share)"],
+        [
+          "Give holders a configured way to cash out or borrow",
+          "Revnet (subject to fees and available funds)",
+        ],
         ["Run a token with a published schedule", "Revnet (stages)"],
         ["Pay out a budget to a team each month", "Juicebox project (payouts)"],
         ["Change the rules after launch", "Juicebox project (rulesets)"],
       ],
     },
     paragraphs: [
-      "A revnet is a Juicebox V6 project whose owner is a contract (REVOwner) that narrows the project to one intent and never changes its economics. Around it sit a deployer that writes the stage schedule, loans, and a narrowly scoped operator. From your product's side it is a project whose rules you can read once and rely on.",
+      "A revnet is a Juicebox V6 project whose owner contract, REVOwner, enforces the stage schedule committed at launch. The operator cannot rewrite that schedule, but can have powers over split recipients, routing, metadata, bridges, and shops. Read both the launch terms and the current integration state.",
       "This guide is written for three kinds of builder, and each section is tagged with who it is for. Project builders launch and run a revnet from this site without writing code. App builders connect a product to one with the SDK and the indexer. Contract builders extend one with Solidity. The parts overlap, so read the tags and skip what is not yours.",
     ],
     links: [
       { href: "/learn", label: "How a revnet works" },
+      { href: "#launch-from-the-wizard", label: "Launch without writing code" },
+      { href: "#set-up", label: "Connect an app with the SDK" },
+      { href: "#extension-points", label: "Build a contract integration" },
       { href: "https://juicebox.money/build", label: "Juicebox build guide" },
     ],
   },
@@ -50,7 +64,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Start here",
     title: "Every operation, in one table",
     summary:
-      "Each thing a user can do maps to one contract call. This site exposes each of them as a button; the SDK ships a builder for each; the sections below show how to quote, bound, and sign it.",
+      "Use this map to find the core call behind an action. Some flows need approvals, routing, or several transactions; the sections below explain the state, minimum outputs, and permissions to check.",
     table: {
       label: "User action → contract call",
       rows: [
@@ -86,7 +100,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Start here",
     title: "The contracts, and where their addresses live",
     summary:
-      "A revnet is a handful of contracts working together. Every one has a single address per chain, and there is one source of truth for those addresses.",
+      "A revnet combines shared protocol contracts with project-specific tokens, shops, and bridge pairs. Start from the deployment artifacts, then resolve the project's active addresses on its chain.",
     table: {
       label: "Who does what",
       rows: [
@@ -145,7 +159,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders"],
     title: "Launch from the wizard",
     summary:
-      "The create page walks through six sections, then deploys to every chain you picked. Everything in Terms is permanent, so this is the part to get right.",
+      "The create page walks through six sections. You can prepare and save a draft before connecting a wallet. Deployment needs a wallet on the selected chain and funds for the live creation fee and network costs. Review the committed stage terms before signing.",
     table: {
       label: "The six sections",
       rows: [
@@ -159,7 +173,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
         [
           "3. Terms",
-          "The stages, described above. Every stage field is written into the contracts and cannot be edited afterwards.",
+          "The complete stage schedule: issuance, cuts, split share, cash out tax, auto issuance, and timing. These economic commitments cannot be edited afterwards; authorized split recipients can still be redirected.",
         ],
         [
           "4. Store",
@@ -167,16 +181,16 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
         [
           "5. Operator",
-          "Off by default, which writes 0xdead… as the operator on every chain, so nobody ever has the role. On: one address for all chains, or one per chain.",
+          "Off by default, which assigns a dead address intended to be inaccessible. On: one address for all chains, or one per chain. Verify control of each address, especially a multisig on a new chain.",
         ],
         [
           "6. Deploy",
-          "Get a quote, then sign. One chain is a normal wallet transaction; two or more go through Relayr so you pay gas once.",
+          "Get a fresh fee quote, review, then sign. One chain uses a wallet transaction or Safe proposal; multiple chains use a Relayr bundle paid from one chain. Confirm each destination separately.",
         ],
       ],
     },
     paragraphs: [
-      "In Terms, each stage has an issuance rate (tokens per unit of base currency; a later stage can pick up where the previous one left off), an optional automatic cut (a percentage every N days, defaults 10% every 30 days), a cash out tax (a 0–80% slider in steps of 5, default 20%; the contracts allow anything below 100%), a split share with recipients (percent of every issuance, optionally different recipients per chain), auto issuance rows (an amount, a beneficiary, and the chain it mints on), and a start: the first stage starts about ten minutes after deploy unless you set a future time, later stages start after a number of cuts or days.",
+      "In Terms, each stage has an issuance rate (tokens per unit of base currency; a later stage can pick up where the previous one left off), an optional automatic cut (a percentage every N days, defaults 10% every 30 days), a cash out tax (a 0–80% slider in steps of 5, default 20%; the contracts allow anything below 100%), a split share with recipients (percent of every issuance, optionally different recipients per chain), and auto issuance rows (an amount, a beneficiary, and the chain where it can be claimed). By default the first start is set with a ten-minute buffer when the configuration is prepared; it is not ten minutes after eventual execution. You can set a later time. Subsequent stages start after the configured number of cuts or days.",
     ],
     note: "Stage starts must strictly increase, a split share above 0% needs at least one recipient, and the cut cadence should stay at a day or more. If a first-stage start is already in the past when the transaction lands, cash outs and loans lock for seven days. The wizard leaves that buffer for you.",
     links: [
@@ -193,7 +207,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders"],
     title: "Draft files, and launching with an agent",
     summary:
-      "The whole wizard round-trips through a .jb file. That is how you save a draft, share one, or have an agent write one for you to review and sign.",
+      "Save the launch form as a .jb draft to reopen, share, or review before deployment. An AI agent can help prepare a draft; you still need to check the configuration and any transaction you sign.",
     paragraphs: [
       "A .jb file is JSON: the form's fields in the units you see on screen (days, percentages from 0 to 100, human token amounts). Import it at the top of the create page and every section fills in. Any live revnet's Extras tab exports one reconstructed from the chain, which is also the easiest way to diff what you launched against what you meant to.",
       "An agent has two ways to launch. It can produce a .jb for you to import, check, and sign, which keeps the keys with you. Or it can call REVDeployer.deployFor itself through the SDK's buildDeployRevnetTx, which is the path for automated or scripted launches.",
@@ -205,13 +219,13 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Skills",
-        text: "jb-revnet-deploy for the call, revnet-economics and revnet-modeler for choosing the numbers.",
+        text: "jb-deploy-ui for launch interfaces, revnet-economics and revnet-modeler for exploring configurations. Check generated drafts against the current schema and live deployment contracts.",
       },
     ],
     links: [
       { href: `${REFERENCE_ROOT}/src/lib/revnet-draft.ts`, label: "Draft format" },
       { href: `${REFERENCE_ROOT}/src/app/create/types.ts`, label: "Every field" },
-      { href: `${SKILLS}/jb-revnet-deploy/SKILL.md`, label: "jb-revnet-deploy skill" },
+      { href: `${SKILLS}/jb-deploy-ui/SKILL.md`, label: "Launch interface skill" },
     ],
   },
   {
@@ -220,15 +234,15 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders", "frontend"],
     title: "What happens when you deploy",
     summary:
-      "One deployFor call per chain, with the same configuration and salt on each, so the revnet's ERC-20 gets the same address everywhere.",
+      "The wizard prepares a deployFor call for each selected chain using matching configuration and salts. Check every destination result: chain-local project IDs and completion states are separate, even when the token address matches.",
     points: [
       {
         key: "Creation fee",
-        text: "0.0001 ETH per chain, paid as a payment into the Juicebox fee project, so you receive its tokens for it.",
+        text: "read JBProjects.creationFee() on each chain immediately before preparing the deployment. The fee recipient and its route determine any fee-project tokens received; show the quoted fee separately from gas and relay costs.",
       },
       {
         key: "Token",
-        text: "an ERC-20 named after your revnet with your ticker, deployed automatically on every chain at one shared address.",
+        text: "an ERC-20 named after your revnet with your ticker. Matching deployments can share a token address across chains when the deployer, sender, configuration hash, and salts match; verify the resulting address on each chain.",
       },
       {
         key: "Pool",
@@ -236,7 +250,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Chains",
-        text: "with two or more chains the transactions go through Relayr as one paid bundle and settle in one to two minutes. With one chain it is a normal wallet transaction, or a Safe proposal if you are connected through a Safe.",
+        text: "with two or more chains, Relayr submits a paid bundle. Completion depends on each chain and the relay service; do not promise a fixed settlement time. With one chain, use a wallet transaction or Safe proposal and wait for execution.",
       },
       {
         key: "Afterwards",
@@ -251,7 +265,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders"],
     title: "Running it: what the operator can do",
     summary:
-      "The operator has nine permissions, none of which touch the economics. The Operator tab exposes them one card at a time.",
+      "The operator has nine default permissions plus any integration permissions granted at launch. The Operator tab exposes available actions; inspect grants per chain because routing, recipients, and shop decisions can affect users.",
     table: {
       label: "Operator tab",
       rows: [
@@ -296,26 +310,32 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders"],
     title: "Money in, money out, and the fees",
     summary:
-      "Contributors pay with any accepted token, a routed swap, or a card. The balance only leaves through cash outs and loans, so there is no payout to manage.",
+      "Accept payments in supported assets or through available swap and on-ramp routes. Contributors receive tokens; there is no discretionary team payout budget. Market, shop, fee, loan, and bridge flows can route funds outside the local balance.",
     paragraphs: [
       "Your team is paid in tokens: the split share of every issuance, plus any auto issuance the stage names. Recipients collect auto issuance from the Owners tab. Holders get a You card with cash out, borrow, move between chains, and claim credits. Card and bank payments go through the embedded wallet's on-ramp, which buys the accepted token first.",
     ],
     table: {
       label: "Fees to expect",
       rows: [
-        ["Launch", "0.0001 ETH per chain"],
-        ["Payments", "None from the protocol. A routed swap pays the pool's 1% fee tier"],
+        [
+          "Launch",
+          "Read JBProjects.creationFee() on every selected chain, then add network or relay costs",
+        ],
+        [
+          "Payments",
+          "No standard protocol fee for an incoming payment. Swaps, bridges, card providers, and configured shop splits can add costs or route funds; show the actual breakdown",
+        ],
         [
           "Cash outs (tax above 0%)",
-          "2.5% protocol fee on the value returned, plus a 2.5% revnet fee on the tokens burned. Both fund fee revnets whose tokens the payer receives",
+          "Standard treasury path: 2.5% protocol fee on reclaimed value, plus a Revnet fee valued from 2.5% of the token count. Different bases; quote net output through the hook. Pool paths and exemptions can differ",
         ],
         [
           "Cash outs (0% tax)",
-          "The protocol fee only on the fee-free surplus portion, which is often zero",
+          "No standard Revnet fee. A protocol fee can apply to the portion backed by previously fee-free intra-terminal payouts; read the terminal preview",
         ],
         [
           "Loans",
-          "2.5% to your revnet, 1% to the REV revnet, and the borrower's prepaid fee of 2.5–50% that buys the extra-cost-free window; ten-year expiry",
+          "Standard new loan: 2.5% protocol fee, a 1% REV fee when available, and a prepaid source fee of 2.5–50% retained by the lending revnet. Show gross principal, net proceeds, repayment cost, and the 3,650-day expiry",
         ],
         ["Cross-chain moves", "Bridge gas, quoted at the time of the move"],
       ],
@@ -327,15 +347,15 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders"],
     title: "Choosing the numbers",
     summary:
-      "The numbers are permanent, so model them first. The skills library ships the rules of thumb and a simulator.",
+      "Model the complete schedule before launch. There is no universal safe tax, cut cadence, or allocation: compare outcomes under realistic revenue, holder concentration, and withdrawal scenarios.",
     points: [
       {
         key: "Issuance and cuts",
-        text: "the cut cadence is the revnet's clock; keep it at a day or more. A launchpad shape is 10% cuts every 7 days with a 20% split share.",
+        text: "simulate both low and high revenue as issuance falls. Show tokens reaching the payer after the split, and consider every stage transition. A shorter cadence makes timing more important; the contract documentation recommends at least a day.",
       },
       {
         key: "Cash out tax",
-        text: "light for something people should be able to leave, heavy (around 80%) for stable commerce where the balance should stay put. Above roughly 39% a loan is cheaper for a holder than cashing out.",
+        text: "compare exits at several shares of total supply. A higher tax retains more of a proportional withdrawal. Loans also use the current cash out tax, so borrowing is not a shortcut around it; compare net proceeds and repayment obligations.",
       },
       {
         key: "Split share",
@@ -343,11 +363,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Stages",
-        text: "90 or 180 days each is a common rhythm for periodic fundraising; the last stage can run forever.",
+        text: "align starts with actual product needs and model late payments around transitions. The final stage continues, including any recurring issuance cuts. Zero issuance prevents further minting from payments, but does not cancel other token allocations.",
       },
       {
         key: "Concentration",
-        text: "aim for no holder above 50% of supply; loan collateral above half the supply is a systemic risk, below a fifth is comfortable.",
+        text: "test large-holder exits, auto issuance claims, heavy borrowing, and empty local balances. Outstanding loans affect both effective supply and backing; arbitrary concentration thresholds do not establish safety.",
       },
     ],
     links: [
@@ -367,6 +387,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       "@bananapus/nana-sdk-core carries the ABIs, the addresses, the reads, and a pure builder for every write. Do not hand-maintain selectors or addresses in product code.",
     paragraphs: [
       "The root entry exports every ABI, jbContractAddress, the chain list, the bendystraw helpers, and project-metadata reads. The /v6 entry exports the reads and builders. Builders are pure: validated input in, a { chainId, address, abi, functionName, args, value } request out. Keep reads on a public client for the target chain and writes on a wallet client connected to that same chain.",
+      "Start with a TypeScript app and a viem public client for the selected chain; add a wallet client only for signing. Install @bananapus/nana-sdk-core and viem, and pin versions in your lockfile. The examples are focused integration fragments: provide the named clients, chain ID, addresses, user inputs, and error handling in your app.",
     ],
     table: {
       label: "/v6 exports, grouped",
@@ -432,7 +453,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
             label: "V6 SDK package",
           },
           { href: "https://github.com/Bananapus/juice-sdk-v4", label: "SDK source" },
-          { href: `${SKILLS}/jb-sdk/SKILL.md`, label: "jb-sdk skill" },
+          { href: `${SKILLS}/jb-v6-api/SKILL.md`, label: "V6 API skill" },
         ],
       },
     ],
@@ -451,7 +472,10 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ["Current and next stage", "JBController.currentRulesetOf / upcomingRulesetOf"],
         ["Full schedule", "JBController.allRulesetsOf(projectId, startingId, size)"],
         ["Accepted tokens", "JBMultiTerminal.accountingContextsOf"],
-        ["Supply and balances", "JBTokens.totalSupplyOf / totalBalanceOf / creditBalanceOf"],
+        [
+          "Supply and balances",
+          "JBTokens.totalBalanceOf / creditBalanceOf; JBController.totalTokenSupplyWithReservedTokensOf; REVLoans.totalCollateralOf / totalBorrowedFrom for effective loan accounting",
+        ],
         ["Splits", "JBSplits.splitsOf(projectId, rulesetId, groupId)"],
         ["Cash out quote", "JBMultiTerminal.previewCashOutFrom"],
         ["Loan capacity", "REVLoans.borrowableAmountFrom / loanOf"],
@@ -464,19 +488,24 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     },
     codePoints: [
       {
-        title: "One multicall for the signing-critical state",
+        title: "Resolve the live controller, then read the stage",
         code: [
-          "const [controller, terminals, contexts, stage] = await publicClient.multicall({",
-          "  allowFailure: false,",
-          "  contracts: [",
-          "    controllerOf(projectId),",
-          "    terminalsOf(projectId),",
-          "    accountingContextsOf(projectId),",
-          "    currentRulesetOf(projectId),",
-          "  ],",
+          "import {",
+          "  getJBContractAddress, JBCoreContracts, jbDirectoryAbi, jbControllerAbi,",
+          '} from "@bananapus/nana-sdk-core";',
+          "",
+          "const directory = getJBContractAddress(JBCoreContracts.JBDirectory, 6, chainId);",
+          "const controller = await publicClient.readContract({",
+          "  address: directory, abi: jbDirectoryAbi,",
+          '  functionName: "controllerOf", args: [projectId],',
+          "});",
+          "const stage = await publicClient.readContract({",
+          "  address: controller, abi: jbControllerAbi,",
+          '  functionName: "currentRulesetOf", args: [projectId],',
           "});",
           "",
-          "// Re-run the reads a quote depends on immediately before simulateContract.",
+          "// Resolve the accepted terminal for your payment token separately.",
+          "// Re-read all quote dependencies immediately before simulateContract.",
         ].join("\n"),
         links: [
           { href: `${REFERENCE_ROOT}/src/lib/nana/project.tsx`, label: "Reference project reads" },
@@ -495,9 +524,9 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["frontend"],
     title: "Indexed data: Bendystraw",
     summary:
-      "Bendystraw is the Juicebox indexer. It is where this site's discover page, activity feeds, price charts, holder tables, and LP positions come from, and it is public.",
+      "Bendystraw indexes on-chain events into searchable data for discovery, activity, charts, holders, and liquidity positions. Use it to display history; use fresh contract reads to authorize a transaction.",
     paragraphs: [
-      "A Ponder service watches every V6 contract on every supported chain and serves the results over GraphQL. Use it for anything a person reads. Use the chain for anything a wallet signs, and re-read that state right before building the transaction: the index can lag the chain by a few blocks, and a lagging index looks like empty data, not an error.",
+      "A Ponder service watches supported contracts and serves indexed results over GraphQL, an API where you request named fields. The index can lag, return incomplete history, or be unavailable. Distinguish loading, unavailable, stale, and empty results; a missing row is not proof that a revnet or transaction does not exist.",
       "This site never sends GraphQL text from the browser. Each query is registered on the server under an operation id; the browser posts { operation, variables } to a same-origin route that validates the variables and forwards it. Heavier history and ranking queries are server-only. Copy that shape if you expose the index to untrusted clients.",
     ],
     table: {
@@ -540,7 +569,13 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           "  { chainId },",
           ");",
           "",
-          "const { project } = await requestBendystraw(",
+          "type RevnetResult = {",
+          "  project: { name: string | null; balance: string; owner: string; suckerGroupId: string | null } | null;",
+          "};",
+          "type RevnetVariables = { chainId: number; projectId: number };",
+          'if (projectId > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Project ID exceeds the indexer numeric range");',
+          "",
+          "const { project } = await requestBendystraw<RevnetResult, RevnetVariables>(",
           "  endpoint,",
           "  `query Revnet($chainId: Float!, $projectId: Float!) {",
           "     project(chainId: $chainId, projectId: $projectId, version: 6) {",
@@ -549,6 +584,8 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           "   }`,",
           "  { chainId, projectId: Number(projectId) },",
           ");",
+          "// Treat project === null as not indexed; do not turn its balances into zero.",
+          "// Generate response types from the current endpoint schema in production.",
         ].join("\n"),
         links: [
           { href: "https://github.com/peripheralist/bendystraw", label: "Bendystraw source" },
@@ -616,10 +653,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           "const quote = await previewPay(publicClient, {",
           "  chainId, terminal, projectId, token, amount, beneficiary, metadata,",
           "});",
+          'if (quote.beneficiaryTokenCount <= 0n) throw new Error("No token output; review the payment terms");',
           "",
           "const tx = buildPayTx({",
           "  chainId, terminal, projectId, token, amount, beneficiary, metadata,",
-          "  minReturnedTokens: slippageFloor(quote.beneficiaryTokenCount, 100n),",
+          "  minReturnedTokens: slippageFloor(quote.beneficiaryTokenCount, 100n), // 1% tolerance; 100 basis points",
           "  memo,",
           "});",
           "",
@@ -689,7 +727,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
       },
     ],
-    note: "Fees to show: a cash out from a stage with a tax above 0% pays the 2.5% protocol fee on the value returned and a 2.5% revnet fee on the tokens burned. At 0% tax the protocol fee applies only to the fee-free surplus portion, which is often zero. Tokens arriving from another chain cash out untaxed and skip the seven-day lock by design.",
+    note: "Use the hook-aware net quote rather than subtracting a flat 5%. The standard taxed treasury path applies a 2.5% protocol fee to value and values the Revnet fee from 2.5% of the token count. At 0% tax, previously fee-free intra-terminal payouts can still make part of the cash out protocol-fee-bearing. The registered sucker's bridge cash out is untaxed and bypasses the launch lock; the receiving holder's later cash out does not inherit that exemption.",
   },
   {
     id: "operate-loans",
@@ -699,7 +737,8 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     summary:
       "Derive loan bounds from live collateral capacity, fees, source token, and permissions, never from a cached cash out estimate.",
     paragraphs: [
-      "Before borrowing, read borrowableAmountFrom in the chosen accounting context and apply a non-zero minimum. Show all three fees: the 2.5% protocol fee, the 1% revnet fee, and the borrower's prepaid fee. A holder acting for themselves needs no permission grant; a contract or operator borrowing on a holder's behalf needs OPEN_LOAN (37) from that holder. Collateral and source token are chain-local.",
+      "Before borrowing, read borrowableAmountFrom in the chosen accounting context. borrowableNow caps gross principal by live funds; borrowableCapacity is the economic collateral capacity and may be larger. minBorrowAmount protects gross principal before fees, not net proceeds. Show the expected net amount after protocol, REV, and prepaid source fees separately.",
+      "A holder acting for themselves needs no permission grant; a contract or operator borrowing on a holder's behalf needs OPEN_LOAN (37) from that holder. Collateral and source token are chain-local. Loan permissions can redirect funds or recovered collateral, so explain the specific authority before requesting a grant.",
       "Before repaying, re-read loanOf and the source fee, compute a conservative ceiling, approve or permit the source token if needed, and simulate the exact collateral being returned. Native repayment sends the ceiling as value; the excess is refunded.",
     ],
     codePoints: [
@@ -712,17 +751,21 @@ const SECTIONS: readonly RevnetGuideSection[] = [
             key: "Permission",
             value: "OPEN_LOAN = 37 (REPAY_LOAN = 39, REALLOCATE_LOAN = 38 for the other calls)",
           },
-          { key: "Bound", value: "minBorrowAmount" },
+          {
+            key: "Bound",
+            value: "minBorrowAmount protects gross principal; calculate net proceeds separately",
+          },
         ],
         code: [
           "const { borrowableNow } = await getBorrowableAmount(publicClient, {",
           "  chainId, revnetId, collateralCount, decimals, currency,",
           "});",
+          'if (borrowableNow <= 0n) throw new Error("No funds available to borrow for this collateral");',
           "",
           "const tx = buildBorrowTx({",
           "  chainId, revnetId, token, collateralCount, beneficiary, holder,",
           "  prepaidFeePercent,            // 25–500 (2.5%–50%, out of 1000)",
-          "  minBorrowAmount: slippageFloor(borrowableNow, 100n),",
+          "  minBorrowAmount: slippageFloor(borrowableNow, 100n), // gross principal, 1% tolerance",
           "});",
         ].join("\n"),
         links: [
@@ -808,7 +851,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
       },
     ],
-    note: "For a revnet with no operator ever, pass address(0): REVOwner treats it as the explicit no-operator value and writes no permissions. An address nobody controls, like the 0xdead one this site uses, has the same effect.",
+    note: "For the explicit no-operator setting, pass address(0). Relinquishing to it is permanent. The site's dead-address default is intended to be inaccessible, but it is not the zero-address mechanism; display the actual value and inspect permissions instead of inferring authority from a label.",
   },
   {
     id: "move-across-chains",
@@ -816,7 +859,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["frontend"],
     title: "Move across chains",
     summary:
-      "A cross-chain move is a state machine with several transactions: prepare, send, prove, claim, and separately sync accounting.",
+      "A cross-chain move has separate stages: prepare on the source chain, send through a bridge, obtain a proof, then claim on the destination. Accounting sync is a separate operation; a source receipt does not mean destination funds are ready.",
     table: {
       label: "Sucker sequence",
       rows: [
@@ -905,8 +948,8 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       { href: `${REFERENCE_ROOT}/src/lib/safe-queue.ts`, label: "Safe queue" },
       { href: `${REFERENCE_ROOT}/src/lib/wagmiConfig.ts`, label: "Wallet config" },
       {
-        href: `${SKILLS}/jb-safe-and-relayr-execution/SKILL.md`,
-        label: "jb-safe-and-relayr-execution skill",
+        href: `${SKILLS}/jb-relayr/SKILL.md`,
+        label: "Relayr integration skill",
       },
     ],
   },
@@ -953,6 +996,8 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     diagrams: [
       {
         label: "Build → simulate → decode → review → write → confirm",
+        description:
+          "Refresh the state, build one transaction request, simulate it as the actual account, decode the call for user review, submit that request, and wait for a successful receipt. A wallet signature or Safe proposal alone is not confirmation.",
         lines: [
           "  fresh reads",
           "    → pure builder",
@@ -990,7 +1035,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
             href: `${REFERENCE_ROOT}/scripts/check-wallet-write-sites.mjs`,
             label: "Write-site inventory check",
           },
-          { href: `${SKILLS}/jb-tx-safety/SKILL.md`, label: "jb-tx-safety skill" },
+          { href: `${SKILLS}/jb-interact-ui/SKILL.md`, label: "Transaction interface skill" },
         ],
       },
     ],
@@ -1001,7 +1046,21 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["frontend"],
     title: "Run this site locally",
     summary:
-      "revnet.money is the reference implementation of everything above. Fork it, run it, and copy the flow closest to yours.",
+      "Run the reference web client to inspect a complete payment, launch, or holder flow. Start with its README and environment example; use the repository's pinned Node version.",
+    codePoints: [
+      {
+        title: "Start a local development server",
+        code: [
+          "git clone https://github.com/mejango/revnet-money.git",
+          "cd revnet-money",
+          "# Install the Node version from .nvmrc with your Node version manager.",
+          "cp .env.example .env.local",
+          "npm ci",
+          "npm run dev",
+          "# Open http://localhost:3002",
+        ].join("\n"),
+      },
+    ],
     table: {
       label: "Commands",
       rows: [
@@ -1010,7 +1069,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           "npm run check",
           "The release-equivalent gate: dependencies, types, lint, format, protocol checks, unit tests, build, bundle, and browser tests",
         ],
-        ["npm test / npm run test:browser", "Vitest, then Playwright against the built app"],
+        ["npm test", "Run unit and integration tests with Vitest"],
+        [
+          "npm run build:browser && npm run test:browser",
+          "Build with deterministic fixtures, then run Playwright; a normal production build uses different endpoints",
+        ],
         ["npm run wallet-writes:check", "Fails if any wallet write bypasses the reviewed hooks"],
       ],
     },
@@ -1077,7 +1140,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     summary:
       "A stage's split recipients can be contracts. When the split share is distributed, the controller hands your contract its tokens and calls processSplitWith. This is how the LP split hook seeds pool liquidity from revenue.",
     paragraphs: [
-      "Splits live in group 1 (RESERVED_TOKENS). Set the split's hook field to your contract's address. If the revnet's token is an ERC-20, the controller approves your contract for the split amount and you must transferFrom during the call; any allowance you leave unused is revoked and burned. If the token is still credits, the controller transfers the credits to you directly. A revert in your hook is caught and emitted as SplitHookReverted rather than blocking distribution.",
+      "Splits live in group 1 (RESERVED_TOKENS). Set the split's hook field to your contract's address. For an ERC-20 token, the controller grants an allowance: pull the tokens during the callback or the unconsumed amount is revoked and burned. For credits, it transfers them to the hook before the callback. A callback revert emits SplitHookReverted without blocking distribution; unpulled ERC-20 tokens are burned, while transferred credits remain at the hook.",
     ],
     codePoints: [
       {
@@ -1099,12 +1162,18 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           },
         ],
         code: [
+          "// ERC-20-only fragment. Define CONTROLLER, PROJECT_ID, and PROJECT_TOKEN",
+          "// in your contract; inherit ReentrancyGuard and implement IERC165.",
+          "using SafeERC20 for IERC20;",
+          "",
           "function processSplitWith(JBSplitHookContext calldata context) external payable nonReentrant {",
           "    if (msg.sender != address(CONTROLLER)) revert Unauthorized();",
+          "    if (context.projectId != PROJECT_ID) revert BadProject();",
           "    if (context.groupId != 1 || address(context.split.hook) != address(this)) revert BadSplit();",
+          "    if (context.token == address(0) || context.token != PROJECT_TOKEN) revert BadToken();",
           "",
           "    // ERC-20: pull it now; the allowance is revoked (and the remainder burned) after this call.",
-          "    IERC20(context.token).transferFrom(msg.sender, address(this), context.amount);",
+          "    IERC20(context.token).safeTransferFrom(msg.sender, address(this), context.amount);",
           "    // ... do the thing: LP, vest, distribute, forward to another project.",
           "}",
         ].join("\n"),
@@ -1149,11 +1218,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     points: [
       {
         key: "Funds",
-        text: "native value arrives as msg.value; ERC-20 arrives as an allowance you must transferFrom during the call, revoked afterwards. A hook that is not feeless receives the amount net of the 2.5% fee.",
+        text: "native value arrives as msg.value; ERC-20 forwarding uses an allowance to pull during the call, revoked afterwards. Fees depend on the path: an ordinary incoming payment hook is not automatically charged 2.5%. Validate the actual forwarded amount and use SafeERC20 for transfers.",
       },
       {
         key: "Two metadatas",
-        text: "hookMetadata is authored by the data hook and is yours to trust; payerMetadata / cashOutMetadata is whatever the caller sent and must be treated as hostile.",
+        text: "hookMetadata is authored by the ruleset data hook; payerMetadata and cashOutMetadata originate with the caller. Authenticate the terminal, project, and expected data hook before relying on that origin, and validate both payloads. A legitimate shared terminal can call your hook for a different project.",
       },
       {
         key: "Metadata format",
@@ -1165,7 +1234,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Reentrancy",
-        text: "pay and cashOutTokensOf have no guard and call hooks after state is recorded; add nonReentrant. Use override(ERC165, IERC165) for supportsInterface.",
+        text: "pay and cashOutTokensOf call hooks after recording state without a global reentrancy guard. Protect your hook's state and external calls; nonReentrant alone does not validate who called or which project is involved. Use override(ERC165, IERC165) for supportsInterface when inheriting both.",
       },
     ],
     links: [
@@ -1252,11 +1321,12 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           },
         ],
         code: [
-          "// Same config + same salt + same sender on every chain → same token and sucker addresses.",
+          "// Resolve the deployed contracts and construct the structs before this fragment.",
+          "// For matching chains, use the same explicit first-stage start and configuration hash.",
           "(uint256 revnetId, IJB721TiersHook hook) = REV_DEPLOYER.deployFor{value: PROJECTS.creationFee()}({",
           "    revnetId: 0,",
           "    configuration: config,",
-          "    terminalConfigurations: contexts,",
+          "    accountingContextsToAccept: contexts,",
           "    suckerDeploymentConfiguration: suckers,",
           "    tiered721HookConfiguration: shop,",
           "    allowedPosts: new REVCroptopAllowedPost[](0)",
@@ -1265,11 +1335,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         links: [
           { href: `${REV_CORE}/REVDeployer.sol`, label: "REVDeployer.sol" },
           { href: `${REV_CORE}/structs/REVStageConfig.sol`, label: "REVStageConfig.sol" },
-          { href: `${SKILLS}/jb-revnet-deploy/SKILL.md`, label: "jb-revnet-deploy skill" },
+          { href: `${SKILLS}/jb-deploy-ui/SKILL.md`, label: "Launch interface skill" },
         ],
       },
     ],
-    note: "The configuration hash covers each stage's start, split percent, issuance, cut, tax, extraMetadata, and the auto issuances; it deliberately excludes split recipients, which is why the operator may redirect them. Adding a chain later needs the same hash, so keep the exact configuration you launched with.",
+    note: "The configuration hash covers the description's name, ticker, and salt; base currency; balance scope; and each stage's effective start, split percent, issuance, cuts, tax, extraMetadata, and auto issuances. It excludes split recipients. A first-stage start of 0 becomes the execution timestamp, so sending 0 independently on several chains can produce different hashes. Keep the origin's effective configuration, sender, salts, and deployment addresses when adding a chain; verify every resulting token and bridge pair.",
   },
   {
     id: "loans-from-contracts",
@@ -1361,11 +1431,12 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Contract builders",
     audience: ["contracts", "frontend"],
     title: "Sharp edges",
-    summary: "The things that bite people who read the interfaces but not the implementations.",
+    summary:
+      "Implementation details that can change the meaning or safety of an otherwise valid call.",
     points: [
       {
         key: "Who is the payer",
-        text: "context.payer is the terminal's msg.sender. Through a router, project payer, or wrapper it is that contract, unless the contract exposes originalPayer() (IJBPayerTracker), which the terminal registry probes. Expose it, or beneficiaries and refunds land on your intermediary.",
+        text: "JBMultiTerminal records its ERC-2771-resolved caller as the payer. A wrapper can therefore be the payer even when a human funded it. Router integrations may probe originalPayer() for fee or refund attribution; that does not rewrite the terminal's payer context or authenticate a human. Set the token beneficiary explicitly.",
       },
       {
         key: "Buyback metadata is three words",
@@ -1373,11 +1444,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "hookMetadata is not yours",
-        text: "for the buyback hook it is a large internal tuple. Treat payerMetadata as untrusted and hookMetadata as the data hook's, never as something a payer controls.",
+        text: "the buyback hook uses an internal tuple that is not an application input format. Caller metadata is untrusted, and hook metadata is only as trustworthy as the authenticated caller, project, and configured data hook. Do not decode it as a user-controlled request.",
       },
       {
         key: "Sucker cash outs",
-        text: "tokens arriving from another chain cash out untaxed and skip the seven-day lock, against the local chain's backing only. Only registry-deployed suckers get that treatment.",
+        text: "the registered sucker's source-chain cash out is untaxed and skips the launch lock, using local backing only. This permits bridge accounting. Tokens received by an ordinary holder on the destination do not acquire an exemption for a later cash out.",
       },
       {
         key: "Router terminal cold start",
@@ -1393,7 +1464,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
     ],
     links: [
-      { href: `${SKILLS}/jb-buyback-hook/SKILL.md`, label: "jb-buyback-hook skill" },
+      { href: "https://github.com/Bananapus/nana-buyback-hook-v6", label: "Buyback hook source" },
       { href: `${SKILLS}/jb-terminal-selection/SKILL.md`, label: "jb-terminal-selection skill" },
       { href: `${SKILLS}/jb-suckers/SKILL.md`, label: "jb-suckers skill" },
     ],
@@ -1409,7 +1480,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     points: [
       {
         key: "Launch",
-        text: "the encoded configuration round-trips through the ABI on every overload; a stale first-stage start is rejected; the same salt yields the same addresses on a second chain.",
+        text: "the configuration round-trips through every supported ABI overload; a past nonzero first-stage start produces the documented seven-day lock; matching effective configuration, sender, salts, and deployment addresses produce the intended cross-chain token addresses.",
       },
       {
         key: "Payments",
@@ -1454,16 +1525,46 @@ export default function BuildPage() {
       <RevnetGuide
         eyebrow="Build"
         title="Build with revnets"
-        introduction="Launch and run a revnet from this site, connect an app to one with the SDK and the indexer, or extend one with contracts. Each section is tagged with who it is for. Every fact here is checked against the V6 contracts, and every section links to the source it came from."
+        introduction="Choose a path: launch and run a revnet without code, connect an app using the V6 SDK, or build a Solidity integration. Start with the steps for your role, then use the transaction examples and source references as you need them."
         sections={SECTIONS}
         afterIntroduction={
           <>
+            <nav aria-label="Choose a building path" className="grid gap-3 sm:grid-cols-3">
+              {[
+                {
+                  href: "#launch-from-the-wizard",
+                  title: "Launch without code",
+                  description: "Prepare a draft, model the terms, and review a deployment.",
+                },
+                {
+                  href: "#set-up",
+                  title: "Connect an app",
+                  description: "Set up the SDK, read a revnet, and build a payment flow.",
+                },
+                {
+                  href: "#extension-points",
+                  title: "Write a contract",
+                  description: "Choose an extension point and test against the V6 contracts.",
+                },
+              ].map(({ href, title, description }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="rounded-lg border border-zinc-300 bg-white p-4 text-zinc-900 hover:border-melon-500 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-900"
+                >
+                  <span className="block font-semibold underline decoration-melon-400 underline-offset-4">
+                    {title}
+                  </span>
+                  <span className="mt-2 block text-sm leading-relaxed text-zinc-700">
+                    {description}
+                  </span>
+                </Link>
+              ))}
+            </nav>
             <p className="text-base text-zinc-600">
               Revnets are built on Juicebox. The{" "}
               <Link
                 href="https://juicebox.money/build"
-                target="_blank"
-                rel="noopener noreferrer"
                 className="underline decoration-melon-400 underline-offset-4"
               >
                 Juicebox build guide
@@ -1472,12 +1573,12 @@ export default function BuildPage() {
             </p>
             <AgentSkillsNote
               skills={[
-                "jb-revnet-deploy",
+                "jb-deploy-ui",
                 "revnet-economics",
                 "jb-revloans",
                 "jb-suckers",
                 "jb-bendystraw",
-                "jb-tx-safety",
+                "jb-interact-ui",
               ]}
               prompt={<CopyRevnetBuildPrompt />}
             />
@@ -1490,8 +1591,6 @@ export default function BuildPage() {
             complete working implementation is the{" "}
             <Link
               href="https://github.com/mejango/revnet-money"
-              target="_blank"
-              rel="noopener noreferrer"
               className="underline decoration-melon-400 underline-offset-4"
             >
               Revnet Money repository

@@ -100,6 +100,23 @@ describe("stacked native dialogs", () => {
     expect(agree).toHaveBeenCalledTimes(1);
   });
 
+  it("covers the dialog underneath while a newer one is open, and uncovers it on close", async () => {
+    render(<StackedDialogs agree={vi.fn()} />);
+
+    click(screen.getByRole("button", { name: "Open pay" }));
+    await screen.findByRole("dialog", { name: "Pay" });
+    expect(dialogNamed("Pay")).not.toHaveAttribute("data-covered");
+
+    click(screen.getByRole("button", { name: "Open review" }));
+    await screen.findByRole("dialog", { name: "Review" });
+    expect(dialogNamed("Pay")).toHaveAttribute("data-covered");
+    expect(dialogNamed("Review")).not.toHaveAttribute("data-covered");
+
+    click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Review" })).toBeNull());
+    expect(dialogNamed("Pay")).not.toHaveAttribute("data-covered");
+  });
+
   it("leaves overlays mounted after the dialog opened untouched", async () => {
     const agree = vi.fn();
     const { rerender } = render(<StackedDialogs agree={agree} tick={0} />);

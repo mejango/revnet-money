@@ -82,13 +82,14 @@ describe("AccountActivityEvents query", () => {
       "mintTokensEvents",
       "manualMintTokensEvents",
       "autoIssueEvents",
+      "sendReservedTokensToSplitEvents",
     ]) {
       expect(query).toContain(`${root}(`);
     }
     const beneficiaryGroups = query.match(
       /AND:\s*\[\s*\{\s*beneficiary:\s*\$address\s*\}\s*,?\s*\{\s*version:\s*6\s*\}\s*\]/gu,
     );
-    expect(beneficiaryGroups).toHaveLength(5);
+    expect(beneficiaryGroups).toHaveLength(6);
   });
 });
 
