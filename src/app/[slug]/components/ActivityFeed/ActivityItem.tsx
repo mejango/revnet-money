@@ -23,6 +23,8 @@ type ActivityEventType =
   | "rulesetQueued"
   | "swapBuy"
   | "swapSell"
+  | "issuance"
+  | "swap"
   | "buybackPool"
   | "payout"
   | "reserved"
@@ -159,6 +161,10 @@ function descriptionParts(
       return { pre: "bought ", strong: count, post: " via the buyback pool" };
     case "swapSell":
       return { pre: "sold ", strong: count, post: " via the buyback pool" };
+    case "issuance":
+      return { pre: "bought ", strong: count, post: " from issuance" };
+    case "swap":
+      return { pre: "swapped ", strong: count, post: " via the buyback pool" };
     case "buybackPool":
       return { pre: "set the buyback pool" };
     case "payout":
@@ -213,7 +219,11 @@ export function ActivityItemRow({
 
   const projectTokenSymbol = symbol ?? "tokens";
   const isPayEvent = event.type === "in";
-  const isInflow = isPayEvent || event.type === "addToBalance" || event.type === "swapBuy";
+  const isInflow =
+    isPayEvent ||
+    event.type === "addToBalance" ||
+    event.type === "swapBuy" ||
+    event.type === "issuance";
   const isOutflow = event.type === "out" || event.type === "swapSell";
   // A reserved distribution leads with the count the way value flows lead
   // with the amount: "3.6M ART" tagged "reserved distro".

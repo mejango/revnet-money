@@ -102,6 +102,8 @@ const SAME_TX_ORDER: ActivityEvent["type"][] = [
   "out",
   "swapBuy",
   "swapSell",
+  "issuance",
+  "swap",
   "mint",
   "autoIssue",
   "reserved",
@@ -173,6 +175,10 @@ export function mapActivityEvents(
   items: ReadonlyArray<ActivityEventItem | null | undefined>,
   tokenContextFor: (item: ActivityEventItem) => ActivityTokenContext,
 ): ActivityEvent[] {
+  // A cash out can also buy fee-project tokens. Keep each project's totals
+  // and receipt matching separate even when those actions share a transaction.
+  const projectTxKey = (event: ActivityEventItem) =>
+    `${event.chainId}:${event.project?.version ?? ""}:${event.project?.projectId ?? ""}:${event.txHash}`;
   // mintTokensOf fires alongside pays, manual mints, and auto-issuance, each of which
   // already gets its own row — only surface mintTokensEvent rows for txs none of those
   // cover. A pay that issued NOTHING itself (the buyback route: the terminal minted
@@ -186,6 +192,9 @@ export function mapActivityEvents(
   // amount rank (largest swap ↔ largest remint): one reserve rate applies to
   // every pay in a tx, which keeps the ranks aligned.
   const buySwapAmountsByTx = new Map<string, bigint[]>();
+  // Leftover issuance joins the bought tokens in ONE beneficiary remint;
+  // sells can also remint internally. Neither shape supports per-buy matching.
+  const mixedSwapTxs = new Set<string>();
   const mintCountsByTx = new Map<string, bigint[]>();
   const manualMintCountsByTx = new Map<string, bigint[]>();
   const pushSorted = (map: Map<string, bigint[]>, key: string, value: bigint) => {
@@ -199,7 +208,7 @@ export function mapActivityEvents(
   const payTotalsByTx = new Map<string, { count: number; amount: bigint; usd: bigint }>();
   for (const event of items) {
     if (!event) continue;
-    const key = `${event.chainId}:${event.txHash}`;
+    const key = projectTxKey(event);
     if (event.payEvent) {
       const total = payTotalsByTx.get(key) ?? { count: 0, amount: 0n, usd: 0n };
       total.count += 1;
@@ -212,18 +221,27 @@ export function mapActivityEvents(
       mintCoveredTxs.add(key);
     }
     if (event.autoIssueEvent) autoIssueTxs.add(key);
-    if (event.swapEvent && event.swapEvent.direction.toLowerCase() !== "sell") {
-      pushSorted(buySwapAmountsByTx, key, BigInt(event.swapEvent.projectTokenAmount));
+    if (event.swapEvent) {
+      if (event.swapEvent.direction.toLowerCase() === "buy") {
+        pushSorted(buySwapAmountsByTx, key, BigInt(event.swapEvent.projectTokenAmount));
+      } else {
+        mixedSwapTxs.add(key);
+      }
     }
     if (event.mintTokensEvent) {
       pushSorted(mintCountsByTx, key, BigInt(event.mintTokensEvent.beneficiaryTokenCount));
     }
     if (event.manualMintTokensEvent) {
-      pushSorted(manualMintCountsByTx, key, BigInt(event.manualMintTokensEvent.beneficiaryTokenCount));
+      pushSorted(
+        manualMintCountsByTx,
+        key,
+        BigInt(event.manualMintTokensEvent.beneficiaryTokenCount),
+      );
     }
   }
   /** The buy swap whose output this remint is the reserved-rate share of, by amount rank. */
   const pairedSwapAmount = (key: string, counts: Map<string, bigint[]>, count: bigint) => {
+    if (mixedSwapTxs.has(key)) return undefined;
     const rank = (counts.get(key) ?? []).indexOf(count);
     return rank < 0 ? undefined : buySwapAmountsByTx.get(key)?.[rank]?.toString();
   };
@@ -238,7 +256,7 @@ export function mapActivityEvents(
 
     const baseTokenSymbol = tokenContext.tokenSymbol ?? undefined;
     const baseTokenDecimals = tokenContext.decimals ?? 18;
-    const txKey = `${event.chainId}:${event.txHash}`;
+    const txKey = projectTxKey(event);
 
     // In USD mode a missing/zero indexed figure falls back to the chain's
     // token so the row still shows a meaningful amount.
@@ -426,10 +444,17 @@ export function mapActivityEvents(
       });
     } else if (event.swapEvent) {
       const e = event.swapEvent;
-      const isSell = e.direction.toLowerCase() === "sell";
+      const direction = e.direction.toLowerCase();
       events.push({
         id: event.id,
-        type: isSell ? "swapSell" : "swapBuy",
+        type:
+          direction === "sell"
+            ? "swapSell"
+            : direction === "buy"
+              ? "swapBuy"
+              : direction === "mint"
+                ? "issuance"
+                : "swap",
         txHash: e.txHash,
         timestamp: e.timestamp,
         // PoolManager is the indexed caller; `from` is the payer/seller whose
