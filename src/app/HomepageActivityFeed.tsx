@@ -31,9 +31,13 @@ function description(event: HomepageActivity, symbol: string) {
     case "addToBalance":
       return "added to balance";
     case "swapBuy":
-      return `bought ${event.tokenCount} ${symbol} through the market`;
+      return `bought ${event.tokenCount} ${symbol} via the buyback pool`;
     case "swapSell":
-      return `sold ${event.tokenCount} ${symbol} through the market`;
+      return `sold ${event.tokenCount} ${symbol} via the buyback pool`;
+    case "issuance":
+      return `bought ${event.tokenCount} ${symbol} from issuance`;
+    case "swap":
+      return `swapped ${event.tokenCount} ${symbol} via the buyback pool`;
     case "payout":
       return "sent payouts";
     case "rulesetQueued":
@@ -49,7 +53,7 @@ function description(event: HomepageActivity, symbol: string) {
   }
 }
 
-/** One sentence for a row and its same-tx companions: "bought … through the market". */
+/** One sentence for a row and its same-tx companions: "bought … via the buyback pool". */
 function combinedDescription(event: HomepageActivity, symbol: string): string {
   // A zero-issuance pay's "paid in" adds nothing next to the amount + "in"
   // tag — it contributes no fragment when other actions exist.
@@ -143,7 +147,10 @@ export function HomepageActivityFeed({
         const href = `/${JB_CHAINS[chainId]?.slug ?? "eth"}:${project.projectId}`;
         const explorer = JB_CHAINS[chainId]?.chain.blockExplorers?.default.url;
         const isIn =
-          activity.type === "in" || activity.type === "addToBalance" || activity.type === "swapBuy";
+          activity.type === "in" ||
+          activity.type === "addToBalance" ||
+          activity.type === "swapBuy" ||
+          activity.type === "issuance";
         const isOut = activity.type === "out" || activity.type === "swapSell";
         // The project ERC-20's ticker. `project.tokenSymbol` names the ACCOUNTING
         // token (ETH, USDC) — labelling a project-token count with it reads as

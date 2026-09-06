@@ -67,6 +67,7 @@ export function activityCategory(event: ActivityEvent): ActivityCategory | null 
     case "addToBalance":
       return "addToBalance";
     case "mint":
+    case "issuance":
       return "tokenMint";
     case "autoIssue":
       return "autoIssue";
@@ -82,6 +83,7 @@ export function activityCategory(event: ActivityEvent): ActivityCategory | null 
       return "payout";
     case "swapBuy":
     case "swapSell":
+    case "swap":
       return "buybackSwap";
     case "buybackPool":
       return "buybackPool";
