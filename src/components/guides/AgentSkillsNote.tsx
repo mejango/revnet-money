@@ -2,48 +2,37 @@ import type { ReactNode } from "react";
 
 const SKILLS_URL = "https://github.com/mejango/juicebox-skills";
 
-/**
- * The one line for readers who are learning or building with an agent: the prompt to hand it,
- * if the page has one, and the skills library it should work from. Reads fine to a person too.
- */
 export function AgentSkillsNote({
   skills,
   prompt,
 }: {
   skills: readonly string[];
-  /** The page's copy-the-prompt control, when it has one. */
   prompt?: ReactNode;
 }) {
-  const skillList = skills.map((skill, i) => (
-    <span key={skill}>
-      {i > 0 ? (i === skills.length - 1 ? " and " : ", ") : ""}
-      <code className="text-sm">{skill}</code>
-    </span>
-  ));
-  const library = (
-    <a
-      href={SKILLS_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="underline decoration-melon-400 underline-offset-4"
-    >
-      Juicebox V6 skills
-    </a>
-  );
-
   return (
-    <p className="text-base text-zinc-600">
-      {prompt ? (
-        <>
-          Building with an agent? {prompt}, and give it the {library} so it works from the deployed
-          addresses, ABIs, and economics rather than from memory. The revnet ones are {skillList}.
-        </>
-      ) : (
-        <>
-          Reading with an agent? Give it the {library} so it answers from the deployed addresses,
-          ABIs, and economics rather than from memory. The revnet ones are {skillList}.
-        </>
-      )}
-    </p>
+    <details className="min-w-0 text-base text-zinc-700">
+      <summary className="min-h-11 cursor-pointer py-3 font-semibold text-melon-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-melon-800">
+        {prompt ? "Build with an AI assistant" : "Learn with an AI assistant"}
+      </summary>
+      <p className="mt-2 leading-relaxed">
+        Give your assistant the{" "}
+        <a href={SKILLS_URL} className="text-melon-900 underline underline-offset-4">
+          Juicebox V6 skills
+        </a>{" "}
+        for contract addresses, interfaces, and economics. Ask it to cite the current contracts so
+        you can check its answers{prompt ? " and review proposed transactions before signing" : ""}.
+      </p>
+      <p className="mt-2 leading-relaxed [overflow-wrap:anywhere]">
+        Relevant skills:{" "}
+        {skills.map((skill, i) => (
+          <span key={skill}>
+            {i > 0 ? ", " : ""}
+            <code className="text-sm">{skill}</code>
+          </span>
+        ))}
+        .
+      </p>
+      {prompt}
+    </details>
   );
 }

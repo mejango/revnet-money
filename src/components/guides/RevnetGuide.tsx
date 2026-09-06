@@ -28,8 +28,8 @@ export type RevnetGuideSection = {
   summary: string;
   paragraphs?: readonly string[];
   points?: readonly RevnetGuidePoint[];
-  /** Monospace sketches: a flow, a comparison, a worked number. */
-  diagrams?: readonly { label: string; lines: readonly string[] }[];
+  /** A visual sketch with a plain-language alternative for readers who cannot use it. */
+  diagrams?: readonly { label: string; description?: string; lines: readonly string[] }[];
   /** Plain two-column reference rows, without the "code point" framing. */
   table?: { label: string; rows: readonly (readonly [string, string])[] };
   /** Side-by-side comparison: two named columns, one row per point. */
@@ -54,16 +54,38 @@ type Props = {
 };
 
 function SectionLink({ href, label }: { href: string; label: string }) {
-  const external = href.startsWith("http");
-
   return (
     <Link
       href={href}
-      className="underline decoration-melon-400 underline-offset-4 hover:text-melon-700"
-      {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      className="inline-flex min-h-11 items-center py-2 underline decoration-melon-500 underline-offset-4 [overflow-wrap:anywhere] hover:text-melon-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700"
     >
       {label}
     </Link>
+  );
+}
+
+function ContentsList({ sections }: { sections: readonly RevnetGuideSection[] }) {
+  return (
+    <ol className="space-y-1 text-sm leading-snug">
+      {sections.map((section, index) => (
+        <li key={section.id}>
+          {section.part && section.part !== sections[index - 1]?.part ? (
+            <p className="mb-1 mt-5 text-xs font-semibold uppercase tracking-[0.12em] text-melon-700">
+              {section.part}
+            </p>
+          ) : null}
+          <a
+            href={`#${section.id}`}
+            className="grid min-h-11 grid-cols-[1.7rem_1fr] items-center gap-1 px-1 py-2 underline-offset-4 hover:bg-melon-100 hover:text-melon-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-melon-700"
+          >
+            <span aria-hidden="true" className="text-zinc-600">
+              {index + 1}.
+            </span>
+            <span>{section.title}</span>
+          </a>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -77,7 +99,11 @@ export function RevnetGuide({
   afterSections,
 }: Props) {
   return (
-    <div className="container px-6 py-12 sm:px-8 sm:py-16">
+    <div
+      id="guide-content"
+      tabIndex={-1}
+      className="container scroll-mt-6 px-6 py-12 [overflow-wrap:anywhere] focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-melon-700 sm:px-8 sm:py-16"
+    >
       <header className="max-w-[78ch]">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-melon-700">
           {eyebrow}
@@ -88,39 +114,46 @@ export function RevnetGuide({
       </header>
 
       <div className="mt-12 grid gap-10 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
-        <nav
-          aria-label={`${eyebrow} contents`}
-          className="border border-melon-200 bg-melon-50 p-5 lg:sticky lg:top-6"
+        <div
+          id="guide-contents"
+          tabIndex={-1}
+          className="scroll-mt-6 border border-melon-200 bg-melon-50 p-5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700 lg:sticky lg:top-6"
         >
-          <p className="text-sm font-semibold uppercase tracking-[0.12em] text-zinc-600">
-            Contents
-          </p>
-          <ol className="mt-4 space-y-3 text-sm leading-snug">
-            {sections.map((section, index) => (
-              <li key={section.id}>
-                {section.part && section.part !== sections[index - 1]?.part ? (
-                  <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-melon-700 first:mt-0">
-                    {section.part}
-                  </p>
-                ) : null}
-                <a
-                  href={`#${section.id}`}
-                  className="grid grid-cols-[1.7rem_1fr] gap-1 underline-offset-4 hover:text-melon-700 hover:underline"
-                >
-                  <span className="text-zinc-500">{index + 1}.</span>
-                  <span>{section.title}</span>
-                </a>
-              </li>
-            ))}
-          </ol>
-        </nav>
+          <nav aria-label={`${eyebrow} contents`} className="lg:hidden">
+            <details>
+              <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700">
+                Contents · {sections.length} sections
+              </summary>
+              <ContentsList sections={sections} />
+            </details>
+          </nav>
+          <nav
+            aria-label={`${eyebrow} contents`}
+            className="hidden max-h-[calc(100dvh-5.5rem)] overflow-y-auto p-1 lg:block"
+          >
+            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-zinc-600">
+              Contents
+            </h2>
+            {sections[0] ? (
+              <a
+                href={`#${sections[0].id}`}
+                className="mt-2 inline-flex min-h-11 items-center text-sm underline underline-offset-4 hover:text-melon-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-melon-700"
+              >
+                Skip contents and start reading
+              </a>
+            ) : null}
+            <ContentsList sections={sections} />
+          </nav>
+        </div>
 
         <div className="min-w-0">
           {sections.map((section, index) => (
             <section
               key={section.id}
               id={section.id}
-              className="scroll-mt-6 border-t border-melon-200 py-10 first:border-t-0 first:pt-0"
+              aria-labelledby={`${section.id}-title`}
+              tabIndex={-1}
+              className="scroll-mt-6 border-t border-melon-200 py-10 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700 first:border-t-0 first:pt-0"
             >
               {section.part && section.part !== sections[index - 1]?.part ? (
                 <p className="mb-6 text-sm font-semibold uppercase tracking-[0.16em] text-melon-700">
@@ -128,11 +161,24 @@ export function RevnetGuide({
                 </p>
               ) : null}
               <div className="flex items-start gap-4">
-                <span className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center border border-melon-300 bg-melon-100 text-sm font-semibold text-melon-800">
+                <span
+                  aria-hidden="true"
+                  className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center border border-melon-300 bg-melon-100 text-sm font-semibold text-melon-800"
+                >
                   {index + 1}
                 </span>
                 <div className="min-w-0">
-                  <h2 className="text-2xl font-semibold sm:text-3xl">{section.title}</h2>
+                  <h2 id={`${section.id}-title`} className="text-2xl font-semibold sm:text-3xl">
+                    <a
+                      href={`#${section.id}`}
+                      className="group inline-block py-1 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700"
+                    >
+                      {section.title}{" "}
+                      <span aria-hidden="true" className="text-melon-700">
+                        #
+                      </span>
+                    </a>
+                  </h2>
                   {section.audience?.length ? (
                     <p className="mt-2 flex flex-wrap gap-2">
                       {section.audience.map((audience) => (
@@ -171,63 +217,94 @@ export function RevnetGuide({
                   </ul>
                 ) : null}
 
-                {section.diagrams?.map((diagram) => (
+                {section.diagrams?.map((diagram, diagramIndex) => (
                   <figure key={diagram.label} className="border border-melon-300 bg-melon-50">
                     <figcaption className="border-b border-melon-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
                       {diagram.label}
                     </figcaption>
-                    <pre className="overflow-x-auto p-4 font-mono text-sm leading-6 text-zinc-800">
-                      {diagram.lines.join("\n")}
-                    </pre>
+                    {diagram.description ? (
+                      <p
+                        id={`${section.id}-diagram-${diagramIndex}-description`}
+                        className="px-4 pt-4 text-base leading-relaxed text-zinc-800"
+                      >
+                        {diagram.description}
+                      </p>
+                    ) : null}
+                    <div
+                      role="region"
+                      aria-label={`${diagram.label}: scrollable diagram`}
+                      aria-describedby={
+                        diagram.description
+                          ? `${section.id}-diagram-${diagramIndex}-description`
+                          : undefined
+                      }
+                      tabIndex={0}
+                      className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-melon-700"
+                    >
+                      <pre
+                        aria-hidden={diagram.description ? true : undefined}
+                        className="p-4 font-mono text-sm leading-6 text-zinc-800"
+                      >
+                        {diagram.lines.join("\n")}
+                      </pre>
+                    </div>
                   </figure>
                 ))}
 
                 {section.compare ? (
                   <div className="border border-melon-300">
-                    <p className="border-b border-melon-200 bg-melon-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
-                      {section.compare.label}
-                    </p>
-                    <div className="grid grid-cols-2 text-sm sm:text-base">
-                      {section.compare.columns.map((column, i) => (
-                        <p
-                          key={column}
-                          className={`border-b border-melon-200 px-4 py-2 font-semibold text-zinc-900 ${i === 0 ? "border-r" : ""}`}
-                        >
-                          {column}
-                        </p>
-                      ))}
-                      {section.compare.rows.map(([left, right], i) => (
-                        <div key={left} className="contents">
-                          <p
-                            className={`border-r border-melon-200 px-4 py-2 text-zinc-700 ${i < section.compare!.rows.length - 1 ? "border-b" : ""}`}
-                          >
-                            {left}
-                          </p>
-                          <p
-                            className={`border-melon-200 px-4 py-2 text-zinc-700 ${i < section.compare!.rows.length - 1 ? "border-b" : ""}`}
-                          >
-                            {right}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
+                    <table className="w-full table-fixed border-collapse text-left text-sm sm:text-base">
+                      <caption className="border-b border-melon-200 bg-melon-50 px-4 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
+                        {section.compare.label}
+                      </caption>
+                      <thead>
+                        <tr>
+                          {section.compare.columns.map((column) => (
+                            <th
+                              key={column}
+                              scope="col"
+                              className="border-b border-melon-200 px-3 py-3 align-top font-semibold text-zinc-900 first:border-r sm:px-4"
+                            >
+                              {column}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {section.compare.rows.map(([left, right]) => (
+                          <tr key={left} className="border-b border-melon-200 last:border-b-0">
+                            <td className="border-r border-melon-200 px-3 py-3 align-top text-zinc-700 sm:px-4">
+                              {left}
+                            </td>
+                            <td className="px-3 py-3 align-top text-zinc-700 sm:px-4">{right}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 ) : null}
 
                 {section.table ? (
                   <div className="border border-melon-300">
-                    <p className="border-b border-melon-200 bg-melon-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
+                    <h3
+                      id={`${section.id}-reference`}
+                      className="border-b border-melon-200 bg-melon-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700"
+                    >
                       {section.table.label}
-                    </p>
-                    <dl className="grid text-sm sm:grid-cols-[minmax(10rem,auto)_minmax(0,1fr)] sm:text-base">
+                    </h3>
+                    <dl
+                      aria-labelledby={`${section.id}-reference`}
+                      className="text-sm sm:text-base"
+                    >
                       {section.table.rows.map(([key, value]) => (
-                        <div key={key} className="contents">
-                          <dt className="border-b border-melon-200 px-4 py-2 font-mono text-sm text-zinc-900 last:border-b-0 sm:border-r">
+                        <div
+                          key={key}
+                          className="grid border-b border-melon-200 last:border-b-0 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+                        >
+                          <dt className="px-4 pb-1 pt-3 font-mono text-sm font-semibold text-zinc-900 sm:border-r sm:border-melon-200 sm:py-3">
                             {key}
                           </dt>
-                          <dd className="border-b border-melon-200 px-4 py-2 text-zinc-700 last:border-b-0">
-                            {value}
-                          </dd>
+                          <dd className="px-4 pb-3 pt-1 text-zinc-700 sm:py-3">{value}</dd>
                         </div>
                       ))}
                     </dl>
@@ -254,13 +331,16 @@ export function RevnetGuide({
                         ) : null}
 
                         {codePoint.details?.length ? (
-                          <dl className="mt-4 grid border border-melon-200 bg-white text-sm sm:grid-cols-[9rem_minmax(0,1fr)] sm:text-base">
+                          <dl className="mt-4 border border-melon-200 bg-white text-sm sm:text-base">
                             {codePoint.details.map((detail) => (
-                              <div key={detail.key} className="contents">
-                                <dt className="border-b border-melon-200 px-3 py-2 font-semibold text-zinc-900 last:border-b-0 sm:border-r">
+                              <div
+                                key={detail.key}
+                                className="grid border-b border-melon-200 last:border-b-0 sm:grid-cols-[9rem_minmax(0,1fr)]"
+                              >
+                                <dt className="px-3 pb-1 pt-3 font-semibold text-zinc-900 sm:border-r sm:border-melon-200 sm:py-3">
                                   {detail.key}
                                 </dt>
-                                <dd className="break-words border-b border-melon-200 px-3 py-2 font-mono text-sm text-zinc-700 last:border-b-0">
+                                <dd className="px-3 pb-3 pt-1 font-mono text-sm text-zinc-700 sm:py-3">
                                   {detail.value}
                                 </dd>
                               </div>
@@ -270,7 +350,9 @@ export function RevnetGuide({
 
                         {codePoint.code ? (
                           <pre
-                            className="mt-4 overflow-x-auto border border-black bg-zinc-900 p-4 text-sm leading-6 text-melon-100"
+                            role="region"
+                            aria-label={`${codePoint.title}: code example`}
+                            className="mt-4 overflow-x-auto border border-black bg-zinc-900 p-4 text-sm leading-6 text-melon-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700"
                             tabIndex={0}
                           >
                             <code>{codePoint.code}</code>
@@ -302,6 +384,13 @@ export function RevnetGuide({
                     ))}
                   </p>
                 ) : null}
+
+                <a
+                  href="#guide-contents"
+                  className="inline-flex min-h-11 items-center py-2 text-sm text-zinc-600 underline underline-offset-4 hover:text-melon-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700"
+                >
+                  Back to contents
+                </a>
               </div>
             </section>
           ))}
@@ -315,7 +404,10 @@ export function RevnetGuide({
               Keep going
             </p>
             <h2 className="mt-2 text-2xl font-semibold">
-              <Link href={companion.href} className="underline underline-offset-4">
+              <Link
+                href={companion.href}
+                className="inline-flex min-h-11 items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700"
+              >
                 {companion.label}
               </Link>
             </h2>
