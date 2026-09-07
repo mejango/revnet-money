@@ -16,6 +16,7 @@ import { AddItemsModal } from "./AddItemsModal";
 import { MintItemModal } from "./MintItemModal";
 import {
   categoryLabel,
+  describeTransferSchedule,
   discountLabel,
   formatShopAmount,
   ShopConfigFlags,
@@ -261,9 +262,7 @@ export function InventorySection({
               {shop.fixedTierTransferability === true
                 ? "Fixed per item"
                 : shop.fixedTierTransferability === false
-                  ? shop.transfersPaused == null
-                    ? "Set by each stage"
-                    : `Set by each stage — transfers ${shop.transfersPaused ? "paused" : "allowed"} now`
+                  ? (describeTransferSchedule(shop.transferPauseByStage) ?? "Set by each stage")
                   : "Status unavailable"}
             </dd>
           </div>

@@ -123,6 +123,46 @@ export interface ShopInventory {
   fixedTierTransferability: boolean | null;
   /** Whether the active stage pauses tiers which opted into transfer control. */
   transfersPaused: boolean | null;
+  /**
+   * Whether each stage pauses transfers, oldest first and numbered the way the Terms
+   * table numbers them. A revnet queues its whole stage schedule at deployFor and no
+   * revnet actor holds QUEUE_RULESETS, so this is the project's settled history and
+   * future — not a reading of what happens to be true right now.
+   */
+  transferPauseByStage: { stage: number; paused: boolean }[] | null;
+}
+
+/**
+ * Describe when transfers are paused across a project's whole stage schedule.
+ *
+ * A revnet's stages are queued once at deployFor and cannot be requeued, so the answer is
+ * settled for the project's lifetime. Saying "transfers allowed now" reported the clock
+ * rather than the agreement, and went stale the moment a stage rolled over.
+ */
+export function describeTransferSchedule(
+  stages: { stage: number; paused: boolean }[] | null,
+): string | null {
+  if (!stages?.length) return null;
+  if (stages.every((entry) => !entry.paused)) return "Transfers allowed in every stage";
+  if (stages.every((entry) => entry.paused)) return "Transfers paused in every stage";
+
+  const runs: { paused: boolean; from: number; to: number }[] = [];
+  for (const entry of stages) {
+    const last = runs[runs.length - 1];
+    if (last && last.paused === entry.paused) last.to = entry.stage;
+    else runs.push({ paused: entry.paused, from: entry.stage, to: entry.stage });
+  }
+
+  // The final stage never ends, so it reads as "from stage N" rather than a closed range.
+  return runs
+    .map((run, index) => {
+      const verb = run.paused ? "paused" : "allowed";
+      if (index === runs.length - 1) return `${verb} from stage ${run.from}`;
+      if (run.from === run.to) return `${verb} in stage ${run.from}`;
+      return `${verb} in stages ${run.from}–${run.to}`;
+    })
+    .join(", ")
+    .replace(/^./u, (character) => character.toUpperCase());
 }
 
 const TIER_PAGE_SIZE = 200;
@@ -294,6 +334,17 @@ export async function loadShopInventory(
     transfersPaused: currentRuleset
       ? decode721RulesetMetadata(Number(currentRuleset.metadata.metadata ?? 0)).pauseTransfers
       : null,
+    transferPauseByStage:
+      allRulesets === null || allRulesets.length === 0
+        ? null
+        : [...allRulesets]
+            // `allOf` returns newest first; the Terms table numbers stages oldest-first.
+            .sort((left, right) => left.start - right.start)
+            .map((ruleset, index) => ({
+              stage: index + 1,
+              paused: decode721RulesetMetadata(decodeRulesetMetadata(ruleset.metadata).metadata)
+                .pauseTransfers,
+            })),
     tiers: activeTiers.map((tier) => ({
       id: tier.id,
       price: tier.price,
