@@ -59,15 +59,81 @@ const result = spawnSync("npm", ["audit", "--omit=dev", "--json"], {
   env: process.env,
 });
 
+const failAudit = (message) => {
+  console.error(`Production dependency audit could not be verified: ${message}`);
+  process.exit(1);
+};
+
+if (result.error) {
+  failAudit(`npm audit could not run (${result.error.code ?? result.error.message}).`);
+}
+if (result.signal) {
+  failAudit(`npm audit terminated with signal ${result.signal}.`);
+}
+// npm uses exit 1 for a completed report with findings. Other exit statuses
+// are execution failures, even when stdout happens to contain valid JSON.
+if (result.status !== 0 && result.status !== 1) {
+  failAudit(`npm audit exited with status ${result.status}.`);
+}
+
 let report;
 try {
   report = JSON.parse(result.stdout);
 } catch {
-  process.stderr.write(result.stderr || result.stdout || "npm audit returned no JSON.\n");
-  process.exit(1);
+  failAudit("npm audit returned invalid or missing JSON.");
 }
 
-const vulnerabilities = report.vulnerabilities ?? {};
+const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const severities = ["info", "low", "moderate", "high", "critical"];
+if (!isRecord(report) || Object.hasOwn(report, "error")) {
+  failAudit("npm audit returned an error response or invalid report.");
+}
+if (
+  report.auditReportVersion !== 2 ||
+  !isRecord(report.vulnerabilities) ||
+  !isRecord(report.metadata) ||
+  !isRecord(report.metadata.vulnerabilities)
+) {
+  failAudit("npm audit returned an incomplete or unsupported vulnerability report.");
+}
+
+const vulnerabilities = report.vulnerabilities;
+const findings = Object.entries(vulnerabilities);
+const counts = Object.fromEntries(severities.map((severity) => [severity, 0]));
+for (const [name, vulnerability] of findings) {
+  if (
+    !isRecord(vulnerability) ||
+    vulnerability.name !== name ||
+    !severities.includes(vulnerability.severity) ||
+    !Array.isArray(vulnerability.via) ||
+    vulnerability.via.length === 0 ||
+    !vulnerability.via.every((via) =>
+      typeof via === "string"
+        ? Object.hasOwn(vulnerabilities, via)
+        : isRecord(via) &&
+          typeof via.url === "string" &&
+          via.url.length > 0 &&
+          severities.includes(via.severity),
+    )
+  ) {
+    failAudit(`npm audit returned a malformed finding for ${name}.`);
+  }
+  counts[vulnerability.severity] += 1;
+}
+for (const severity of [...severities, "total"]) {
+  const count = report.metadata.vulnerabilities[severity];
+  if (
+    !Number.isSafeInteger(count) ||
+    count < 0 ||
+    count !== (severity === "total" ? findings.length : counts[severity])
+  ) {
+    failAudit("npm audit returned inconsistent vulnerability counts.");
+  }
+}
+if (result.status === 1 && findings.length === 0) {
+  failAudit("npm audit exited unsuccessfully without reporting any findings.");
+}
+
 const memo = new Map();
 const isScopedEllipticFinding = (name, active = new Set()) => {
   if (memo.has(name)) return memo.get(name);

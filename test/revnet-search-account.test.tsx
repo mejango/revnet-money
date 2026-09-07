@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { hydrateRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -47,6 +49,29 @@ beforeEach(() => {
 });
 
 describe("search:account — RevnetSearch account routing", () => {
+  it("enables the server-rendered search only after hydration can retain input and handle submission", async () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderToString(<RevnetSearch />);
+    document.body.append(container);
+    let root: Root | undefined;
+    try {
+      expect(screen.getByRole("searchbox")).toBeDisabled();
+      await act(async () => {
+        root = hydrateRoot(container, <RevnetSearch />);
+      });
+      expect(screen.getByRole("searchbox")).toBeEnabled();
+      fireEvent.change(screen.getByRole("searchbox"), { target: { value: "@fixture-revnet" } });
+      expect(screen.getByRole("search")).toHaveAttribute("action", "/@fixture-revnet");
+      expect(screen.getByRole("link", { name: /Open revnet handle/i })).toHaveAttribute(
+        "href",
+        "/@fixture-revnet",
+      );
+    } finally {
+      await act(async () => root?.unmount());
+      container.remove();
+    }
+  });
+
   it("shows an account row for a valid 0x address and navigates on click", async () => {
     render(<RevnetSearch />);
     await typeQuery(ADDRESS);

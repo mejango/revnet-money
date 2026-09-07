@@ -144,7 +144,7 @@ export async function fetchSafeCreation(
   }
 }
 
-export type SafeCreationValidationReason =
+type SafeCreationValidationReason =
   | "unrecognized-deployment"
   | "unsafe-current-policy"
   | "malformed-initializer"
@@ -334,9 +334,6 @@ export function buildSafeProxyFactoryCall(creation: SafeCreation): SafeProxyFact
     }),
   };
 }
-
-/** Alias matching the terminology used by the account Safe deployment flow. */
-export const buildDeploySafeCall = buildSafeProxyFactoryCall;
 
 export type SafeDeploymentSimulation =
   | { valid: true; call: SafeProxyFactoryCall }

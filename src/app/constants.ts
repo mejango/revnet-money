@@ -22,7 +22,7 @@ export const REVNET_CASHOUT_FEE_PERCENT = 0.025;
  * makes the comparator return 0 for the missing ones, and their order then depends on
  * whatever the data source happened to emit.
  */
-export const chainSortOrder = new Map<JBChainId, number>([
+const chainSortOrder = new Map<JBChainId, number>([
   [mainnet.id, 0],
   [optimism.id, 1],
   [base.id, 2],

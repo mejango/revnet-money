@@ -12,7 +12,7 @@ const APP = {
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://revnet.money",
 };
 
-export const WALLET_CONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID ?? "";
+const WALLET_CONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID ?? "";
 
 /**
  * WalletConnect — the only route to mobile wallets that aren't in this browser.
@@ -24,7 +24,7 @@ export const WALLET_CONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLET_CONNECT_
  * pairing URI as a `display_uri` message, which our sign-in sheet renders as a
  * QR, so no third-party chrome appears.
  */
-export function lazyWalletConnect(): CreateConnectorFn | undefined {
+function lazyWalletConnect(): CreateConnectorFn | undefined {
   if (!WALLET_CONNECT_PROJECT_ID) return undefined;
   return lazyConnector({
     id: "walletConnect",
@@ -48,7 +48,7 @@ export function lazyWalletConnect(): CreateConnectorFn | undefined {
 }
 
 /** Coinbase Wallet, which is not an injected provider outside its extension. */
-export function lazyCoinbaseWallet(): CreateConnectorFn {
+function lazyCoinbaseWallet(): CreateConnectorFn {
   return lazyConnector({
     id: "coinbaseWalletSDK",
     name: "Coinbase Wallet",
@@ -73,7 +73,7 @@ export function lazyCoinbaseWallet(): CreateConnectorFn {
  * the gate its SDK is fetched on every page load, since Wagmi's reconnect
  * probes `getProvider()` on every connector.
  */
-export function lazySafe(): CreateConnectorFn {
+function lazySafe(): CreateConnectorFn {
   return lazyConnector({
     id: "safe",
     name: "Safe",

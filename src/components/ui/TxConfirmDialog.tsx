@@ -31,6 +31,7 @@ export function TxConfirmDialog({
   action,
   onConfirm,
   busy = false,
+  disabled = false,
   preparing = false,
   status,
   error,
@@ -48,6 +49,8 @@ export function TxConfirmDialog({
   action: string;
   onConfirm: () => void;
   busy?: boolean;
+  /** The review is ready, but another input is required before confirming. */
+  disabled?: boolean;
   /** Rows and steps are still being read; `status` says what is happening. */
   preparing?: boolean;
   status?: string | null;
@@ -70,7 +73,7 @@ export function TxConfirmDialog({
         <ButtonWithWallet
           targetChainId={chainId}
           loading={busy}
-          disabled={busy}
+          disabled={busy || preparing || disabled}
           onClick={onConfirm}
           connectWalletText="Connect Wallet"
           className="bg-teal-500 text-melon-950 hover:bg-teal-600"

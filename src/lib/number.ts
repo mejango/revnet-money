@@ -70,7 +70,8 @@ export function formatCompact(value: string | number, maxDecimals: number = 4): 
   const fixed = trimZeros(magnitude.toFixed(maxDecimals));
   // A real amount never reads as nothing: below the decimal budget, show its
   // first significant figure instead of rounding to 0.
-  if (fixed === "0") return `${sign}${trimZeros(magnitude.toFixed(Math.ceil(-Math.log10(magnitude))))}`;
+  if (fixed === "0")
+    return `${sign}${trimZeros(magnitude.toFixed(Math.ceil(-Math.log10(magnitude))))}`;
   return `${sign}${fixed}`;
 }
 

@@ -18,6 +18,7 @@ import { toast } from "@/components/ui/use-toast";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
+import { isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { useEffect, useMemo, useState } from "react";
 import { Address, zeroAddress } from "viem";
@@ -87,15 +88,17 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const { hasPermission } = useUserPermissions();
   const { chainSplits, refetch } = useChainSplits(stageIdx);
 
-  const { submitSplits, isSubmitting, isPending, isTxLoading } = useSetSplitGroups({
-    onSuccess: (txHash) => {
-      console.debug(`Transaction confirmed: ${txHash}`);
-      toast({ title: "Splits updated successfully" });
-      setReviewing(null);
-      setOpen(false);
-      setTimeout(refetch, 4000); // Give it some time to index data
+  const { submitSplits, isSubmitting, isPending, isTxLoading, relayrAvailable } = useSetSplitGroups(
+    {
+      onSuccess: (txHash) => {
+        console.debug(`Transaction confirmed: ${txHash}`);
+        toast({ title: "Splits updated successfully" });
+        setReviewing(null);
+        setOpen(false);
+        setTimeout(refetch, 4000); // Give it some time to index data
+      },
     },
-  });
+  );
 
   useEffect(() => {
     if (open) refetch();
@@ -164,7 +167,10 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   };
 
   const writing = isSubmitting || isPending || isTxLoading;
-  const relayed = (reviewing?.length ?? 0) > 1;
+  const relayed =
+    relayrAvailable &&
+    (reviewing?.length ?? 0) > 1 &&
+    reviewing?.every((chain) => isRelayrSupportedChain(chain.chainId));
   const chainNameOf = (chainId: JBChainId) => JB_CHAINS[chainId]?.name ?? `chain ${chainId}`;
 
   if (!hasPermission("SET_SPLIT_GROUPS")) {
@@ -189,14 +195,16 @@ export function ChangeSplitRecipientsDialog(props: Props) {
               ? [
                   {
                     title: "Sign the authorization",
-                    detail: "One signature covers every selected chain.",
+                    detail: "Sign one exact authorization for each selected chain.",
                   },
                   {
                     title: "Pay the relay fee",
-                    detail: "Relayr then updates the recipients on each chain.",
+                    detail: "Choose a funding chain and pay once. Relayr updates each chain.",
                   },
                 ]
-              : [{ title: `Update the recipients on ${chainNameOf(reviewing[0].chainId)}` }]
+              : reviewing.map((chain) => ({
+                  title: `Update the recipients on ${chainNameOf(chain.chainId)}`,
+                }))
           }
           activeIndex={writing ? 0 : -1}
           action="Save changes"

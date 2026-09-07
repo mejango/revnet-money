@@ -63,7 +63,7 @@ function fansOut(entries: ActivityEvent[]): boolean {
  * nothing next to the row's amount and "in" tag, so it contributes no
  * fragment when other actions exist — it still anchors the row's meta.
  */
-export function describableEntries(event: ActivityEvent): ActivityEvent[] {
+function describableEntries(event: ActivityEvent): ActivityEvent[] {
   const entries = [event, ...(event.also ?? [])];
   if (entries.length === 1) return entries;
   // A reserved distribution's receipts name who got what — its own

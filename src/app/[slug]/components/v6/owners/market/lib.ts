@@ -50,7 +50,6 @@ import {
   decodeAbiParameters,
   decodeFunctionData,
   encodeAbiParameters,
-  encodeFunctionData,
   erc20Abi,
   formatUnits,
   Hex,
@@ -1322,7 +1321,7 @@ const ACTION_DECREASE_LIQUIDITY = "01";
 const ACTION_BURN_POSITION = "03";
 const ACTION_TAKE_PAIR = "11";
 
-export type EditLiquidityKind = "increase" | "decrease" | "move" | "remove";
+type EditLiquidityKind = "increase" | "decrease" | "move" | "remove";
 
 /**
  * One position's edit as bare V4 actions, before settlement. The single-position
@@ -1903,7 +1902,7 @@ export interface MarketSides {
   pairSide: UserLpPosition | null;
 }
 
-export type MarketSideEditKind = EditLiquidityKind | "mint" | "keep";
+type MarketSideEditKind = EditLiquidityKind | "mint" | "keep";
 
 export interface MarketSideEdit {
   kind: MarketSideEditKind;
@@ -2220,17 +2219,6 @@ export async function reverifyAddLiquidity(
   if (required.amount0 > plan.amount0Max || required.amount1 > plan.amount1Max) {
     throw new Error("The pool price moved beyond the reviewed range. Review fresh amounts.");
   }
-}
-
-export function encodeAddLiquidityCall(plan: AddLiquidityPlan, deadline = lpDeadline(false)) {
-  return {
-    args: [plan.unlockData, deadline] as const,
-    data: encodeFunctionData({
-      abi: POSITION_MANAGER_ABI,
-      functionName: "modifyLiquidities",
-      args: [plan.unlockData, deadline],
-    }),
-  };
 }
 
 // ── AMM card aggregate ────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { rememberProjectNavigation } from "@/lib/project-navigation";
 import { parseProjectHandleInput } from "@/lib/projectHandles";
 import { formatEthAddress } from "@/lib/utils";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Address, isAddress } from "viem";
 
 type SearchResult = {
@@ -51,6 +51,10 @@ function looksLikeEnsName(value: string) {
   return value.includes(".") && ENS_NAME_PATTERN.test(value);
 }
 
+const subscribeToHydration = () => () => {};
+const clientIsHydrated = () => true;
+const serverIsHydrated = () => false;
+
 export function Magnifier() {
   return (
     <svg
@@ -78,6 +82,9 @@ export function RevnetSearch({
   onFocusChange?: (focused: boolean) => void;
 } = {}) {
   const router = useRouter();
+  // The server form has no search action yet. Typing before its handlers attach
+  // can lose the controlled value or submit back to the current project URL.
+  const hydrated = useSyncExternalStore(subscribeToHydration, clientIsHydrated, serverIsHydrated);
   const containerRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -241,6 +248,7 @@ export function RevnetSearch({
           </span>
           <input
             type="search"
+            disabled={!hydrated}
             autoFocus={autoFocus}
             value={query}
             onChange={(event) => setQuery(event.target.value)}

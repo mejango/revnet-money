@@ -54,6 +54,7 @@ export function TierDetailModal({
   tier,
   media,
   onMint,
+  onEditMedia,
   onClose,
 }: {
   shop: ShopInventory;
@@ -62,6 +63,7 @@ export function TierDetailModal({
   tier: ShopTier;
   media: TierMedia | undefined;
   onMint?: () => void;
+  onEditMedia?: () => void;
   onClose: () => void;
 }) {
   const config = useConfig();
@@ -201,6 +203,16 @@ export function TierDetailModal({
                     : `${tier.remaining.toLocaleString("en-US")} left on ${JB_CHAINS[chainId]?.name ?? "this chain"}`}
               </span>
             </div>
+
+            {onEditMedia ? (
+              <button
+                type="button"
+                onClick={onEditMedia}
+                className="mt-3 block text-sm font-medium text-teal-700 underline underline-offset-4 hover:text-teal-900"
+              >
+                Replace media across chains →
+              </button>
+            ) : null}
 
             {onMint ? (
               <button

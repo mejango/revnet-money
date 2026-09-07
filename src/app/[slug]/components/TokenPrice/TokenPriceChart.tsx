@@ -199,16 +199,14 @@ export function TokenPriceChart({
           firstTimestamp,
           lastTimestamp,
           POOL_RESERVE_BARS,
-        ).map(
-          (bucket) => ({
-            key: `reserves-${bucket.timestamp}`,
-            x: bucket.timestamp,
-            segments: [
-              { value: bucket.pairValue, fill: POOL_PAIR_FILL },
-              { value: bucket.tokenValue, fill: POOL_TOKEN_FILL },
-            ],
-          }),
-        )
+        ).map((bucket) => ({
+          key: `reserves-${bucket.timestamp}`,
+          x: bucket.timestamp,
+          segments: [
+            { value: bucket.pairValue, fill: POOL_PAIR_FILL },
+            { value: bucket.tokenValue, fill: POOL_TOKEN_FILL },
+          ],
+        }))
       : [];
   const maxVisiblePrice = filteredData.reduce(
     (max, point) =>

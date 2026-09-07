@@ -13,6 +13,7 @@ import { usePublicClient } from "wagmi";
 import { usePayShopCredits } from "../pay/usePayShop";
 import { ProjectItem } from "../shared";
 import { AddItemsModal } from "./AddItemsModal";
+import { EditItemMediaModal } from "./EditItemMediaModal";
 import { MintItemModal } from "./MintItemModal";
 import {
   categoryLabel,
@@ -26,7 +27,7 @@ import {
   TierMedia,
   useTierCart,
 } from "./shopLib";
-import { canAdjust721Tiers, canMint721Tiers } from "./shopPermissions";
+import { canAdjust721Tiers, canMint721Tiers, canSet721Metadata } from "./shopPermissions";
 import { TierDetailModal } from "./TierDetailModal";
 import { TierMediaPreview } from "./TierMediaPreview";
 
@@ -67,6 +68,7 @@ export function InventorySection({
   const [detailTierId, setDetailTierId] = useState<number | null>(null);
   const [addItemsOpen, setAddItemsOpen] = useState(false);
   const [mintTierId, setMintTierId] = useState<number | null>(null);
+  const [mediaTierId, setMediaTierId] = useState<number | null>(null);
 
   // Use both the indexed affordance and the hook's live permission semantics.
   // The latter covers indexer lag and delegates authorized specifically to
@@ -111,6 +113,19 @@ export function InventorySection({
         operator: address!,
       }),
   });
+  const { data: canEditMedia } = useQuery({
+    queryKey: ["v6ShopMetadataPermission", chainId, projectId.toString(), shop.hook, address],
+    enabled: !!address && !!publicClient,
+    staleTime: 15_000,
+    retry: 1,
+    queryFn: () =>
+      canSet721Metadata(publicClient as PublicClient, {
+        chainId,
+        projectId,
+        hook: shop.hook,
+        operator: address!,
+      }),
+  });
   const canMintItems =
     hasPermission("MINT_721") || hasPermission("ROOT") || !!isOperator || !!canMintLive;
 
@@ -132,6 +147,7 @@ export function InventorySection({
 
   const detailTier =
     detailTierId == null ? null : (shop.tiers.find((tier) => tier.id === detailTierId) ?? null);
+  const mediaTier = shop.tiers.find((tier) => tier.id === mediaTierId);
   const mintTier =
     mintTierId == null ? null : (shop.tiers.find((tier) => tier.id === mintTierId) ?? null);
 
@@ -286,6 +302,14 @@ export function InventorySection({
                 }
               : undefined
           }
+          onEditMedia={
+            canEditMedia
+              ? () => {
+                  setDetailTierId(null);
+                  setMediaTierId(detailTier.id);
+                }
+              : undefined
+          }
           onClose={() => setDetailTierId(null)}
         />
       ) : null}
@@ -302,12 +326,24 @@ export function InventorySection({
         />
       ) : null}
 
+      {mediaTier ? (
+        <EditItemMediaModal
+          chainId={chainId}
+          projectId={projectId}
+          projects={projects}
+          tier={mediaTier}
+          media={mediaById?.[mediaTier.id]}
+          onClose={() => setMediaTierId(null)}
+        />
+      ) : null}
+
       {addItemsOpen ? (
         <AddItemsModal
           shop={shop}
           chainId={chainId}
           projectId={projectId}
           categories={categories}
+          projects={projects}
           onClose={() => setAddItemsOpen(false)}
         />
       ) : null}

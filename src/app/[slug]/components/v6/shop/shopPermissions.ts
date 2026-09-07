@@ -43,6 +43,36 @@ export async function canAdjust721Tiers(
   });
 }
 
+/** Metadata delegates are separate from tier/inventory managers. */
+export async function canSet721Metadata(
+  client: PublicClient,
+  {
+    chainId,
+    projectId,
+    hook,
+    operator,
+  }: {
+    chainId: JBChainId;
+    projectId: bigint;
+    hook: Address;
+    operator: Address;
+  },
+): Promise<boolean> {
+  const owner = await client.readContract({
+    address: hook,
+    abi: jb721TiersHookAbi,
+    functionName: "owner",
+  });
+  if (owner.toLowerCase() === operator.toLowerCase()) return true;
+  return hasPermissions(client, {
+    chainId,
+    operator,
+    account: owner,
+    projectId,
+    permissionIds: [JBPermissionIdsV6.SET_721_METADATA],
+  });
+}
+
 /** Mirrors `mintFor` authorization for owner/operator free mints. */
 export async function canMint721Tiers(
   client: PublicClient,

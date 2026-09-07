@@ -937,7 +937,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
         [
           "Relayr",
-          "ERC-2771 forward requests signed once and posted as a prepaid bundle; used for multichain launch, metadata edits, and operator writes so the user pays gas on one chain",
+          "One exact ERC-2771 authorization per destination chain, posted as a prepaid bundle; choose a funding chain and pay once for multichain launch, metadata edits, and operator writes",
         ],
         [
           "Permit2",

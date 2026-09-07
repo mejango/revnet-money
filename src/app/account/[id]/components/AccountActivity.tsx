@@ -11,6 +11,7 @@ import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { mergeAccountActivity } from "@/lib/bendystraw/accountActivity";
 import type { AccountActivityEventItem } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
+import { canCheckRelayrBundle } from "@/lib/relayr-activity";
 import { slugFor } from "@/lib/slug";
 import { useTransactionActivities, type TransactionActivity } from "@/lib/transaction-activity";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
@@ -36,10 +37,7 @@ function useInFlightActivities(address: Address, enabled: boolean): TransactionA
 }
 
 function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isSelf: boolean }) {
-  const resumable =
-    isSelf &&
-    !!activity.bundleUuid &&
-    (activity.status === "submitted" || activity.status === "pending");
+  const resumable = isSelf && canCheckRelayrBundle(activity);
   return (
     <div className="border border-melon-200 bg-melon-50 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -55,7 +53,7 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
             className="text-xs font-medium text-teal-700 underline"
             onClick={() => void waitForRelayrBundle(activity.bundleUuid!).catch(() => undefined)}
           >
-            Resume
+            Check bundle
           </button>
         ) : null}
       </div>
@@ -120,6 +118,12 @@ export function AccountActivity({ address }: { address: Address }) {
   // Local, in-flight transaction state layered above confirmed rows — shown
   // only when viewing your own account, deduped against indexed rows.
   const inFlight = useInFlightActivities(address, isSelf).filter((activity) => {
+    // An indexed payment or one destination does not settle the whole bundle.
+    if (
+      activity.kind === "relayr-bundle" &&
+      (activity.status !== "success" || activity.manualVerificationRequired)
+    )
+      return true;
     const hashes = [
       activity.hash,
       activity.executionHash,

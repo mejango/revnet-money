@@ -27,13 +27,11 @@ import {
   probeFeedReachability,
   requiredFeedPairs,
   type JBAccountingContext,
-  type JBFeedPair,
 } from "@bananapus/nana-sdk-core/v6";
 import { BaseError, ContractFunctionRevertedError, PublicClient } from "viem";
 
 /** Structurally the SDK's `JBAccountingContext`. */
 export type FeedProbeContext = JBAccountingContext;
-export type FeedPair = JBFeedPair;
 
 export { requiredFeedPairs };
 

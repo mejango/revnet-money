@@ -1,25 +1,30 @@
 "use client";
 
+import { runSequentialWrites } from "@/app/[slug]/components/v6/operator/operatorLib";
 import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { useToast } from "@/components/ui/use-toast";
 import {
+  requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import {
+  isSafeConnection,
   submittedViaSafe,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { gasWithHeadroom } from "@/lib/gas";
 import { useJBContractContext } from "@/lib/nana/project";
+import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
-import { Address, encodeFunctionData, zeroAddress } from "viem";
-import { useAccount, useSwitchChain } from "wagmi";
+import { Address, encodeFunctionData, zeroAddress, type Hash } from "viem";
+import { useAccount, useConfig, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { ChainFormData } from "../ChangeSplitRecipientsDialog";
 
@@ -30,28 +35,28 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   const { contractAddress } = useJBContractContext();
   const { address: userAddress, chainId: connectedChainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
+  const config = useConfig();
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
   const [onSuccessCalled, setOnSuccessCalled] = useState(false);
+  const [singleTxHash, setSingleTxHash] = useState<Hash>();
 
-  const {
-    writeContractAsync,
-    isPending,
-    data: txHash,
-  } = useWriteContract({
+  const { writeContractAsync, isPending } = useWriteContract({
     mutation: {
       onSuccess() {
         toast({ title: "Transaction submitted. Awaiting confirmation..." });
       },
     },
   });
-  const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({
+    hash: singleTxHash,
+  });
 
   useEffect(() => {
-    if (!isSuccess || onSuccessCalled || !txHash) return;
-    onSuccess(txHash);
+    if (!isSuccess || onSuccessCalled || !singleTxHash) return;
+    onSuccess(singleTxHash);
     setOnSuccessCalled(true);
-  }, [isSuccess, onSuccess, onSuccessCalled, txHash]);
+  }, [isSuccess, onSuccess, onSuccessCalled, singleTxHash]);
 
   const submitSplits = useCallback(
     async (selectedChains: ChainFormData[]) => {
@@ -61,23 +66,63 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
 
       try {
         if (selectedChains.length === 0) throw new Error("Please select at least one chain");
+        const direct =
+          selectedChains.length === 1 ||
+          isSafeConnection(config) ||
+          selectedChains.some((chain) => !isRelayrSupportedChain(chain.chainId));
+        if (direct)
+          selectedChains.forEach((chain) =>
+            requireRelayrRecoveryScopeAvailable(
+              userAddress,
+              `project-splits:${chain.chainId}:${chain.projectId}:${chain.rulesetId}:${RESERVED_TOKEN_SPLIT_GROUP_ID}`,
+            ),
+          );
+        setSingleTxHash(undefined);
 
         // Single chain - use direct writeContract
         if (selectedChains.length === 1) {
+          setOnSuccessCalled(false);
           const chain = selectedChains[0];
 
           if (connectedChainId !== chain.chainId) {
             await switchChainAsync?.({ chainId: chain.chainId });
           }
 
-          await writeContractAsync?.({
+          const hash = await writeContractAsync({
             abi: jbControllerAbi,
             functionName: "setSplitGroupsOf",
             chainId: chain.chainId,
             address: contractAddress(JBCoreContracts.JBController, chain.chainId),
             args: prepareArgs(chain),
           });
+          setSingleTxHash(hash);
 
+          return { success: true };
+        }
+
+        if (
+          isSafeConnection(config) ||
+          selectedChains.some((chain) => !isRelayrSupportedChain(chain.chainId))
+        ) {
+          let lastHash: Hash | undefined;
+          await runSequentialWrites({
+            writes: selectedChains.map((chain) => ({
+              chainId: chain.chainId,
+              address: contractAddress(JBCoreContracts.JBController, chain.chainId),
+              abi: jbControllerAbi,
+              functionName: "setSplitGroupsOf",
+              args: prepareArgs(chain),
+            })),
+            account: userAddress,
+            writeContractAsync: async (call) => {
+              lastHash = await writeContractAsync(call);
+              return lastHash;
+            },
+            onProgress: () => undefined,
+          });
+          if (!lastHash) throw new Error("No split update was submitted.");
+          onSuccess(lastHash);
+          setOnSuccessCalled(true);
           return { success: true };
         }
 
@@ -85,11 +130,6 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
         const relayrTransactions = [];
 
         for (const chain of selectedChains) {
-          // Switch to chain for gas estimation
-          if (connectedChainId !== chain.chainId) {
-            await switchChainAsync?.({ chainId: chain.chainId });
-          }
-
           const publicClient = getPublicClient(wagmiConfig, { chainId: chain.chainId });
           if (!publicClient) throw new Error("Public client not available");
 
@@ -105,6 +145,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
           });
 
           relayrTransactions.push({
+            recoveryScope: `project-splits:${chain.chainId}:${chain.projectId}:${chain.rulesetId}:${RESERVED_TOKEN_SPLIT_GROUP_ID}`,
             data: {
               from: userAddress,
               to: controller,
@@ -131,7 +172,8 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
         const quote = await getRelayrTxQuote(relayrTransactions);
         if (!quote) throw new Error("Failed to get relayr tx quote");
 
-        const hash = await sendRelayrTx?.(quote.payment_info[0]);
+        const payment = await chooseRelayrPayment(quote.payment_info, connectedChainId);
+        const hash = await sendRelayrTx?.(payment);
         if (!hash) throw new Error("Relayr payment was not submitted.");
         if (submittedViaSafe(hash)) {
           toast({
@@ -161,6 +203,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
     [
       userAddress,
       connectedChainId,
+      config,
       contractAddress,
       switchChainAsync,
       writeContractAsync,
@@ -178,6 +221,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
     isPending,
     isTxLoading,
     isSuccess,
+    relayrAvailable: !isSafeConnection(config),
   };
 }
 

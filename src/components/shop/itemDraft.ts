@@ -14,7 +14,7 @@ import { Address, Hex, isAddress, parseUnits, zeroAddress } from "viem";
  * modal, which encodes them for `adjustTiers` on a live hook. One encoder for both, so a
  * collection cannot be stocked differently from how it was deployed.
  */
-export interface DraftSplit {
+interface DraftSplit {
   percent: string;
   beneficiary: string;
 }

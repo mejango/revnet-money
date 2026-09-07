@@ -1,4 +1,7 @@
-import { canAdjust721Tiers } from "@/app/[slug]/components/v6/shop/shopPermissions";
+import {
+  canAdjust721Tiers,
+  canSet721Metadata,
+} from "@/app/[slug]/components/v6/shop/shopPermissions";
 import type { Address, PublicClient } from "viem";
 import { describe, expect, it, vi } from "vitest";
 
@@ -61,5 +64,48 @@ describe("canAdjust721Tiers", () => {
         operator,
       }),
     ).resolves.toBe(false);
+  });
+});
+
+describe("canSet721Metadata", () => {
+  it("uses the separate metadata grant from the live hook owner, including ROOT/wildcards", async () => {
+    const readContract = vi.fn().mockResolvedValueOnce(owner).mockResolvedValueOnce(true);
+    await expect(
+      canSet721Metadata({ readContract } as unknown as PublicClient, {
+        chainId: 8453,
+        projectId: 91n,
+        hook,
+        operator,
+      }),
+    ).resolves.toBe(true);
+    expect(readContract).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        functionName: "hasPermissions",
+        args: [operator, owner, 91n, [25n], true, true],
+      }),
+    );
+  });
+
+  it("permits the owner but does not mistake a tier manager for a metadata delegate", async () => {
+    const readContract = vi.fn().mockResolvedValueOnce(owner).mockResolvedValueOnce(false);
+    await expect(
+      canSet721Metadata({ readContract } as unknown as PublicClient, {
+        chainId: 8453,
+        projectId: 91n,
+        hook,
+        operator,
+      }),
+    ).resolves.toBe(false);
+    readContract.mockReset().mockResolvedValue(owner);
+    await expect(
+      canSet721Metadata({ readContract } as unknown as PublicClient, {
+        chainId: 8453,
+        projectId: 91n,
+        hook,
+        operator: owner,
+      }),
+    ).resolves.toBe(true);
+    expect(readContract).toHaveBeenCalledTimes(1);
   });
 });

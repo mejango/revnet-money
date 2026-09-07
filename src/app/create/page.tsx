@@ -3,12 +3,20 @@
 import { Nav } from "@/components/layout/Nav";
 import { pinDraftItems } from "@/components/shop/itemDraft";
 import { useToast } from "@/components/ui/use-toast";
-import { useGetRelayrTxQuote } from "@/hooks/useReviewedRelayr";
-import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import {
+  requireRelayrRecoveryScopeAvailable,
+  useGetRelayrTxQuote,
+} from "@/hooks/useReviewedRelayr";
+import {
+  isSafeConnector,
+  submittedViaSafe,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
 import { gasWithHeadroom } from "@/lib/gas";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
+import { isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
@@ -29,7 +37,7 @@ import { RevnetFormData } from "./types";
 
 export default function Page() {
   const { toast } = useToast();
-  const { address, chainId: connectedChainId, isConnected } = useAccount();
+  const { address, chainId: connectedChainId, isConnected, connector } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
@@ -44,6 +52,16 @@ export default function Page() {
     if (!isConnected || !address) {
       throw new Error("Please connect your wallet to deploy");
     }
+    if (
+      formData.chainIds.length > 1 &&
+      (isSafeConnector(connector) ||
+        formData.chainIds.some((chainId) => !isRelayrSupportedChain(chainId)))
+    ) {
+      throw new Error(
+        "For a Safe or testnet deployment, select one chain. Multi-chain launch is available to an EOA on supported mainnets.",
+      );
+    }
+    requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
     setDirectDeployment(null);
 
     let deploymentFormData = formData;
@@ -157,6 +175,7 @@ export default function Page() {
         .catch(() => 8_000_000n);
 
       relayrTransactions.push({
+        recoveryScope: "revnet-launch",
         data: {
           from: address,
           to: request.address,

@@ -15,8 +15,11 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxBundle, useSendRelayrTx } from "@/hooks/useReviewedRelayr";
 import { submittedViaSafe } from "@/hooks/useReviewedWriteContract";
-import { useTokenA } from "@/hooks/useTokenA";
-import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
+import type {
+  ChainPayment,
+  RelayrGetBundleResponse,
+  RelayrPostBundleResponse,
+} from "@/lib/nana/types";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
@@ -40,9 +43,16 @@ const statusToIcon = (status: string) => {
     return <CircleDotDashedIcon className="w-5 h-5 text-blue-400 animate-spin" />;
   if (status === "Included")
     return <CircleDotIcon className="w-5 h-5 text-cyan-400 animate-spin" />;
-  if (status === "Success") return <CheckCircle className="w-5 h-5 text-emerald-500 fade-in-50" />;
+  if (status === "Success" || status === "Completed")
+    return <CheckCircle className="w-5 h-5 text-emerald-500 fade-in-50" />;
   return <CircleXIcon className="w-5 h-5 text-red-500 fade-in-50" />;
 };
+
+function destinationHash(transaction: RelayrGetBundleResponse["transactions"][number]) {
+  const data = transaction.status?.data as
+    { hash?: Hash; transaction?: { hash?: Hash } } | undefined;
+  return data?.hash ?? data?.transaction?.hash;
+}
 
 export function PayAndDeploy({
   relayrResponse,
@@ -52,28 +62,40 @@ export function PayAndDeploy({
 }: PaymentAndDeploySectionProps) {
   const [selectedPayment, selectPayment] = useState<ChainPayment | null>(null);
   const [payIsProcessing, setPayIsProcessing] = useState(false);
+  const [paymentSubmitted, setPaymentSubmitted] = useState(false);
+  const [safeProposalSubmitted, setSafeProposalSubmitted] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { values } = useCreateForm();
-  const { sendRelayrTx } = useSendRelayrTx();
-  const { startPolling, response: bundleResponse, isComplete, hasFailed } = useGetRelayrTxBundle();
+  const { sendRelayrTx, data: paymentHash } = useSendRelayrTx();
+  const {
+    startPolling,
+    response: bundleResponse,
+    isComplete,
+    hasFailed,
+    isPolling,
+    error: bundleError,
+  } = useGetRelayrTxBundle();
   const { toast } = useToast();
-  const { symbol } = useTokenA();
+  // A receipt or bundle verification error cannot make an existing payment safe to repeat.
+  const paymentSent = paymentSubmitted || !!paymentHash;
+  const paymentLocked = paymentSent || isComplete || hasFailed;
+  const busy = payIsProcessing || isPolling;
 
   return (
     <div>
       <RelayrPaymentSelect
         payments={relayrResponse.payment_info}
-        tokenSymbol={symbol ?? ""}
+        tokenSymbol="ETH"
         selectedPayment={selectedPayment}
         onSelectPayment={selectPayment}
-        disabled={payIsProcessing}
+        disabled={payIsProcessing || paymentLocked}
       />
       <div className="flex justify-end md:col-span-3 mt-4">
         <Button
           type="submit"
           size="lg"
-          disabled={payIsProcessing || !selectedPayment}
+          disabled={payIsProcessing || paymentLocked || !selectedPayment}
           className="disabled:text-black disabled:bg-transparent disabled:border disabled:border-black disabled:bg-gray-100 bg-teal-500 text-melon-950 hover:bg-teal-600"
           onClick={() => {
             setError(null);
@@ -87,7 +109,7 @@ export function PayAndDeploy({
             <FastForward
               className={twMerge(
                 "h-4 w-4 fill-melon-950 ml-2",
-                payIsProcessing ? "animate-spin" : "animate-pulse",
+                busy ? "animate-spin" : paymentLocked ? "" : "animate-pulse",
               )}
             />
           )}
@@ -103,15 +125,17 @@ export function PayAndDeploy({
           chainId={selectedPayment.chain}
           steps={[
             {
-              title: `Pay ${formatHexEther(selectedPayment.amount)} ${symbol ?? ""} to relay`,
+              title: `Pay ${formatHexEther(selectedPayment.amount)} ETH to relay`,
               detail: "Relayr then deploys on every chain; no further prompts.",
             },
           ]}
           activeIndex={payIsProcessing ? 0 : -1}
           action="Pay and ship"
           busy={payIsProcessing}
+          disabled={paymentLocked}
           error={error}
           onConfirm={async () => {
+            if (payIsProcessing || paymentLocked) return;
             setPayIsProcessing(true);
             setError(null);
             try {
@@ -130,8 +154,9 @@ export function PayAndDeploy({
               });
               if (payment !== selectedPayment) selectPayment(payment);
               const hash = await sendRelayrTx(payment);
+              setPaymentSubmitted(true);
               if (submittedViaSafe(hash)) {
-                setPayIsProcessing(false);
+                setSafeProposalSubmitted(true);
                 setReview(false);
                 toast({
                   title: "Safe payment proposal submitted",
@@ -143,19 +168,18 @@ export function PayAndDeploy({
               setReview(false);
               startPolling(bundle.bundle_uuid);
             } catch (e: any) {
-              setPayIsProcessing(false);
               setError(formatWalletError(e));
               toast({
                 title: "Error",
                 description: formatWalletError(e),
                 variant: "destructive",
               });
+            } finally {
+              setPayIsProcessing(false);
             }
           }}
         >
-          <SummaryRow label="Pays">
-            {formatHexEther(selectedPayment.amount)} {symbol ?? ""}
-          </SummaryRow>
+          <SummaryRow label="Pays">{formatHexEther(selectedPayment.amount)} ETH</SummaryRow>
           <SummaryRow label="On">{chainDisplayName(selectedPayment.chain)}</SummaryRow>
           <SummaryRow label="Deploys on">
             {values.chainIds.map((chainId) => chainDisplayName(chainId)).join(", ")}
@@ -164,6 +188,21 @@ export function PayAndDeploy({
             {values.name || "Unnamed"} (${revnetTokenSymbol})
           </SummaryRow>
         </TxConfirmDialog>
+      ) : null}
+      {safeProposalSubmitted ? (
+        <p className="mt-4 text-sm text-melon-700">
+          Complete the existing payment proposal in Safe, then check transaction activity. Do not
+          submit another payment.
+        </p>
+      ) : null}
+      {bundleError ? (
+        <p
+          role="alert"
+          className="mt-4 border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800"
+        >
+          {formatWalletError(bundleError)} Check the existing bundle in transaction activity. Do not
+          make another Relayr payment.
+        </p>
       ) : null}
       {!!bundleResponse && (
         <div className="mt-10 flex flex-col space-y-2">
@@ -185,10 +224,10 @@ export function PayAndDeploy({
                     <div>{statusToIcon(txn.status.state)}</div>
                     <div>{txn.status.state}</div>
                   </div>
-                  {"hash" in (txn?.status?.data ?? {}) ? (
+                  {destinationHash(txn) ? (
                     <div className="flex flex-row space-x-1 items-center">
                       <EtherscanLink
-                        value={(txn?.status?.data as { hash: Hash })?.hash}
+                        value={destinationHash(txn)}
                         type="tx"
                         chain={JB_CHAINS[txn.request.chain as JBChainId].chain}
                         truncateTo={6}
@@ -201,12 +240,12 @@ export function PayAndDeploy({
                 </div>
               ),
           )}
-          {isComplete ? (
+          {isComplete && bundleResponse.transactions[0] ? (
             <GoToProjectButton
-              txHash={(bundleResponse.transactions[0].status?.data as { hash: Hash })?.hash}
+              txHash={destinationHash(bundleResponse.transactions[0])}
               chainId={bundleResponse.transactions[0].request.chain}
             />
-          ) : hasFailed ? (
+          ) : bundleError ? null : hasFailed ? (
             <p className="border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800">
               At least one destination transaction failed. Review the per-chain status above; do not
               make another Relayr payment.

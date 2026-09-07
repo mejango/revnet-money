@@ -227,35 +227,6 @@ export function TableSkeleton({ rows = 4, columns = 4 }: { rows?: number; column
   );
 }
 
-export function TopProjectsTableSkeleton() {
-  return (
-    <div className="mt-12 w-full max-w-xl" role="status" aria-label="Loading top projects">
-      <span className="sr-only">Loading top projects</span>
-      <div className="grid h-12 grid-cols-[3rem_1fr_8rem] items-center border-b border-zinc-100 px-4 sm:px-8">
-        <span />
-        <span className="text-sm text-zinc-500">Project</span>
-        <span className="text-right text-sm text-zinc-500">Balance</span>
-      </div>
-      {Array.from({ length: 5 }, (_, index) => (
-        <div
-          key={index}
-          className="grid min-h-[64px] grid-cols-[3rem_1fr_8rem] items-center border-b border-zinc-100 px-4 last:border-b-0 sm:px-8"
-        >
-          <Skeleton className="h-3 w-3" />
-          <div className="flex items-center gap-3">
-            <Skeleton className="size-8 shrink-0 rounded-full" />
-            <div className="min-w-0 flex-1 space-y-2">
-              <Skeleton className={index % 2 === 0 ? "h-3 w-36" : "h-3 w-28"} />
-              <Skeleton className="h-2.5 w-44 max-w-[70%]" />
-            </div>
-          </div>
-          <Skeleton className="ml-auto h-3 w-20" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function DiscoverGridSkeleton({ cards = 6 }: { cards?: number }) {
   return (
     <div

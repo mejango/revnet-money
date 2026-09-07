@@ -13,23 +13,27 @@ import {
 } from "@/components/ui/select";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
-import {
-  requireOnchainExecution,
-  submittedViaSafe,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
-import { formatWalletError } from "@/lib/utils";
+import { useMultichainBatch } from "@/hooks/useMultichainBatch";
+import { etherscanLink, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { buildDeployProjectPayerTx, projectPayerFromDeployLogs } from "@bananapus/nana-sdk-core/v6";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Address, isAddress, PublicClient, zeroAddress } from "viem";
-import { useAccount, useSwitchChain } from "wagmi";
-import { getAccount, getPublicClient } from "wagmi/actions";
+import {
+  Address,
+  encodeFunctionData,
+  encodeFunctionResult,
+  isAddress,
+  parseAbi,
+  PublicClient,
+  zeroAddress,
+} from "viem";
+import { useAccount } from "wagmi";
+import { getPublicClient } from "wagmi/actions";
 import { ChainProjectRow, PayerRow } from "./projectPayers";
 
 type DeployedPayer = { chainId: JBChainId; payer: Address | null; txHash: `0x${string}` };
+const FACTORY_DIRECTORY_ABI = parseAbi(["function DIRECTORY() view returns (address)"]);
 
 type ReviewedDeploy = {
   /** One frozen call per selected chain — what's reviewed is what's sent. */
@@ -37,6 +41,7 @@ type ReviewedDeploy = {
     chainId: JBChainId;
     projectId: number;
     request: ReturnType<typeof buildDeployProjectPayerTx>;
+    directory: Address;
   }[];
   addToBalance: boolean;
   memo: string;
@@ -54,7 +59,7 @@ function resolveAddressInput(raw: string): Address | null {
  * transfers to a dedicated address pay the project. Permissionless; defaults
  * match the website — Pay behavior, zero beneficiary (the original payer gets
  * the tokens), zero admin (immutable settings), 0x metadata. Multi-chain
- * deploys run as sequential simulate-first transactions per selected chain.
+ * deploys share one reviewed batch with durable destination progress.
  */
 export function PayerDeployForm({
   rows,
@@ -69,9 +74,13 @@ export function PayerDeployForm({
   tokenSymbol?: string;
 }) {
   const { address } = useAccount();
-  const { switchChainAsync } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
+  const { runBatch, getPendingBatch } = useMultichainBatch();
   const { toast } = useToast();
+  const scope = `project-payers:${rows
+    .map((row) => `${row.chainId}:${row.projectId}`)
+    .sort()
+    .join(",")}`;
+  const pendingBatch = getPendingBatch(scope);
 
   const deployableRows = rows;
 
@@ -126,7 +135,7 @@ export function PayerDeployForm({
     });
   }, [existingRows, selected, addToBalance, originalPayer, beneficiary]);
 
-  const buildReview = () => {
+  const buildReview = async () => {
     setError(null);
     if (!address) return;
     if (!selectedRows.length) {
@@ -134,7 +143,7 @@ export function PayerDeployForm({
       return;
     }
     const trimmedMetadata = metadata.trim() || "0x";
-    const calls: ReviewedDeploy["calls"] = [];
+    const calls: Omit<ReviewedDeploy["calls"][number], "directory">[] = [];
     for (const row of selectedRows) {
       const chainName = JB_CHAINS[row.chainId]?.name ?? row.chainId;
       let beneficiaryAddress: Address = zeroAddress;
@@ -176,12 +185,35 @@ export function PayerDeployForm({
         return;
       }
     }
-    setReview({ calls, addToBalance, memo: memo.trim(), account: address });
+    setBusy(true);
+    try {
+      const destinations = await Promise.all(
+        calls.map(async (call) => {
+          const client = getPublicClient(wagmiConfig, { chainId: call.chainId }) as PublicClient;
+          const directory = await client.readContract({
+            address: call.request.address,
+            abi: FACTORY_DIRECTORY_ABI,
+            functionName: "DIRECTORY",
+          });
+          if (!isAddress(directory) || directory === zeroAddress) {
+            throw new Error(
+              `Could not verify the payer factory on ${JB_CHAINS[call.chainId]?.name ?? call.chainId}.`,
+            );
+          }
+          return { ...call, directory };
+        }),
+      );
+      setReview({ calls: destinations, addToBalance, memo: memo.trim(), account: address });
+    } catch (e) {
+      setError(formatWalletError(e) || "Could not verify the payer factories.");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const submitDeploys = async () => {
-    if (!review || busy || !address) return;
-    if (address.toLowerCase() !== review.account.toLowerCase()) {
+  const submitDeploys = async (resume = false) => {
+    if ((!review && !resume) || busy || !address) return;
+    if (!resume && review && address.toLowerCase() !== review.account.toLowerCase()) {
       setReview(null);
       setError("Your connected account changed — review the deploy again.");
       return;
@@ -191,49 +223,66 @@ export function PayerDeployForm({
     setDeployed([]);
     const results: DeployedPayer[] = [];
     try {
-      for (const call of review.calls) {
-        const chainName = JB_CHAINS[call.chainId]?.name ?? call.chainId;
-        // Read the LIVE wallet chain — the hook value is stale inside this
-        // loop once the first switch lands.
-        if (getAccount(wagmiConfig).chainId !== call.chainId) {
-          setStatus(`Switch your wallet to ${chainName}…`);
-          await switchChainAsync({ chainId: call.chainId });
-        }
-        // Plain viem PublicClient: wagmi's per-chain client union trips TS2590
-        // on simulateContract's generics.
-        const client = getPublicClient(wagmiConfig, {
-          chainId: call.chainId,
-        }) as unknown as PublicClient;
-        setStatus(`Simulating the deploy on ${chainName}…`);
-        await client.simulateContract({
-          account: address,
-          ...call.request,
-        });
-        setStatus(`Confirm the deploy on ${chainName} in your wallet…`);
-        const txHash = await writeContractAsync(call.request);
-        setStatus(`Waiting for confirmation on ${chainName}…`);
-        if (submittedViaSafe(txHash)) {
-          results.push({ chainId: call.chainId, payer: null, txHash });
-          setDeployed([...results]);
-          setStatus(
-            `Safe proposal submitted on ${chainName}. Approve and execute it in Safe before deploying on another chain.`,
-          );
-          return;
-        }
-        requireOnchainExecution(txHash, `Payer deployment on ${chainName}`);
-        const receipt = await waitForReceiptWithRetry(client, txHash);
-        if (receipt.status !== "success") {
-          throw new Error(`Payer deployment ${txHash} reverted on ${chainName}.`);
-        }
-        // The new payer address comes from the DeployProjectPayer event — the
-        // function's return value isn't available from a transaction.
-        const payer = projectPayerFromDeployLogs(receipt.logs);
-        results.push({ chainId: call.chainId, payer, txHash });
-        setDeployed([...results]);
+      const outcome = await runBatch({
+        label: "Deploy payer addresses",
+        scope,
+        calls: resume
+          ? []
+          : (review?.calls ?? []).map((call) => ({
+              ...call.request,
+              chainId: call.chainId,
+              contractName: "JBProjectPayerDeployer",
+              relayrMode: "raw" as const,
+              recoveryScope: `project-payer:${call.chainId}:${call.projectId}`,
+              preconditions: [
+                {
+                  address: call.request.address,
+                  data: encodeFunctionData({
+                    abi: FACTORY_DIRECTORY_ABI,
+                    functionName: "DIRECTORY",
+                  }),
+                  expected: encodeFunctionResult({
+                    abi: FACTORY_DIRECTORY_ABI,
+                    functionName: "DIRECTORY",
+                    result: call.directory,
+                  }),
+                },
+              ],
+              expectedDeployment: {
+                kind: "project-payer" as const,
+                projectId: String(call.projectId),
+                beneficiary: call.request.args[1],
+                memo: call.request.args[2],
+                metadata: call.request.args[3],
+                addToBalance: call.request.args[4],
+                owner: call.request.args[5],
+                directory: call.directory,
+              },
+            })),
+        onProgress: setStatus,
+      });
+      for (const completed of outcome.hashes ?? []) {
+        const chainId = completed.chainId as JBChainId;
+        const client = getPublicClient(wagmiConfig, { chainId }) as PublicClient;
+        // The batch verifies the exact factory event and clone code before
+        // reporting completion. Read that canonical receipt for its address.
+        const receipt = await client
+          .getTransactionReceipt({ hash: completed.hash })
+          .catch(() => null);
+        const payer = receipt ? projectPayerFromDeployLogs(receipt.logs) : null;
+        results.push({ chainId, payer, txHash: completed.hash });
+      }
+      setDeployed(results);
+      if (outcome.status !== "success") {
+        setReview(null);
+        setStatus(
+          "Deployment is pending. Resume this batch to check completed chains before continuing.",
+        );
+        return;
       }
       setStatus(
-        `Payer address deployment complete on ${review.calls.length} chain${
-          review.calls.length === 1 ? "" : "s"
+        `Payer address deployment complete on ${results.length} chain${
+          results.length === 1 ? "" : "s"
         }.`,
       );
       setReview(null);
@@ -251,7 +300,7 @@ export function PayerDeployForm({
       const message = formatWalletError(e) || "Could not deploy the payer address.";
       setStatus(
         results.length
-          ? `Deployed on ${results.length} of ${review.calls.length} chains before failing.`
+          ? `Verified payer addresses on ${results.length} chains. Resume the saved batch to check the remaining destinations.`
           : null,
       );
       setError(message);
@@ -272,6 +321,22 @@ export function PayerDeployForm({
 
   return (
     <div className="w-full">
+      {pendingBatch ? (
+        <div className="border border-amber-300 bg-amber-50 p-3 text-sm">
+          <p>
+            A payer deployment has saved progress ({pendingBatch.completed}/{pendingBatch.total}{" "}
+            complete).
+          </p>
+          <ButtonWithWallet
+            className="mt-2"
+            disabled={busy}
+            loading={busy}
+            onClick={() => void submitDeploys(true)}
+          >
+            Resume saved deployment
+          </ButtonWithWallet>
+        </div>
+      ) : null}
       <section className="pb-6">
         <div>
           <div className="mt-4">
@@ -489,10 +554,9 @@ export function PayerDeployForm({
 
           <div className="mt-4 flex justify-end">
             <ButtonWithWallet
-              targetChainId={selectedRows[0]?.chainId}
               connectWalletText="Connect wallet to deploy"
               loading={busy}
-              disabled={busy || selectedRows.length === 0}
+              disabled={busy || Boolean(pendingBatch) || selectedRows.length === 0}
               onClick={buildReview}
               className="bg-teal-500 text-melon-950 hover:bg-teal-600"
             >
@@ -515,7 +579,7 @@ export function PayerDeployForm({
               activeIndex={busy ? deployed.length : -1}
               stepsIntro={
                 review.calls.length > 1
-                  ? `One deploy per chain, in order — your wallet will ask ${review.calls.length} times and switch networks between them.`
+                  ? "Review the destinations together, then choose a funding chain. Safe and testnet wallets continue in stages with saved progress."
                   : undefined
               }
               action={`Deploy payer address${review.calls.length > 1 ? "es" : ""}`}
@@ -576,9 +640,14 @@ export function PayerDeployForm({
                         <CopyButton value={result.payer} />
                       </>
                     ) : (
-                      <span className="text-zinc-500 text-xs">
-                        Deployed — see the transaction on the explorer.
-                      </span>
+                      <a
+                        className="text-zinc-500 text-xs underline"
+                        href={etherscanLink(result.txHash, { type: "tx", chainId: result.chainId })}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Verified deployment transaction
+                      </a>
                     )}
                   </div>
                 ))}
@@ -619,6 +688,7 @@ function PerChainOverrides({
             </span>
             <Input
               className="h-8 border-melon-300 bg-melon-25 text-xs"
+              aria-label={`${label} on ${JB_CHAINS[row.chainId]?.name ?? row.chainId}`}
               value={values[row.chainId] ?? ""}
               onChange={(e) => onChange({ ...values, [row.chainId]: e.target.value })}
               disabled={disabled}

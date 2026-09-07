@@ -52,6 +52,6 @@ export async function getIndexedProjectOperatorAddresses(projectId: number, chai
 }
 
 /** @deprecated Prefer all candidates plus a live REVOwner check. */
-export async function getCurrentProjectOperatorAddress(projectId: number, chainId: number) {
+async function getCurrentProjectOperatorAddress(projectId: number, chainId: number) {
   return (await getIndexedProjectOperatorAddresses(projectId, chainId))[0] ?? null;
 }

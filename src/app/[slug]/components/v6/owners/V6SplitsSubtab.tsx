@@ -25,12 +25,13 @@ import {
   JB_CHAINS,
   jbControllerAbi,
   JBCoreContracts,
+  jbDirectoryAbi,
   jbSplitsAbi,
   SPLITS_TOTAL_PERCENT,
 } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { twJoin } from "tailwind-merge";
-import { zeroAddress } from "viem";
+import { isAddress, zeroAddress } from "viem";
 import { useReadContracts } from "wagmi";
 import { ChangeSplitRecipientsDialog } from "../../../owners/components/ChangeSplitRecipientsDialog";
 import { DistributeReservedTokensButton } from "../../../owners/components/DistributeReservedTokensButton";
@@ -115,32 +116,61 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
 
   // Per-chain splits + pending balances for the selected stage.
   const splitReads = useReadContracts({
-    contracts: readableChains.flatMap((c) => {
+    contracts: readableChains.map((c) => {
       const ruleset = rulesetsByChain.get(Number(c.chainId))![selectedStageIdx];
-      return [
-        {
-          chainId: c.chainId,
-          address: contractAddress(JBCoreContracts.JBSplits, c.chainId),
-          abi: jbSplitsAbi,
-          functionName: "splitsOf" as const,
-          args: [BigInt(c.projectId), BigInt(ruleset.id), RESERVED_TOKEN_SPLIT_GROUP_ID] as const,
-        },
-        {
-          chainId: c.chainId,
-          address: contractAddress(JBCoreContracts.JBController, c.chainId),
-          abi: jbControllerAbi,
-          functionName: "pendingReservedTokenBalanceOf" as const,
-          args: [BigInt(c.projectId)] as const,
-        },
-      ];
+      return {
+        chainId: c.chainId,
+        address: contractAddress(JBCoreContracts.JBSplits, c.chainId),
+        abi: jbSplitsAbi,
+        functionName: "splitsOf" as const,
+        args: [BigInt(c.projectId), BigInt(ruleset.id), RESERVED_TOKEN_SPLIT_GROUP_ID] as const,
+      };
     }),
     query: { enabled: readableChains.length > 0 },
   });
 
-  if (rulesetReads.isLoading) return <TableSkeleton rows={4} columns={3} />;
+  // Distribution always uses each destination's live controller/current ruleset,
+  // independently of the historical stage whose split table is being viewed.
+  const controllerReads = useReadContracts({
+    contracts: chains.map((project) => ({
+      chainId: project.chainId,
+      address: contractAddress(JBCoreContracts.JBDirectory, project.chainId),
+      abi: jbDirectoryAbi,
+      functionName: "controllerOf" as const,
+      args: [BigInt(project.projectId)] as const,
+    })),
+    query: { enabled: chains.length > 0 },
+  });
+  const pendingTargets = chains.flatMap((project, index) => {
+    const result = controllerReads.data?.[index];
+    const controller = result?.status === "success" ? result.result : undefined;
+    return typeof controller === "string" && isAddress(controller) && controller !== zeroAddress
+      ? [{ ...project, controller }]
+      : [];
+  });
+  const pendingReads = useReadContracts({
+    contracts: pendingTargets.map((project) => ({
+      chainId: project.chainId,
+      address: project.controller,
+      abi: jbControllerAbi,
+      functionName: "pendingReservedTokenBalanceOf" as const,
+      args: [BigInt(project.projectId)] as const,
+    })),
+    query: { enabled: pendingTargets.length > 0 },
+  });
+  const pendingByProject = new Map(
+    pendingTargets.map((project, index) => {
+      const result = pendingReads.data?.[index];
+      return [
+        `${project.chainId}:${project.projectId}`,
+        result?.status === "success" ? (result.result as bigint) : undefined,
+      ] as const;
+    }),
+  );
 
   return (
     <div>
+      {rulesetReads.isLoading ? <TableSkeleton rows={4} columns={3} /> : null}
       <p className="text-md text-black font-light italic mb-2">
         Splits can be adjusted by the revnet operator at any time, within the permanent split limit
         of a stage.
@@ -182,16 +212,26 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
         </div>
       )}
 
+      <DistributeReservedTokensButton
+        projects={chains.map((project) => ({
+          ...project,
+          projectId: BigInt(project.projectId),
+          pending: pendingByProject.get(`${project.chainId}:${project.projectId}`),
+        }))}
+        tokenSymbol={tokenSymbol}
+        onSuccess={() => {
+          void pendingReads.refetch();
+        }}
+      />
+
       <div className="flex flex-col gap-6">
         {chains.map((c) => {
           const readIdx = readIndexByChain.get(Number(c.chainId));
           const hasStage = readIdx !== undefined;
-          const splitsResult = hasStage ? splitReads.data?.[readIdx * 2] : undefined;
-          const pendingResult = hasStage ? splitReads.data?.[readIdx * 2 + 1] : undefined;
+          const splitsResult = hasStage ? splitReads.data?.[readIdx] : undefined;
           const splits =
             splitsResult?.status === "success" ? (splitsResult.result as readonly Split[]) : null;
-          const pending =
-            pendingResult?.status === "success" ? (pendingResult.result as bigint) : undefined;
+          const pending = pendingByProject.get(`${c.chainId}:${c.projectId}`);
 
           return (
             <div key={c.chainId}>
@@ -300,16 +340,6 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                   </Table>
                 </div>
               </div>
-              {pending !== undefined && pending > 0n && (
-                <div className="mt-2">
-                  <DistributeReservedTokensButton
-                    chainId={c.chainId}
-                    projectId={BigInt(c.projectId)}
-                    pending={pending}
-                    tokenSymbol={tokenSymbol}
-                  />
-                </div>
-              )}
             </div>
           );
         })}

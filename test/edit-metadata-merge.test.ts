@@ -1,4 +1,5 @@
 import {
+  applyMetadataEdits,
   customPropertyCollisions,
   formatCustomProperties,
   mergeProjectMetadata,
@@ -15,8 +16,179 @@ const baseValues = {
   telegram: "",
   discord: "",
   infoUri: "",
+  farcaster: "",
   payDisclosure: "",
 };
+
+describe("applyMetadataEdits", () => {
+  it("applies a name edit while retaining every unedited destination field", () => {
+    const baseline = {
+      ...baseValues,
+      logoUri: "ipfs://source",
+      twitter: "source",
+      farcaster: "source-fid",
+      leagueID: "source-league",
+      tags: ["source"],
+      version: 1,
+    };
+    const current = {
+      ...baseline,
+      name: "Peer",
+      description: "Peer description",
+      logoUri: "ipfs://peer",
+      twitter: "peer",
+      farcaster: "peer-fid",
+      telegram: "peer-only",
+      leagueID: "peer-league",
+      tags: ["peer"],
+      peerOnly: { keep: true },
+      version: 2,
+    };
+
+    expect(
+      applyMetadataEdits(
+        current,
+        baseline,
+        { ...baseline, name: "Edited" },
+        {
+          leagueID: baseline.leagueID,
+          tags: baseline.tags,
+        },
+      ),
+    ).toEqual({ ...current, name: "Edited" });
+  });
+
+  it("applies explicit managed edits and clears on each destination, including farcaster", () => {
+    const baseline = {
+      ...baseValues,
+      twitter: "source",
+      farcaster: "source-fid",
+      payDisclosure: "Source notice",
+    };
+    const values = {
+      ...baseline,
+      description: "Edited description",
+      twitter: "  ",
+      farcaster: " new-fid ",
+      payDisclosure: "New notice",
+    };
+    for (const current of [baseline, { ...baseline, twitter: "peer", farcaster: "peer-fid" }]) {
+      const edited = applyMetadataEdits(current, baseline, values);
+      expect(edited.description).toBe("Edited description");
+      expect(edited).not.toHaveProperty("twitter");
+      expect(edited.farcaster).toBe("new-fid");
+      expect(edited.payDisclosure).toBe("New notice");
+      expect(
+        applyMetadataEdits(current, baseline, { ...baseline, farcaster: "" }),
+      ).not.toHaveProperty("farcaster");
+    }
+  });
+
+  it("keeps the current logo for a blank or unchanged upload and applies a new upload", () => {
+    const baseline = { ...baseValues, logoUri: "ipfs://source" };
+    const current = { ...baseline, logoUri: "ipfs://peer" };
+    expect(applyMetadataEdits(current, baseline, { ...baseline, logoUri: " " }).logoUri).toBe(
+      "ipfs://peer",
+    );
+    expect(applyMetadataEdits(current, baseline, baseline).logoUri).toBe("ipfs://peer");
+    expect(
+      applyMetadataEdits(current, baseline, { ...baseline, logoUri: " ipfs://new " }).logoUri,
+    ).toBe("ipfs://new");
+  });
+
+  it("adds, replaces, and deletes only edited custom keys without mutating its inputs", () => {
+    const nested = Object.freeze({ source: true, list: Object.freeze([1, 2]) });
+    const baseline = Object.freeze({ ...baseValues, nested, deleteMe: "source", keep: "source" });
+    const current = Object.freeze({
+      ...baseline,
+      nested: Object.freeze({ peer: true }),
+      deleteMe: "peer",
+      keep: "peer",
+      peerOnly: true,
+    });
+    const custom = Object.freeze({
+      nested: Object.freeze({ source: false, list: Object.freeze([2, 1]) }),
+      keep: "source",
+      added: Object.freeze({ enabled: true }),
+    });
+
+    for (const destination of [baseline, current]) {
+      const result = applyMetadataEdits(destination, baseline, baseValues, custom);
+      expect(result.nested).toEqual(custom.nested);
+      expect(result.added).toEqual(custom.added);
+      expect(result).not.toHaveProperty("deleteMe");
+      expect(result.keep).toBe(destination.keep);
+    }
+    expect(applyMetadataEdits(current, baseline, baseValues, custom).peerOnly).toBe(true);
+    expect(baseline.nested).toEqual({ source: true, list: [1, 2] });
+    expect(current.nested).toEqual({ peer: true });
+    expect(current.deleteMe).toBe("peer");
+    expect(custom.nested).toEqual({ source: false, list: [2, 1] });
+  });
+
+  it("recognizes unchanged nested JSON despite object key reordering", () => {
+    const baseline = {
+      ...baseValues,
+      nested: { first: 1, object: { a: true, b: null }, array: [{ x: 1, y: 2 }, "value"] },
+    };
+    const current = { ...baseline, nested: { destinationSpecific: true } };
+    const custom = JSON.parse(
+      '{"nested":{"array":[{"y":2,"x":1},"value"],"object":{"b":null,"a":true},"first":1}}',
+    );
+    expect(applyMetadataEdits(current, baseline, baseValues, custom)).toEqual(current);
+  });
+
+  it.each([
+    [{ a: 1 }, { b: 1 }],
+    [
+      [1, 2],
+      [2, 1],
+    ],
+    [[1], [1, 2]],
+    [1, "1"],
+    [null, {}],
+    [[1], { 0: 1 }],
+  ])("applies a structural or type change from %j to %j", (before, after) => {
+    expect(
+      applyMetadataEdits(
+        { ...baseValues, custom: "peer" },
+        { ...baseValues, custom: before },
+        baseValues,
+        { custom: after },
+      ).custom,
+    ).toEqual(after);
+  });
+
+  it("ignores custom managed-key collisions and preserves each destination version", () => {
+    const baseline = { ...baseValues, farcaster: "source", version: 1, removed: true };
+    const current = { ...baseline, name: "Peer", farcaster: "peer", version: 2, peerOnly: true };
+    expect(
+      applyMetadataEdits(current, baseline, baseline, {
+        name: "Injected",
+        farcaster: "Injected",
+        logoUri: "ipfs://injected",
+        version: 99,
+      }),
+    ).toEqual({ ...baseValues, name: "Peer", farcaster: "peer", version: 2, peerOnly: true });
+  });
+
+  it("preserves all custom properties when the editor is not supplied", () => {
+    const baseline = { ...baseValues, custom: "source" };
+    const current = { ...baseline, custom: "peer", peerOnly: true };
+    expect(applyMetadataEdits(current, baseline, baseValues)).toEqual(current);
+  });
+
+  it("handles missing metadata and unchanged blank optional controls", () => {
+    expect(applyMetadataEdits(null, undefined, baseValues, { added: true })).toEqual({
+      name: baseValues.name,
+      description: baseValues.description,
+      added: true,
+    });
+    const current = { ...baseValues, telegram: "peer", farcaster: "peer" };
+    const baseline = { name: baseValues.name, description: baseValues.description };
+    expect(applyMetadataEdits(current, baseline, baseValues, {})).toEqual(current);
+  });
+});
 
 describe("mergeProjectMetadata", () => {
   it("preserves unknown keys, nested objects, and tags on a name-only edit", () => {
@@ -93,6 +265,15 @@ describe("mergeProjectMetadata", () => {
       { ...baseValues, name: "P", description: "d" },
     );
     expect("payDisclosure" in cleared).toBe(false);
+  });
+
+  it("sets and clears farcaster", () => {
+    expect(mergeProjectMetadata({}, { ...baseValues, farcaster: " new-fid " }).farcaster).toBe(
+      "new-fid",
+    );
+    expect(mergeProjectMetadata({ farcaster: "old-fid" }, baseValues)).not.toHaveProperty(
+      "farcaster",
+    );
   });
 
   it("tolerates a missing or non-record current metadata", () => {

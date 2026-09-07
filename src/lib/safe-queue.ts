@@ -37,30 +37,6 @@ export type SafePolicy = {
   nonce: number;
 };
 
-export const SAFE_VIEW_ABI = [
-  {
-    type: "function",
-    name: "getThreshold",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "getOwners",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "address[]" }],
-  },
-  {
-    type: "function",
-    name: "nonce",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint256" }],
-  },
-] as const;
-
 const SAFE_EXECUTION_SUCCESS_TOPIC = keccak256(stringToHex("ExecutionSuccess(bytes32,uint256)"));
 const SAFE_EXECUTION_FAILURE_TOPIC = keccak256(stringToHex("ExecutionFailure(bytes32,uint256)"));
 const ZERO_WORD = "0".repeat(64);

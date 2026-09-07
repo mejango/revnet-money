@@ -4,6 +4,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dialogProps = vi.hoisted(() => ({ last: undefined as Record<string, unknown> | undefined }));
+const distributionProps = vi.hoisted(() => ({
+  last: undefined as Record<string, unknown> | undefined,
+}));
 const reads = vi.hoisted(() => ({
   splits: [] as Array<{ percent: number; beneficiary: string; hook: string }>,
   // reservedPercent lives in ruleset metadata bits 4-19, out of 10_000.
@@ -11,6 +14,9 @@ const reads = vi.hoisted(() => ({
   /** Extra chains in the rulesets map, keyed by chain id → number of stages. */
   extraChainStages: {} as Record<number, number>,
   splitsContracts: [] as Array<{ functionName: string; args: readonly unknown[] }>,
+  controllers: {} as Record<number, string>,
+  pending: {} as Record<number, bigint>,
+  pendingContracts: [] as Array<{ chainId: number; address: string; args: readonly unknown[] }>,
 }));
 
 vi.mock("@/lib/nana/project", () => ({
@@ -63,7 +69,10 @@ vi.mock("@/components/EthereumAddress", () => ({
   EthereumAddress: ({ address }: { address: string }) => <span>{address}</span>,
 }));
 vi.mock("@/app/[slug]/owners/components/DistributeReservedTokensButton", () => ({
-  DistributeReservedTokensButton: () => null,
+  DistributeReservedTokensButton: (props: Record<string, unknown>) => {
+    distributionProps.last = props;
+    return null;
+  },
 }));
 vi.mock("@/app/[slug]/owners/components/ChangeSplitRecipientsDialog", () => ({
   ChangeSplitRecipientsDialog: (props: Record<string, unknown>) => {
@@ -76,11 +85,19 @@ vi.mock("wagmi", () => ({
   useReadContracts: ({
     contracts,
   }: {
-    contracts: Array<{ functionName: string; args: readonly unknown[] }>;
+    contracts: Array<{
+      chainId: number;
+      address: string;
+      functionName: string;
+      args: readonly unknown[];
+    }>;
   }) => {
     if (contracts.length === 0) return { data: undefined, isLoading: false };
     if (contracts[0].functionName === "splitsOf") {
       reads.splitsContracts = contracts.filter((c) => c.functionName === "splitsOf");
+    }
+    if (contracts[0].functionName === "pendingReservedTokenBalanceOf") {
+      reads.pendingContracts = contracts;
     }
     if (contracts[0].functionName === "allOf") {
       // JBRulesets.allOf returns newest-first; the component reverses it.
@@ -108,7 +125,13 @@ vi.mock("wagmi", () => ({
     return {
       data: contracts.map((contract) => ({
         status: "success",
-        result: contract.functionName === "splitsOf" ? reads.splits : 0n,
+        result:
+          contract.functionName === "splitsOf"
+            ? reads.splits
+            : contract.functionName === "controllerOf"
+              ? (reads.controllers[contract.chainId] ??
+                "0x0000000000000000000000000000000000000000")
+              : (reads.pending[contract.chainId] ?? 0n),
       })),
       isLoading: false,
     };
@@ -119,6 +142,10 @@ const projects = [{ chainId: 8453, projectId: 3, token: null }] as unknown as Pr
 
 beforeEach(() => {
   dialogProps.last = undefined;
+  distributionProps.last = undefined;
+  reads.controllers = {};
+  reads.pending = {};
+  reads.pendingContracts = [];
   reads.extraChainStages = {};
   reads.splitsContracts = [];
   reads.splits = [
@@ -196,5 +223,23 @@ describe("V6SplitsSubtab per-chain stage resolution", () => {
 
     expect(reads.splitsContracts).toHaveLength(1);
     expect(screen.getByText("This chain has no stage 1.")).toBeTruthy();
+  });
+
+  it("resolves pending reserves through each live controller even without the viewed historical stage", () => {
+    reads.extraChainStages = { 10: 0 };
+    reads.controllers = {
+      8453: "0x0000000000000000000000000000000000000003",
+      10: "0x0000000000000000000000000000000000000004",
+    };
+    reads.pending = { 8453: 31n, 10: 92n };
+    render(<V6SplitsSubtab projects={twoChains} />);
+    expect(reads.pendingContracts.map((call) => [call.chainId, call.address, call.args])).toEqual([
+      [8453, reads.controllers[8453], [3n]],
+      [10, reads.controllers[10], [12n]],
+    ]);
+    expect(distributionProps.last?.projects).toEqual([
+      { chainId: 8453, projectId: 3n, pending: 31n },
+      { chainId: 10, projectId: 12n, pending: 92n },
+    ]);
   });
 });

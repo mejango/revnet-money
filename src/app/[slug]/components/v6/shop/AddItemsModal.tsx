@@ -4,7 +4,6 @@ import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import {
-  buildTierConfigs,
   MAX_MEDIA_BYTES,
   newDraftItem,
   pinDraftItems,
@@ -19,21 +18,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
-import {
-  requireOnchainExecution,
-  submittedViaSafe,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { jb721TiersHookAbi, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { PublicClient } from "viem";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount } from "wagmi";
+import type { ProjectItem } from "../shared";
+import { addItemsConditions, tierConfigsForDestination, type ShopReadCondition } from "./shopBatch";
 import { ShopInventory } from "./shopLib";
-import { canAdjust721Tiers } from "./shopPermissions";
+import { useShopDestinations, type ShopDestination } from "./useShopDestinations";
 
 /**
  * Operator "+ Add items" (website/ openAddTierModal + submitAddTiers parity):
@@ -45,27 +41,32 @@ export function AddItemsModal({
   chainId,
   projectId,
   categories,
+  projects,
   onClose,
 }: {
   shop: ShopInventory;
   chainId: JBChainId;
   projectId: bigint;
   categories: { id: number; name: string }[];
+  projects: ProjectItem[];
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const publicClient = usePublicClient({ chainId });
   const { address } = useAccount();
-  const { writeContractAsync } = useWriteContract({
-    transactionReview: {
-      title: "Review shop items",
-      description:
-        "Review the live shop hook, decoded tier settings, and exact calldata before sending.",
-      label: "Add shop items",
-      contractName: "JB721TiersHook",
-      confirmLabel: "Confirm & send",
-    },
-  });
+  const { runBatch, getPendingBatch } = useMultichainBatch();
+  const scope = `shop-add:${chainId}:${projectId}`;
+  const saved = getPendingBatch(scope);
+  const peers = useShopDestinations(projects, chainId, projectId);
+  const [selected, setSelected] = useState<string[]>([`${chainId}:${projectId}`]);
+  const [prices, setPrices] = useState<Record<string, Record<number, string>>>({});
+  const destinations = peers.destinations.filter((destination) =>
+    selected.includes(`${destination.chainId}:${destination.projectId}`),
+  );
+  const [prepared, setPrepared] = useState<Array<{
+    destination: ShopDestination;
+    configs: ReturnType<typeof tierConfigsForDestination>;
+    preconditions: ShopReadCondition[];
+  }> | null>(null);
 
   const [items, setItems] = useState<DraftItem[]>([newDraftItem()]);
   const [phase, setPhase] = useState<
@@ -80,7 +81,7 @@ export function AddItemsModal({
   >("form");
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const mediaPreviews = useRef(new Set<string>());
   useEffect(
     () => () => {
@@ -127,89 +128,121 @@ export function AddItemsModal({
       mediaPreviews.current.delete(preview);
     }
     setItems((current) => current.filter((_, i) => i !== index));
+    setPrices((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([key, overrides]) => [
+          key,
+          Object.fromEntries(
+            Object.entries(overrides)
+              .filter(([itemIndex]) => Number(itemIndex) !== index)
+              .map(([itemIndex, price]) => [
+                Number(itemIndex) > index ? Number(itemIndex) - 1 : Number(itemIndex),
+                price,
+              ]),
+          ),
+        ]),
+      ),
+    );
     setError(null);
   };
 
   const review = async () => {
-    if (!address || !publicClient || busy) return;
+    if (!address || busy || !destinations.length) return;
     setError(null);
-
-    setReviewing(true);
+    setPhase("checking");
     try {
-      setPhase("checking");
-      const authorized = await canAdjust721Tiers(publicClient as PublicClient, {
-        chainId,
-        projectId,
-        hook: shop.hook,
-        operator: address,
-      });
-      if (!authorized) throw new Error("This wallet cannot manage this shop.");
-
       for (let index = 0; index < items.length; index++) {
         const item = items[index];
         if (
-          (item.name.trim() || item.description.trim() || item.mediaUri.trim() || item.mediaFile) &&
+          (item.description.trim() || item.mediaUri.trim() || item.mediaFile) &&
           !item.name.trim()
         ) {
-          throw new Error(
-            `${items.length > 1 ? `Item ${index + 1}: ` : ""}enter a name when composing item metadata.`,
-          );
+          throw new Error(`Item ${index + 1}: enter a name when composing item metadata.`);
         }
       }
-      const draftConfigs = buildTierConfigs(items, shop.pricing.decimals);
-      if (typeof draftConfigs === "string") throw new Error(draftConfigs);
-      setPhase("form");
+      await Promise.all(
+        destinations.map(async (destination) => {
+          tierConfigsForDestination(
+            items,
+            destination,
+            prices[`${destination.chainId}:${destination.projectId}`],
+          );
+          await addItemsConditions(peers.clientFor(destination.chainId), destination, address);
+        }),
+      );
+      setReviewing(true);
     } catch (err) {
-      setPhase("form");
-      setReviewing(false);
       setError(shortError(err));
+    } finally {
+      setPhase("form");
     }
   };
 
-  const submit = async () => {
-    if (!address || !publicClient || busy) return;
+  const submit = async (resume = false) => {
+    if (!address || busy) return;
     setError(null);
-
+    setProgress(null);
     try {
-      setPhase("pinning");
-      const preparedItems = await pinDraftItems(items, categories);
-      const configs = buildTierConfigs(preparedItems, shop.pricing.decimals);
-      if (typeof configs === "string") throw new Error(configs);
-
-      // Simulate first — a revert (missing ADJUST_721_TIERS permission, bad
-      // ordering, hook paused…) surfaces here instead of costing gas.
-      setPhase("simulating");
-      const { request } = await (publicClient as PublicClient).simulateContract({
-        address: shop.hook,
-        abi: jb721TiersHookAbi,
-        functionName: "adjustTiers",
-        args: [configs, []],
-        account: address,
-      });
-
+      let batch = prepared;
+      if (!batch && !resume) {
+        setPhase("checking");
+        // Every destination is authorized before uploading any media.
+        const conditions = await Promise.all(
+          destinations.map((destination) =>
+            addItemsConditions(peers.clientFor(destination.chainId), destination, address),
+          ),
+        );
+        setPhase("pinning");
+        const pinned = await pinDraftItems(items, categories);
+        batch = destinations.map((destination, index) => ({
+          destination,
+          configs: tierConfigsForDestination(
+            pinned,
+            destination,
+            prices[`${destination.chainId}:${destination.projectId}`],
+          ),
+          preconditions: conditions[index],
+        }));
+        setPrepared(batch);
+      }
       setPhase("sending");
-      // The simulated request is the exact call — wagmi's union type just
-      // can't carry the tuple inference across the runtime chain.
-      const hash = await writeContractAsync(request as never);
-      setTxHash(hash);
-
-      setPhase("confirming");
-      if (submittedViaSafe(hash)) {
-        setReviewing(false);
+      const result = await runBatch({
+        label: "Add shop items",
+        scope,
+        onProgress: setProgress,
+        calls: resume
+          ? []
+          : batch!.map(({ destination, configs, preconditions }) => ({
+              chainId: destination.chainId,
+              address: destination.shop.hook,
+              abi: jb721TiersHookAbi,
+              functionName: "adjustTiers",
+              args: [configs, []],
+              contractName: "JB721TiersHook",
+              recoveryScope: `shop-add:${destination.chainId}:${destination.projectId}`,
+              preconditions,
+            })),
+      });
+      if (result.status === "pending") {
         setPhase("safe-proposed");
+        setReviewing(false);
         return;
       }
-      requireOnchainExecution(hash, "Shop item update");
-      const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
-      if (receipt.status !== "success") throw new Error("The transaction failed.");
-
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["v6Shop721", chainId, projectId.toString()] }),
-        queryClient.invalidateQueries({ queryKey: ["v6PayShop", chainId, projectId.toString()] }),
-        // shopLib keys tier media as "v6Shop721TierMedia"; this prefix matched nothing, so
-        // media never refreshed after items were added.
-        queryClient.invalidateQueries({ queryKey: ["v6Shop721TierMedia", chainId, shop.hook] }),
-      ]);
+      await Promise.all(
+        (batch ?? peers.destinations.map((destination) => ({ destination }))).flatMap(
+          ({ destination }) => [
+            queryClient.invalidateQueries({
+              queryKey: ["v6Shop721", destination.chainId, destination.projectId.toString()],
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ["v6PayShop", destination.chainId, destination.projectId.toString()],
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ["v6Shop721TierMedia", destination.chainId, destination.shop.hook],
+            }),
+          ],
+        ),
+      );
       setReviewing(false);
       setPhase("done");
     } catch (err) {
@@ -219,7 +252,8 @@ export function AddItemsModal({
   };
 
   const status =
-    phase === "checking"
+    progress ??
+    (phase === "checking"
       ? "Checking the shop and your permissions…"
       : phase === "pinning"
         ? "Pinning metadata…"
@@ -229,7 +263,7 @@ export function AddItemsModal({
             ? "Confirm in wallet…"
             : phase === "confirming"
               ? "Confirming…"
-              : null;
+              : null);
 
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
@@ -237,8 +271,8 @@ export function AddItemsModal({
         <DialogHeader>
           <DialogTitle>Add items for sale</DialogTitle>
           <DialogDescription>
-            Stage one or more items, then add them to the collection in one revnet operator
-            transaction.
+            Stage items and choose the collections to stock. Review each chain’s prices and
+            inventory before submitting.
           </DialogDescription>
         </DialogHeader>
 
@@ -246,17 +280,19 @@ export function AddItemsModal({
           <div className="py-6 text-center">
             <p className="text-sm font-medium text-zinc-900">
               {phase === "safe-proposed"
-                ? "Safe proposal submitted"
-                : `${items.length} item${items.length === 1 ? "" : "s"} added.`}
+                ? "Shop update pending"
+                : "Items added to every selected collection."}
             </p>
             {phase === "safe-proposed" ? (
               <p className="mx-auto mt-2 max-w-md text-sm text-zinc-600">
-                The items have not been added yet. The Safe still needs its approvals and onchain
-                execution; follow the persistent transaction status before trying again.
+                Follow the transaction status for submitted destinations, then continue this same
+                update. Confirmed chains will not be submitted again.
               </p>
             ) : null}
-            {txHash ? (
-              <p className="mt-1 break-all font-mono text-xs text-zinc-500">{txHash}</p>
+            {phase === "safe-proposed" ? (
+              <Button className="mt-4 mr-2" onClick={() => void submit(true)}>
+                Check and continue
+              </Button>
             ) : null}
             <Button className="mt-4" onClick={onClose}>
               Done
@@ -264,6 +300,17 @@ export function AddItemsModal({
           </div>
         ) : (
           <>
+            {saved ? (
+              <div className="space-y-2 bg-melon-50 p-3">
+                <p className="text-sm">
+                  A saved shop update is awaiting completion. Confirmed chains will not be submitted
+                  again.
+                </p>
+                <Button disabled={busy} onClick={() => void submit(true)}>
+                  Resume saved shop update
+                </Button>
+              </div>
+            ) : null}
             <div className="flex flex-col gap-5">
               {items.map((item, index) => (
                 <div key={index} className="bg-melon-50 p-4 sm:p-5">
@@ -273,7 +320,7 @@ export function AddItemsModal({
                       <button
                         type="button"
                         onClick={() => removeItem(index)}
-                        disabled={busy}
+                        disabled={busy || !!prepared || !!saved}
                         className="text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
                       >
                         Remove
@@ -292,7 +339,8 @@ export function AddItemsModal({
                       noNewTiersWithOwnerMinting: shop.configFlags?.noNewTiersWithOwnerMinting,
                       transferabilityFixed: shop.fixedTierTransferability,
                     }}
-                    disabled={busy}
+                    disabled={busy || !!prepared || !!saved}
+                    chains={destinations.map((destination) => destination.chainId)}
                     onChange={(patch) => updateItem(index, patch)}
                     onSelectMedia={(file) => selectMedia(index, file)}
                   />
@@ -302,7 +350,7 @@ export function AddItemsModal({
               <button
                 type="button"
                 onClick={() => setItems((current) => [...current, newDraftItem()])}
-                disabled={busy}
+                disabled={busy || !!prepared || !!saved}
                 className="self-start border border-dashed border-zinc-400 px-4 py-2.5 text-sm text-zinc-600 hover:border-zinc-700 hover:text-zinc-900"
               >
                 + Add an item
@@ -315,12 +363,73 @@ export function AddItemsModal({
                   aria-label="Chains to add items on"
                   className="mt-2 flex flex-wrap gap-2"
                 >
-                  <div className="inline-flex min-h-11 items-center gap-2 border border-teal-500 bg-teal-50 px-3 text-sm font-medium text-teal-800">
-                    <ChainLogo chainId={chainId} width={22} height={22} />
-                    <span>{chainDisplayName(chainId)}</span>
-                  </div>
+                  {peers.destinations.map((destination) => {
+                    const key = `${destination.chainId}:${destination.projectId}`;
+                    return (
+                      <label
+                        key={key}
+                        className="inline-flex min-h-11 items-center gap-2 border border-zinc-300 px-3 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Add on ${chainDisplayName(destination.chainId)}`}
+                          checked={selected.includes(key)}
+                          disabled={busy || !!prepared || !!saved}
+                          onChange={(event) =>
+                            setSelected((current) =>
+                              event.target.checked
+                                ? [...current, key]
+                                : current.filter((entry) => entry !== key),
+                            )
+                          }
+                        />
+                        <ChainLogo chainId={destination.chainId} width={22} height={22} />
+                        {chainDisplayName(destination.chainId)} · #
+                        {destination.projectId.toString()}
+                      </label>
+                    );
+                  })}
+                  {peers.isLoading ? (
+                    <p className="text-xs text-zinc-500">Loading linked shops…</p>
+                  ) : null}
+                  {peers.unavailable.map((destination) => (
+                    <p
+                      key={`${destination.chainId}:${destination.projectId}`}
+                      className="text-xs text-red-700"
+                    >
+                      Shop unavailable on {chainDisplayName(destination.chainId)}.
+                    </p>
+                  ))}
                 </div>
               </div>
+              {destinations.map((destination) => {
+                const key = `${destination.chainId}:${destination.projectId}`;
+                return (
+                  <fieldset key={key} className="space-y-2 border-t border-zinc-200 pt-3">
+                    <legend className="text-sm">
+                      {chainDisplayName(destination.chainId)} prices (
+                      {destination.shop.pricing.symbol}; {destination.shop.pricing.decimals}{" "}
+                      decimals)
+                    </legend>
+                    {items.map((item, index) => (
+                      <label key={index} className="flex items-center gap-3 text-xs">
+                        {item.name || `Item ${index + 1}`}
+                        <Input
+                          aria-label={`Item ${index + 1} price on ${chainDisplayName(destination.chainId)}`}
+                          value={prices[key]?.[index] ?? item.price}
+                          disabled={busy || !!prepared || !!saved}
+                          onChange={(event) =>
+                            setPrices((current) => ({
+                              ...current,
+                              [key]: { ...current[key], [index]: event.target.value },
+                            }))
+                          }
+                        />
+                      </label>
+                    ))}
+                  </fieldset>
+                );
+              })}
             </div>
 
             {error && !reviewing ? (
@@ -336,12 +445,12 @@ export function AddItemsModal({
               <ButtonWithWallet
                 targetChainId={chainId}
                 loading={busy}
-                disabled={busy}
-                onClick={() => void review()}
+                disabled={busy || !!saved || (!prepared && !destinations.length)}
+                onClick={() => (prepared ? setReviewing(true) : void review())}
                 connectWalletText="Connect Wallet"
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                Add items
+                {prepared ? "Continue reviewed update" : "Add items"}
               </ButtonWithWallet>
             </div>
           </>
@@ -359,7 +468,7 @@ export function AddItemsModal({
           steps={[
             {
               title: `Add ${items.length} item${items.length === 1 ? "" : "s"}`,
-              detail: "Metadata is pinned first; then one call on the shop hook.",
+              detail: `One call per selected collection across ${destinations.length} chain${destinations.length === 1 ? "" : "s"}.`,
             },
           ]}
           activeIndex={busy ? 0 : -1}
@@ -371,13 +480,26 @@ export function AddItemsModal({
         >
           {items.map((item, index) => (
             <SummaryRow key={index} label={item.name.trim() || `Item ${index + 1}`}>
-              {item.price.trim() ? `${item.price.trim()} ${shop.pricing.symbol}` : "Free"}
               <span className="block text-xs text-zinc-500">
                 {item.supply.trim() ? `${item.supply.trim()} in stock` : "Unlimited stock"}
               </span>
             </SummaryRow>
           ))}
-          <SummaryRow label="On">{chainDisplayName(chainId)}</SummaryRow>
+          {destinations.map((destination) => (
+            <SummaryRow
+              key={`${destination.chainId}:${destination.projectId}`}
+              label={`${chainDisplayName(destination.chainId)} · #${destination.projectId}`}
+            >
+              {items.map((item, index) => (
+                <span className="block" key={index}>
+                  {item.name || `Item ${index + 1}`}:{" "}
+                  {prices[`${destination.chainId}:${destination.projectId}`]?.[index] ?? item.price}{" "}
+                  {destination.shop.pricing.symbol} ·{" "}
+                  {item.perChainSupply[destination.chainId] || item.supply || "Unlimited"} stock
+                </span>
+              ))}
+            </SummaryRow>
+          ))}
         </TxConfirmDialog>
       ) : null}
     </Dialog>

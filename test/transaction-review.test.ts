@@ -1,5 +1,7 @@
+import type { ChainPayment } from "@/lib/nana/types";
 import {
   buildTransactionReviewPrompt,
+  chooseRelayrPayment,
   registerTransactionReviewHandler,
   requireContractTransactionReview,
   requireTransactionReview,
@@ -108,6 +110,71 @@ describe("transaction review fail-closed boundary", () => {
 
     await expect(requireContractTransactionReview(call)).rejects.toThrow(
       "Transaction data changed after review",
+    );
+  });
+});
+
+describe("Relayr funding selection", () => {
+  const payment: ChainPayment = {
+    chain: 8453,
+    amount: "0x1",
+    calldata: "0x12345678",
+    payment_deadline: "2030-01-01T00:00:00Z",
+    target: TOKEN,
+    token: "0x0000000000000000000000000000000000000000",
+  };
+
+  it("rejects an empty quote before opening a review", async () => {
+    await expect(chooseRelayrPayment([])).rejects.toThrow(
+      "Relayr did not return a payment option.",
+    );
+  });
+
+  it("requires an available review surface even for one preferred payment", async () => {
+    await expect(chooseRelayrPayment([payment], payment.chain)).rejects.toThrow(
+      "Transaction review is unavailable",
+    );
+  });
+
+  it("does not use the preferred chain or first quote without a selection", async () => {
+    unregister = registerTransactionReviewHandler(async () => true);
+
+    await expect(chooseRelayrPayment([payment], payment.chain)).rejects.toThrow(
+      "Choose a quoted Relayr payment before continuing.",
+    );
+  });
+
+  it("returns the quoted option chosen by the user on another chain", async () => {
+    const alternate = { ...payment, chain: 10 } as const;
+    unregister = registerTransactionReviewHandler(async (request) => {
+      expect(request.calls).toEqual([]);
+      expect(request.relayrPaymentSelection?.preferredChainId).toBe(payment.chain);
+      request.relayrPaymentSelection?.select(alternate);
+      return true;
+    });
+
+    await expect(chooseRelayrPayment([payment, alternate], payment.chain)).resolves.toBe(alternate);
+  });
+
+  it("rejects an option outside the quote", async () => {
+    unregister = registerTransactionReviewHandler(async (request) => {
+      request.relayrPaymentSelection?.select({ ...payment, amount: "0x2" });
+      return true;
+    });
+
+    await expect(chooseRelayrPayment([payment])).rejects.toThrow(
+      "Choose a quoted Relayr payment before continuing.",
+    );
+  });
+
+  it("rejects cancellation even after choosing a payment", async () => {
+    unregister = registerTransactionReviewHandler(async (request) => {
+      request.relayrPaymentSelection?.select(payment);
+      return false;
+    });
+
+    await expect(chooseRelayrPayment([payment])).rejects.toThrow(
+      "Review closed. Nothing was sent.",
     );
   });
 });

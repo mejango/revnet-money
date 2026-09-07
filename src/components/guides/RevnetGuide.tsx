@@ -10,9 +10,9 @@ type RevnetGuideCodePoint = {
   links?: readonly { href: string; label: string }[];
 };
 
-export type RevnetGuideAudience = "founders" | "frontend" | "contracts";
+type RevnetGuideAudience = "founders" | "frontend" | "contracts";
 
-export const AUDIENCE_LABEL: Record<RevnetGuideAudience, string> = {
+const AUDIENCE_LABEL: Record<RevnetGuideAudience, string> = {
   founders: "Project builders",
   frontend: "App builders",
   contracts: "Contract builders",
