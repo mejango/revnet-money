@@ -13,7 +13,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@/lib/cross-chain-authority";
 import { gasWithHeadroom } from "@/lib/gas";
-import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import {
   listPendingSafeTransactions,
   nextProposalNonce,
@@ -60,7 +60,7 @@ const REPEATABLE_OPERATOR_WRITES = new Set(["setHookFor", "setTerminalFor", "set
  * can authorize it:
  *
  * - The operator itself (an EOA, or the Safe through its own app): a single
- *   chain keeps the simulate-first wallet write; two or more supported mainnets
+ *   chain keeps the simulate-first wallet write; two or more supported mainnets or testnets
  *   are bundled into ONE Relayr payment, after an exact authorization signature on each chain.
  *   Gas is estimated against each chain's live state first, so
  *   a call that would revert never reaches the bundle. A Safe-app connection
@@ -117,10 +117,10 @@ export function useOperatorWrites() {
       writes.some((write) => !REPEATABLE_OPERATOR_WRITES.has(write.functionName)) &&
       (isSafeConnection(config) ||
         routed.some((entry) => entry.route.kind === "safe-signer") ||
-        writes.some((write) => !isRelayrSupportedChain(write.chainId)))
+        !areRelayrChainsCompatible(writes.map((write) => write.chainId)))
     ) {
       throw new Error(
-        "Choose one chain for this action when using Safe or a network unsupported by Relayr. Confirm that chain's result before proceeding to another chain.",
+        "Choose one chain for this action when using Safe, unsupported networks, or a mix of mainnets and testnets. Confirm that chain's result before proceeding to another chain.",
       );
     }
     const direct = routed.filter((entry) => entry.route.kind === "direct").map((e) => e.write);
@@ -222,11 +222,11 @@ export function useOperatorWrites() {
 
     // Relayr forwards ERC-2771 requests signed by a key; a Safe app connection
     // has none, so it proposes each chain's call to its Safe one at a time.
-    // Relayr does not support testnets; those use the same sequential path.
+    // A bundle must stay entirely on supported mainnets or entirely on testnets.
     if (
       direct.length === 1 ||
       isSafeConnection(config) ||
-      direct.some((write) => !isRelayrSupportedChain(write.chainId))
+      !areRelayrChainsCompatible(direct.map((write) => write.chainId))
     ) {
       result.chains = await runSequentialWrites({
         writes: direct,

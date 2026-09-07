@@ -53,6 +53,10 @@ const PAYMENTS: ChainPayment[] = [
   },
 ];
 const QUOTE = { bundle_uuid: "selected-payment-bundle", payment_info: PAYMENTS };
+const RELAYR_NETWORKS: { family: string; chains: JBChainId[]; preferred: JBChainId }[] = [
+  { family: "mainnets", chains: [1, 10, 8453, 42161], preferred: 8453 },
+  { family: "testnets", chains: [11155111, 11155420, 84532, 421614], preferred: 84532 },
+];
 
 vi.mock("wagmi", () => ({
   useConfig: () => mocks.config,
@@ -185,9 +189,10 @@ describe("wallet-action:operator-writes — operator Relayr routing", () => {
 
   it.each([
     { label: "a single chain", chains: [1], safe: false },
-    { label: "a testnet", chains: [1, 11155111], safe: false },
+    { label: "mixed mainnets and testnets", chains: [1, 11155111], safe: false },
     { label: "an unsupported chain", chains: [1, 137], safe: false },
     { label: "a Safe connection", chains: [1, 10], safe: true },
+    { label: "a testnet Safe connection", chains: [11155111, 84532], safe: true },
   ])("uses sequential reviewed writes for $label", async ({ chains, safe }) => {
     mocks.safe = safe;
     const { result } = renderHook(useOperatorWrites);
@@ -205,28 +210,35 @@ describe("wallet-action:operator-writes — operator Relayr routing", () => {
     expect(mocks.chooseRelayrPayment).not.toHaveBeenCalled();
   });
 
-  it("waits for explicit funding selection across supported mainnets and preserves the initial wallet preference", async () => {
-    const selected = deferred<(typeof PAYMENTS)[number]>();
-    mocks.chooseRelayrPayment.mockReturnValue(selected.promise);
-    mocks.getRelayrTxQuote.mockImplementation(async () => {
-      // Authorization may switch networks before payment selection opens.
-      mocks.chainId = 42161;
-      return QUOTE;
-    });
-    const { result } = renderHook(useOperatorWrites);
-    const pending = run(result.current.runWrites, [1, 10, 8453, 42161]);
-    await vi.waitFor(() => expect(mocks.chooseRelayrPayment).toHaveBeenCalledWith(PAYMENTS, 8453));
-    expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
-    expect(
-      mocks.getRelayrTxQuote.mock.calls[0][0].map((call: { chainId: number }) => call.chainId),
-    ).toEqual([1, 10, 8453, 42161]);
+  it.each(RELAYR_NETWORKS)(
+    "waits for explicit funding selection across supported $family and preserves the initial wallet preference",
+    async ({ chains, preferred }) => {
+      mocks.chainId = preferred;
+      const payments = PAYMENTS.map((payment, index) => ({ ...payment, chain: chains[index] }));
+      const selected = deferred<(typeof PAYMENTS)[number]>();
+      mocks.chooseRelayrPayment.mockReturnValue(selected.promise);
+      mocks.getRelayrTxQuote.mockImplementation(async () => {
+        // Authorization may switch networks before payment selection opens.
+        mocks.chainId = chains[3];
+        return { ...QUOTE, payment_info: payments };
+      });
+      const { result } = renderHook(useOperatorWrites);
+      const pending = run(result.current.runWrites, chains);
+      await vi.waitFor(() =>
+        expect(mocks.chooseRelayrPayment).toHaveBeenCalledWith(payments, preferred),
+      );
+      expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
+      expect(
+        mocks.getRelayrTxQuote.mock.calls[0][0].map((call: { chainId: number }) => call.chainId),
+      ).toEqual(chains);
 
-    selected.resolve(PAYMENTS[1]);
-    await expect(pending).resolves.toMatchObject({ chains: 4, viaRelayr: true });
-    expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(PAYMENTS[1]);
-    expect(mocks.waitForRelayrBundle).toHaveBeenCalledExactlyOnceWith(QUOTE.bundle_uuid);
-    expect(mocks.runSequentialWrites).not.toHaveBeenCalled();
-  });
+      selected.resolve(payments[1]);
+      await expect(pending).resolves.toMatchObject({ chains: 4, viaRelayr: true });
+      expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(payments[1]);
+      expect(mocks.waitForRelayrBundle).toHaveBeenCalledExactlyOnceWith(QUOTE.bundle_uuid);
+      expect(mocks.runSequentialWrites).not.toHaveBeenCalled();
+    },
+  );
 
   it("stops before payment when funding selection is cancelled", async () => {
     mocks.chooseRelayrPayment.mockRejectedValue(new Error("Transaction review cancelled"));
@@ -238,7 +250,10 @@ describe("wallet-action:operator-writes — operator Relayr routing", () => {
 
   it.each([
     { functionName: "initializePoolFor", chains: [1, 11155111], safe: false, safeSigner: false },
+    { functionName: "deploySuckersFor", chains: [1, 11155111], safe: false, safeSigner: false },
+    { functionName: "setOperatorOf", chains: [1, 11155111], safe: false, safeSigner: false },
     { functionName: "deploySuckersFor", chains: [1, 10], safe: true, safeSigner: false },
+    { functionName: "deploySuckersFor", chains: [11155111, 84532], safe: true, safeSigner: false },
     { functionName: "setOperatorOf", chains: [1, 10], safe: false, safeSigner: true },
   ])(
     "blocks partial $functionName batches before any wallet action",
@@ -270,14 +285,19 @@ describe("wallet-action:operator-writes — operator Relayr routing", () => {
     },
   );
 
-  it("keeps supported-mainnet EOA pool initialization on Relayr", async () => {
+  it.each([
+    { functionName: "initializePoolFor", chains: [1, 10] },
+    { functionName: "initializePoolFor", chains: [11155111, 84532] },
+    { functionName: "deploySuckersFor", chains: [11155111, 84532] },
+    { functionName: "setOperatorOf", chains: [11155111, 84532] },
+  ])("relays same-family EOA $functionName on $chains", async ({ functionName, chains }) => {
     const { result } = renderHook(useOperatorWrites);
     await expect(
       result.current.runWrites({
-        writes: operatorWrites([1, 10]).map((write) => ({
+        writes: operatorWrites(chains).map((write) => ({
           ...write,
-          functionName: "initializePoolFor",
-          abi: parseAbi(["function initializePoolFor(uint256 value)"]),
+          functionName,
+          abi: parseAbi([`function ${functionName}(uint256 value)`]),
         })),
         account: ACCOUNT,
         label: "Initialize pool",
@@ -333,9 +353,10 @@ describe("wallet-action:split-groups — reserved token split routing", () => {
   });
 
   it.each([
-    { label: "a testnet", chains: [1, 11155111], safe: false },
+    { label: "mixed mainnets and testnets", chains: [1, 11155111], safe: false },
     { label: "an unsupported chain", chains: [1, 137], safe: false },
     { label: "a Safe connection", chains: [1, 10], safe: true },
+    { label: "a testnet Safe connection", chains: [11155111, 84532], safe: true },
   ])("uses sequential writes for $label", async ({ chains, safe }) => {
     mocks.safe = safe;
     const onSuccess = vi.fn();
@@ -354,42 +375,43 @@ describe("wallet-action:split-groups — reserved token split routing", () => {
     expect(mocks.chooseRelayrPayment).not.toHaveBeenCalled();
   });
 
-  it("holds the supported-mainnet bundle until the user chooses its funding option", async () => {
-    const onSuccess = vi.fn();
-    const selected = deferred<(typeof PAYMENTS)[number]>();
-    mocks.chooseRelayrPayment.mockReturnValue(selected.promise);
-    const { result } = renderHook(() => useSetSplitGroups({ onSuccess }));
-    let pending!: ReturnType<typeof result.current.submitSplits>;
-    await act(async () => {
-      pending = result.current.submitSplits(splitChains([1, 10, 8453, 42161]));
-    });
-    expect(mocks.chooseRelayrPayment).toHaveBeenCalledWith(PAYMENTS, 8453);
-    expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
-    expect(onSuccess).not.toHaveBeenCalled();
-    expect(
-      mocks.getRelayrTxQuote.mock.calls[0][0].map((call: { chainId: number }) => call.chainId),
-    ).toEqual([1, 10, 8453, 42161]);
+  it.each(RELAYR_NETWORKS)(
+    "holds the supported-$family bundle until the user chooses its funding option",
+    async ({ chains, preferred }) => {
+      mocks.chainId = preferred;
+      const payments = PAYMENTS.map((payment, index) => ({ ...payment, chain: chains[index] }));
+      mocks.getRelayrTxQuote.mockResolvedValue({ ...QUOTE, payment_info: payments });
+      const onSuccess = vi.fn();
+      const selected = deferred<(typeof PAYMENTS)[number]>();
+      mocks.chooseRelayrPayment.mockReturnValue(selected.promise);
+      const { result } = renderHook(() => useSetSplitGroups({ onSuccess }));
+      let pending!: ReturnType<typeof result.current.submitSplits>;
+      await act(async () => {
+        pending = result.current.submitSplits(splitChains(chains));
+      });
+      expect(mocks.chooseRelayrPayment).toHaveBeenCalledWith(payments, preferred);
+      expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
+      expect(onSuccess).not.toHaveBeenCalled();
+      expect(
+        mocks.getRelayrTxQuote.mock.calls[0][0].map((call: { chainId: number }) => call.chainId),
+      ).toEqual(chains);
 
-    expect(
-      mocks.getRelayrTxQuote.mock.calls[0][0].map(
-        (call: { recoveryScope: string }) => call.recoveryScope,
-      ),
-    ).toEqual([
-      "project-splits:1:1:123:1",
-      "project-splits:10:10:123:1",
-      "project-splits:8453:8453:123:1",
-      "project-splits:42161:42161:123:1",
-    ]);
+      expect(
+        mocks.getRelayrTxQuote.mock.calls[0][0].map(
+          (call: { recoveryScope: string }) => call.recoveryScope,
+        ),
+      ).toEqual(chains.map((chainId) => `project-splits:${chainId}:${chainId}:123:1`));
 
-    await act(async () => {
-      selected.resolve(PAYMENTS[1]);
-      await expect(pending).resolves.toEqual({ success: true });
-    });
-    expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(PAYMENTS[1]);
-    expect(mocks.waitForRelayrBundle).toHaveBeenCalledWith(QUOTE.bundle_uuid);
-    expect(onSuccess).toHaveBeenCalledExactlyOnceWith(LAST_HASH);
-    expect(mocks.runSequentialWrites).not.toHaveBeenCalled();
-  });
+      await act(async () => {
+        selected.resolve(payments[1]);
+        await expect(pending).resolves.toEqual({ success: true });
+      });
+      expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(payments[1]);
+      expect(mocks.waitForRelayrBundle).toHaveBeenCalledWith(QUOTE.bundle_uuid);
+      expect(onSuccess).toHaveBeenCalledExactlyOnceWith(LAST_HASH);
+      expect(mocks.runSequentialWrites).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not send or report success after cancelling funding selection", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);

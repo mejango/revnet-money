@@ -46,7 +46,7 @@ import {
   verifyMetadataSource,
   type MetadataDestination,
 } from "@/lib/project-metadata-write";
-import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
@@ -139,7 +139,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
   const relayed =
     projects.length > 1 &&
     !isSafeConnector(connector) &&
-    projects.every((project) => isRelayrSupportedChain(project.chainId));
+    areRelayrChainsCompatible(projects.map((project) => project.chainId));
 
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();

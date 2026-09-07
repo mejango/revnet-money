@@ -1,3 +1,4 @@
+import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import { act, renderHook } from "@testing-library/react";
@@ -301,13 +302,28 @@ describe("reviewed Relayr authorization hook", () => {
     review.registerTransactionReviewHandler(async () => true);
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(
-      result.current.getRelayrTxQuote([{ ...REQUEST, chainId: 11155111 }]),
+      result.current.getRelayrTxQuote([{ ...REQUEST, chainId: 56 as typeof REQUEST.chainId }]),
     ).rejects.toThrow(/direct transaction flow/);
     mocks.readContract.mockResolvedValue(false);
     await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
       /does not trust this forwarder/,
     );
     expect(mocks.signTypedData).not.toHaveBeenCalled();
+  });
+
+  it("rejects mixed mainnet and testnet destinations before any authorization", async () => {
+    const { review, hooks } = await freshHarness();
+    const reviewer = vi.fn().mockResolvedValue(true);
+    review.registerTransactionReviewHandler(reviewer);
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+    await expect(
+      result.current.getRelayrTxQuote([REQUEST, { ...REQUEST, chainId: 11155111 }]),
+    ).rejects.toThrow(/only mainnets or only testnets/);
+    expect(reviewer).not.toHaveBeenCalled();
+    expect(mocks.signTypedData).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("refuses a domain from another deployment", async () => {
@@ -684,16 +700,19 @@ describe("metadata source guards in Relayr", () => {
   });
 });
 
-async function quotedPayment() {
+async function quotedPayment(
+  requests: ReviewedRelayrRequest[] = [REQUEST],
+  offeredQuote = quote(),
+) {
   const harness = await freshHarness();
   harness.review.registerTransactionReviewHandler(async () => true);
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
+    vi.fn().mockResolvedValue(new Response(JSON.stringify(offeredQuote), { status: 200 })),
   );
   const authorization = renderHook(() => harness.hooks.useGetRelayrTxQuote());
   await act(async () => {
-    await authorization.result.current.getRelayrTxQuote([REQUEST]);
+    await authorization.result.current.getRelayrTxQuote(requests);
   });
   const send = renderHook(() => harness.hooks.useSendRelayrTx());
   // Stop the automatic destination watcher without entering a timer loop.
@@ -706,10 +725,120 @@ async function quotedPayment() {
           new Response(JSON.stringify({ bundle_uuid: "wrong", transactions: [] }), { status: 200 }),
       ),
   );
-  return { ...harness, result: send.result };
+  return { ...harness, quote: authorization.result.current.data, result: send.result };
 }
 
 describe("reviewed Relayr payment hook", () => {
+  it("signs all four testnets once and funds them with one explicitly selected testnet payment", async () => {
+    const chainIds = [11155111, 11155420, 84532, 421614] as const;
+    const selectedPayment = payment({ chain: 84532 });
+    const harness = await quotedPayment(
+      chainIds.map((chainId) => ({ ...REQUEST, chainId })),
+      {
+        ...quote(),
+        payment_info: [payment(), payment({ chain: 11155111 }), selectedPayment],
+        txn_uuids: chainIds.map((chainId) => `tx-${chainId}`),
+      },
+    );
+    expect(mocks.signTypedData.mock.calls.map(([request]) => request.domain.chainId)).toEqual(
+      chainIds,
+    );
+    expect(harness.quote?.payment_info.map((option) => option.chain)).toEqual([11155111, 84532]);
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    await expect(harness.result.current.sendRelayrTx(payment())).rejects.toThrow(/does not belong/);
+    await act(async () => {
+      await expect(harness.result.current.sendRelayrTx(selectedPayment)).resolves.toBe(HASH);
+    });
+    expect(mocks.sendTransaction).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ account: ACCOUNT, chainId: 84532, to: PAYMENT_TARGET, value: 16n }),
+    );
+    expect(mocks.getCode).toHaveBeenCalledWith({ address: PAYMENT_TARGET });
+    expect(
+      harness.activity
+        .transactionActivityForHash(HASH)
+        ?.relayrExpectedTransactions?.map((transaction) => transaction.chainId),
+    ).toEqual(chainIds);
+  });
+
+  it("retains an unusable publication when the service offers only mainnet funding for testnets", async () => {
+    const { review, hooks, activity } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
+    );
+    const authorizer = renderHook(() => hooks.useGetRelayrTxQuote());
+    await expect(
+      authorizer.result.current.getRelayrTxQuote([{ ...REQUEST, chainId: 11155111 }]),
+    ).rejects.toThrow(/no funding option/);
+    expect(activity.transactionActivitySnapshot()).toEqual([
+      expect.objectContaining({ relayrPaymentStatus: "unfunded" }),
+    ]);
+    await expect(
+      authorizer.result.current.getRelayrTxQuote([{ ...REQUEST, chainId: 11155111 }]),
+    ).rejects.toThrow(/published authorizations/);
+    expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("filters legacy saved testnet quote funding without signing or publishing again", async () => {
+    const request = { ...REQUEST, chainId: 11155111 as const };
+    const offeredQuote = {
+      ...quote(),
+      payment_info: [payment(), payment({ chain: 84532 })],
+    };
+    const initial = await quotedPayment([request], offeredQuote);
+    initial.activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
+      relayrQuote: offeredQuote,
+    });
+    const resumed = await freshHarness();
+    const authorizer = renderHook(() => resumed.hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await expect(authorizer.result.current.getRelayrTxQuote([request])).resolves.toMatchObject({
+        payment_info: [payment({ chain: 84532 })],
+      });
+    });
+    expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
+    const payer = renderHook(() => resumed.hooks.useSendRelayrTx());
+    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(/does not belong/);
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("isolates persisted testnet fees from returned quote mutations before and after recovery", async () => {
+    const request = { ...REQUEST, chainId: 11155111 as const };
+    const offeredPayment = payment({ chain: 84532 });
+    const initial = await quotedPayment([request], quote(offeredPayment));
+    initial.quote!.payment_info[0].amount = "0x100";
+    initial.activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
+      message: "Still awaiting the original reviewed payment.",
+    });
+    expect(initial.activity.transactionActivitySnapshot()[0].relayrQuote?.payment_info).toEqual([
+      offeredPayment,
+    ]);
+
+    const resumed = await freshHarness();
+    const authorizer = renderHook(() => resumed.hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      const restored = await authorizer.result.current.getRelayrTxQuote([request]);
+      expect(restored.payment_info).toEqual([offeredPayment]);
+      restored.payment_info[0].amount = "0x200";
+    });
+    resumed.activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
+      message: "The restored fee remains unchanged.",
+    });
+    expect(resumed.activity.transactionActivitySnapshot()[0].relayrQuote?.payment_info).toEqual([
+      offeredPayment,
+    ]);
+    const payer = renderHook(() => resumed.hooks.useSendRelayrTx());
+    await expect(
+      payer.result.current.sendRelayrTx({ ...offeredPayment, amount: "0x200" }),
+    ).rejects.toThrow(/does not belong/);
+    expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
   it("reviews the exact selected funding chain and persists its signed destination calls", async () => {
     const { review, activity, result } = await quotedPayment();
     review.registerTransactionReviewHandler(async (request) => {
@@ -747,15 +876,23 @@ describe("reviewed Relayr payment hook", () => {
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
-  it("rejects edited quote fields and an unrecognized payment runtime", async () => {
-    const { result } = await quotedPayment();
-    await expect(result.current.sendRelayrTx(payment({ amount: "0x100" }))).rejects.toThrow(
-      /does not belong/,
-    );
-    mocks.getCode.mockResolvedValue("0x00");
-    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(/code is not recognized/);
-    expect(mocks.sendTransaction).not.toHaveBeenCalled();
-  });
+  it.each([1, 11155111] as const)(
+    "rejects edited quote fields and unrecognized runtime on %s",
+    async (chainId) => {
+      const { result } = await quotedPayment(
+        [{ ...REQUEST, chainId }],
+        quote(payment({ chain: chainId })),
+      );
+      await expect(
+        result.current.sendRelayrTx(payment({ chain: chainId, amount: "0x100" })),
+      ).rejects.toThrow(/does not belong/);
+      mocks.getCode.mockResolvedValue("0x00");
+      await expect(result.current.sendRelayrTx(payment({ chain: chainId }))).rejects.toThrow(
+        /code is not recognized/,
+      );
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects account or chain changes before funding submission", async () => {
     const { review, result } = await quotedPayment();

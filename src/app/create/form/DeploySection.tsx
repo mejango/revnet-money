@@ -4,7 +4,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { isSafeConnector } from "@/hooks/useReviewedWriteContract";
 import { hasErrors } from "@/lib/forms";
 import type { JBChainId } from "@/lib/nana/types";
-import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { useState } from "react";
 import { useAccount } from "wagmi";
@@ -38,9 +38,7 @@ export function DeploySection({
   const deploysViaSafe = isSafeConnector(connector) && values.chainIds.length === 1;
   const singleChain = values.chainIds.length === 1;
   const unsupportedMultichain =
-    !singleChain &&
-    (isSafeConnector(connector) ||
-      values.chainIds.some((chainId) => !isRelayrSupportedChain(chainId)));
+    !singleChain && (isSafeConnector(connector) || !areRelayrChainsCompatible(values.chainIds));
   const chainNames = values.chainIds.map((chainId) => chainDisplayName(chainId));
   const action = singleChain ? "Deploy the revnet" : "Sign and get quote";
 
@@ -71,8 +69,9 @@ export function DeploySection({
             role="alert"
             className="mb-4 border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800"
           >
-            For a Safe or testnet deployment, select one chain. Multi-chain launch is available to
-            an EOA on supported mainnets.
+            {isSafeConnector(connector)
+              ? "For a Safe deployment, select one chain."
+              : "Select supported chains from one network family: all mainnets or all testnets."}
           </p>
         ) : null}
         <div className="flex justify-end">
@@ -80,7 +79,7 @@ export function DeploySection({
             targetChainId={
               singleChain
                 ? values.chainIds[0]
-                : isRelayrSupportedChain(connectedChainId ?? 0)
+                : areRelayrChainsCompatible([...values.chainIds, connectedChainId ?? 0])
                   ? (connectedChainId as JBChainId)
                   : undefined
             }

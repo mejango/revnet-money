@@ -1,4 +1,5 @@
 import { ChangeSplitRecipientsDialog } from "@/app/[slug]/owners/components/ChangeSplitRecipientsDialog";
+import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -13,6 +14,7 @@ type ChainSplit = {
 const state = vi.hoisted(() => ({
   chainSplits: [] as unknown[],
   submitSplits: vi.fn(),
+  relayrAvailable: true,
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -42,6 +44,7 @@ vi.mock("@/app/[slug]/owners/components/hooks/useSetSplitGroups", () => ({
     isPending: false,
     isTxLoading: false,
     isSuccess: false,
+    relayrAvailable: state.relayrAvailable,
   }),
 }));
 
@@ -58,8 +61,13 @@ function chain(overrides: Partial<ChainSplit> = {}): ChainSplit {
   };
 }
 
-async function openDialog(stageIdx: number) {
-  render(<ChangeSplitRecipientsDialog stageIdx={stageIdx} initialChainId={8453} />);
+async function openDialog(stageIdx: number, initialChainId = 8453) {
+  render(
+    <ChangeSplitRecipientsDialog
+      stageIdx={stageIdx}
+      initialChainId={initialChainId as JBChainId}
+    />,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Change split recipients" }));
   return screen.findByRole("dialog");
 }
@@ -67,6 +75,7 @@ async function openDialog(stageIdx: number) {
 beforeEach(() => {
   state.chainSplits = [chain()];
   state.submitSplits = vi.fn();
+  state.relayrAvailable = true;
 });
 
 describe("ChangeSplitRecipientsDialog stage labelling", () => {
@@ -124,6 +133,36 @@ describe("ChangeSplitRecipientsDialog fallback-splits guard", () => {
 });
 
 describe("ChangeSplitRecipientsDialog confirm stage", () => {
+  it.each([
+    { label: "testnet EOA", chainIds: [11155111, 84532], relayrAvailable: true, relayed: true },
+    { label: "testnet Safe", chainIds: [11155111, 84532], relayrAvailable: false, relayed: false },
+    {
+      label: "mixed network families",
+      chainIds: [1, 84532],
+      relayrAvailable: true,
+      relayed: false,
+    },
+  ])(
+    "shows the matching confirmation route for $label",
+    async ({ chainIds, relayrAvailable, relayed }) => {
+      state.relayrAvailable = relayrAvailable;
+      state.chainSplits = chainIds.map((chainId) => chain({ chainId }));
+      await openDialog(0, chainIds[0]);
+      fireEvent.click(screen.getByRole("checkbox", { name: "Base Sepolia" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      const confirm = (await screen.findAllByRole("dialog")).at(-1)!;
+      await waitFor(() => expect(confirm).toHaveTextContent("Confirm split recipients"));
+      if (relayed) {
+        expect(confirm).toHaveTextContent("Choose a funding chain and pay once.");
+        expect(confirm).toHaveTextContent("Quoted in ETH after you sign");
+      } else {
+        expect(confirm).toHaveTextContent("Update the recipients on Base Sepolia");
+        expect(confirm).not.toHaveTextContent("Quoted in ETH after you sign");
+      }
+      expect(state.submitSplits).not.toHaveBeenCalled();
+    },
+  );
+
   it("reviews the recipients before the write", async () => {
     state.submitSplits = vi.fn().mockResolvedValue({ success: true });
     await openDialog(0);

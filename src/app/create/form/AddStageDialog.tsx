@@ -17,7 +17,7 @@ import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
 import { cn, sortChains } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
-import { useState } from "react";
+import { cloneElement, useState, useSyncExternalStore } from "react";
 import { defaultStageData, PERMANENTLY_DISABLED_OPERATOR } from "../constants";
 import { getResolvedIssuance } from "../helpers/calculatePickupIssuance";
 import { formatFormErrors } from "../helpers/formatFormErrors";
@@ -64,6 +64,10 @@ export function NotesSection({
   );
 }
 
+const subscribeToHydration = () => () => {};
+const clientIsHydrated = () => true;
+const serverIsHydrated = () => false;
+
 export function AddStageDialog({
   stageIdx,
   children,
@@ -72,7 +76,7 @@ export function AddStageDialog({
 }: {
   stageIdx: number;
   initialValues?: StageData;
-  children: React.ReactNode;
+  children: React.ReactElement<{ disabled?: boolean }>;
   onSave: (newStage: StageData) => void;
 }) {
   const {
@@ -103,6 +107,8 @@ export function AddStageDialog({
     "h-9 flex-1 border-2 border-melon-300 bg-melon-25 px-3 py-1.5 text-md placeholder:text-zinc-500 hover:border-melon-400 focus-visible:border-melon-600 focus-visible:outline-none focus-visible:ring-0";
 
   const [open, setOpen] = useState(false);
+  // The server-rendered trigger cannot open a dialog until its handler is attached.
+  const hydrated = useSyncExternalStore(subscribeToHydration, clientIsHydrated, serverIsHydrated);
 
   // The issuance denomination is a single global value (the ruleset's base
   // currency for the whole revnet), edited inline in the first stage's issuance
@@ -147,7 +153,9 @@ export function AddStageDialog({
         setOpen(nextOpen);
       }}
     >
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      <DialogTrigger asChild>
+        {cloneElement(children, { disabled: !hydrated || children.props.disabled })}
+      </DialogTrigger>
       <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl p-4 sm:p-6">
         <DialogHeader className="text-left">
           <DialogTitle className="text-xl">Add stage</DialogTitle>

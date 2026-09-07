@@ -18,7 +18,7 @@ import { toast } from "@/components/ui/use-toast";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
-import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { useEffect, useMemo, useState } from "react";
 import { Address, zeroAddress } from "viem";
@@ -170,7 +170,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const relayed =
     relayrAvailable &&
     (reviewing?.length ?? 0) > 1 &&
-    reviewing?.every((chain) => isRelayrSupportedChain(chain.chainId));
+    areRelayrChainsCompatible(reviewing?.map((chain) => chain.chainId) ?? []);
   const chainNameOf = (chainId: JBChainId) => JB_CHAINS[chainId]?.name ?? `chain ${chainId}`;
 
   if (!hasPermission("SET_SPLIT_GROUPS")) {

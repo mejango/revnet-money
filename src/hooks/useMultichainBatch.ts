@@ -24,7 +24,7 @@ import {
 } from "@/lib/multichain-batch";
 import { verifyActionReceipt, verifyCallPreconditions } from "@/lib/multichain-guards";
 import type { JBChainId } from "@/lib/nana/types";
-import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -249,10 +249,16 @@ export function useMultichainBatch() {
             );
           if (!batch) {
             if (!input.calls.length) throw new Error("There is no saved batch to resume.");
-            const relayr =
-              input.calls.length > 1 &&
-              !isSafeConnection(config) &&
-              input.calls.every((call) => isRelayrSupportedChain(call.chainId));
+            const multichainEoa = input.calls.length > 1 && !isSafeConnection(config);
+            const chainIds = input.calls.map((call) => call.chainId);
+            const compatible = areRelayrChainsCompatible(chainIds);
+            if (multichainEoa && chainIds.every(isRelayrSupportedChain) && !compatible)
+              throw new Error(
+                "Choose destinations from one network family. Mainnet and testnet transactions cannot share a Relayr batch.",
+              );
+            // Routing is decided only for a new journal. An older direct testnet
+            // job must resume its original transport and skip confirmed calls.
+            const relayr = multichainEoa && compatible;
             batch = createMultichainBatch(
               account,
               input.scope,

@@ -28,6 +28,7 @@ const call = (chainId: number, id = 1n): MultichainCall => ({
 const mocks = vi.hoisted(() => ({
   safe: false,
   account: "0x1111111111111111111111111111111111111111",
+  chainId: 1,
   quote: vi.fn(),
   pay: vi.fn(),
   wait: vi.fn(),
@@ -43,7 +44,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
 vi.mock("wagmi/actions", () => ({
-  getAccount: () => ({ address: mocks.account, chainId: 1 }),
+  getAccount: () => ({ address: mocks.account, chainId: mocks.chainId }),
   getPublicClient: () => ({
     estimateContractGas: mocks.estimate,
     call: mocks.verify,
@@ -65,10 +66,13 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
   useWriteContract: (options: typeof mocks.options) => {
     mocks.options = options;
     return {
-      writeContractAsync: async () => {
+      writeContractAsync: async (variables: { chainId: number }) => {
+        // The reviewed direct wrapper switches to each destination before its
+        // final source/account checks and wallet submission.
+        mocks.chainId = variables.chainId;
         await options.reverify?.();
         await options.beforeSubmission?.();
-        return mocks.write();
+        return mocks.write(variables);
       },
     };
   },
@@ -82,6 +86,7 @@ beforeEach(() => {
   window.localStorage.clear();
   mocks.safe = false;
   mocks.account = ACCOUNT;
+  mocks.chainId = 1;
   mocks.review.mockResolvedValue(undefined);
   mocks.estimate.mockResolvedValue(100000n);
   mocks.verify.mockResolvedValue({ data: "0x" });
@@ -108,7 +113,7 @@ beforeEach(() => {
   mocks.block.mockResolvedValue({ hash: HASH });
   mocks.quote.mockImplementation(async (requests: MultichainCall[]) => ({
     bundle_uuid: `bundle-${mocks.quote.mock.calls.length}`,
-    payment_info: [{ chain: 1 }],
+    payment_info: [{ chain: requests[0].chainId }],
     requests,
   }));
   mocks.wait.mockImplementation(async (uuid: string) => {
@@ -153,6 +158,153 @@ describe("durable multichain batch journal", () => {
 });
 
 describe("wallet-action:multichain-batch — reviewed selected-call orchestration", () => {
+  it("routes all four supported testnet destinations through one reviewed Relayr round", async () => {
+    const chainIds = [11155111, 11155420, 84532, 421614];
+    mocks.choose.mockResolvedValue({ chain: 11155111 });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      const completed = await result.current.runBatch({
+        scope: "testnet-auto",
+        label: "Distribute",
+        calls: chainIds.map((chainId, index) => call(chainId, BigInt(index + 10))),
+      });
+      expect(completed.status).toBe("success");
+      expect(completed.hashes.map((row) => row.callIndex)).toEqual([0, 1, 2, 3]);
+    });
+    expect(mocks.quote).toHaveBeenCalledOnce();
+    expect(mocks.quote.mock.calls[0][0].map((request: MultichainCall) => request.chainId)).toEqual(
+      chainIds,
+    );
+    expect(mocks.choose).toHaveBeenCalledWith([{ chain: 11155111 }], 1);
+    expect(mocks.pay).toHaveBeenCalledOnce();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(readMultichainBatches()[0].route).toBe("relayr");
+  });
+
+  it("rejects a fresh mixed mainnet/testnet EOA batch before review, publication, or saving", async () => {
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({
+          scope: "mixed-family",
+          label: "Distribute",
+          calls: [call(1), call(11155111)],
+        }),
+      ).rejects.toThrow(/Mainnet and testnet transactions cannot share/);
+    });
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(readMultichainBatches()).toEqual([]);
+  });
+
+  it("resumes an older direct testnet job without switching transport or replaying its completed call", async () => {
+    const originalHash = `0x${"cd".repeat(32)}` as Hash;
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "old-testnet-direct",
+      "Claim",
+      [call(11155111, 21n), call(11155420, 32n)],
+      "direct",
+    );
+    batch.calls[0].state = "success";
+    batch.calls[0].hash = originalHash;
+    saveMultichainBatch(batch);
+    mocks.transaction.mockResolvedValue({
+      hash: HASH,
+      from: ACCOUNT,
+      to: TARGET,
+      input: batch.calls[1].data,
+      value: 0n,
+      blockHash: HASH,
+      blockNumber: 1n,
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      const completed = await result.current.runBatch({
+        scope: "old-testnet-direct",
+        label: "Claim",
+        calls: [],
+      });
+      expect(completed).toEqual({
+        status: "success",
+        hashes: [
+          { chainId: 11155111, callIndex: 0, hash: originalHash },
+          { chainId: 11155420, callIndex: 1, hash: HASH },
+        ],
+      });
+    });
+    expect(mocks.write).toHaveBeenCalledOnce();
+    expect(mocks.write).toHaveBeenCalledWith(
+      expect.objectContaining({ chainId: 11155420, args: [32n] }),
+    );
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+    expect(readMultichainBatches()[0].route).toBe("direct");
+  });
+
+  it("resumes a paid testnet Relayr round without funding again or replaying confirmed allocations", async () => {
+    const originalHash = `0x${"cd".repeat(32)}` as Hash;
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "testnet-paid",
+      "Distribute",
+      [call(11155111, 1n), call(11155420, 1n), call(11155111, 2n)],
+      "relayr",
+    );
+    batch.calls[0].state = "success";
+    batch.calls[0].hash = originalHash;
+    batch.calls[1].state = "success";
+    batch.calls[1].hash = originalHash;
+    batch.rounds[0].state = "success";
+    batch.rounds[1].state = "pending";
+    batch.rounds[1].bundleUuid = "saved-testnet-paid";
+    saveMultichainBatch(batch);
+    mocks.wait.mockResolvedValue({
+      transactions: [{ request: { chain: 11155111 }, status: { data: { hash: HASH } } }],
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      const completed = await result.current.runBatch({
+        scope: "testnet-paid",
+        label: "Distribute",
+        calls: [],
+      });
+      expect(completed.status).toBe("success");
+      expect(completed.hashes.map((row) => row.callIndex)).toEqual([0, 1, 2]);
+    });
+    expect(mocks.wait).toHaveBeenCalledExactlyOnceWith("saved-testnet-paid");
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(readMultichainBatches()[0].route).toBe("relayr");
+  });
+
+  it("keeps fresh testnet Safe batches on the staged proposal route", async () => {
+    mocks.safe = true;
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      expect(
+        (
+          await result.current.runBatch({
+            scope: "testnet-safe",
+            label: "Distribute",
+            calls: [call(11155111), call(11155420)],
+          })
+        ).status,
+      ).toBe("pending");
+    });
+    expect(mocks.write).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ chainId: 11155111 }),
+    );
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(readMultichainBatches()[0]).toMatchObject({
+      route: "direct",
+      calls: [{ state: "safe" }, { state: "ready" }],
+    });
+  });
+
   it("keeps a soft-failed direct recipient result pending and never repeats its transaction", async () => {
     const topic = `0x${"ef".repeat(32)}` as Hash;
     mocks.receipt.mockResolvedValue({

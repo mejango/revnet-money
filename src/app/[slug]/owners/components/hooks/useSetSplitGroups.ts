@@ -17,7 +17,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { gasWithHeadroom } from "@/lib/gas";
 import { useJBContractContext } from "@/lib/nana/project";
-import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
@@ -69,7 +69,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
         const direct =
           selectedChains.length === 1 ||
           isSafeConnection(config) ||
-          selectedChains.some((chain) => !isRelayrSupportedChain(chain.chainId));
+          !areRelayrChainsCompatible(selectedChains.map((chain) => chain.chainId));
         if (direct)
           selectedChains.forEach((chain) =>
             requireRelayrRecoveryScopeAvailable(
@@ -102,7 +102,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
 
         if (
           isSafeConnection(config) ||
-          selectedChains.some((chain) => !isRelayrSupportedChain(chain.chainId))
+          !areRelayrChainsCompatible(selectedChains.map((chain) => chain.chainId))
         ) {
           let lastHash: Hash | undefined;
           await runSequentialWrites({

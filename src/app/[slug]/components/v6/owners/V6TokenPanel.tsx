@@ -39,7 +39,7 @@ import {
 } from "@/lib/nana/project";
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PERSIST } from "@/lib/query-persist";
-import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { formatEthAddress, formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -52,7 +52,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { getTokenAddress, hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   Address,
   encodeAbiParameters,
@@ -105,8 +105,15 @@ function TokenField({ label, children }: { label: string; children: React.ReactN
   );
 }
 
+const subscribeToHydration = () => () => {};
+const clientIsHydrated = () => true;
+const serverIsHydrated = () => false;
+
 /** Token identity and omnichain edit/deploy controls, ahead of the Owners subtabs. */
 export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
+  // The persisted query can restore before this streamed panel hydrates.
+  // Keep its first client snapshot identical to the server's loading state.
+  const hydrated = useSyncExternalStore(subscribeToHydration, clientIsHydrated, serverIsHydrated);
   const { contractAddress } = useJBContractContext();
   const { metadata } = useJBProjectMetadataContext();
   const { token: contextToken } = useJBTokenContext();
@@ -193,7 +200,7 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
     <section className="mb-8 bg-melon-50 p-4">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-melon-700">Token</h2>
 
-      {tokenState.isLoading ? (
+      {!hydrated || tokenState.isLoading ? (
         <SkeletonLines lines={2} />
       ) : tokenState.isError ? (
         <p className="text-sm text-red-600">Couldn&apos;t read this project&apos;s token.</p>
@@ -247,7 +254,7 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
         </div>
       )}
 
-      {!tokenState.isLoading && !tokenState.isError && states.length > 0 ? (
+      {hydrated && !tokenState.isLoading && !tokenState.isError && states.length > 0 ? (
         <div className="mt-4">
           <TokenEditDialog
             states={states}
@@ -300,11 +307,11 @@ function TokenEditDialog({
   const relayed =
     states.length > 1 &&
     !isSafeConnection(wagmiConfig) &&
-    states.every((state) => isRelayrSupportedChain(state.chainId));
+    areRelayrChainsCompatible(states.map((state) => state.chainId));
   // A partial deployment cannot safely replay if a later direct transaction fails.
   const deploymentRouteError =
     !relayed && states.length > 1 && states.some((state) => !state.token)
-      ? "Choose one chain at a time to deploy an ERC-20 with this connection. Multi-chain deployment requires supported mainnets and a wallet that can sign Relayr authorizations."
+      ? "Choose one chain at a time to deploy an ERC-20 with this connection. Multi-chain deployment requires supported networks that are all mainnets or all testnets and a wallet that can sign Relayr authorizations."
       : null;
 
   const resetQuote = () => {
@@ -508,7 +515,7 @@ function TokenEditDialog({
     }
   };
 
-  // Supported mainnet bundles prepare their authorization before payment review.
+  // Compatible network bundles prepare their authorization before payment review.
   // Direct writes wait for confirmation before submitting the chain sequence.
   const start = async () => {
     setError(deploymentRouteError);
