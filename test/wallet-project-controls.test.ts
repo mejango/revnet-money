@@ -26,7 +26,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx",
-        contains: ["buildClaimTokensTx", "simulateContract", "writeContractAsync(tx)"],
+        contains: ["prepareCreditClaim", "OwnerDistributionBatchButton"],
       },
     ],
   },
@@ -44,7 +44,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/V6AutoIssuanceSubtab.tsx",
-        contains: ["buildAutoIssueTx", "writeContractAsync"],
+        contains: ["prepareAutoIssuance", "OwnerDistributionBatchButton"],
       },
     ],
   },
@@ -62,7 +62,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/owners/components/DistributeReservedTokensButton.tsx",
-        contains: ['functionName: "sendReservedTokensToSplitsOf"'],
+        contains: ["prepareReservedDistribution", "OwnerDistributionBatchButton"],
       },
     ],
   },
@@ -89,7 +89,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/components/v6/extras/PayerDeployForm.tsx",
-        contains: ["buildDeployProjectPayerTx", "simulateContract", "writeContractAsync"],
+        contains: ["buildDeployProjectPayerTx", "runBatch", 'relayrMode: "raw"'],
       },
     ],
   },
@@ -124,11 +124,7 @@ const actionExpectations: Array<{
         // Sucker extension must verify the target chain's config hash before
         // building the deploySuckersFor writes — pairing depends on it.
         file: "src/app/[slug]/components/v6/operator/SuckerExtensionCard.tsx",
-        contains: [
-          '"hashedEncodedConfigurationOf"',
-          "buildSuckerExtensionWrites",
-          "runWrites",
-        ],
+        contains: ['"hashedEncodedConfigurationOf"', "buildSuckerExtensionWrites", "runWrites"],
       },
       {
         file: "src/app/[slug]/components/v6/operator/operatorLib.ts",
@@ -171,7 +167,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/components/v6/shop/AddItemsModal.tsx",
-        contains: ['functionName: "adjustTiers"', "simulateContract", "writeContractAsync"],
+        contains: ['functionName: "adjustTiers"', "runBatch", "preconditions"],
       },
     ],
   },

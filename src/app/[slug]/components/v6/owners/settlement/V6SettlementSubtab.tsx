@@ -7,6 +7,7 @@ import { AcrossChainsCard } from "./AcrossChainsCard";
 import { BridgesCard } from "./BridgesCard";
 import { GossipCard } from "./GossipCard";
 import { chainProjectsKey, projectTokenSymbol, toChainProjects } from "./lib";
+import { PayoutsCard } from "./PayoutsCard";
 import { QueuedMovementsCard } from "./QueuedMovementsCard";
 
 /**
@@ -32,6 +33,7 @@ export function V6SettlementSubtab({ projects }: { projects: ProjectItem[] }) {
   return (
     <div className="flex flex-col gap-4">
       <AcrossChainsCard chains={chains} tokenSymbol={tokenSymbol} />
+      <PayoutsCard chains={chains} />
       {chains.length > 1 ? (
         <>
           <BridgesCard chains={chains} tokenSymbol={tokenSymbol} />

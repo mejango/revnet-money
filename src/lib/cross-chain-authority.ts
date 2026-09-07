@@ -33,7 +33,7 @@ function rpcBlockTag(blockNumber?: bigint): Hex | "latest" {
 }
 
 /** keccak256(runtime bytecode) returned by canonical v1.3.0/v1.4.1 factories. */
-export const RECOGNIZED_SAFE_PROXY_CODE_HASHES = [
+const RECOGNIZED_SAFE_PROXY_CODE_HASHES = [
   "0xb89c1b3bdf2cf8827818646bce9a8f6e372885f8c55e5c07acbd307cb133b000",
   "0xd7d408ebcd99b2b70be43e20253d6d92a8ea8fab29bd3be7f55b10032331fb4c",
 ] as const satisfies readonly Hex[];
@@ -210,7 +210,7 @@ export type SafeAuthorityIdentity = {
   ownersAreEoas: boolean;
 };
 
-export type EoaAuthorityIdentity = {
+type EoaAuthorityIdentity = {
   kind: "eoa";
   /** Present only when the account has an exact EIP-7702 delegation designator. */
   delegation?: Address;
@@ -222,10 +222,6 @@ function safeReleaseForSingleton(singleton: Address) {
   return RECOGNIZED_SAFE_RELEASES.find((release) =>
     release.singletons.some((candidate) => isAddressEqual(candidate, singleton)),
   );
-}
-
-export function isRecognizedSafeSingleton(singleton: Address): boolean {
-  return Boolean(safeReleaseForSingleton(singleton));
 }
 
 export function recognizedSafeVersionForSingleton(
@@ -748,26 +744,4 @@ export async function readCrossChainHandleAuthority({
   return authorityIdentitiesMatch(source, mainnet)
     ? verdict("valid-safe", source, mainnet)
     : verdict("authority-mismatch", source, mainnet);
-}
-
-/** Compatibility-shaped low-level read for call routing and route guards. */
-export async function readMatchingAuthorityIdentities({
-  sourceClient,
-  destinationClient,
-  authority,
-}: {
-  sourceClient: PublicClient;
-  destinationClient: PublicClient;
-  authority: Address;
-}): Promise<{
-  source: AuthorityIdentity;
-  destination: AuthorityIdentity;
-  matches: boolean;
-} | null> {
-  const [source, destination] = await Promise.all([
-    readAuthorityIdentity(sourceClient, authority),
-    readAuthorityIdentity(destinationClient, authority),
-  ]);
-  if (!source || !destination) return null;
-  return { source, destination, matches: authorityIdentitiesMatch(source, destination) };
 }

@@ -142,8 +142,8 @@ describe("stacked native dialogs", () => {
     click(screen.getByRole("button", { name: "Open pay" }));
     await screen.findByRole("dialog", { name: "Pay" });
     const payNow = screen.getByRole("button", { name: "Pay now" });
-    // `showModal()` runs the dialog focusing steps once, on open.
-    expect(screen.getByRole("button", { name: "Open review" })).toHaveFocus();
+    // The shell initially focuses itself, then leaves the user's chosen focus alone.
+    expect(dialogNamed("Pay")).toHaveFocus();
 
     payNow.focus();
     rerender(<StackedDialogs agree={agree} tick={1} />);

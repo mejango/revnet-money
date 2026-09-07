@@ -6,8 +6,8 @@ import {
   describePermissionsData,
   describeSafeInitializer,
   describeSafeInnerCall,
-  describeSuckerClaim,
   describeSplitGroups,
+  describeSuckerClaim,
   type PrettyStep,
 } from "@/components/TransactionReviewProvider";
 import { safeSetupAbi, safeToL2SetupAbi } from "@/lib/safeDeployment";
@@ -132,7 +132,7 @@ describe("Safe execution decoding", () => {
     });
     const steps = describeSafeInnerCall(data)!;
     expect(steps[0].title).toBe("Queued call — JBController.sendReservedTokensToSplitsOf(…)");
-    expect(rowsOf(steps)).toContain("projectId=\"41\"");
+    expect(rowsOf(steps)).toContain('projectId="41"');
   });
 
   it("returns null for an unknown selector", () => {
@@ -182,7 +182,9 @@ describe("permissions and splits decoding", () => {
     expect(rows).toContain("EVERY project");
     expect(rows).toContain("Warning=ROOT grants every permission");
     expect(
-      rowsOf(describePermissionsData(1, { operator: BOB, projectId: 3n, permissionIds: [] })).join(),
+      rowsOf(
+        describePermissionsData(1, { operator: BOB, projectId: 3n, permissionIds: [] }),
+      ).join(),
     ).toContain("none — revokes everything");
   });
 

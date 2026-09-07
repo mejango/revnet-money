@@ -21,12 +21,12 @@ export const PROJECT_HANDLE_CHAIN_ID = 1 as const;
 export const PROJECT_HANDLE_TEXT_KEY = "juicebox";
 // eth_call's outer transaction budget includes its own call overhead. This
 // leaves approximately the contract's 100k resolver stipend available.
-export const PROJECT_HANDLE_TEXT_READ_GAS = 125_000n;
-export const PROJECT_HANDLE_MAX_TEXT_BYTES = 256;
-export const PROJECT_HANDLE_TEXT_WRITE_SIMULATION_GAS = 500_000n;
-export const PROJECT_HANDLE_MAX_WRITE_RESULT_BYTES = 32;
-export const PROJECT_HANDLE_READ_GAS = 300_000n;
-export const PROJECT_HANDLE_MAX_BYTES = 256;
+const PROJECT_HANDLE_TEXT_READ_GAS = 125_000n;
+const PROJECT_HANDLE_MAX_TEXT_BYTES = 256;
+const PROJECT_HANDLE_TEXT_WRITE_SIMULATION_GAS = 500_000n;
+const PROJECT_HANDLE_MAX_WRITE_RESULT_BYTES = 32;
+const PROJECT_HANDLE_READ_GAS = 300_000n;
+const PROJECT_HANDLE_MAX_BYTES = 256;
 
 export const jbProjectHandlesAbi = [
   {

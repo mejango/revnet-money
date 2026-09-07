@@ -172,6 +172,23 @@ describe("transaction activity persistence", () => {
     window.localStorage.setItem(STORAGE_KEY, "not json");
     const malformed = await freshActivityModule();
     expect(malformed.transactionActivitySnapshot()).toEqual([]);
+    expect(() => malformed.requireTransactionActivityPersistence()).toThrow(
+      /storage is unavailable/,
+    );
+    malformed.recordTransactionActivity({
+      id: "new",
+      kind: "direct",
+      title: "New",
+      status: "pending",
+      message: "Pending",
+    });
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("not json");
+    expect(() => malformed.requireTransactionActivityPersistence()).toThrow(
+      /storage is unavailable/,
+    );
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+    expect(() => malformed.requireTransactionActivityPersistence()).not.toThrow();
+    expect(malformed.transactionActivitySnapshot()).toHaveLength(25);
   });
 
   it("ignores updates for unknown ids", async () => {

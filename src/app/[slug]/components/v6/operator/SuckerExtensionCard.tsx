@@ -313,7 +313,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                 steps={[
                   {
                     title: "Deploy suckers",
-                    detail: `One transaction on ${chainName(Number(targetChainId))} and one on each existing chain: a Relayr bundle from the operator wallet, or Safe proposals from a signer.`,
+                    detail: `One transaction on ${chainName(Number(targetChainId))} and one on each existing chain, bundled with Relayr on supported mainnets. Safe and other networks need each chain deployed and confirmed separately.`,
                   },
                 ]}
                 activeIndex={busy ? 0 : -1}

@@ -8,6 +8,12 @@ const testingPath = resolve(root, "TESTING.md");
 const sourceRoot = resolve(root, "src");
 
 const reviewedHookModules = {
+  "@/hooks/useMultichainBatch": {
+    useMultichainBatch: {
+      hookKind: "reviewed-multichain-hook",
+      bindings: { runBatch: "reviewed-multichain-batch" },
+    },
+  },
   "@/hooks/useReviewedWriteContract": {
     useWriteContract: {
       hookKind: "reviewed-write-hook",

@@ -37,14 +37,6 @@ export function ChevronDown(props: IconProps) {
   );
 }
 
-export function ChevronUp(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="m18 15-6-6-6 6" />
-    </Icon>
-  );
-}
-
 export function Loader2(props: IconProps) {
   return (
     <Icon {...props}>

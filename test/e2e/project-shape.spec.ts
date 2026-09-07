@@ -362,12 +362,28 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
 
 test("verified handle routes decode exactly once", async ({ page, request }) => {
   const boundary = await installBrowserBoundary(page);
-
-  const projectResponse = await page.goto("/eth:1/operator", {
-    waitUntil: "domcontentloaded",
+  // Hold hydration deterministically: the SSR form must not accept text which
+  // React cannot retain yet or natively submit to the current project URL.
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
   });
-  expectSecurityHeaders(projectResponse);
+  const scriptPattern = /\/_next\/static\/.*\.js(?:\?.*)?$/u;
+  await page.route(scriptPattern, async (route) => {
+    await scriptsReady;
+    await route.fallback();
+  });
   const search = page.getByRole("searchbox", { name: /Search revnets/u });
+  try {
+    const projectResponse = await page.goto("/eth:1/operator", { waitUntil: "commit" });
+    expectSecurityHeaders(projectResponse);
+    await expect(search).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await page.waitForLoadState("domcontentloaded");
+  await expect(search).toBeEnabled();
+  await page.unroute(scriptPattern);
   await search.fill("@fixture-revnet");
   const searchNavigation = page.waitForResponse(
     (response) =>

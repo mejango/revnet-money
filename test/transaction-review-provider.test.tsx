@@ -1,11 +1,31 @@
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { requireTransactionReview } from "@/lib/transaction-review";
+import type { ChainPayment } from "@/lib/nana/types";
+import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { encodeFunctionData } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { isBlockedByModalDialog, openModalDialogs } from "./native-dialog-shim";
+
+const relayrPayments: ChainPayment[] = [
+  {
+    chain: 8453,
+    amount: "0x1",
+    calldata: "0x12345678",
+    payment_deadline: "2030-01-01T00:00:00Z",
+    target: "0x2222222222222222222222222222222222222222",
+    token: "0x0000000000000000000000000000000000000000",
+  },
+  {
+    chain: 10,
+    amount: "0x2",
+    calldata: "0x87654321",
+    payment_deadline: "2030-01-01T00:00:00Z",
+    target: "0x3333333333333333333333333333333333333333",
+    token: "0x0000000000000000000000000000000000000000",
+  },
+];
 
 vi.mock("@/hooks/useReviewedRelayr", () => ({
   resumePendingRelayrBundles: vi.fn(),
@@ -29,6 +49,85 @@ vi.mock("wagmi", () => ({
 }));
 
 describe("TransactionReviewProvider", () => {
+  it("lets the user change the preferred funding chain before continuing", async () => {
+    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+    const selected = vi.fn();
+    const choice = chooseRelayrPayment(relayrPayments, 8453).then(selected);
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose where to pay Relayr" });
+    expect(screen.getByRole("combobox")).toHaveTextContent("ETH on Base");
+    expect(selected).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("combobox"));
+    const option = await screen.findByRole("option", { name: /ETH on Optimism/ });
+    expect(isBlockedByModalDialog(option)).toBe(false);
+    expect(dialog.contains(option)).toBe(true);
+    fireEvent.click(option);
+    expect(screen.getByRole("combobox")).toHaveTextContent("ETH on Optimism");
+    expect(selected).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue to payment review" }));
+    await choice;
+    expect(selected).toHaveBeenCalledExactlyOnceWith(relayrPayments[1]);
+  });
+
+  it("requires a funding selection when the preferred chain is not quoted", async () => {
+    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+    const choice = chooseRelayrPayment([relayrPayments[0]], 42161);
+
+    await screen.findByRole("dialog", { name: "Choose where to pay Relayr" });
+    expect(screen.getByRole("combobox")).toHaveTextContent("Select chain");
+    expect(screen.getByRole("button", { name: "Continue to payment review" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: /ETH on Base/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to payment review" }));
+    await expect(choice).resolves.toBe(relayrPayments[0]);
+  });
+
+  it("cancels funding selection without returning a preferred payment", async () => {
+    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+    const choice = chooseRelayrPayment(relayrPayments, 8453);
+    const canceled = expect(choice).rejects.toThrow("Review closed. Nothing was sent.");
+
+    await screen.findByRole("dialog", { name: "Choose where to pay Relayr" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await canceled;
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("resets the chosen funding chain when a queued request opens", async () => {
+    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+    const first = chooseRelayrPayment(relayrPayments, 8453);
+    const second = chooseRelayrPayment(relayrPayments);
+    const canceledSecond = expect(second).rejects.toThrow("Review closed. Nothing was sent.");
+
+    await screen.findByRole("dialog", { name: "Choose where to pay Relayr" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue to payment review" }));
+    await expect(first).resolves.toBe(relayrPayments[0]);
+
+    await waitFor(() => expect(screen.getByRole("combobox")).toHaveTextContent("Select chain"));
+    expect(screen.getByRole("button", { name: "Continue to payment review" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await canceledSecond;
+  });
+
+  it("cancels active and queued funding selections when the provider unmounts", async () => {
+    const { unmount } = render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+    const first = expect(chooseRelayrPayment(relayrPayments, 8453)).rejects.toThrow(
+      "Review closed. Nothing was sent.",
+    );
+    const second = expect(chooseRelayrPayment(relayrPayments, 10)).rejects.toThrow(
+      "Review closed. Nothing was sent.",
+    );
+
+    await screen.findByRole("dialog", { name: "Choose where to pay Relayr" });
+    unmount();
+
+    await Promise.all([first, second]);
+  });
+
   it("opens above the app shell in the top layer and keeps its actions interactive", async () => {
     const writeText = vi.fn(async () => undefined);
     vi.stubGlobal("navigator", {
@@ -62,7 +161,7 @@ describe("TransactionReviewProvider", () => {
     expect(shell.contains(dialog)).toBe(false);
     expect(isBlockedByModalDialog(dialog)).toBe(false);
     expect(isBlockedByModalDialog(shell)).toBe(true);
-    expect(screen.getByRole("button", { name: "Close review" })).toHaveFocus();
+    expect(dialog).toHaveFocus();
 
     fireEvent.click(screen.getByRole("button", { name: "[copy tx audit prompt]" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));

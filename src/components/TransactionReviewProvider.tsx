@@ -1,10 +1,13 @@
 "use client";
 
 import { CallRow, ExactCallCard } from "@/components/ExactCallCard";
+import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { resumePendingRelayrBundles, waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
 import { PERMIT2_ADDRESS, UNIVERSAL_ROUTER_BY_CHAIN } from "@/lib/directPaySwap";
+import { canCheckRelayrBundle } from "@/lib/relayr-activity";
 import { safeSetupAbi, safeToL2SetupAbi } from "@/lib/safeDeployment";
 import {
   dismissTransactionActivity,
@@ -1563,9 +1566,7 @@ function TransactionStatusCenter() {
               ))}
             </div>
           ) : null}
-          {activity.kind === "relayr-bundle" &&
-          activity.status === "pending" &&
-          activity.bundleUuid ? (
+          {canCheckRelayrBundle(activity) ? (
             <button
               type="button"
               className="mt-2 text-xs font-bold underline"
@@ -1577,6 +1578,51 @@ function TransactionStatusCenter() {
         </div>
       ))}
     </aside>
+  );
+}
+
+function RelayrPaymentChoice({
+  pending,
+  finish,
+}: {
+  pending: PendingReview;
+  finish: (approved: boolean) => void;
+}) {
+  const selection = pending.request.relayrPaymentSelection!;
+  const [payment, setPayment] = useState(
+    selection.payments.find((option) => option.chain === selection.preferredChainId) ?? null,
+  );
+  return (
+    <Dialog open onOpenChange={(open) => !open && finish(false)}>
+      <DialogContent>
+        <DialogTitle>Choose where to pay Relayr</DialogTitle>
+        <p className="text-sm text-melon-700">
+          One payment funds the signed calls on every selected chain. You will review the exact
+          payment before your wallet sends it.
+        </p>
+        <RelayrPaymentSelect
+          payments={[...selection.payments]}
+          tokenSymbol="ETH"
+          selectedPayment={payment}
+          onSelectPayment={setPayment}
+        />
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => finish(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!payment}
+            onClick={() => {
+              if (!payment) return;
+              selection.select(payment);
+              finish(true);
+            }}
+          >
+            Continue to payment review
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1637,7 +1683,11 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     <>
       {children}
       <TransactionStatusCenter />
-      {active ? <ReviewModal key={active.id} pending={active} finish={finish} /> : null}
+      {active?.request.relayrPaymentSelection ? (
+        <RelayrPaymentChoice key={active.id} pending={active} finish={finish} />
+      ) : active ? (
+        <ReviewModal key={active.id} pending={active} finish={finish} />
+      ) : null}
     </>
   );
 }

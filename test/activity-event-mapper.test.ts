@@ -296,7 +296,13 @@ describe("mapActivityEvents", () => {
     const payOf = (id: string, beneficiary: string, amount: string): ActivityEventItem =>
       payItem({
         id,
-        payEvent: { ...payItem().payEvent!, beneficiary, amount, from: payer, newlyIssuedTokenCount: "0" },
+        payEvent: {
+          ...payItem().payEvent!,
+          beneficiary,
+          amount,
+          from: payer,
+          newlyIssuedTokenCount: "0",
+        },
       });
     const swapOf = (id: string, projectTokenAmount: string): ActivityEventItem => ({
       ...payItem({ payEvent: null }),
@@ -311,7 +317,11 @@ describe("mapActivityEvents", () => {
         from: payer,
       },
     });
-    const mintOf = (id: string, beneficiary: string, beneficiaryTokenCount: string): ActivityEventItem => ({
+    const mintOf = (
+      id: string,
+      beneficiary: string,
+      beneficiaryTokenCount: string,
+    ): ActivityEventItem => ({
       ...payItem({ payEvent: null }),
       id,
       mintTokensEvent: {

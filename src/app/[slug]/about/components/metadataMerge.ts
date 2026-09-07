@@ -18,7 +18,14 @@ const EDITOR_MANAGED_KEYS = [
   "version",
 ] as const;
 
-const OPTIONAL_TEXT_KEYS = ["twitter", "telegram", "discord", "infoUri", "payDisclosure"] as const;
+const OPTIONAL_TEXT_KEYS = [
+  "twitter",
+  "telegram",
+  "discord",
+  "infoUri",
+  "farcaster",
+  "payDisclosure",
+] as const;
 
 function isManagedKey(key: string): boolean {
   return (EDITOR_MANAGED_KEYS as readonly string[]).includes(key);
@@ -32,8 +39,80 @@ export type EditableMetadataValues = {
   telegram?: string;
   discord?: string;
   infoUri?: string;
+  farcaster?: string;
   payDisclosure?: string;
 };
+
+function metadataText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** JSON object ordering is irrelevant; array ordering and value types are not. */
+function equalJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => equalJson(value, right[index]))
+    );
+  }
+  if (!isRecord(left) || !isRecord(right)) return false;
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every((key) => Object.hasOwn(right, key) && equalJson(left[key], right[key]))
+  );
+}
+
+/**
+ * Apply only edits made relative to the metadata that initially filled the form.
+ * Each destination retains its current values for fields the user did not edit.
+ * Custom properties are compared per top-level key, with structural JSON equality:
+ * an edited key replaces that key, and removing a baseline key deletes it on every
+ * destination. Keys absent from the baseline and editor remain destination-specific.
+ */
+export function applyMetadataEdits(
+  current: unknown,
+  baseline: unknown,
+  values: EditableMetadataValues,
+  customProperties?: Record<string, unknown>,
+): JBProjectMetadata & Record<string, unknown> {
+  const merged: Record<string, unknown> = isRecord(current) ? { ...current } : {};
+  const initial = isRecord(baseline) ? baseline : {};
+
+  for (const key of ["name", "description"] as const) {
+    if (values[key] !== metadataText(initial[key])) merged[key] = values[key];
+  }
+
+  // The form cannot clear the logo; blank means no new upload.
+  const logoUri = values.logoUri?.trim();
+  if (logoUri && logoUri !== metadataText(initial.logoUri).trim()) merged.logoUri = logoUri;
+
+  for (const key of OPTIONAL_TEXT_KEYS) {
+    const value = values[key]?.trim() ?? "";
+    if (value === metadataText(initial[key]).trim()) continue;
+    if (value) merged[key] = value;
+    else delete merged[key];
+  }
+
+  const customEdits: Array<[string, unknown]> = [];
+  if (customProperties !== undefined) {
+    for (const key of otherMetadataKeys(initial)) {
+      if (!Object.hasOwn(customProperties, key)) delete merged[key];
+    }
+    for (const [key, value] of Object.entries(customProperties)) {
+      if (isManagedKey(key)) continue;
+      if (!Object.hasOwn(initial, key) || !equalJson(value, initial[key])) {
+        customEdits.push([key, value]);
+      }
+    }
+  }
+
+  return { ...merged, ...Object.fromEntries(customEdits) } as JBProjectMetadata &
+    Record<string, unknown>;
+}
 
 /**
  * Merge edited form values on top of the project's CURRENT metadata JSON.

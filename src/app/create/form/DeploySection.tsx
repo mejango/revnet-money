@@ -3,6 +3,8 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { isSafeConnector } from "@/hooks/useReviewedWriteContract";
 import { hasErrors } from "@/lib/forms";
+import type { JBChainId } from "@/lib/nana/types";
+import { isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { useState } from "react";
 import { useAccount } from "wagmi";
@@ -28,13 +30,17 @@ export function DeploySection({
   } = useCreateForm();
   const [review, setReview] = useState(false);
   // The explicit config keeps this section renderable outside a WagmiProvider.
-  const { connector } = useAccount({ config: wagmiConfig });
+  const { connector, chainId: connectedChainId } = useAccount({ config: wagmiConfig });
 
   // A Safe proposal executes arbitrarily later, but the request encodes stage
   // 1's start time now. REVDeployer locks cash-outs and loans for 7 days when
   // that start is already past at execution, so warn before proposing.
   const deploysViaSafe = isSafeConnector(connector) && values.chainIds.length === 1;
   const singleChain = values.chainIds.length === 1;
+  const unsupportedMultichain =
+    !singleChain &&
+    (isSafeConnector(connector) ||
+      values.chainIds.some((chainId) => !isRelayrSupportedChain(chainId)));
   const chainNames = values.chainIds.map((chainId) => chainDisplayName(chainId));
   const action = singleChain ? "Deploy the revnet" : "Sign and get quote";
 
@@ -60,12 +66,27 @@ export function DeploySection({
             in the future, later than the Safe will execute.
           </p>
         )}
+        {unsupportedMultichain ? (
+          <p
+            role="alert"
+            className="mb-4 border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800"
+          >
+            For a Safe or testnet deployment, select one chain. Multi-chain launch is available to
+            an EOA on supported mainnets.
+          </p>
+        ) : null}
         <div className="flex justify-end">
           <ButtonWithWallet
-            targetChainId={values.chainIds[0]}
+            targetChainId={
+              singleChain
+                ? values.chainIds[0]
+                : isRelayrSupportedChain(connectedChainId ?? 0)
+                  ? (connectedChainId as JBChainId)
+                  : undefined
+            }
             size="lg"
             loading={isSubmitting}
-            disabled={isSubmitting || disabled}
+            disabled={isSubmitting || disabled || unsupportedMultichain}
             onClick={() => {
               if (hasErrors(errors)) void submitForm();
               else setReview(true);

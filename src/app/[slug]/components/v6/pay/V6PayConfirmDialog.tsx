@@ -49,8 +49,6 @@ interface PreparedV6SignatureAction {
   authorization: Permit2SignatureAuthorization;
 }
 
-export type PreparedV6WalletAction = PreparedV6TransactionAction | PreparedV6SignatureAction;
-
 /** A fully resolved, encodable pay/add-to-balance transaction. */
 export interface PreparedV6Pay {
   mode: V6PayMode;

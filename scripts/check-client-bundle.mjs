@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const routeBudgetKiB = Number(process.env.CLIENT_ROUTE_GZIP_BUDGET_KIB ?? 900);
@@ -25,11 +25,31 @@ for (const manifestPath of [buildManifestPath, appRoutesManifestPath]) {
 
 const gzipSizes = new Map();
 
+function javascriptAsset(asset) {
+  if (typeof asset !== "string") return null;
+  // Next appends deployment IDs to chunk URLs. URL decorations are not part
+  // of the emitted filename or its identity for budgets and lazy SDK checks.
+  // Decode only after removing the suffix, so encoded filename characters
+  // remain part of the path and are never treated as URL delimiters.
+  const pathname = decodeURIComponent(asset.split(/[?#]/u, 1)[0]);
+  if (!pathname.endsWith(".js")) return null;
+  const relativePath = relative(buildDirectory, resolve(buildDirectory, pathname));
+  if (
+    isAbsolute(pathname) ||
+    relativePath === ".." ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
+  ) {
+    throw new Error(`The build manifest references a client asset outside .next: ${asset}`);
+  }
+  return relativePath.split(sep).join("/");
+}
+
 function gzipSize(relativePath) {
   const cached = gzipSizes.get(relativePath);
   if (cached !== undefined) return cached;
 
-  const absolutePath = resolve(buildDirectory, decodeURIComponent(relativePath));
+  const absolutePath = resolve(buildDirectory, relativePath);
   if (!existsSync(absolutePath)) {
     throw new Error(`The build manifest references a missing client asset: ${relativePath}`);
   }
@@ -48,7 +68,9 @@ function filesBelow(directory) {
 
 const buildManifest = JSON.parse(readFileSync(buildManifestPath, "utf8"));
 const appRoutes = JSON.parse(readFileSync(appRoutesManifestPath, "utf8"));
-const rootMainFiles = buildManifest.rootMainFiles ?? [];
+const rootMainFiles = [
+  ...new Set((buildManifest.rootMainFiles ?? []).map(javascriptAsset).filter(Boolean)),
+];
 const pages = Object.fromEntries(
   filesBelow(clientReferenceDirectory)
     .filter((file) => file.endsWith("_client-reference-manifest.js"))
@@ -66,11 +88,7 @@ const pages = Object.fromEntries(
       const routeAssets = Object.values(manifest.clientModules ?? {}).flatMap(
         (module) => module.chunks ?? [],
       );
-      const javascript = [
-        ...new Set(
-          routeAssets.filter((asset) => typeof asset === "string" && asset.endsWith(".js")),
-        ),
-      ];
+      const javascript = [...new Set(routeAssets.map(javascriptAsset).filter(Boolean))];
 
       return [appRoutes[appPath] ?? appPath, [...new Set([...rootMainFiles, ...javascript])]];
     })
@@ -141,7 +159,7 @@ for (const [label, markers] of vendorWallets) {
         const source = readFileSync(file, "utf8");
         return markers.some((marker) => source.includes(marker));
       })
-      .map((file) => file.slice(buildDirectory.length + 1)),
+      .map((file) => relative(buildDirectory, file).split(sep).join("/")),
   );
   if (vendorAssets.size === 0) continue;
   const eager = Object.values(pages)

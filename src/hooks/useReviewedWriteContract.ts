@@ -77,12 +77,21 @@ async function watchSafeProposal(id: string, hash: Hex, chainId: number): Promis
               await new Promise((resolve) => window.setTimeout(resolve, 5_000));
               continue;
             }
+            const needsReceiptVerification =
+              refreshTransactionActivities().find((activity) => activity.id === id)
+                ?.manualVerificationRequired === true;
             updateTransactionActivity(id, {
-              status: transaction.isSuccessful ? "success" : "failed",
+              status: needsReceiptVerification
+                ? "pending"
+                : transaction.isSuccessful
+                  ? "success"
+                  : "failed",
               executionHash: transaction.transactionHash ?? undefined,
-              message: !transaction.isSuccessful
-                ? "Safe executed this proposal, but the onchain transaction failed."
-                : `Safe approvals completed and the proposal executed onchain${transaction.transactionHash ? ` as ${transaction.transactionHash}` : ""}.`,
+              message: needsReceiptVerification
+                ? "Safe execution was reported. Its exact transaction and recipient results still require verification; resume the saved batch."
+                : !transaction.isSuccessful
+                  ? "Safe executed this proposal, but the onchain transaction failed."
+                  : `Safe approvals completed and the proposal executed onchain${transaction.transactionHash ? ` as ${transaction.transactionHash}` : ""}.`,
             });
             return;
           }
@@ -274,7 +283,7 @@ function followSubmission(
     callKey,
     manualVerificationRequired: manualReceiptVerification || undefined,
   });
-  if (manualReceiptVerification) {
+  if (manualReceiptVerification && !safe) {
     updateTransactionActivity(id, {
       status: "pending",
       message: "Pending action-specific receipt verification.",
@@ -316,6 +325,10 @@ type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] 
    * mandatory.
    */
   reviewedInParent?: boolean;
+  /** Persist caller-specific recovery immediately before the wallet broadcast boundary. */
+  beforeSubmission?: () => Promise<void>;
+  /** A batch verifier reconstructs the exact Safe execution before releasing child activity. */
+  allowSafeManualReceiptVerification?: boolean;
   reverify?: (
     variables: Parameters<ReturnType<typeof useWagmiWriteContract>["writeContractAsync"]>[0],
     account: Address,
@@ -342,6 +355,8 @@ export function useWriteContract(
   const {
     transactionReview,
     reviewedInParent,
+    beforeSubmission,
+    allowSafeManualReceiptVerification,
     reverify,
     preflightSimulation,
     manualReceiptVerification,
@@ -385,7 +400,7 @@ export function useWriteContract(
 
         const safe = isSafeConnection(config);
         const ownsReceiptLifecycle = manualReceiptVerification?.(variables) === true;
-        if (safe && ownsReceiptLifecycle) {
+        if (safe && ownsReceiptLifecycle && !allowSafeManualReceiptVerification) {
           throw new Error(
             "This execution requires exact onchain result verification and cannot be proposed through a Safe connector. Connect an EOA owner of the executing Safe.",
           );
@@ -469,6 +484,7 @@ export function useWriteContract(
             throw new Error(`Switch your wallet to ${target ?? `chain ${chainId}`} to continue.`);
           }
         }
+        await beforeSubmission?.();
         const hash = await mutation.writeContractAsync({
           ...simulation.request,
           // Safe Apps maps the Ethereum gas field directly to Safe's signed
@@ -505,6 +521,8 @@ export function useWriteContract(
       preflightSimulation,
       reviewedInParent,
       reverify,
+      beforeSubmission,
+      allowSafeManualReceiptVerification,
       transactionReview,
     ],
   );

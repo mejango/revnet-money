@@ -25,6 +25,7 @@ import {
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import {
+  isSafeConnection,
   requireOnchainExecution,
   submittedViaSafe,
   useWriteContract,
@@ -38,6 +39,7 @@ import {
 } from "@/lib/nana/project";
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PERSIST } from "@/lib/query-persist";
+import { isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { formatEthAddress, formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -61,7 +63,7 @@ import {
   zeroAddress,
 } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
-import { getPublicClient } from "wagmi/actions";
+import { getAccount, getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
 
 type TokenChainState = {
@@ -283,6 +285,7 @@ function TokenEditDialog({
   const [name, setName] = useState(initialName);
   const [symbol, setSymbol] = useState(initialSymbol);
   const [busy, setBusy] = useState(false);
+  const [directWriteIndex, setDirectWriteIndex] = useState(-1);
   const [quote, setQuote] = useState<RelayrPostBundleResponse | null>(null);
   const [selectedPayment, setSelectedPayment] = useState<ChainPayment | null>(null);
   const [confirming, setConfirming] = useState<"submit" | "pay" | null>(null);
@@ -294,6 +297,15 @@ function TokenEditDialog({
   const { sendRelayrTx } = useSendRelayrTx();
   const { toast } = useToast();
   const { projectId: homeProjectId } = useJBContractContext();
+  const relayed =
+    states.length > 1 &&
+    !isSafeConnection(wagmiConfig) &&
+    states.every((state) => isRelayrSupportedChain(state.chainId));
+  // A partial deployment cannot safely replay if a later direct transaction fails.
+  const deploymentRouteError =
+    !relayed && states.length > 1 && states.some((state) => !state.token)
+      ? "Choose one chain at a time to deploy an ERC-20 with this connection. Multi-chain deployment requires supported mainnets and a wallet that can sign Relayr authorizations."
+      : null;
 
   const resetQuote = () => {
     setQuote(null);
@@ -314,8 +326,7 @@ function TokenEditDialog({
     toast({ title: deployed ? "Token updated" : "Token deployment submitted", description });
     setOpen(false);
     resetQuote();
-    // Refresh immediately, then once more after the (possibly relayed)
-    // transactions have had time to land on every chain.
+    // Refresh after execution, then once more for indexers to catch up.
     onSuccess();
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
     refreshTimer.current = setTimeout(onSuccess, deployed ? 2_000 : 10_000);
@@ -360,40 +371,53 @@ function TokenEditDialog({
       return false;
     }
     if (!address || !canManage) return false;
+    if (deploymentRouteError) {
+      setError(deploymentRouteError);
+      return false;
+    }
 
     setBusy(true);
     setError(null);
     try {
-      if (states.length === 1) {
-        const state = states[0];
-        if (connectedChainId !== state.chainId) await switchChainAsync({ chainId: state.chainId });
-        const call = callFor(state, nextName, nextSymbol);
-        const hash = state.token
-          ? await writeContractAsync({
-              address: state.controller,
-              chainId: state.chainId,
-              abi: jbControllerAbi,
-              functionName: "setTokenMetadataOf",
-              args: call.args as readonly [bigint, string, string],
-            })
-          : await writeContractAsync({
-              address: state.controller,
-              chainId: state.chainId,
-              abi: jbControllerAbi,
-              functionName: "deployERC20For",
-              args: call.args as readonly [bigint, string, string, `0x${string}`],
+      if (!relayed) {
+        for (const [index, state] of states.entries()) {
+          setDirectWriteIndex(index);
+          if (getAccount(wagmiConfig).chainId !== state.chainId) {
+            await switchChainAsync({ chainId: state.chainId });
+          }
+          const call = callFor(state, nextName, nextSymbol);
+          const hash = state.token
+            ? await writeContractAsync({
+                address: state.controller,
+                chainId: state.chainId,
+                abi: jbControllerAbi,
+                functionName: "setTokenMetadataOf",
+                args: call.args as readonly [bigint, string, string],
+              })
+            : await writeContractAsync({
+                address: state.controller,
+                chainId: state.chainId,
+                abi: jbControllerAbi,
+                functionName: "deployERC20For",
+                args: call.args as readonly [bigint, string, string, `0x${string}`],
+              });
+          if (states.length === 1 && submittedViaSafe(hash)) {
+            toast({
+              title: "Safe proposal submitted",
+              description: `The ${deployed ? "token update" : "token deployment"} is awaiting Safe approvals and execution.`,
             });
-        if (submittedViaSafe(hash)) {
-          toast({
-            title: "Safe proposal submitted",
-            description: `The ${deployed ? "token update" : "token deployment"} is awaiting Safe approvals and execution.`,
-          });
-          return true;
-        }
-        requireOnchainExecution(hash, deployed ? "Token metadata update" : "Token deployment");
-        const receipt = await waitForReceiptWithRetry(clientFor(state.chainId), hash);
-        if (receipt.status !== "success") {
-          throw new Error(`Token transaction ${hash} reverted onchain.`);
+            return true;
+          }
+          requireOnchainExecution(
+            hash,
+            `${state.token ? "Token metadata update" : "Token deployment"} on ${chainDisplayName(state.chainId)}`,
+          );
+          const receipt = await waitForReceiptWithRetry(clientFor(state.chainId), hash);
+          if (receipt.status !== "success") {
+            throw new Error(
+              `Token transaction ${hash} reverted on ${chainDisplayName(state.chainId)}.`,
+            );
+          }
         }
         finish(deployed ? "The name and symbol are now updated." : "The ERC-20 is now deployed.");
         return true;
@@ -441,13 +465,19 @@ function TokenEditDialog({
       const relayrQuote = await getRelayrTxQuote(transactions);
       if (!relayrQuote) throw new Error("Relayr did not return a quote.");
       setQuote(relayrQuote);
-      setSelectedPayment(relayrQuote.payment_info[0] ?? null);
+      // Signing may switch the wallet; prefer the chain captured before this submission.
+      setSelectedPayment(
+        relayrQuote.payment_info.find(
+          (payment: ChainPayment) => payment.chain === connectedChainId,
+        ) ?? null,
+      );
       return true;
     } catch (cause) {
       setError(formatWalletError(cause));
       return false;
     } finally {
       setBusy(false);
+      setDirectWriteIndex(-1);
     }
   };
 
@@ -478,16 +508,17 @@ function TokenEditDialog({
     }
   };
 
-  // The one main action: on several chains the relay quote (one signature) loads while the
-  // confirm prepares, so its action is the relay payment; on one chain the confirm shows at once.
+  // Supported mainnet bundles prepare their authorization before payment review.
+  // Direct writes wait for confirmation before submitting the chain sequence.
   const start = async () => {
-    setError(null);
+    setError(deploymentRouteError);
+    if (deploymentRouteError) return;
     if (quote) {
       setConfirming("pay");
       return;
     }
     setConfirming("submit");
-    if (states.length === 1) return;
+    if (!relayed) return;
     setConfirming((await submit()) ? "pay" : null);
   };
 
@@ -498,14 +529,13 @@ function TokenEditDialog({
 
   const permissionName = deployed ? "SET_TOKEN_METADATA" : "DEPLOY_ERC20";
   const chainNames = states.map((state) => chainDisplayName(state.chainId)).join(", ");
-  const relayed = states.length > 1;
   const formAction = deployed ? "Save token" : "Deploy token";
   const actionLabel = relayed ? "Pay and submit" : formAction;
   const confirmSteps = relayed
     ? [
         {
-          title: "Sign the authorization",
-          detail: `One signature covers all ${states.length} chains.`,
+          title: "Sign the authorizations",
+          detail: `Sign one authorization for each of the ${states.length} chains.`,
         },
         {
           title: selectedPayment
@@ -514,7 +544,10 @@ function TokenEditDialog({
           detail: "Relayr then submits the transaction on each chain.",
         },
       ]
-    : [{ title: deployed ? "Update the name and symbol" : "Deploy the ERC-20" }];
+    : states.map((state) => ({
+        title: state.token ? "Update the name and symbol" : "Deploy the ERC-20",
+        detail: chainDisplayName(state.chainId),
+      }));
 
   return (
     <Dialog
@@ -550,10 +583,11 @@ function TokenEditDialog({
           }
           preparing={relayed && confirming === "submit"}
           steps={confirmSteps}
-          activeIndex={confirming === "pay" ? 1 : busy ? 0 : -1}
+          activeIndex={confirming === "pay" ? 1 : relayed && busy ? 0 : directWriteIndex}
           action={actionLabel}
           onConfirm={() => void confirm()}
           busy={busy}
+          disabled={confirming === "pay" && !selectedPayment}
           status={
             relayed && confirming === "submit"
               ? "Getting a relay quote… Your wallet will ask for a signature."
@@ -578,7 +612,7 @@ function TokenEditDialog({
           {quote ? (
             <RelayrPaymentSelect
               payments={quote.payment_info}
-              tokenSymbol={symbol || "token"}
+              tokenSymbol="ETH"
               selectedPayment={selectedPayment}
               onSelectPayment={setSelectedPayment}
               disabled={busy}
@@ -649,7 +683,9 @@ function TokenEditDialog({
             Cancel
           </Button>
           <ButtonWithWallet
-            targetChainId={states[0].chainId}
+            targetChainId={
+              relayed || deploymentRouteError ? (connectedChainId as JBChainId) : states[0].chainId
+            }
             onClick={() => void start()}
             loading={busy}
             disabled={!address || !canManage || busy}

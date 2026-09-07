@@ -12,7 +12,7 @@ import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
 import { getHomepageEthPrice, getHomepageSuckerGroups } from "./getTopProjects";
 
-export type ReservePoint = {
+type ReservePoint = {
   timestamp: number;
   valueUsd: number;
   chains: Array<{ chainId: number; valueUsd: number }>;

@@ -54,7 +54,7 @@ describe("dependency-free UI primitives", () => {
     expect(dialog).toHaveAccessibleDescription("Change project settings.");
     expect(dialog.className).not.toMatch(/animate-in|fade-in|zoom-in|slide-in/);
     expect(dialog.closest("[data-ui-dialog-portal]")?.children).toHaveLength(1);
-    expect(screen.getByLabelText("Project name")).toHaveFocus();
+    expect(dialog).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

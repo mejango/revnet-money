@@ -133,8 +133,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const project = projectId ? await getProject(projectId, chainId) : null;
   // Scrapers cache og:image by URL, so bake the numbers into it: the card refreshes
   // whenever the balance or payment count moves.
-  const suckerGroup =
-    project?.suckerGroupId ? await getSuckerGroup(project.suckerGroupId, chainId) : null;
+  const suckerGroup = project?.suckerGroupId
+    ? await getSuckerGroup(project.suckerGroupId, chainId)
+    : null;
   const version = `${suckerGroup?.paymentsCount ?? 0}-${formatProjectPreviewBalance(
     suckerGroup?.projects?.items ?? [],
   ).replace(/\D/gu, "")}`;

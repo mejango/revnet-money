@@ -147,11 +147,6 @@ describe("revnet shop item editor", () => {
     for (const label of ["Add on", "Add items"]) {
       expect(source).toContain(label);
     }
-    // Nothing is pinned until the wallet is known to be authorized and the tiers are known to
-    // encode: a rejected submit should not leave orphaned uploads behind.
-    expect(source.indexOf("canAdjust721Tiers")).toBeLessThan(source.indexOf("pinDraftItems("));
-    expect(source.indexOf("const draftConfigs = buildTierConfigs")).toBeLessThan(
-      source.indexOf("pinDraftItems("),
-    );
+    // Permission-before-upload behavior is exercised by shop-multichain-dialogs.test.tsx.
   });
 });

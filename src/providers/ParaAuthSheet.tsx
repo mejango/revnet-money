@@ -446,9 +446,7 @@ export default function ParaAuthSheet({
             <h2 className="text-lg font-medium text-zinc-900">
               Continue with your {credentialStep.method}
             </h2>
-            <p className="mt-1 text-sm text-zinc-600">
-              Finish signing in securely with Para.
-            </p>
+            <p className="mt-1 text-sm text-zinc-600">Finish signing in securely with Para.</p>
           </div>
           {closeButton}
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import type { JBChainId } from "@/lib/nana/types";
+import type { ChainPayment, JBChainId } from "@/lib/nana/types";
 import { explorerBaseUrl } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { encodeFunctionData, type Abi, type Address, type Hex } from "viem";
@@ -27,6 +27,12 @@ export type TransactionReviewRequest = {
   confirmLabel?: string;
   kind?: "transaction" | "authorization";
   authorization?: unknown;
+  /** Chooses a funding network only; the exact payment still needs its own review. */
+  relayrPaymentSelection?: {
+    payments: readonly ChainPayment[];
+    preferredChainId?: number;
+    select: (payment: ChainPayment) => void;
+  };
 };
 
 export type ContractTransactionReviewCall = {
@@ -58,7 +64,7 @@ export function registerTransactionReviewHandler(next: ReviewHandler): () => voi
 }
 
 async function requestTransactionReview(request: TransactionReviewRequest): Promise<boolean> {
-  if (!request.calls.length && !request.authorization)
+  if (!request.calls.length && !request.authorization && !request.relayrPaymentSelection)
     throw new Error("There is no transaction to review.");
   const handler = handlers[handlers.length - 1];
   if (!handler) {
@@ -93,6 +99,26 @@ export async function requireTransactionReview(request: TransactionReviewRequest
   if (!(await requestTransactionReview(request))) {
     throw new Error("Review closed. Nothing was sent.");
   }
+}
+
+export async function chooseRelayrPayment(
+  payments: readonly ChainPayment[],
+  preferredChainId?: number,
+): Promise<ChainPayment> {
+  if (!payments.length) throw new Error("Relayr did not return a payment option.");
+  let selected: ChainPayment | undefined;
+  await requireTransactionReview({
+    calls: [],
+    relayrPaymentSelection: {
+      payments,
+      preferredChainId,
+      select: (payment) => {
+        if (payments.includes(payment)) selected = payment;
+      },
+    },
+  });
+  if (!selected) throw new Error("Choose a quoted Relayr payment before continuing.");
+  return selected;
 }
 
 export async function requireContractTransactionReview(
@@ -154,7 +180,9 @@ export function buildTransactionDebugPrompt(calls: { chainId: number; txHash: st
   for (const call of calls) {
     const base = explorerBaseUrl(call.chainId);
     const name = JB_CHAINS[call.chainId as JBChainId]?.chain.name ?? `chain ${call.chainId}`;
-    lines.push(`- ${name} (chain ${call.chainId}): ${base ? `${base}/tx/${call.txHash}` : call.txHash}`);
+    lines.push(
+      `- ${name} (chain ${call.chainId}): ${base ? `${base}/tx/${call.txHash}` : call.txHash}`,
+    );
   }
   lines.push(
     "",

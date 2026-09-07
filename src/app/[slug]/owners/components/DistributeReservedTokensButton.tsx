@@ -1,98 +1,89 @@
 "use client";
 
-import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
-import { useToast } from "@/components/ui/use-toast";
-import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { useJBContractContext } from "@/lib/nana/project";
-import { formatWalletError } from "@/lib/utils";
-import { formatUnits, JB_CHAINS, JBChainId, jbControllerAbi } from "@bananapus/nana-sdk-core";
+import { wagmiConfig } from "@/lib/wagmiConfig";
+import { formatUnits, JB_CHAINS, JBCoreContracts } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
+import { useAccount } from "wagmi";
+import { getPublicClient } from "wagmi/actions";
+import { OwnerDistributionBatchButton } from "./OwnerDistributionBatchButton";
+import {
+  distributionProjectKey,
+  prepareReservedDistribution,
+  type DistributionProject,
+} from "./ownerDistributionBatch";
 
-interface Props {
-  chainId: JBChainId;
-  projectId: bigint;
-  /** The chain's pending reserved balance, when the caller has it. */
-  pending?: bigint;
+export function DistributeReservedTokensButton({
+  projects,
+  tokenSymbol = "tokens",
+  onSuccess,
+}: {
+  projects: Array<DistributionProject & { pending?: bigint }>;
   tokenSymbol?: string;
-}
-
-export function DistributeReservedTokensButton(props: Props) {
-  const { chainId, projectId, pending, tokenSymbol } = props;
-
-  const { toast } = useToast();
-  const [reviewing, setReviewing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const {
-    contracts: { controller },
-  } = useJBContractContext();
-
-  const { writeContractAsync, isPending, data: hash } = useWriteContract();
-
-  const { isLoading } = useWaitForTransactionReceipt({ hash });
+  onSuccess?: () => void;
+}) {
+  const { address } = useAccount();
+  const { contractAddress } = useJBContractContext();
+  const [selection, setSelection] = useState<Record<string, boolean>>({});
+  const selected = projects.filter(
+    (project) =>
+      selection[distributionProjectKey(project)] ??
+      (project.pending !== undefined && project.pending > 0n),
+  );
+  const scope = `reserved-distribution:${projects.map(distributionProjectKey).sort().join("|")}`;
 
   return (
-    <>
-      <ButtonWithWallet
-        variant="outline"
-        loading={isPending || isLoading}
-        targetChainId={chainId}
-        onClick={() => {
-          setError(null);
-          setReviewing(true);
+    <div className="my-4 space-y-3 border border-zinc-200 p-3">
+      <p className="text-sm text-zinc-600">
+        Distribute pending reserved tokens to each selected chain’s current split recipients.
+      </p>
+      <div className="flex flex-wrap gap-3">
+        {projects.map((project) => {
+          const key = distributionProjectKey(project);
+          return (
+            <label key={key} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={selection[key] ?? (project.pending !== undefined && project.pending > 0n)}
+                disabled={project.pending === 0n}
+                onChange={(event) =>
+                  setSelection((previous) => ({ ...previous, [key]: event.target.checked }))
+                }
+              />
+              {JB_CHAINS[project.chainId]?.name ?? project.chainId} · project{" "}
+              {String(project.projectId)}
+              {project.pending !== undefined
+                ? ` (${formatUnits(project.pending, 18, { fractionDigits: 4 })} ${tokenSymbol})`
+                : " (balance unavailable)"}
+            </label>
+          );
+        })}
+      </div>
+      <OwnerDistributionBatchButton
+        label="Distribute selected pending splits"
+        scope={scope}
+        tokenSymbol={tokenSymbol}
+        disabled={selected.length === 0}
+        onSuccess={onSuccess}
+        prepare={async () => {
+          if (!address) throw new Error("Connect your wallet to continue.");
+          return Promise.all(
+            selected.map(async (project) => {
+              const client = getPublicClient(wagmiConfig, { chainId: project.chainId });
+              if (!client) throw new Error(`No public client for chain ${project.chainId}.`);
+              return prepareReservedDistribution(
+                client,
+                {
+                  ...project,
+                  directory: contractAddress(JBCoreContracts.JBDirectory, project.chainId),
+                  projects: contractAddress(JBCoreContracts.JBProjects, project.chainId),
+                },
+                address,
+              );
+            }),
+          );
         }}
-      >
-        Distribute pending splits
-      </ButtonWithWallet>
-      <TxConfirmDialog
-        open={reviewing}
-        onOpenChange={(next) => {
-          if (!next) setReviewing(false);
-        }}
-        title="Confirm distribution"
-        chainId={chainId}
-        steps={[
-          {
-            title: "Distribute pending splits",
-            detail: "Mints the reserved tokens to each recipient's share.",
-          },
-        ]}
-        activeIndex={isPending ? 0 : -1}
-        action="Distribute pending splits"
-        onConfirm={async () => {
-          setError(null);
-          try {
-            if (!controller.data || !writeContractAsync || !projectId) {
-              throw new Error("Missing data. Please try again.");
-            }
-
-            await writeContractAsync({
-              abi: jbControllerAbi,
-              functionName: "sendReservedTokensToSplitsOf",
-              chainId,
-              address: controller.data,
-              args: [projectId],
-            });
-
-            toast({ title: "Transaction submitted." });
-            setReviewing(false);
-          } catch (e) {
-            console.error(e);
-            setError(formatWalletError(e));
-          }
-        }}
-        busy={isPending}
-        error={error}
-      >
-        <SummaryRow label="Sends">
-          {pending !== undefined
-            ? `${formatUnits(pending, 18, { fractionDigits: 4 })} ${tokenSymbol ?? ""}`.trim()
-            : "All pending reserved tokens"}
-        </SummaryRow>
-        <SummaryRow label="On">{JB_CHAINS[chainId]?.name ?? chainId}</SummaryRow>
-        <SummaryRow label="To">This stage&apos;s split recipients</SummaryRow>
-      </TxConfirmDialog>
-    </>
+      />
+    </div>
   );
 }

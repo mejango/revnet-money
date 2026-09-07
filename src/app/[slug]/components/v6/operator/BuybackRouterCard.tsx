@@ -328,8 +328,10 @@ export function BuybackRouterCard({
         <p className="text-sm text-zinc-500">
           Wire up the project&apos;s buyback hook and swap router, initialize its Uniswap pool, and
           tune the pool&apos;s TWAP window. An operator wallet signs one chain directly and runs
-          several as one Relayr bundle. When the operator is a Safe, a connected signer proposes the
-          call to each chain&apos;s Safe queue for the other signers to confirm.
+          several supported mainnets as one Relayr bundle. Other chains use a wallet transaction on
+          each chain. When the operator is a Safe, a connected signer proposes the call to each
+          chain&apos;s Safe queue for the other signers to confirm. Initialize pools one chain at a
+          time with Safe or other networks.
         </p>
         {stateQuery.isLoading ? (
           <SkeletonLines lines={4} className="mt-3" />
@@ -924,7 +926,9 @@ function BuybackActionForm({
               title: action.title,
               detail:
                 review.length > 1
-                  ? "One Relayr bundle from the operator wallet, or one Safe proposal per chain from a signer."
+                  ? kind === "pool"
+                    ? "Use an operator wallet with Relayr on supported mainnets. With Safe or other networks, initialize and confirm one chain at a time."
+                    : "One Relayr bundle on supported mainnets; otherwise, one wallet transaction per chain. Safe signers propose to each chain's queue."
                   : "From the operator wallet, or proposed to the operator Safe from a signer.",
             },
           ]}

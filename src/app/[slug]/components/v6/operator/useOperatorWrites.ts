@@ -13,6 +13,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@/lib/cross-chain-authority";
 import { gasWithHeadroom } from "@/lib/gas";
+import { isRelayrSupportedChain } from "@/lib/relayr-chains";
 import {
   listPendingSafeTransactions,
   nextProposalNonce,
@@ -21,7 +22,7 @@ import {
   safeProposalFor,
   submitSafeConfirmation,
 } from "@/lib/safe-queue";
-import { wagmiConfig } from "@/lib/wagmiConfig";
+import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { useQueryClient } from "@tanstack/react-query";
 import { Address, encodeFunctionData, isAddressEqual } from "viem";
 import { useConfig } from "wagmi";
@@ -49,14 +50,19 @@ export type OperatorWritesResult = {
 
 type RoutedWrite = { write: ChainWrite; route: OperatorWriteRoute };
 
+// Repeating these setters preserves their result and the caller's authority.
+// Deployment, pool initialization, and operator transfer need per-chain progress
+// tracking before a partially completed sequence can be retried safely.
+const REPEATABLE_OPERATOR_WRITES = new Set(["setHookFor", "setTerminalFor", "setTwapWindowOf"]);
+
 /**
  * Runs one operator action across the selected chains, from whichever account
  * can authorize it:
  *
  * - The operator itself (an EOA, or the Safe through its own app): a single
- *   chain keeps the simulate-first wallet write; two or more are bundled into
- *   ONE Relayr payment, so an omnichain edit costs one signature instead of N
- *   chain switches. Gas is estimated against each chain's live state first, so
+ *   chain keeps the simulate-first wallet write; two or more supported mainnets
+ *   are bundled into ONE Relayr payment, after an exact authorization signature on each chain.
+ *   Gas is estimated against each chain's live state first, so
  *   a call that would revert never reaches the bundle. A Safe-app connection
  *   cannot sign Relayr's forward requests, so it runs the chains one by one.
  * - A signer of an operator Safe: the exact call is simulated FROM the Safe,
@@ -86,6 +92,7 @@ export function useOperatorWrites() {
     onProgress: (message: string) => void;
   }): Promise<OperatorWritesResult> => {
     if (!writes.length) throw new Error("Choose at least one chain.");
+    const preferredPaymentChainId = getAccount(config).chainId;
 
     // Decide per chain who can sign before touching any wallet, so a mixed or
     // impossible selection fails whole instead of halfway through.
@@ -105,6 +112,17 @@ export function useOperatorWrites() {
         };
       }),
     );
+    if (
+      writes.length > 1 &&
+      writes.some((write) => !REPEATABLE_OPERATOR_WRITES.has(write.functionName)) &&
+      (isSafeConnection(config) ||
+        routed.some((entry) => entry.route.kind === "safe-signer") ||
+        writes.some((write) => !isRelayrSupportedChain(write.chainId)))
+    ) {
+      throw new Error(
+        "Choose one chain for this action when using Safe or a network unsupported by Relayr. Confirm that chain's result before proceeding to another chain.",
+      );
+    }
     const direct = routed.filter((entry) => entry.route.kind === "direct").map((e) => e.write);
     const viaSafe = routed.filter(
       (
@@ -204,7 +222,12 @@ export function useOperatorWrites() {
 
     // Relayr forwards ERC-2771 requests signed by a key; a Safe app connection
     // has none, so it proposes each chain's call to its Safe one at a time.
-    if (direct.length === 1 || isSafeConnection(config)) {
+    // Relayr does not support testnets; those use the same sequential path.
+    if (
+      direct.length === 1 ||
+      isSafeConnection(config) ||
+      direct.some((write) => !isRelayrSupportedChain(write.chainId))
+    ) {
       result.chains = await runSequentialWrites({
         writes: direct,
         account,
@@ -254,15 +277,9 @@ export function useOperatorWrites() {
     const quote = await getRelayrTxQuote(requests);
     if (!quote) throw new Error("Relayr did not return a quote.");
 
+    onProgress("Choose the chain for your Relayr payment…");
+    const payment = await chooseRelayrPayment(quote.payment_info, preferredPaymentChainId);
     onProgress("Confirm the Relayr payment in your wallet…");
-    // Prefer paying on the chain the wallet is already connected to, rather than whichever
-    // option Relayr happens to list first — that billed operators on an arbitrary chain and
-    // forced a network switch. (The deploy flow offers a full picker; this headless sequence
-    // has no UI to host one, so it makes the sensible choice instead of an arbitrary one.)
-    const connectedChainId = getAccount(wagmiConfig).chainId;
-    const payment =
-      quote.payment_info.find((option) => option.chain === connectedChainId) ??
-      quote.payment_info[0];
     const hash = await sendRelayrTx(payment);
     if (submittedViaSafe(hash)) {
       return { ...result, chains: direct.length, viaRelayr: true, safeProposal: true };

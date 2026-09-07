@@ -422,8 +422,15 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
           </BridgeDialog>
         )}
 
-        {hasErc20 && creditRows.length > 0 && (
-          <V6ClaimCreditsDialog creditRows={creditRows} tokenSymbol={tokenSymbol}>
+        {hasErc20 && (
+          <V6ClaimCreditsDialog
+            creditRows={creditRows}
+            tokenSymbol={tokenSymbol}
+            batchScope={projects
+              .map((project) => `${project.chainId}:${project.projectId}`)
+              .sort()
+              .join("|")}
+          >
             <Button
               variant="outline"
               className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
@@ -468,11 +475,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
               in the project&apos;s market pools.
             </p>
             {dialogAmmStates ? (
-              <LiquidityManager
-                states={dialogAmmStates}
-                tokenSymbol={tokenSymbol}
-                heading={null}
-              />
+              <LiquidityManager states={dialogAmmStates} tokenSymbol={tokenSymbol} heading={null} />
             ) : (
               <SkeletonLines lines={3} />
             )}
@@ -484,9 +487,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
         <Dialog open onOpenChange={(next) => !next && setLiquidityChain(null)}>
           <DialogContent className="max-w-lg">
             <DialogTitle className="text-base font-medium">Market liquidity</DialogTitle>
-            <p className="text-sm text-zinc-500">
-              Add liquidity from your connected wallet.
-            </p>
+            <p className="text-sm text-zinc-500">Add liquidity from your connected wallet.</p>
             <div className="flex flex-wrap gap-1">
               {pooledAmmStates.map((state) => (
                 <LiquidityChainPill
