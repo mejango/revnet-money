@@ -1,7 +1,7 @@
 const SECURITY_HEADERS = [
   {
     key: "Content-Security-Policy",
-    value: "frame-ancestors https://app.safe.global https://app.5afe.dev",
+    value: "frame-ancestors https://app.safe.global https://app.5afe.dev https://plugin.money https://www.plugin.money",
   },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
