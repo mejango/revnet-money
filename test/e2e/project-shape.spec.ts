@@ -362,6 +362,17 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
 
 test("verified handle routes decode exactly once", async ({ page, request }) => {
   const boundary = await installBrowserBoundary(page);
+  const narrowViewport = page.viewportSize()?.width === 320;
+  if (narrowViewport) {
+    // A real long wallet identity guarantees the collapsed search layout on
+    // every platform, independent of the font metrics of the Sign in button.
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "revnet:view-as:v1",
+        "0x2222222222222222222222222222222222222222",
+      );
+    });
+  }
   // Hold hydration deterministically: the SSR form must not accept text which
   // React cannot retain yet or natively submit to the current project URL.
   let releaseScripts!: () => void;
@@ -373,17 +384,34 @@ test("verified handle routes decode exactly once", async ({ page, request }) => 
     await scriptsReady;
     await route.fallback();
   });
-  const search = page.getByRole("searchbox", { name: /Search revnets/u });
+  // Hydration is a DOM state, including when the responsive navigation hides
+  // its inline field behind the mobile Search button.
+  const serverSearch = page.getByRole("searchbox", {
+    name: /Search revnets/u,
+    includeHidden: true,
+  });
   try {
     const projectResponse = await page.goto("/eth:1/operator", { waitUntil: "commit" });
     expectSecurityHeaders(projectResponse);
-    await expect(search).toBeDisabled();
+    await expect(serverSearch).toBeDisabled();
   } finally {
     releaseScripts();
   }
   await page.waitForLoadState("domcontentloaded");
-  await expect(search).toBeEnabled();
+  await expect(serverSearch).toBeEnabled();
   await page.unroute(scriptPattern);
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  const mobileSearch = page.getByRole("button", { name: "Search", exact: true });
+  if (narrowViewport) {
+    await expect(
+      page.getByRole("button", { name: /Viewing as artizenendowment\.eth/i }),
+    ).toBeVisible();
+    await expect(mobileSearch).toBeVisible();
+  }
+  if (await mobileSearch.isVisible()) await mobileSearch.click();
+  const search = page.getByRole("searchbox", { name: /Search revnets/u });
+  await expect(search).toBeVisible();
+  await expect(search).toBeEnabled();
   await search.fill("@fixture-revnet");
   const searchNavigation = page.waitForResponse(
     (response) =>

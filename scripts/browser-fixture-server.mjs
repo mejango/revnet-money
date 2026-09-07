@@ -8,6 +8,7 @@ import {
   jbControllerAbi,
   jbDirectoryAbi,
   jbMultiTerminalAbi,
+  jbPermissionsAbi,
   jbPricesAbi,
   jbProjectsAbi,
   jbRouterTerminalRegistryAbi,
@@ -861,6 +862,32 @@ registerCall({
   result: () => 0n,
 });
 
+// The long viewed identity used by responsive navigation also renders project
+// balances and permissions. Permit only this participant's exact read-only tuples.
+registerCall({
+  abi: erc20Abi,
+  functionName: "balanceOf",
+  address: usdc,
+  result: ([holder]) => {
+    requireFixture(holder === fixtureParticipant, `USDC balanceOf holder=${holder}`);
+    return 0n;
+  },
+});
+registerCall({
+  abi: jbPermissionsAbi,
+  functionName: "permissionsOf",
+  address: addresses.permissions,
+  result: ([operator, account, requestedProjectId]) => {
+    requireFixture(operator === fixtureParticipant, `permissionsOf operator=${operator}`);
+    requireFixture(account === addresses.revOwner, `permissionsOf account=${account}`);
+    requireFixture(
+      requestedProjectId === 1n || requestedProjectId === 0n,
+      `permissionsOf projectId=${requestedProjectId}`,
+    );
+    return 0n;
+  },
+});
+
 registerCall({
   abi: jbDirectoryAbi,
   functionName: "primaryTerminalOf",
@@ -1210,7 +1237,7 @@ for (const [functionName, result] of [
   });
 }
 
-function executeContractCall(to, data) {
+export function executeContractCall(to, data) {
   const address = getAddress(to);
   if (address === addresses.multicall && data.startsWith(toFunctionSelector(multicall3Abi[0]))) {
     const decoded = decodeFunctionData({ abi: multicall3Abi, data });
@@ -1443,10 +1470,12 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, host, () => {
-  console.log(`[browser-fixture] listening on http://${host}:${port}`);
-});
+if (import.meta.main) {
+  server.listen(port, host, () => {
+    console.log(`[browser-fixture] listening on http://${host}:${port}`);
+  });
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.on(signal, () => server.close(() => process.exit(0)));
+  }
 }
