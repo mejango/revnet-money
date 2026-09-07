@@ -253,6 +253,14 @@ export function TokenPriceChart({
             note={priceConcept("issuance", { baseSymbol: axisSymbol })}
             onClick={() => setShowIssuance(!showIssuance)}
           />
+          <ChartToggleButton
+            label="Cash out Price"
+            active={showFloor}
+            disabled={!hasFloorData}
+            colorVar="--chart-3"
+            note={priceConcept("cashOut", { baseSymbol: axisSymbol })}
+            onClick={() => setShowFloor(!showFloor)}
+          />
           {hasPool && (
             <ChartToggleButton
               label="Pool price & liquidity"
@@ -268,14 +276,6 @@ export function TokenPriceChart({
               onClick={() => setShowAmm(!showAmm)}
             />
           )}
-          <ChartToggleButton
-            label="Cash out Price"
-            active={showFloor}
-            disabled={!hasFloorData}
-            colorVar="--chart-3"
-            note={priceConcept("cashOut", { baseSymbol: axisSymbol })}
-            onClick={() => setShowFloor(!showFloor)}
-          />
           {conversionNote ? <InfoTip note={conversionNote} /> : null}
         </span>
         <span className="flex flex-wrap items-center gap-4">

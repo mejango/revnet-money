@@ -11,6 +11,7 @@ import { useConfig } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
 import {
+  describeTransferSchedule,
   discountLabel,
   formatShopAmount,
   ShopInventory,
@@ -137,11 +138,8 @@ export function TierDetailModal({
         ? "Non-transferable"
         : shop.fixedTierTransferability === null
           ? "Transfer policy unavailable"
-          : shop.transfersPaused == null
-            ? "Set by each stage; current status unavailable"
-            : shop.transfersPaused
-              ? "Not transferable in this stage"
-              : "Transferable in this stage";
+          : (describeTransferSchedule(shop.transferPauseByStage) ??
+            "Set by each stage; schedule unavailable");
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
