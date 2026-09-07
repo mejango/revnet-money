@@ -16,7 +16,7 @@ import { FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
 import { gasWithHeadroom } from "@/lib/gas";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
-import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
@@ -52,13 +52,12 @@ export default function Page() {
     if (!isConnected || !address) {
       throw new Error("Please connect your wallet to deploy");
     }
-    if (
-      formData.chainIds.length > 1 &&
-      (isSafeConnector(connector) ||
-        formData.chainIds.some((chainId) => !isRelayrSupportedChain(chainId)))
-    ) {
+    if (formData.chainIds.length > 1 && isSafeConnector(connector)) {
+      throw new Error("For a Safe deployment, select one chain.");
+    }
+    if (formData.chainIds.length > 1 && !areRelayrChainsCompatible(formData.chainIds)) {
       throw new Error(
-        "For a Safe or testnet deployment, select one chain. Multi-chain launch is available to an EOA on supported mainnets.",
+        "Select supported chains from one network family: all mainnets or all testnets.",
       );
     }
     requireRelayrRecoveryScopeAvailable(address, "revnet-launch");

@@ -399,7 +399,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
               title: "Transfer revnet operator",
               detail:
                 group.rows.length > 1
-                  ? "Use an operator wallet with Relayr on supported mainnets. With Safe or other networks, transfer and confirm one chain at a time."
+                  ? "Use an operator wallet with Relayr across supported mainnets or across supported testnets. With Safe or other networks, transfer and confirm one chain at a time."
                   : "From the operator wallet, or proposed to the operator Safe from a signer.",
             },
           ]}

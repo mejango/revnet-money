@@ -179,6 +179,40 @@ beforeEach(() => {
 });
 
 describe("token panel Relayr funding", () => {
+  it.each([false, true])(
+    "relays all four testnets for token management (deployed: %s)",
+    async (deployed) => {
+      const chains = [11155111, 11155420, 84532, 421614];
+      const payments = PAYMENTS.map((payment, index) => ({
+        ...payment,
+        chain: index ? 84532 : 11155111,
+      }));
+      mocks.chainId = 11155420;
+      mocks.getRelayrTxQuote.mockResolvedValue({ ...QUOTE, payment_info: payments });
+      await openConfirmation(chains, deployed);
+      const picker = await screen.findByRole("combobox");
+      const confirm = screen.getByRole("button", { name: "Pay and submit" });
+      expect(confirm).toBeDisabled();
+      expect(mocks.getRelayrTxQuote.mock.calls[0][0]).toEqual(
+        chains.map((chainId, index) =>
+          expect.objectContaining({
+            chainId,
+            review: expect.objectContaining({
+              functionName: deployed ? "setTokenMetadataOf" : "deployERC20For",
+            }),
+            data: expect.objectContaining({ to: mocks.states[index].controller }),
+          }),
+        ),
+      );
+      expect(mocks.writeContractAsync).not.toHaveBeenCalled();
+      fireEvent.click(picker);
+      fireEvent.click(screen.getByRole("option", { name: /ETH on Base Sepolia/ }));
+      fireEvent.click(confirm);
+      await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(payments[1]));
+      expect(mocks.waitForRelayrBundle).toHaveBeenCalledExactlyOnceWith(QUOTE.bundle_uuid);
+    },
+  );
+
   it("requires a funding selection and waits for the funded bundle before reporting success", async () => {
     mocks.chainId = 10;
     const bundle = deferred<void>();
@@ -248,8 +282,19 @@ describe("token panel Relayr funding", () => {
 describe("wallet-action:token-admin — token panel direct routing", () => {
   it.each([
     { label: "one deployment chain", chains: [1], safe: false, deployed: false },
-    { label: "metadata on a testnet", chains: [1, 11155111], safe: false, deployed: true },
+    {
+      label: "metadata across mainnets and testnets",
+      chains: [1, 11155111],
+      safe: false,
+      deployed: true,
+    },
     { label: "metadata with a Safe wallet", chains: [1, 8453], safe: true, deployed: true },
+    {
+      label: "testnet metadata with a Safe wallet",
+      chains: [11155111, 84532],
+      safe: true,
+      deployed: true,
+    },
   ])("reviews $label before submitting direct transactions", async ({ chains, safe, deployed }) => {
     mocks.safe = safe;
     await openConfirmation(chains, deployed);
@@ -266,9 +311,10 @@ describe("wallet-action:token-admin — token panel direct routing", () => {
   });
 
   it.each([
-    { label: "a testnet", chains: [1, 11155111], safe: false },
+    { label: "mixed mainnets and testnets", chains: [1, 11155111], safe: false },
     { label: "an unsupported mainnet", chains: [1, 137], safe: false },
     { label: "a Safe wallet", chains: [1, 8453], safe: true },
+    { label: "a testnet Safe wallet", chains: [11155111, 84532], safe: true },
   ])(
     "blocks multi-chain deployment for $label before any transaction",
     async ({ chains, safe }) => {

@@ -60,11 +60,14 @@ describe("wallet-action:create-revnet — creation route eligibility", () => {
     expect(screen.getByText("Deployment review")).toBeVisible();
   });
 
-  it.each(["Safe", "testnets"])(
-    "guides %s multichain launch back to single-chain deployment before review",
-    (route) => {
-      if (route === "Safe") mocks.account.connector = { id: "safe", name: "Safe" };
-      else mocks.form.values = { ...validRevnetForm(), chainIds: [11155111, 84532] };
+  it.each([
+    [1, 10],
+    [11155111, 84532],
+  ])(
+    "guides Safe multichain launch back to single-chain deployment before review (%s, %s)",
+    (...chainIds) => {
+      mocks.account.connector = { id: "safe", name: "Safe" };
+      mocks.form.values = { ...validRevnetForm(), chainIds };
       render(<DeploySection />);
       expect(screen.getByRole("alert")).toHaveTextContent("select one chain");
       const button = screen.getByRole("button", { name: "Sign and get quote" });
@@ -74,6 +77,45 @@ describe("wallet-action:create-revnet — creation route eligibility", () => {
       expect(mocks.submitForm).not.toHaveBeenCalled();
     },
   );
+
+  it("allows all four supported testnets in one EOA launch", () => {
+    mocks.account.chainId = 84532;
+    mocks.form.values = { ...validRevnetForm(), chainIds: [11155111, 11155420, 84532, 421614] };
+    render(<DeploySection />);
+    const button = screen.getByRole("button", { name: "Sign and get quote" });
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute("data-chain", "84532");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.click(button);
+    expect(screen.getByText("Deployment review")).toBeVisible();
+  });
+
+  it.each([
+    { chainIds: [1, 10], connectedChainId: 84532 },
+    { chainIds: [11155111, 84532], connectedChainId: 10 },
+  ])("does not prefer funding on another network family", ({ chainIds, connectedChainId }) => {
+    mocks.account.chainId = connectedChainId;
+    mocks.form.values = { ...validRevnetForm(), chainIds };
+    render(<DeploySection />);
+    const button = screen.getByRole("button", { name: "Sign and get quote" });
+    expect(button).toBeEnabled();
+    expect(button).not.toHaveAttribute("data-chain");
+  });
+
+  it.each([
+    [1, 84532],
+    [11155111, 10],
+    [1, 999999],
+  ])("rejects mixed or unsupported destinations before review (%s, %s)", (...chainIds) => {
+    mocks.form.values = { ...validRevnetForm(), chainIds };
+    render(<DeploySection />);
+    expect(screen.getByRole("alert")).toHaveTextContent("all mainnets or all testnets");
+    const button = screen.getByRole("button", { name: "Sign and get quote" });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(screen.queryByText("Deployment review")).not.toBeInTheDocument();
+    expect(mocks.submitForm).not.toHaveBeenCalled();
+  });
 
   it("retains direct single-chain Safe/testnet deployment", () => {
     mocks.account.connector = { id: "safe", name: "Safe" };

@@ -18,7 +18,7 @@ import type {
 } from "@/lib/nana/types";
 import type { ExpectedPayoutReceipt } from "@/lib/payout-receipts";
 import { verifyMetadataSource, type MetadataSourceGuard } from "@/lib/project-metadata-write";
-import { isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import {
   dismissTransactionActivity,
   recordTransactionActivity,
@@ -217,9 +217,13 @@ function requireUnfunded(
     );
 }
 
-function paymentDetails(payment: ChainPayment, bundleUuid: string) {
+function paymentDetails(payment: ChainPayment, bundleUuid: string, destinationChains: number[]) {
   if (!isRelayrSupportedChain(payment.chain))
     throw new Error("Relayr returned an unsupported payment chain.");
+  if (!areRelayrChainsCompatible([...destinationChains, payment.chain]))
+    throw new Error(
+      "Relayr funding must use the same mainnet or testnet family as its destinations.",
+    );
   if (!isAddress(payment.target) || payment.target.toLowerCase() !== RELAYR_PAYMENT_ADDRESS)
     throw new Error("Relayr returned an unrecognized payment contract.");
   if (payment.token?.toLowerCase() !== RELAYR_NATIVE_TOKEN)
@@ -249,6 +253,23 @@ function paymentDetails(payment: ChainPayment, bundleUuid: string) {
   if (encodedDeadline > 0xffffffffffn || encodedDeadline !== BigInt(deadline))
     throw new Error("Relayr payment calldata does not match the quote deadline.");
   return { value, deadline };
+}
+
+function quoteForDestinationChains(
+  quote: RelayrPostBundleResponse,
+  destinationChains: number[],
+): RelayrPostBundleResponse {
+  const payments = quote.payment_info.filter((payment) =>
+    areRelayrChainsCompatible([...destinationChains, payment.chain]),
+  );
+  if (!payments.length)
+    throw new Error(
+      "Relayr returned no funding option for the selected mainnet or testnet family.",
+    );
+  payments.forEach((payment) => paymentDetails(payment, quote.bundle_uuid, destinationChains));
+  // Recovery quotes must not share nested payment objects with caller-owned
+  // responses. A later UI update cannot rewrite the already published fee.
+  return structuredClone({ ...quote, payment_info: payments });
 }
 
 class RelayrVerificationError extends Error {}
@@ -593,6 +614,8 @@ export function useGetRelayrTxQuote() {
             );
           requestChains.add(request.chainId);
         }
+        if (!areRelayrChainsCompatible([...requestChains]))
+          throw new Error("Choose only mainnets or only testnets for one Relayr bundle.");
         const callKey = requestKey(address, requests);
         const callKeys = requests.flatMap((request) => [
           requestKey(address, [request]),
@@ -614,8 +637,7 @@ export function useGetRelayrTxQuote() {
             activity.relayrQuote,
         );
         if (existingQuote?.relayrQuote && existingQuote.relayrExpectedTransactions) {
-          const quote = existingQuote.relayrQuote;
-          quote.payment_info.forEach((payment) => paymentDetails(payment, quote.bundle_uuid));
+          const quote = quoteForDestinationChains(existingQuote.relayrQuote, [...requestChains]);
           updateTransactionActivity(existingQuote.id, {
             relayrCallKeys: Array.from(
               new Set([...(existingQuote.relayrCallKeys ?? []), ...callKeys]),
@@ -896,14 +918,15 @@ export function useGetRelayrTxQuote() {
             body: JSON.stringify({ transactions, virtual_nonce_mode: "Disabled" }),
           });
           if (!response.ok) throw new Error(await response.text());
-          const quote = (await response.json()) as RelayrPostBundleResponse;
+          const receivedQuote = (await response.json()) as RelayrPostBundleResponse;
           if (
-            !UUID_PATTERN.test(quote.bundle_uuid) ||
-            !Array.isArray(quote.payment_info) ||
-            !quote.payment_info.length
+            !UUID_PATTERN.test(receivedQuote.bundle_uuid) ||
+            !Array.isArray(receivedQuote.payment_info) ||
+            !receivedQuote.payment_info.length
           ) {
             throw new Error("Relayr returned an incomplete quote without a payable bundle.");
           }
+          const quote = quoteForDestinationChains(receivedQuote, [...requestChains]);
           if (
             !Array.isArray(quote.txn_uuids) ||
             quote.txn_uuids.length !== transactions.length ||
@@ -913,7 +936,6 @@ export function useGetRelayrTxQuote() {
             throw new Error(
               "Relayr returned an incomplete quote without the signed transaction identities.",
             );
-          quote.payment_info.forEach((payment) => paymentDetails(payment, quote.bundle_uuid));
           const expectedTransactions = transactions.map((transaction, index) => ({
             gas: executionGas[index],
             metadataSource: requests[index].metadataSource,
@@ -942,7 +964,7 @@ export function useGetRelayrTxQuote() {
             relayrPaymentStatus: "unfunded",
             relayrAuthorizationExpiresAt: authorizationExpiresAt,
             relayrExpectedTransactions: expectedTransactions,
-            relayrQuote: quote,
+            relayrQuote: structuredClone(quote),
           });
           dismissTransactionActivity(publicationId);
           rememberQuote(quote, address, callKey, callKeys, expectedTransactions);
@@ -988,7 +1010,7 @@ export function useSendRelayrTx() {
       const activityId = `relayr:${remembered.bundleUuid}`;
       const submit = async () => {
         requireUnfunded(remembered);
-        const { value } = paymentDetails(payment, remembered.bundleUuid);
+        const { value } = paymentDetails(payment, remembered.bundleUuid, remembered.chainIds);
         await switchChainAsync({ chainId: payment.chain });
         const requireAccount = () => {
           requireNoViewAs();
@@ -1055,7 +1077,7 @@ export function useSendRelayrTx() {
           });
         }
         requireAccount();
-        paymentDetails(payment, remembered.bundleUuid);
+        paymentDetails(payment, remembered.bundleUuid, remembered.chainIds);
         requireUnfunded(remembered);
         recordTransactionActivity({
           id: activityId,

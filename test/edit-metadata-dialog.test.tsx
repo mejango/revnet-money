@@ -215,6 +215,46 @@ describe("EditMetadataDialog Relayr payment choice", () => {
   }));
   const quote = { bundle_uuid: "metadata-bundle", payment_info: payments };
 
+  it("relays all four testnet metadata destinations and waits for a testnet funding choice", async () => {
+    const chainIds = [11155111, 11155420, 84532, 421614];
+    const testnetPayments = payments.map((payment, index) => ({
+      ...payment,
+      chain: index ? 84532 : 11155111,
+    }));
+    mocks.connectedChainId = 10;
+    mocks.getRelayrTxQuote.mockResolvedValue({ ...quote, payment_info: testnetPayments });
+    await openDialog(
+      chainIds.map((chainId, index) => ({ ...PROJECTS[0], chainId, projectId: index + 41 })),
+    );
+    await prefilledAdvancedTextarea();
+    await save();
+    const picker = await screen.findByRole("combobox");
+    const confirm = screen.getByRole("button", { name: "Pay and submit" });
+    expect(confirm).toBeDisabled();
+    expect(mocks.getRelayrTxQuote.mock.calls[0][0]).toEqual(
+      chainIds.map((chainId, index) =>
+        expect.objectContaining({
+          chainId,
+          recoveryScope: `project-metadata:${chainId}:${index + 41}`,
+          review: expect.objectContaining({
+            functionName: "setUriOf",
+            args: [BigInt(index + 41), expect.any(String)],
+          }),
+          metadataSource: expect.objectContaining({ chainId, projectId: String(index + 41) }),
+        }),
+      ),
+    );
+    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
+    expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByRole("option", { name: /ETH on Base Sepolia/ }));
+    fireEvent.click(confirm);
+    await waitFor(() =>
+      expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(testnetPayments[1]),
+    );
+    expect(mocks.waitForRelayrBundle).toHaveBeenCalledExactlyOnceWith(quote.bundle_uuid);
+  });
+
   it("requires an explicit funding choice when the connected chain is not quoted", async () => {
     mocks.connectedChainId = 10;
     mocks.getRelayrTxQuote.mockResolvedValue(quote);
@@ -271,8 +311,8 @@ describe("EditMetadataDialog Relayr payment choice", () => {
 
 describe("wallet-action:metadata — EditMetadataDialog direct routing", () => {
   it.each([
-    { route: "testnet EOA", chainIds: [11155111, 84532], safe: false },
-    { route: "mixed supported and unsupported EOA", chainIds: [1, 84532], safe: false },
+    { route: "testnet Safe", chainIds: [11155111, 84532], safe: true },
+    { route: "mixed mainnet and testnet EOA", chainIds: [1, 84532], safe: false },
     { route: "mainnet Safe", chainIds: [1, 8453], safe: true },
   ])("waits for every receipt in order for $route metadata updates", async ({ chainIds, safe }) => {
     mocks.safe = safe;
