@@ -26,8 +26,28 @@ function shouldReload(error: Error) {
   }
 }
 
-export default function AppError({ error, reset }: { error: Error; reset: () => void }) {
+export default function AppError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
   const reloading = shouldReload(error);
+
+  // The boundary used to swallow the error, so a screenshot of this screen carried
+  // nothing to diagnose — not even whether the auto-reload path had been taken.
+  // Log it before deciding what to do with it.
+  useEffect(() => {
+    console.error("[revnet] page error boundary", {
+      name: error.name,
+      message: error.message,
+      digest: error.digest,
+      staleDeployment: isStaleDeploymentError(error),
+      url: typeof window === "undefined" ? null : window.location.href,
+    });
+  }, [error]);
+
   useEffect(() => {
     if (!reloading) return;
     try {
