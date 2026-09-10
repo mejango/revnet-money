@@ -906,7 +906,7 @@
         "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
         "src/app/[slug]/components/v6/owners/market/liquidityWrite.tsx"
       ],
-      "tests": ["test/liquidity-remove.test.ts"]
+      "tests": ["test/liquidity-remove.test.ts", "test/liquidity-edit-safe-batch.test.tsx"]
     },
     {
       "id": "split-hook",

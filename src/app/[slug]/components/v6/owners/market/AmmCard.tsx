@@ -63,7 +63,6 @@ import {
   lpDeadline,
   PERMIT2_ABI,
   PERMIT2_ADDRESS,
-  permit2ApprovalArgs,
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
   prepareAddLiquidity,
@@ -88,7 +87,9 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
+  liquidityBatchCalls,
   runApprovalStep,
+  safeBatchIntro,
   SummaryRow,
   type LiquidityStep,
 } from "./liquidityWrite";
@@ -833,39 +834,16 @@ export function AddLiquidityForm({
       if (isSafeConnection(wagmiConfig) && steps.length > 1) {
         if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
         else await reverifyAddLiquidity(pool, built.plan);
-        const calls = steps.map((step) =>
-          step.approval?.kind === "erc20"
-            ? {
-                address: step.approval.currency,
-                abi: erc20Abi,
-                functionName: "approve",
-                args: [PERMIT2_ADDRESS, step.approval.max],
-              }
-            : step.approval
-              ? {
-                  address: PERMIT2_ADDRESS,
-                  abi: PERMIT2_ABI,
-                  functionName: "approve",
-                  args: permit2ApprovalArgs(
-                    state.chainId,
-                    step.approval.currency,
-                    step.approval.max,
-                  ),
-                }
-              : {
-                  address: POSITION_MANAGER_BY_CHAIN[chainId]!,
-                  abi: POSITION_MANAGER_ABI,
-                  functionName: "modifyLiquidities",
-                  args: [plan.unlockData, lpDeadline(true)],
-                  value: plan.value,
-                  dependsOnPrior: true,
-                },
-        );
         await proposeSafeBatch(
           wagmiConfig,
           chainId,
           built.kind === "market" ? "Make the market" : "Add liquidity",
-          calls,
+          liquidityBatchCalls({
+            chainId: state.chainId,
+            steps,
+            unlockData: plan.unlockData,
+            value: plan.value,
+          }),
         );
         setStatus(
           "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity.",
@@ -1125,7 +1103,7 @@ export function AddLiquidityForm({
           activeIndex={busy ? stepIndex : -1}
           stepsIntro={
             isSafeConnection(wagmiConfig) && reviewSteps.length > 1
-              ? `Goes to your Safe as one batch of ${reviewSteps.length} calls: approved once, executed together.`
+              ? safeBatchIntro(reviewSteps)
               : undefined
           }
           action={mode === "market" ? "Make the market" : "Add liquidity"}

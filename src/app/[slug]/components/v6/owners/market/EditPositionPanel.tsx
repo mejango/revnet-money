@@ -5,6 +5,7 @@ import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
   isSafeConnection,
+  proposeSafeBatch,
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -34,8 +35,10 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
+  liquidityBatchCalls,
   parseAmountText,
   runApprovalStep,
+  safeBatchIntro,
   SummaryRow,
   type LiquidityStep,
 } from "./liquidityWrite";
@@ -308,6 +311,27 @@ export function EditPositionPanel({
     setBusy(true);
     setStatus(null);
     try {
+      // ponytail: Safe app only; other EIP-5792 wallets keep the sequential path.
+      if (isSafeConnection(wagmiConfig) && steps.length > 1) {
+        await reverifyEditLiquidity(current.pool, plan, address);
+        await proposeSafeBatch(
+          wagmiConfig,
+          chainId,
+          "Edit position",
+          liquidityBatchCalls({
+            chainId: state.chainId,
+            steps,
+            unlockData: plan.unlockData,
+            value: plan.value,
+          }),
+        );
+        setStatus(
+          "Proposed to Safe as one batch. The position shows its new state under Your liquidity once it executes.",
+        );
+        setReviewed(null);
+        onDone(null);
+        return;
+      }
       for (const [index, step] of steps.entries()) {
         setStepIndex(index);
         if (step.approval) {
@@ -532,6 +556,11 @@ export function EditPositionPanel({
           preparing={!current}
           steps={current?.steps ?? []}
           activeIndex={busy ? stepIndex : -1}
+          stepsIntro={
+            isSafeConnection(wagmiConfig) && (current?.steps.length ?? 0) > 1
+              ? safeBatchIntro(current!.steps)
+              : undefined
+          }
           action={actionLabel}
           onConfirm={() => void execute()}
           busy={busy}
