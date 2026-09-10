@@ -257,7 +257,7 @@ export function isSafeConnection(config: ReturnType<typeof useConfig>): boolean 
   return isSafeConnector(getAccount(config).connector);
 }
 
-function followSubmission(
+export function followSubmission(
   config: ReturnType<typeof useConfig>,
   hash: Hex,
   chainId: number,

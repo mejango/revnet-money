@@ -795,6 +795,27 @@
           "submit",
           "writeContractAsync",
           1
+        ],
+        [
+          "reviewed-safe-signature",
+          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+          "submit",
+          "signSafeTransactionAsync",
+          2
+        ],
+        [
+          "reviewed-safe-signature-hook",
+          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+          "useSafeBatchSubmit",
+          "useReviewedSafeSignature",
+          1
+        ],
+        [
+          "reviewed-write-hook",
+          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+          "useSafeBatchSubmit",
+          "useWriteContract",
+          1
         ]
       ]
     }
@@ -944,6 +965,12 @@
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/operator/SafeQueueCard.tsx"],
       "tests": ["test/safe-queue.test.ts"]
+    },
+    {
+      "id": "safe-batch",
+      "risk": "project-control",
+      "files": ["src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts"],
+      "tests": ["test/safe-batch-signer-proposal.test.ts", "test/safe-batch.test.ts"]
     },
     {
       "id": "settlement-sync",

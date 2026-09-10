@@ -12,6 +12,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
+import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import {
   JBBuybackHookContracts,
@@ -730,6 +731,24 @@ function BuybackActionForm({
     }
   };
 
+  // The same calls the submit would send, queued in each chain's tray instead.
+  const addToBatch = () => {
+    if (busy) return;
+    setError(null);
+    try {
+      const chains = addStepsToBatch(buildWrites().map(stepFromWrite));
+      toast({
+        title: "Added to the batch",
+        description: `Added to the batch for ${chains.map(chainName).join(", ")}.`,
+      });
+      onDone();
+    } catch (e) {
+      const message = formatWalletError(e) || "Could not add this action to the batch.";
+      setError(message);
+      toast({ variant: "destructive", title: "Error", description: message });
+    }
+  };
+
   const submit = async () => {
     if (busy || !address || !review) return;
     setError(null);
@@ -899,7 +918,16 @@ function BuybackActionForm({
         </span>
       </label>
 
-      <div className="mt-3 flex justify-end">
+      <div className="mt-3 flex justify-end gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-11"
+          disabled={busy || !chosen.length}
+          onClick={addToBatch}
+        >
+          Add to batch
+        </Button>
         <ButtonWithWallet
           targetChainId={chosen[0]?.chainId}
           connectWalletText="Connect wallet to continue"

@@ -1,5 +1,6 @@
 "use client";
 
+import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@/lib/safe-batch";
 import {
   getAddress,
   hashTypedData,
@@ -342,16 +343,30 @@ export function safeProposalFor(
   };
 }
 
-/** Whether a queued transaction is this exact call (target, calldata, value, plain CALL). */
+/**
+ * One SafeTx for a whole batch: a DELEGATECALL into MultiSendCallOnly, which
+ * runs every packed call from the Safe itself, in order, or reverts as one.
+ */
+export function safeBatchProposalFor(
+  calls: readonly { to: Address; data: Hex; value?: bigint }[],
+  nonce: number,
+): SafeQueuedTransaction {
+  return {
+    ...safeProposalFor({ to: MULTI_SEND_CALL_ONLY, data: encodeMultiSend(calls) }, nonce),
+    operation: 1,
+  };
+}
+
+/** Whether a queued transaction is this exact call (target, calldata, value, operation). */
 export function queuedTransactionMatchesCall(
   tx: SafeQueuedTransaction,
-  call: { to: Address; data: Hex; value?: bigint },
+  call: { to: Address; data: Hex; value?: bigint; operation?: number },
 ): boolean {
   return (
     isAddressEqual(tx.to, call.to) &&
     (tx.data ?? "0x").toLowerCase() === call.data.toLowerCase() &&
     BigInt(tx.value ?? 0) === (call.value ?? 0n) &&
-    Number(tx.operation ?? 0) === 0
+    Number(tx.operation ?? 0) === (call.operation ?? 0)
   );
 }
 
