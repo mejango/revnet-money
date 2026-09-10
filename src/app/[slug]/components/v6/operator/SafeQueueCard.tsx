@@ -19,6 +19,7 @@ import {
   type ProjectSafeQueueTarget,
   type QueuedProjectHandleBinding,
 } from "@/lib/queuedProjectHandle";
+import { describeQueuedBatch } from "@/lib/safe-batch";
 import {
   SAFE_EXEC_ABI,
   listPendingSafeTransactions,
@@ -536,8 +537,8 @@ export function SafeQueueCard({
                     <li key={`${tx.nonce}:${tx.safeTxHash ?? tx.data}`} className="py-3 text-xs">
                       <details>
                         <summary className="cursor-pointer font-bold">
-                          #{tx.nonce} | {tx.data?.slice(0, 10) ?? "0x"} | {confirmations.length}/
-                          {row.policy.threshold} signatures
+                          #{tx.nonce} | {describeQueuedBatch(tx) ?? tx.data?.slice(0, 10) ?? "0x"} |{" "}
+                          {confirmations.length}/{row.policy.threshold} signatures
                         </summary>
                         {handleBinding ? (
                           <p className="mt-2 font-medium text-melon-800">

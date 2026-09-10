@@ -10,6 +10,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { readAuthorityIdentity } from "@/lib/cross-chain-authority";
+import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
@@ -249,10 +250,43 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
     setReview(true);
   };
 
+  const buildWrites = (): ChainWrite[] => {
+    const to = destination.trim();
+    if (!isAddress(to)) throw new Error("Enter a valid destination address.");
+    return group.rows.map((row) => {
+      const target = v6ContractAddress(RevnetCoreContracts.REVOwner, row.chainId);
+      if (!target) throw new Error(`REVOwner isn't deployed on ${chainName(row.chainId)}.`);
+      return {
+        chainId: row.chainId,
+        address: target,
+        abi: revOwnerAbi,
+        functionName: "setOperatorOf",
+        args: [BigInt(row.projectId), to as Address],
+        contractName: "REVOwner",
+        authority: (group.operator as Address | null) ?? undefined,
+      };
+    });
+  };
+
+  // The same calls the submit would send, queued in each chain's tray instead.
+  const addToBatch = () => {
+    if (busy) return;
+    setError(null);
+    try {
+      const chainIds = addStepsToBatch(buildWrites().map(stepFromWrite));
+      toast({
+        title: "Added to the batch",
+        description: `Added to the batch for ${chainIds.map(chainName).join(", ")}.`,
+      });
+      setOpen(false);
+    } catch (e) {
+      setError(formatWalletError(e) || "Could not add the transfer to the batch.");
+    }
+  };
+
   const submit = async () => {
     if (busy || !address) return;
-    const to = destination.trim();
-    if (!isAddress(to)) {
+    if (!isAddress(destination.trim())) {
       setError("Enter a valid destination address.");
       return;
     }
@@ -260,21 +294,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
     setBusy(true);
     setError(null);
     try {
-      const writes: ChainWrite[] = group.rows.map((row) => {
-        const target = v6ContractAddress(RevnetCoreContracts.REVOwner, row.chainId);
-        if (!target) throw new Error(`REVOwner isn't deployed on ${chainName(row.chainId)}.`);
-        return {
-          chainId: row.chainId,
-          address: target,
-          abi: revOwnerAbi,
-          functionName: "setOperatorOf",
-          args: [BigInt(row.projectId), to as Address],
-          contractName: "REVOwner",
-          authority: (group.operator as Address | null) ?? undefined,
-        };
-      });
       const result = await runWrites({
-        writes,
+        writes: buildWrites(),
         account: address,
         label: "Transfer revnet operator",
         onProgress: setStatus,
@@ -372,7 +393,16 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
             : "I verified the new revnet operator. They receive every power attached to this role."}
         </span>
       </label>
-      <div className="mt-3 flex justify-end">
+      <div className="mt-3 flex justify-end gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-11"
+          disabled={busy || !destination.trim()}
+          onClick={addToBatch}
+        >
+          Add to batch
+        </Button>
         <ButtonWithWallet
           targetChainId={group.rows[0]?.chainId}
           connectWalletText="Connect wallet to transfer"

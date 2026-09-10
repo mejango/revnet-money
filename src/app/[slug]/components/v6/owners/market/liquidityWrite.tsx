@@ -1,10 +1,18 @@
 "use client";
 
-import { submittedViaSafe } from "@/hooks/useReviewedWriteContract";
+import { submittedViaSafe, type proposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { erc20Abi, parseUnits, type Address, type Hex, type PublicClient } from "viem";
-import { PERMIT2_ADDRESS, permit2AllowanceCovers, permit2ApprovalArgs } from "./lib";
+import {
+  lpDeadline,
+  PERMIT2_ABI,
+  PERMIT2_ADDRESS,
+  permit2AllowanceCovers,
+  permit2ApprovalArgs,
+  POSITION_MANAGER_ABI,
+  POSITION_MANAGER_BY_CHAIN,
+} from "./lib";
 
 export { SummaryRow } from "@/components/ui/TxConfirmDialog";
 
@@ -106,6 +114,57 @@ export async function runApprovalStep(
     throw new Error(`Permit2 authorization ${approvalHash} reverted.`);
   }
   return "done";
+}
+
+export type LiquidityBatchCall = Parameters<typeof proposeSafeBatch>[3][number];
+
+/**
+ * The reviewed step list as ONE Safe batch: each approval becomes its call,
+ * and the position-manager write comes last, marked as depending on them so
+ * a standalone simulation never runs it before its allowances exist.
+ */
+export function liquidityBatchCalls({
+  chainId,
+  steps,
+  unlockData,
+  value,
+}: {
+  chainId: JBChainId;
+  steps: readonly LiquidityStep[];
+  unlockData: Hex;
+  value: bigint;
+}): LiquidityBatchCall[] {
+  const positionManager = POSITION_MANAGER_BY_CHAIN[Number(chainId)];
+  if (!positionManager) throw new Error("LP management is unavailable on this chain.");
+  return steps.map((step) =>
+    step.approval?.kind === "erc20"
+      ? {
+          address: step.approval.currency,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [PERMIT2_ADDRESS, step.approval.max],
+        }
+      : step.approval
+        ? {
+            address: PERMIT2_ADDRESS,
+            abi: PERMIT2_ABI,
+            functionName: "approve",
+            args: permit2ApprovalArgs(chainId, step.approval.currency, step.approval.max),
+          }
+        : {
+            address: positionManager,
+            abi: POSITION_MANAGER_ABI,
+            functionName: "modifyLiquidities",
+            args: [unlockData, lpDeadline(true)],
+            value,
+            dependsOnPrior: true,
+          },
+  );
+}
+
+/** The confirm's intro line when the whole step list goes to a Safe at once. */
+export function safeBatchIntro(steps: readonly unknown[]): string {
+  return `Goes to your Safe as one batch of ${steps.length} calls: approved once, executed together.`;
 }
 
 /** A typed amount as raw units; "" is zero, anything unparsable names the side. */
