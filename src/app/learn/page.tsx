@@ -49,6 +49,10 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     ],
     links: [
       { href: "/discover", label: "Explore revnets without a wallet" },
+      {
+        href: "https://juicebox.money/build/first-payment",
+        label: "Try the shared Juicebox payment tutorial",
+      },
       { href: "#your-first-transaction", label: "Prepare your first transaction" },
       { href: "/build#launch-from-the-wizard", label: "Launch a revnet without code" },
       { href: "#glossary", label: "Look up an unfamiliar term" },

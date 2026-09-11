@@ -7,8 +7,9 @@ const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
 const LLMS_TXT = `# Revnet
 
 > A revnet is an autonomous business model: rules for issuing and cashing out a token
-> are set once, at launch, and cannot be changed afterwards — there is no admin who can
-> mint, pause, or reprice. This site reads and writes revnets built on Juicebox V6
+> follow a core stage schedule committed at launch. Limited operator powers and
+> contract dependencies remain. Issuance terms do not fix a market price or guarantee
+> revenue or a cash out value. This site reads and writes revnets built on Juicebox V6
 > across Ethereum, Optimism, Base and Arbitrum. Every number shown is derived from
 > onchain state or the Bendystraw indexer.
 
@@ -31,6 +32,10 @@ identifier, description and logo.
 - [Discover](${siteOrigin}/discover): every indexed revnet.
 - [Learn](${siteOrigin}/learn): what a revnet is and the rules it fixes at launch.
 - [Build](${siteOrigin}/build): integration guide and contract addresses.
+- [Payment tutorial](https://juicebox.money/build/first-payment): learn the shared V6 payment flow with wallet-free reads, simulation, and a reviewed testnet payment.
+- [Model the schedule](${siteOrigin}/build#choosing-the-numbers): compare scenarios before preparing a revnet draft.
+- [Three prices](${siteOrigin}/learn#three-prices): distinguish issuance, market, and cash out prices.
+- [Inspect a project](https://juicebox.center/#apps/juicescan): use the chain ID and project ID together; pending or indexed observations do not prove settlement.
 - [Create](${siteOrigin}/create): the revnet launch flow.
 - [Audit](${siteOrigin}/audit): audits and security posture.
 
@@ -47,7 +52,7 @@ Read-only, no key required, cached at the edge.
 
 ## Source
 
-- Revnet contracts: https://github.com/rev-net/revnet-core
+- Revnet contracts: https://github.com/rev-net/revnet-core-v6
 - Protocol contracts: https://github.com/Bananapus/version-6
 - This client: https://github.com/mejango/revnet-money
 `;

@@ -381,6 +381,14 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       { href: `${SKILLS}/revnet-economics/SKILL.md`, label: "revnet-economics skill" },
       { href: `${SKILLS}/revnet-modeler/SKILL.md`, label: "revnet-modeler skill" },
       { href: "https://github.com/mejango/rev-sim", label: "rev-sim (simulator)" },
+      {
+        href: "/learn#three-prices",
+        label: "First: distinguish issuance, market, and cash out prices",
+      },
+      {
+        href: "https://juicebox.money/build/first-payment",
+        label: "Try a payment and inspect its result on testnet",
+      },
     ],
   },
 
@@ -1568,6 +1576,16 @@ export default function BuildPage() {
                 </Link>
               ))}
             </nav>
+            <p className="text-base text-zinc-600">
+              New to the payment integration?{" "}
+              <Link
+                href="https://juicebox.money/build/first-payment"
+                className="underline decoration-melon-400 underline-offset-4"
+              >
+                Read, simulate, and inspect a shared Juicebox test payment
+              </Link>
+              , then return here for revnet stages, loan mechanics, and operator controls.
+            </p>
             <p className="text-base text-zinc-600">
               Revnets are built on Juicebox. The{" "}
               <Link
