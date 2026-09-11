@@ -161,7 +161,9 @@ if (computedFixtureCid !== fixtureCid) {
   throw new Error(`Fixture metadata CID mismatch: expected ${computedFixtureCid}`);
 }
 
-const addressOf = (contract) => getAddress(jbContractAddress[6][contract][chainId]);
+const routerDeployments = protocolRollout.chains[chainId];
+const addressOf = (contract) =>
+  getAddress(routerDeployments.contracts[contract] ?? jbContractAddress[6][contract][chainId]);
 const addresses = {
   buybackRegistry: addressOf(JBBuybackHookContracts.JBBuybackHookRegistry),
   controller: addressOf(JBCoreContracts.JBController),
@@ -184,7 +186,6 @@ const addresses = {
   routerRegistry: addressOf(JBRouterTerminalContracts.JBRouterTerminalRegistry),
   routerTerminal: addressOf(JBRouterTerminalContracts.JBRouterTerminal),
 };
-const routerDeployments = protocolRollout.chains[chainId];
 const knownTerminalProbes = new Set(
   [
     addresses.terminal,
@@ -1389,6 +1390,7 @@ function handleRpc(request) {
       requested === fixtureOwner ||
       requested === projectToken ||
       requested === addresses.multicall ||
+      knownTerminalProbes.has(requested.toLowerCase()) ||
       Object.values(addresses).includes(requested);
     requireFixture(known, `eth_getCode address=${requested}`);
     result = requested === fixtureOwner ? "0x" : "0x60006000";
