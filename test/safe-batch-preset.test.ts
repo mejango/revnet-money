@@ -101,7 +101,7 @@ describe("Move to buyback 1.4.0 + gateway", () => {
     });
   });
 
-  it("keeps pending mainnets unavailable until canonical deployment records land", async () => {
+  it("keeps a mainnet unavailable when the staged fixture omits its canonical deployment", async () => {
     await expect(
       resolvePreset(preset, { chainId: 8453, projectId: 6, client: stubClient({}) }),
     ).resolves.toEqual({
@@ -252,7 +252,7 @@ describe("Move to buyback 1.4.0 + gateway", () => {
 });
 
 describe("mirroring per-chain steps", () => {
-  it("cannot mirror migration selections or their dependent pool onto pending mainnets or OP Sepolia", async () => {
+  it("cannot mirror migration selections or their dependent pool onto chains absent from the staged fixture", async () => {
     const migration = await resolvePreset(preset, {
       chainId: 84532,
       projectId: 2,

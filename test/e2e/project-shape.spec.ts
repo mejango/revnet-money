@@ -356,6 +356,7 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   expect(status.graphqlOperations.V6AutoIssueEvents).toBeGreaterThan(0);
   expect(status.graphqlOperations.V6AllLoans).toBeGreaterThan(0);
   expect(status.contractFunctions.ownerOf).toBeGreaterThan(0);
+  expect(status.contractFunctions.isTerminalOf).toBeGreaterThan(0);
   await page.waitForTimeout(250);
   expectBoundaryToStayLocal(boundary);
 });

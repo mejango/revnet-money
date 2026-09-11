@@ -2,7 +2,7 @@
 
 The app reads its rollout snapshot from `src/lib/protocol-rollout.json`, generated from executed `deploy-all-v6/deployments/<chain>/*.json` records. Receipt status, chain, contract identity, block, and transaction identifiers must be present and valid. Proposal addresses do not enable a network.
 
-The snapshot contains the current canonical record plus previous and v1 hook/router history. The current rollout is buyback hook 1.4.0, router 1.3.0, and its gateway; package patch releases contain their deployment artifacts. Sepolia, Base Sepolia, and Arbitrum Sepolia have the gateway. OP Sepolia has the ratio feed only. Mainnet gateway migration stays unavailable until executed artifacts are recorded there.
+The snapshot contains the current canonical record plus previous and v1 hook/router history. The current rollout is buyback hook 1.4.0, router 1.3.0, and its gateway; package patch releases contain their deployment artifacts. Ethereum, Optimism, Base, Arbitrum, Sepolia, Base Sepolia, and Arbitrum Sepolia have executed hook, router, gateway, and ratio-feed records. OP Sepolia has the ratio feed only. The source is deploy-all-v6 commit `a6ab40c5806b52ff4cb21f9eaefe275e621796f9`. Mainnet migration targets are now available from these records; each project retains its actual selection until an operator changes it, and migration preparation still checks live code and registry allowlists.
 
 Regenerate after deployment records land:
 

@@ -7,6 +7,13 @@ import {
   rolloutTargets,
 } from "@/lib/protocol-rollout";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
+import { mirrorBatch } from "@/lib/safe-batch";
+import {
+  resolvePreset,
+  SAFE_BATCH_PRESETS,
+  stepResolverFor,
+  type PresetReadClient,
+} from "@/lib/safe-batch-presets";
 import {
   jbBuybackHookAbi,
   jbRouterTerminalAbi,
@@ -28,6 +35,37 @@ function client(terminal: Address, attached = true) {
 }
 
 describe("canonical router rollout", () => {
+  it.each([1, 10, 8453, 42161])(
+    "prepares and mirrors the executed mainnet migration on chain %s",
+    async (destination) => {
+      const reader = {
+        getCode: vi.fn(async () => "0x6001"),
+        readContract: vi.fn(async ({ functionName }: { functionName: string }) => {
+          if (functionName === "isHookAllowed" || functionName === "isTerminalAllowed") return true;
+          if (functionName === "hookOf" || functionName === "terminalOf") return zeroAddress;
+          throw new Error(`Unexpected migration read: ${functionName}`);
+        }),
+      } as unknown as PresetReadClient;
+      const preset = await resolvePreset(SAFE_BATCH_PRESETS[0]!, {
+        chainId,
+        projectId: 2,
+        client: reader,
+      });
+      if (preset.status !== "ready") throw new Error(preset.message);
+      const mirrored = await mirrorBatch(
+        preset.steps,
+        chainId,
+        { chainId: destination, projectId: 2 },
+        stepResolverFor(() => reader),
+      );
+      expect(mirrored.skipped).toEqual([]);
+      expect(mirrored.steps.map((step) => [step.kind, step.values])).toEqual([
+        ["setHookFor", { hook: rolloutAddress("JBBuybackHook", destination) }],
+        ["setTerminalFor", { terminal: rolloutAddress("JBRouterTerminalGateway", destination) }],
+      ]);
+      expect(mirrored.steps.every((step) => step.chainId === destination)).toBe(true);
+    },
+  );
   it("derives readiness from each chain's canonical records, allowing data-only activation", () => {
     for (const id of [1, 10, 8453, 42161, 11155420, 11155111, 84532, 421614]) {
       const hook = rolloutAddress("JBBuybackHook", id);

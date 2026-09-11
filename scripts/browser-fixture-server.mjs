@@ -33,6 +33,7 @@ import {
   zeroAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
+import protocolRollout from "../src/lib/protocol-rollout.json" with { type: "json" };
 import browserProject from "../test/fixtures/browser-project.json" with { type: "json" };
 
 const port = browserProject.fixturePort;
@@ -183,6 +184,18 @@ const addresses = {
   routerRegistry: addressOf(JBRouterTerminalContracts.JBRouterTerminalRegistry),
   routerTerminal: addressOf(JBRouterTerminalContracts.JBRouterTerminal),
 };
+const routerDeployments = protocolRollout.chains[chainId];
+const knownTerminalProbes = new Set(
+  [
+    addresses.terminal,
+    routerDeployments.contracts.JBRouterTerminalRegistry,
+    routerDeployments.contracts.JBRouterTerminalGateway,
+    routerDeployments.contracts.JBRouterTerminal,
+    ...Object.values(routerDeployments.history.JBRouterTerminal),
+  ]
+    .filter(Boolean)
+    .map((address) => address.toLowerCase()),
+);
 allowedEnsReverseAddresses.add(addresses.revOwner.toLowerCase());
 
 const ruleset = {
@@ -927,12 +940,10 @@ registerCall({
   result: ([requestedProjectId, terminal]) => {
     requireFixture(requestedProjectId === 1n, `isTerminalOf projectId=${requestedProjectId}`);
     requireFixture(
-      [addresses.routerRegistry, addresses.routerTerminal].some(
-        (candidate) => candidate.toLowerCase() === terminal.toLowerCase(),
-      ),
+      knownTerminalProbes.has(terminal.toLowerCase()),
       `isTerminalOf terminal=${terminal}`,
     );
-    return false;
+    return terminal.toLowerCase() === addresses.terminal.toLowerCase();
   },
 });
 for (const [functionName, result] of [

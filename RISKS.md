@@ -9,13 +9,18 @@
   spenders, and transaction targets must use the same attached entry.
 - Deployment presence is chain-specific. Generated records validate successful
   deployment receipts and retain current, previous, and v1 history. Pending
-  mainnet proposals do not enable new targets. Regeneration must use the pinned
+  proposals do not enable new targets. Regeneration must use the pinned
   executed artifacts; an address on one chain is not evidence for another.
 - A successful gateway transaction can leave a fee payment pending in gateway
   custody. Receipt success does not prove fee settlement. Retries and
   finalization have distinct outcomes; `pendingCallCount` is a lifetime counter,
   not an active pending balance. The client does not display an indexed
   per-project custody balance.
+
+The current snapshot records executed deployments on Ethereum, Optimism, Base,
+Arbitrum and the three full-stack testnets. OP Sepolia remains feed-only. This
+enables migration preparation on those mainnets; it does not migrate existing
+projects or replace the live registry allowlist checks.
 
 ## Trust assumptions and accepted behaviors
 
@@ -30,7 +35,7 @@ They are not silently substituted for an unavailable current selection. Mirrorin
 requires valid source ordering and skips dependent pool steps when hook selection
 is unavailable. Custom addresses require explicit per-chain selection.
 
-Current buyback metadata has three words; a quote below the minting floor falls
+Current buyback metadata has three words; a swap below the TWAP floor falls
 back to minting. Earlier generations retain their own behavior. A historical
 two-day TWAP sentinel must not become the new hook's actual pool window.
 

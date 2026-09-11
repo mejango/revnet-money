@@ -2,7 +2,7 @@
   "format": "revnet-v6-app-deployments-2",
   "source": {
     "repository": "https://github.com/Bananapus/deploy-all-v6",
-    "commit": "8522541297557c80f8bc2dd674c3098f8849b527"
+    "commit": "a6ab40c5806b52ff4cb21f9eaefe275e621796f9"
   },
   "chains": {
     "1": {
