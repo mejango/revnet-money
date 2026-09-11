@@ -160,10 +160,19 @@ describe("mirroring to another chain", () => {
       { chainId: 10, projectId: 7 },
       async (step, chainId, projectId) => {
         seen.push({ kind: step.kind, chainId, projectId });
-        return { values: { ...step.values, fee: 3_000n, tickSpacing: 60n } };
+        return {
+          values:
+            step.kind === "setPoolFor"
+              ? { ...step.values, fee: 3_000n, tickSpacing: 60n }
+              : step.values,
+        };
       },
     );
-    expect(seen).toEqual([{ kind: "setPoolFor", chainId: 10, projectId: 7 }]);
+    expect(seen).toEqual([
+      { kind: "setHookFor", chainId: 10, projectId: 7 },
+      { kind: "setPoolFor", chainId: 10, projectId: 7 },
+      { kind: "setTerminalFor", chainId: 10, projectId: 7 },
+    ]);
     expect(result.skipped).toEqual([]);
     expect(result.steps.map((step) => [step.kind, step.chainId, step.projectId])).toEqual([
       ["setHookFor", 10, 7],
@@ -186,8 +195,9 @@ describe("mirroring to another chain", () => {
       { chainId: 10, projectId: 7 },
       async () => null,
     );
-    expect(result.steps.map((step) => step.kind)).toEqual(["setHookFor"]);
+    expect(result.steps).toEqual([]);
     expect(result.skipped).toEqual([
+      { label: "Set buyback hook", reason: expect.stringMatching(/Optimism/) },
       { label: "Register buyback pool", reason: expect.stringMatching(/Optimism/) },
     ]);
   });

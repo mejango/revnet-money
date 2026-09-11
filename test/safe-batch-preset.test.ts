@@ -1,4 +1,5 @@
-import { buildStep } from "@/lib/safe-batch";
+import { rolloutTargets } from "@/lib/protocol-rollout";
+import { buildStep, mirrorBatch } from "@/lib/safe-batch";
 import {
   mapTerminalToken,
   resolvePreset,
@@ -8,11 +9,23 @@ import {
 } from "@/lib/safe-batch-presets";
 import { NATIVE_TOKEN, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
 import { getAddress, zeroAddress, type Address } from "viem";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // wallet-action:safe-batch
+// The previous hook remains here deliberately: these tests exercise migration from a retired generation.
+
+// Model a staged rollout explicitly so future mainnet data regeneration needs no test rewrite.
+vi.mock("@/lib/protocol-rollout", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/protocol-rollout")>();
+  return {
+    ...actual,
+    rolloutTargets: (chainId: number) =>
+      [84532, 11155111, 421614].includes(chainId) ? actual.rolloutTargets(chainId) : null,
+  };
+});
 
 const preset = SAFE_BATCH_PRESETS[0]!;
+const targets = rolloutTargets(84532)!;
 const OLD_HOOK = getAddress("0x77bee1ad2ac0ace98a9b5b58d75685c8b4d94948");
 const OLD_TERMINAL = "0x5555555555555555555555555555555555555555" as Address;
 const BASE_USDC = USDC_ADDRESSES[8453] as Address;
@@ -21,13 +34,15 @@ type Pools = Partial<Record<string, { twap: bigint; fee: number; tickSpacing: nu
 
 /** A fake chain: which targets have code, the project's current hook/terminal, and its pools per hook. */
 function stubClient({
-  deployed = [preset.targets.hook, preset.targets.terminal],
+  deployed = [targets.hook, targets.terminal],
   hookOf = OLD_HOOK,
   terminalOf = OLD_TERMINAL,
   pools = {},
   carried = {},
+  allowed = true,
 }: {
   deployed?: Address[];
+  allowed?: boolean;
   hookOf?: Address;
   terminalOf?: Address;
   /** Pools on the current hook, keyed by the read token (address(0) for native). */
@@ -50,12 +65,15 @@ function stubClient({
     }) => {
       const token = lower(args?.[1]);
       switch (functionName) {
+        case "isHookAllowed":
+        case "isTerminalAllowed":
+          return allowed;
         case "hookOf":
           return hookOf;
         case "terminalOf":
           return terminalOf;
         case "twapWindowOf":
-          if (lower(address) === lower(preset.targets.hook)) return carried[token] ?? 0n;
+          if (lower(address) === lower(targets.hook)) return carried[token] ?? 0n;
           return pools[token]?.twap ?? 0n;
         case "poolKeyOf": {
           const pool = pools[token];
@@ -76,8 +94,17 @@ function stubClient({
 
 describe("Move to buyback 1.4.0 + gateway", () => {
   it("is unavailable where either target has no code", async () => {
-    const client = stubClient({ deployed: [preset.targets.hook] });
-    await expect(resolvePreset(preset, { chainId: 8453, projectId: 6, client })).resolves.toEqual({
+    const client = stubClient({ deployed: [targets.hook] });
+    await expect(resolvePreset(preset, { chainId: 84532, projectId: 6, client })).resolves.toEqual({
+      status: "unavailable",
+      message: "Not deployed on Base Sepolia yet.",
+    });
+  });
+
+  it("keeps pending mainnets unavailable until canonical deployment records land", async () => {
+    await expect(
+      resolvePreset(preset, { chainId: 8453, projectId: 6, client: stubClient({}) }),
+    ).resolves.toEqual({
       status: "unavailable",
       message: "Not deployed on Base yet.",
     });
@@ -90,17 +117,70 @@ describe("Move to buyback 1.4.0 + gateway", () => {
         throw new Error("origin not allowed");
       },
     } as unknown as PresetReadClient;
-    await expect(resolvePreset(preset, { chainId: 8453, projectId: 6, client })).resolves.toEqual({
+    await expect(resolvePreset(preset, { chainId: 84532, projectId: 6, client })).resolves.toEqual({
       status: "unavailable",
-      message: "Could not read Base: origin not allowed",
+      message: "Could not read Base Sepolia: origin not allowed",
     });
   });
 
+  it.each([
+    "hookOf",
+    "old window",
+    "target window",
+    "terminalOf",
+    "isHookAllowed",
+    "isTerminalAllowed",
+  ])("refuses migration when the required %s read fails", async (failure) => {
+    const base = stubClient({
+      pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } },
+    });
+    const client = {
+      ...base,
+      readContract: async (request: { address: Address; functionName: string }) => {
+        const targetHook = request.address.toLowerCase() === targets.hook.toLowerCase();
+        if (
+          request.functionName === failure ||
+          (request.functionName === "twapWindowOf" &&
+            (failure === "target window" ? targetHook : failure === "old window" && !targetHook))
+        ) {
+          throw new Error("RPC unavailable");
+        }
+        return (base.readContract as (request: unknown) => Promise<unknown>)(request);
+      },
+    } as unknown as PresetReadClient;
+    await expect(resolvePreset(preset, { chainId: 84532, projectId: 2, client })).rejects.toThrow(
+      "RPC unavailable",
+    );
+  });
+
+  it("does not prepare or mirror targets that the live registries disallow", async () => {
+    const unavailable = await resolvePreset(preset, {
+      chainId: 84532,
+      projectId: 2,
+      client: stubClient({ allowed: false }),
+    });
+    expect(unavailable.status).toBe("unavailable");
+    const migration = await resolvePreset(preset, {
+      chainId: 84532,
+      projectId: 2,
+      client: stubClient({ pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } } }),
+    });
+    if (migration.status !== "ready") throw new Error(migration.message);
+    const mirrored = await mirrorBatch(
+      migration.steps,
+      84532,
+      { chainId: 11155111, projectId: 2 },
+      stepResolverFor(() => stubClient({ allowed: false })),
+    );
+    expect(mirrored.steps).toEqual([]);
+    expect(mirrored.skipped).toHaveLength(3);
+  });
+
   it("reports nothing to do when the hook and gateway are already current", async () => {
-    const client = stubClient({ hookOf: preset.targets.hook, terminalOf: preset.targets.terminal });
-    await expect(resolvePreset(preset, { chainId: 8453, projectId: 6, client })).resolves.toEqual({
+    const client = stubClient({ hookOf: targets.hook, terminalOf: targets.terminal });
+    await expect(resolvePreset(preset, { chainId: 84532, projectId: 6, client })).resolves.toEqual({
       status: "nothing",
-      message: "Nothing to do on Base: already on the current hook and gateway.",
+      message: "Nothing to do on Base Sepolia: already on the current hook and gateway.",
     });
   });
 
@@ -108,7 +188,7 @@ describe("Move to buyback 1.4.0 + gateway", () => {
     const client = stubClient({
       pools: { [zeroAddress]: { twap: 172_800n, fee: 10_000, tickSpacing: 200 } },
     });
-    const result = await resolvePreset(preset, { chainId: 8453, projectId: 2, client });
+    const result = await resolvePreset(preset, { chainId: 84532, projectId: 2, client });
     if (result.status !== "ready") throw new Error(result.message);
     expect(result.steps.map((step) => step.kind)).toEqual([
       "setHookFor",
@@ -133,22 +213,24 @@ describe("Move to buyback 1.4.0 + gateway", () => {
 
   it("keeps a deliberate window and writes USDC pools with the chain's USDC address", async () => {
     const client = stubClient({
-      pools: { [BASE_USDC.toLowerCase()]: { twap: 900n, fee: 10_000, tickSpacing: 200 } },
+      pools: {
+        [USDC_ADDRESSES[84532].toLowerCase()]: { twap: 900n, fee: 10_000, tickSpacing: 200 },
+      },
     });
-    const result = await resolvePreset(preset, { chainId: 8453, projectId: 6, client });
+    const result = await resolvePreset(preset, { chainId: 84532, projectId: 6, client });
     if (result.status !== "ready") throw new Error(result.message);
     expect(result.steps[1]!.values).toEqual({
       fee: 10_000n,
       tickSpacing: 200n,
       twapWindow: 900n,
-      terminalToken: BASE_USDC,
+      terminalToken: USDC_ADDRESSES[84532],
     });
     expect(result.notes).toEqual([]);
   });
 
   it("adds no setPoolFor when the project has no pool", async () => {
     const result = await resolvePreset(preset, {
-      chainId: 10,
+      chainId: 11155111,
       projectId: 6,
       client: stubClient({}),
     });
@@ -158,11 +240,11 @@ describe("Move to buyback 1.4.0 + gateway", () => {
 
   it("skips a pool the new hook already carries and a terminal already set", async () => {
     const client = stubClient({
-      terminalOf: preset.targets.terminal,
+      terminalOf: targets.terminal,
       pools: { [zeroAddress]: { twap: 900n, fee: 3_000, tickSpacing: 60 } },
       carried: { [zeroAddress]: 900n },
     });
-    const result = await resolvePreset(preset, { chainId: 8453, projectId: 2, client });
+    const result = await resolvePreset(preset, { chainId: 84532, projectId: 2, client });
     if (result.status !== "ready") throw new Error(result.message);
     expect(result.steps.map((step) => step.kind)).toEqual(["setHookFor"]);
     expect(result.notes).toEqual(["Native pool is already registered on the new hook."]);
@@ -170,6 +252,43 @@ describe("Move to buyback 1.4.0 + gateway", () => {
 });
 
 describe("mirroring per-chain steps", () => {
+  it("cannot mirror migration selections or their dependent pool onto pending mainnets or OP Sepolia", async () => {
+    const migration = await resolvePreset(preset, {
+      chainId: 84532,
+      projectId: 2,
+      client: stubClient({ pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } } }),
+    });
+    if (migration.status !== "ready") throw new Error(migration.message);
+    const resolver = stepResolverFor(() =>
+      stubClient({ pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } } }),
+    );
+    for (const chainId of [1, 10, 8453, 42161, 11155420]) {
+      const result = await mirrorBatch(migration.steps, 84532, { chainId, projectId: 2 }, resolver);
+      expect(result.steps).toEqual([]);
+      expect(result.skipped).toHaveLength(3);
+    }
+    const reordered = await mirrorBatch(
+      [migration.steps[1]!, migration.steps[0]!, migration.steps[2]!],
+      84532,
+      { chainId: 8453, projectId: 2 },
+      resolver,
+    );
+    expect(reordered.steps).toEqual([]);
+    expect(reordered.skipped).toHaveLength(1);
+    const available = await mirrorBatch(
+      migration.steps,
+      84532,
+      { chainId: 11155111, projectId: 2 },
+      resolver,
+    );
+    expect(available.steps.map((step) => step.kind)).toEqual([
+      "setHookFor",
+      "setPoolFor",
+      "setTerminalFor",
+    ]);
+    expect(available.skipped).toEqual([]);
+  });
+
   it("maps USDC to the target chain's USDC and leaves native alone", () => {
     expect(mapTerminalToken(BASE_USDC, 8453, 10)).toBe(USDC_ADDRESSES[10]);
     expect(mapTerminalToken(NATIVE_TOKEN, 8453, 10)).toBe(NATIVE_TOKEN);

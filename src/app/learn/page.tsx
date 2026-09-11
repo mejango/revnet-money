@@ -529,7 +529,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "TWAP",
-        text: "time-weighted average price: a trading price averaged over a period. It helps compare payment paths, but does not guarantee the price of a trade.",
+        text: "time-weighted average price: a trading price averaged over a period. It helps compare payment paths. The current buyback hook creates tokens if a swap cannot meet this price floor; previous hooks can revert instead.",
+      },
+      {
+        key: "Router gateway",
+        text: "a payment entry selected by the revnet’s router registry on networks that have upgraded. It holds funds before routing them. Some failed protocol fee payments remain held for retry, or return to the source revnet after repeated failures; a held fee is still owed.",
       },
       {
         key: "Beneficiary",

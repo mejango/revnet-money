@@ -37,7 +37,9 @@
     "check": "npm run dependencies:check && npm run dead-code:check && npm run env:test && npm run deployment:check && npm run typecheck && npm run lint && npm run format:ratchet && npm run source:check && npm run protocol:check && npm run test:ci && npm run build:browser && npm run standalone:check && npm run bundle:check && npm run test:browser",
     "ts:compile": "tsc",
     "format:write": "prettier --write \"**/*.{js,jsx,mjs,ts,tsx,json,css,scss}\"",
-    "format:check": "prettier --check \"**/*.{js,jsx,mjs,ts,tsx,json,css,scss}\""
+    "format:check": "prettier --check \"**/*.{js,jsx,mjs,ts,tsx,json,css,scss}\"",
+    "protocol:rollout:generate": "node scripts/generate-protocol-rollout.mjs",
+    "protocol:rollout:check": "node scripts/generate-protocol-rollout.mjs --check"
   },
   "dependencies": {
     "@bananapus/nana-sdk-core": "^2.3.2",

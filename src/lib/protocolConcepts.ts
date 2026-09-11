@@ -52,7 +52,7 @@ export const PROTOCOL_CONCEPTS = {
 
   /** JBBuybackHook._requireValidTwapWindow — 5 minutes to 2 days. */
   twapWindow:
-    "How much trading history to use for an average price. This helps check a trade before it goes through. A longer window is harder to manipulate but slower to reflect price changes. Allowed range: 5 minutes to 2 days.",
+    "How much trading history to use for an average price. This helps check a trade before it goes through. A longer window is harder to manipulate but slower to reflect price changes. Allowed range: 5 minutes to 2 days. With the current buyback hook, a trade below the average-price floor falls back to creating tokens. Previous hooks can revert instead.",
 } as const;
 
 /**

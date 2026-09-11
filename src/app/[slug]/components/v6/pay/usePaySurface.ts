@@ -1,12 +1,12 @@
 "use client";
 
+import { routerEntriesFor } from "@/lib/protocol-rollout";
 import { payTokenCurrencyId, routerPayRouteWorks, V6PayTokenOption } from "@/lib/v6/pay";
 import {
   JBChainId,
   jbContractAddress,
   JBCoreContracts,
   jbDirectoryAbi,
-  JBRouterTerminalContracts,
   NATIVE_TOKEN,
   USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
@@ -30,9 +30,9 @@ export interface V6PaySurface {
  * ruleset gates (website/ readProjectPaymentSurface parity).
  *
  * Direct tokens = the multi terminal's accounting contexts. When the project
- * also lists the router terminal registry, native ETH and/or USDC that it does
+ * also lists a known router registry, gateway, or current/previous router, native ETH and/or USDC that it does
  * NOT accept directly are offered as swap-via-router options — but ONLY when a
- * live `previewPayFor` probe through the registry succeeds (a listed router
+ * live `previewPayFor` probe through an attached entry succeeds (a listed router
  * with no route reverts at pay time). Built atomically so the token list is
  * never a partial snapshot.
  */
@@ -48,9 +48,6 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
       const client = publicClient as PublicClient;
       const nativeSymbol = "ETH";
       const directory = jbContractAddress[6][JBCoreContracts.JBDirectory][chainId];
-      const routerRegistry = jbContractAddress[6][
-        JBRouterTerminalContracts.JBRouterTerminalRegistry
-      ]?.[chainId] as Address | undefined;
 
       const [contexts, ruleset, terminalsRaw] = await Promise.all([
         getAccountingContexts(client, { chainId, projectId }),
@@ -76,14 +73,13 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
       );
 
       const terminals = (terminalsRaw ?? []).filter(Boolean) as Address[];
-      const hasRouter =
-        !!routerRegistry && terminals.some((t) => t.toLowerCase() === routerRegistry.toLowerCase());
+      const routerEntries = routerEntriesFor(chainId, terminals);
 
       // Router candidates: ETH/USDC that aren't already accepted directly,
       // each gated by an actual previewPayFor route probe (cached).
       const has = (a: string) => direct.some((t) => t.token.toLowerCase() === a.toLowerCase());
       let routable: V6PayTokenOption[] = [];
-      if (hasRouter && routerRegistry) {
+      if (routerEntries.length) {
         const candidates: V6PayTokenOption[] = [];
         if (!has(NATIVE_TOKEN)) {
           candidates.push({
@@ -106,14 +102,13 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
         }
         const gated = await Promise.all(
           candidates.map(async (c) =>
-            (await routerPayRouteWorks(
-              client,
-              chainId,
-              projectId,
-              routerRegistry,
-              c.token,
-              c.decimals,
-            ))
+            (
+              await Promise.all(
+                routerEntries.map((entry) =>
+                  routerPayRouteWorks(client, chainId, projectId, entry, c.token, c.decimals),
+                ),
+              )
+            ).some(Boolean)
               ? c
               : null,
           ),

@@ -11,7 +11,14 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import {
+  RETAINED_FEE_NOTE,
+  rolloutAddress,
+  rolloutChain,
+  rolloutContractName,
+} from "@/lib/protocol-rollout";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
+import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -53,6 +60,11 @@ type BuybackChainState = ChainProjectRow & {
   hook: Address | null;
   /** The terminal the router registry forwards into, or null. */
   terminal: Address | null;
+  defaultHook: Address | null;
+  defaultTerminal: Address | null;
+  registryAttached: boolean;
+  gateway: Address | null;
+  router: Address | null;
   /** Pair tokens with an initialized pool on this chain, and their TWAP window. */
   pools: { label: string; token: Address; twap: number }[];
   poolSummary: string;
@@ -124,6 +136,9 @@ async function resolveBuybackHook(row: ChainProjectRow): Promise<Address | null>
     return hook && hook !== zeroAddress ? hook : null;
   }
   if (concrete && sameAddress(dataHook, concrete)) return dataHook;
+  const historical = rolloutChain(row.chainId)?.history.JBBuybackHook;
+  if (historical && Object.values(historical).some((hook) => sameAddress(dataHook, hook)))
+    return dataHook;
   return null; // 721 tiers, croptop, defifa, unknown — no buyback pool.
 }
 
@@ -132,7 +147,9 @@ async function resolveBuybackHook(row: ChainProjectRow): Promise<Address | null>
  * JBDirectory.isTerminalOf before trusting the registry's terminalOf (which
  * also resolves a default for non-users).
  */
-async function resolveRouterTerminal(row: ChainProjectRow): Promise<Address | null> {
+async function resolveRouterTerminal(
+  row: ChainProjectRow,
+): Promise<{ terminal: Address; registryAttached: boolean } | null> {
   const client = publicClientFor(row.chainId);
   const directory = v6ContractAddress(JBCoreContracts.JBDirectory, row.chainId);
   const registry = v6ContractAddress(
@@ -163,9 +180,17 @@ async function resolveRouterTerminal(row: ChainProjectRow): Promise<Address | nu
         args: [projectId],
       })
       .catch(() => null);
-    return terminal && terminal !== zeroAddress ? terminal : null;
+    return terminal && terminal !== zeroAddress ? { terminal, registryAttached: true } : null;
   }
-  if (await isTerminal(direct)) return direct!;
+  const deployments = [
+    rolloutAddress("JBRouterTerminalGateway", row.chainId),
+    direct,
+    ...Object.values(rolloutChain(row.chainId)?.history.JBRouterTerminal ?? {}),
+  ];
+  for (const deployed of deployments) {
+    if (deployed && (await isTerminal(deployed as Address)))
+      return { terminal: deployed as Address, registryAttached: false };
+  }
   return null;
 }
 
@@ -180,7 +205,7 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
     row.chainId,
   );
 
-  const [hook, terminal, defaultHook, defaultTerminal] = await Promise.all([
+  const [hook, selectedTerminal, defaultHook, defaultTerminal] = await Promise.all([
     resolveBuybackHook(row).catch(() => null),
     resolveRouterTerminal(row).catch(() => null),
     buybackRegistry
@@ -203,12 +228,28 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
       : Promise.resolve(null),
   ]);
 
+  // The live selection retains its attachment provenance even when another RPC read fails.
+  const terminal = selectedTerminal?.terminal ?? null;
+  const registryAttached = selectedTerminal?.registryAttached ?? false;
+  const gateway = sameAddress(terminal, rolloutAddress("JBRouterTerminalGateway", row.chainId))
+    ? terminal
+    : null;
+  const knownRouter =
+    terminal && rolloutContractName(row.chainId, terminal)?.startsWith("JBRouterTerminal (");
+  const router = gateway
+    ? await client
+        .readContract({ address: gateway, abi: routerGatewayAbi, functionName: "ROUTER" })
+        .catch(() => null)
+    : knownRouter
+      ? terminal
+      : null;
+
   // Chains without a full Uniswap v4 AMM have a registry with no default hook
   // or allowlisted terminal — setHookFor/initializePoolFor would revert there.
   const buybackAvailable = !!buybackRegistry && !!defaultHook && defaultHook !== zeroAddress;
   const routerAvailable = !!routerRegistry && !!defaultTerminal && defaultTerminal !== zeroAddress;
 
-  let poolSummary = hook ? "Not initialized" : "Set the hook first";
+  let poolSummary = hook ? "No initialized pool resolved" : "No hook resolved";
   let pools: BuybackChainState["pools"] = [];
   if (hook) {
     const projectId = BigInt(row.projectId);
@@ -244,6 +285,11 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
     routerAvailable,
     hook,
     terminal,
+    defaultHook,
+    defaultTerminal,
+    registryAttached,
+    gateway,
+    router,
     pools,
     poolSummary,
   };
@@ -265,7 +311,7 @@ const ACTIONS: Record<
   terminal: {
     title: "Set router terminal",
     description:
-      "Sets the terminal the swap router forwards into after swapping USDC or another payment token. Requires SET_ROUTER_TERMINAL.",
+      "Selects the gateway or terminal used by the router registry. On upgraded networks, choose the gateway; it holds funds before calling the underlying swap router. Requires SET_ROUTER_TERMINAL.",
     danger:
       "This changes where router-swapped funds are deposited. A wrong terminal can misdirect or strand funds.",
     fieldLabel: "Router terminal",
@@ -283,7 +329,7 @@ const ACTIONS: Record<
     description:
       "Changes how far back the buyback hook averages the pool price to decide swap-vs-issue and to floor the swap. Written straight to the project's hook. Requires SET_BUYBACK_TWAP.",
     danger:
-      "A window longer than the pool's price actually trends floors swaps above what the pool can fill, and every payment routed to a swap reverts. A very short window is cheaper to manipulate. 300–172800 seconds.",
+      "A longer window reacts slowly to price changes. The current buyback hook falls back to minting when a swap cannot meet the TWAP floor; previous hooks can still revert. A very short window is cheaper to manipulate. 300–172800 seconds.",
     fieldLabel: "Pair (terminal) token",
   },
 };
@@ -334,6 +380,17 @@ export function BuybackRouterCard({
           signer proposes the call to each chain&apos;s Safe queue for the other signers to confirm.
           Initialize pools one chain at a time with Safe or other networks.
         </p>
+        <p className="mt-2 text-xs text-zinc-500">{RETAINED_FEE_NOTE}</p>
+        {states
+          .filter((state) => state.terminal)
+          .map((state) => (
+            <p key={`route:${state.chainId}`} className="mt-2 break-all text-xs text-zinc-600">
+              {chainName(state.chainId)}:{" "}
+              {state.registryAttached ? "registry → " : "direct terminal → "}
+              {rolloutContractName(state.chainId, state.terminal!) ?? "selected terminal"}
+              {state.gateway ? ` → router ${state.router ?? "unavailable"}` : ""}
+            </p>
+          ))}
         {stateQuery.isLoading ? (
           <SkeletonLines lines={4} className="mt-3" />
         ) : stateQuery.isError ? (
@@ -430,7 +487,7 @@ function ActionRow({
                     className="text-xs font-mono"
                   />
                 ) : (
-                  <p className="text-xs text-zinc-500">Not set</p>
+                  <p className="text-xs text-zinc-500">Not set or unavailable</p>
                 )}
                 <p className="text-xs text-zinc-500 mt-0.5">Same on all chains</p>
               </div>
@@ -462,7 +519,7 @@ function ActionRow({
                         className="text-xs font-mono"
                       />
                     ) : (
-                      <p className="text-xs text-zinc-500">Not set</p>
+                      <p className="text-xs text-zinc-500">Not set or unavailable</p>
                     )}
                   </div>
                 </div>
@@ -554,9 +611,13 @@ function BuybackActionForm({
       available.map((state) => [
         state.chainId,
         kind === "hook"
-          ? (state.hook ?? "")
+          ? state.defaultHook && state.defaultHook !== zeroAddress
+            ? state.defaultHook
+            : ""
           : kind === "terminal"
-            ? (state.terminal ?? "")
+            ? state.defaultTerminal && state.defaultTerminal !== zeroAddress
+              ? state.defaultTerminal
+              : ""
             : // Pre-select the pool the chain already has, so a TWAP edit targets
               // an initialized pair instead of a native pool a USDC revnet never
               // had. Native pools read back as address(0); show the sentinel.

@@ -163,7 +163,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Pool",
-        text: "a Uniswap V4 pool per accepted token is initialized at the issuance price with a 1% fee tier, 200 tick spacing, and a two-day TWAP window. It starts empty; liquidity is added later.",
+        text: "a Uniswap V4 pool per accepted token is initialized at the issuance price with a 1% fee tier and 200 tick spacing. The current buyback hook turns the deployer’s 172800-second sentinel into a 30-minute TWAP window; read twapWindowOf for the project’s actual setting. It starts empty; liquidity is added later.",
       },
       {
         key: "Chains",
@@ -197,7 +197,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
         [
           "Buyback router",
-          "Point at a buyback hook, pick a router terminal, set the TWAP window (5 minutes to just under 2 days), or initialize a pool by hand if the automatic one was front-run",
+          "Point at a buyback hook, select the router gateway through the registry where deployed, set the TWAP window (5 minutes to 2 days), or initialize a pool by hand if the automatic one was front-run",
         ],
         [
           "Shop",
@@ -630,7 +630,8 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           { key: "Shop metadata", value: "build721PayMetadata" },
           {
             key: "Not directly accepted?",
-            value: "resolvePaymentTerminal finds the router terminal; chooseBestPayRoute compares",
+            value:
+              "resolvePaymentTerminal finds the registry entry; terminalOf resolves its gateway or previous router; chooseBestPayRoute compares",
           },
         ],
         code: [
@@ -804,7 +805,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ["Add shop tiers", "JB721TiersHook.adjustTiers"],
         ["Operator mint", "JB721TiersHook.mintFor"],
         ["Buyback hook", "JBBuybackHookRegistry.setHookFor"],
-        ["Router terminal", "JBRouterTerminalRegistry.setTerminalFor"],
+        ["Router gateway / terminal", "JBRouterTerminalRegistry.setTerminalFor"],
         ["TWAP window", "JBBuybackHook.setTwapWindowOf"],
         ["Initialize pool", "JBBuybackHookRegistry.initializePoolFor"],
         ["Add chains", "REVDeployer.deploySuckersFor"],
@@ -1436,8 +1437,16 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         text: "the registered sucker's source-chain cash out is untaxed and skips the launch lock, using local backing only. This permits bridge accounting. Tokens received by an ordinary holder on the destination do not acquire an exemption for a later cash out.",
       },
       {
+        key: "Buyback TWAP floor",
+        text: "buyback hook 1.4.0 falls back to minting when a pool swap cannot meet the TWAP floor. The previous hook may revert instead. Read the live project hook and pool window; deployment status and project migration are separate.",
+      },
+      {
+        key: "Retained router fees",
+        text: "the gateway takes custody before routing. Eligible failed fee and protocol-payer calls retain the input in a pending call; this is not fee forgiveness or a completed payment. Gateway custody is separate from core held-fee refund accounting, and a successful outer receipt alone does not prove settlement. Index QueuePendingCall, RecordTerminalCallFailure, ProcessPendingCall, and RefundPendingCall with the source project, token, amount, memo, metadata, and error class. pendingCallCount counts all identifiers ever issued; pendingCallCommitmentOf identifies calls still pending. Permissionless processPendingCall[WithGas] retries; finalizePendingCall[WithGas] makes a final attempt and can refund the source project after the required matching failures and delay. Mainnet gateways become available only when canonical deployment records land; OP Sepolia has the feed but no default hook or gateway.",
+      },
+      {
         key: "Router terminal cold start",
-        text: "the router registry reverts accountingContextForTokenOf for projects below its threshold; it is not universally accepting. Probe with previewPayFor before assuming a route.",
+        text: "the router registry reverts accountingContextForTokenOf for projects below its threshold. Resolve registry.terminalOf(projectId): on upgraded chains it selects JBRouterTerminalGateway, whose ROUTER() is the underlying JBRouterTerminal. The raw new router cannot be selected in the registry. Previous project selections remain effective until migrated. Probe with previewPayFor before assuming a route.",
       },
       {
         key: "The 7-day lock",

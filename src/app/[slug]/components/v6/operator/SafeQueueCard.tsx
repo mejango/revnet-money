@@ -10,6 +10,7 @@ import {
   type SafeAuthorityIdentity,
 } from "@/lib/cross-chain-authority";
 import { PROJECT_HANDLE_CHAIN_ID } from "@/lib/projectHandles";
+import { protocolQueueLabel } from "@/lib/protocol-queue-label";
 import {
   bindingMatchesProject,
   classifyQueuedProjectHandleTransaction,
@@ -537,8 +538,12 @@ export function SafeQueueCard({
                     <li key={`${tx.nonce}:${tx.safeTxHash ?? tx.data}`} className="py-3 text-xs">
                       <details>
                         <summary className="cursor-pointer font-bold">
-                          #{tx.nonce} | {describeQueuedBatch(tx) ?? tx.data?.slice(0, 10) ?? "0x"} |{" "}
-                          {confirmations.length}/{row.policy.threshold} signatures
+                          #{tx.nonce} |{" "}
+                          {describeQueuedBatch(tx) ??
+                            protocolQueueLabel(row.chainId, tx) ??
+                            tx.data?.slice(0, 10) ??
+                            "0x"}{" "}
+                          | {confirmations.length}/{row.policy.threshold} signatures
                         </summary>
                         {handleBinding ? (
                           <p className="mt-2 font-medium text-melon-800">

@@ -1,3 +1,4 @@
+import { routerEntriesFor } from "@/lib/protocol-rollout";
 import {
   getJBContractAddress,
   JBChainId,
@@ -32,11 +33,12 @@ export async function resolveBestV6PayRoute(args: {
   token: Address;
   amount: bigint;
   beneficiary: Address;
+  attachedTerminals?: readonly Address[];
 }): Promise<V6PayRoute | null> {
   const { client, chainId, projectId, token, amount, beneficiary } = args;
 
   const previews = await Promise.all(
-    v6PayRouteCandidates(chainId).map(async (route) => {
+    v6PayRouteCandidates(chainId, args.attachedTerminals).map(async (route) => {
       try {
         const preview = await previewPay(client, {
           chainId,
@@ -62,21 +64,42 @@ export async function resolveBestV6PayRoute(args: {
   return best;
 }
 
-function v6PayRouteCandidates(chainId: JBChainId): PaymentTerminal[] {
+function v6PayRouteCandidates(
+  chainId: JBChainId,
+  attachedTerminals?: readonly Address[],
+): PaymentTerminal[] {
   const routes: PaymentTerminal[] = [];
 
-  try {
-    routes.push({
-      address: getJBContractAddress(JBRouterTerminalContracts.JBRouterTerminalRegistry, 6, chainId),
-      abi: jbRouterTerminalRegistryAbi,
-      type: "swap",
-    });
-  } catch {
-    // Router registry not deployed on this chain.
-  }
+  if (attachedTerminals) {
+    routes.push(
+      ...routerEntriesFor(chainId, attachedTerminals).map((address) => ({
+        address,
+        abi: jbRouterTerminalRegistryAbi,
+        type: "swap" as const,
+      })),
+    );
+  } else
+    try {
+      routes.push({
+        address: getJBContractAddress(
+          JBRouterTerminalContracts.JBRouterTerminalRegistry,
+          6,
+          chainId,
+        ),
+        abi: jbRouterTerminalRegistryAbi,
+        type: "swap",
+      });
+    } catch {
+      // Router registry not deployed on this chain.
+    }
 
   const multi = jbContractAddress[6].JBMultiTerminal[chainId];
-  if (multi && !routes.some((route) => route.address.toLowerCase() === multi.toLowerCase())) {
+  if (
+    multi &&
+    (!attachedTerminals ||
+      attachedTerminals.some((address) => address.toLowerCase() === multi.toLowerCase())) &&
+    !routes.some((route) => route.address.toLowerCase() === multi.toLowerCase())
+  ) {
     routes.push({ address: multi, abi: jbMultiTerminalAbi, type: "multi" });
   }
 
