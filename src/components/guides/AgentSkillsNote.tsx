@@ -19,8 +19,7 @@ export function AgentSkillsNote({
         <a href={SKILLS_URL} className="text-melon-900 underline underline-offset-4">
           Juicebox V6 skills
         </a>{" "}
-        for contract addresses, interfaces, and economics. Ask it to cite the current contracts so
-        you can check its answers{prompt ? " and review proposed transactions before signing" : ""}.
+        to help it explain anything Juicebox.
       </p>
       <p className="mt-2 leading-relaxed [overflow-wrap:anywhere]">
         Relevant skills:{" "}

@@ -20,7 +20,7 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
       <div className="pb-7">
         <label className="block text-md font-semibold leading-6 mb-3">3. Start Time</label>
         <p className="text-md text-zinc-500 mb-3">
-          By default, the revnet starts ~10 minutes after deployment.
+          By default, the revnet starts about 10 minutes after you prepare the launch.
         </p>
         <label className="flex items-center gap-2 cursor-pointer mb-3">
           <input
@@ -71,7 +71,7 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
             3. Start Time
           </label>
           <p className="text-md text-zinc-500 mb-3">
-            How many issuance cuts of the previous stage before this stage starts?
+            After how many cuts to the previous stage’s token rate should this stage start?
           </p>
           <div className="flex items-center gap-2">
             <div className="relative w-32">
@@ -105,7 +105,7 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
           <ul className="list-disc list-inside">
             <li className="flex">
               <span className="mr-2">•</span>
-              <div>Cuts must be a positive integer.</div>
+              <div>Enter a whole number of cuts, at least 1.</div>
             </li>
           </ul>
         </NotesSection>
@@ -131,7 +131,7 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
         <ul className="list-disc list-inside">
           <li className="flex">
             <span className="mr-2">•</span>
-            <div>Days must be a multiple of this stage's issuance cut rate.</div>
+            <div>The delay must be a whole number of this stage’s cut intervals.</div>
           </li>
         </ul>
       </NotesSection>

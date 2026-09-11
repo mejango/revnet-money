@@ -33,10 +33,10 @@ import {
 
 const REPAY_STATUS_TEXT: Record<string, string> = {
   "waiting-signature": "Waiting for wallet confirmation...",
-  approving: "Approving token allowance...",
+  approving: "Approving token use...",
   pending: "Repayment pending...",
-  success: "Repayment successful!",
-  error: "Something went wrong during repayment.",
+  success: "Repayment confirmed.",
+  error: "Repayment failed.",
 };
 
 export function RepayDialog({
@@ -345,14 +345,14 @@ export function RepayDialog({
         if (finalRepayAmount === undefined || BigInt(allowance) < finalRepayAmount) {
           setHasSufficientAllowance(false);
           setAllowanceError(
-            "To calculate your repayment cost, we need permission for this loan. You will not be charged until you confirm repayment.",
+            "Allow the loan contract to use your tokens so it can check this repayment. Approval does not repay the loan.",
           );
         } else {
           setHasSufficientAllowance(true);
           setAllowanceError("");
         }
       } catch (error) {
-        setAllowanceError("Error checking allowance. Please try again.");
+        setAllowanceError("Could not check token permission. Try again.");
         setHasSufficientAllowance(false);
       } finally {
         setAllowanceChecked(true);
@@ -381,7 +381,7 @@ export function RepayDialog({
         `Cannot return more than ${formatCollateralAmount(loanData.collateral)} ${tokenSymbol}`,
       );
     } else if (inputCollateral <= 0) {
-      setCollateralError("Collateral amount must be greater than 0");
+      setCollateralError("Enter a token amount greater than 0");
     } else {
       setCollateralError("");
     }
@@ -396,7 +396,7 @@ export function RepayDialog({
       setRepayStatus("success");
       toast({
         title: "Success",
-        description: "Loan repayment completed successfully!",
+        description: "Repayment confirmed.",
       });
     }
   }, [isRepayTxLoading, isRepaySuccess, toast]);
@@ -460,7 +460,7 @@ export function RepayDialog({
 
       toast({
         title: "Approval Successful",
-        description: "Token allowance approved. You can now proceed with repayment.",
+        description: "Token use approved. You can now repay.",
       });
     } catch (error: any) {
       if (isSafeProposalPendingError(error)) {
@@ -490,7 +490,7 @@ export function RepayDialog({
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Missing required data for repayment",
+        description: "Loan details are missing. Reload and try again.",
       });
       return;
     }
@@ -659,7 +659,7 @@ export function RepayDialog({
             <DialogTitle>Repay loan</DialogTitle>
           </DialogHeader>
           <div className="text-sm text-zinc-700 space-y-4">
-            <p>Loan not found or no longer exists.</p>
+            <p>Loan not found. It may have been closed or replaced.</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -680,7 +680,7 @@ export function RepayDialog({
                 htmlFor="collateral-to-return"
                 className="block text-zinc-700 text-sm font-bold mb-1"
               >
-                How much {tokenSymbol} collateral do you want back?
+                How much {tokenSymbol} do you want to recover?
               </Label>
               <Input
                 id="collateral-to-return"
@@ -720,7 +720,7 @@ export function RepayDialog({
                     setCollateralToReturn(value);
                   }
                 }}
-                placeholder="Enter collateral amount to return"
+                placeholder="Enter tokens to recover"
                 className={collateralError ? "border-red-500" : ""}
               />
               {collateralError && <p className="text-xs text-red-500 mt-1">{collateralError}</p>}
@@ -730,23 +730,21 @@ export function RepayDialog({
           </div>
 
           <div className="mt-4">
-            <Label className="block text-zinc-700 text-sm font-bold mb-1">
-              Repayment Breakdown
-            </Label>
+            <Label className="block text-zinc-700 text-sm font-bold mb-1">Repayment details</Label>
             {loanData && (
               <div className="bg-melon-25 border border-melon-300 p-4">
                 <div className="text-sm text-zinc-600">
                   <table className="w-full">
                     <tbody className="space-y-1">
                       <tr>
-                        <td className="pr-4">Original amount borrowed:</td>
+                        <td className="pr-4">Originally borrowed:</td>
                         <td className="font-semibold text-right">
                           {formatUnits(loanData.amount, baseTokenDecimals)} {baseTokenSymbol}
                         </td>
                       </tr>
                       <tr>
                         <td className="pr-4">
-                          Amount of collateral you want back (
+                          Tokens to recover (
                           {(
                             (Number(collateralToReturn) /
                               Number(formatUnits(loanData.collateral, projectTokenDecimals))) *
@@ -764,7 +762,7 @@ export function RepayDialog({
                         repayPrincipal !== undefined && (
                           <>
                             <tr>
-                              <td className="pr-4">Amount to pay now:</td>
+                              <td className="pr-4">Pay now:</td>
                               <td className="font-semibold text-right">
                                 {formatUnits(amountToPayNow, baseTokenDecimals)} {baseTokenSymbol}
                                 {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
@@ -776,7 +774,7 @@ export function RepayDialog({
                               </td>
                             </tr>
                             <tr>
-                              <td className="pr-4">Amount rolled into new loan id:</td>
+                              <td className="pr-4">Debt left in a new loan:</td>
                               <td className="font-semibold text-right">
                                 {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
                                 {baseTokenSymbol}
@@ -788,7 +786,7 @@ export function RepayDialog({
                   </table>
                 </div>
                 {isSimulating && (
-                  <p className="text-sm text-zinc-500 mt-2">Calculating exact amounts...</p>
+                  <p className="text-sm text-zinc-500 mt-2">Checking repayment amounts...</p>
                 )}
                 {simulationError && shouldRunSimulation && (
                   <p className="text-sm text-red-500 mt-2">Error: {simulationError.message}</p>
@@ -799,7 +797,7 @@ export function RepayDialog({
                   !hasSufficientAllowance &&
                   isNativeBase === false && (
                     <p className="text-sm text-red-500 mt-2">
-                      Please approve token allowance to see exact repayment amounts
+                      Approve token use to check the repayment amount
                     </p>
                   )}
                 {!isSimulating &&
@@ -807,7 +805,7 @@ export function RepayDialog({
                   amountToPayNow === undefined &&
                   (hasSufficientAllowance || isNativeBase) && (
                     <p className="text-sm text-zinc-500 mt-2">
-                      Contract will calculate exact amounts
+                      The contract will calculate the amount
                     </p>
                   )}
               </div>
@@ -818,7 +816,7 @@ export function RepayDialog({
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-start gap-3">
                 <div className="flex-1">
-                  <p className="text-sm text-red-700 font-medium mb-2">Token Approval Required</p>
+                  <p className="text-sm text-red-700 font-medium mb-2">Token approval needed</p>
                   <p className="text-sm text-red-600 mb-3">{allowanceError}</p>
                   <ButtonWithWallet
                     targetChainId={chainId as JBChainId}
@@ -877,13 +875,15 @@ export function RepayDialog({
                 ? [
                     {
                       title: `Approve ${baseTokenSymbol}`,
-                      detail: "REVLoans can pull at most this amount; the surplus is refunded.",
+                      detail:
+                        "The loan contract can use up to this amount. Any unused payment is returned.",
                     },
                   ]
                 : [
                     {
                       title: "Repay the loan",
-                      detail: "Pays what is owed and returns the collateral to your wallet.",
+                      detail:
+                        "Repays the amount shown and creates the tokens again in your wallet.",
                     },
                   ]
             }
@@ -916,7 +916,7 @@ export function RepayDialog({
                   ) : null}
                 </SummaryRow>
                 {repayPrincipal !== undefined && loanData.amount - repayPrincipal > 0n ? (
-                  <SummaryRow label="Rolled into a new loan">
+                  <SummaryRow label="Debt left in a new loan">
                     {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
                     {baseTokenSymbol}
                   </SummaryRow>

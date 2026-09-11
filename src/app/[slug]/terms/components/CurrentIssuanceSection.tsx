@@ -65,14 +65,15 @@ export function CurrentIssuanceSection() {
 
       {timeLeft && nextIssuance && (
         <p className="text-sm text-zinc-500">
-          Cut to <span className="font-normal tabular-nums text-black">{nextIssuance}</span> in{" "}
+          Changes to <span className="font-normal tabular-nums text-black">{nextIssuance}</span> in{" "}
           {formatSeconds(timeLeft)}
         </p>
       )}
 
       {splitPercent && boostRecipient && (
         <p className="text-sm text-zinc-500">
-          {splitPercent.formatPercentage().toFixed(2)}% of issuance and buybacks to splits
+          {splitPercent.formatPercentage().toFixed(2)}% of new or bought tokens goes to the listed
+          recipients
         </p>
       )}
     </div>

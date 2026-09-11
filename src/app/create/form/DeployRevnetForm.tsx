@@ -2,6 +2,7 @@ import { useFormContext } from "@/lib/forms";
 import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { parseRevnetDraft } from "@/lib/revnet-draft";
 import Image from "next/image";
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { GoToProjectButton } from "../buttons/GoToProjectButton";
 import type { QuotedStageStart } from "../helpers/staleQuote";
@@ -58,7 +59,16 @@ export function DeployRevnetForm({
         alt="A figure holding a lightning bolt above the clouds"
       />
       <div className="mb-16 flex flex-wrap items-center justify-between gap-3 md:col-span-3">
-        <h1 className="text-2xl font-semibold">Create a revnet</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">Create a revnet</h1>
+          <p className="mt-2 text-sm text-zinc-600">
+            Set its terms below. Find definitions in the{" "}
+            <Link href="/learn#glossary" className="underline underline-offset-4">
+              glossary
+            </Link>
+            .
+          </p>
+        </div>
         <DraftImport disabled={disabled} />
       </div>
       {/* "Look" carries no chain-dependent field, so it leads. Settlement
@@ -86,7 +96,7 @@ export function DeployRevnetForm({
       {directDeployment && (
         <div className="flex flex-col items-start md:col-span-2 md:col-start-2">
           <p className="mt-4 text-sm text-zinc-600">
-            Deployment submitted. The button unlocks once the transaction is confirmed onchain.
+            Launch submitted. You can open your revnet once the chain confirms the transaction.
           </p>
           <GoToProjectButton txHash={directDeployment.hash} chainId={directDeployment.chainId} />
         </div>
@@ -114,7 +124,7 @@ function DraftImport({ disabled }: { disabled: boolean }) {
           if (!file) return;
           try {
             setValues(parseRevnetDraft(await file.text()));
-            setStatus("Draft imported. Review every section before deploying.");
+            setStatus("Draft imported. Review every section before launch.");
           } catch (error) {
             setStatus(error instanceof Error ? error.message : "Could not import that draft.");
           }

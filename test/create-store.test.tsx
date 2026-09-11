@@ -221,7 +221,7 @@ describe("store section", () => {
 
   it("says the operator can stock it later", () => {
     renderStore(validRevnetForm());
-    expect(screen.getByText(/The Operator can add items later/i)).toBeInTheDocument();
+    expect(screen.getByText(/An operator can add items later/i)).toBeInTheDocument();
   });
 
   it("adds and removes items", () => {
@@ -255,8 +255,8 @@ describe("store section", () => {
   it("keeps the operator's post-launch powers editable", () => {
     const form = validRevnetForm();
     renderStore(form);
-    fireEvent.click(screen.getByText(/Store config/));
-    fireEvent.click(screen.getByText("Mint items for free"));
+    fireEvent.click(screen.getByText(/Store settings/));
+    fireEvent.click(screen.getByText("Create items for free"));
     expect(storeState().operatorCanMint).toBe(false);
   });
 

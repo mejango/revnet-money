@@ -23,14 +23,14 @@ import { useBorrowDialog, type SelectedLoan } from "./hooks/useBorrowDialog";
 const REALLOCATE_STATUS_TEXT: Record<string, string> = {
   checking: "Checking permissions...",
   "granting-permission": "Granting permission...",
-  "permission-granted": "Permission granted. Reallocating loan...",
+  "permission-granted": "Permission granted. Refinancing loan...",
   "waiting-signature": "Waiting for wallet confirmation...",
-  pending: "Reallocating loan...",
-  "reallocation-pending": "Reallocating loan...",
-  success: "Loan reallocated successfully!",
-  "error-permission-denied": "Permission was not granted. Please approve to proceed.",
-  "error-loan-canceled": "Loan reallocation was canceled.",
-  error: "Something went wrong during loan reallocation.",
+  pending: "Refinancing loan...",
+  "reallocation-pending": "Refinancing loan...",
+  success: "Loan refinanced.",
+  "error-permission-denied": "Permission was not granted. Approve it to continue.",
+  "error-loan-canceled": "Refinancing canceled.",
+  error: "The loan could not be refinanced.",
 };
 
 export function ReallocateDialog({
@@ -151,36 +151,36 @@ export function ReallocateDialog({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Reallocate Loan</DialogTitle>
+          <DialogTitle>Refinance loan</DialogTitle>
           <DialogDescription>
-            Carve out your token's upside: maintain your original loan terms & generate a second
-            loan that pays you cash out based on your collateral's gain.
+            If the tokens backing your loan can now support more borrowing, use the extra capacity
+            for a new loan. This is called refinancing. The original debt keeps its terms.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Current Loan Details */}
+          {/* Current loan */}
           <div className="bg-zinc-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-sm mb-3">Current Loan Details</h3>
+            <h3 className="font-semibold text-sm mb-3">Current loan</h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-zinc-600">Current Collateral:</span>
+                <span className="text-zinc-600">Tokens backing loan:</span>
                 <div className="font-medium">
                   {existingCollateral.toFixed(6)} {tokenSymbol}
                 </div>
               </div>
               <div>
-                <span className="text-zinc-600">Currently Borrowed:</span>
+                <span className="text-zinc-600">Borrowed:</span>
                 <div className="font-medium">
                   {existingBorrowed.toFixed(6)} {selectedChainTokenSymbol}
                 </div>
               </div>
               <div>
-                <span className="text-zinc-600">Loan ID will be burned and replaced:</span>
+                <span className="text-zinc-600">Loan number to replace:</span>
                 <div className="font-medium">{selectedLoan?.id}</div>
               </div>
               <div>
-                <span className="text-zinc-600">Chain:</span>
+                <span className="text-zinc-600">Network:</span>
                 <div className="font-medium">{selectedLoan?.chainId}</div>
               </div>
             </div>
@@ -191,30 +191,30 @@ export function ReallocateDialog({
             <div>
               {Number(borrowableAmountFormatted) > 0 ? (
                 <div className="text-sm text-zinc-600 mb-2">
-                  Your balance on this chain: {Number(borrowableAmountFormatted).toFixed(6)}{" "}
+                  Your balance on this network: {Number(borrowableAmountFormatted).toFixed(6)}{" "}
                   {tokenSymbol}
                 </div>
               ) : (
                 <div className="text-sm text-red-600 mb-2">
-                  No {tokenSymbol} available on this chain for reallocation
+                  No extra {tokenSymbol} in your wallet on this network
                 </div>
               )}
               <div className="text-sm text-zinc-600 mb-2">
-                Borrowable amount for the new loan:{" "}
+                New loan can borrow:{" "}
                 {newLoanBorrowableAmount
                   ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)
                   : "0.000000"}{" "}
                 {selectedChainTokenSymbol}
               </div>
               <div className="text-sm text-zinc-600 mb-2">
-                Protected minimum (1% tolerance):{" "}
+                Minimum borrowed (99% of the quote):{" "}
                 {minimumBorrowAmountPreview !== undefined
                   ? Number(formatUnits(minimumBorrowAmountPreview, baseTokenDecimals)).toFixed(8)
                   : "Unavailable"}{" "}
                 {selectedChainTokenSymbol}
               </div>
               <div className="text-sm text-zinc-600 mb-2">
-                Head room to reallocate:{" "}
+                Tokens available to back the new loan:{" "}
                 {collateralToTransfer > 0 ? collateralToTransfer.toFixed(6) : "0.000000"}{" "}
                 {tokenSymbol}
               </div>
@@ -222,7 +222,7 @@ export function ReallocateDialog({
                 htmlFor="additional-collateral"
                 className="block text-gray-700 text-sm font-bold mb-2"
               >
-                How much additional {tokenSymbol} do you want to add as collateral for the new loan?
+                How much extra {tokenSymbol} do you want to use for the new loan?
               </Label>
               <Input
                 id="additional-collateral"
@@ -306,7 +306,7 @@ export function ReallocateDialog({
           {/* Warning when nothing to reallocate */}
           {collateralToTransfer <= 0 && (
             <div className="text-sm text-amber-600 mb-2 font-medium">
-              ⚠️ Nothing to reallocate. Consider taking out a new loan.
+              The tokens backing this loan cannot support another loan yet.
             </div>
           )}
 
@@ -335,7 +335,7 @@ export function ReallocateDialog({
                 onClick={() => setShowChart(!showChart)}
                 className="flex items-center gap-2 text-left text-gray-700 text-sm font-bold"
               >
-                <span>Fee Structure for New Loan</span>
+                <span>New loan repayment cost</span>
                 <span
                   className={`transform transition-transform ${showChart ? "rotate-90" : "rotate-0"}`}
                 >
@@ -345,11 +345,9 @@ export function ReallocateDialog({
               {showChart && (
                 <div className="bg-zinc-50 p-4 rounded-lg">
                   <p className="text-sm text-zinc-600 mb-4">
-                    This shows the fee structure for the new loan that will be created with{" "}
-                    {newLoanCollateral.toFixed(6)} {tokenSymbol} collateral (appreciation:{" "}
-                    {collateralToTransfer.toFixed(6)} + additional:{" "}
-                    {additionalCollateral.toFixed(6)}
-                    ), allowing you to borrow{" "}
+                    The new loan uses {newLoanCollateral.toFixed(6)} {tokenSymbol}:{" "}
+                    {collateralToTransfer.toFixed(6)} from the existing loan and{" "}
+                    {additionalCollateral.toFixed(6)} from your wallet. You can borrow{" "}
                     {newLoanBorrowableAmount
                       ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)
                       : "0.000000"}{" "}
@@ -371,7 +369,7 @@ export function ReallocateDialog({
             </>
           )}
 
-          {/* Important Info */}
+          {/* How loan backing works */}
           {collateralToTransfer > 0 && (
             <>
               <button
@@ -379,7 +377,7 @@ export function ReallocateDialog({
                 onClick={() => setShowInfo(!showInfo)}
                 className="flex items-center gap-2 text-left text-gray-700 text-sm font-bold"
               >
-                <span>Important Info</span>
+                <span>How loan backing works</span>
                 <span
                   className={`transform transition-transform ${showInfo ? "rotate-90" : "rotate-0"}`}
                 >
@@ -410,7 +408,7 @@ export function ReallocateDialog({
                 }
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                Reallocate loan
+                Refinance loan
               </ButtonWithWallet>
             </DialogFooter>
           )}
@@ -420,24 +418,25 @@ export function ReallocateDialog({
               onOpenChange={(open) => {
                 if (!open) setReview(false);
               }}
-              title="Confirm reallocation"
+              title="Confirm refinancing"
               chainId={Number(cashOutChainId) as JBChainId}
               steps={[
                 ...(grantsPermission
                   ? [
                       {
                         key: "permission",
-                        title: "Let REVLoans burn your collateral",
-                        detail: "A one-off permission so the loan can hold your tokens.",
+                        title: "Let the loan contract remove your tokens from supply",
+                        detail:
+                          "This is called burning. Repayment creates the tokens again and returns them to you.",
                       },
                     ]
                   : []),
-                { key: "borrow", title: "Reallocate the loan" },
+                { key: "borrow", title: "Refinance the loan" },
               ]}
               activeIndex={
                 borrowStatus === "granting-permission" ? 0 : busy ? (grantsPermission ? 1 : 0) : -1
               }
-              action="Reallocate loan"
+              action="Refinance loan"
               onConfirm={() => void handleBorrow()}
               busy={busy}
               status={busy ? statusText : null}
@@ -445,12 +444,14 @@ export function ReallocateDialog({
             >
               <SummaryRow label="Loan">
                 #{selectedLoan?.id} on {chainDisplayName(Number(cashOutChainId) as JBChainId)}
-                <span className="block text-xs text-zinc-500">Replaced by a new loan id</span>
+                <span className="block text-xs text-zinc-500">
+                  The remaining debt gets a new loan number
+                </span>
               </SummaryRow>
-              <SummaryRow label="Adds collateral">
+              <SummaryRow label="Extra tokens used">
                 {collateralAmount || "0"} {tokenSymbol}
                 <span className="block text-xs text-zinc-500">
-                  Plus {collateralToTransfer.toFixed(6)} {tokenSymbol} of headroom moved over
+                  Plus {collateralToTransfer.toFixed(6)} {tokenSymbol} moved from the existing loan
                 </span>
               </SummaryRow>
               <SummaryRow label="New loan borrows">
@@ -463,7 +464,7 @@ export function ReallocateDialog({
                   <span className="block text-xs text-zinc-500">
                     At least{" "}
                     {Number(formatUnits(minimumBorrowAmountPreview, baseTokenDecimals)).toFixed(8)}{" "}
-                    {selectedChainTokenSymbol}, enforced onchain
+                    {selectedChainTokenSymbol}; the contract enforces this minimum
                   </span>
                 ) : null}
               </SummaryRow>

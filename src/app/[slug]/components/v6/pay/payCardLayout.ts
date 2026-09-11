@@ -21,7 +21,7 @@ export function payPanelLayoutClasses({
 }
 
 export function paySettlementLabel(routeType: PaymentTerminalType) {
-  return routeType === "swap" ? "Swap" : "Issuance";
+  return routeType === "swap" ? "Swap" : "New tokens";
 }
 
 /**

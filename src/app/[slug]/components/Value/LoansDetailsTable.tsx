@@ -254,11 +254,11 @@ export function LoanDetailsTable({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-left px-3 py-2">Chain</TableHead>
+                  <TableHead className="text-left px-3 py-2">Network</TableHead>
                   <TableHead className="text-left px-3 py-2">Borrowed</TableHead>
-                  <TableHead className="text-left px-3 py-2">Locked Collateral</TableHead>
-                  <TableHead className="text-left px-3 py-2">Refinanceable</TableHead>
-                  <TableHead className="text-left px-3 py-2">Fees Increase In</TableHead>
+                  <TableHead className="text-left px-3 py-2">Tokens backing loan</TableHead>
+                  <TableHead className="text-left px-3 py-2">Extra borrowing capacity</TableHead>
+                  <TableHead className="text-left px-3 py-2">Repayment cost rises in</TableHead>
                   <TableHead className="text-left px-3 py-2">Actions</TableHead>
                 </TableRow>
               </TableHeader>

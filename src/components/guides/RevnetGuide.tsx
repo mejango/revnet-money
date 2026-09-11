@@ -20,6 +20,8 @@ const AUDIENCE_LABEL: Record<RevnetGuideAudience, string> = {
 
 export type RevnetGuideSection = {
   id: string;
+  /** Old section links that now point to this consolidated explanation. */
+  aliases?: readonly string[];
   /** Who the section is for. Omitted = everyone. */
   audience?: readonly RevnetGuideAudience[];
   /** Group label. A new value starts a part header in the body and the contents list. */
@@ -155,6 +157,9 @@ export function RevnetGuide({
               tabIndex={-1}
               className="scroll-mt-6 border-t border-melon-200 py-10 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700 first:border-t-0 first:pt-0"
             >
+              {section.aliases?.map((alias) => (
+                <span key={alias} id={alias} className="block scroll-mt-6" aria-hidden="true" />
+              ))}
               {section.part && section.part !== sections[index - 1]?.part ? (
                 <p className="mb-6 text-sm font-semibold uppercase tracking-[0.16em] text-melon-700">
                   {section.part}

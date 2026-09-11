@@ -62,10 +62,10 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
       <div className="md:col-span-1">
         <h2 className="mb-4 text-lg font-bold md:mb-2">3. Terms</h2>
         <p className="text-zinc-600 text-lg">
-          <span className="capitalize">{revnetTokenSymbol}</span> issuance and cash out terms evolve
-          over time automatically in stages.
+          Set how many {revnetTokenSymbol} payments create and how much holders receive when they
+          cash out. These terms change automatically on the schedule you choose, in stages.
         </p>
-        <p className="text-zinc-600 text-lg mt-2">Staged terms can't be edited once deployed.</p>
+        <p className="text-zinc-600 text-lg mt-2">You cannot edit the stages after launch.</p>
       </div>
       <FieldArray
         name="stages"
@@ -131,13 +131,16 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
                             `${duration} days`
                           )}
                         </dd>
-                        <dt className="font-medium">Paid Issuance</dt>
+                        <dt className="font-medium">Tokens per payment</dt>
                         <dd>
                           {getResolvedIssuance(stage, index, values.stages)}{" "}
                           {formatTokenSymbol(values.tokenSymbol) ?? "tokens"} /{" "}
                           {issuanceBaseCurrencySymbol}
                           {stage.pickUpFromPrevious && index > 0 && (
-                            <span className="text-xs text-gray-500 italic"> (pickup)</span>
+                            <span className="text-xs text-gray-500 italic">
+                              {" "}
+                              (continued from previous stage)
+                            </span>
                           )}
                           {Number(stage.priceCeilingIncreasePercentage) > 0 &&
                             Number(stage.priceCeilingIncreaseFrequency) > 0 &&
@@ -147,17 +150,17 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
                               (sum, split) => sum + (Number(split.percentage) || 0),
                               0,
                             );
-                            return splitSum === 0 ? "" : `, ${splitSum}% split limit`;
+                            return splitSum === 0 ? "" : `, ${splitSum}% set aside`;
                           })()}
                         </dd>
-                        <dt className="font-medium">Auto issuance</dt>
+                        <dt className="font-medium">Tokens at stage start</dt>
                         <dd>
                           {stage.autoIssuance.reduce(
                             (sum, autoIssuance) => sum + (Number(autoIssuance.amount) || 0),
                             0,
                           ) === 0
                             ? "none"
-                            : `${commaNumber(stage.autoIssuance.reduce((sum, autoIssuance) => sum + (Number(autoIssuance.amount) || 0), 0))} ${formatTokenSymbol(values.tokenSymbol) ?? "tokens"} auto issuance`}
+                            : `${commaNumber(stage.autoIssuance.reduce((sum, autoIssuance) => sum + (Number(autoIssuance.amount) || 0), 0))} ${formatTokenSymbol(values.tokenSymbol) ?? "tokens"} at stage start`}
                         </dd>
                         <dt className="font-medium">Cash out tax</dt>
                         <dd>{Number(stage.priceFloorTaxIntensity) / 100 || 0}</dd>
@@ -187,8 +190,8 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
             {chartStages.some((stage) => stage.weight > 0n || stage.inheritsWeight) ? (
               <div className="mt-6">
                 <p className="text-sm text-zinc-500">
-                  Preview {formatTokenSymbol(values.tokenSymbol) ?? "token"} issuance price over
-                  time with the above stages:
+                  Preview the price to create {formatTokenSymbol(values.tokenSymbol) ?? "tokens"}{" "}
+                  over time. Market prices can differ:
                 </p>
                 <div className="mt-2 border border-zinc-200 p-4">
                   <IssuanceLadder

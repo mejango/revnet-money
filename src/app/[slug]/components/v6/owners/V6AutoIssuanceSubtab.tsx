@@ -126,8 +126,8 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
   return (
     <div>
       <p className="text-md text-black font-light italic mb-2">
-        Auto issuance mints a fixed amount to a preset account when a stage starts. Anyone can
-        trigger the distribution once its unlock date passes.
+        These accounts can receive a fixed number of new tokens without paying. This is called auto
+        issuance. Anyone can send the tokens to them once the stage begins.
       </p>
       <div className="mb-4">
         <OwnerDistributionBatchButton

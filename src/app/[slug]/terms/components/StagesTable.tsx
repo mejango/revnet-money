@@ -150,8 +150,8 @@ export function StagesTable({ rulesets }: Props) {
                 label="Issuance"
                 tooltip={
                   <p>
-                    {PROTOCOL_CONCEPTS.issuance} Here: {formatTokenSymbol(token)} created per{" "}
-                    {tokenA.symbol} received.
+                    {PROTOCOL_CONCEPTS.issuance} The unit after the slash is the stage&apos;s chosen
+                    pricing currency.
                   </p>
                 }
               />

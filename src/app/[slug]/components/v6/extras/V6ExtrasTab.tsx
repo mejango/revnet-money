@@ -137,10 +137,10 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
   return (
     <div className="flex flex-col min-w-0 gap-8">
       <section className="max-w-screen-sm">
-        <h3 className="mb-2 text-base font-semibold text-zinc-700">Export deployment</h3>
+        <h3 className="mb-2 text-base font-semibold text-zinc-700">Export settings</h3>
         <p className="text-sm text-zinc-500">
-          Download this revnet&apos;s deployed stages, splits, reserve asset, and details as a .jb
-          file. Import it from Create a revnet to review and change it before deploying.
+          Download this revnet&apos;s settings as a .jb file. Import it from Create a revnet to
+          review and edit a copy before launching.
         </p>
         {exportStatus ? <p className="mt-3 text-sm text-zinc-600">{exportStatus}</p> : null}
         <Button
@@ -159,7 +159,7 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
         </Button>
         {!operator && !operatorQuery.isLoading ? (
           <p className="mt-2 text-xs text-zinc-500">
-            The operator must be indexed before this deployment can be exported.
+            The operator&apos;s records must load before these settings can be exported.
           </p>
         ) : null}
       </section>

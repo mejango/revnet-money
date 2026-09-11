@@ -152,7 +152,7 @@ describe("wallet-action:create-revnet — creation submit routing", () => {
       expect(mocks.toast).toHaveBeenCalledWith(
         expect.objectContaining({
           variant: "destructive",
-          description: expect.stringContaining("all mainnets or all testnets"),
+          description: expect.stringContaining("either live chains or test chains"),
         }),
       );
       expect(mocks.recoveryGuard).not.toHaveBeenCalled();

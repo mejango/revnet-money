@@ -1221,7 +1221,9 @@ export function LiquidityManager({
     <div className={heading ? "mt-3 min-w-0 border-t border-zinc-100 pt-3" : "min-w-0"}>
       {heading ? <div className="text-xs font-medium text-zinc-600">{heading}</div> : null}
       {!address ? (
-        <p className="mt-1 text-xs text-zinc-400">Connect a wallet to manage its LP positions.</p>
+        <p className="mt-1 text-xs text-zinc-400">
+          Connect a wallet to manage the tokens it offers for trading.
+        </p>
       ) : (
         <>
           {allEmpty ? (
@@ -1888,12 +1890,11 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
   return (
     <div className="flex flex-col gap-4">
       <div className="border border-teal-200 bg-teal-50 p-4">
-        <h3 className="font-medium text-zinc-900">
-          Pool <span className="ml-1 text-xs uppercase tracking-wide text-zinc-400">AMM</span>
-        </h3>
+        <h3 className="font-medium text-zinc-900">Trading pool</h3>
         <p className="mt-1 text-sm text-zinc-500">
-          The market fills orders that would give payers more {tokenSymbol} than issuance. Arbitrage
-          keeps its price between the issuance ceiling and the cash-out floor.
+          A payment can buy existing {tokenSymbol} here when it returns more than creating new
+          tokens. Traders can profit from differences between the market, new-token, and cash-out
+          prices. This can bring those prices closer; it does not guarantee a price range.
         </p>
         <div className="mt-2">{content("market")}</div>
       </div>
@@ -1901,7 +1902,8 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
       <div className="border border-teal-200 bg-teal-50 p-4">
         <h3 className="font-medium text-zinc-900">Liquidity</h3>
         <p className="mt-1 text-sm text-zinc-500">
-          The tokens currently pooled across the market&apos;s active price ranges.
+          Tokens offered for trading are called liquidity. These amounts sit in price ranges that
+          include the current market price.
         </p>
         <div className="mt-2">{content("liquidity")}</div>
       </div>

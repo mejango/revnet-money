@@ -109,7 +109,7 @@ describe("wallet-action:create-revnet — creation route eligibility", () => {
   ])("rejects mixed or unsupported destinations before review (%s, %s)", (...chainIds) => {
     mocks.form.values = { ...validRevnetForm(), chainIds };
     render(<DeploySection />);
-    expect(screen.getByRole("alert")).toHaveTextContent("all mainnets or all testnets");
+    expect(screen.getByRole("alert")).toHaveTextContent("either live chains or test chains");
     const button = screen.getByRole("button", { name: "Sign and get quote" });
     expect(button).toBeDisabled();
     fireEvent.click(button);

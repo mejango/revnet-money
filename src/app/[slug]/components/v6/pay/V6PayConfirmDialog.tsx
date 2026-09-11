@@ -190,9 +190,8 @@ export function V6PayConfirmDialog({
               ) : phase === "safe-proposed" ? (
                 <div className="py-2">
                   <p className="text-sm leading-relaxed text-zinc-700">
-                    The Safe has accepted this proposal, but the payment has not reached the project
-                    yet. It still needs the required approvals and successful onchain execution.
-                    Track the persistent transaction status and do not submit it again.
+                    The payment is proposed in Safe. It still needs the required approvals and a
+                    successful transaction. Follow its saved status before trying again.
                   </p>
                   {txHash ? (
                     <p className="mt-2 break-all font-mono text-xs text-zinc-500">{txHash}</p>
@@ -229,7 +228,7 @@ export function V6PayConfirmDialog({
                         </SummaryRow>
                       ) : (
                         <SummaryRow label="Effect">
-                          Adds to the project balance — nothing else.
+                          Adds money to the project without giving you tokens.
                         </SummaryRow>
                       )}
                       {prepared.swapInputRoute && prepared.swapInputRoute.kind !== "single-v4" ? (

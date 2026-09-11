@@ -101,7 +101,9 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
           Sell things right from your revnet. Each sale pays the revnet, and the buyer gets the item
           plus {revnetTokenSymbol}.
         </p>
-        <p className="mt-2 text-lg text-zinc-600">The Operator can add items later.</p>
+        <p className="mt-2 text-lg text-zinc-600">
+          An operator can add items later if you allow it below.
+        </p>
       </div>
       <div className="mt-6 md:col-span-2 md:mt-0">
         <div>
@@ -188,14 +190,14 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
             aria-expanded={configOpen}
             className="text-sm font-medium text-teal-700 hover:text-teal-900"
           >
-            Store config {configOpen ? "▾" : "▸"}
+            Store settings {configOpen ? "▾" : "▸"}
           </button>
           {configOpen ? (
             <div className="mt-4 space-y-5 border border-zinc-200 p-4">
               <p className="text-xs text-zinc-500">
-                The collection&apos;s name and symbol can be changed later, by the revnet operator
-                as long as it keeps &ldquo;Update item metadata&rdquo;. Everything else here is
-                fixed when the revnet deploys.
+                The operator can change the collection&apos;s name and symbol later if it keeps the
+                &ldquo;Update item details&rdquo; permission. The other store settings are fixed at
+                launch.
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
@@ -240,8 +242,8 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
                     ],
                     [
                       "noNewTiersWithOwnerMinting",
-                      "Lock free minting after launch",
-                      "Items added later can never be minted for free.",
+                      "Lock free item creation after launch",
+                      "Items added later can never be created for free.",
                     ],
                   ] as const
                 ).map(([key, title, blurb]) => (
@@ -260,8 +262,8 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
                   </label>
                 ))}
                 <p className="bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-600">
-                  Items can&apos;t cash out for surplus: a revnet&apos;s tokens already can, and the
-                  two can&apos;t both redeem.
+                  Store items cannot be exchanged for the revnet&apos;s reserves. Only its tokens
+                  can cash out.
                 </p>
               </div>
 
@@ -272,8 +274,8 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
                 {(
                   [
                     ["operatorCanAdjustTiers", "Add & remove items"],
-                    ["operatorCanUpdateMetadata", "Update item metadata"],
-                    ["operatorCanMint", "Mint items for free"],
+                    ["operatorCanUpdateMetadata", "Update item details"],
+                    ["operatorCanMint", "Create items for free"],
                     ["operatorCanIncreaseDiscount", "Increase discounts"],
                   ] as const
                 ).map(([key, title]) => (

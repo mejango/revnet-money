@@ -6,12 +6,11 @@ const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
  */
 const LLMS_TXT = `# Revnet
 
-> A revnet is an autonomous business model: rules for issuing and cashing out a token
-> follow a core stage schedule committed at launch. Limited operator powers and
-> contract dependencies remain. Issuance terms do not fix a market price or guarantee
-> revenue or a cash out value. This site reads and writes revnets built on Juicebox V6
-> across Ethereum, Optimism, Base and Arbitrum. Every number shown is derived from
-> onchain state or the Bendystraw indexer.
+> A revnet shares revenue through tokens. Its token and cash out rules follow a
+> schedule fixed at launch. An operator can manage some details, but cannot rewrite
+> that schedule or withdraw the balance. Token value and revenue are not guaranteed.
+> This site works with revnets built on Juicebox V6 across Ethereum, Optimism, Base,
+> and Arbitrum. It reads contracts and Bendystraw, a service that indexes their records.
 
 ## URL grammar
 
@@ -28,14 +27,16 @@ identifier, description and logo.
 
 ## Pages
 
-- [Home](${siteOrigin}/): revnets ranked by secured reserves.
+- [Home](${siteOrigin}/): how revnets work and where to start.
 - [Discover](${siteOrigin}/discover): every indexed revnet.
 - [Learn](${siteOrigin}/learn): what a revnet is and the rules it fixes at launch.
-- [Build](${siteOrigin}/build): integration guide and contract addresses.
-- [Payment tutorial](https://juicebox.money/build/first-payment): learn the shared V6 payment flow with wallet-free reads, simulation, and a reviewed testnet payment.
+- [Build](${siteOrigin}/build): launch a revnet, connect an app, or write a contract.
+- [Glossary](${siteOrigin}/learn#glossary): short definitions of the words used across this site.
+- [Fees](${siteOrigin}/learn#fees): costs, receiving revnets, and how they share tokens with payers.
+- [Payment tutorial](https://juicebox.money/build/first-payment): read a project, preview a payment, then try it on a test network.
 - [Model the schedule](${siteOrigin}/build#choosing-the-numbers): compare scenarios before preparing a revnet draft.
-- [Three prices](${siteOrigin}/learn#three-prices): distinguish issuance, market, and cash out prices.
-- [Inspect a project](https://juicebox.center/#apps/juicescan): use the chain ID and project ID together; pending or indexed observations do not prove settlement.
+- [Three prices](${siteOrigin}/learn#three-prices): compare new tokens, existing tokens, and returning tokens for money.
+- [Inspect a project](https://juicebox.center/#apps/juicescan): identify a project by its network and ID; check transaction confirmation and any destination claim.
 - [Create](${siteOrigin}/create): the revnet launch flow.
 - [Audit](${siteOrigin}/audit): audits and security posture.
 

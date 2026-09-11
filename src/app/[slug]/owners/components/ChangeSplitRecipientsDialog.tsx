@@ -245,8 +245,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
           <p className="text-sm text-zinc-500 mt-2">Stage {stageIdx + 1}</p>
           <p className="text-sm text-zinc-500 mt-1">
             The stage always sets aside {splitLimit ? `${splitLimit} of` : "its split percent of"}{" "}
-            new issuance — that amount is fixed. Splits only route it, so changing them can&apos;t
-            change how much is set aside.
+            new tokens. You can change who receives that share, but cannot change its size.
           </p>
         </DialogHeader>
 

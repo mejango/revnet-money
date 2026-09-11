@@ -37,13 +37,13 @@ export function SimulatedLoanCard({
                 <span className="font-semibold">
                   {amountBorrowed.toFixed(8)} {tokenSymbol}
                 </span>{" "}
-                borrowing
+                borrowed
               </p>
               <p>
                 <span className="font-semibold">
                   {amountToWallet.toFixed(8)} {tokenSymbol}
                 </span>{" "}
-                to beneficiary after fees
+                to your wallet after fees
               </p>
             </div>
           </div>
@@ -52,7 +52,7 @@ export function SimulatedLoanCard({
           <div className="space-y-1 text-sm">
             <p>
               <span className="font-semibold">{collateralAmount}</span> {collateralTokenSymbol} used
-              as collateral
+              to back the loan
             </p>
             <p>
               <span className="font-semibold">
@@ -64,7 +64,7 @@ export function SimulatedLoanCard({
               <span className="font-semibold">
                 {maxUnlockCost.toFixed(8)} {tokenSymbol}
               </span>{" "}
-              max cost to unlock all collateral before 10 years
+              maximum repayment to recover all tokens before 10 years
             </p>
           </div>
         </TooltipContent>

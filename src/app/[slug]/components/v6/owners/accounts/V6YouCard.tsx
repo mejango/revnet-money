@@ -321,7 +321,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                 <TableHead className="text-right">Cash out value</TableHead>
                 <TableHead
                   className="text-right"
-                  title="Estimated proceeds after the protocol, REV, and minimum source fees"
+                  title="Estimated amount after the costs shown in the loan review"
                 >
                   Max loan
                 </TableHead>

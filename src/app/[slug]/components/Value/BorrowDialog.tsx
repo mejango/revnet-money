@@ -5,6 +5,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -41,10 +42,10 @@ const BORROW_STATUS_TEXT: Record<string, string> = {
   "waiting-signature": "Waiting for wallet confirmation...",
   pending: "Creating loan...",
   "reallocation-pending": "Adjusting loan...",
-  success: "Loan created successfully!",
-  "error-permission-denied": "Permission was not granted. Please approve to proceed.",
-  "error-loan-canceled": "Loan creation was canceled.",
-  error: "Something went wrong during loan creation.",
+  success: "Loan opened.",
+  "error-permission-denied": "Permission was not granted. Approve it to continue.",
+  "error-loan-canceled": "Loan canceled.",
+  error: "The loan could not be opened.",
 };
 
 export function BorrowDialog(props: PropsWithChildren<Props>) {
@@ -176,6 +177,10 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>New loan</DialogTitle>
+          <DialogDescription>
+            Use tokens to back a loan from the revnet. This backing is called collateral. The tokens
+            are removed from supply; repay before 10 years to create them again.
+          </DialogDescription>
         </DialogHeader>
         <div className="mb-5 w-[65%]">
           <span className="text-sm text-black font-medium">Your {tokenSymbol}</span>
@@ -194,7 +199,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         {/* Collateral Input Section - Like RedeemDialog */}
         <div className="grid w-full gap-1.5">
           <Label htmlFor="collateral-amount" className="text-zinc-900">
-            How much {tokenSymbol} do you want to collateralize?
+            How much {tokenSymbol} do you want to use for this loan?
           </Label>
           <div className="grid grid-cols-7 gap-2">
             <div className="col-span-3">
@@ -208,7 +213,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
               ) : (
                 <Select onValueChange={handleChainSelect} value={cashOutChainId || ""}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select chain">
+                    <SelectValue placeholder="Choose network">
                       {cashOutChainId && (
                         <div className="flex items-center gap-2">
                           <ChainLogo chainId={Number(cashOutChainId) as JBChainId} />
@@ -289,7 +294,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                     if (!cashOutChainId) {
                       return toast({
                         variant: "warning",
-                        description: "Please select a chain first.",
+                        description: "Choose a network first.",
                       });
                     }
                     setCollateralAmount((maxCollateralAmount * (pct / 100)).toFixed(8));
@@ -318,15 +323,15 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         {minimumBorrowAmountPreview !== undefined && selectedChainTokenConfig ? (
           <div className="border border-melon-300 bg-melon-25 p-3 text-sm">
             <div className="flex justify-between gap-3">
-              <span className="text-zinc-600">Protected minimum borrowed</span>
+              <span className="text-zinc-600">Minimum borrowed</span>
               <span className="font-medium">
                 {formatUnits(minimumBorrowAmountPreview, selectedChainTokenConfig.decimals)}{" "}
                 {selectedChainTokenSymbol}
               </span>
             </div>
             <p className="mt-1 text-xs text-zinc-500">
-              Based on the live contract quote with a 1% safety tolerance; refreshed again before
-              submission.
+              The loan cannot borrow less than 99% of the latest quote. The quote refreshes before
+              you submit.
             </p>
           </div>
         ) : null}
@@ -336,7 +341,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           onClick={() => setShowChart(!showChart)}
           className="flex items-center gap-2 text-left text-zinc-700 text-sm font-bold"
         >
-          <span>Variable Fee Structure</span>
+          <span>Repayment cost over time</span>
           <span
             className={`transform transition-transform ${showChart ? "rotate-90" : "rotate-0"}`}
           >
@@ -356,13 +361,13 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
             displayMonths={displayMonths}
           />
         )}
-        {/* Important Info toggleable section */}
+        {/* How loan backing works toggleable section */}
         <button
           type="button"
           onClick={() => setShowInfo(!showInfo)}
           className="flex items-center gap-2 text-left text-zinc-700 text-sm font-bold mb-2"
         >
-          <span>Important Info</span>
+          <span>How loan backing works</span>
           <span className={`transform transition-transform ${showInfo ? "rotate-90" : "rotate-0"}`}>
             ▶
           </span>
@@ -404,8 +409,9 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                 ? [
                     {
                       key: "permission",
-                      title: "Let REVLoans burn your collateral",
-                      detail: "A one-off permission so the loan can hold your tokens.",
+                      title: "Let the loan contract remove your tokens from supply",
+                      detail:
+                        "This is called burning. Repayment creates the tokens again and returns them to you.",
                     },
                   ]
                 : []),
@@ -420,7 +426,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
             status={busy ? statusText : null}
             error={borrowStatus.startsWith("error") ? statusText : null}
           >
-            <SummaryRow label="Collateral">
+            <SummaryRow label="Tokens used for loan">
               {collateralAmount} {tokenSymbol}
             </SummaryRow>
             <SummaryRow label="On">
@@ -432,7 +438,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                 <span className="block text-xs text-zinc-500">
                   At least{" "}
                   {formatUnits(minimumBorrowAmountPreview, selectedChainTokenConfig.decimals)}{" "}
-                  {selectedChainTokenSymbol}, enforced onchain
+                  {selectedChainTokenSymbol}; the contract enforces this minimum
                 </span>
               ) : null}
             </SummaryRow>

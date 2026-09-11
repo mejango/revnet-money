@@ -102,7 +102,7 @@ export function PayAndDeploy({
             setReview(true);
           }}
         >
-          Pay and ship
+          Pay and launch
           {isComplete ? (
             <CheckCircle className={"h-4 w-4 ml-2 fill-none text-emerald-500"} />
           ) : (
@@ -126,11 +126,12 @@ export function PayAndDeploy({
           steps={[
             {
               title: `Pay ${formatHexEther(selectedPayment.amount)} ETH to relay`,
-              detail: "Relayr then deploys on every chain; no further prompts.",
+              detail:
+                "Relayr sends the launch transactions to each selected chain. No further wallet prompts are needed.",
             },
           ]}
           activeIndex={payIsProcessing ? 0 : -1}
-          action="Pay and ship"
+          action="Pay and launch"
           busy={payIsProcessing}
           disabled={paymentLocked}
           error={error}
@@ -147,9 +148,9 @@ export function PayAndDeploy({
                 rebuildStaleQuote,
                 onRebuild: () =>
                   toast({
-                    title: "Refreshing stale quote",
+                    title: "Refreshing quote",
                     description:
-                      "This quote's encoded start time has passed. Sign the refreshed deploy requests to keep cash-outs and loans open at launch.",
+                      "The quoted start time has passed. Sign the new launch requests to avoid a 7-day lock on cash-outs and loans.",
                   }),
               });
               if (payment !== selectedPayment) selectPayment(payment);
@@ -161,7 +162,7 @@ export function PayAndDeploy({
                 toast({
                   title: "Safe payment proposal submitted",
                   description:
-                    "The Relayr bundle is not paid yet. Approve and execute the payment in Safe, then check this bundle; do not propose another payment. Execute it before the quoted start time — about 10 minutes after the quote was created — or cash-outs and loans will be locked for 7 days from execution.",
+                    "The launch is not paid yet. Approve and carry out this payment in Safe, then check transaction activity. Do not propose another payment. If it runs after the quoted start time, cash-outs and loans will be locked for 7 days from launch.",
                 });
                 return;
               }
@@ -200,15 +201,15 @@ export function PayAndDeploy({
           role="alert"
           className="mt-4 border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800"
         >
-          {formatWalletError(bundleError)} Check the existing bundle in transaction activity. Do not
-          make another Relayr payment.
+          {formatWalletError(bundleError)} Check the launch in transaction activity. Do not make
+          another Relayr payment.
         </p>
       ) : null}
       {!!bundleResponse && (
         <div className="mt-10 flex flex-col space-y-2">
           <div className="text-left text-zinc-500 mb-2">
-            Your revnet is made up of components deployed on each blockchain where it'll accept
-            funds and issue {revnetTokenSymbol} from. These transactions take 1-2 minutes to settle.
+            Track the launch on each chain below. It usually takes 1–2 minutes; your revnet is ready
+            on a chain once its transaction confirms.
           </div>
           <div className="grid grid-cols-3 gap-4 font-semibold border-b mb-2">
             <div>Network</div>
@@ -247,12 +248,12 @@ export function PayAndDeploy({
             />
           ) : bundleError ? null : hasFailed ? (
             <p className="border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800">
-              At least one destination transaction failed. Review the per-chain status above; do not
-              make another Relayr payment.
+              At least one launch transaction failed. Review each chain’s status above; do not make
+              another Relayr payment.
             </p>
           ) : (
             <p className="text-sm text-melon-700">
-              Relayr payment confirmed. Destination transactions are still pending.
+              Relayr payment confirmed. The launch transactions are still pending.
             </p>
           )}
         </div>

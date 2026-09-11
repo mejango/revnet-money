@@ -30,8 +30,8 @@ describe("v6 pay card settlement label", () => {
     expect(paySettlementLabel("swap")).toBe("Swap");
   });
 
-  it("calls direct terminal settlement issuance", () => {
-    expect(paySettlementLabel("multi")).toBe("Issuance");
+  it("labels newly created tokens in plain language", () => {
+    expect(paySettlementLabel("multi")).toBe("New tokens");
   });
 });
 

@@ -1143,8 +1143,8 @@ export function V6PayCard() {
               ) : cartCount > 0 && supportedShopTokenIndexes.length === 0 ? (
                 <p className="mb-2 text-xs text-red-600">
                   {shopRouteCheckFailed
-                    ? "Couldn't check which payment tokens have a price feed for these items. Try again in a moment."
-                    : "No directly accepted payment token has a verified price feed for these items."}
+                    ? "Couldn't read the prices needed to pay for these items. Try again in a moment."
+                    : "None of the accepted payment tokens has a verified price for these items."}
                 </p>
               ) : cartCount > 0 && !shopMatchesToken ? (
                 <p className="mb-2 text-xs text-zinc-500">
@@ -1288,8 +1288,8 @@ export function V6PayCard() {
                       aria-expanded={showRouteComparison}
                       title={
                         routeIsRouter
-                          ? "Compare the selected swap with project issuance."
-                          : "This payment issues tokens from the project."
+                          ? "Compare buying existing tokens with creating new ones."
+                          : "This payment creates new project tokens."
                       }
                       className="shrink-0 border border-melon-500 bg-white px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-zinc-700 hover:bg-melon-50"
                     >
@@ -1325,19 +1325,19 @@ export function V6PayCard() {
                         </p>
                       </div>
                       <div>
-                        <p className="text-zinc-500">Issuance</p>
+                        <p className="text-zinc-500">New tokens</p>
                         <p className="font-medium text-zinc-900">
                           {formatPayAmount(preview.issuanceTokenCount ?? 0n, 18)}{" "}
                           {projectTokenLabel}
                         </p>
                       </div>
                       <p className="col-span-2 text-zinc-500">
-                        The better guaranteed return is selected automatically.
+                        The route with the higher minimum token return is selected automatically.
                       </p>
                     </div>
                   ) : (
                     <p className="mt-2 border-t border-zinc-200 pt-2 text-xs text-zinc-500">
-                      This payment settles through the project&apos;s configured swap route.
+                      This payment uses the project&apos;s chosen route to exchange tokens.
                     </p>
                   )
                 ) : null}
@@ -1452,7 +1452,8 @@ export function V6PayCard() {
 
                 {preview && preview.reservedTokenCount > 0n ? (
                   <p className="mt-1.5 text-xs font-medium text-zinc-500">
-                    Splits get {formatPayAmount(preview.reservedTokenCount, 18)} {projectTokenLabel}
+                    Other recipients get {formatPayAmount(preview.reservedTokenCount, 18)}{" "}
+                    {projectTokenLabel}
                   </p>
                 ) : null}
               </div>
@@ -1464,8 +1465,7 @@ export function V6PayCard() {
 
             {mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
-                Couldn&apos;t verify what this payment returns — paying is disabled until the
-                preview works.
+                Couldn&apos;t check what you will receive. Try again once the preview loads.
               </p>
             ) : null}
 
@@ -1542,7 +1542,7 @@ export function V6PayCard() {
           <p className="text-sm leading-relaxed text-zinc-600">
             {/* One string, not JSX text around an expression: a line break after `{asset}`
                 swallows the space that follows it, which is how this shipped as "USDCin". */}
-            {`Payments to this project take ${buyableLabel} in order to settle instantly, stick to automated rules, and send out incentives on schedule. You'll use your card or bank to buy some first, then come back here to pay.`}
+            {`This project accepts ${buyableLabel}. Buy some with your card or bank, then return here to pay.`}
           </p>
           <div className="mt-4 flex justify-end">
             <Button

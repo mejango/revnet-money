@@ -50,21 +50,21 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
       ) : isError ? (
         <div className="text-red-600">Active loans are unavailable.</div>
       ) : rows.length === 0 ? (
-        <div className="text-zinc-500">No active loans indexed.</div>
+        <div className="text-zinc-500">No active loans found.</div>
       ) : (
         <div className="mb-4 max-h-96 w-full max-w-full min-w-0 overflow-auto">
           <div className="flex min-w-0 flex-col">
             <Table className="min-w-max">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="whitespace-nowrap">Chain</TableHead>
+                  <TableHead className="whitespace-nowrap">Network</TableHead>
                   <TableHead className="whitespace-nowrap">Borrower</TableHead>
                   <TableHead className="whitespace-nowrap">Borrowed</TableHead>
-                  <TableHead className="whitespace-nowrap">Collateral</TableHead>
+                  <TableHead className="whitespace-nowrap">Tokens backing loan</TableHead>
                   <TableHead className="whitespace-nowrap">
                     <ConceptTerm note={PROTOCOL_CONCEPTS.prepaidFee}>Prepaid fee</ConceptTerm>
                   </TableHead>
-                  <TableHead className="whitespace-nowrap">Current fee outstanding</TableHead>
+                  <TableHead className="whitespace-nowrap">Current repayment fee</TableHead>
                   <TableHead className="whitespace-nowrap">Opened</TableHead>
                 </TableRow>
               </TableHeader>
@@ -151,7 +151,7 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
       <div className="flex w-full min-w-0 flex-col items-start gap-3">
         <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} />
         <p className="text-md text-black font-light italic">
-          Connect a wallet to see and manage your loans against {tokenSymbol} collateral.
+          Connect a wallet to manage loans backed by your {tokenSymbol}.
         </p>
         <WalletConnectButton />
       </div>
@@ -163,8 +163,9 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
       <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} />
 
       <p className="text-md text-black font-light italic mb-2">
-        Loans borrow against your {tokenSymbol} as collateral through the revnet itself. Repay to
-        reclaim collateral, or refinance to borrow against appreciated collateral.
+        Use {tokenSymbol} to back a loan from the revnet. This backing is called collateral. The
+        tokens are removed from supply; repay to create them again. If they can support more
+        borrowing later, you can use the extra capacity for a new loan, called refinancing.
       </p>
 
       <LoanDetailsTable

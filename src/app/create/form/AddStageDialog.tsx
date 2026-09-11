@@ -244,10 +244,11 @@ export function AddStageDialog({
                   <div className="pb-10">
                     <div>
                       <div className="block text-md font-semibold leading-6">
-                        1. {revnetTokenSymbol} issuance
+                        1. New {revnetTokenSymbol}
                       </div>
                       <p className="text-md text-zinc-500 mt-3">
-                        How many {revnetTokenSymbol} to issue when receiving 1 {baseCurrencySymbol}.
+                        How many {revnetTokenSymbol} a payment of 1 {baseCurrencySymbol} creates.
+                        Creating tokens is called issuance.
                       </p>
 
                       <PickupFromPreviousStage
@@ -297,7 +298,7 @@ export function AddStageDialog({
                               </span>
                             ) : (
                               <select
-                                aria-label="Issuance currency"
+                                aria-label="New token pricing currency"
                                 className="inline-caret ml-1 h-7 border-0 bg-transparent py-0 pl-1 text-md text-zinc-600 focus:outline-none focus:ring-0"
                                 value={draftBaseCurrency}
                                 onChange={(event) =>
@@ -317,7 +318,7 @@ export function AddStageDialog({
                                 htmlFor="enableCut"
                                 className="whitespace-nowrap italic text-zinc-400"
                               >
-                                add automatic cuts?
+                                Reduce this rate over time
                               </label>
                               <input
                                 type="checkbox"
@@ -395,7 +396,7 @@ export function AddStageDialog({
                                       className="whitespace-nowrap"
                                       htmlFor={`splits.${index}.amount`}
                                     >
-                                      {index === 0 ? "split" : "... and"}
+                                      {index === 0 ? "set aside" : "... and"}
                                     </label>
                                     <Field
                                       id={`splits.${index}.percentage`}
@@ -434,7 +435,7 @@ export function AddStageDialog({
                                         className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
                                         htmlFor={`perChainBeneficiary-${index}`}
                                       >
-                                        set beneficiary per chain?
+                                        Use a different recipient on each chain
                                         <input
                                           type="checkbox"
                                           id={`perChainBeneficiary-${index}`}
@@ -466,7 +467,7 @@ export function AddStageDialog({
                                                   </span>
                                                 </div>
                                                 <input
-                                                  aria-label={`${chainDisplayName(chainId)} beneficiary`}
+                                                  aria-label={`${chainDisplayName(chainId)} recipient`}
                                                   className={perChainInputClassName}
                                                   placeholder="0x"
                                                   value={entry?.address ?? ""}
@@ -497,30 +498,30 @@ export function AddStageDialog({
                                 }
                                 className="h-7 mt-3 bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900"
                               >
-                                add split +
+                                add recipient +
                               </Button>
                             </div>
                           )}
                         />
                         {values.splits.length > 0 && (
                           <div className="text-sm font-medium text-zinc-500 mt-4 border-l border-zinc-300 pl-2 py-1 px-1">
-                            Total split limit of{" "}
+                            Set aside{" "}
                             {values.splits.reduce(
                               (sum, split) => sum + (Number(split.percentage) || 0),
                               0,
                             )}
-                            %, payer always receives{" "}
+                            % of tokens. The payer receives{" "}
                             {100 -
                               values.splits.reduce(
                                 (sum, split) => sum + (Number(split.percentage) || 0),
                                 0,
                               )}
-                            % of issuance.
+                            %. The set-aside share is called a token split.
                           </div>
                         )}
                         {values.splits.length == 0 && (
                           <div className="text-sm font-medium text-zinc-500 mt-4 border-l border-zinc-300 pl-2 py-1 px-1">
-                            Without splits, the payer always receives 100% of issuance.
+                            With no tokens set aside, the payer receives them all.
                           </div>
                         )}
                       </div>
@@ -528,42 +529,40 @@ export function AddStageDialog({
                         <div className="text-zinc-600 text-md mt-4 italic">
                           <ul className="list-disc list-inside space-y-2">
                             <li className="flex">
-                              <span className="mr-2">•</span>
-                              Cutting issuance by 50% means to double the price – a halvening
-                              effect.
+                              <span className="mr-2">•</span>A 50% cut creates half as many tokens
+                              for the same payment, doubling the price to create each token.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
-                              If there's a market for {revnetTokenSymbol} / {reserveAsset} offering
-                              a better price, all {reserveAsset} paid in will be used to buyback
-                              instead of feeding the revnet. Uniswap is used as the market.
+                              If a configured Uniswap market offers more {revnetTokenSymbol} for the
+                              payment, it can buy existing tokens there instead of creating new
+                              ones. This is a buyback; the money used goes to the market.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
-                              Splits apply to both issuance and buybacks.
+                              Token splits apply to both newly created tokens and buybacks.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
                               <span>
-                                You can write and deploy a custom split hook that automatically
-                                receives and processes the split {revnetTokenSymbol}.
+                                A recipient can be a contract that handles the tokens automatically,
+                                called a split hook.
                               </span>
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
-                              If there are splits, the revnet operator can change the distribution
-                              of the split limit to new destinations at any time.
+                              The operator can change who receives the set-aside tokens at any time,
+                              but cannot increase the total share set for this stage.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
-                              The revnet operator can be a multisig, a DAO, an LLC, a core team, an
-                              airdrop stockpile, a staking rewards contract, or some other address.
+                              The operator can be a wallet or a contract. Choose its address in the
+                              Operator section.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
-                              The revnet operator is set once and is not bound by stages. The revnet
-                              operator can hand off this responsibility to another address at any
-                              time, or relinquish it altogether.
+                              The same operator serves every stage. It can pass the role to another
+                              address or give it up.
                             </li>
                           </ul>
                         </div>
@@ -573,7 +572,8 @@ export function AddStageDialog({
                         render={(arrayHelpers) => (
                           <div>
                             <p className="text-md text-zinc-500 mt-10">
-                              Optionally, auto-issue {revnetTokenSymbol} when the stage starts.
+                              Optionally, create {revnetTokenSymbol} for chosen recipients when the
+                              stage starts, without a payment.
                             </p>
                             {values.autoIssuance?.map((autoissuance, index) => (
                               <div
@@ -584,7 +584,7 @@ export function AddStageDialog({
                                   className="whitespace-nowrap"
                                   htmlFor={`autoIssuance.${index}.amount`}
                                 >
-                                  {index === 0 ? "Issue" : "... and"}
+                                  {index === 0 ? "Create" : "... and"}
                                 </label>
                                 <div className="relative w-48 sm:w-40">
                                   <Field
@@ -649,11 +649,11 @@ export function AddStageDialog({
                               }}
                               className="h-7 mt-3 bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900"
                             >
-                              add auto issuance +
+                              add tokens at stage start +
                             </Button>
                             {values.autoIssuance.length > 0 && (
                               <div className="text-sm font-medium text-zinc-500 mt-4 border-l border-zinc-300 pl-2 py-1 px-1">
-                                Total auto issuance of{" "}
+                                Total created at stage start:{" "}
                                 {commaNumber(
                                   values.autoIssuance?.reduce(
                                     (sum, issuance) => sum + (Number(issuance.amount) || 0),
@@ -677,17 +677,17 @@ export function AddStageDialog({
                       2. {revnetTokenSymbol} cash outs
                     </div>
                     <p className="text-md text-zinc-500 mt-3">
-                      The only way for anyone to access the {reserveAsset} used to issue{" "}
-                      {revnetTokenSymbol} is by cashing out or taking out a loan from the revnet
-                      using their {revnetTokenSymbol}.
+                      Holders can exchange {revnetTokenSymbol} for a share of the revnet&apos;s{" "}
+                      {reserveAsset}, called cashing out. They can also borrow against their tokens.
                     </p>
                     <p className="text-md text-zinc-500 mt-3">
-                      A tax can be added that makes cashing out and loans more expensive, while
-                      rewarding {revnetTokenSymbol} holders who stick around as others cash out.
+                      You can leave some of that share in the revnet for remaining holders. This is
+                      the cash-out tax. A higher setting leaves more behind and reduces how much
+                      holders can cash out or borrow.
                     </p>
                     <p className="text-md text-zinc-500 mt-3">
-                      A light tax is recommended to add an incentive while maintaining liquidity for{" "}
-                      {revnetTokenSymbol} holders.
+                      Use the preview to compare what a holder receives with what remains in the
+                      revnet.
                     </p>
                     <div className="space-y-2 mt-6">
                       <div className="flex justify-between relative w-full">
@@ -717,7 +717,7 @@ export function AddStageDialog({
                           step={5}
                           name="priceFloorTaxIntensity"
                           className="h-2 w-full cursor-pointer appearance-none bg-gray-200 px-0 accent-teal-500"
-                          aria-label="Exit tax percentage"
+                          aria-label="Cash-out tax percentage"
                         />
                       </div>
                     </div>
@@ -731,32 +731,25 @@ export function AddStageDialog({
                         <ul className="list-disc list-inside space-y-2">
                           <li className="flex">
                             <span className="mr-2">•</span>
-                            The heavier the tax, the less that can be accessed by cashing out or
-                            taking out a loan at any given time, and the more that is left to share
-                            between remaining holders who cash out later.
+                            The cash-out tax stays in the revnet. It does not go to the operator.
                           </li>
 
                           <li className="flex">
-                            <span className="mr-2">•</span>
-                            Loans are an automated source of revenue for {revnetTokenSymbol}. By
-                            making loans more expensive, a heavier cash out tax reduces potential
-                            loan revenue.
+                            <span className="mr-2">•</span>A higher cash-out tax reduces loan
+                            amounts. It does not change the loan&apos;s repayment terms.
                           </li>
                           <li className="flex">
                             <span className="mr-2">•</span>
-                            Given 100 {reserveAsset} in the revnet, 100 total supply of{" "}
-                            {revnetTokenSymbol}, and 10 {revnetTokenSymbol} being cashed out, a tax
-                            rate of 0 would yield a cash out value of 10 {reserveAsset}, 0.2 would
-                            yield 8.2 {reserveAsset}, 0.5 would yield 5.5 {reserveAsset}, and 0.8
-                            would yield 2.8 {reserveAsset}.
+                            For example, with 100 {reserveAsset} in reserve and 100 total{" "}
+                            {revnetTokenSymbol}, cashing out 10 tokens gives 10 {reserveAsset} at a
+                            tax rate of 0, 8.2 at 0.2, 5.5 at 0.5, or 2.8 at 0.8. These examples
+                            apply the cash-out tax. Check the final quote before confirming.
                           </li>
                           <li className="flex">
                             <span className="mr-2">•</span>
-                            The formula for the amount of {reserveAsset} received when cashing out
-                            is `(ax/s) * ((1-r) + xr/s)` where: `r` is the cash out tax rate, `a` is
-                            the amount in the revnet being accessed, `s` is the current token supply
-                            of {revnetTokenSymbol}, `x` is the amount of {revnetTokenSymbol} being
-                            cashed out.
+                            To calculate this amount, use `(ax/s) * ((1-r) + xr/s)`: `a` is the
+                            available reserve, `x` the tokens being cashed out, `s` the total token
+                            supply, and `r` the cash-out tax rate from 0 to 1.
                           </li>
                         </ul>
                       </div>

@@ -172,8 +172,8 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
     <div>
       {rulesetReads.isLoading ? <TableSkeleton rows={4} columns={3} /> : null}
       <p className="text-md text-black font-light italic mb-2">
-        Splits can be adjusted by the revnet operator at any time, within the permanent split limit
-        of a stage.
+        A share of tokens goes to the recipients listed below. These shares are called splits. The
+        revnet operator can change the recipients, but cannot raise a stage&apos;s fixed share.
       </p>
 
       <div className="text-sm font-medium text-zinc-500 mt-2 border-l border-zinc-300 pl-2 py-1">

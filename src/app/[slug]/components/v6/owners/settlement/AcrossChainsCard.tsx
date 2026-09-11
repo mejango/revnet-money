@@ -89,7 +89,7 @@ function AcrossChainsTable({ rows, tokenSymbol }: { rows: AcrossChainRow[]; toke
             // Gross of the cash-out fees. The You card nets them, so an unqualified number
             // here reads as a contradiction on the adjacent tab rather than a different
             // question — this column is the raw per-token reclaim used for bridging math.
-            title="What one token reclaims from this chain's surplus, before cash-out fees"
+            title="What one token can return from this chain's available balance, before costs"
           >
             Unit value <span className="font-normal text-zinc-500">(before fees)</span>
           </th>

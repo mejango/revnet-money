@@ -123,10 +123,11 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
       <div className="md:col-span-1">
         <h2 className="mb-4 text-lg font-bold md:mb-2">5. Operator</h2>
         <p className="text-lg text-zinc-600">
-          An optional address holding limited controls over the revnet once it&apos;s deployed.
+          Choose who can manage the revnet after launch. This optional role is called the operator,
+          and has only the powers listed here.
         </p>
         <p className="mt-2 text-lg text-zinc-600">
-          Whoever you name here can be changed later only by the operator itself.
+          Only the current operator can pass the role to someone else.
         </p>
       </div>
       <div className="mt-6 md:col-span-2 md:mt-0">
@@ -159,7 +160,7 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
         </label>
         {controlsEnabled && sortedChains.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-500">
-            Pick the chains you&apos;re deploying on, and an address per chain appears here.
+            Choose your chains first, then enter the operator address.
           </p>
         ) : controlsEnabled ? (
           <div className="mt-4">
@@ -184,7 +185,7 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
                 className="mt-2 flex w-fit items-center gap-2 text-md italic text-zinc-400"
                 htmlFor="perChainOperator"
               >
-                set operator per chain?
+                Use a different operator on each chain
                 <input
                   type="checkbox"
                   id="perChainOperator"
@@ -215,9 +216,7 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
               : null}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-zinc-500">
-            No operator address will retain these limited controls.
-          </p>
+          <p className="mt-3 text-sm text-zinc-500">No one will have these controls.</p>
         )}
       </div>
     </>

@@ -231,7 +231,7 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
     page.getByRole("heading", { name: "Active loans", exact: true }),
   );
   await expect(page.getByRole("columnheader", { name: "Prepaid fee" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Current fee outstanding" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Current repayment fee" })).toBeVisible();
   await expect(page.getByText("603.5741 USDC")).toBeVisible();
   await expect(page.getByText("2.5%")).toBeVisible();
   await expect(page.getByRole("cell", { name: "0 USDC", exact: true })).toBeVisible();
@@ -497,9 +497,7 @@ test("home and discover shells stay contained and deterministic", async ({ page,
 
   const homeResponse = await page.goto("/", { waitUntil: "domcontentloaded" });
   expectSecurityHeaders(homeResponse);
-  await expect(
-    page.locator("main").getByText("Guarantees that stand the test of time."),
-  ).toBeVisible();
+  await expect(page.locator("main").getByText("How a revnet works.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Create yours" })).toBeVisible();
   // The Top and Trending panels are the dashboard's project rows, and the layout
   // hides both below the tablet breakpoint — mobile home is the activity feed. Above

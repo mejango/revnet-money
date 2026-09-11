@@ -26,8 +26,8 @@ import { TierMediaPreview } from "./TierMediaPreview";
 const FLAG_DESCRIPTIONS: [keyof NonNullable<ShopTier["flags"]>, string, string][] = [
   [
     "allowOwnerMint",
-    "Revnet operator can mint",
-    "The revnet operator can mint this item for free, without a payment.",
+    "Operator can give items",
+    "The operator can create and give this item without a payment.",
   ],
   ["cantBeRemoved", "Cannot be removed", "This item can never be removed from the shop."],
   [
@@ -37,8 +37,8 @@ const FLAG_DESCRIPTIONS: [keyof NonNullable<ShopTier["flags"]>, string, string][
   ],
   [
     "cantBuyWithCredits",
-    "No credit buys",
-    "Buyers can't use shop credits to mint this item — only a fresh payment.",
+    "Payment required",
+    "This item requires a payment. Shop credits cannot be used.",
   ],
 ];
 
@@ -220,7 +220,7 @@ export function TierDetailModal({
                 onClick={onMint}
                 className="mt-3 text-sm font-medium text-teal-700 underline underline-offset-4 hover:text-teal-900"
               >
-                Mint to a beneficiary without payment →
+                Give to a recipient without payment →
               </button>
             ) : null}
 
@@ -270,19 +270,24 @@ export function TierDetailModal({
                 <Fact label="Current discount" value={discountLabel(tier.discountPercent)} />
               ) : null}
               {tier.reserveFrequency > 0 ? (
-                <Fact label="Reserve mint" value={`1 per ${tier.reserveFrequency} sold`} />
+                <Fact label="Items set aside" value={`1 per ${tier.reserveFrequency} sold`} />
               ) : null}
               {tier.votingUnits > 0n ? (
                 <Fact label="Voting units" value={tier.votingUnits.toLocaleString("en-US")} />
               ) : null}
               {tier.splitPercent > 0 ? (
-                <Fact label="Split" value={`${tier.splitPercent / 1e7}% of sales`} />
+                <Fact
+                  label="Share sent to recipients"
+                  value={`${tier.splitPercent / 1e7}% of sales`}
+                />
               ) : null}
             </dl>
 
             {setFlags.length > 0 ? (
               <div className="mt-4 border-t border-zinc-200 pt-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Flags</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  Item rules
+                </p>
                 <div className="mt-2 space-y-2">
                   {setFlags.map(([flag, label, description]) => (
                     <div key={flag}>

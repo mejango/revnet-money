@@ -255,13 +255,15 @@ export function GossipCard({ chains }: { chains: ChainProject[] }) {
     <div className="border border-zinc-200 bg-melon-50 p-4">
       <h3 className="font-medium text-zinc-900">Gossip</h3>
       <p className="text-sm text-zinc-500 mt-1">
-        Each chain&apos;s cash out and loan availability depends on knowledge of the project&apos;s
-        composition on other chains.
+        Chains share records of the revnet&apos;s money and tokens. This is called gossip. These
+        records affect how much holders can cash out or borrow on each chain.
       </p>
       {isLoading ? (
         <TableSkeleton rows={Math.max(chains.length, 2)} columns={6} />
       ) : isError || !data ? (
-        <div className="text-sm text-zinc-500 py-4">Could not verify cross-chain gossip state.</div>
+        <div className="text-sm text-zinc-500 py-4">
+          Could not check the records shared between chains.
+        </div>
       ) : (
         data.map((view) => (
           <div key={view.chainId} className="mt-4">

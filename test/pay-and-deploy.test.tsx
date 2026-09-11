@@ -77,9 +77,9 @@ function component() {
 async function confirmPayment() {
   fireEvent.click(screen.getByRole("combobox"));
   fireEvent.click(screen.getByRole("option", { name: /ETH on Ethereum/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Pay and ship" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pay and launch" }));
   const dialog = await screen.findByRole("dialog", { name: "Confirm payment" });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Pay and ship" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Pay and launch" }));
   await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledTimes(1));
 }
 
@@ -116,7 +116,7 @@ describe("wallet-action:create-revnet — PayAndDeploy settlement", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("does not match the signed request");
     expect(screen.getByRole("alert")).toHaveTextContent("Do not make another Relayr payment");
-    const pay = screen.getByRole("button", { name: "Pay and ship" });
+    const pay = screen.getByRole("button", { name: "Pay and launch" });
     expect(pay).toBeDisabled();
     expect(screen.getByRole("combobox")).toBeDisabled();
     expect(view.container.querySelector(".animate-spin")).toBeNull();
@@ -168,7 +168,7 @@ describe("wallet-action:create-revnet — PayAndDeploy settlement", () => {
         "data-chain",
         "1",
       );
-      expect(screen.getByRole("button", { name: "Pay and ship" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Pay and launch" })).toBeDisabled();
     },
   );
 
@@ -179,7 +179,7 @@ describe("wallet-action:create-revnet — PayAndDeploy settlement", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 
     expect(screen.getByText(/Complete the existing payment proposal in Safe/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pay and ship" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Pay and launch" })).toBeDisabled();
     expect(mocks.startPolling).not.toHaveBeenCalled();
   });
 
@@ -193,12 +193,12 @@ describe("wallet-action:create-revnet — PayAndDeploy settlement", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Confirm payment" });
     await within(dialog).findByText("Payment confirmation is uncertain.");
-    expect(within(dialog).getByRole("button", { name: "Pay and ship" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Pay and launch" })).toBeDisabled();
     const close = within(dialog).getByRole("button", { name: "Close" });
     expect(close).not.toBeDisabled();
     fireEvent.click(close);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    const pay = screen.getByRole("button", { name: "Pay and ship" });
+    const pay = screen.getByRole("button", { name: "Pay and launch" });
     expect(pay).toBeDisabled();
     fireEvent.click(pay);
     expect(mocks.sendRelayrTx).toHaveBeenCalledTimes(1);

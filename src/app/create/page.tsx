@@ -50,15 +50,13 @@ export default function Page() {
     formData: RevnetFormData,
   ): Promise<RelayrPostBundleResponse | undefined> {
     if (!isConnected || !address) {
-      throw new Error("Please connect your wallet to deploy");
+      throw new Error("Connect your wallet to launch the revnet.");
     }
     if (formData.chainIds.length > 1 && isSafeConnector(connector)) {
       throw new Error("For a Safe deployment, select one chain.");
     }
     if (formData.chainIds.length > 1 && !areRelayrChainsCompatible(formData.chainIds)) {
-      throw new Error(
-        "Select supported chains from one network family: all mainnets or all testnets.",
-      );
+      throw new Error("Choose either live chains or test chains, not a mix.");
     }
     requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
     setDirectDeployment(null);
@@ -123,7 +121,7 @@ export default function Page() {
       });
 
       if (!publicClient) {
-        throw new Error("Public client not available");
+        throw new Error("Could not connect to the chain. Try again.");
       }
 
       // Deploying a new revnet requires paying the exact project creation fee.
@@ -209,7 +207,7 @@ export default function Page() {
         toast({
           title: "Safe proposal submitted",
           description:
-            "The deployment was proposed to your Safe. Approve and execute it there — your revnet exists once that transaction confirms.",
+            "Approve and carry out the launch proposal in your Safe. Your revnet exists once the chain confirms that transaction.",
         });
         return;
       }
@@ -239,12 +237,12 @@ export default function Page() {
     const formData = quotedFormData.current;
     if (!formData) {
       throw new Error(
-        "The original deploy request is unavailable. Clear the quote and get a new one.",
+        "The original launch request is unavailable. Clear the quote and get a new one.",
       );
     }
     const quote = await deployProject(formData);
     if (!quote) {
-      throw new Error("Rebuilding the deploy request did not produce a new quote.");
+      throw new Error("Could not refresh the quote. Clear it and try again.");
     }
     return quote;
   }
@@ -267,7 +265,7 @@ export default function Page() {
             toast({
               variant: "destructive",
               title: "Error",
-              description: e.message || "Error encoding transaction",
+              description: e.message || "Could not prepare the transaction. Try again.",
             });
             console.error(e);
           } finally {

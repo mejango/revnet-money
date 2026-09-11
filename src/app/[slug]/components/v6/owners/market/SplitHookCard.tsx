@@ -215,7 +215,8 @@ function SplitHookChainBlock({
                   <SummaryRow label="Seeds with">
                     {fmtUnits(state.accumulated, 18)} {tokenSymbol}
                     <span className="block text-xs text-zinc-500">
-                      Part is cashed out for {state.pairSymbol} to mint a two-sided position
+                      Part is cashed out for {state.pairSymbol}, so both tokens can be offered for
+                      trading
                     </span>
                   </SummaryRow>
                   <SummaryRow label="Minimum cash out return">None</SummaryRow>
@@ -225,9 +226,9 @@ function SplitHookChainBlock({
             />
             {state.deployGated && (
               <span className="text-xs text-zinc-400 max-w-md">
-                Deploying currently requires the revnet operator (SET_BUYBACK_POOL permission). It
-                becomes permissionless once the issuance rate decays to 10% of what it was when
-                tokens started accumulating.
+                Only an account with the operator&apos;s SET_BUYBACK_POOL permission can create the
+                pool now. Anyone can do so once the new-token rate falls to 10% of its rate when
+                these tokens began collecting.
               </span>
             )}
           </>
@@ -238,7 +239,7 @@ function SplitHookChainBlock({
             confirmTitle="Confirm fee collection"
             functionName="collectAndRouteLPFees"
             args={[state.projectId, state.terminalToken] as const}
-            title="Collect LP trading fees and route them into the project's terminal balance (anyone can call this)"
+            title="Collect trading fees into the project balance (anyone can do this)"
             rows={
               <>
                 <SummaryRow label="Collects">

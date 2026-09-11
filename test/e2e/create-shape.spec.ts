@@ -64,7 +64,7 @@ test("production create surface stays visible and contained", async ({ page }) =
   const sectionHeadings = page.getByRole("heading", { level: 2 });
   await expect(sectionHeadings).toHaveText([
     "1. Look",
-    "2. Settlement",
+    "2. Money and chains",
     "3. Terms",
     "4. Store",
     "5. Operator",
@@ -73,23 +73,25 @@ test("production create surface stays visible and contained", async ({ page }) =
   await expect(page.getByRole("combobox", { name: "Deployment environment" })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Ticker", exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Token symbol", exact: true })).toBeVisible();
   await retryUntilVisible(
     () => page.getByRole("checkbox", { name: "USDC" }).check(),
-    page.getByText("backed by both ETH and USDC", { exact: false }),
+    page.getByText("The reserve will hold the ETH and USDC", { exact: false }),
   );
   await expect(page.getByRole("checkbox", { name: "ETH", exact: true })).toBeChecked();
 
   // The issuance denomination is one global value edited at its point of use:
   // inline in the stage's issuance row, not in a standalone block.
-  await expect(page.getByRole("combobox", { name: "Issuance currency" })).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "New token pricing currency" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Add stage" }).click();
   const stageDialog = page.getByRole("dialog");
   await expect(stageDialog).toBeVisible();
   const issuanceAmount = page.locator("#initialIssuance");
   const issuanceSuffix = page.locator("#initialIssuance + span");
-  const issuanceCurrency = issuanceSuffix.getByRole("combobox", { name: "Issuance currency" });
+  const issuanceCurrency = issuanceSuffix.getByRole("combobox", {
+    name: "New token pricing currency",
+  });
   await expect(issuanceCurrency).toHaveCount(1);
   await expect(issuanceCurrency).toHaveValue("ETH");
   await expect(issuanceCurrency.locator("option")).toHaveText(["ETH", "USD"]);
@@ -125,7 +127,7 @@ test("production create surface stays visible and contained", async ({ page }) =
   expect(amountBox).not.toBeNull();
   expect(suffixBox).not.toBeNull();
   expect(amountBox!.x + amountBox!.width).toBeLessThanOrEqual(suffixBox!.x + 0.5);
-  await page.getByRole("checkbox", { name: "add automatic cuts?" }).check();
+  await page.getByRole("checkbox", { name: "Reduce this rate over time" }).check();
   const dialogBox = await page.getByRole("dialog").boundingBox();
   const enabledSuffixBox = await issuanceSuffix.boundingBox();
   const cutLabelBox = await page.locator('label[for="uiCutPercentage"]').boundingBox();
@@ -143,9 +145,9 @@ test("production create surface stays visible and contained", async ({ page }) =
   expect(cutFrequencyBox!.x + cutFrequencyBox!.width).toBeLessThanOrEqual(
     dialogBox!.x + dialogBox!.width - 8,
   );
-  await page.getByRole("button", { name: "add split +" }).click();
+  await page.getByRole("button", { name: "add recipient +" }).click();
   await page.locator("#splits\\.0\\.percentage").fill("10");
-  await page.getByRole("button", { name: "add split +" }).click();
+  await page.getByRole("button", { name: "add recipient +" }).click();
   await page.locator("#splits\\.1\\.percentage").fill("10");
   const splitPercentageBoxes = await page
     .locator('[id^="splits."][id$=".percentage"]')
@@ -155,8 +157,10 @@ test("production create surface stays visible and contained", async ({ page }) =
   await page.keyboard.press("Escape");
 
   await page.getByRole("checkbox", { name: "Custom token" }).check();
-  await expect(page.getByRole("textbox", { name: "ERC-20 token address" })).toBeVisible();
-  await expect(page.getByText("A custom reserve is exclusive.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Token contract address" })).toBeVisible();
+  await expect(
+    page.getByText("Choosing a custom token makes it the only accepted token.", { exact: false }),
+  ).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "ETH", exact: true })).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: "USDC" })).not.toBeChecked();
   await expect(page.locator('a[href*="/undefined/"]')).toHaveCount(0);
@@ -174,7 +178,9 @@ test("only the first stage offers the issuance denomination; later stages quote 
   // The first stage owns the one global denomination.
   await page.getByRole("button", { name: "Add stage" }).click();
   const firstStage = page.getByRole("dialog");
-  await firstStage.getByRole("combobox", { name: "Issuance currency" }).selectOption("USD");
+  await firstStage
+    .getByRole("combobox", { name: "New token pricing currency" })
+    .selectOption("USD");
   await firstStage.getByRole("button", { name: "Save stage" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
@@ -182,7 +188,9 @@ test("only the first stage offers the issuance denomination; later stages quote 
   await page.getByRole("button", { name: "Add stage" }).click();
   const laterStage = page.getByRole("dialog");
   await expect(laterStage).toBeVisible();
-  await expect(laterStage.getByRole("combobox", { name: "Issuance currency" })).toHaveCount(0);
+  await expect(
+    laterStage.getByRole("combobox", { name: "New token pricing currency" }),
+  ).toHaveCount(0);
   await expect(laterStage.locator("select")).toHaveCount(0);
   const laterSuffix = laterStage.locator("#initialIssuance + span");
   await expect(laterSuffix).toHaveText(/\/\s*USD/);
@@ -229,14 +237,14 @@ test("environment flip swaps the chain list and selects a visible fallback", asy
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeChecked();
 
   await environment.click();
-  await page.getByRole("option", { name: "Testnets" }).click();
+  await page.getByRole("option", { name: "Test chains" }).click();
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toHaveCount(0);
   await expect(page.getByRole("checkbox", { name: "Sepolia", exact: true })).toBeVisible();
 
   // The hidden environment's pick was dropped, and the form remains valid by
   // selecting the first chain in the newly visible environment.
   await environment.click();
-  await page.getByRole("option", { name: "Production" }).click();
+  await page.getByRole("option", { name: "Live chains" }).click();
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeChecked();
 
   await page.waitForTimeout(250);
@@ -248,7 +256,7 @@ test("create form remains keyboard-usable and free of severe accessibility regre
 }) => {
   const boundary = await openCreatePage(page);
   const name = page.getByRole("textbox", { name: "Name", exact: true });
-  const ticker = page.getByRole("textbox", { name: "Ticker", exact: true });
+  const ticker = page.getByRole("textbox", { name: "Token symbol", exact: true });
 
   await name.focus();
   await page.keyboard.type("Keyboard Revnet");

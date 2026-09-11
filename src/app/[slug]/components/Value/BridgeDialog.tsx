@@ -7,6 +7,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -137,7 +138,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       if (!publicClient || !suckerPair || amountValue === undefined || !terminalToken) {
         throw new Error("The bridge quote is incomplete.");
       }
-      if (slippageBps === undefined) throw new Error("Enter a valid slippage tolerance.");
+      if (slippageBps === undefined) throw new Error("Enter a valid maximum quote change.");
 
       return quoteBridgePrepare(publicClient, {
         chainId: sourceChainId,
@@ -218,7 +219,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
 
       const reviewedQuote = prepareQuote.data;
       if (!reviewedQuote || Date.now() - prepareQuote.dataUpdatedAt > 30_000) {
-        throw new Error("The bridge quote is unavailable or stale. Wait for it to refresh.");
+        throw new Error("The transfer quote is missing or out of date. Wait for it to refresh.");
       }
 
       const tokenAddress = await getTokenAddress(sourceChainId, projectId);
@@ -228,7 +229,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       }
 
       if (!suckerPair) {
-        throw new Error("Couldn't determine sucker pair. Please try again");
+        throw new Error("Could not find a bridge between these networks. Try again.");
       }
 
       // Named before any prompt opens: the approval is a separate wallet action
@@ -246,10 +247,10 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       // before the write and preserve the minimum the user actually reviewed.
       const freshQuote = await prepareQuote.refetch();
       if (freshQuote.error || !freshQuote.data) {
-        throw new Error("The live bridge quote could not be refreshed. Nothing was submitted.");
+        throw new Error("The transfer quote could not be refreshed. Nothing was submitted.");
       }
       if (freshQuote.data.netReclaimAmount < reviewedQuote.minTokensReclaimed) {
-        throw new Error("The live bridge quote fell below your reviewed minimum. Review it again.");
+        throw new Error("The transfer quote fell below your minimum. Review it again.");
       }
 
       const request = buildProtectedBridgePrepareTx({
@@ -304,7 +305,11 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Move between chains</DialogTitle>
+          <DialogTitle>Move between networks</DialogTitle>
+          <DialogDescription>
+            Move your tokens and their share of revnet funds to another network. This transfer,
+            called bridging, takes more than one step.
+          </DialogDescription>
         </DialogHeader>
 
         <form
@@ -316,7 +321,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
           <fieldset className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="sourceChainId" className="text-zinc-900">
-                From chain
+                From network
               </Label>
               <Select
                 value={sourceChainId.toString()}
@@ -328,7 +333,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 disabled={isDisabled}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select chain..." id="sourceChainId">
+                  <SelectValue placeholder="Choose network..." id="sourceChainId">
                     <div className="flex items-center gap-2">
                       <ChainLogo chainId={sourceChainId} />
                       {chainDisplayName(sourceChainId)}
@@ -359,7 +364,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             </div>
             <div>
               <Label htmlFor="targetChainId" className="text-zinc-900">
-                To chain
+                To network
               </Label>
               <Select
                 value={targetChainId?.toString() ?? ""}
@@ -370,7 +375,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 disabled={isDisabled}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select chain..." id="targetChainId">
+                  <SelectValue placeholder="Choose network..." id="targetChainId">
                     {targetChainId && (
                       <div className="flex items-center gap-2">
                         <ChainLogo chainId={targetChainId} />
@@ -461,7 +466,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 </div>
               </div>
               <p className="mt-1 text-xs text-zinc-500">
-                The transaction reverts below this floor.
+                The transfer stops if the amount falls below your minimum.
               </p>
             </div>
             <div
@@ -469,10 +474,12 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
               aria-live="polite"
             >
               {prepareQuote.isPending && prepareQuote.fetchStatus === "fetching" ? (
-                <span className="text-zinc-600">Reading the live source-chain cash-out quote…</span>
+                <span className="text-zinc-600">
+                  Checking how much revnet funding moves with your tokens…
+                </span>
               ) : prepareQuote.data ? (
                 <div className="grid gap-1 sm:grid-cols-2">
-                  <span className="text-zinc-600">Estimated backing received</span>
+                  <span className="text-zinc-600">Estimated funding moved</span>
                   <span className="font-medium sm:text-right">
                     {formatUnits(
                       prepareQuote.data.netReclaimAmount,
@@ -480,7 +487,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                     )}{" "}
                     {backingTokenSymbol}
                   </span>
-                  <span className="text-zinc-600">Protected minimum</span>
+                  <span className="text-zinc-600">Minimum funding moved</span>
                   <span className="font-medium sm:text-right">
                     {formatUnits(
                       prepareQuote.data.minTokensReclaimed,
@@ -494,8 +501,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                   {prepareQuote.error instanceof Error
                     ? prepareQuote.error.message
                     : slippageBps === undefined
-                      ? "Enter a slippage tolerance from 0% to 5%."
-                      : "Choose both chains and enter an amount to review the protected minimum."}
+                      ? "Enter a maximum quote change from 0% to 5%."
+                      : "Choose both networks and an amount to see the minimum funding moved."}
                 </span>
               )}
             </div>
@@ -510,7 +517,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
               {isApproving && "Waiting for confirmation..."}
               {isLoading && "Waiting for confirmation..."}
               {isSuccess &&
-                "Success! Close the dialog and check transactions in the table to complete."}
+                "First step confirmed. Close this window and use the transaction table to finish the move."}
             </div>
             <ButtonWithWallet
               targetChainId={sourceChainId}
@@ -536,21 +543,21 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             title="Confirm move"
             chainId={sourceChainId}
             preparing={needsApproval === null}
-            status={needsApproval === null ? "Reading your token allowance…" : null}
+            status={needsApproval === null ? "Checking permission to use your tokens…" : null}
             steps={[
               ...(needsApproval
                 ? [
                     {
                       key: "approve",
-                      title: "Approve the bridge for your tokens",
-                      detail: "The sucker cannot take custody of them without this allowance.",
+                      title: "Let the bridge use your tokens",
+                      detail: "This lets the bridge contract receive the amount shown.",
                     },
                   ]
                 : []),
               {
                 key: "prepare",
-                title: "Queue the bridge",
-                detail: "Cashes out here and sends the backing to the other chain.",
+                title: "Start the move",
+                detail: "Cashes out here and queues the funds for the other network.",
               },
             ]}
             activeIndex={isApproving ? 0 : isSubmitting ? (needsApproval ? 1 : 0) : -1}
@@ -564,11 +571,11 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             </SummaryRow>
             <SummaryRow label="From">{chainDisplayName(sourceChainId)}</SummaryRow>
             <SummaryRow label="To">{chainDisplayName(targetChainId)}</SummaryRow>
-            <SummaryRow label="Backing received">
+            <SummaryRow label="Funding moved">
               ~{formatUnits(prepareQuote.data.netReclaimAmount, prepareQuote.data.tokenDecimals)}{" "}
               {backingTokenSymbol}
             </SummaryRow>
-            <SummaryRow label="Enforced onchain">
+            <SummaryRow label="Minimum funding moved">
               At least{" "}
               {formatUnits(prepareQuote.data.minTokensReclaimed, prepareQuote.data.tokenDecimals)}{" "}
               {backingTokenSymbol}

@@ -71,7 +71,7 @@ interface Props {
 export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, disabled, children } = props;
   const [redeemAmount, setRedeemAmount] = useState<string>();
-  // Max slippage tolerance in basis points; protects both routes (terminal
+  // Max quote change tolerance in basis points; protects both routes (terminal
   // minimum on the treasury path, metadata minimum on the AMM path).
   const [slippageBps, setSlippageBps] = useState(100);
 
@@ -317,16 +317,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
       kind === "erc20"
         ? {
             key: "erc20",
-            title: "Approve your tokens for the swap router",
-            detail: "Permit2 cannot move your tokens without this allowance.",
+            title: "Allow token use for the sale",
+            detail:
+              "This gives the token approval contract, Permit2, permission to move the amount shown.",
           }
         : {
             key: "router",
-            title: "Authorize the swap router",
-            detail: "A capped allowance that expires in 30 days.",
+            title: "Allow the sale contract to use your tokens",
+            detail: "Permission is limited to the amount shown and expires in 30 days.",
           },
     ),
-    { key: "cashout", title: directSell ? "Sell on the pool" : "Cash out" },
+    { key: "cashout", title: directSell ? "Sell on the market" : "Cash out" },
   ];
   const cashOutActiveIndex = isSuccess
     ? cashOutSteps.length
@@ -360,6 +361,11 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 <div>Success! You can close this window.</div>
               ) : (
                 <>
+                  <p className="mb-4">
+                    Cashing out removes your tokens from supply, called burning, in exchange for
+                    revnet funds. If selling them to other traders pays more, this form offers that
+                    sale instead.
+                  </p>
                   <div className="mb-5 w-[65%]">
                     <span className="text-sm text-black font-medium"> Your {tokenSymbol}</span>
                     <div className="mt-1 border border-melon-300 p-3 bg-melon-25">
@@ -376,7 +382,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
                   <div className="grid w-full gap-1.5">
                     <Label htmlFor="amount" className="text-zinc-900">
-                      Cash out amount
+                      Tokens to cash out
                     </Label>
                     <div className="grid grid-cols-7 gap-2">
                       <div className="col-span-3">
@@ -391,7 +397,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                             onValueChange={(v) => setCashOutChainId(v)}
                           >
                             <SelectTrigger>
-                              <SelectValue placeholder="Select chain" />
+                              <SelectValue placeholder="Choose network" />
                             </SelectTrigger>
                             <SelectContent>
                               {cashOutableBalances.map((balance) => (
@@ -430,7 +436,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                                 if (!activeCashOutChainId) {
                                   return toast({
                                     variant: "warning",
-                                    description: "Please select a chain first.",
+                                    description: "Choose a network first.",
                                   });
                                 }
                                 setRedeemAmount(
@@ -451,20 +457,20 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
                   {redeemAmount && activeCashOutChainId && !valid ? (
                     <div className="text-red-500 mt-4">
-                      Insufficient {tokenSymbol} on{" "}
+                      Not enough {tokenSymbol} on{" "}
                       {chainDisplayName(Number(activeCashOutChainId) as JBChainId)}
                     </div>
                   ) : null}
 
                   {redeemAmount && valid && isQuoteError ? (
                     <div className="text-red-500 mt-4">
-                      Couldn't quote this cash out. Cash outs unlock after the revnet's initial
-                      delay — if it's still locked, try again later.
+                      Could not estimate this cash out. If the revnet's opening wait period has not
+                      ended, try again afterward.
                     </div>
                   ) : null}
 
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <span className="shrink-0 text-sm text-zinc-700">Max slippage</span>
+                    <span className="shrink-0 text-sm text-zinc-700">Max quote change</span>
                     <div className="flex flex-wrap items-center gap-1">
                       {[50, 100, 300].map((bps) => (
                         <button
@@ -481,7 +487,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                         </button>
                       ))}
                       <label className="flex h-7 w-[4.75rem] shrink-0 items-center border border-melon-300 bg-melon-25 px-2 text-sm text-zinc-700 focus-within:border-teal-600">
-                        <span className="sr-only">Custom max slippage percent</span>
+                        <span className="sr-only">Custom maximum quote change, percent</span>
                         <input
                           type="number"
                           min="0"
@@ -504,10 +510,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
                   {!directSell && poolBufferBps !== null ? (
                     <div className="mt-2 text-sm text-zinc-500">
-                      This pool&apos;s preview already allows about{" "}
-                      {(poolBufferBps / 100).toFixed(2).replace(/\.00$/, "")}% for its fee and price
-                      impact. Your {slippageBps / 100}% setting additionally covers movement before
-                      the transaction lands.
+                      This trading estimate already allows about{" "}
+                      {(poolBufferBps / 100).toFixed(2).replace(/\.00$/, "")}% for the trading fee
+                      and the price change caused by your sale. Your {slippageBps / 100}% setting
+                      allows further change before the transaction confirms.
                     </div>
                   ) : null}
 
@@ -524,7 +530,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                         {baseToken?.symbol}
                       </span>
                       <div className="text-sm text-zinc-500 mt-1">
-                        Reverts below{" "}
+                        Stops if you would receive less than{" "}
                         {formatDecimals(
                           directSell
                             ? Number(formatUnits(directSell.minimumOutput, baseDecimals))
@@ -533,8 +539,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                         )}{" "}
                         {baseToken?.symbol}
                         {directSell
-                          ? ` | direct pool sale beats ${formatDecimals(expectedReclaim, 5)} ${baseToken?.symbol} from cashing out`
-                          : " | best hook-aware cash-out route"}
+                          ? ` | selling pays more than the ${formatDecimals(expectedReclaim, 5)} ${baseToken?.symbol} cash-out estimate`
+                          : " | includes the revnet’s cash-out settings"}
                       </div>
                     </div>
                   ) : null}
@@ -558,7 +564,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 }}
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                {directSell ? "Sell on pool" : "Cash out"}
+                {directSell ? "Sell on market" : "Cash out"}
               </ButtonWithWallet>
             ) : null}
           </DialogFooter>
@@ -579,9 +585,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 : needsErc20Approval
                   ? "Approve tokens"
                   : needsRouterApproval
-                    ? "Authorize swap router"
+                    ? "Allow token use for sale"
                     : directSell
-                      ? "Sell on pool"
+                      ? "Sell on market"
                       : "Cash out"
             }
             busy={loading || isApproving}
@@ -650,7 +656,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     : null;
                   if (!fresh) {
                     throw new Error(
-                      "The pool no longer beats cashing out. Review the refreshed quote.",
+                      "Selling no longer pays more than cashing out. Review the new estimate.",
                     );
                   }
                   await writeContractAsync(
@@ -708,7 +714,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
               )}{" "}
               {baseToken?.symbol}
               <span className="block text-xs text-zinc-500">
-                Reverts below{" "}
+                Stops if you would receive less than{" "}
                 {formatDecimals(
                   directSell
                     ? Number(formatUnits(directSell.minimumOutput, baseDecimals))
@@ -719,9 +725,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
               </span>
             </SummaryRow>
             <SummaryRow label="Route">
-              {directSell ? "Direct pool sale" : "Cash out from the treasury"}
+              {directSell ? "Sell to other traders" : "Cash out from revnet funds"}
             </SummaryRow>
-            <SummaryRow label="Max slippage">{slippageBps / 100}%</SummaryRow>
+            <SummaryRow label="Max quote change">{slippageBps / 100}%</SummaryRow>
           </TxConfirmDialog>
         ) : null}
       </DialogContent>

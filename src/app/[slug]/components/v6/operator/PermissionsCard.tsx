@@ -177,8 +177,8 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
               </div>
             ))}
             <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-              Every power. The revnet is owned by the REVOwner contract, which acts directly and
-              never needs a grant — it is what delegates the powers below to the revnet operator.
+              The REVOwner contract holds the owner role and enforces the revnet&apos;s rules. It
+              gives the operator the limited permissions listed below.
             </p>
           </div>
         ) : null}
@@ -188,8 +188,7 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
           <p className="text-sm text-zinc-500 mt-3">Could not read permissions.</p>
         ) : grants.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-500">
-            No other accounts have been granted permissions, according to the indexer. Grants are
-            read from the index, so one made very recently may not appear yet.
+            No other permissions appear in the records yet. Recent changes may take time to appear.
           </p>
         ) : (
           <div className="mt-3 divide-y divide-melon-200 bg-melon-50 px-4">

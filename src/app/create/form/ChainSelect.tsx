@@ -81,8 +81,8 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
       <div className="text-black-500 text-left font-semibold">Choose your chains</div>
       {reassignedRows > 0 ? (
         <p className="text-xs text-amber-700">
-          {reassignedRows} auto-issuance {reassignedRows === 1 ? "row was" : "rows were"} moved to
-          the only selected chain. Re-adding chains will not restore the previous targets — set them
+          {reassignedRows} token {reassignedRows === 1 ? "entry was" : "entries were"} moved to the
+          only selected chain. Re-adding chains will not restore the previous targets — set them
           again on the stage.
         </p>
       ) : null}
@@ -115,10 +115,10 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="production" key="production">
-              Production
+              Live chains
             </SelectItem>
             <SelectItem value="testing" key="testing">
-              Testnets
+              Test chains
             </SelectItem>
           </SelectContent>
         </Select>

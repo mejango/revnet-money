@@ -47,21 +47,20 @@ export function DeploySection({
       <div className="md:col-span-1">
         <h2 className="mb-4 text-lg font-bold md:mb-2">6. Deploy</h2>
         <p className="text-lg text-zinc-600">
-          Deploy your revnet on the chains you selected. Anyone will be able to pay it to receive{" "}
-          {revnetTokenSymbol} right away.
+          Create your revnet on the selected chains. Once its first stage starts, people can pay it
+          to receive {revnetTokenSymbol} under its terms.
         </p>
         <p className="mt-2 text-lg text-zinc-600">
-          An operator, if you named one, will also be able to add new chains to the revnet later
-          using the matching deployment configuration.
+          If you chose an operator, they can add chains later using the same launch settings.
         </p>
       </div>
       <div className="mt-6 md:col-span-2 md:mt-0">
         {deploysViaSafe && (
           <p className="mb-4 border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800">
-            This deployment encodes stage 1&apos;s start time when it is proposed — about 10 minutes
-            ahead unless you set one. If your Safe executes the proposal after that time, cash-outs
-            and loans are locked for 7 days from execution. To avoid the lock, set stage 1 to start
-            in the future, later than the Safe will execute.
+            This proposal fixes stage 1&apos;s start time, about 10 minutes ahead unless you chose a
+            date. If your Safe carries out the proposal after that time, cash-outs and loans will be
+            locked for 7 days. To avoid the lock, choose a start date that gives your Safe enough
+            time to approve and carry out the proposal.
           </p>
         )}
         {unsupportedMultichain ? (
@@ -71,7 +70,7 @@ export function DeploySection({
           >
             {isSafeConnector(connector)
               ? "For a Safe deployment, select one chain."
-              : "Select supported chains from one network family: all mainnets or all testnets."}
+              : "Choose either live chains or test chains, not a mix."}
           </p>
         ) : null}
         <div className="flex justify-end">
@@ -109,7 +108,7 @@ export function DeploySection({
                 ? [
                     {
                       title: `Deploy ${values.name || "the revnet"} on ${chainNames[0]}`,
-                      detail: "Pays the project creation fee with the deployment.",
+                      detail: "Creates the revnet with the terms you chose.",
                     },
                   ]
                 : values.chainIds.map((chainId) => ({

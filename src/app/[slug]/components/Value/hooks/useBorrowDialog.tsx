@@ -513,7 +513,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         toast({
           variant: "destructive",
           title: "Permission Denied",
-          description: "Permission was not granted. Please approve to proceed.",
+          description: "Permission was not granted. Approve it to continue.",
         });
         return false;
       }
@@ -542,7 +542,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       toast({
         variant: "destructive",
         title: "Configuration Error",
-        description: "Unable to determine token configuration for the selected chain.",
+        description: "Could not load the token details for this network.",
       });
       return;
     }
@@ -573,9 +573,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         setBorrowStatus("error");
         toast({
           variant: "destructive",
-          title: "Invalid Reallocation",
-          description:
-            "Adding this collateral would result in a borrow amount less than your original loan. Please add more collateral.",
+          title: "Cannot refinance",
+          description: "These tokens cannot back the original debt. Add more tokens.",
         });
         return;
       }
@@ -587,7 +586,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
       try {
         if (!publicClient) {
-          throw new Error("The selected chain is unavailable. Nothing was submitted.");
+          throw new Error("This network is unavailable. Nothing was submitted.");
         }
 
         const newLoanCollateralCount = collateralCountToTransfer + collateralCountToAdd;
@@ -620,7 +619,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         setBorrowStatus("error");
         toast({
           variant: "destructive",
-          title: "Reallocation Failed",
+          title: "Refinancing failed",
           description: formatWalletError(err),
         });
       }
@@ -752,9 +751,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       setBorrowStatus("success");
       toast({
         title: "Success",
-        description: isReallocationSuccess
-          ? "Loan adjusted successfully!"
-          : "Loan created successfully!",
+        description: isReallocationSuccess ? "Loan adjusted." : "Loan opened.",
       });
     } else {
       setBorrowStatus("error");

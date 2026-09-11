@@ -2,21 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const PHRASES = [
-  "business model",
-  "coordination engine",
-  "money machine",
-  "growth flywheel",
-  "revenue loop",
-  "capital protocol",
-  "funding rocket",
-  "ownership stack",
-  "upside splitter",
-  "fundraising rail",
-  "economic organism",
-  "profit garden",
-  "income network",
-];
+const PHRASES = ["business model", "shared project", "community fund", "revenue network"];
 
 export function RotatingTagline() {
   const [index, setIndex] = useState(0);

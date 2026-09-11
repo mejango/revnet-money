@@ -141,8 +141,8 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
     <section className="border border-zinc-200 bg-melon-50 p-4">
       <h3 className="font-medium text-zinc-900">Payouts</h3>
       <p className="mt-1 text-sm text-zinc-500">
-        Distribute the available payout allowance to each chain&apos;s configured recipients. Any
-        unallocated share goes to that chain&apos;s project owner. Protocol fees apply.
+        Send the amount allowed by the project&apos;s rules to its listed recipients on each chain.
+        Any share without a recipient goes to that chain&apos;s project owner.
       </p>
       {pending ? (
         <div className="mt-3 border border-amber-300 bg-amber-50 p-3 text-sm">

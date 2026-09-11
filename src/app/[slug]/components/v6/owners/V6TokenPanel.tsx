@@ -248,8 +248,9 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
         <div className="max-w-3xl">
           <p className="font-medium text-black">No ERC-20 yet</p>
           <p className="mt-1 text-sm text-melon-700">
-            Balances remain internal Juicebox credits and can still be cashed out. Deploying an
-            ERC-20 makes them claimable as a transferable token and enables market liquidity.
+            Juicebox records your token balance, and you can still cash it out. Creating a standard
+            token contract, called an ERC-20, lets holders claim tokens for use in wallets and
+            markets.
           </p>
         </div>
       )}

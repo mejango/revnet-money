@@ -157,7 +157,7 @@ describe("OperatorSection", () => {
   it("binds each typed address to the chain it is rendered beside, not the selection index", () => {
     render(<Harness initialValues={operatorForm()} />);
     fireEvent.click(toggle());
-    fireEvent.click(screen.getByLabelText(/set operator per chain/i));
+    fireEvent.click(screen.getByLabelText(/Use a different operator on each chain/i));
 
     fireEvent.change(screen.getByLabelText("Sepolia operator address"), {
       target: { value: TEST_ACCOUNT },

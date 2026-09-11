@@ -44,9 +44,8 @@ export function V6SettlementSubtab({ projects }: { projects: ProjectItem[] }) {
         // Single-chain projects have nothing to bridge, gossip, or claim — say so
         // instead of silently hiding the sections.
         <div className="text-zinc-500">
-          This project settles on one chain, so there are no bridges, cross-chain accounting
-          records, or queued token movements. If the revnet operator deploys the project to more
-          chains, they&apos;ll show up here.
+          This revnet uses one chain. If the operator adds more chains, their balances and transfers
+          will appear here.
         </div>
       )}
     </div>
