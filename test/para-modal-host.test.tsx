@@ -247,8 +247,8 @@ describe("ParaModalHost", () => {
     expect(para.state.openModalCalls).toEqual([]);
     const sheet = within(hostDialog());
     expect(sheet.getByRole("textbox", { name: "Email address or phone number" })).toBeEnabled();
-    expect(sheet.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
-    expect(sheet.getByRole("button", { name: "Google", exact: true })).toBeEnabled();
+    expect(sheet.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(sheet.getByRole("button", { name: "Google" })).toBeEnabled();
     expect(sheet.queryByRole("button", { name: "Continue with email" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -387,8 +387,8 @@ describe("ParaModalHost", () => {
     await waitFor(() => expect(hostDialog().open).toBe(true));
     const sheet = within(hostDialog());
     expect(sheet.getByRole("textbox", { name: "Email address or phone number" })).toBeEnabled();
-    expect(sheet.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
-    expect(sheet.getByRole("button", { name: "Google", exact: true })).toBeEnabled();
+    expect(sheet.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(sheet.getByRole("button", { name: "Google" })).toBeEnabled();
     expect(sheet.queryByRole("button", { name: "Continue with email" })).not.toBeInTheDocument();
     expect(para.state.onRampCalls).toEqual([]);
     expect(para.state.openModalCalls).toEqual([]);
