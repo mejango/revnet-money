@@ -57,11 +57,15 @@ without a product requirement that the current stack cannot meet.
 
 ## Decision
 
-Retain React and Next's single-process runtime. Use Next 16.2.11, Node 26.5.0,
+Retain React and Next's single-process runtime. Use Next 16.3.3, Node 26.5.0,
 npm 12.0.1, and the repository's single `package-lock.json`. Ship
 `output: "standalone"` in a digest-pinned, multi-stage, non-root OCI image. CI,
 release, and Docker builds use `npm ci --ignore-scripts`; no second lockfile is
 accepted.
+
+Next uses the TypeScript 6 compatibility package's compiler API explicitly:
+its binary is named `tsc6`, while Next's default CLI mode expects `tsc`.
+The separate `typecheck` command continues to use the TypeScript 7 native CLI.
 
 Dependency or framework updates remain coupled to lockfile integrity, native
 and optional-package resolution, the production build, browser suite, and OCI
@@ -71,7 +75,7 @@ Public build configuration is validated before compilation. Runtime secrets are
 validated at process start. Per-chain RPC inputs are provider-neutral,
 comma-separated fallback lists; no vendor credential is committed. Contract
 deployments remain pinned to deploy-all-v6 commit
-`316e9d4d3f9e1c5b41a5df7c0ad6183abbeccc7f`.
+`8522541297557c80f8bc2dd674c3098f8849b527`.
 
 ## Consequences
 

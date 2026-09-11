@@ -16,6 +16,10 @@ const SECURITY_HEADERS = [
 /** @type {import('next').NextConfig} */
 module.exports = {
   reactStrictMode: true,
+  // The TypeScript 6 compatibility package exposes the compiler API and a
+  // `tsc6` binary. Next's CLI mode looks for `tsc`, so retain the API path for
+  // build type checks and tsconfig aliases; the standalone check uses TS 7.
+  experimental: { useTypeScriptCli: false },
   // The git SHA is set at build and run time by the Dockerfile. Next appends it
   // to asset URLs and navigation requests, and hard-navigates a tab whose
   // deployment differs from the server's instead of failing on stale chunks
