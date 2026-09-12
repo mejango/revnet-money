@@ -29,7 +29,7 @@ import {
   jbSplitsAbi,
   SPLITS_TOTAL_PERCENT,
 } from "@bananapus/nana-sdk-core";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { twJoin } from "tailwind-merge";
 import { isAddress, zeroAddress } from "viem";
 import { useReadContracts } from "wagmi";
@@ -39,6 +39,9 @@ import { currentStageIndex, effectiveSplitPercent } from "../../../owners/compon
 import { ProjectItem } from "../shared";
 
 const BURN_SENTINEL = "0x000000000000000000000000000000000000dead";
+const subscribeToHydration = () => () => {};
+const clientIsHydrated = () => true;
+const serverIsHydrated = () => false;
 
 type Split = {
   beneficiary: `0x${string}`;
@@ -54,6 +57,8 @@ type Split = {
  * burn sentinel.
  */
 export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
+  // Persisted rulesets may restore before this streamed subtab hydrates.
+  const hydrated = useSyncExternalStore(subscribeToHydration, clientIsHydrated, serverIsHydrated);
   const { projectId, contractAddress } = useJBContractContext();
   const chainId = useJBChainId();
   const { token } = useJBTokenContext();
@@ -167,6 +172,8 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
       ] as const;
     }),
   );
+
+  if (!hydrated) return <TableSkeleton rows={4} columns={3} />;
 
   return (
     <div>
