@@ -1,15 +1,19 @@
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import {
   decodeEventLog,
+  decodeFunctionResult,
   encodeFunctionData,
   isAddressEqual,
   parseAbi,
+  zeroHash,
   type Address,
   type Hex,
   type PublicClient,
   type TransactionReceipt,
 } from "viem";
 import { verifyPayoutReceipt, type ExpectedPayoutReceipt } from "./payout-receipts";
+import { verifyRouterPendingReceipt, type RouterPendingReceiptGuard } from "./pending-router-calls";
+import { routerGatewayAbi } from "./router-gateway-abi";
 
 /** Exact read-only source snapshots. Hex keeps the durable journal independent of ABI/BigInt JSON. */
 export type CallPrecondition = { address: Address; data: Hex; expected: Hex };
@@ -46,6 +50,53 @@ export async function verifyCallPreconditions(
       throw new Error(
         "A destination's reviewed state changed. Reconcile any submitted calls, then prepare a new review.",
       );
+  }
+}
+
+/** A keeper may advance a retained call while earlier batch calls are executing. */
+export async function readRouterPendingAdvance(
+  client: Pick<PublicClient, "call">,
+  guard: RouterPendingReceiptGuard,
+  preconditions: readonly CallPrecondition[] = [],
+): Promise<"resolved-externally" | "retried-externally" | undefined> {
+  const read = async (functionName: "pendingCallCommitmentOf" | "pendingCallFailureOf") => {
+    const data = encodeFunctionData({
+      abi: routerGatewayAbi,
+      functionName,
+      args: [guard.pendingCallId],
+    });
+    const snapshot = preconditions.find(
+      (item) =>
+        isAddressEqual(item.address, guard.gateway) &&
+        item.data.toLowerCase() === data.toLowerCase(),
+    );
+    if (!snapshot) throw new Error("The saved routing call has no authenticated source snapshot.");
+    const current = await client.call({ to: guard.gateway, data });
+    return { snapshot: snapshot.expected, current: current.data ?? "0x" };
+  };
+  const commitment = await read("pendingCallCommitmentOf");
+  const currentCommitment = decodeFunctionResult({
+    abi: routerGatewayAbi,
+    functionName: "pendingCallCommitmentOf",
+    data: commitment.current,
+  });
+  if (currentCommitment === zeroHash) return "resolved-externally";
+  if (commitment.current.toLowerCase() !== commitment.snapshot.toLowerCase()) {
+    throw new Error("The saved payment no longer matches the gateway commitment.");
+  }
+  const failure = await read("pendingCallFailureOf");
+  const previous = decodeFunctionResult({
+    abi: routerGatewayAbi,
+    functionName: "pendingCallFailureOf",
+    data: failure.snapshot,
+  });
+  const current = decodeFunctionResult({
+    abi: routerGatewayAbi,
+    functionName: "pendingCallFailureOf",
+    data: failure.current,
+  });
+  if (current.count > 0 && current.lastFailureAt > previous.lastFailureAt) {
+    return "retried-externally";
   }
 }
 
@@ -89,6 +140,7 @@ export async function verifyActionReceipt(
   rejectEvents: readonly RejectedReceiptEvent[] = [],
   reservedReceipt?: ReservedReceiptGuard,
   expectedPayout?: ExpectedPayoutReceipt,
+  expectedRouterPending?: RouterPendingReceiptGuard,
 ) {
   if (
     rejectEvents.length &&
@@ -148,7 +200,10 @@ export async function verifyActionReceipt(
       );
   }
   if (expectedPayout) verifyPayoutReceipt(receipt, expectedPayout);
-  if (!expected) return;
+  const routerResult = expectedRouterPending
+    ? verifyRouterPendingReceipt(receipt, expectedRouterPending)
+    : undefined;
+  if (!expected) return routerResult;
   const events = receipt.logs.flatMap((log) => {
     if (!isAddressEqual(log.address, target)) return [];
     try {
@@ -186,4 +241,5 @@ export async function verifyActionReceipt(
     throw new Error(
       "The reported payer has no deployed code. Keep the transaction for reconciliation.",
     );
+  return routerResult;
 }

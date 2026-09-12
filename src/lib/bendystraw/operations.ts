@@ -23,10 +23,13 @@ import type {
   IndexedLpPositionsQueryVariables,
   IndexedPoolLiquidityEventsQuery,
   IndexedPoolLiquidityEventsQueryVariables,
+  IndexedPoolRangesQuery,
+  IndexedPoolRangesQueryVariables,
   IndexedPoolSwapsQuery,
   IndexedPoolSwapsQueryVariables,
   IndexedProjectsQuery,
   IndexedProjectsQueryVariables,
+  IndexedRouterPendingCall,
   IndexedSuckerGroupQuery,
   IndexedSuckerGroupQueryVariables,
   LoansByAccountQuery,
@@ -427,7 +430,7 @@ export const IndexedLpPositionsOperation = operation<
   IndexedLpPositionsQuery,
   IndexedLpPositionsQueryVariables
 >(
-  "indexed-lp-positions.v1",
+  "indexed-lp-positions.v2",
   variablesWith({ chainId: isNumber, poolId: isString }, { limit: positiveLimit, offset }),
   // Rows carry no projectId, so the shared identity guard does not apply: a
   // position is identified by its pool, which the query already pins.
@@ -466,6 +469,21 @@ export const IndexedPoolLiquidityEventsOperation = operation<
   }),
   hasIdentityItems("buybackPoolLiquidityEvents"),
 );
+export const IndexedPoolRangesOperation = operation<
+  IndexedPoolRangesQuery,
+  IndexedPoolRangesQueryVariables
+>(
+  "indexed-pool-ranges.v1",
+  variablesWith({
+    projectId: isNumber,
+    chainId: isNumber,
+    version: isNumber,
+    poolId: isString,
+    limit: positiveLimit,
+    offset,
+  }),
+  hasIdentityItems("buybackPoolRanges"),
+);
 export const OwnedNftsOperation = operation<OwnedNftsQuery, OwnedNftsQueryVariables>(
   "owned-nfts.v1",
   variablesWith({ where: filter, limit: positiveLimit, offset }),
@@ -487,7 +505,23 @@ export const ShieldGroupOperation = operation<ShieldGroupQuery, ShieldGroupQuery
   hasRoot("suckerGroup", "nullable-object"),
 );
 
+export const RouterPendingCallsOperation = operation<
+  { routerPendingCalls: { items: IndexedRouterPendingCall[]; totalCount: number } },
+  { chainId: number; sourceProjectId: number; gateway: string; limit: number; offset: number }
+>(
+  "router-pending-calls.v1",
+  variablesWith({
+    chainId: isInteger,
+    sourceProjectId: isInteger,
+    gateway: isString,
+    limit: positiveLimit,
+    offset,
+  }),
+  hasRoot("routerPendingCalls", "items"),
+);
+
 export const BENDYSTRAW_OPERATIONS = [
+  RouterPendingCallsOperation,
   ProjectOperation,
   ProjectAccountingContextOperation,
   IndexedProjectsOperation,
@@ -520,6 +554,7 @@ export const BENDYSTRAW_OPERATIONS = [
   IndexedLpPositionsOperation,
   IndexedPoolSwapsOperation,
   IndexedPoolLiquidityEventsOperation,
+  IndexedPoolRangesOperation,
   OwnedNftsOperation,
   MintNftEventsOperation,
   ShieldProjectOperation,
@@ -536,6 +571,7 @@ export const BENDYSTRAW_OPERATIONS = [
  * browser consumer.
  */
 export const BROWSER_BENDYSTRAW_OPERATIONS = [
+  RouterPendingCallsOperation,
   ProjectOperation,
   ProjectAccountingContextOperation,
   SuckerGroupOperation,
@@ -560,7 +596,7 @@ export const BROWSER_BENDYSTRAW_OPERATIONS = [
   OwnedNftsOperation,
   MintNftEventsOperation,
   IndexedLpPositionsOperation,
-  IndexedPoolLiquidityEventsOperation,
+  IndexedPoolRangesOperation,
 ] as const;
 
 export type BrowserBendystrawOperation = (typeof BROWSER_BENDYSTRAW_OPERATIONS)[number];

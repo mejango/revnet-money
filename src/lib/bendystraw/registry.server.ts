@@ -13,6 +13,7 @@ import {
   IndexedBuybackPoolsOperation,
   IndexedLpPositionsOperation,
   IndexedPoolLiquidityEventsOperation,
+  IndexedPoolRangesOperation,
   IndexedPoolSwapsOperation,
   IndexedProjectsOperation,
   IndexedSuckerGroupOperation,
@@ -30,6 +31,7 @@ import {
   ProjectPayersOperation,
   ProjectsByOwnerOperation,
   ProjectWithPermissionsOperation,
+  RouterPendingCallsOperation,
   ShieldGroupOperation,
   ShieldProjectOperation,
   StoreAutoIssuanceAmountEventsOperation,
@@ -848,6 +850,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         totalCount
         items {
           chainId
+          poolId
           tokenId
           owner
           tickLower
@@ -918,6 +921,36 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           liquidityDelta
           liquidityAfter
           sqrtPriceX96
+        }
+      }
+    }`,
+  },
+  [IndexedPoolRangesOperation.id]: {
+    operationName: "IndexedPoolRanges",
+    query: `query IndexedPoolRanges(
+      $projectId: Int!
+      $chainId: Int!
+      $version: Int!
+      $poolId: String!
+      $limit: Int!
+      $offset: Int!
+    ) {
+      buybackPoolRanges(
+        where: { projectId: $projectId, chainId: $chainId, version: $version, poolId: $poolId }
+        orderBy: "tickLower"
+        orderDirection: "asc"
+        limit: $limit
+        offset: $offset
+      ) {
+        totalCount
+        items {
+          chainId
+          projectId
+          version
+          poolId
+          tickLower
+          tickUpper
+          liquidity
         }
       }
     }`,
@@ -1040,6 +1073,25 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         }
       }
     }`,
+  },
+  // The complete original calldata is needed to authenticate each permissionless retry.
+  [RouterPendingCallsOperation.id]: {
+    operationName: "RouterPendingCalls",
+    query: `query RouterPendingCalls($chainId: Int!, $sourceProjectId: Int!, $gateway: String!, $limit: Int!, $offset: Int!) {
+    routerPendingCalls(
+      where: { chainId: $chainId, sourceProjectId: $sourceProjectId, gateway: $gateway, version: 6, status_in: [queued, retried] }
+      orderBy: "pendingCallId"
+      orderDirection: "asc"
+      limit: $limit
+      offset: $offset
+    ) {
+      totalCount
+      items {
+        chainId version gateway pendingCallId projectId sourceProjectId token amount retainedAmount
+        preferAddToBalance shouldReturnHeldFees beneficiary refundTo memo metadata callCommitment status
+      }
+    }
+  }`,
   },
 };
 

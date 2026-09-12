@@ -54,6 +54,11 @@ async function watchSafeProposal(id: string, hash: Hex, chainId: number): Promis
   if (existing) return existing;
   const request = (async () => {
     for (let attempt = 0; attempt < 720; attempt += 1) {
+      if (
+        refreshTransactionActivities().find((activity) => activity.id === id)?.obsoleteSafeNonce !==
+        undefined
+      )
+        return;
       try {
         const response = await fetch(
           `https://api.safe.global/tx-service/${prefix}/api/v1/multisig-transactions/${hash}/`,
@@ -66,6 +71,11 @@ async function watchSafeProposal(id: string, hash: Hex, chainId: number): Promis
             confirmations?: unknown[];
             confirmationsRequired?: number;
           };
+          if (
+            refreshTransactionActivities().find((activity) => activity.id === id)
+              ?.obsoleteSafeNonce !== undefined
+          )
+            return;
           if (transaction.isExecuted) {
             if (transaction.isSuccessful == null) {
               updateTransactionActivity(id, {
@@ -414,6 +424,7 @@ export function useWriteContract(
               functionName,
               args: variables.args,
               value: variables.value,
+              gas: preflightSimulation ? variables.gas : undefined,
               account: initialAddress,
               safeTxGas: safe ? 0n : undefined,
             },

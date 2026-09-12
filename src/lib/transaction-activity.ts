@@ -41,6 +41,8 @@ export type TransactionActivity = {
   account?: Address;
   hash?: Hex;
   safeProposalHash?: Hex;
+  /** Its authenticated call became permanently obsolete; keep nonce cancellation guidance. */
+  obsoleteSafeNonce?: number;
   executionHash?: Hex;
   bundleUuid?: string;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];

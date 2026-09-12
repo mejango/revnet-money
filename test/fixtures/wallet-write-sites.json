@@ -531,6 +531,20 @@
       "label": "Operator, settlement, shop, payer, and metadata writes",
       "sites": [
         [
+          "reviewed-multichain-hook",
+          "src/app/[slug]/components/ActivityFeed/PendingRoutingPayments.tsx",
+          "PendingRoutingPayments",
+          "useMultichainBatch",
+          1
+        ],
+        [
+          "reviewed-multichain-batch",
+          "src/app/[slug]/components/ActivityFeed/PendingRoutingPayments.tsx",
+          "submit",
+          "runBatch",
+          1
+        ],
+        [
           "reviewed-relayr-payment-hook",
           "src/app/[slug]/about/components/EditMetadataDialog.tsx",
           "EditMetadataDialog",
@@ -1014,6 +1028,12 @@
         "test/owner-distribution-batch.test.ts",
         "test/owner-distribution-selection.test.tsx"
       ]
+    },
+    {
+      "id": "pending-routing",
+      "risk": "money",
+      "files": ["src/app/[slug]/components/ActivityFeed/PendingRoutingPayments.tsx"],
+      "tests": ["test/pending-router-calls.test.ts", "test/pending-routing-payments.test.tsx"]
     },
     {
       "id": "payouts",

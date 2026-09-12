@@ -27,13 +27,17 @@ import {
   encodeFunctionResult,
   erc20Abi,
   getAddress,
+  keccak256,
   multicall3Abi,
   namehash,
+  parseAbi,
   toFunctionSelector,
   zeroAddress,
+  zeroHash,
 } from "viem";
 import { mainnet } from "viem/chains";
 import protocolRollout from "../src/lib/protocol-rollout.json" with { type: "json" };
+import { routerGatewayAbi } from "../src/lib/router-gateway-abi.ts";
 import browserProject from "../test/fixtures/browser-project.json" with { type: "json" };
 
 const port = browserProject.fixturePort;
@@ -185,7 +189,64 @@ const addresses = {
   revOwner: addressOf(RevnetCoreContracts.REVOwner),
   routerRegistry: addressOf(JBRouterTerminalContracts.JBRouterTerminalRegistry),
   routerTerminal: addressOf(JBRouterTerminalContracts.JBRouterTerminal),
+  routerGateway: addressOf("JBRouterTerminalGateway"),
 };
+
+const routingTimestamp = 1_789_200_000;
+const routingCallParameter = routerGatewayAbi.find(
+  (entry) => entry.type === "function" && entry.name === "processPendingCall",
+).inputs[1];
+const pendingRoutingRows = [
+  { amount: 10_000_000_000_000_000n, token: nativeToken, count: 0, lastFailureAt: 0 },
+  { amount: 12_500_000n, token: usdc, count: 1, lastFailureAt: routingTimestamp - 3_600 },
+  {
+    amount: 30_000_000_000_000_000n,
+    token: nativeToken,
+    count: 3,
+    lastFailureAt: routingTimestamp - 86_400,
+  },
+].map(({ amount, token, count, lastFailureAt }, index) => {
+  const call = {
+    amount,
+    preferAddToBalance: false,
+    shouldReturnHeldFees: false,
+    beneficiary: fixtureOwner,
+    projectId: 1n,
+    refundTo: addresses.terminal,
+    sourceProjectId: 1n,
+    token,
+  };
+  const memo = "Fixture retained routing payment";
+  const metadata = "0x";
+  return {
+    indexed: {
+      ...call,
+      amount: amount.toString(),
+      projectId,
+      sourceProjectId: projectId,
+      chainId,
+      version: 6,
+      gateway: addresses.routerGateway,
+      pendingCallId: `0x${(index + 1).toString(16).padStart(64, "0")}`,
+      memo,
+      metadata,
+      callCommitment: keccak256(
+        encodeAbiParameters(
+          [routingCallParameter, { type: "string" }, { type: "bytes" }],
+          [call, memo, metadata],
+        ),
+      ),
+      retainedAmount: amount.toString(),
+      status: count ? "retried" : "queued",
+    },
+    failure: {
+      count,
+      lastFailureAt,
+      highestGasLimit: count ? 5_000_000n : 0n,
+      errorHash: zeroHash,
+    },
+  };
+});
 const knownTerminalProbes = new Set(
   [
     addresses.terminal,
@@ -313,6 +374,7 @@ function requireFixture(condition, message) {
 }
 
 const allowedGraphqlOperations = new Set([
+  "RouterPendingCalls",
   "ActivityEvents",
   "AddToBalanceInflows",
   "AutoIssueEvents",
@@ -787,6 +849,16 @@ const graphqlHandlers = {
       },
     };
   },
+  RouterPendingCalls(variables) {
+    requireExactVariables("RouterPendingCalls", variables, {
+      chainId,
+      sourceProjectId: projectId,
+      gateway: addresses.routerGateway.toLowerCase(),
+      limit: 100,
+      offset: 0,
+    });
+    return { routerPendingCalls: { items: [], totalCount: 0 } };
+  },
   OwnedNfts(variables) {
     requireFixture(
       variables.where?.version === 6 &&
@@ -863,6 +935,30 @@ function registerCall({ abi, functionName, address, result }) {
     abi: [item],
     functionName,
     result,
+  });
+}
+
+for (const functionName of ["pendingCallCommitmentOf", "pendingCallFailureOf"]) {
+  registerCall({
+    abi: routerGatewayAbi,
+    functionName,
+    address: addresses.routerGateway,
+    result: ([id]) => {
+      const row = pendingRoutingRows.find(({ indexed }) => indexed.pendingCallId === id);
+      requireFixture(Boolean(row), `${functionName} id=${id}`);
+      return functionName === "pendingCallCommitmentOf" ? row.indexed.callCommitment : row.failure;
+    },
+  });
+}
+for (const [functionName, result] of [
+  ["RETRY_DELAY", 86_400n],
+  ["maximumQualifiedCallGas", 15_038_509n],
+]) {
+  registerCall({
+    abi: parseAbi([`function ${functionName}() view returns (uint256)`]),
+    functionName,
+    address: addresses.routerGateway,
+    result: () => result,
   });
 }
 
@@ -1317,6 +1413,32 @@ function handleRpc(request) {
   } else if (method === "eth_blockNumber") {
     requireFixture(params.length === 0, `eth_blockNumber params=${JSON.stringify(params)}`);
     result = "0x18281d2";
+  } else if (method === "eth_getBlockByNumber") {
+    requireFixture(
+      params.length === 2 && params[0] === "latest" && params[1] === false,
+      `eth_getBlockByNumber params=${JSON.stringify(params)}`,
+    );
+    result = {
+      number: "0x18281d2",
+      hash: `0x${"44".repeat(32)}`,
+      parentHash: zeroHash,
+      nonce: "0x0000000000000000",
+      sha3Uncles: zeroHash,
+      logsBloom: `0x${"00".repeat(256)}`,
+      transactionsRoot: zeroHash,
+      stateRoot: zeroHash,
+      receiptsRoot: zeroHash,
+      miner: zeroAddress,
+      difficulty: "0x0",
+      extraData: "0x",
+      size: "0x1",
+      gasLimit: "0x1c9c380",
+      gasUsed: "0x0",
+      timestamp: `0x${routingTimestamp.toString(16)}`,
+      transactions: [],
+      uncles: [],
+      baseFeePerGas: "0x1",
+    };
   } else if (method === "eth_call") {
     requireFixture(
       params.length === 2 && ["latest", "0x18281d2"].includes(params[1]),
@@ -1447,6 +1569,24 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && url.pathname === "/__fixture/status") {
       sendJson(response, 200, state, true);
+      return;
+    }
+    // A read-only scenario response lets one browser exercise retained custody
+    // without mutating the shared fixture used by parallel empty-state tests.
+    if (request.method === "GET" && url.pathname === "/__fixture/pending-routing") {
+      sendJson(
+        response,
+        200,
+        {
+          data: {
+            routerPendingCalls: {
+              totalCount: pendingRoutingRows.length,
+              items: pendingRoutingRows.map(({ indexed }) => indexed),
+            },
+          },
+        },
+        true,
+      );
       return;
     }
     if (request.method === "OPTIONS" && isApi) {

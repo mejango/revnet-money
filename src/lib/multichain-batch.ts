@@ -14,6 +14,7 @@ import type {
   ReservedReceiptGuard,
 } from "./multichain-guards";
 import type { ExpectedPayoutReceipt } from "./payout-receipts";
+import type { RouterPendingReceiptGuard } from "./pending-router-calls";
 
 export type MultichainCall = {
   chainId: number;
@@ -22,6 +23,8 @@ export type MultichainCall = {
   functionName: string;
   args: readonly unknown[];
   value?: bigint;
+  /** Exact gas bound for calls whose retry behavior depends on available gas. */
+  gas?: bigint;
   contractName?: string;
   recoveryScope?: string;
   relayrMode?: "raw" | "forwarded";
@@ -30,11 +33,14 @@ export type MultichainCall = {
   rejectEvents?: RejectedReceiptEvent[];
   reservedReceipt?: ReservedReceiptGuard;
   expectedPayout?: ExpectedPayoutReceipt;
+  expectedRouterPending?: RouterPendingReceiptGuard;
   validate?: () => Promise<void>;
 };
 export type FrozenBatchCall = Omit<MultichainCall, "validate"> & {
   data: Hex;
-  state: "ready" | "submitting" | "submitted" | "safe" | "success";
+  state: "ready" | "submitting" | "submitted" | "safe" | "success" | "skipped" | "reverted";
+  skipReason?: "resolved-externally" | "retried-externally" | "obsolete-safe";
+  safeNonce?: number;
   hash?: Hash;
 };
 export type BatchRound = {
