@@ -1,4 +1,5 @@
 import { chainDisplayName } from "@/app/constants";
+import { rolloutTargets } from "@/lib/protocol-rollout";
 import {
   buildStep,
   contractAddressOn,
@@ -19,8 +20,6 @@ export type SafeBatchPreset = {
   id: string;
   title: string;
   description: string;
-  /** The same addresses on every chain (CREATE2). */
-  targets: { hook: Address; terminal: Address };
   steps: readonly ("setHookFor" | "setPoolFor" | "setTerminalFor")[];
 };
 
@@ -30,10 +29,6 @@ export const SAFE_BATCH_PRESETS: readonly SafeBatchPreset[] = [
     title: "Move to buyback 1.4.0 + gateway",
     description:
       "Points the project at the current buyback hook and router gateway, carrying its live pool onto the new hook.",
-    targets: {
-      hook: "0xB222Da5A71e8FB89a5A38b7c920EaB5DfbC74B91",
-      terminal: "0x4a56AEf5b6A5b9742AbB02cA67C5a85ba183D901",
-    },
     steps: ["setHookFor", "setPoolFor", "setTerminalFor"],
   },
 ];
@@ -64,20 +59,48 @@ async function hasCode(client: PresetReadClient, address: Address): Promise<bool
   return !!code && code !== "0x";
 }
 
+async function selectionAllowed(
+  client: PresetReadClient,
+  chainId: number,
+  kind: "hook" | "terminal",
+  target: Address,
+): Promise<boolean> {
+  if (kind === "hook") {
+    const registry = contractAddressOn("JBBuybackHookRegistry", chainId);
+    return (
+      !!registry &&
+      (await client.readContract({
+        address: registry,
+        abi: jbBuybackHookRegistryAbi,
+        functionName: "isHookAllowed",
+        args: [target],
+      }))
+    );
+  }
+  const registry = contractAddressOn("JBRouterTerminalRegistry", chainId);
+  return (
+    !!registry &&
+    (await client.readContract({
+      address: registry,
+      abi: jbRouterTerminalRegistryAbi,
+      functionName: "isTerminalAllowed",
+      args: [target],
+    }))
+  );
+}
+
 async function twapWindowOn(
   client: PresetReadClient,
   hook: Address,
   projectId: bigint,
   token: Address,
 ): Promise<bigint> {
-  return client
-    .readContract({
-      address: hook,
-      abi: jbBuybackHookAbi,
-      functionName: "twapWindowOf",
-      args: [projectId, token],
-    })
-    .catch(() => 0n);
+  return client.readContract({
+    address: hook,
+    abi: jbBuybackHookAbi,
+    functionName: "twapWindowOf",
+    args: [projectId, token],
+  });
 }
 
 async function currentHookOf(
@@ -87,14 +110,12 @@ async function currentHookOf(
 ): Promise<Address | null> {
   const registry = contractAddressOn("JBBuybackHookRegistry", chainId);
   if (!registry) return null;
-  const hook = await client
-    .readContract({
-      address: registry,
-      abi: jbBuybackHookRegistryAbi,
-      functionName: "hookOf",
-      args: [projectId],
-    })
-    .catch(() => null);
+  const hook = await client.readContract({
+    address: registry,
+    abi: jbBuybackHookRegistryAbi,
+    functionName: "hookOf",
+    args: [projectId],
+  });
   return hook && !isAddressEqual(hook, zeroAddress) ? getAddress(hook) : null;
 }
 
@@ -108,12 +129,14 @@ export async function resolvePreset(
   { chainId, projectId, client }: { chainId: number; projectId: number; client: PresetReadClient },
 ): Promise<PresetResolution> {
   const chain = chainDisplayName(chainId);
+  const targets = rolloutTargets(chainId);
+  if (!targets) return { status: "unavailable", message: `Not deployed on ${chain} yet.` };
   // An RPC that cannot answer is not "no code": say which so nobody waits on a deployment.
   let deployed: boolean;
   try {
     const [hook, terminal] = await Promise.all([
-      hasCode(client, preset.targets.hook),
-      hasCode(client, preset.targets.terminal),
+      hasCode(client, targets.hook),
+      hasCode(client, targets.terminal),
     ]);
     deployed = hook && terminal;
   } catch (cause) {
@@ -124,19 +147,29 @@ export async function resolvePreset(
   }
   if (!deployed) return { status: "unavailable", message: `Not deployed on ${chain} yet.` };
 
+  const allowed = await Promise.all([
+    selectionAllowed(client, chainId, "hook", targets.hook),
+    selectionAllowed(client, chainId, "terminal", targets.terminal),
+  ]);
+  if (!allowed.every(Boolean))
+    return {
+      status: "unavailable",
+      message: `The migration targets are not allowlisted on ${chain}.`,
+    };
+
   const pid = BigInt(projectId);
   const steps: BatchStep[] = [];
   const notes: string[] = [];
 
   const currentHook = await currentHookOf(client, chainId, pid);
-  const onTargetHook = !!currentHook && isAddressEqual(currentHook, preset.targets.hook);
+  const onTargetHook = !!currentHook && isAddressEqual(currentHook, targets.hook);
   if (preset.steps.includes("setHookFor") && !onTargetHook) {
     steps.push(
       buildStep({
         kind: "setHookFor",
         chainId,
         projectId,
-        values: { hook: getAddress(preset.targets.hook) },
+        values: { hook: getAddress(targets.hook) },
       }),
     );
   }
@@ -145,7 +178,7 @@ export async function resolvePreset(
     for (const probe of tokenProbes(chainId)) {
       const oldWindow = await twapWindowOn(client, currentHook, pid, probe.read);
       if (oldWindow <= 0n) continue;
-      const carried = await twapWindowOn(client, preset.targets.hook, pid, probe.read);
+      const carried = await twapWindowOn(client, targets.hook, pid, probe.read);
       if (carried > 0n) {
         notes.push(`${probe.label} pool is already registered on the new hook.`);
         continue;
@@ -174,22 +207,20 @@ export async function resolvePreset(
   if (preset.steps.includes("setTerminalFor")) {
     const routerRegistry = contractAddressOn("JBRouterTerminalRegistry", chainId);
     const terminal = routerRegistry
-      ? await client
-          .readContract({
-            address: routerRegistry,
-            abi: jbRouterTerminalRegistryAbi,
-            functionName: "terminalOf",
-            args: [pid],
-          })
-          .catch(() => null)
+      ? await client.readContract({
+          address: routerRegistry,
+          abi: jbRouterTerminalRegistryAbi,
+          functionName: "terminalOf",
+          args: [pid],
+        })
       : null;
-    if (!terminal || !isAddressEqual(terminal, preset.targets.terminal)) {
+    if (!terminal || !isAddressEqual(terminal, targets.terminal)) {
       steps.push(
         buildStep({
           kind: "setTerminalFor",
           chainId,
           projectId,
-          values: { terminal: getAddress(preset.targets.terminal) },
+          values: { terminal: getAddress(targets.terminal) },
         }),
       );
     }
@@ -226,6 +257,18 @@ export function stepResolverFor(clientFor: (chainId: number) => PresetReadClient
   return async (step, chainId, projectId) => {
     const client = clientFor(chainId);
     const pid = BigInt(projectId);
+    if (step.kind === "setHookFor" || step.kind === "setTerminalFor") {
+      const source = rolloutTargets(step.chainId);
+      const target = rolloutTargets(chainId);
+      if (!source || !target) return null;
+      const key = step.kind === "setHookFor" ? "hook" : "terminal";
+      const selected = step.values[key];
+      // Custom selections require an explicit edit on each target network.
+      if (typeof selected !== "string" || !isAddressEqual(selected, source[key])) return null;
+      if (!(await hasCode(client, target[key]))) return null;
+      if (!(await selectionAllowed(client, chainId, key, target[key]))) return null;
+      return { values: { ...step.values, [key]: target[key] } };
+    }
     if (step.kind === "initializePoolFor") return null;
     const token = mapTerminalToken(step.values.terminalToken as Address, step.chainId, chainId);
     if (!token) return null;

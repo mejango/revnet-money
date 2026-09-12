@@ -375,6 +375,7 @@ export function V6PayCard() {
     queryKey: [
       "v6PayPreview",
       chainId,
+      surface?.terminals.join(",") ?? "",
       projectId.toString(),
       selected ? payTokenKey(selected) : "",
       amountRaw.toString(),
@@ -411,6 +412,7 @@ export function V6PayCard() {
         } as const;
       }
       const route = await resolveBestV6PayRoute({
+        attachedTerminals: surface?.terminals,
         client,
         chainId,
         projectId,

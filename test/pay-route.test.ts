@@ -1,3 +1,4 @@
+import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { minReturnedTokens } from "@/lib/quote";
 import {
   formatPayAmount,
@@ -78,6 +79,22 @@ describe("wallet-action:pay — v6 payment route selection", () => {
         metadata: "0x",
       }),
     );
+  });
+
+  it("quotes and preserves the actual directly attached gateway or previous router", async () => {
+    const gateway = rolloutAddress("JBRouterTerminalGateway", sepolia.id)!;
+    const previous = rolloutChain(sepolia.id)!.history.JBRouterTerminal!.previous as Address;
+    for (const terminal of [gateway, previous]) {
+      previewPayMock.mockReset();
+      previewPayMock.mockResolvedValue(preview(100n));
+      const result = await resolveBestV6PayRoute({ ...routeArgs, attachedTerminals: [terminal] });
+      expect(result).toMatchObject({ address: terminal, type: "swap" });
+      expect(previewPayMock).toHaveBeenCalledTimes(1);
+      expect(previewPayMock).toHaveBeenCalledWith(
+        routeArgs.client,
+        expect.objectContaining({ terminal }),
+      );
+    }
   });
 
   it("uses reserved issuance as the second tie-breaker, then prefers the direct terminal", async () => {

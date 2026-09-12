@@ -1,6 +1,7 @@
 "use client";
 
 import { chainDisplayName } from "@/app/constants";
+import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import {
   jbBuybackHookAbi,
   jbBuybackHookRegistryAbi,
@@ -92,6 +93,7 @@ const STEP_KINDS: Record<BatchStepKind, StepKindDefinition> = {
     abi: jbBuybackHookRegistryAbi,
     functionName: "setHookFor",
     inputs: ["hook"],
+    perChain: true,
     describe: (values) => `Hook ${shortAddress(String(values.hook))}`,
   },
   setPoolFor: {
@@ -112,6 +114,7 @@ const STEP_KINDS: Record<BatchStepKind, StepKindDefinition> = {
     abi: jbRouterTerminalRegistryAbi,
     functionName: "setTerminalFor",
     inputs: ["terminal"],
+    perChain: true,
     describe: (values) => `Terminal ${shortAddress(String(values.terminal))}`,
   },
   setTwapWindowOf: {
@@ -169,6 +172,10 @@ const DEPENDENCIES: readonly {
 
 /** A v6 contract's address on a chain, or undefined where it isn't deployed. */
 export function contractAddressOn(contract: ContractName, chainId: number): Address | undefined {
+  const rollout = rolloutChain(chainId);
+  if (rollout && contract in rollout.contracts) {
+    return rolloutAddress(contract as keyof typeof rollout.contracts, chainId) ?? undefined;
+  }
   const deployments = jbContractAddress["6"][contract] as Partial<Record<number, Address>>;
   const address = deployments?.[chainId];
   return address ? getAddress(address) : undefined;
@@ -343,12 +350,35 @@ export async function mirrorBatch(
   const mirrored: BatchStep[] = [];
   const skipped: { label: string; reason: string }[] = [];
   const chain = chainDisplayName(target.chainId);
-  for (const step of steps.filter((step) => step.chainId === fromChainId)) {
+  const sourceSteps = steps.filter((step) => step.chainId === fromChainId);
+  const order = checkBatchOrder(sourceSteps);
+  if (!order.ok) {
+    return {
+      steps: [],
+      skipped: order.problems.map(({ index, message }) => ({
+        label: sourceSteps[index]!.label,
+        reason: message,
+      })),
+    };
+  }
+  let hookSelectionSkipped = false;
+  for (const step of sourceSteps) {
     const definition = STEP_KINDS[step.kind];
+    if (
+      ["setPoolFor", "initializePoolFor", "setTwapWindowOf"].includes(step.kind) &&
+      hookSelectionSkipped
+    ) {
+      skipped.push({
+        label: step.label,
+        reason: `The preceding buyback hook selection could not be resolved on ${chain}.`,
+      });
+      continue;
+    }
     try {
       if (definition.perChain) {
         const resolved = await resolve(step, target.chainId, target.projectId);
         if (!resolved) {
+          if (step.kind === "setHookFor") hookSelectionSkipped = true;
           skipped.push({
             label: step.label,
             reason: `${step.label}: its values are chain-specific and could not be resolved on ${chain}.`,
@@ -375,6 +405,7 @@ export async function mirrorBatch(
         }),
       );
     } catch (cause) {
+      if (step.kind === "setHookFor") hookSelectionSkipped = true;
       skipped.push({ label: step.label, reason: (cause as Error).message });
     }
   }

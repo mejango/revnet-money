@@ -7,7 +7,9 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { resumePendingRelayrBundles, waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
 import { PERMIT2_ADDRESS, UNIVERSAL_ROUTER_BY_CHAIN } from "@/lib/directPaySwap";
+import { rolloutContractName } from "@/lib/protocol-rollout";
 import { canCheckRelayrBundle } from "@/lib/relayr-activity";
+import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import { safeSetupAbi, safeToL2SetupAbi } from "@/lib/safeDeployment";
 import {
   dismissTransactionActivity,
@@ -24,12 +26,15 @@ import {
 import { explorerBaseUrl } from "@/lib/utils";
 import {
   JB_CHAINS,
+  jbBuybackHookAbi,
+  jbBuybackHookRegistryAbi,
   jbContractAddress,
   jbControllerAbi,
   jbDirectoryAbi,
   jbMultiTerminalAbi,
   jbPermissionsAbi,
   jbProjectsAbi,
+  jbRouterTerminalRegistryAbi,
   jbSplitsAbi,
   jbTokensAbi,
   SPLITS_TOTAL_PERCENT,
@@ -78,6 +83,8 @@ function knownAddress(chainId: number, address: unknown): string | null {
     return "Uniswap Universal Router";
   }
   if (USDC_ADDRESSES[chainId as JBChainId]?.toLowerCase() === address.toLowerCase()) return "USDC";
+  const rolloutName = rolloutContractName(chainId, address as Address);
+  if (rolloutName) return rolloutName;
   const contracts = jbContractAddress["6"] as unknown as Record<
     string,
     Partial<Record<number, Address>>
@@ -962,6 +969,10 @@ const SAFE_INNER_ABIS: { name: string; abi: Abi }[] = [
   { name: "JBPermissions", abi: jbPermissionsAbi as Abi },
   { name: "JBSplits", abi: jbSplitsAbi as Abi },
   { name: "JBProjects", abi: jbProjectsAbi as Abi },
+  { name: "JBBuybackHookRegistry", abi: jbBuybackHookRegistryAbi },
+  { name: "JBBuybackHook", abi: jbBuybackHookAbi },
+  { name: "JBRouterTerminalRegistry", abi: jbRouterTerminalRegistryAbi },
+  { name: "JBRouterTerminalGateway", abi: routerGatewayAbi },
   { name: "ERC-20", abi: erc20Abi as Abi },
 ];
 

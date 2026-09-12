@@ -72,7 +72,7 @@ test("an open dialog inerts the page, stacks, and restores it on close", async (
   // dialog, so every keystroke re-renders it with fresh inline callbacks —
   // the same churn the payment card produces while quoting. Neither the
   // inertness nor the caret may move.
-  await page.getByRole("checkbox", { name: "add automatic cuts?" }).check();
+  await dialog.getByRole("checkbox", { name: "Reduce this rate over time" }).check();
   const cutPercentage = page.locator("#uiCutPercentage");
   await cutPercentage.click();
   await page.keyboard.type("12345");

@@ -43,6 +43,23 @@ describe("JB hook metadata decoding", () => {
     expect(rowsOf(steps).join()).toContain("Allow overspending=no — any excess reverts");
   });
 
+  it("decodes every word of the current buyback pay quote", () => {
+    const metadata = createHookMetadata(
+      [hookMetadataId(HOOK, "pay")],
+      [
+        encodeAbiParameters(
+          [{ type: "uint256" }, { type: "uint256" }, { type: "bool" }],
+          [123n, 456n, true],
+        ),
+      ],
+    );
+    const steps = describeJBHookMetadata("pay", metadata)!;
+    expect(steps).toHaveLength(1);
+    expect(rowsOf(steps).join()).toContain("123");
+    expect(rowsOf(steps).join()).toContain("456");
+    expect(rowsOf(steps).join()).toContain("yes");
+  });
+
   it("reports a degenerate payload as ambiguous instead of picking a reading", () => {
     // An empty tier list byte-matches both the 721 mint shape and the 3-word
     // buyback swap shape; the decoder must refuse to choose.

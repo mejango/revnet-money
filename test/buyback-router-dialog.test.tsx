@@ -16,6 +16,8 @@ vi.mock("@tanstack/react-query", () => ({
         routerAvailable: true,
         hook: "0x3333333333333333333333333333333333333333",
         terminal: "0x4444444444444444444444444444444444444444",
+        defaultHook: "0x5555555555555555555555555555555555555555",
+        defaultTerminal: "0x6666666666666666666666666666666666666666",
         pools: [
           { label: "USDC", token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", twap: 172800 },
         ],
@@ -71,6 +73,20 @@ describe("BuybackRouterCard", () => {
     // The form lives INSIDE the dialog — an inline render would fail this.
     expect(dialog!.contains(screen.getByText("Run on"))).toBe(true);
     expect(dialog!.querySelector("input[type=checkbox]")).toBeTruthy();
+  });
+
+  it("pre-fills hook and terminal edits from the live registry defaults", async () => {
+    const view = render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set buyback hook" }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("0x5555555555555555555555555555555555555555")).toBeTruthy(),
+    );
+    view.unmount();
+    render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set router terminal" }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("0x6666666666666666666666666666666666666666")).toBeTruthy(),
+    );
   });
 
   it("pre-fills the pair token from the pool that exists", async () => {

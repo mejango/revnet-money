@@ -3,6 +3,7 @@ import { requireOnchainExecution } from "@/hooks/useReviewedWriteContract";
 import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import type { PermissionHolder, PermissionHolderFilter } from "@/lib/bendystraw/types";
 import type { AuthorityIdentity } from "@/lib/cross-chain-authority";
+import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
@@ -39,6 +40,10 @@ export function v6ContractAddress(
   contract: keyof (typeof jbContractAddress)["6"],
   chainId: JBChainId,
 ): Address | undefined {
+  const rollout = rolloutChain(chainId);
+  if (rollout && contract in rollout.contracts) {
+    return rolloutAddress(contract as keyof typeof rollout.contracts, chainId) ?? undefined;
+  }
   const deployments = jbContractAddress["6"][contract] as Partial<Record<number, Address>>;
   return deployments?.[chainId];
 }

@@ -236,7 +236,10 @@ test("environment flip swaps the chain list and selects a visible fallback", asy
   await page.getByRole("checkbox", { name: "Ethereum", exact: true }).check();
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toBeChecked();
 
-  await environment.click();
+  await retryUntilVisible(
+    () => environment.click(),
+    page.getByRole("option", { name: "Test chains" }),
+  );
   await page.getByRole("option", { name: "Test chains" }).click();
   await expect(page.getByRole("checkbox", { name: "Ethereum", exact: true })).toHaveCount(0);
   await expect(page.getByRole("checkbox", { name: "Sepolia", exact: true })).toBeVisible();
@@ -257,6 +260,13 @@ test("create form remains keyboard-usable and free of severe accessibility regre
   const boundary = await openCreatePage(page);
   const name = page.getByRole("textbox", { name: "Name", exact: true });
   const ticker = page.getByRole("textbox", { name: "Token symbol", exact: true });
+
+  // Wait for the form's React handlers before testing the exact keyboard sequence.
+  await retryUntilVisible(
+    () => page.getByRole("combobox", { name: "Deployment environment" }).click(),
+    page.getByRole("option", { name: "Test chains" }),
+  );
+  await page.keyboard.press("Escape");
 
   await name.focus();
   await page.keyboard.type("Keyboard Revnet");

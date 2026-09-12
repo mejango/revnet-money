@@ -16,6 +16,9 @@ const gitignore = await readFile(".gitignore", "utf8");
 const dockerignore = await readFile(".dockerignore", "utf8");
 const npmConfig = await readFile(".npmrc", "utf8");
 const packageManifest = JSON.parse(await readFile("package.json", "utf8"));
+const protocolFixture = JSON.parse(
+  await readFile("test/fixtures/protocol-deployments.v6.json", "utf8"),
+);
 
 for (const legacyRoute of [
   "src/app/api/ipfs/[...path]/route.ts",
@@ -67,15 +70,21 @@ if (packageManifest.scripts?.["dependencies:check"] !== "npm ls --depth=0") {
   throw new Error("The installed dependency tree must have an explicit npm integrity gate");
 }
 if (
-  packageManifest.dependencies?.next !== "16.2.11" ||
-  packageManifest.devDependencies?.["eslint-config-next"] !== "16.2.11"
+  packageManifest.dependencies?.next !== "16.3.3" ||
+  packageManifest.devDependencies?.["eslint-config-next"] !== "16.3.3"
 ) {
-  throw new Error("Next and eslint-config-next must remain on the supported 16.2.11 baseline");
+  throw new Error("Next and eslint-config-next must remain on the supported 16.3.3 baseline");
 }
 for (const [name, workflow] of [
   ["CI", ci],
   ["release", release],
 ]) {
+  const artifactCommit = workflow.match(
+    /repository: Bananapus\/deploy-all-v6\s+ref: ([a-f\d]{40})/u,
+  )?.[1];
+  if (artifactCommit !== protocolFixture.source.commit) {
+    throw new Error(`${name} must check out the fixture's exact deploy-all-v6 commit`);
+  }
   const installIndex = workflow.indexOf("npm ci --ignore-scripts");
   const integrityIndex = workflow.indexOf("npm run dependencies:check");
   const auditIndex = workflow.indexOf("npm run audit:production");

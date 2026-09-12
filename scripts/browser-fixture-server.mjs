@@ -33,6 +33,7 @@ import {
   zeroAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
+import protocolRollout from "../src/lib/protocol-rollout.json" with { type: "json" };
 import browserProject from "../test/fixtures/browser-project.json" with { type: "json" };
 
 const port = browserProject.fixturePort;
@@ -160,7 +161,9 @@ if (computedFixtureCid !== fixtureCid) {
   throw new Error(`Fixture metadata CID mismatch: expected ${computedFixtureCid}`);
 }
 
-const addressOf = (contract) => getAddress(jbContractAddress[6][contract][chainId]);
+const routerDeployments = protocolRollout.chains[chainId];
+const addressOf = (contract) =>
+  getAddress(routerDeployments.contracts[contract] ?? jbContractAddress[6][contract][chainId]);
 const addresses = {
   buybackRegistry: addressOf(JBBuybackHookContracts.JBBuybackHookRegistry),
   controller: addressOf(JBCoreContracts.JBController),
@@ -183,6 +186,17 @@ const addresses = {
   routerRegistry: addressOf(JBRouterTerminalContracts.JBRouterTerminalRegistry),
   routerTerminal: addressOf(JBRouterTerminalContracts.JBRouterTerminal),
 };
+const knownTerminalProbes = new Set(
+  [
+    addresses.terminal,
+    routerDeployments.contracts.JBRouterTerminalRegistry,
+    routerDeployments.contracts.JBRouterTerminalGateway,
+    routerDeployments.contracts.JBRouterTerminal,
+    ...Object.values(routerDeployments.history.JBRouterTerminal),
+  ]
+    .filter(Boolean)
+    .map((address) => address.toLowerCase()),
+);
 allowedEnsReverseAddresses.add(addresses.revOwner.toLowerCase());
 
 const ruleset = {
@@ -927,12 +941,10 @@ registerCall({
   result: ([requestedProjectId, terminal]) => {
     requireFixture(requestedProjectId === 1n, `isTerminalOf projectId=${requestedProjectId}`);
     requireFixture(
-      [addresses.routerRegistry, addresses.routerTerminal].some(
-        (candidate) => candidate.toLowerCase() === terminal.toLowerCase(),
-      ),
+      knownTerminalProbes.has(terminal.toLowerCase()),
       `isTerminalOf terminal=${terminal}`,
     );
-    return false;
+    return terminal.toLowerCase() === addresses.terminal.toLowerCase();
   },
 });
 for (const [functionName, result] of [
@@ -1378,6 +1390,7 @@ function handleRpc(request) {
       requested === fixtureOwner ||
       requested === projectToken ||
       requested === addresses.multicall ||
+      knownTerminalProbes.has(requested.toLowerCase()) ||
       Object.values(addresses).includes(requested);
     requireFixture(known, `eth_getCode address=${requested}`);
     result = requested === fixtureOwner ? "0x" : "0x60006000";

@@ -63,7 +63,7 @@ export function routerPayRouteWorks(
   token: Address,
   decimals: number,
 ): Promise<boolean> {
-  const key = `${chainId}:${projectId}:${token.toLowerCase()}`;
+  const key = `${chainId}:${projectId}:${registry.toLowerCase()}:${token.toLowerCase()}`;
   let cached = payRouteCache.get(key);
   if (!cached) {
     cached = client

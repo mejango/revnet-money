@@ -3,6 +3,7 @@ import {
   IndexedLpPositionsOperation,
   IndexedPoolLiquidityEventsOperation,
 } from "@/lib/bendystraw/operations";
+import { rolloutChain } from "@/lib/protocol-rollout";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   JBBuybackHookContracts,
@@ -235,6 +236,12 @@ async function projectBuybackHook(
       }
     }
     if (concrete && d === lc(concrete)) return dataHook;
+    const rollout = rolloutChain(chainId);
+    const hooks = [
+      rollout?.contracts.JBBuybackHook,
+      ...Object.values(rollout?.history.JBBuybackHook ?? {}),
+    ];
+    if (hooks.some((hook) => hook && d === lc(hook))) return dataHook;
     return null;
   };
 
