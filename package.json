@@ -42,7 +42,7 @@
     "protocol:rollout:check": "node scripts/generate-protocol-rollout.mjs --check"
   },
   "dependencies": {
-    "@bananapus/nana-sdk-core": "^2.5.0",
+    "@bananapus/nana-sdk-core": "^2.5.1",
     "@coinbase/wallet-sdk": "4.3.7",
     "@getpara/react-component-library": "3.15.0",
     "@getpara/react-sdk-lite": "3.15.0",

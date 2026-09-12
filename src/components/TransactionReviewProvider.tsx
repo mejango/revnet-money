@@ -58,6 +58,7 @@ import {
   type Hex,
 } from "viem";
 import { useAccount } from "wagmi";
+import { FeeBuybackNotice, useFeeBuybackReview } from "./FeeBuybackNotice";
 
 type PendingReview = {
   id: number;
@@ -1321,6 +1322,7 @@ function ReviewModal({
 }) {
   const [agreed, setAgreed] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const feeReview = useFeeBuybackReview(pending.request.calls);
   const authorization = pending.request.kind === "authorization";
   // Callers assemble the description from optional fragments, so a blank string
   // means "nothing extra to say" and must fall back to the standing guidance
@@ -1414,6 +1416,7 @@ function ReviewModal({
           ) : null}
         </div>
         <footer className="border-t border-melon-300 bg-melon-50 p-4 sm:p-6">
+          <FeeBuybackNotice review={feeReview} />
           <label className="flex items-start gap-3 border border-melon-300 bg-melon-25 p-3 text-sm">
             <input
               className="mt-1"
@@ -1436,11 +1439,14 @@ function ReviewModal({
             </button>
             <button
               type="button"
-              disabled={!agreed}
+              disabled={!agreed || feeReview.busy}
               className="border border-melon-700 bg-melon-500 px-5 py-2 font-bold disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={() => finish(true)}
+              onClick={async () => {
+                if (await feeReview.confirm()) finish(true);
+              }}
             >
-              {pending.request.confirmLabel ??
+              {feeReview.confirmLabel ??
+                pending.request.confirmLabel ??
                 (authorization ? "Agree & authorize" : "Agree & continue")}
             </button>
           </div>
