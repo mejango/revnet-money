@@ -9,7 +9,7 @@ import {
   type MultichainCall,
 } from "@/lib/multichain-batch";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
-import { safeProposalFor, safeTransactionHash } from "@/lib/safe-queue";
+import { SAFE_EXEC_ABI, safeProposalFor, safeTransactionHash } from "@/lib/safe-queue";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -22,6 +22,7 @@ import {
   encodeFunctionResult,
   parseAbi,
   parseAbiParameters,
+  zeroAddress,
   zeroHash,
   type Address,
   type Hash,
@@ -84,6 +85,7 @@ const mocks = vi.hoisted(() => ({
   simulate: vi.fn(),
   rawCall: vi.fn(),
   review: vi.fn(),
+  resumeSafe: vi.fn(),
   transaction: vi.fn(),
   receipt: vi.fn(),
   block: vi.fn(),
@@ -116,6 +118,7 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   isSafeConnection: () => mocks.safe,
   submittedViaSafe: () => mocks.safe,
+  resumeSafeProposalTracking: mocks.resumeSafe,
   useWriteContract: (options: typeof mocks.options) => {
     mocks.options = options;
     return {
@@ -189,6 +192,447 @@ beforeEach(() => {
 });
 
 describe("durable multichain batch journal", () => {
+  it("adversarial: rechecks a completed routing receipt after reload", async () => {
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "orphaned-routing",
+      "Route fees",
+      [retryCall(1), retryCall(10)],
+      "direct",
+    );
+    // Persist the same checkpoint produced after the first successful attempt.
+    batch.calls[0].state = "success";
+    batch.calls[0].hash = HASH;
+    saveMultichainBatch(batch);
+    mocks.block.mockResolvedValue({ hash: zeroHash, gasLimit: 36_000_000n });
+    mocks.verify.mockResolvedValue({ data: zeroHash }); // Keeper resolved the unsent second call.
+    const { result } = renderHook(() => useMultichainBatch());
+    let failure: unknown;
+    await act(async () => {
+      try {
+        await result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] });
+      } catch (error) {
+        failure = error;
+      }
+    });
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(
+      failure,
+      "must not return the orphaned transaction as a verified successful hash",
+    ).toBeTruthy();
+    expect(findPendingBatch(ACCOUNT, batch.scope)).toBeDefined();
+    expect(mocks.receipt).toHaveBeenCalledWith({ hash: HASH });
+    expect(readMultichainBatches()[0].calls[0]).toMatchObject({
+      hash: HASH,
+      checkpointUnverified: true,
+    });
+    expect(result.current.getPendingBatch(batch.scope)?.completed).toBe(0);
+  });
+
+  it.each(["success", "reverted"] as const)(
+    "keeps a saved %s receipt unresolved across retries when it disappears",
+    async (state) => {
+      const batch = createMultichainBatch(
+        ACCOUNT,
+        "missing-receipt",
+        "Route fees",
+        [retryCall(1)],
+        "direct",
+      );
+      Object.assign(batch.calls[0], { state, hash: HASH });
+      saveMultichainBatch(batch);
+      mocks.receipt.mockRejectedValue(new Error("Receipt not found"));
+      const { result } = renderHook(() => useMultichainBatch());
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await act(async () => {
+          await expect(
+            result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+          ).rejects.toThrow(/Receipt not found/);
+        });
+      }
+      expect(result.current.getPendingBatch(batch.scope)?.completed).toBe(0);
+      expect(readMultichainBatches()[0].calls[0]).toMatchObject({
+        hash: HASH,
+        checkpointUnverified: true,
+      });
+      expect(mocks.write).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rechecks earlier receipts after the remaining calls finish", async () => {
+    const secondHash = `0x${"cd".repeat(32)}` as Hash;
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "final-reorg",
+      "Route fees",
+      [retryCall(1), call(10)],
+      "direct",
+    );
+    saveMultichainBatch(batch);
+    mocks.write.mockResolvedValueOnce(HASH).mockResolvedValueOnce(secondHash);
+    mocks.transaction.mockImplementation(async ({ hash }) => ({
+      hash,
+      from: ACCOUNT,
+      to: TARGET,
+      input: batch.calls[0].data,
+      value: 0n,
+      blockHash: HASH,
+      blockNumber: hash === HASH ? 1n : 2n,
+    }));
+    mocks.receipt.mockImplementation(async ({ hash }) => ({
+      transactionHash: hash,
+      status: hash === HASH ? "reverted" : "success",
+      blockHash: HASH,
+      blockNumber: hash === HASH ? 1n : 2n,
+      logs: [],
+    }));
+    mocks.block.mockImplementation(async ({ blockNumber }) => ({
+      hash: blockNumber === 1n && mocks.write.mock.calls.length === 2 ? zeroHash : HASH,
+    }));
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+      ).rejects.toThrow(/canonical/);
+    });
+    expect(mocks.write).toHaveBeenCalledTimes(2);
+    expect(findPendingBatch(ACCOUNT, batch.scope)).toBeDefined();
+    expect(result.current.getPendingBatch(batch.scope)?.completed).toBe(0);
+    await act(async () => {
+      await expect(
+        result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+      ).rejects.toThrow(/canonical/);
+    });
+    expect(mocks.write).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["resume", "completion"])("rechecks keeper skip decisions at %s", async (phase) => {
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "keeper-reorg",
+      "Route fees",
+      [retryCall(1)],
+      "direct",
+    );
+    if (phase === "resume")
+      Object.assign(batch.calls[0], { state: "skipped", skipReason: "resolved-externally" });
+    else mocks.verify.mockResolvedValueOnce({ data: zeroHash });
+    saveMultichainBatch(batch);
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+      ).rejects.toThrow(/payment is pending again/);
+    });
+    expect(result.current.getPendingBatch(batch.scope)?.completed).toBe(0);
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(readMultichainBatches()[0].calls[0]).toMatchObject({ state: "ready" });
+    expect(readMultichainBatches()[0].calls[0].skipReason).toBeUndefined();
+    expect(readMultichainBatches()[0].calls[0].checkpointUnverified).toBeUndefined();
+  });
+
+  it("resumes a restored unsigned keeper call without replaying completed transactions", async () => {
+    const secondHash = `0x${"cd".repeat(32)}` as Hash;
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "keeper-resume",
+      "Route fees",
+      [call(1), retryCall(10)],
+      "direct",
+    );
+    Object.assign(batch.calls[0], { state: "success", hash: HASH });
+    Object.assign(batch.calls[1], { state: "skipped", skipReason: "resolved-externally" });
+    saveMultichainBatch(batch);
+    mocks.write.mockResolvedValue(secondHash);
+    mocks.transaction.mockImplementation(async ({ hash }) => ({
+      hash,
+      from: ACCOUNT,
+      to: TARGET,
+      input: batch.calls[0].data,
+      value: 0n,
+      blockHash: HASH,
+      blockNumber: 1n,
+    }));
+    mocks.receipt.mockImplementation(async ({ hash }) => ({
+      transactionHash: hash,
+      status: hash === secondHash ? "reverted" : "success",
+      blockHash: HASH,
+      blockNumber: 1n,
+      logs: [],
+    }));
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+      ).rejects.toThrow(/payment is pending again/);
+    });
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(readMultichainBatches()[0].calls[1]).toMatchObject({
+      state: "ready",
+      preconditions: batch.calls[1].preconditions,
+    });
+    await act(async () => {
+      await expect(
+        result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+      ).resolves.toEqual({
+        status: "success",
+        hashes: [{ chainId: 1, hash: HASH, callIndex: 0 }],
+        revertedHashes: [{ chainId: 10, hash: secondHash, callIndex: 1 }],
+      });
+    });
+    expect(mocks.write).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ chainId: 10 }));
+  });
+
+  it("does not restore a skipped call when its publication scope cannot be reconciled", async () => {
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "keeper-published",
+      "Route fees",
+      [retryCall(1)],
+      "direct",
+    );
+    Object.assign(batch.calls[0], { state: "skipped", skipReason: "resolved-externally" });
+    saveMultichainBatch(batch);
+    mocks.scopeAvailable.mockImplementation(() => {
+      throw new Error("Authorization already published");
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+      ).rejects.toThrow(/already published/);
+    });
+    expect(readMultichainBatches()[0].calls[0]).toMatchObject({
+      state: "skipped",
+      checkpointUnverified: true,
+    });
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it.each(["retained", "pruned"])(
+    "revokes an obsolete Safe checkpoint with %s activity when the payment is pending again",
+    async (history) => {
+      const batch = createMultichainBatch(
+        ACCOUNT,
+        "obsolete-reorg",
+        "Route fees",
+        [retryCall(1)],
+        "direct",
+      );
+      Object.assign(batch.calls[0], {
+        state: "skipped",
+        skipReason: "obsolete-safe",
+        hash: HASH,
+        safeProposalHash: HASH,
+        safeNonce: 7,
+      });
+      saveMultichainBatch(batch);
+      if (history === "retained")
+        recordTransactionActivity({
+          id: `tx:1:${HASH}`,
+          kind: "safe",
+          title: "Route fees",
+          status: "failed",
+          message: "Obsolete",
+          account: ACCOUNT,
+          chainId: 1,
+          hash: HASH,
+          safeProposalHash: HASH,
+          obsoleteSafeNonce: 7,
+        });
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(
+          result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+        ).rejects.toThrow(/saved Safe proposal/);
+      });
+      expect(readMultichainBatches()[0].calls[0]).toMatchObject({
+        safeProposalHash: HASH,
+        checkpointUnverified: true,
+      });
+      expect(result.current.getPendingBatch(batch.scope)?.completed).toBe(0);
+      expect(mocks.write).not.toHaveBeenCalled();
+      expect(
+        refreshTransactionActivities().find((row) => row.safeProposalHash === HASH),
+      ).toMatchObject({
+        status: "safe-proposed",
+        manualVerificationRequired: true,
+        hash: HASH,
+      });
+      expect(
+        refreshTransactionActivities().find((row) => row.safeProposalHash === HASH)
+          ?.obsoleteSafeNonce,
+      ).toBeUndefined();
+      expect(mocks.resumeSafe).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("reports the fresh outcome when the original routing transaction is canonically re-included", async () => {
+    const newBlock = `0x${"cd".repeat(32)}` as Hash;
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "changed-outcome",
+      "Route fees",
+      [retryCall(1)],
+      "direct",
+    );
+    Object.assign(batch.calls[0], {
+      state: "success",
+      hash: HASH,
+      receipt: { blockHash: HASH, blockNumber: 1n, outcome: "settled" },
+    });
+    saveMultichainBatch(batch);
+    mocks.transaction.mockResolvedValue({
+      hash: HASH,
+      from: ACCOUNT,
+      to: TARGET,
+      input: batch.calls[0].data,
+      value: 0n,
+      blockHash: newBlock,
+      blockNumber: 2n,
+    });
+    mocks.receipt.mockResolvedValue({
+      transactionHash: HASH,
+      status: "reverted",
+      blockHash: newBlock,
+      blockNumber: 2n,
+      logs: [],
+    });
+    mocks.block.mockResolvedValue({ hash: newBlock });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+      ).resolves.toEqual({
+        status: "success",
+        hashes: [],
+        revertedHashes: [{ chainId: 1, hash: HASH, callIndex: 0 }],
+      });
+    });
+    expect(readMultichainBatches()[0].calls[0]).toMatchObject({
+      state: "reverted",
+      hash: HASH,
+      receipt: { blockHash: newBlock, blockNumber: 2n, outcome: "reverted" },
+    });
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it.each(["current", "legacy", "pending", "reexecuted"])(
+    "preserves the exact Safe proposal when rechecking a %s completion",
+    async (mode) => {
+      const executionHash = `0x${"cd".repeat(32)}` as Hash;
+      const batch = createMultichainBatch(
+        ACCOUNT,
+        "safe-executed",
+        "Distribute",
+        [call(1)],
+        "direct",
+      );
+      Object.assign(
+        batch.calls[0],
+        mode === "pending"
+          ? { state: "safe", hash: HASH }
+          : mode === "legacy"
+            ? { state: "success", hash: executionHash }
+            : {
+                state: "success",
+                hash: HASH,
+                safeProposalHash: HASH,
+                executionHash: mode === "reexecuted" ? `0x${"ef".repeat(32)}` : executionHash,
+              },
+      );
+      saveMultichainBatch(batch);
+      if (mode !== "current")
+        recordTransactionActivity({
+          id: `tx:1:${HASH}`,
+          kind: "safe",
+          title: "Distribute",
+          status: "success",
+          message: "Executed",
+          account: ACCOUNT,
+          chainId: 1,
+          safeProposalHash: HASH,
+          executionHash,
+        });
+      mocks.transaction.mockResolvedValue({
+        hash: executionHash,
+        from: TARGET,
+        to: ACCOUNT,
+        value: 0n,
+        blockHash: HASH,
+        blockNumber: 1n,
+        input: encodeFunctionData({
+          abi: SAFE_EXEC_ABI,
+          functionName: "execTransaction",
+          args: [TARGET, 0n, batch.calls[0].data, 0, 0n, 0n, 0n, zeroAddress, zeroAddress, "0x"],
+        }),
+      });
+      mocks.receipt.mockResolvedValue({
+        transactionHash: executionHash,
+        status: "success",
+        blockHash: HASH,
+        blockNumber: 1n,
+        logs: [
+          {
+            address: ACCOUNT,
+            topics: encodeEventTopics({
+              abi: SAFE_EXEC_ABI,
+              eventName: "ExecutionSuccess",
+              args: { txHash: HASH },
+            }),
+            data: encodeAbiParameters(parseAbiParameters("uint256"), [0n]),
+          },
+        ],
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(
+          result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+        ).resolves.toEqual({
+          status: "success",
+          hashes: [{ chainId: 1, hash: executionHash, callIndex: 0 }],
+        });
+      });
+      expect(readMultichainBatches()[0].calls[0]).toMatchObject({
+        hash: HASH,
+        safeProposalHash: HASH,
+        executionHash,
+        receipt: { blockHash: HASH, blockNumber: 1n, outcome: "success" },
+      });
+      expect(mocks.receipt).toHaveBeenCalledTimes(2);
+      expect(mocks.write).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a legacy Safe completion unresolved when its original proposal identity is unavailable", async () => {
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "safe-identity-lost",
+      "Distribute",
+      [call(1)],
+      "direct",
+    );
+    Object.assign(batch.calls[0], { state: "success", hash: HASH });
+    saveMultichainBatch(batch);
+    mocks.transaction.mockResolvedValue({
+      hash: HASH,
+      from: TARGET,
+      to: ACCOUNT,
+      input: batch.calls[0].data,
+      value: 0n,
+      blockHash: HASH,
+      blockNumber: 1n,
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({ scope: batch.scope, label: batch.label, calls: [] }),
+      ).rejects.toThrow(/exact reviewed call/);
+    });
+    expect(result.current.getPendingBatch(batch.scope)?.completed).toBe(0);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
   it("preserves all allocations in explicit rounds with one call per chain", () => {
     expect(
       makeBatchRounds([call(1, 1n), call(10, 1n), call(1, 2n), call(10, 2n), call(1, 3n)]).map(
@@ -285,6 +729,7 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
   });
 
   it("finishes a canonical reverted EOA routing attempt without replaying it, then continues the batch", async () => {
+    const revertedHash = `0x${"cd".repeat(32)}` as Hash;
     const batch = createMultichainBatch(
       ACCOUNT,
       "reverted-routing",
@@ -292,10 +737,10 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
       [retryCall(1), call(10)],
       "direct",
     );
-    batch.calls[0].hash = HASH;
+    batch.calls[0].hash = revertedHash;
     batch.calls[0].state = "submitted";
     saveMultichainBatch(batch);
-    const activityId = `tx:1:${HASH.toLowerCase()}`;
+    const activityId = `tx:1:${revertedHash.toLowerCase()}`;
     recordTransactionActivity({
       id: activityId,
       kind: "direct",
@@ -303,17 +748,26 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
       status: "pending",
       message: "Awaiting verification",
       manualVerificationRequired: true,
-      hash: HASH,
+      hash: revertedHash,
       chainId: 1,
       account: ACCOUNT,
     });
-    mocks.receipt.mockResolvedValueOnce({
-      transactionHash: HASH,
-      status: "reverted",
+    mocks.transaction.mockImplementation(async ({ hash }) => ({
+      hash,
+      from: ACCOUNT,
+      to: TARGET,
+      input: batch.calls[0].data,
+      value: 0n,
+      blockHash: HASH,
+      blockNumber: 1n,
+    }));
+    mocks.receipt.mockImplementation(async ({ hash }) => ({
+      transactionHash: hash,
+      status: hash === revertedHash ? "reverted" : "success",
       blockHash: HASH,
       blockNumber: 1n,
       logs: [],
-    });
+    }));
     const { result } = renderHook(() => useMultichainBatch());
     await act(async () => {
       await expect(
@@ -321,7 +775,7 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
       ).resolves.toEqual({
         status: "success",
         hashes: [{ chainId: 10, hash: HASH, callIndex: 1 }],
-        revertedHashes: [{ chainId: 1, hash: HASH, callIndex: 0 }],
+        revertedHashes: [{ chainId: 1, hash: revertedHash, callIndex: 0 }],
       });
     });
     expect(mocks.write).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ chainId: 10 }));
@@ -409,15 +863,16 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
       });
       vi.stubGlobal(
         "fetch",
-        vi.fn().mockResolvedValue(
-          new Response(
-            JSON.stringify({
-              ...proposal,
-              safe: mode === "safe" ? TARGET : ACCOUNT,
-              nonce: mode === "hash" ? 8 : 7,
-            }),
-            { status: mode === "unavailable" ? 503 : 200 },
-          ),
+        vi.fn().mockImplementation(
+          async () =>
+            new Response(
+              JSON.stringify({
+                ...proposal,
+                safe: mode === "safe" ? TARGET : ACCOUNT,
+                nonce: mode === "hash" ? 8 : 7,
+              }),
+              { status: mode === "unavailable" ? 503 : 200 },
+            ),
         ),
       );
       mocks.verify.mockResolvedValue({ data: zeroHash });
@@ -546,6 +1001,8 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
       if (state !== "submitting") batch.calls[0].hash = HASH;
       saveMultichainBatch(batch);
       mocks.verify.mockResolvedValue({ data: zeroHash });
+      if (state === "safe")
+        vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Safe service unavailable")));
       const { result } = renderHook(() => useMultichainBatch());
       await act(async () => {
         await expect(
@@ -553,7 +1010,8 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
         ).rejects.toThrow();
       });
       expect(readMultichainBatches()[0].calls[0].state).toBe(state);
-      expect(mocks.verify).not.toHaveBeenCalled();
+      if (state === "safe") expect(mocks.verify).toHaveBeenCalledOnce();
+      else expect(mocks.verify).not.toHaveBeenCalled();
       expect(mocks.write).not.toHaveBeenCalled();
     },
   );
@@ -657,15 +1115,22 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
     batch.calls[0].state = "success";
     batch.calls[0].hash = originalHash;
     saveMultichainBatch(batch);
-    mocks.transaction.mockResolvedValue({
-      hash: HASH,
+    mocks.transaction.mockImplementation(async ({ hash }) => ({
+      hash,
       from: ACCOUNT,
       to: TARGET,
-      input: batch.calls[1].data,
+      input: batch.calls[hash === originalHash ? 0 : 1].data,
       value: 0n,
       blockHash: HASH,
       blockNumber: 1n,
-    });
+    }));
+    mocks.receipt.mockImplementation(async ({ hash }) => ({
+      transactionHash: hash,
+      status: "success",
+      blockHash: HASH,
+      blockNumber: 1n,
+      logs: [],
+    }));
     const { result } = renderHook(() => useMultichainBatch());
     await act(async () => {
       const completed = await result.current.runBatch({

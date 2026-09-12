@@ -41,6 +41,16 @@ export type FrozenBatchCall = Omit<MultichainCall, "validate"> & {
   state: "ready" | "submitting" | "submitted" | "safe" | "success" | "skipped" | "reverted";
   skipReason?: "resolved-externally" | "retried-externally" | "obsolete-safe";
   safeNonce?: number;
+  /** Safe proposal identity must survive execution and activity-history pruning. */
+  safeProposalHash?: Hash;
+  executionHash?: Hash;
+  /** Terminal checkpoints are provisional until rechecked during recovery. */
+  checkpointUnverified?: boolean;
+  receipt?: {
+    blockHash: Hash;
+    blockNumber: bigint;
+    outcome: "success" | "reverted" | "settled" | "refunded" | "pending";
+  };
   hash?: Hash;
 };
 export type BatchRound = {

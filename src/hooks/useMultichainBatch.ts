@@ -8,6 +8,7 @@ import {
 } from "@/hooks/useReviewedRelayr";
 import {
   isSafeConnection,
+  resumeSafeProposalTracking,
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -30,6 +31,7 @@ import {
 import type { JBChainId } from "@/lib/nana/types";
 import { simulatePendingRouterCall } from "@/lib/pending-router-calls";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { requireSafeExecutionSuccess } from "@/lib/safe-queue";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -39,7 +41,6 @@ import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction
 import { requireNoViewAs } from "@/lib/view-as";
 import { useCallback, useRef, useState } from "react";
 import {
-  decodeEventLog,
   decodeFunctionData,
   isAddressEqual,
   parseAbi,
@@ -90,7 +91,12 @@ async function verifyDirectResult(
   batch: MultichainBatch,
   call: FrozenBatchCall,
 ): Promise<
-  | { hash: Hash; state: "success" | "reverted" }
+  | {
+      hash: Hash;
+      executionHash?: Hash;
+      state: "success" | "reverted";
+      receipt: NonNullable<FrozenBatchCall["receipt"]>;
+    }
   | {
       hash: Hash;
       state: "skipped";
@@ -98,17 +104,39 @@ async function verifyDirectResult(
       safeNonce: number;
     }
 > {
-  let hash = call.hash!;
-  const safe = call.state === "safe";
+  const activity = refreshTransactionActivities().find(
+    (row) =>
+      row.kind === "safe" &&
+      row.chainId === call.chainId &&
+      row.account?.toLowerCase() === batch.account.toLowerCase() &&
+      ((row.safeProposalHash ?? row.hash)?.toLowerCase() ===
+        (call.safeProposalHash ?? call.hash)?.toLowerCase() ||
+        row.executionHash?.toLowerCase() === call.hash?.toLowerCase()),
+  );
+  const safe = Boolean(
+    call.safeProposalHash ||
+    call.state === "safe" ||
+    call.skipReason === "obsolete-safe" ||
+    activity,
+  );
   if (safe) {
-    const activity = refreshTransactionActivities().find(
-      (row) =>
-        row.safeProposalHash?.toLowerCase() === call.hash?.toLowerCase() &&
-        row.chainId === call.chainId,
-    );
-    if (!activity?.executionHash) {
+    call.safeProposalHash ??=
+      activity?.safeProposalHash ??
+      activity?.hash ??
+      (call.state === "safe" || call.skipReason === "obsolete-safe" ? call.hash : undefined);
+    if (!call.safeProposalHash)
+      throw new Error(
+        "The original Safe proposal identity is unavailable. Keep this execution for reconciliation; do not replay it.",
+      );
+    if (call.state === "success" && call.hash !== call.safeProposalHash)
+      call.executionHash ??= call.hash;
+    call.hash = call.safeProposalHash;
+    saveMultichainBatch(batch);
+  }
+  let hash = call.executionHash ?? call.hash!;
+  if (safe) {
+    if (!call.executionHash && !activity?.executionHash) {
       if (
-        activity &&
         call.expectedRouterPending &&
         (await readRouterPendingAdvance(client, call.expectedRouterPending, call.preconditions)) ===
           "resolved-externally"
@@ -134,19 +162,24 @@ async function verifyDirectResult(
           throw new Error(
             "The payment is pending again. Keep the original Safe proposal for reconciliation.",
           );
-        updateTransactionActivity(activity.id, {
-          status: "failed",
-          manualVerificationRequired: false,
-          obsoleteSafeNonce: proposal.nonce,
-          message: `Payment resolved elsewhere. Safe proposal ${call.hash} is obsolete, not verified executed. Cancel or replace nonce ${proposal.nonce} in Safe if it blocks the queue.`,
-        });
+        updateTransactionActivity(
+          activity?.id ?? `tx:${call.chainId}:${call.hash!.toLowerCase()}`,
+          {
+            status: "failed",
+            manualVerificationRequired: false,
+            obsoleteSafeNonce: proposal.nonce,
+            message: `Payment resolved elsewhere. Safe proposal ${call.hash} is obsolete, not verified executed. Cancel or replace nonce ${proposal.nonce} in Safe if it blocks the queue.`,
+          },
+        );
         return { hash, state: "skipped", skipReason: "obsolete-safe", safeNonce: proposal.nonce };
       }
       throw new Error(
         "The saved Safe proposal still needs approvals and execution. Resume after it executes; do not propose it again.",
       );
     }
-    hash = activity.executionHash;
+    // A reorg can allow the same original proposal to execute in a different
+    // transaction. Treat a new activity hash only as a candidate to authenticate.
+    hash = activity?.executionHash ?? call.executionHash!;
   }
   const [transaction, receipt] = await Promise.all([
     client.getTransaction({ hash }),
@@ -175,22 +208,7 @@ async function verifyDirectResult(
       decoded.args[3] !== 0
     )
       throw new Error("The Safe execution does not match the saved destination call.");
-    const success = receipt.logs.some((log) => {
-      if (!isAddressEqual(log.address, batch.account)) return false;
-      try {
-        return (
-          decodeEventLog({
-            abi: SAFE_ABI,
-            eventName: "ExecutionSuccess",
-            topics: log.topics,
-            data: log.data,
-          }).args.txHash.toLowerCase() === call.hash?.toLowerCase()
-        );
-      } catch {
-        return false;
-      }
-    });
-    if (!success) throw new Error("The exact Safe proposal has not executed successfully.");
+    requireSafeExecutionSuccess(receipt, batch.account, call.safeProposalHash!);
   } else if (
     !transaction.to ||
     !isAddressEqual(transaction.to, call.address) ||
@@ -207,7 +225,15 @@ async function verifyDirectResult(
         message:
           "The exact routing transaction reverted. No routing changes from this attempt took effect. Refresh the payment and prepare a new review to try again.",
       });
-      return { hash, state: "reverted" };
+      return {
+        hash,
+        state: "reverted",
+        receipt: {
+          blockHash: receipt.blockHash,
+          blockNumber: receipt.blockNumber,
+          outcome: "reverted",
+        },
+      };
     }
     throw new Error(
       "The saved transaction has no canonical successful receipt. Keep it for reconciliation; do not replay it.",
@@ -226,13 +252,23 @@ async function verifyDirectResult(
   updateTransactionActivity(`tx:${call.chainId}:${call.hash!.toLowerCase()}`, {
     status: "success",
     manualVerificationRequired: false,
+    obsoleteSafeNonce: undefined,
     executionHash: safe ? hash : undefined,
     message:
       routerResult === "pending"
         ? "The routing attempt was verified. The payment remains in gateway custody awaiting another attempt."
         : "The exact transaction and every required recipient result were verified.",
   });
-  return { hash, state: "success" };
+  return {
+    hash: safe ? call.safeProposalHash! : hash,
+    executionHash: safe ? hash : undefined,
+    state: "success",
+    receipt: {
+      blockHash: receipt.blockHash,
+      blockNumber: receipt.blockNumber,
+      outcome: routerResult ?? "success",
+    },
+  };
 }
 
 /** One frozen job, explicit rounds, one payment per independent multichain round. */
@@ -314,7 +350,8 @@ export function useMultichainBatch() {
             total: batch.calls.length,
             completed: batch.calls.filter(
               (call) =>
-                call.state === "success" || call.state === "skipped" || call.state === "reverted",
+                !call.checkpointUnverified &&
+                (call.state === "success" || call.state === "skipped" || call.state === "reverted"),
             ).length,
           }
         : undefined;
@@ -333,6 +370,7 @@ export function useMultichainBatch() {
       const execute = async (): Promise<BatchResult> => {
         setIsPending(true);
         let batch: MultichainBatch | undefined;
+        let revokedKeeperCheckpoint = false;
         const progress = (message: string) => {
           input.onProgress?.(message);
           if (batch) updateTransactionActivity(batch.id, { message });
@@ -345,14 +383,14 @@ export function useMultichainBatch() {
         const result = (status: BatchResult["status"]): BatchResult => ({
           status,
           hashes: batch!.calls.flatMap((call, callIndex) =>
-            call.state === "success" && call.hash
-              ? [{ chainId: call.chainId, hash: call.hash, callIndex }]
+            call.state === "success" && !call.checkpointUnverified && call.hash
+              ? [{ chainId: call.chainId, hash: call.executionHash ?? call.hash, callIndex }]
               : [],
           ),
           ...(batch!.calls.some((call) => call.state === "reverted")
             ? {
                 revertedHashes: batch!.calls.flatMap((call, callIndex) =>
-                  call.state === "reverted" && call.hash
+                  call.state === "reverted" && !call.checkpointUnverified && call.hash
                     ? [{ chainId: call.chainId, hash: call.hash, callIndex }]
                     : [],
                 ),
@@ -361,7 +399,10 @@ export function useMultichainBatch() {
           ...(batch!.calls.some((call) => call.skipReason === "obsolete-safe")
             ? {
                 obsoleteSafeProposals: batch!.calls.flatMap((call, callIndex) =>
-                  call.skipReason === "obsolete-safe" && call.hash && call.safeNonce !== undefined
+                  call.skipReason === "obsolete-safe" &&
+                  !call.checkpointUnverified &&
+                  call.hash &&
+                  call.safeNonce !== undefined
                     ? [
                         {
                           chainId: call.chainId,
@@ -398,6 +439,90 @@ export function useMultichainBatch() {
             return true;
           }
           return false;
+        };
+        const revalidateDirectCheckpoints = async () => {
+          const checkpoints = batch!.calls.filter(
+            (call) =>
+              call.state === "success" || call.state === "reverted" || call.state === "skipped",
+          );
+          if (!checkpoints.length) return;
+          // Persist revocation before an RPC request can fail or the page can close.
+          for (const call of checkpoints) call.checkpointUnverified = true;
+          saveMultichainBatch(batch!);
+          for (const call of checkpoints) {
+            const client = getPublicClient(config, { chainId: call.chainId }) as
+              PublicClient | undefined;
+            if (!client) throw new Error("Destination RPC unavailable.");
+            try {
+              if (call.hash) {
+                Object.assign(call, await verifyDirectResult(client, batch!, call));
+                if (call.state !== "skipped") delete call.skipReason;
+              } else {
+                if (!call.expectedRouterPending || call.state !== "skipped")
+                  throw new Error(
+                    "The saved completion has no transaction evidence. Keep it for reconciliation; do not replay it.",
+                  );
+                const advance = await readRouterPendingAdvance(
+                  client,
+                  call.expectedRouterPending,
+                  call.preconditions,
+                );
+                if (!advance) {
+                  if (
+                    call.safeProposalHash ||
+                    call.executionHash ||
+                    call.skipReason === "obsolete-safe"
+                  )
+                    throw new Error(
+                      "The original Safe proposal needs reconciliation before this batch can finish.",
+                    );
+                  requireRelayrRecoveryScopeAvailable(
+                    account,
+                    call.recoveryScope ??
+                      `${batch!.scope}:${call.chainId}:${batch!.calls.indexOf(call)}`,
+                  );
+                  // This call was never published or submitted. Restore the
+                  // original snapshot, then require another resume to reverify it.
+                  call.state = "ready";
+                  delete call.skipReason;
+                  delete call.checkpointUnverified;
+                  revokedKeeperCheckpoint = true;
+                  saveMultichainBatch(batch!);
+                  throw new Error(
+                    "The payment is pending again. Resume the saved batch to reverify its original routing call.",
+                  );
+                }
+                call.skipReason = advance;
+              }
+              delete call.checkpointUnverified;
+              saveMultichainBatch(batch!);
+            } catch (cause) {
+              if (call.safeProposalHash) {
+                recordTransactionActivity({
+                  id: `tx:${call.chainId}:${call.safeProposalHash.toLowerCase()}`,
+                  kind: "safe",
+                  title: batch!.label,
+                  status: "safe-proposed",
+                  account: batch!.account,
+                  chainId: call.chainId,
+                  hash: call.safeProposalHash,
+                  safeProposalHash: call.safeProposalHash,
+                  obsoleteSafeNonce: undefined,
+                  manualVerificationRequired: true,
+                  message:
+                    "The saved Safe result needs reconciliation. Track the original proposal before continuing this batch.",
+                });
+                resumeSafeProposalTracking();
+              } else if (call.hash)
+                updateTransactionActivity(`tx:${call.chainId}:${call.hash.toLowerCase()}`, {
+                  status: "pending",
+                  manualVerificationRequired: true,
+                  message:
+                    "The saved result could not be reverified. Keep the original transaction or Safe proposal for reconciliation; do not submit it again.",
+                });
+              throw cause;
+            }
+          }
         };
         try {
           batch = findPendingBatch(account, input.scope);
@@ -590,6 +715,7 @@ export function useMultichainBatch() {
               saveMultichainBatch(batch);
             }
           } else {
+            await revalidateDirectCheckpoints();
             for (const [index, call] of batch.calls.entries()) {
               if (call.state === "success" || call.state === "skipped" || call.state === "reverted")
                 continue;
@@ -631,7 +757,18 @@ export function useMultichainBatch() {
                 }
                 throw cause;
               }
-              call.state = submittedViaSafe(call.hash) ? "safe" : "submitted";
+              call.state =
+                submittedViaSafe(call.hash) ||
+                refreshTransactionActivities().some(
+                  (row) =>
+                    row.kind === "safe" &&
+                    row.chainId === call.chainId &&
+                    row.account?.toLowerCase() === account.toLowerCase() &&
+                    (row.safeProposalHash ?? row.hash)?.toLowerCase() === call.hash?.toLowerCase(),
+                )
+                  ? "safe"
+                  : "submitted";
+              if (call.state === "safe") call.safeProposalHash = call.hash;
               saveMultichainBatch(batch);
               if (call.state === "safe") {
                 progress(
@@ -643,6 +780,9 @@ export function useMultichainBatch() {
               Object.assign(call, await verifyDirectResult(client, batch, call));
               saveMultichainBatch(batch);
             }
+            // Canonicality is checked again after later calls and keeper reads.
+            // This is an observation at completion, not an irreversible-finality claim.
+            await revalidateDirectCheckpoints();
           }
           batch.status = "success";
           saveMultichainBatch(batch);
@@ -660,6 +800,7 @@ export function useMultichainBatch() {
           if (batch) {
             let discarded = false;
             if (
+              !revokedKeeperCheckpoint &&
               batch.calls.every((call) => call.state === "ready") &&
               batch.rounds.every((round) => round.state === "ready")
             ) {
