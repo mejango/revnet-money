@@ -32,7 +32,13 @@ const calls = [
     functionName: "borrowFrom",
   },
 ];
-const fee = { key: "base:6", projectId: 6n, received: 9429n * 10n ** 18n, route: "fallback" };
+const fee = {
+  key: "base:6",
+  projectId: 6n,
+  beneficiary: "0x6666666666666666666666666666666666666666",
+  received: 9429n * 10n ** 18n,
+  route: "fallback",
+};
 function Host({ sent }: { sent: () => void }) {
   const review = useFeeBuybackReview(calls);
   return (
@@ -73,6 +79,7 @@ describe("actionable fee review", () => {
     const sent = vi.fn();
     await render(sent);
     expect(host.textContent).toContain("9,429");
+    expect(host.textContent).toContain("tokens to 0x6666…6666");
     await act(async () => button("Wait for better rate").click());
     expect(host.textContent).toContain("Checking new blocks automatically");
     mocks.check.mockResolvedValue({
