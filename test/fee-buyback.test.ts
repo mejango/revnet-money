@@ -412,6 +412,20 @@ describe("live fee review", () => {
     expect((await watch.refresh()).status).toBe("unknown");
     watch.stop();
   });
+  it("remembers affected fee groups that grow after recovery before shrinking", async () => {
+    const expanded = simulation(true);
+    expanded[0].calls[0].logs.push(...simulation(true)[0].calls[0].logs);
+    const check = vi
+      .fn()
+      .mockResolvedValueOnce(result())
+      .mockResolvedValueOnce(analyzeFeeSimulation(expanded, opts))
+      .mockResolvedValue(result(true));
+    const watch = createFeeWatch(check, vi.fn());
+    await watch.refresh();
+    expect((await watch.refresh()).status).toBe("ready");
+    expect((await watch.refresh()).status).toBe("unknown");
+    watch.stop();
+  });
   it("rechecks before confirmation and refuses a newly unfavorable result", async () => {
     const check = vi.fn().mockResolvedValueOnce(result(true)).mockResolvedValue(result());
     const watch = createFeeWatch(check, vi.fn());

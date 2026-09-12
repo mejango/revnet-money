@@ -279,6 +279,8 @@ export function createFeeWatch(
         const group = identity(fee);
         affectedCounts.set(group, Math.max(affectedCounts.get(group) ?? 0, counts.get(group) ?? 0));
       }
+      for (const [group, count] of affectedCounts)
+        affectedCounts.set(group, Math.max(count, counts.get(group) ?? 0));
       if (
         next.status !== "fallback" &&
         ([...affectedCounts].some(([group, count]) => (counts.get(group) ?? 0) < count) ||
