@@ -10,6 +10,8 @@ export type TransactionReviewCall = {
   to: Address;
   data: Hex;
   value?: bigint;
+  /** Exact EOA/forwarder gas bound; Safe execution still signs safeTxGas separately. */
+  gas?: bigint;
   /** Safe connector only: the exact signed Safe transaction gas envelope. */
   safeTxGas?: bigint;
   from?: Address;
@@ -42,6 +44,7 @@ export type ContractTransactionReviewCall = {
   functionName: string;
   args?: readonly unknown[];
   value?: bigint;
+  gas?: bigint;
   account?: Address;
   /** Safe connector only: the exact signed Safe transaction gas envelope. */
   safeTxGas?: bigint;
@@ -82,6 +85,7 @@ function encodedCall(
     to: call.address,
     from: call.account,
     value: call.value,
+    gas: call.gas,
     safeTxGas: call.safeTxGas,
     data: encodeFunctionData({
       abi: call.abi,
@@ -135,6 +139,7 @@ export async function requireContractTransactionReview(
     before.chainId !== after.chainId ||
     before.to.toLowerCase() !== after.to.toLowerCase() ||
     (before.value ?? 0n) !== (after.value ?? 0n) ||
+    before.gas !== after.gas ||
     before.safeTxGas !== after.safeTxGas ||
     before.data !== after.data
   ) {
@@ -148,6 +153,7 @@ export function transactionReviewJson(request: TransactionReviewRequest): string
     from: call.from,
     to: call.to,
     value: `0x${(call.value ?? 0n).toString(16)}`,
+    ...(call.gas === undefined ? {} : { gas: `0x${call.gas.toString(16)}` }),
     ...(call.safeTxGas === undefined ? {} : { safeTxGas: `0x${call.safeTxGas.toString(16)}` }),
     data: call.data,
   }));

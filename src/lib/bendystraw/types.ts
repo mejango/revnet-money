@@ -774,6 +774,7 @@ export type IndexedLpPositionsQuery = {
     totalCount?: number;
     items: Array<{
       chainId: number;
+      poolId: string;
       tokenId: string;
       owner: string;
       tickLower: number;
@@ -783,6 +784,26 @@ export type IndexedLpPositionsQuery = {
       feesClaimed1: string;
     }>;
   } | null;
+};
+
+export type IndexedPoolRangesQueryVariables = IndexedBuybackPoolsQueryVariables & {
+  poolId: string;
+  limit: number;
+  offset: number;
+};
+export type IndexedPoolRangesQuery = {
+  buybackPoolRanges: {
+    totalCount: number;
+    items: Array<{
+      chainId: number;
+      projectId: number;
+      version: number;
+      poolId: string;
+      tickLower: number;
+      tickUpper: number;
+      liquidity: string;
+    }>;
+  };
 };
 
 export type IndexedPoolLiquidityEventsQueryVariables = IndexedBuybackPoolsQueryVariables & {
@@ -929,4 +950,23 @@ export type ShieldGroupQuery = {
       }>;
     } | null;
   } | null;
+};
+export type IndexedRouterPendingCall = {
+  chainId: number;
+  version: number;
+  gateway: string;
+  pendingCallId: string;
+  projectId: number;
+  sourceProjectId: number;
+  token: string;
+  amount: string;
+  retainedAmount: string;
+  preferAddToBalance: boolean;
+  shouldReturnHeldFees: boolean;
+  beneficiary: string;
+  refundTo: string;
+  memo: string;
+  metadata: string;
+  callCommitment: string;
+  status: string;
 };

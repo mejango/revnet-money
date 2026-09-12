@@ -205,6 +205,33 @@ export function safeTransactionHash(
   });
 }
 
+/** Authenticate service fields against the proposal hash returned by the wallet. */
+export async function readSafeTransaction(
+  chainId: number,
+  safe: Address,
+  hash: Hex,
+): Promise<SafeQueuedTransaction> {
+  const base = serviceBase(chainId);
+  if (!base) throw new Error(`Safe proposal ${hash} cannot be retrieved on this chain.`);
+  const response = await fetch(`${base}/api/v1/multisig-transactions/${hash}/`);
+  if (!response.ok)
+    throw new Error(
+      `Safe proposal ${hash} could not be retrieved (${response.status}). Resume when the service is available.`,
+    );
+  const transaction = (await response.json()) as SafeQueuedTransaction & { safe?: Address };
+  if (
+    !transaction.safe ||
+    !isAddressEqual(transaction.safe, safe) ||
+    !Number.isSafeInteger(transaction.nonce) ||
+    transaction.nonce < 0 ||
+    safeTransactionHash(chainId, safe, transaction).toLowerCase() !== hash.toLowerCase()
+  )
+    throw new Error(
+      `Safe proposal ${hash} does not match its authenticated chain, account and payload.`,
+    );
+  return transaction;
+}
+
 export async function listPendingSafeTransactions(
   chainId: number,
   safe: Address,

@@ -112,6 +112,16 @@ describe("transaction review fail-closed boundary", () => {
       "Transaction data changed after review",
     );
   });
+
+  it("includes the bounded retry gas in the portable review and rejects changes", async () => {
+    const call = { ...transferCall(), gas: 6_600_000n };
+    unregister = registerTransactionReviewHandler(async (request) => {
+      expect(JSON.parse(transactionReviewJson(request)).gas).toBe("0x64b540");
+      call.gas += 1n;
+      return true;
+    });
+    await expect(requireContractTransactionReview(call)).rejects.toThrow(/changed after review/);
+  });
 });
 
 describe("Relayr funding selection", () => {

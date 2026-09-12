@@ -8,6 +8,7 @@ import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
 import { useState } from "react";
 import { ProjectTabIcon } from "../ProjectTabIcon";
 import { ActivityItem, type ActivityEvent } from "./ActivityItem";
+import { PendingRoutingPayments } from "./PendingRoutingPayments";
 import {
   groupSameTxEvents,
   isProjectFeedActivityEvent,
@@ -195,6 +196,17 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
 
   return (
     <div className="mt-6">
+      <PendingRoutingPayments
+        key={projects
+          .map(({ chainId, projectId, version }) => `${chainId}:${projectId}:${version}`)
+          .sort()
+          .join(",")}
+        projects={projects.map(({ chainId, projectId, version }) => ({
+          chainId,
+          projectId,
+          version,
+        }))}
+      />
       <div className="mb-2 flex items-center justify-between gap-3">
         {/* Same voice as the project tabs — the icon and type the Latest tab
             uses when the feed collapses into the tab bar. */}

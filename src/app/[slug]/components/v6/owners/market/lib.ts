@@ -1,7 +1,7 @@
 import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
 import {
   IndexedLpPositionsOperation,
-  IndexedPoolLiquidityEventsOperation,
+  IndexedPoolRangesOperation,
 } from "@/lib/bendystraw/operations";
 import { rolloutChain } from "@/lib/protocol-rollout";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
@@ -54,6 +54,7 @@ import {
   erc20Abi,
   formatUnits,
   Hex,
+  isAddress,
   parseAbiItem,
   PublicClient,
   toFunctionSelector,
@@ -507,60 +508,113 @@ function compositionFromRanges(
   };
 }
 
+/** Reject partial or shifting pages instead of valuing an incomplete pool. */
+async function completeIndexedPages<T>(
+  readPage: (offset: number) => Promise<{ items: T[]; totalCount?: number } | null>,
+  keyOf: (item: T) => string,
+): Promise<T[]> {
+  const items: T[] = [];
+  const keys = new Set<string>();
+  let totalCount: number | undefined;
+  do {
+    const page = await readPage(items.length);
+    const count = page?.totalCount;
+    if (
+      !page ||
+      !Array.isArray(page.items) ||
+      typeof count !== "number" ||
+      !Number.isSafeInteger(count) ||
+      count < 0 ||
+      (totalCount !== undefined && count !== totalCount)
+    ) {
+      throw new Error("Indexed pool pagination is unavailable or changed.");
+    }
+    totalCount = count;
+    if (
+      items.length + page.items.length > totalCount ||
+      (page.items.length === 0 && items.length < totalCount)
+    ) {
+      throw new Error("Indexed pool pagination is incomplete.");
+    }
+    for (const item of page.items) {
+      const key = keyOf(item);
+      if (keys.has(key)) throw new Error("Indexed pool pagination repeated a row.");
+      keys.add(key);
+      items.push(item);
+    }
+  } while (items.length < totalCount);
+  return items;
+}
+
+function isIndexedUint(value: unknown): value is string {
+  return typeof value === "string" && /^\d+$/u.test(value);
+}
+
+function validIndexedRange(range: { tickLower: number; tickUpper: number; liquidity: string }) {
+  return (
+    Number.isSafeInteger(range.tickLower) &&
+    Number.isSafeInteger(range.tickUpper) &&
+    range.tickLower >= -UNISWAP_V4_MAX_TICK &&
+    range.tickUpper <= UNISWAP_V4_MAX_TICK &&
+    range.tickLower < range.tickUpper &&
+    isIndexedUint(range.liquidity)
+  );
+}
+
 /**
- * The composition from bendystraw's ModifyLiquidity history: every indexed
- * delta netted per tick range — a few small queries instead of a log scan.
- * Null when the index has nothing for this pool, which reads the same as
- * "not indexed yet", so the caller scans onchain rather than presenting an
- * empty pool as fact.
+ * Bendystraw already nets PositionManager liquidity per range. Keep the same
+ * indexed coverage as the event history without downloading every change.
+ * No rows means coverage is unknown; explicit zero ranges mean fully withdrawn.
  */
 async function readIndexedPoolComposition(pool: PoolSnapshot): Promise<PoolComposition | null> {
   try {
-    const ranges = new Map<string, { tickLower: number; tickUpper: number; liquidity: bigint }>();
-    let seen = 0;
-    let offset = 0;
-    let totalCount = 0;
-    do {
-      const result = await queryBendystrawFromBrowser(
-        IndexedPoolLiquidityEventsOperation,
-        {
-          projectId: pool.projectId,
-          chainId: Number(pool.chainId),
-          version: 6,
-          limit: 1000,
-          offset,
-        },
-        Number(pool.chainId),
-      );
-      const page = result.buybackPoolLiquidityEvents?.items ?? [];
-      totalCount = result.buybackPoolLiquidityEvents?.totalCount ?? page.length;
-      if (!page.length) break;
-      offset += page.length;
-      for (const item of page) {
-        if (item.poolId.toLowerCase() !== pool.poolId.toLowerCase()) continue;
-        seen++;
-        const key = `${item.tickLower}:${item.tickUpper}`;
-        const entry = ranges.get(key) ?? {
-          tickLower: item.tickLower,
-          tickUpper: item.tickUpper,
-          liquidity: 0n,
-        };
-        entry.liquidity += BigInt(item.liquidityDelta);
-        ranges.set(key, entry);
-      }
-    } while (offset < totalCount);
-    if (!seen) return null;
-    return compositionFromRanges(pool, [...ranges.values()]);
+    const ranges = await completeIndexedPages(
+      async (offset) => {
+        const result = await queryBendystrawFromBrowser(
+          IndexedPoolRangesOperation,
+          {
+            projectId: pool.projectId,
+            chainId: Number(pool.chainId),
+            version: 6,
+            poolId: pool.poolId,
+            limit: 1000,
+            offset,
+          },
+          Number(pool.chainId),
+        );
+        return result.buybackPoolRanges;
+      },
+      (item) => {
+        if (
+          item.chainId !== Number(pool.chainId) ||
+          item.projectId !== pool.projectId ||
+          item.version !== 6 ||
+          item.poolId.toLowerCase() !== pool.poolId.toLowerCase() ||
+          !validIndexedRange(item)
+        ) {
+          throw new Error("Indexed liquidity range does not match this pool.");
+        }
+        return `${item.tickLower}:${item.tickUpper}`;
+      },
+    );
+    if (!ranges.length) return null;
+    return compositionFromRanges(
+      pool,
+      ranges.map(({ tickLower, tickUpper, liquidity }) => ({
+        tickLower,
+        tickUpper,
+        liquidity: BigInt(liquidity),
+      })),
+    );
   } catch {
     return null;
   }
 }
 
 /**
- * The pool's current reserves, reconstructed by netting every ModifyLiquidity
- * delta per tick range (all senders — composition covers the whole pool) back to
- * the pool's Initialize event, then valuing each surviving range at the current
- * price. Null when the RPC can't return the complete history.
+ * Current reserves from indexed PositionManager ranges, valued at the live
+ * price. If unavailable, reconstruct every ModifyLiquidity delta (all senders)
+ * back to Initialize. Null when the RPC cannot return complete history.
  */
 export async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition | null> {
   const indexed = await readIndexedPoolComposition(pool);
@@ -872,12 +926,30 @@ async function positionFor(
  */
 async function readIndexedLpPositions(pool: PoolSnapshot): Promise<UserLpPosition[] | null> {
   try {
-    const result = await queryBendystrawFromBrowser(
-      IndexedLpPositionsOperation,
-      { chainId: Number(pool.chainId), poolId: pool.poolId, limit: 250 },
-      Number(pool.chainId),
+    const items = await completeIndexedPages(
+      async (offset) => {
+        const result = await queryBendystrawFromBrowser(
+          IndexedLpPositionsOperation,
+          { chainId: Number(pool.chainId), poolId: pool.poolId, limit: 250, offset },
+          Number(pool.chainId),
+        );
+        return result.buybackPoolPositions;
+      },
+      (item) => {
+        if (
+          item.chainId !== Number(pool.chainId) ||
+          item.poolId.toLowerCase() !== pool.poolId.toLowerCase() ||
+          !isAddress(item.owner, { strict: false }) ||
+          !validIndexedRange(item) ||
+          !isIndexedUint(item.tokenId) ||
+          !isIndexedUint(item.feesClaimed0) ||
+          !isIndexedUint(item.feesClaimed1)
+        ) {
+          throw new Error("Indexed position does not match this pool.");
+        }
+        return BigInt(item.tokenId).toString();
+      },
     );
-    const items = result.buybackPoolPositions?.items ?? [];
     if (!items.length) return null;
     return items
       .map((item) => {

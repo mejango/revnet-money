@@ -1248,6 +1248,8 @@ function PrettyCall({
         from: call.from,
         to: call.to,
         value: call.value ?? 0n,
+        gas: call.gas,
+        safeTxGas: call.safeTxGas,
         functionName: call.functionName,
         args: call.args,
         data: call.data,
@@ -1262,6 +1264,11 @@ function PrettyCall({
         {call.safeTxGas !== undefined ? (
           <CallRow label="Safe transaction gas">
             {call.safeTxGas.toString()} (signed envelope)
+          </CallRow>
+        ) : null}
+        {call.gas !== undefined ? (
+          <CallRow label={call.safeTxGas !== undefined ? "Preflight gas limit" : "Gas limit"}>
+            {call.gas.toString()}
           </CallRow>
         ) : null}
       </dl>
