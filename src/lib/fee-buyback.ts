@@ -7,10 +7,12 @@ const abi = parseAbi([
   "event Swap(uint256 indexed projectId,uint256 amountToSwapWith,bytes32 indexed poolId,uint256 amountReceived,address caller)",
   "event Pay(uint256 indexed rulesetId,uint256 indexed rulesetCycleNumber,uint256 indexed projectId,address payer,address beneficiary,uint256 amount,uint256 newlyIssuedTokenCount,string memo,bytes metadata,address caller)",
   "event MintTokens(address indexed beneficiary,uint256 indexed projectId,uint256 tokenCount,uint256 beneficiaryTokenCount,string memo,uint256 reservedPercent,address caller)",
+  "event ProcessFee(uint256 indexed projectId,address indexed token,uint256 indexed amount,bool wasHeld,address beneficiary,address caller)",
 ]);
 export type Fee = {
   key: string;
   projectId: bigint;
+  beneficiary?: string;
   received: bigint;
   route: "fallback" | "swap" | "issuance" | "unknown";
 };
@@ -50,7 +52,12 @@ export function analyzeFeeSimulation(value: unknown, options: FeeOptions): FeeRe
     calls[0].logs.length > 20000
   )
     return unknownResult();
-  const fees: Fee[] = [];
+  const records: {
+    fee: Fee;
+    payer: string;
+    metadata: string;
+    confirmed: boolean;
+  }[] = [];
   const active = new Map<
     string,
     { fee: Fee; hook?: string; mint: boolean; swap: boolean; sawSwap: boolean }
@@ -76,36 +83,43 @@ export function analyzeFeeSimulation(value: unknown, options: FeeOptions): FeeRe
         const key = `${log.address.toLowerCase()}:${a.projectId}`;
         // Every pay closes the prior scope for this project, even if unrelated.
         active.delete(key);
-        if (
-          !same(a.beneficiary, options.beneficiary) ||
-          !includes(options.feePayers, a.payer) ||
-          a.amount === 0n
-        )
-          continue;
+        if (!includes(options.feePayers, a.payer) || a.amount === 0n) continue;
+        const terminalPayer = includes(options.terminals, a.payer);
+        if (terminalPayer && a.projectId !== 1n) continue;
+        // Fee recipients can differ from the submitting account. Keep repeated
+        // payments distinct without depending on unrelated fees earlier in the log.
+        const identity = `${key}:${a.beneficiary.toLowerCase()}`;
         const fee: Fee = {
-          key: `${key}:${a.beneficiary.toLowerCase()}:${fees.length}`,
+          key: identity,
           projectId: a.projectId,
+          beneficiary: a.beneficiary,
           received: a.newlyIssuedTokenCount,
           route: a.newlyIssuedTokenCount > 0n ? "issuance" : "unknown",
         };
-        fees.push(fee);
+        records.push({
+          fee,
+          payer: a.payer,
+          metadata: a.metadata,
+          confirmed: !terminalPayer,
+        });
         active.set(key, { fee, mint: false, swap: false, sawSwap: false });
       } else if (event.eventName === "Mint" || event.eventName === "Swap") {
         if (!includes(options.trustedHooks, log.address)) continue;
         const state = active.get(`${args.caller.toLowerCase()}:${args.projectId}`);
         if (!state || (state.hook && !same(state.hook, log.address))) continue;
         state.hook = log.address;
+        // Earlier direct issuance does not verify this hook's beneficiary receipt.
+        state.fee.route = "unknown";
         if (event.eventName === "Mint" && event.args.tokenCount > 0n) state.mint = true;
         if (event.eventName === "Swap") state.sawSwap = true;
         if (event.eventName === "Swap" && event.args.amountReceived > 0n) state.swap = true;
       } else if (event.eventName === "MintTokens") {
-        if (
-          !includes(options.controllers, log.address) ||
-          !same(event.args.beneficiary, options.beneficiary)
-        )
-          continue;
+        if (!includes(options.controllers, log.address)) continue;
         const matches = [...active.entries()].filter(
-          ([, s]) => s.fee.projectId === event.args.projectId && same(s.hook, event.args.caller),
+          ([, s]) =>
+            s.fee.projectId === event.args.projectId &&
+            same(s.fee.beneficiary, event.args.beneficiary) &&
+            same(s.hook, event.args.caller),
         );
         if (matches.length !== 1) continue;
         const [key, state] = matches[0];
@@ -121,11 +135,34 @@ export function analyzeFeeSimulation(value: unknown, options: FeeOptions): FeeRe
                   ? "fallback"
                   : "unknown";
         active.delete(key);
+      } else if (event.eventName === "ProcessFee") {
+        if (!includes(options.terminals, log.address)) continue;
+        // Ordinary project payouts also emit terminal-paid Pay logs, even to
+        // project #1. Only ProcessFee after settlement proves a platform fee.
+        const record = records.findLast(
+          (r) =>
+            !r.confirmed &&
+            r.fee.projectId === 1n &&
+            same(r.payer, log.address) &&
+            same(r.fee.beneficiary, event.args.beneficiary) &&
+            same(r.metadata, numberToHex(event.args.projectId, { size: 32 })),
+        );
+        if (record) record.confirmed = true;
       }
     }
   } catch {
     return unknownResult();
   }
+  // Excluded payout candidates must not change a recognized fee's identity.
+  const occurrences = new Map<string, number>();
+  const fees = records
+    .filter((r) => r.confirmed)
+    .map(({ fee }) => {
+      const occurrence = occurrences.get(fee.key) ?? 0;
+      occurrences.set(fee.key, occurrence + 1);
+      fee.key = `${fee.key}:${occurrence}`;
+      return fee;
+    });
   // Ordinary issuance has no buyback Mint/Swap event and must not be called a fallback.
   return {
     status: fees.some((f) => f.route === "fallback")
@@ -206,7 +243,10 @@ export function feeMessage(result: FeeResult): string {
 export function feeReceipt(fee: Fee): string {
   const amount = formatUnits(fee.received, 18);
   const [whole, fraction] = amount.split(".");
-  return `~${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fraction ? "." + fraction.slice(0, 4) : ""} project #${fee.projectId} tokens`;
+  const recipient = fee.beneficiary
+    ? ` to ${fee.beneficiary.slice(0, 6)}…${fee.beneficiary.slice(-4)}`
+    : "";
+  return `~${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fraction ? "." + fraction.slice(0, 4) : ""} project #${fee.projectId} tokens${recipient}`;
 }
 
 /** One review owns one watcher. It never sends, and stale/closed reviews cannot approve. */
@@ -218,6 +258,8 @@ export function createFeeWatch(
   let latest: FeeResult = unknownResult();
   let pending: Promise<FeeResult> | undefined;
   const affected = new Set<string>();
+  const affectedCounts = new Map<string, number>();
+  const identity = (fee: Fee) => fee.key.slice(0, fee.key.lastIndexOf(":"));
   async function refresh(): Promise<FeeResult> {
     if (stopped) return unknownResult();
     if (pending) return pending;
@@ -229,12 +271,20 @@ export function createFeeWatch(
         next = unknownResult();
       }
       if (stopped) return unknownResult();
-      for (const fee of next.fees) if (fee.route === "fallback") affected.add(fee.key);
+      const counts = new Map<string, number>();
+      for (const fee of next.fees) counts.set(identity(fee), (counts.get(identity(fee)) ?? 0) + 1);
+      for (const fee of next.fees) {
+        if (fee.route !== "fallback") continue;
+        affected.add(fee.key);
+        const group = identity(fee);
+        affectedCounts.set(group, Math.max(affectedCounts.get(group) ?? 0, counts.get(group) ?? 0));
+      }
       if (
         next.status !== "fallback" &&
-        [...affected].some(
-          (key) => !next.fees.some((fee) => fee.key === key && fee.route === "swap"),
-        )
+        ([...affectedCounts].some(([group, count]) => (counts.get(group) ?? 0) < count) ||
+          [...affected].some(
+            (key) => !next.fees.some((fee) => fee.key === key && fee.route === "swap"),
+          ))
       )
         next = { ...next, status: "unknown" };
       latest = next;
