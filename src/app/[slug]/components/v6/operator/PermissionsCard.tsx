@@ -162,6 +162,7 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
             {owners.map((owner) => (
               <div key={owner.address} className="flex flex-wrap items-center gap-2">
                 <EthereumAddress
+                  showSafe
                   address={owner.address}
                   short
                   chain={JB_CHAINS[owner.chains[0]]?.chain}
@@ -199,6 +200,7 @@ export function PermissionsCard({ rows }: { rows: ChainProjectRow[] }) {
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <EthereumAddress
+                    showSafe
                     address={grant.operator}
                     short
                     withEnsName

@@ -4,6 +4,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import EtherscanLink from "@/components/EtherscanLink";
 import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
 import { ProjectLink } from "@/components/ProjectLink";
+import { SafeBadge } from "@/components/SafeBadge";
 import { FastForward as ForwardIcon } from "@/components/ui/icons";
 import { Revalidating } from "@/components/ui/Revalidating";
 import { useCompleteParticipants } from "@/hooks/useCompleteBendystrawLists";
@@ -262,12 +263,18 @@ export function Header(props: Props) {
                       >
                         <span className="text-zinc-500">Operator:</span>
                         {operator ? (
-                          <EtherscanLink
-                            value={operator.address}
-                            className="ml-1 inline-block min-h-11 min-w-0 break-all font-medium text-zinc-900 sm:min-h-0"
-                          >
-                            {operator.displayName}
-                          </EtherscanLink>
+                          <>
+                            <EtherscanLink
+                              value={operator.address}
+                              chain={chainId ? JB_CHAINS[chainId]?.chain : undefined}
+                              className="ml-1 inline-block min-h-11 min-w-0 break-all font-medium text-zinc-900 sm:min-h-0"
+                            >
+                              {operator.displayName}
+                            </EtherscanLink>
+                            {operator.address && chainId ? (
+                              <SafeBadge address={operator.address} chainId={Number(chainId)} />
+                            ) : null}
+                          </>
                         ) : (
                           <span
                             className="ml-1 font-medium text-zinc-500"

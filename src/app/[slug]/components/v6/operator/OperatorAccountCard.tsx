@@ -171,6 +171,7 @@ export function OperatorAccountCard({
                   <dd>
                     {group.operator ? (
                       <EthereumAddress
+                        showSafe
                         address={group.operator}
                         short
                         withEnsName
