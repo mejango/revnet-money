@@ -4,6 +4,7 @@ import Image from "next/image";
 import { twMerge } from "tailwind-merge";
 import { Address, Chain } from "viem";
 import EtherscanLink from "./EtherscanLink";
+import { SafeBadge } from "./SafeBadge";
 
 const STAMP_FYI_BASE_URL = "https://cdn.stamp.fyi";
 
@@ -23,6 +24,7 @@ export function EthereumAddress({
   avatarProps,
   className,
   chain,
+  showSafe = false,
 }: {
   address: Address;
   short?: boolean;
@@ -31,6 +33,7 @@ export function EthereumAddress({
   avatarProps?: { size?: "sm" | "md" };
   className?: string;
   chain?: Chain;
+  showSafe?: boolean;
 }) {
   const { data } = useEnsName(address, { enabled: withEnsName });
   const formattedAddress = short ? formatEthAddress(address) : address;
@@ -41,7 +44,7 @@ export function EthereumAddress({
   const avatarSize = avatarProps?.size ?? "md";
   const avatarDimensions = avatarSize === "md" ? 36 : 24;
 
-  return (
+  const link = (
     <EtherscanLink
       className={twMerge("inline-flex items-center", className)}
       value={address}
@@ -65,5 +68,13 @@ export function EthereumAddress({
       )}
       {renderValue}
     </EtherscanLink>
+  );
+  return showSafe && chain ? (
+    <span className="inline-flex items-center">
+      {link}
+      <SafeBadge address={address} chainId={chain.id} />
+    </span>
+  ) : (
+    link
   );
 }
