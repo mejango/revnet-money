@@ -99,20 +99,22 @@ describe("SafeBatchTray", () => {
     mocks.submit.mockReset();
   });
 
-  it("shows one chip per chain with queued steps, read from storage", () => {
+  it("shows one tab per chain with queued steps, read from storage", () => {
     writeBatch(8453, 6, [hookStep(), terminalStep()]);
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
-    expect(screen.getByRole("button", { name: "2 queued · Base" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Optimism/ })).toBeNull();
-    expect(screen.getByRole("button", { name: "Presets" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Same on every chain" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Base (2)" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Optimism/ })).toBeNull();
+    expect(screen.getByRole("table").textContent).toContain("Set buyback hook");
+    expect(screen.getByRole("table").textContent).toContain("Set router terminal");
+    expect(screen.getByRole("button", { name: "Start from a preset" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy the Base batch to every chain" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy();
   });
 
-  it("keeps only Presets when nothing is queued, and Clear empties every chain", () => {
+  it("keeps only the preset button when nothing is queued, and Clear all empties every chain", () => {
     const { unmount } = render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
-    expect(screen.getByText("Nothing queued.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+    expect(screen.getByText(/Nothing queued\./)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear all" })).toBeNull();
     unmount();
 
     writeBatch(8453, 6, [hookStep()]);
@@ -120,16 +122,16 @@ describe("SafeBatchTray", () => {
       buildStep({ kind: "setHookFor", chainId: 10, projectId: 7, values: { hook: HOOK } }),
     ]);
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
     expect(readBatch(8453, 6)).toEqual([]);
     expect(readBatch(10, 7)).toEqual([]);
-    expect(screen.getByText("Nothing queued.")).toBeTruthy();
+    expect(screen.getByText(/Nothing queued\./)).toBeTruthy();
   });
 
   it("opens the chain's batch dialog listing each step with its decoded call", async () => {
     writeBatch(8453, 6, [hookStep(), terminalStep()]);
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
-    fireEvent.click(screen.getByRole("button", { name: "2 queued · Base" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review and propose on Base" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Batch on Base" });
     const list = screen.getByRole("list", { name: "Batch steps" });
@@ -149,7 +151,7 @@ describe("SafeBatchTray", () => {
   it("shows the dependency message on the offending step, disables the action, and lets ↑ fix it", async () => {
     writeBatch(8453, 6, [poolStep(), hookStep()]);
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
-    fireEvent.click(screen.getByRole("button", { name: "2 queued · Base" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review and propose on Base" }));
     await screen.findByRole("dialog", { name: "Batch on Base" });
 
     const alert = screen.getByRole("alert");
@@ -172,14 +174,14 @@ describe("SafeBatchTray", () => {
   it("removes a step from storage and updates the chip", async () => {
     writeBatch(8453, 6, [hookStep(), terminalStep()]);
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
-    fireEvent.click(screen.getByRole("button", { name: "2 queued · Base" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review and propose on Base" }));
     await screen.findByRole("dialog", { name: "Batch on Base" });
 
     fireEvent.click(screen.getByRole("button", { name: "Remove step 1" }));
     await waitFor(() =>
       expect(readBatch(8453, 6).map((step) => step.kind)).toEqual(["setTerminalFor"]),
     );
-    expect(screen.getByRole("button", { name: "1 queued · Base" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Base (1)" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send 1 transaction" })).toBeTruthy();
   });
 
@@ -187,7 +189,7 @@ describe("SafeBatchTray", () => {
     mocks.submit.mockResolvedValue({ kind: "sent", transactions: 2 });
     writeBatch(8453, 6, [hookStep(), terminalStep()]);
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
-    fireEvent.click(screen.getByRole("button", { name: "2 queued · Base" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review and propose on Base" }));
     await screen.findByRole("dialog", { name: "Batch on Base" });
 
     fireEvent.click(screen.getByRole("button", { name: "Send 2 transactions" }));
@@ -207,7 +209,7 @@ describe("SafeBatchTray", () => {
   it("stages a preset's resolved steps per chain and adds them to the batch without submitting", async () => {
     mocks.preset.steps = [hookStep(), poolStep(), terminalStep()];
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Presets" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start from a preset" }));
     const dialog = await screen.findByRole("dialog", { name: "Move to buyback 1.4.0 + gateway" });
     expect(dialog.textContent).toContain("Register buyback pool");
 
@@ -225,6 +227,6 @@ describe("SafeBatchTray", () => {
     await waitFor(() => expect(readBatch(8453, 6)).toHaveLength(3));
     expect(readBatch(8453, 6)[1]!.values.twapWindow).toBe(900n);
     expect(mocks.submit).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "3 queued · Base" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Base (3)" })).toBeTruthy();
   });
 });
