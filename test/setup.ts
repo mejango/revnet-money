@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 import { installNativeDialogShim, resetNativeDialogShim } from "./native-dialog-shim";
 
@@ -7,6 +7,10 @@ import { installNativeDialogShim, resetNativeDialogShim } from "./native-dialog-
 const hasDom = typeof window !== "undefined";
 
 if (hasDom) installNativeDialogShim(window);
+
+// findBy*/waitFor default to 1s, which the full suite exceeds under parallel load;
+// keep it under the 10s test timeout so a real hang still fails.
+configure({ asyncUtilTimeout: 4_000 });
 
 function blockedNetworkConstructor(transport: string) {
   return class {
