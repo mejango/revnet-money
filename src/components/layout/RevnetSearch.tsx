@@ -1,6 +1,8 @@
 "use client";
 
+import { ChainLogo } from "@/components/ChainLogo";
 import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
+import type { JBChainId } from "@/lib/nana/types";
 import { rememberProjectNavigation } from "@/lib/project-navigation";
 import { parseProjectHandleInput } from "@/lib/projectHandles";
 import { formatEthAddress } from "@/lib/utils";
@@ -24,13 +26,6 @@ const CHAIN_SLUGS: Record<number, string> = {
   10: "op",
   8453: "base",
   42161: "arb",
-};
-
-const CHAIN_NAMES: Record<number, string> = {
-  1: "Ethereum",
-  10: "Optimism",
-  8453: "Base",
-  42161: "Arbitrum",
 };
 
 function resultHref(result: SearchResult) {
@@ -317,11 +312,19 @@ export function RevnetSearch({
                     <span className="block truncate font-medium">
                       {result.name ?? `Project ${result.projectId}`}
                     </span>
-                    <span className="block truncate text-xs text-zinc-600">
-                      {result.ticker ? `${result.ticker.replace(/^\$+/, "")} ` : ""}
-                      {(result.chainIds.length ? result.chainIds : [result.chainId])
-                        .map((chainId) => CHAIN_NAMES[chainId] ?? `Chain ${chainId}`)
-                        .join(", ")}
+                    <span className="flex items-center gap-1 text-xs text-zinc-600">
+                      {result.ticker ? <span>{result.ticker.replace(/^\$+/, "")}</span> : null}
+                      {(result.chainIds.length ? result.chainIds : [result.chainId]).map(
+                        (chainId) => (
+                          <ChainLogo
+                            key={chainId}
+                            chainId={chainId as JBChainId}
+                            width={14}
+                            height={14}
+                            standalone
+                          />
+                        ),
+                      )}
                     </span>
                   </button>
                 </li>

@@ -252,7 +252,7 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
 
   const operatorResponse = await page.goto("/eth:1/operator", { waitUntil: "domcontentloaded" });
   expectSecurityHeaders(operatorResponse);
-  for (const heading of ["Account", "Edits", "Buyback & swap router", "Permissions"]) {
+  for (const heading of ["Account", "Edits", "Buyback hook", "Swap router", "Permissions"]) {
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
   // Scoped to main: while a streamed segment lands, the same markup exists twice —

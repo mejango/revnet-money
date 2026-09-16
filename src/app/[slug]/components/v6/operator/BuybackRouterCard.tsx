@@ -11,14 +11,8 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
-import {
-  RETAINED_FEE_NOTE,
-  rolloutAddress,
-  rolloutChain,
-  rolloutContractName,
-} from "@/lib/protocol-rollout";
+import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
-import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -62,9 +56,6 @@ type BuybackChainState = ChainProjectRow & {
   terminal: Address | null;
   defaultHook: Address | null;
   defaultTerminal: Address | null;
-  registryAttached: boolean;
-  gateway: Address | null;
-  router: Address | null;
   /** Pair tokens with an initialized pool on this chain, and their TWAP window. */
   pools: { label: string; token: Address; twap: number }[];
   poolSummary: string;
@@ -147,9 +138,7 @@ async function resolveBuybackHook(row: ChainProjectRow): Promise<Address | null>
  * JBDirectory.isTerminalOf before trusting the registry's terminalOf (which
  * also resolves a default for non-users).
  */
-async function resolveRouterTerminal(
-  row: ChainProjectRow,
-): Promise<{ terminal: Address; registryAttached: boolean } | null> {
+async function resolveRouterTerminal(row: ChainProjectRow): Promise<Address | null> {
   const client = publicClientFor(row.chainId);
   const directory = v6ContractAddress(JBCoreContracts.JBDirectory, row.chainId);
   const registry = v6ContractAddress(
@@ -180,7 +169,7 @@ async function resolveRouterTerminal(
         args: [projectId],
       })
       .catch(() => null);
-    return terminal && terminal !== zeroAddress ? { terminal, registryAttached: true } : null;
+    return terminal && terminal !== zeroAddress ? terminal : null;
   }
   const deployments = [
     rolloutAddress("JBRouterTerminalGateway", row.chainId),
@@ -188,8 +177,7 @@ async function resolveRouterTerminal(
     ...Object.values(rolloutChain(row.chainId)?.history.JBRouterTerminal ?? {}),
   ];
   for (const deployed of deployments) {
-    if (deployed && (await isTerminal(deployed as Address)))
-      return { terminal: deployed as Address, registryAttached: false };
+    if (deployed && (await isTerminal(deployed as Address))) return deployed as Address;
   }
   return null;
 }
@@ -205,7 +193,7 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
     row.chainId,
   );
 
-  const [hook, selectedTerminal, defaultHook, defaultTerminal] = await Promise.all([
+  const [hook, terminal, defaultHook, defaultTerminal] = await Promise.all([
     resolveBuybackHook(row).catch(() => null),
     resolveRouterTerminal(row).catch(() => null),
     buybackRegistry
@@ -227,22 +215,6 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
           .catch(() => null)
       : Promise.resolve(null),
   ]);
-
-  // The live selection retains its attachment provenance even when another RPC read fails.
-  const terminal = selectedTerminal?.terminal ?? null;
-  const registryAttached = selectedTerminal?.registryAttached ?? false;
-  const gateway = sameAddress(terminal, rolloutAddress("JBRouterTerminalGateway", row.chainId))
-    ? terminal
-    : null;
-  const knownRouter =
-    terminal && rolloutContractName(row.chainId, terminal)?.startsWith("JBRouterTerminal (");
-  const router = gateway
-    ? await client
-        .readContract({ address: gateway, abi: routerGatewayAbi, functionName: "ROUTER" })
-        .catch(() => null)
-    : knownRouter
-      ? terminal
-      : null;
 
   // Chains without a full Uniswap v4 AMM have a registry with no default hook
   // or allowlisted terminal — setHookFor/initializePoolFor would revert there.
@@ -287,15 +259,12 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
     terminal,
     defaultHook,
     defaultTerminal,
-    registryAttached,
-    gateway,
-    router,
     pools,
     poolSummary,
   };
 }
 
-type ActionKind = "hook" | "terminal" | "pool" | "twap";
+type ActionKind = "hook" | "terminal" | "pool" | "setPool" | "twap";
 
 const ACTIONS: Record<
   ActionKind,
@@ -311,7 +280,7 @@ const ACTIONS: Record<
   terminal: {
     title: "Set router terminal",
     description:
-      "Selects the gateway or terminal used by the router registry. On upgraded networks, choose the gateway; it holds funds before calling the underlying swap router. Requires SET_ROUTER_TERMINAL.",
+      "Sets the project's entry in the router registry: the terminal router-swapped funds are deposited to. Requires SET_ROUTER_TERMINAL.",
     danger:
       "This changes where router-swapped funds are deposited. A wrong terminal can misdirect or strand funds.",
     fieldLabel: "Router terminal",
@@ -322,6 +291,14 @@ const ACTIONS: Record<
       "Creates and price-initializes the Uniswap v4 pool for a pair token through the project's configured hook (set the hook first). Requires SET_BUYBACK_POOL.",
     danger:
       "A wrong initial price lets arbitrageurs extract value. Verify the price, fee, tick spacing, pair token, and every selected chain.",
+    fieldLabel: "Pair (terminal) token",
+  },
+  setPool: {
+    title: "Set buyback pool",
+    description:
+      "Points the project's hook at an existing Uniswap v4 pool for a pair token, without creating or pricing one. Requires SET_BUYBACK_POOL.",
+    danger:
+      "Every payment can swap through this pool. A wrong or illiquid pool lets arbitrageurs extract value. Verify the fee, tick spacing, pair token, and every selected chain.",
     fieldLabel: "Pair (terminal) token",
   },
   twap: {
@@ -368,61 +345,65 @@ export function BuybackRouterCard({
     queryFn: () => Promise.all(rows.map((row) => readChainState(row))),
   });
   const states = stateQuery.data ?? [];
+  const body = (kinds: ActionKind[]) =>
+    stateQuery.isLoading ? (
+      <SkeletonLines lines={kinds.length} className="mt-3" />
+    ) : stateQuery.isError ? (
+      <p className="text-sm text-red-600 mt-3">Could not read the registries.</p>
+    ) : (
+      <div className="mt-3 divide-y divide-melon-200 bg-melon-50 px-4">
+        {kinds.map((kind) => (
+          <ActionRow
+            key={kind}
+            kind={kind}
+            states={states}
+            authorityByChain={operatorByChain}
+            onDone={() => stateQuery.refetch()}
+          />
+        ))}
+      </div>
+    );
 
   return (
-    <OperatorSection title="Buyback &amp; swap router">
-      <div>
-        <p className="text-sm text-zinc-500">
-          Wire up the project&apos;s buyback hook and swap router, initialize its Uniswap pool, and
-          tune the pool&apos;s TWAP window. An operator wallet signs one chain directly and runs
-          several supported mainnets or several supported testnets as one Relayr bundle. Other
-          routes use a wallet transaction on each chain. When the operator is a Safe, a connected
-          signer proposes the call to each chain&apos;s Safe queue for the other signers to confirm.
-          Initialize pools one chain at a time with Safe or other networks.
-        </p>
-        <p className="mt-2 text-xs text-zinc-500">{RETAINED_FEE_NOTE}</p>
-        {states
-          .filter((state) => state.terminal)
-          .map((state) => (
-            <p key={`route:${state.chainId}`} className="mt-2 break-all text-xs text-zinc-600">
-              {chainName(state.chainId)}:{" "}
-              {state.registryAttached ? "registry → " : "direct terminal → "}
-              {rolloutContractName(state.chainId, state.terminal!) ?? "selected terminal"}
-              {state.gateway ? ` → router ${state.router ?? "unavailable"}` : ""}
-            </p>
-          ))}
-        {stateQuery.isLoading ? (
-          <SkeletonLines lines={4} className="mt-3" />
-        ) : stateQuery.isError ? (
-          <p className="text-sm text-red-600 mt-3">Could not read the buyback registries.</p>
-        ) : (
-          <div className="mt-3 divide-y divide-melon-200 bg-melon-50 px-4">
-            {(["hook", "terminal", "pool", "twap"] as const).map((kind) => (
-              <ActionRow
-                key={kind}
-                kind={kind}
-                states={states}
-                authorityByChain={operatorByChain}
-                onDone={() => stateQuery.refetch()}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </OperatorSection>
+    <>
+      <OperatorSection title="Buyback hook">
+        <div>
+          <p className="text-sm text-zinc-500">
+            Choose the hook that decides, on every payment, whether to issue tokens or buy them on
+            the AMM, then point it at a Uniswap pool and tune the pool&apos;s TWAP window. An
+            operator wallet signs one chain directly and runs several supported mainnets or several
+            supported testnets as one Relayr bundle. Other routes use a wallet transaction on each
+            chain. When the operator is a Safe, a connected signer proposes the call to each
+            chain&apos;s Safe queue for the other signers to confirm. Initialize pools one chain at
+            a time with Safe or other networks.
+          </p>
+          {body(["hook", "pool", "setPool", "twap"])}
+        </div>
+      </OperatorSection>
+      <OperatorSection title="Swap router">
+        <div>
+          <p className="text-sm text-zinc-500">
+            Choose the terminal the router registry deposits router-swapped funds to.
+          </p>
+          {body(["terminal"])}
+        </div>
+      </OperatorSection>
+    </>
   );
 }
 
-/** A chain can run the action only where its target contract resolves. */
 function isKindAvailable(kind: ActionKind, state: BuybackChainState): boolean {
   if (kind === "terminal") return state.routerAvailable;
   // The TWAP window lives on the hook itself, and only for an initialized pool.
   if (kind === "twap") return state.buybackAvailable && !!state.hook && state.pools.length > 0;
+  // The registry forwards setPoolFor to the project's resolved hook.
+  if (kind === "setPool") return state.buybackAvailable && !!state.hook;
   return state.buybackAvailable;
 }
 
 function unavailableNote(kind: ActionKind, everywhere: boolean): string {
   if (kind === "twap") return `No initialized buyback pool ${everywhere ? "on any chain" : "here"}`;
+  if (kind === "setPool") return `No buyback hook set ${everywhere ? "on any chain" : "here"}`;
   return `No Uniswap v4 registry ${everywhere ? "on any chain" : "here"}`;
 }
 
@@ -452,7 +433,7 @@ function ActionRow({
       </div>
 
       {(() => {
-        const showsPool = kind === "pool" || kind === "twap";
+        const showsPool = kind === "pool" || kind === "setPool" || kind === "twap";
         const cell = (state: BuybackChainState) => {
           const isAvailable = isKindAvailable(kind, state);
           const value = kind === "hook" ? state.hook : kind === "terminal" ? state.terminal : null;
@@ -656,15 +637,19 @@ function BuybackActionForm({
       twapWindow: bigint;
       sqrtPriceX96: bigint;
     } | null = null;
-    if (kind === "pool") {
-      if (![fee, tickSpacing, twapWindow, sqrtPriceX96].every((v) => DIGITS.test(v))) {
+    if (kind === "pool" || kind === "setPool") {
+      const numbers =
+        kind === "pool"
+          ? [fee, tickSpacing, twapWindow, sqrtPriceX96]
+          : [fee, tickSpacing, twapWindow];
+      if (!numbers.every((v) => DIGITS.test(v))) {
         throw new Error("Fee, tick spacing, TWAP window, and price must be whole numbers.");
       }
       poolValues = {
         fee: Number(fee),
         tickSpacing: Number(tickSpacing),
         twapWindow: BigInt(twapWindow),
-        sqrtPriceX96: BigInt(sqrtPriceX96),
+        sqrtPriceX96: kind === "pool" ? BigInt(sqrtPriceX96) : 0n,
       };
       if (poolValues.fee < 0 || poolValues.fee > 0xffffff) {
         throw new Error("Fee must fit uint24.");
@@ -692,7 +677,10 @@ function BuybackActionForm({
             `Use ${MAX_TWAP_WINDOW - 1} for the longest real window, or set 1800 deliberately.`,
         );
       }
-      if (poolValues.sqrtPriceX96 <= 0n || poolValues.sqrtPriceX96 >= 2n ** 160n) {
+      if (
+        kind === "pool" &&
+        (poolValues.sqrtPriceX96 <= 0n || poolValues.sqrtPriceX96 >= 2n ** 160n)
+      ) {
         throw new Error("Initial price must be a positive uint160 value.");
       }
     }
@@ -759,6 +747,17 @@ function BuybackActionForm({
       }
       if (!state.buybackRegistry || !poolValues)
         throw new Error(`${chainName(state.chainId)}: no buyback registry.`);
+      if (kind === "setPool") {
+        return {
+          chainId: state.chainId,
+          address: state.buybackRegistry,
+          abi: jbBuybackHookRegistryAbi,
+          functionName: "setPoolFor",
+          args: [projectId, poolValues.fee, poolValues.tickSpacing, poolValues.twapWindow, target],
+          contractName: "JBBuybackHookRegistry",
+          authority,
+        };
+      }
       return {
         chainId: state.chainId,
         address: state.buybackRegistry,
@@ -904,7 +903,7 @@ function BuybackActionForm({
             </div>
           ))}
         </div>
-        {kind === "pool" || kind === "twap" ? (
+        {kind === "pool" || kind === "setPool" || kind === "twap" ? (
           <p className="text-xs text-zinc-500 mt-1">
             Use the native-token sentinel ({NATIVE_TOKEN}) for native ETH pools; the hook stores
             that pool key under address(0). USDC and other pair-token addresses can differ by chain.
@@ -919,7 +918,7 @@ function BuybackActionForm({
           : null}
       </div>
 
-      {kind === "pool" ? (
+      {kind === "pool" || kind === "setPool" ? (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <NumberField
             label="Fee (hundredths of a bip)"
@@ -943,13 +942,15 @@ function BuybackActionForm({
             disabled={busy}
             placeholder="1800"
           />
-          <NumberField
-            label="Initial price (sqrtPriceX96)"
-            value={sqrtPriceX96}
-            onChange={setSqrtPriceX96}
-            disabled={busy}
-            placeholder="positive uint160"
-          />
+          {kind === "pool" ? (
+            <NumberField
+              label="Initial price (sqrtPriceX96)"
+              value={sqrtPriceX96}
+              onChange={setSqrtPriceX96}
+              disabled={busy}
+              placeholder="positive uint160"
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -1044,16 +1045,18 @@ function BuybackActionForm({
               ))
             )}
           </SummaryRow>
-          {kind === "pool" ? (
+          {kind === "pool" || kind === "setPool" ? (
             <>
               <SummaryRow label="Fee">{fee} hundredths of a bip</SummaryRow>
               <SummaryRow label="Tick spacing">{tickSpacing}</SummaryRow>
-              <SummaryRow label="Initial price">
-                <span className="break-all font-mono text-xs">{sqrtPriceX96}</span>
-              </SummaryRow>
             </>
           ) : null}
-          {kind === "pool" || kind === "twap" ? (
+          {kind === "pool" ? (
+            <SummaryRow label="Initial price">
+              <span className="break-all font-mono text-xs">{sqrtPriceX96}</span>
+            </SummaryRow>
+          ) : null}
+          {kind === "pool" || kind === "setPool" || kind === "twap" ? (
             <SummaryRow label="TWAP window">{twapWindow}s</SummaryRow>
           ) : null}
         </TxConfirmDialog>
