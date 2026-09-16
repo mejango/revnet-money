@@ -38,12 +38,12 @@ export function V6OperatorTab({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <SafeBatchTray rows={rows} fallbackOperator={operator} fallbackProject={handleProject} />
       <OperatorAccountCard
         rows={rows}
         fallbackOperator={operator}
         fallbackProject={handleProject}
       />
+      <SafeBatchTray rows={rows} fallbackOperator={operator} fallbackProject={handleProject} />
       <SafeQueueCard rows={rows} fallbackOperator={operator} fallbackProject={handleProject} />
       <OperatorEditsCard
         projects={projects}
