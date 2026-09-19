@@ -98,7 +98,7 @@ const STEP_KINDS: Record<BatchStepKind, StepKindDefinition> = {
   },
   setPoolFor: {
     kind: "setPoolFor",
-    label: "Register buyback pool",
+    label: "Set buyback pool",
     contract: "JBBuybackHookRegistry",
     abi: jbBuybackHookRegistryAbi,
     functionName: "setPoolFor",

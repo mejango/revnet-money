@@ -198,7 +198,7 @@ describe("mirroring to another chain", () => {
     expect(result.steps).toEqual([]);
     expect(result.skipped).toEqual([
       { label: "Set buyback hook", reason: expect.stringMatching(/Optimism/) },
-      { label: "Register buyback pool", reason: expect.stringMatching(/Optimism/) },
+      { label: "Set buyback pool", reason: expect.stringMatching(/Optimism/) },
     ]);
   });
 });

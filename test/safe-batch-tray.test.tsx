@@ -233,7 +233,7 @@ describe("SafeBatchTray", () => {
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
     fireEvent.click(screen.getByRole("button", { name: "Start from a preset" }));
     const dialog = await screen.findByRole("dialog", { name: "Move to buyback 1.4.0 + gateway" });
-    expect(dialog.textContent).toContain("Register buyback pool");
+    expect(dialog.textContent).toContain("Set buyback pool");
 
     const windowInput = screen.getByRole("textbox", {
       name: "TWAP window on Base",
