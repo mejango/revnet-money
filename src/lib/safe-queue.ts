@@ -177,6 +177,25 @@ export function safeQueueLink(chainId: number, safe: Address): string | null {
   return prefix ? `https://app.safe.global/transactions/queue?safe=${prefix}:${safe}` : null;
 }
 
+export function safeTransactionLink(chainId: number, safe: Address, safeTxHash: Hex): string | null {
+  const prefix = SAFE_SERVICE_PREFIX[chainId];
+  return prefix
+    ? `https://app.safe.global/transactions/tx?safe=${prefix}:${safe}&id=multisig_${safe}_${safeTxHash}`
+    : null;
+}
+
+/** One Safe service request; a 429 (rejected before processing, so safe to repeat) waits and tries again. */
+async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, init);
+    if (response.status !== 429 || attempt >= 3) return response;
+    const retryAfter = Number(response.headers.get("retry-after"));
+    await new Promise((resolve) =>
+      setTimeout(resolve, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * (attempt + 1)),
+    );
+  }
+}
+
 export function safeMessage(tx: SafeQueuedTransaction) {
   return {
     to: tx.to,
@@ -213,7 +232,7 @@ export async function readSafeTransaction(
 ): Promise<SafeQueuedTransaction> {
   const base = serviceBase(chainId);
   if (!base) throw new Error(`Safe proposal ${hash} cannot be retrieved on this chain.`);
-  const response = await fetch(`${base}/api/v1/multisig-transactions/${hash}/`);
+  const response = await safeFetch(`${base}/api/v1/multisig-transactions/${hash}/`);
   if (!response.ok)
     throw new Error(
       `Safe proposal ${hash} could not be retrieved (${response.status}). Resume when the service is available.`,
@@ -243,7 +262,7 @@ export async function listPendingSafeTransactions(
     `${base}/api/v1/safes/${getAddress(safe)}/multisig-transactions/?executed=false&trusted=true&ordering=nonce&limit=100&nonce__gte=${currentNonce}`;
   const transactions: SafeQueuedTransaction[] = [];
   for (let page = 0; next && page < 10; page += 1) {
-    const response = await fetch(next);
+    const response = await safeFetch(next);
     if (!response.ok) throw new Error(`Safe queue service returned ${response.status}.`);
     const body = (await response.json()) as {
       next?: string | null;
@@ -272,7 +291,7 @@ export async function submitSafeConfirmation(
   const base = serviceBase(chainId);
   const hash = tx.safeTxHash ?? tx.contractTransactionHash;
   if (!base || !hash) throw new Error("The queued Safe transaction has no service hash.");
-  const response = await fetch(`${base}/api/v1/multisig-transactions/${hash}/confirmations/`, {
+  const response = await safeFetch(`${base}/api/v1/multisig-transactions/${hash}/confirmations/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ signature }),
@@ -430,7 +449,7 @@ export async function proposeSafeTransaction(
   const base = serviceBase(chainId);
   if (!base) throw new Error("Safe queue service is unavailable on this chain.");
   const safeTxHash = safeTransactionHash(chainId, safe, tx);
-  const response = await fetch(`${base}/api/v1/safes/${getAddress(safe)}/multisig-transactions/`, {
+  const response = await safeFetch(`${base}/api/v1/safes/${getAddress(safe)}/multisig-transactions/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

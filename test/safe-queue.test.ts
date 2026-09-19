@@ -187,6 +187,23 @@ describe("Safe queue execution", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("retries a 429 after the Retry-After delay", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchSpy = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 429, headers: { get: () => "2" } })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ next: null, results: [transaction] }) });
+      vi.stubGlobal("fetch", fetchSpy);
+      const pending = listPendingSafeTransactions(1, SAFE, 8);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await pending).toEqual([transaction]);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("never presents an unsupported queue service as an empty queue", async () => {
     await expect(listPendingSafeTransactions(999, SAFE, 0)).rejects.toThrow(
       "unavailable on this chain",

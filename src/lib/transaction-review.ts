@@ -20,6 +20,8 @@ export type TransactionReviewCall = {
   args?: readonly unknown[];
   label?: string;
   contractName?: string;
+  /** The calls a batching destination (MultiSend) makes in order, decoded by the caller. */
+  calls?: readonly TransactionReviewCall[];
 };
 
 export type TransactionReviewRequest = {

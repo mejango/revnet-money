@@ -417,7 +417,7 @@ export async function mirrorBatch(
 /** Safe's canonical MultiSendCallOnly 1.3.0, the same address on every supported chain. */
 export const MULTI_SEND_CALL_ONLY = "0x40A2aCCbd92BCA938b02010E17A5b8929b49130D" as Address;
 
-const MULTI_SEND_ABI = parseAbi(["function multiSend(bytes transactions) payable"]);
+export const MULTI_SEND_ABI = parseAbi(["function multiSend(bytes transactions) payable"]);
 
 /** `MultiSendCallOnly.multiSend(bytes)`: each call packed as op ‖ to ‖ value ‖ data.length ‖ data. */
 export function encodeMultiSend(calls: readonly { to: Address; data: Hex; value?: bigint }[]): Hex {
@@ -465,6 +465,16 @@ export function decodeMultiSend(
     offset = end;
   }
   return calls.length ? calls : null;
+}
+
+/** The inner calls of a queued MultiSendCallOnly delegatecall, else null. */
+export function queuedBatchCalls(tx: {
+  to: Address;
+  data: Hex | null;
+  operation: number;
+}): { to: Address; data: Hex; value: bigint }[] | null {
+  if (Number(tx.operation) !== 1 || !isAddressEqual(tx.to, MULTI_SEND_CALL_ONLY)) return null;
+  return decodeMultiSend(tx.data);
 }
 
 /** "Batch (N calls)" for a queued MultiSendCallOnly delegatecall, else null. */

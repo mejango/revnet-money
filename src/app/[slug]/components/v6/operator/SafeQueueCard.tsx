@@ -20,7 +20,7 @@ import {
   type ProjectSafeQueueTarget,
   type QueuedProjectHandleBinding,
 } from "@/lib/queuedProjectHandle";
-import { describeQueuedBatch } from "@/lib/safe-batch";
+import { describeQueuedBatch, queuedBatchCalls } from "@/lib/safe-batch";
 import {
   SAFE_EXEC_ABI,
   listPendingSafeTransactions,
@@ -544,6 +544,16 @@ export function SafeQueueCard({
                             tx.data?.slice(0, 10) ??
                             "0x"}{" "}
                           | {confirmations.length}/{row.policy.threshold} signatures
+                          {queuedBatchCalls(tx)?.length ? (
+                            <ol className="mt-1 list-decimal pl-5 font-normal text-zinc-700">
+                              {queuedBatchCalls(tx)!.map((call, index) => (
+                                <li key={index}>
+                                  {protocolQueueLabel(row.chainId, { ...call, operation: 0 }) ??
+                                    `${call.data.slice(0, 10)} → ${call.to}`}
+                                </li>
+                              ))}
+                            </ol>
+                          ) : null}
                         </summary>
                         {handleBinding ? (
                           <p className="mt-2 font-medium text-melon-800">

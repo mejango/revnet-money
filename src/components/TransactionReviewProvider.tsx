@@ -1211,6 +1211,15 @@ function specialArgumentView(
     const steps = describeSplitGroups(call.chainId, value);
     if (steps) return <UrPlanView steps={steps} />;
   }
+  if (fn.name === "multiSend" && inputName === "transactions" && call.calls?.length) {
+    return (
+      <div className="mt-2 space-y-2">
+        {call.calls.map((inner, index) => (
+          <PrettyCall key={index} call={inner} index={index} total={call.calls!.length} />
+        ))}
+      </div>
+    );
+  }
   return null;
 }
 

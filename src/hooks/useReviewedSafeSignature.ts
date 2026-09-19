@@ -6,7 +6,7 @@ import {
   safeTransactionHash,
   type SafeQueuedTransaction,
 } from "@/lib/safe-queue";
-import { requireTransactionReview } from "@/lib/transaction-review";
+import { requireTransactionReview, type TransactionReviewCall } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { useCallback } from "react";
 import { type Address, type Hex } from "viem";
@@ -19,6 +19,11 @@ export type ReviewedSafeSignatureRequest = {
   tx: SafeQueuedTransaction;
   /** Re-authenticate the Safe/owner after review and chain switching. */
   reverify?: (account: Address) => Promise<void>;
+  /** How to decode the queued call for the review (ABI, args, a batch's inner calls). */
+  review?: Pick<
+    TransactionReviewCall,
+    "abi" | "functionName" | "args" | "label" | "contractName" | "calls"
+  >;
 };
 
 function exactSafeDigest(
@@ -43,7 +48,7 @@ export function useReviewedSafeSignature() {
   const { switchChainAsync } = useSwitchChain();
 
   const signSafeTransactionAsync = useCallback(
-    async ({ chainId, safe, tx, reverify }: ReviewedSafeSignatureRequest): Promise<Hex> => {
+    async ({ chainId, safe, tx, reverify, review }: ReviewedSafeSignatureRequest): Promise<Hex> => {
       requireNoViewAs();
       const before = getAccount(config);
       if (!before.address) throw new Error("Connect a wallet first.");
@@ -71,6 +76,7 @@ export function useReviewedSafeSignature() {
             value: BigInt(tx.value ?? 0),
             data: tx.data ?? "0x",
             label: `Safe transaction #${tx.nonce}`,
+            ...review,
           },
         ],
       });

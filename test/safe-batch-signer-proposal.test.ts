@@ -137,6 +137,21 @@ describe("batch routing", () => {
     ).toEqual({ kind: "eoa", authority: SIGNER });
   });
 
+  it("refuses a Safe app opened on another chain instead of trying to switch", () => {
+    const route = routeSafeBatch({
+      account: SAFE,
+      authority: SAFE,
+      identity: null,
+      safeConnection: true,
+      chainId: 10,
+      connectedChainId: 1,
+    });
+    expect(route).toMatchObject({ kind: "refused", message: expect.stringMatching(/Open this Safe on/) });
+    expect(
+      routeSafeBatch({ account: SAFE, authority: SAFE, identity: null, safeConnection: true, chainId: 10, connectedChainId: 10 }),
+    ).toEqual({ kind: "safe-app", authority: SAFE });
+  });
+
   it("refuses with the existing copy when the wallet cannot act for the authority", () => {
     expect(
       routeSafeBatch({

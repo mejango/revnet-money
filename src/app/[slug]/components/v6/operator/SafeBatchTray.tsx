@@ -14,18 +14,67 @@ import { useToast } from "@/components/ui/use-toast";
 import {
   addStepsToBatch,
   clearBatch,
+  composeBatch,
   contractAddressOn,
   describeStep,
   mirrorBatch,
+  queuedBatchCalls,
   useSafeBatches,
+  type BatchStep,
 } from "@/lib/safe-batch";
 import { stepResolverFor } from "@/lib/safe-batch-presets";
+import { readBoundedSafeNonce } from "@/lib/cross-chain-authority";
+import {
+  listPendingSafeTransactions,
+  safeQueueLink,
+  safeTransactionLink,
+  usableSafeConfirmations,
+  type SafeQueuedTransaction,
+} from "@/lib/safe-queue";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import type { Address } from "viem";
 import { chainName, publicClientFor, type ChainProjectRow } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
 import { SafeBatchDialog } from "./SafeBatchDialog";
 import { SafeBatchPresetDialog } from "./SafeBatchPresetDialog";
 import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
+
+/** The calls as an order-free key, so a reordered tray still matches its proposal. */
+function callsKey(calls: readonly { to: Address; data: string; value: bigint }[]): string {
+  return calls
+    .map((call) => `${call.to.toLowerCase()}:${call.data.toLowerCase()}:${call.value}`)
+    .sort()
+    .join("|");
+}
+
+/** The pending Safe proposal whose MultiSend holds exactly these queued steps, if one is queued. */
+function useProposedBatch(
+  chainId: number,
+  authority: Address | undefined,
+  steps: readonly BatchStep[],
+): SafeQueuedTransaction | null {
+  const key = steps.length ? callsKey(composeBatch(steps).calls) : null;
+  const query = useQuery({
+    queryKey: ["revnet-safe-batch-proposed", chainId, authority, key],
+    enabled: !!authority && !!key && !!safeQueueLink(chainId, authority),
+    staleTime: 15_000,
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const client = publicClientFor(chainId as ChainProjectRow["chainId"]);
+      const nonce = await readBoundedSafeNonce(client, authority!);
+      if (nonce === null) return null;
+      const pending = await listPendingSafeTransactions(chainId, authority!, Number(nonce));
+      return (
+        pending.find((tx) => {
+          const calls = queuedBatchCalls(tx);
+          return !!calls && callsKey(calls) === key;
+        }) ?? null
+      );
+    },
+  });
+  return query.data ?? null;
+}
 
 /**
  * The batch card at the top of the Operator tab: one tab per chain with
@@ -58,14 +107,20 @@ export function SafeBatchTray({
   const presetsAvailable = rows.some((row) =>
     contractAddressOn("JBBuybackHookRegistry", row.chainId),
   );
-  if (!queued.length && !presetsAvailable) return null;
-
   // The batch shown in the active tab is the one mirrored to the other chains. Before a tab
   // is picked, the page's chain is "current" when it has steps; otherwise the first that does.
   const source =
     queued.find((row) => row.chainId === activeChainId) ??
     queued.find((row) => row.chainId === fallbackProject?.chainId) ??
     queued[0];
+  const steps = source ? (batches.get(source.chainId) ?? []) : [];
+  const sourceOperator = source ? operatorByChain.get(source.chainId) : undefined;
+  const proposed = useProposedBatch(source?.chainId ?? 0, sourceOperator, steps);
+  const proposedLink =
+    proposed && source && sourceOperator && proposed.safeTxHash
+      ? safeTransactionLink(source.chainId, sourceOperator, proposed.safeTxHash)
+      : null;
+  if (!queued.length && !presetsAvailable) return null;
 
   const mirror = async () => {
     if (!source || mirroring) return;
@@ -103,7 +158,6 @@ export function SafeBatchTray({
   const batchRow =
     dialog?.kind === "batch" ? rows.find((row) => row.chainId === dialog.chainId) : null;
 
-  const steps = source ? (batches.get(source.chainId) ?? []) : [];
 
   return (
     <OperatorSection title="Batch">
@@ -156,13 +210,36 @@ export function SafeBatchTray({
               </TableBody>
             </Table>
           </div>
-          <Button
-            className="mt-3"
-            size="sm"
-            onClick={() => setDialog({ kind: "batch", chainId: source.chainId })}
-          >
-            Review and propose on {chainName(source.chainId)}
-          </Button>
+          {proposed ? (
+            <p className="mt-3 text-sm text-teal-700" role="status">
+              Already proposed on {chainName(source.chainId)} as Safe transaction #
+              {proposed.nonce}
+              {proposed.confirmationsRequired
+                ? ` (${usableSafeConfirmations(proposed).length}/${proposed.confirmationsRequired} signatures)`
+                : ""}
+              . Sign or execute it under Pending multisig transactions.{" "}
+              {proposedLink ? (
+                <a href={proposedLink} target="_blank" rel="noreferrer" className="underline">
+                  Open in Safe ↗
+                </a>
+              ) : null}{" "}
+              <button
+                type="button"
+                className="text-zinc-500 underline"
+                onClick={() => clearBatch(source.chainId, source.projectId)}
+              >
+                Remove from the batch
+              </button>
+            </p>
+          ) : (
+            <Button
+              className="mt-3"
+              size="sm"
+              onClick={() => setDialog({ kind: "batch", chainId: source.chainId })}
+            >
+              Review and propose on {chainName(source.chainId)}
+            </Button>
+          )}
         </>
       ) : (
         <p className="mt-3 text-sm text-zinc-500">

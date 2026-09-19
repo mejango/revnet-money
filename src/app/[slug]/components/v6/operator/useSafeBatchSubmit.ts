@@ -11,6 +11,7 @@ import { readAuthorityIdentity, readBoundedSafeNonce } from "@/lib/cross-chain-a
 import {
   composeBatch,
   encodeMultiSend,
+  MULTI_SEND_ABI,
   MULTI_SEND_CALL_ONLY,
   type BatchCall,
   type BatchStep,
@@ -26,7 +27,7 @@ import {
 } from "@/lib/safe-queue";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
-import { isAddressEqual, keccak256, stringToHex, type Address, type Hex } from "viem";
+import { decodeFunctionData, isAddressEqual, keccak256, stringToHex, type Address, type Hex } from "viem";
 import { useConfig } from "wagmi";
 import { getAccount } from "wagmi/actions";
 import { chainName, operatorWriteRoute, publicClientFor, runSequentialWrites } from "./operatorLib";
@@ -46,11 +47,16 @@ export function routeSafeBatch({
   authority,
   identity,
   safeConnection,
+  chainId,
+  connectedChainId,
 }: {
   account: Address | undefined;
   authority: Address | undefined;
   identity: Parameters<typeof operatorWriteRoute>[0]["identity"];
   safeConnection: boolean;
+  /** The batch's chain and the wallet's; a Safe app cannot switch, so they must agree. */
+  chainId?: number;
+  connectedChainId?: number;
 }): SafeBatchRoute {
   if (!account) return { kind: "refused", message: "Connect a wallet first.", authority };
   let route: ReturnType<typeof operatorWriteRoute>;
@@ -61,6 +67,13 @@ export function routeSafeBatch({
   }
   if (route.kind === "safe-signer") return route;
   const acting = authority ?? account;
+  if (safeConnection && chainId !== undefined && connectedChainId !== undefined && chainId !== connectedChainId) {
+    return {
+      kind: "refused",
+      message: `Open this Safe on ${chainName(chainId)} in Safe to propose this batch.`,
+      authority: acting,
+    };
+  }
   return safeConnection
     ? { kind: "safe-app", authority: acting }
     : { kind: "eoa", authority: acting };
@@ -154,6 +167,8 @@ export function useSafeBatchSubmit() {
       authority,
       identity,
       safeConnection: isSafeConnection(config),
+      chainId,
+      connectedChainId: getAccount(config).chainId,
     });
   };
 
@@ -263,6 +278,25 @@ export function useSafeBatchSubmit() {
       value: 0n,
       operation: 1,
     };
+    // The review decodes the MultiSend into the steps it packs.
+    const review = {
+      label: title,
+      contractName: "MultiSendCallOnly",
+      abi: MULTI_SEND_ABI,
+      functionName: "multiSend",
+      args: decodeFunctionData({ abi: MULTI_SEND_ABI, data: batchCall.data }).args,
+      calls: steps.map((step) => ({
+        chainId,
+        to: step.to,
+        data: step.data,
+        value: step.value,
+        label: step.label,
+        abi: step.abi,
+        functionName: step.functionName,
+        args: step.args,
+        contractName: step.contractName,
+      })),
+    };
     const existing = pending.find((tx) => queuedTransactionMatchesCall(tx, batchCall));
     if (existing) {
       const confirmed = (existing.confirmations ?? []).some((confirmation) =>
@@ -270,7 +304,7 @@ export function useSafeBatchSubmit() {
       );
       if (!confirmed) {
         onProgress(`Sign the already-queued batch on ${name} in your wallet…`);
-        const signature = await signSafeTransactionAsync({ chainId, safe, tx: existing, reverify });
+        const signature = await signSafeTransactionAsync({ chainId, safe, tx: existing, reverify, review });
         await submitSafeConfirmation(chainId, existing, signature);
       }
       void queryClient.invalidateQueries({ queryKey: ["revnet-safe-queues"] });
@@ -283,7 +317,7 @@ export function useSafeBatchSubmit() {
 
     const tx = safeBatchProposalFor(calls, nextProposalNonce(Number(nonce), pending));
     onProgress(`Sign the batch proposal for ${name} in your wallet…`);
-    const signature = await signSafeTransactionAsync({ chainId, safe, tx, reverify });
+    const signature = await signSafeTransactionAsync({ chainId, safe, tx, reverify, review });
     onProgress(`Queuing the proposal with the Safe service on ${name}…`);
     const hash = await proposeSafeTransaction(chainId, safe, tx, account, signature);
     void queryClient.invalidateQueries({ queryKey: ["revnet-safe-queues"] });

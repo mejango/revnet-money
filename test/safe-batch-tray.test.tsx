@@ -17,6 +17,7 @@ const ROWS = [
 
 const mocks = vi.hoisted(() => ({
   submit: vi.fn(),
+  proposed: null as null | Record<string, unknown>,
   preset: {
     status: "ready" as const,
     steps: [] as unknown[],
@@ -33,7 +34,9 @@ vi.mock("@tanstack/react-query", () => ({
         ? { kind: "eoa", authority: OPERATOR }
         : queryKey[0] === "safe-batch-preset"
           ? ROWS.map((row) => ({ row, result: mocks.preset }))
-          : undefined,
+          : queryKey[0] === "revnet-safe-batch-proposed"
+            ? mocks.proposed
+            : undefined,
     isLoading: false,
     isError: false,
   }),
@@ -97,6 +100,25 @@ describe("SafeBatchTray", () => {
   beforeEach(() => {
     window.localStorage.clear();
     mocks.submit.mockReset();
+    mocks.proposed = null;
+  });
+
+  it("shows a queued proposal in place of the review button and can drop the steps", () => {
+    writeBatch(8453, 6, [hookStep(), terminalStep()]);
+    mocks.proposed = {
+      nonce: 10,
+      safeTxHash: `0x${"cd".repeat(32)}`,
+      confirmationsRequired: 2,
+      confirmations: [{ owner: OPERATOR, signature: `0x${"ab".repeat(65)}` }],
+    };
+    render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
+    expect(screen.getByRole("status").textContent).toContain(
+      "Already proposed on Base as Safe transaction #10 (1/2 signatures)",
+    );
+    expect(screen.getByRole("link", { name: /Open in Safe/ }).getAttribute("href")).toContain("multisig_");
+    expect(screen.queryByRole("button", { name: /Review and propose/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Remove from the batch" }));
+    expect(readBatch(8453, 6)).toEqual([]);
   });
 
   it("shows one tab per chain with queued steps, read from storage", () => {
