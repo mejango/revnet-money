@@ -13,7 +13,7 @@ import {
 import type { JBChainId, ProjectTokenData } from "@/lib/nana/types";
 import { exactNumber, prettyNumber } from "@/lib/number";
 import { formatPortion, formatTokenSymbol } from "@/lib/utils";
-import { formatUnits } from "@bananapus/nana-sdk-core";
+import { formatUnits, JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { useRef, useState, type ReactNode } from "react";
 import { Address } from "viem";
 
@@ -82,12 +82,14 @@ export function ParticipantsTable({
         </TableHeader>
         <TableBody>
           {visibleParticipants.map((participant) => (
+            // Explorer link follows the chain the holder is on, not the connected wallet.
             <TableRow key={participant?.address}>
               <TableCell>
                 <div className="flex flex-col sm:flex-row items-center">
                   <div className="hidden sm:flex">
                     <EthereumAddress
                       address={participant?.address as Address}
+                      chain={JB_CHAINS[participant.chains[0] as JBChainId]?.chain}
                       short
                       withEnsAvatar
                       withEnsName
@@ -96,6 +98,7 @@ export function ParticipantsTable({
                   <div className="flex sm:hidden">
                     <EthereumAddress
                       address={participant?.address as Address}
+                      chain={JB_CHAINS[participant.chains[0] as JBChainId]?.chain}
                       short
                       withEnsAvatar
                       withEnsName
