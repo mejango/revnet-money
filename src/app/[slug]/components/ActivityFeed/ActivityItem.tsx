@@ -199,12 +199,16 @@ function eventDescription(
   return `${shortAddress(parts.lead)}${parts.pre}${parts.strong ?? ""}${parts.post ?? ""}${shortAddress(parts.recipient)}`;
 }
 
+/** Hand-rolled markers: the dot sits flush left while wrapped lines keep hanging-indent alignment with the first line's text. */
+const BULLET_CLASS =
+  "relative break-words pl-3.5 before:absolute before:left-0 before:top-[5px] before:h-1.5 before:w-1.5 before:rounded-full before:bg-zinc-300 before:content-['']";
+
 /**
  * "minted item #2" grows into the item's name and, when the tier splits its
- * sales, the share of this payment that went to the split recipients — the
- * part of the price the buyer's token count does not account for.
+ * sales, a second bullet for the share of this payment that went to the split
+ * recipients — the part of the price the buyer's token count does not account for.
  */
-function ItemMintFragment({
+function ItemMintBullets({
   chainId,
   item,
 }: {
@@ -230,14 +234,15 @@ function ItemMintFragment({
       : null;
   return (
     <>
-      minted item #{item.tierId}
-      {name ? ` (${name})` : ""}
+      <li className={BULLET_CLASS}>
+        minted item #{item.tierId}
+        {name ? ` (${name})` : ""}
+      </li>
       {split ? (
-        <>
-          {" · "}
+        <li className={BULLET_CLASS}>
           <span className="font-medium">{split.amount}</span>
           {` (${split.percent}) sent to item recipients`}
-        </>
+        </li>
       ) : null}
     </>
   );
@@ -282,19 +287,19 @@ export function ActivityItemRow({
   const distributed = distributesReserved(event);
   const fanOut = fansOut([event, ...(event.also ?? [])]);
   // One fragment per same-tx event: a lone one reads inline, several read as bullets.
-  const fragments = describableEntries(event).map((entry) => {
+  const fragments = describableEntries(event).map((entry, index) => {
     if (entry.type === "mintNft" && entry.item) {
-      return <ItemMintFragment key={entry.id} chainId={entry.chainId} item={entry.item} />;
+      return <ItemMintBullets key={index} chainId={entry.chainId} item={entry.item} />;
     }
     const parts = descriptionParts(entry, projectTokenSymbol, distributed, fanOut);
     return (
-      <>
+      <li key={index} className={BULLET_CLASS}>
         {parts.lead ? <ProfileAvatar address={parts.lead} short chain={chain} /> : null}
         {parts.pre}
         {parts.strong ? <span className="font-medium">{parts.strong}</span> : null}
         {parts.post}
         {parts.recipient ? <ProfileAvatar address={parts.recipient} short chain={chain} /> : null}
-      </>
+      </li>
     );
   });
   const description = combinedDescription(event, projectTokenSymbol);
@@ -398,16 +403,7 @@ export function ActivityItemRow({
           </p>
         )}
         <ul className={`${event.memo ? "mt-1" : "mt-3"} space-y-0.5 text-xs text-zinc-500`}>
-          {/* Hand-rolled markers: the dot sits flush left while wrapped
-              lines keep hanging-indent alignment with the first line's text. */}
-          {fragments.map((fragment, index) => (
-            <li
-              key={index}
-              className="relative break-words pl-3.5 before:absolute before:left-0 before:top-[5px] before:h-1.5 before:w-1.5 before:rounded-full before:bg-zinc-300 before:content-['']"
-            >
-              {fragment}
-            </li>
-          ))}
+          {fragments}
         </ul>
       </div>
     </div>
