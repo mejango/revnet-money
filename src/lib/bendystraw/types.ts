@@ -302,6 +302,15 @@ export type ActivityEventsQuery = {
           })
         | null;
       buybackPoolEvent: (ActivityBase & { caller: string }) | null;
+      mintNftEvent?:
+        | (ActivityBase & {
+            beneficiary: string;
+            hook: string;
+            tierId: number;
+            tokenId: BigNumberish;
+            totalAmountPaid: BigNumberish;
+          })
+        | null;
       sendPayoutsEvent?:
         | (ActivityBase & {
             caller: string;

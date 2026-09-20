@@ -7,8 +7,9 @@ import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { formatTokenSymbol } from "@/lib/utils";
-import { JB_CHAINS } from "@bananapus/nana-sdk-core";
+import { JB_CHAINS, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { Address } from "viem";
+import { formatShopAmount, useShopInventory, useTierMedia } from "../v6/shop/shopLib";
 
 type ActivityEventType =
   | "in"
@@ -28,7 +29,8 @@ type ActivityEventType =
   | "buybackPool"
   | "payout"
   | "reserved"
-  | "reservedSplit";
+  | "reservedSplit"
+  | "mintNft";
 
 export interface ActivityEvent {
   id: string;
@@ -51,6 +53,8 @@ export interface ActivityEvent {
   also?: ActivityEvent[];
   /** Set on a pay that shares its tx with other pays: who this one was for. */
   payee?: Address;
+  /** A 721 mint: which item, what was paid for it, and for which project. */
+  item?: { projectId: number; tierId: number; amountPaid: string };
 }
 
 /** A tx with several pays reads "<total> from <payer>" and names who got what. */
@@ -171,6 +175,8 @@ function descriptionParts(
       return { pre: "sent payouts" };
     case "reserved":
       return { pre: "distributed reserved ", strong: count };
+    case "mintNft":
+      return { pre: `minted item #${event.item?.tierId ?? ""}` };
     case "reservedSplit":
       // Under its distribution a receipt names who got what; on its own it
       // is what the account received.
@@ -191,6 +197,50 @@ function eventDescription(
   const shortAddress = (address?: Address) =>
     address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "";
   return `${shortAddress(parts.lead)}${parts.pre}${parts.strong ?? ""}${parts.post ?? ""}${shortAddress(parts.recipient)}`;
+}
+
+/**
+ * "minted item #2" grows into the item's name and, when the tier splits its
+ * sales, the share of this payment that went to the split recipients — the
+ * part of the price the buyer's token count does not account for.
+ */
+function ItemMintFragment({
+  chainId,
+  item,
+}: {
+  chainId: JBChainId;
+  item: NonNullable<ActivityEvent["item"]>;
+}) {
+  const shop = useShopInventory(chainId, BigInt(item.projectId));
+  const tier = shop.data?.tiers.find((entry) => entry.id === item.tierId);
+  const media = useTierMedia(
+    chainId,
+    tier && shop.data ? { hook: shop.data.hook, tiers: [tier] } : null,
+  );
+  const name = media.data[item.tierId]?.name;
+  const split =
+    tier && shop.data && tier.splitPercent > 0
+      ? {
+          amount: `${formatShopAmount(
+            (BigInt(item.amountPaid) * BigInt(tier.splitPercent)) / BigInt(SPLITS_TOTAL_PERCENT),
+            shop.data.pricing.decimals,
+          )} ${shop.data.pricing.symbol}`,
+          percent: `${tier.splitPercent / 1e7}%`,
+        }
+      : null;
+  return (
+    <>
+      minted item #{item.tierId}
+      {name ? ` (${name})` : ""}
+      {split ? (
+        <>
+          {" · "}
+          <span className="font-medium">{split.amount}</span>
+          {` (${split.percent}) sent to item recipients`}
+        </>
+      ) : null}
+    </>
+  );
 }
 
 /** Project-page wrapper: reads the project token context for the symbol. */
@@ -233,6 +283,9 @@ export function ActivityItemRow({
   const fanOut = fansOut([event, ...(event.also ?? [])]);
   // One fragment per same-tx event: a lone one reads inline, several read as bullets.
   const fragments = describableEntries(event).map((entry) => {
+    if (entry.type === "mintNft" && entry.item) {
+      return <ItemMintFragment key={entry.id} chainId={entry.chainId} item={entry.item} />;
+    }
     const parts = descriptionParts(entry, projectTokenSymbol, distributed, fanOut);
     return (
       <>

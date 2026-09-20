@@ -95,6 +95,7 @@ const ACTIVITY_EVENT_FIELDS = `
     txHash timestamp from caller direction terminalTokenAmount projectTokenAmount
   }
   buybackPoolEvent { txHash timestamp from caller }
+  mintNftEvent { txHash timestamp from beneficiary hook tierId tokenId totalAmountPaid }
   sendPayoutsEvent {
     txHash timestamp from caller amount amountPaidOut amountPaidOutUsd
   }

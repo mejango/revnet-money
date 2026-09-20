@@ -62,6 +62,7 @@ const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
 export function activityCategory(event: ActivityEvent): ActivityCategory | null {
   switch (event.type) {
     case "in":
+    case "mintNft":
       return "pay";
     case "out":
       return "cashOut";

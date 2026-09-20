@@ -105,6 +105,7 @@ const SAME_TX_ORDER: ActivityEvent["type"][] = [
   "issuance",
   "swap",
   "mint",
+  "mintNft",
   "autoIssue",
   "reserved",
   "reservedSplit",
@@ -378,6 +379,23 @@ export function mapActivityEvents(
         tokenCount: prettyNumber(new JBProjectToken(BigInt(e.beneficiaryTokenCount)).format(6)),
         memo: e.memo || undefined,
         detail: reservePercent ? `after the ${reservePercent}% split` : undefined,
+      });
+    } else if (event.mintNftEvent) {
+      const e = event.mintNftEvent;
+      events.push({
+        id: event.id,
+        type: "mintNft",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        beneficiary: e.beneficiary as Address,
+        chainId,
+        item: event.project
+          ? {
+              projectId: event.project.projectId,
+              tierId: e.tierId,
+              amountPaid: String(e.totalAmountPaid),
+            }
+          : undefined,
       });
     } else if (event.autoIssueEvent) {
       const e = event.autoIssueEvent;
