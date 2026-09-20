@@ -136,6 +136,7 @@ export type IndexedProjectSummary = Pick<
   | "handle"
   | "isRevnet"
   | "logoUri"
+  | "metadataUri"
   | "name"
   | "projectId"
   | "projectTagline"
@@ -210,6 +211,7 @@ type ActivityProject = Pick<Project, "projectId" | "handle" | "version"> & {
   chainId?: number;
   name?: string | null;
   logoUri?: string | null;
+  metadataUri?: string | null;
   projectTagline?: string | null;
   tokenSymbol?: string | null;
   decimals?: number | null;
@@ -615,6 +617,7 @@ export type TopSuckerGroupsQuery = {
             | "projectTagline"
             | "tokenSymbol"
             | "logoUri"
+            | "metadataUri"
             | "projectId"
             | "version"
             | "isRevnet"

@@ -5,6 +5,7 @@ import { mainnet } from "@/lib/chains";
 import { fetchEthPrice } from "@/lib/ethPrice";
 import { ipfsUriToAppUrl } from "@/lib/ipfs";
 import { getIssuanceFingerprint } from "@/lib/issuanceFingerprint.server";
+import { fillIndexedMetadata } from "@/lib/projectMetadataFill.server";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
@@ -46,9 +47,13 @@ export async function getTopProjects(limit = 8, offset = 0) {
     })
     .filter((item) => item !== null)
     .sort((a, b) => b.balanceUsd - a.balanceUsd)
-    .slice(offset, offset + limit)
-    .map((item, index) => {
-      const { project, balanceUsd } = item;
+    .slice(offset, offset + limit);
+
+  const projects = await fillIndexedMetadata(ranked.map((item) => item.project));
+
+  return Promise.all(
+    ranked.map(async ({ balanceUsd }, index) => {
+      const project = projects[index]!;
       const chainId = project.chainId as JBChainId;
 
       return {
@@ -60,14 +65,9 @@ export async function getTopProjects(limit = 8, offset = 0) {
         tagline: project.projectTagline ?? null,
         logoUri: ipfsUriToAppUrl(project.logoUri) ? project.logoUri : null,
         balanceUsd,
+        issuanceFingerprint: await getIssuanceFingerprint(project.projectId, chainId),
       };
-    });
-
-  return Promise.all(
-    ranked.map(async (project) => ({
-      ...project,
-      issuanceFingerprint: await getIssuanceFingerprint(project.projectId, project.chainId),
-    })),
+    }),
   );
 }
 

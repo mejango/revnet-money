@@ -20,6 +20,7 @@ import {
   JBChainId,
   JBCoreContracts,
   NATIVE_TOKEN,
+  SPLITS_TOTAL_PERCENT,
 } from "@bananapus/nana-sdk-core";
 import {
   BASE_CURRENCY_ETH,
@@ -549,4 +550,24 @@ export function useTierCart(shop: ShopInventory | null | undefined, chainId: num
   const total = shopItems.reduce((sum, item) => sum + item.price * BigInt(item.quantity), 0n);
 
   return { quantityOf, setTierQuantity, count, total };
+}
+
+/**
+ * Each split recipient's cut of a whole tier sale, in hundredths of a percent,
+ * and what is left for the project: everything outside the tier's split share
+ * plus whatever the split group leaves unclaimed (JB721TiersHookLib routes
+ * that leftover to the project's balance).
+ */
+export function tierSaleShares<T extends { percent: number | bigint }>(
+  splitPercent: number,
+  splits: readonly T[],
+) {
+  const total = BigInt(SPLITS_TOTAL_PERCENT);
+  const share = BigInt(splitPercent);
+  const rows = splits.map((split) => ({
+    split,
+    bps: (share * BigInt(split.percent)) / ((total * total) / 10_000n),
+  }));
+  const treasuryBps = 10_000n - rows.reduce((sum, row) => sum + row.bps, 0n);
+  return { rows, treasuryBps };
 }

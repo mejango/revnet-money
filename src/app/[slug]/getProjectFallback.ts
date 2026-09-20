@@ -1,6 +1,5 @@
 import type { ProjectQuery } from "@/lib/bendystraw/types";
-import { ipfsMediaGatewayUrls } from "@/lib/ipfs";
-import { readBoundedBody } from "@/lib/server/readBoundedBody";
+import { fetchIpfsMetadata } from "@/lib/projectMetadataFill.server";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   getJBContractAddress,
@@ -24,35 +23,6 @@ import {
 import { getProject } from "./getProject";
 
 type ProjectRow = NonNullable<ProjectQuery["project"]>;
-
-const MAX_METADATA_BYTES = 512 * 1024;
-const FETCH_TIMEOUT_MS = 8_000;
-
-async function fetchIpfsMetadata(
-  uri: string | null,
-): Promise<{ name?: unknown; logoUri?: unknown } | null> {
-  for (const url of ipfsMediaGatewayUrls(uri)) {
-    try {
-      const response = await fetch(url, {
-        cache: "no-store",
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (!response.ok) {
-        await response.body?.cancel();
-        continue;
-      }
-      const body = await readBoundedBody(response.body, MAX_METADATA_BYTES);
-      if (!body) continue;
-      const value = JSON.parse(new TextDecoder().decode(body)) as unknown;
-      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-        return value as { name?: unknown; logoUri?: unknown };
-      }
-    } catch {
-      // Try the next gateway.
-    }
-  }
-  return null;
-}
 
 const isRevertError = (err: unknown) =>
   err instanceof BaseError &&

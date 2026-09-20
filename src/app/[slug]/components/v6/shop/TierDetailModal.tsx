@@ -1,13 +1,21 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { EthereumAddress } from "@/components/EthereumAddress";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { jb721TiersHookStoreAbi, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import {
+  getJBContractAddress,
+  jb721TiersHookStoreAbi,
+  JB_CHAINS,
+  JBChainId,
+  JBCoreContracts,
+  jbSplitsAbi,
+} from "@bananapus/nana-sdk-core";
 import { effectiveTierPrice, getProject721Shop } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { PublicClient } from "viem";
-import { useConfig } from "wagmi";
+import { Address, PublicClient, zeroAddress } from "viem";
+import { useConfig, useReadContract } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
 import {
@@ -19,6 +27,7 @@ import {
   TIER_UNLIMITED_SUPPLY,
   tierDisplayName,
   TierMedia,
+  tierSaleShares,
   useTierCart,
 } from "./shopLib";
 import { TierMediaPreview } from "./TierMediaPreview";
@@ -275,13 +284,17 @@ export function TierDetailModal({
               {tier.votingUnits > 0n ? (
                 <Fact label="Voting units" value={tier.votingUnits.toLocaleString("en-US")} />
               ) : null}
-              {tier.splitPercent > 0 ? (
-                <Fact
-                  label="Share sent to recipients"
-                  value={`${tier.splitPercent / 1e7}% of sales`}
-                />
-              ) : null}
             </dl>
+
+            {tier.splitPercent > 0 ? (
+              <TierSaleRouting
+                chainId={chainId}
+                projectId={projects.find((p) => p.chainId === chainId)?.projectId}
+                hook={shop.hook}
+                tier={tier}
+                issueTokensForSplits={shop.configFlags?.issueTokensForSplits ?? false}
+              />
+            ) : null}
 
             {setFlags.length > 0 ? (
               <div className="mt-4 border-t border-zinc-200 pt-4">
@@ -303,6 +316,91 @@ export function TierDetailModal({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Where each sale of this tier goes. The tier's split share is paid out to
+ * its split group (`groupId = hook | tierId << 160`, ruleset 0); whatever the
+ * group leaves unclaimed, and everything outside the share, lands in the
+ * project's balance.
+ */
+function TierSaleRouting({
+  chainId,
+  projectId,
+  hook,
+  tier,
+  issueTokensForSplits,
+}: {
+  chainId: JBChainId;
+  projectId: number | undefined;
+  hook: Address;
+  tier: ShopTier;
+  issueTokensForSplits: boolean;
+}) {
+  const splits = useReadContract({
+    chainId,
+    address: getJBContractAddress(JBCoreContracts.JBSplits, 6, chainId),
+    abi: jbSplitsAbi,
+    functionName: "splitsOf",
+    args: [BigInt(projectId ?? 0), 0n, BigInt(hook) | (BigInt(tier.id) << 160n)],
+    query: { enabled: projectId !== undefined, staleTime: 60_000 },
+  });
+
+  const { rows, treasuryBps } = tierSaleShares(tier.splitPercent, splits.data ?? []);
+
+  return (
+    <div className="mt-4 border-t border-zinc-200 pt-4">
+      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+        Where each sale goes
+      </p>
+      {splits.isPending && projectId !== undefined ? (
+        <SkeletonLines className="mt-2" lines={2} />
+      ) : splits.isError || projectId === undefined ? (
+        <p className="mt-2 text-xs text-zinc-500">
+          {formatBps(BigInt(tier.splitPercent) / 100_000n)} of each sale is split with recipients we
+          could not read; the rest goes to the project.
+        </p>
+      ) : (
+        <dl className="mt-2 space-y-1.5 text-xs">
+          {rows.map(({ split, bps }, index) => {
+            const toProject = split.projectId > 0n;
+            const toHook = split.hook.toLowerCase() !== zeroAddress;
+            return (
+              <div key={index} className="flex items-start justify-between gap-4">
+                <dt className="min-w-0 text-zinc-900">
+                  {toProject ? (
+                    `Project #${split.projectId.toString()}`
+                  ) : (
+                    <EthereumAddress
+                      address={toHook ? split.hook : split.beneficiary}
+                      chain={JB_CHAINS[chainId].chain}
+                      short
+                      withEnsName
+                    />
+                  )}
+                </dt>
+                <dd className="tabular-nums text-zinc-900">{formatBps(bps)}</dd>
+              </div>
+            );
+          })}
+          <div className="flex items-start justify-between gap-4">
+            <dt className="text-zinc-500">This project</dt>
+            <dd className="tabular-nums text-zinc-900">{formatBps(treasuryBps)}</dd>
+          </div>
+        </dl>
+      )}
+      {!issueTokensForSplits ? (
+        <p className="mt-2 text-xs text-zinc-500">
+          Tokens are issued on the {formatBps(10_000n - BigInt(tier.splitPercent) / 100_000n)} the
+          project keeps, not the full price.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function formatBps(bps: bigint) {
+  return `${(Number(bps) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

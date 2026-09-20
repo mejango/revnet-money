@@ -130,6 +130,7 @@ const INDEXED_PROJECT_FIELDS = `
   name
   handle
   logoUri
+  metadataUri
   projectTagline
   tokenSymbol
   decimals
@@ -275,7 +276,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           timestamp
           txHash
           project {
-            id projectId chainId handle version name logoUri projectTagline
+            id projectId chainId handle version name logoUri metadataUri projectTagline
             tokenSymbol decimals isRevnet suckerGroupId
           }
           ${ACTIVITY_EVENT_FIELDS}
@@ -737,6 +738,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
               projectTagline
               tokenSymbol
               logoUri
+              metadataUri
               projectId
               version
               isRevnet

@@ -11,6 +11,7 @@ import type { IndexedProjectSummary } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
 import { getIssuanceFingerprint } from "@/lib/issuanceFingerprint.server";
 import { formatCompact } from "@/lib/number";
+import { fillIndexedMetadata } from "@/lib/projectMetadataFill.server";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import Image from "next/image";
 import Link from "next/link";
@@ -38,13 +39,15 @@ async function getHomepageProjects(
       offset: 0,
     });
     const groups = new Set<string>();
-    const projects = data.projects.items
-      .filter((project) => {
-        if (!project.isRevnet || groups.has(project.suckerGroupId)) return false;
-        groups.add(project.suckerGroupId);
-        return true;
-      })
-      .slice(0, 8);
+    const projects = await fillIndexedMetadata(
+      data.projects.items
+        .filter((project) => {
+          if (!project.isRevnet || groups.has(project.suckerGroupId)) return false;
+          groups.add(project.suckerGroupId);
+          return true;
+        })
+        .slice(0, 8),
+    );
     return Promise.all(
       projects.map(async (project) => ({
         ...project,

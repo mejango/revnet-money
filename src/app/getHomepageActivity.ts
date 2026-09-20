@@ -5,6 +5,7 @@ import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { ActivityEventsQuery } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
 import { getIssuanceFingerprint } from "@/lib/issuanceFingerprint.server";
+import { fillIndexedMetadata } from "@/lib/projectMetadataFill.server";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 
 export type HomepageRawActivity = ActivityEventsQuery["activityEvents"]["items"][number] & {
@@ -42,6 +43,20 @@ async function tickersFor(events: HomepageRawActivity[]) {
   }
 }
 
+type ActivityProjectRow = NonNullable<HomepageRawActivity["project"]>;
+
+async function fillActivityProjects<T extends { project?: ActivityProjectRow | null }>(
+  events: T[],
+): Promise<T[]> {
+  const filled = await fillIndexedMetadata(
+    events.flatMap((event) => (event.project ? [event.project] : [])),
+  );
+  return events.map((event) => ({
+    ...event,
+    project: event.project ? filled.shift() : event.project,
+  }));
+}
+
 function relevant(event: HomepageRawActivity) {
   return !!(
     event.project?.isRevnet &&
@@ -75,7 +90,7 @@ export async function getHomepageActivityPage(limit = 8, offset = 0) {
       sourceOffset += items.length;
       if (!items.length) break;
     }
-    const page = matches.slice(offset, wanted);
+    const page = await fillActivityProjects(matches.slice(offset, wanted));
     const tickers = await tickersFor(page);
     const fingerprints = new Map<string, Promise<number[]>>();
     return Promise.all(
