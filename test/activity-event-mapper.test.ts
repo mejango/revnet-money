@@ -231,6 +231,61 @@ describe("mapActivityEvents", () => {
     expect(manualRow?.tokenCount).toBe("17k");
   });
 
+  it("hides the hook's own remint when a cash out sells through the buyback pool", () => {
+    // The terminal burns the holder's tokens, then the hook remints the same
+    // count to itself and sells it. That mint is plumbing, not a receipt.
+    const base = { ...payItem({ payEvent: null }), txHash: "0xccc" };
+    const cashOut: ActivityEventItem = {
+      ...base,
+      id: "cashout-1",
+      cashOutTokensEvent: {
+        id: "cashout-event-1",
+        timestamp: 1_700_000_000,
+        txHash: "0xccc",
+        from: "0x2222222222222222222222222222222222222222",
+        beneficiary: "0x2222222222222222222222222222222222222222",
+        reclaimAmount: "0",
+        reclaimAmountUsd: "0",
+        cashOutCount: "1186973000000000000",
+        metadata: "0x",
+        project: null,
+      },
+    };
+    const sell: ActivityEventItem = {
+      ...base,
+      id: "swap-1",
+      swapEvent: {
+        txHash: "0xccc",
+        timestamp: 1_700_000_000,
+        direction: "sell",
+        terminalTokenAmount: "1000000000000000",
+        projectTokenAmount: "1160000000000000000",
+        caller: "0x498581ff718922c3f8e6a244956af099b2652b2b",
+        from: "0x2222222222222222222222222222222222222222",
+      },
+    };
+    const hookRemint: ActivityEventItem = {
+      ...base,
+      id: "mint-1",
+      manualMintTokensEvent: {
+        id: "mint-event-1",
+        txHash: "0xccc",
+        timestamp: 1_700_000_000,
+        from: "0x3333333333333333333333333333333333333333",
+        beneficiary: "0x3333333333333333333333333333333333333333",
+        beneficiaryTokenCount: "1160000000000000000",
+        memo: null,
+      },
+    };
+
+    const events = mapActivityEvents([cashOut, sell, hookRemint], () => ({
+      tokenSymbol: "ETH",
+      decimals: 18,
+    }));
+
+    expect(events.map((event) => event.id)).toEqual(["cashout-1", "swap-1"]);
+  });
+
   it("pairs each remint with its own swap when one tx holds two buyback pays", () => {
     const swapOf = (id: string, projectTokenAmount: string): ActivityEventItem => ({
       ...payItem({ payEvent: null }),

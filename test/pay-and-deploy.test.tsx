@@ -42,7 +42,7 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     connectWalletText?: string;
   }) => <button {...props}>{children}</button>,
 }));
-vi.mock("@/lib/nana/project", () => ({ useChain: () => undefined }));
+vi.mock("@/lib/nana/project", () => ({ useChain: () => undefined, useJBChainId: () => undefined }));
 vi.mock("@/app/create/buttons/GoToProjectButton", () => ({
   GoToProjectButton: ({ txHash, chainId }: { txHash?: string; chainId: number }) => (
     <button data-tx-hash={txHash} data-chain={chainId}>
