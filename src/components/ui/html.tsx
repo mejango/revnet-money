@@ -155,6 +155,12 @@ function sanitizeProjectRichText(source: string): string {
     image.setAttribute("referrerpolicy", "no-referrer");
   }
 
+  // Legacy editors saved paragraph breaks as `<p><br></p>` spacers; they
+  // would render as empty lines on top of the paragraph margin.
+  for (const block of fragment.querySelectorAll("p")) {
+    if (!block.textContent?.trim() && !block.querySelector("img")) block.remove();
+  }
+
   const container = document.createElement("div");
   container.append(fragment);
   return container.innerHTML;

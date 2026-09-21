@@ -34,6 +34,15 @@ describe("untrusted project content", () => {
     expect(screen.getByText("bad link").closest("a")).toBeNull();
   });
 
+  it("drops legacy <p><br></p> spacer paragraphs", () => {
+    const { container } = render(
+      createElement(ProjectRichText, { source: "<p>One</p><p><br></p><p>Two</p><p></p>" }),
+    );
+
+    expect(container.querySelectorAll("p")).toHaveLength(2);
+    expect(container.querySelector("br")).toBeNull();
+  });
+
   it("hardens absolute external links and rejects relative project links", () => {
     const { container } = render(
       createElement(ProjectRichText, {
