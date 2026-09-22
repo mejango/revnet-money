@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
+import { readBoundedSafeNonce } from "@/lib/cross-chain-authority";
 import {
   addStepsToBatch,
   clearBatch,
@@ -23,7 +24,6 @@ import {
   type BatchStep,
 } from "@/lib/safe-batch";
 import { stepResolverFor } from "@/lib/safe-batch-presets";
-import { readBoundedSafeNonce } from "@/lib/cross-chain-authority";
 import {
   listPendingSafeTransactions,
   safeQueueLink,
@@ -158,7 +158,6 @@ export function SafeBatchTray({
   const batchRow =
     dialog?.kind === "batch" ? rows.find((row) => row.chainId === dialog.chainId) : null;
 
-
   return (
     <OperatorSection title="Batch">
       <p className="text-sm text-zinc-500">
@@ -212,8 +211,7 @@ export function SafeBatchTray({
           </div>
           {proposed ? (
             <p className="mt-3 text-sm text-teal-700" role="status">
-              Already proposed on {chainName(source.chainId)} as Safe transaction #
-              {proposed.nonce}
+              Already proposed on {chainName(source.chainId)} as Safe transaction #{proposed.nonce}
               {proposed.confirmationsRequired
                 ? ` (${usableSafeConfirmations(proposed).length}/${proposed.confirmationsRequired} signatures)`
                 : ""}

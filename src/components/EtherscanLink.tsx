@@ -1,7 +1,7 @@
 import { useChain, useJBChainId } from "@/lib/nana/project";
 import { etherscanLink, formatEthAddress } from "@/lib/utils";
-import { twMerge } from "tailwind-merge";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
+import { twMerge } from "tailwind-merge";
 import { Chain } from "viem";
 import { ExternalLink } from "./ExternalLink";
 

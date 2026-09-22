@@ -193,7 +193,10 @@ describe("Safe queue execution", () => {
       const fetchSpy = vi
         .fn()
         .mockResolvedValueOnce({ ok: false, status: 429, headers: { get: () => "2" } })
-        .mockResolvedValueOnce({ ok: true, json: async () => ({ next: null, results: [transaction] }) });
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ next: null, results: [transaction] }),
+        });
       vi.stubGlobal("fetch", fetchSpy);
       const pending = listPendingSafeTransactions(1, SAFE, 8);
       await vi.advanceTimersByTimeAsync(2000);

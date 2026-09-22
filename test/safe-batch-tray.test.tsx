@@ -115,7 +115,9 @@ describe("SafeBatchTray", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "Already proposed on Base as Safe transaction #10 (1/2 signatures)",
     );
-    expect(screen.getByRole("link", { name: /Open in Safe/ }).getAttribute("href")).toContain("multisig_");
+    expect(screen.getByRole("link", { name: /Open in Safe/ }).getAttribute("href")).toContain(
+      "multisig_",
+    );
     expect(screen.queryByRole("button", { name: /Review and propose/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Remove from the batch" }));
     expect(readBatch(8453, 6)).toEqual([]);
