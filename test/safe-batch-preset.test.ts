@@ -211,21 +211,7 @@ describe("Move to buyback 1.4.0 + gateway", () => {
     ]);
   });
 
-  it("uses project 7's fixed 3600s window whatever the old window, matching juicebox-money", async () => {
-    for (const twap of [172_800n, 900n]) {
-      const client = stubClient({
-        pools: { [zeroAddress]: { twap, fee: 10_000, tickSpacing: 200 } },
-      });
-      const result = await resolvePreset(preset, { chainId: 84532, projectId: 7, client });
-      if (result.status !== "ready") throw new Error(result.message);
-      expect(result.steps[1]!.values.twapWindow).toBe(3_600n);
-      expect(result.notes).toEqual([
-        "Native pool: this project uses a 3600s window on every chain.",
-      ]);
-    }
-  });
-
-  it("keeps a deliberate window and writes USDC pools with the chain's USDC address", async () => {
+  it("stores 30 minutes over a replaced window and writes USDC pools with the chain's USDC address", async () => {
     const client = stubClient({
       pools: {
         [USDC_ADDRESSES[84532].toLowerCase()]: { twap: 900n, fee: 10_000, tickSpacing: 200 },
@@ -236,10 +222,12 @@ describe("Move to buyback 1.4.0 + gateway", () => {
     expect(result.steps[1]!.values).toEqual({
       fee: 10_000n,
       tickSpacing: 200n,
-      twapWindow: 900n,
+      twapWindow: 1_800n,
       terminalToken: USDC_ADDRESSES[84532],
     });
-    expect(result.notes).toEqual([]);
+    expect(result.notes).toEqual([
+      "USDC pool: the old window was 900s; 30 minutes will be stored.",
+    ]);
   });
 
   it("adds no setPoolFor when the project has no pool", async () => {
