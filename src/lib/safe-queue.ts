@@ -172,12 +172,61 @@ function serviceBase(chainId: number): string | null {
   return prefix ? `https://api.safe.global/tx-service/${prefix}` : null;
 }
 
+/** Whether Safe's hosted transaction service covers the chain; without it, owners approve onchain. */
+export function hasSafeService(chainId: number): boolean {
+  return serviceBase(chainId) !== null;
+}
+
+export const SAFE_APPROVE_HASH_ABI = [
+  {
+    type: "function",
+    name: "approveHash",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "hashToApprove", type: "bytes32" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "approvedHashes",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "hash", type: "bytes32" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
+/**
+ * The next onchain step for one owner on a chain with no Safe service. Safe
+ * counts the executor itself as a signature, so the owner who would meet the
+ * threshold executes instead of approving first.
+ */
+export function onchainApprovalStep({
+  account,
+  approved,
+  threshold,
+}: {
+  account: Address;
+  /** Current owners with approvedHashes set for the exact SafeTx hash. */
+  approved: readonly Address[];
+  threshold: number;
+}): { kind: "approve" } | { kind: "waiting" } | { kind: "execute"; signers: Address[] } {
+  const others = approved.filter((owner) => !isAddressEqual(owner, account));
+  if (others.length + 1 >= threshold) return { kind: "execute", signers: [...others, account] };
+  return others.length === approved.length ? { kind: "approve" } : { kind: "waiting" };
+}
+
 export function safeQueueLink(chainId: number, safe: Address): string | null {
   const prefix = SAFE_SERVICE_PREFIX[chainId];
   return prefix ? `https://app.safe.global/transactions/queue?safe=${prefix}:${safe}` : null;
 }
 
-export function safeTransactionLink(chainId: number, safe: Address, safeTxHash: Hex): string | null {
+export function safeTransactionLink(
+  chainId: number,
+  safe: Address,
+  safeTxHash: Hex,
+): string | null {
   const prefix = SAFE_SERVICE_PREFIX[chainId];
   return prefix
     ? `https://app.safe.global/transactions/tx?safe=${prefix}:${safe}&id=multisig_${safe}_${safeTxHash}`
@@ -191,7 +240,10 @@ async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
     if (response.status !== 429 || attempt >= 3) return response;
     const retryAfter = Number(response.headers.get("retry-after"));
     await new Promise((resolve) =>
-      setTimeout(resolve, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * (attempt + 1)),
+      setTimeout(
+        resolve,
+        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * (attempt + 1),
+      ),
     );
   }
 }
@@ -449,26 +501,29 @@ export async function proposeSafeTransaction(
   const base = serviceBase(chainId);
   if (!base) throw new Error("Safe queue service is unavailable on this chain.");
   const safeTxHash = safeTransactionHash(chainId, safe, tx);
-  const response = await safeFetch(`${base}/api/v1/safes/${getAddress(safe)}/multisig-transactions/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      to: getAddress(tx.to),
-      value: String(tx.value ?? 0),
-      data: tx.data ?? "0x",
-      operation: Number(tx.operation ?? 0),
-      safeTxGas: String(tx.safeTxGas ?? 0),
-      baseGas: String(tx.baseGas ?? 0),
-      gasPrice: String(tx.gasPrice ?? 0),
-      gasToken: tx.gasToken ?? zeroAddress,
-      refundReceiver: tx.refundReceiver ?? zeroAddress,
-      nonce: String(tx.nonce),
-      contractTransactionHash: safeTxHash,
-      sender: getAddress(sender),
-      signature,
-      origin: "revnet.money",
-    }),
-  });
+  const response = await safeFetch(
+    `${base}/api/v1/safes/${getAddress(safe)}/multisig-transactions/`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: getAddress(tx.to),
+        value: String(tx.value ?? 0),
+        data: tx.data ?? "0x",
+        operation: Number(tx.operation ?? 0),
+        safeTxGas: String(tx.safeTxGas ?? 0),
+        baseGas: String(tx.baseGas ?? 0),
+        gasPrice: String(tx.gasPrice ?? 0),
+        gasToken: tx.gasToken ?? zeroAddress,
+        refundReceiver: tx.refundReceiver ?? zeroAddress,
+        nonce: String(tx.nonce),
+        contractTransactionHash: safeTxHash,
+        sender: getAddress(sender),
+        signature,
+        origin: "revnet.money",
+      }),
+    },
+  );
   if (!response.ok && response.status !== 201) {
     const detail = await response.text().catch(() => "");
     throw new Error(

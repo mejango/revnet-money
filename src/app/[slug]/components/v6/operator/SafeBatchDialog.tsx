@@ -14,6 +14,7 @@ import {
   writeBatch,
   type BatchStep,
 } from "@/lib/safe-batch";
+import { hasSafeService } from "@/lib/safe-queue";
 import { formatWalletError } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -54,11 +55,13 @@ function DecodedCall({ step }: { step: BatchStep }) {
   );
 }
 
-function routeSummary(route: SafeBatchRoute | undefined, count: number): string {
+function routeSummary(route: SafeBatchRoute | undefined, count: number, chainId: number): string {
   if (!route) return "Checking who can sign…";
   if (route.kind === "safe-app") return "One MultiSend proposal through the Safe app";
   if (route.kind === "safe-signer") {
-    return `One MultiSend proposal to the operator Safe (${route.threshold} of ${route.owners.length} signatures)`;
+    return hasSafeService(chainId)
+      ? `One MultiSend proposal to the operator Safe (${route.threshold} of ${route.owners.length} signatures)`
+      : `One MultiSend batch each operator Safe owner approves onchain (${route.threshold} of ${route.owners.length})`;
   }
   if (route.kind === "eoa") {
     return `${count} transaction${count === 1 ? "" : "s"} from your wallet, in order`;
@@ -66,8 +69,9 @@ function routeSummary(route: SafeBatchRoute | undefined, count: number): string 
   return "Not available";
 }
 
-function actionLabel(route: SafeBatchRoute | undefined, count: number): string {
+function actionLabel(route: SafeBatchRoute | undefined, count: number, chainId: number): string {
   if (route?.kind === "eoa") return `Send ${count} transaction${count === 1 ? "" : "s"}`;
+  if (route?.kind === "safe-signer" && !hasSafeService(chainId)) return "Approve batch onchain";
   return "Propose batch to Safe";
 }
 
@@ -136,9 +140,18 @@ export function SafeBatchDialog({
           ? `Sent ${outcome.transactions} transaction${outcome.transactions === 1 ? "" : "s"} on ${name}.`
           : outcome.kind === "confirmed"
             ? `Your confirmation was added to the identical batch of ${outcome.calls} calls already queued in the Safe on ${name}.`
-            : `Proposed to Safe as one batch of ${outcome.calls} call${outcome.calls === 1 ? "" : "s"} on ${name}.`;
+            : outcome.kind === "approved"
+              ? `Approved onchain on ${name} (${outcome.approvals} of ${outcome.threshold}). Each other owner adds the same steps in the same order and approves; the one who reaches ${outcome.threshold} executes it.`
+              : outcome.kind === "executed"
+                ? `Executed the batch of ${outcome.calls} call${outcome.calls === 1 ? "" : "s"} on ${name}.`
+                : `Proposed to Safe as one batch of ${outcome.calls} call${outcome.calls === 1 ? "" : "s"} on ${name}.`;
       toast({
-        title: outcome.kind === "sent" ? "Batch sent" : "Batch proposed",
+        title:
+          outcome.kind === "sent" || outcome.kind === "executed"
+            ? "Batch sent"
+            : outcome.kind === "approved"
+              ? "Batch approved"
+              : "Batch proposed",
         description: message,
       });
       onOpenChange(false);
@@ -157,16 +170,25 @@ export function SafeBatchDialog({
     }
   };
 
+  const onchain = route?.kind === "safe-signer" && !hasSafeService(row.chainId);
   const prompts =
     route?.kind === "eoa"
       ? steps.map((step) => ({ key: step.id, title: step.label, detail: describeStep(step) }))
-      : [
-          {
-            key: "propose",
-            title: "Propose batch to Safe",
-            detail: `${steps.length} call${steps.length === 1 ? "" : "s"} execute together, in this order, once the Safe's approvals are in.`,
-          },
-        ];
+      : onchain
+        ? [
+            {
+              key: "approve",
+              title: "Approve batch onchain",
+              detail: `${name} has no Safe transaction service. Each owner approves the same batch onchain; the owner who reaches the threshold executes it.`,
+            },
+          ]
+        : [
+            {
+              key: "propose",
+              title: "Propose batch to Safe",
+              detail: `${steps.length} call${steps.length === 1 ? "" : "s"} execute together, in this order, once the Safe's approvals are in.`,
+            },
+          ];
   const from =
     route && route.kind !== "refused"
       ? route.kind === "safe-signer"
@@ -191,9 +213,11 @@ export function SafeBatchDialog({
       stepsIntro={
         route?.kind === "eoa"
           ? `Your wallet will ask for ${steps.length} transaction${steps.length === 1 ? "" : "s"}, in this order.`
-          : "Your wallet will ask for one signature."
+          : onchain
+            ? "Your wallet will ask for one transaction."
+            : "Your wallet will ask for one signature."
       }
-      action={actionLabel(route, steps.length)}
+      action={actionLabel(route, steps.length, row.chainId)}
       onConfirm={() => void confirm()}
       busy={busy}
       disabled={!route || route.kind === "refused" || !steps.length || problems.length > 0}
@@ -211,7 +235,7 @@ export function SafeBatchDialog({
           "Connect a wallet"
         )}
       </SummaryRow>
-      <SummaryRow label="Route">{routeSummary(route, steps.length)}</SummaryRow>
+      <SummaryRow label="Route">{routeSummary(route, steps.length, row.chainId)}</SummaryRow>
       {steps.length ? (
         <ol className="space-y-2" aria-label="Batch steps">
           {steps.map((step, index) => {

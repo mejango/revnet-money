@@ -2,9 +2,12 @@ import { routeSafeBatch } from "@/app/[slug]/components/v6/operator/useSafeBatch
 import type { AuthorityIdentity } from "@/lib/cross-chain-authority";
 import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@/lib/safe-batch";
 import {
+  hasSafeService,
+  onchainApprovalStep,
   proposeSafeTransaction,
   queuedTransactionMatchesCall,
   safeBatchProposalFor,
+  safeExecutionArgs,
   safeProposalFor,
   safeTransactionHash,
 } from "@/lib/safe-queue";
@@ -146,9 +149,19 @@ describe("batch routing", () => {
       chainId: 10,
       connectedChainId: 1,
     });
-    expect(route).toMatchObject({ kind: "refused", message: expect.stringMatching(/Open this Safe on/) });
+    expect(route).toMatchObject({
+      kind: "refused",
+      message: expect.stringMatching(/Open this Safe on/),
+    });
     expect(
-      routeSafeBatch({ account: SAFE, authority: SAFE, identity: null, safeConnection: true, chainId: 10, connectedChainId: 10 }),
+      routeSafeBatch({
+        account: SAFE,
+        authority: SAFE,
+        identity: null,
+        safeConnection: true,
+        chainId: 10,
+        connectedChainId: 10,
+      }),
     ).toEqual({ kind: "safe-app", authority: SAFE });
   });
 
@@ -180,5 +193,54 @@ describe("batch routing", () => {
         safeConnection: false,
       }),
     ).toMatchObject({ kind: "refused", message: "Connect a wallet first." });
+  });
+});
+
+describe("onchain approval on chains with no Safe service", () => {
+  const THIRD = "0x0444444444444444444444444444444444444444" as Address;
+
+  it("knows which chains have the hosted service", () => {
+    expect(hasSafeService(11155111)).toBe(true);
+    expect(hasSafeService(421614)).toBe(false);
+    expect(hasSafeService(11155420)).toBe(false);
+  });
+
+  it("approves, waits, or executes once this owner meets the threshold", () => {
+    expect(onchainApprovalStep({ account: SIGNER, approved: [], threshold: 3 })).toEqual({
+      kind: "approve",
+    });
+    expect(onchainApprovalStep({ account: SIGNER, approved: [SIGNER], threshold: 3 })).toEqual({
+      kind: "waiting",
+    });
+    expect(onchainApprovalStep({ account: SIGNER, approved: [OTHER], threshold: 3 })).toEqual({
+      kind: "approve",
+    });
+    expect(
+      onchainApprovalStep({ account: SIGNER, approved: [SIGNER, OTHER], threshold: 3 }),
+    ).toEqual({
+      kind: "waiting",
+    });
+    // Safe counts the executor, so the owner reaching the threshold skips approveHash.
+    expect(
+      onchainApprovalStep({ account: SIGNER, approved: [OTHER, THIRD], threshold: 3 }),
+    ).toEqual({
+      kind: "execute",
+      signers: [OTHER, THIRD, SIGNER],
+    });
+    expect(onchainApprovalStep({ account: SIGNER, approved: [], threshold: 1 })).toEqual({
+      kind: "execute",
+      signers: [SIGNER],
+    });
+  });
+
+  it("executes with pre-validated signatures in ascending owner order", () => {
+    const tx = safeBatchProposalFor(calls, 3);
+    const signatures = safeExecutionArgs(
+      { ...tx, confirmations: [OTHER, THIRD, SIGNER].map((owner) => ({ owner })) },
+      [SIGNER, OTHER, THIRD],
+    )[9];
+    const approved = (owner: Address) =>
+      `${owner.slice(2).toLowerCase().padStart(64, "0")}${"0".repeat(64)}01`;
+    expect(signatures).toBe(`0x${approved(THIRD)}${approved(SIGNER)}${approved(OTHER)}`);
   });
 });

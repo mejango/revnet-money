@@ -825,11 +825,18 @@
           1
         ],
         [
+          "reviewed-write",
+          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+          "submit",
+          "writeContractAsync",
+          1
+        ],
+        [
           "reviewed-write-hook",
           "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
           "useSafeBatchSubmit",
           "useWriteContract",
-          1
+          2
         ]
       ]
     }
