@@ -36,6 +36,11 @@ export const SAFE_BATCH_PRESETS: readonly SafeBatchPreset[] = [
 /** `JBBuybackHook.MAX_TWAP_WINDOW`: the deployer default, which the hook stores as 30 minutes. */
 export const MAX_TWAP_WINDOW = 172_800n;
 const DEFAULT_TWAP_WINDOW = 1_800n;
+/**
+ * Projects whose window is fixed on every chain. Must match juicebox-money's
+ * table: Safe co-signers on either client only meet on identical calldata.
+ */
+export const PROJECT_TWAP_WINDOWS: Readonly<Record<number, bigint>> = { 7: 3_600n };
 
 export type PresetResolution =
   | { status: "unavailable"; message: string }
@@ -189,13 +194,16 @@ export async function resolvePreset(
         functionName: "poolKeyOf",
         args: [pid, probe.read],
       });
+      const fixed = PROJECT_TWAP_WINDOWS[projectId];
       const values: BatchStepValues = {
         fee: BigInt(key.fee),
         tickSpacing: BigInt(key.tickSpacing),
-        twapWindow: oldWindow === MAX_TWAP_WINDOW ? DEFAULT_TWAP_WINDOW : oldWindow,
+        twapWindow: fixed ?? (oldWindow === MAX_TWAP_WINDOW ? DEFAULT_TWAP_WINDOW : oldWindow),
         terminalToken: probe.write,
       };
-      if (oldWindow === MAX_TWAP_WINDOW) {
+      if (fixed !== undefined) {
+        notes.push(`${probe.label} pool: this project uses a ${fixed}s window on every chain.`);
+      } else if (oldWindow === MAX_TWAP_WINDOW) {
         notes.push(
           `${probe.label} pool: the old window was the deployer default (48h); 30 minutes will be stored.`,
         );
