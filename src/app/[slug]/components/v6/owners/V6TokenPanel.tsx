@@ -88,17 +88,11 @@ function clientFor(chainId: JBChainId) {
   return client;
 }
 
-function Pipe() {
-  return (
-    <span aria-hidden="true" className="text-melon-200">
-      |
-    </span>
-  );
-}
-
+// Each field draws its pip in the gap to its left. The row is shifted left by one gap and
+// clipped horizontally, so the pip of whichever field starts a line falls outside the clip.
 function TokenField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+    <span className="relative ml-8 inline-flex items-center gap-1.5 whitespace-nowrap before:absolute before:-left-5 before:text-melon-200 before:content-['|']">
       <span className="text-melon-700">{label}:</span>
       <span className="text-black">{children}</span>
     </span>
@@ -205,44 +199,42 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
       ) : tokenState.isError ? (
         <p className="text-sm text-red-600">Couldn&apos;t read this project&apos;s token.</p>
       ) : isDeployed && primary?.token ? (
-        <div
-          className={`flex flex-wrap items-center gap-x-3 gap-y-2 text-sm${
-            tokenState.isFetching ? " revalidating" : ""
-          }`}
-          aria-busy={tokenState.isFetching || undefined}
-        >
-          <TokenField label="Name">{primary.name ?? primary.symbol ?? "Token"}</TokenField>
-          <Pipe />
-          <TokenField label="Symbol">{primary.symbol ?? "—"}</TokenField>
-          <Pipe />
-          <TokenField label="Type">ERC-20</TokenField>
-          <Pipe />
-          <TokenField label="Address">
-            <EtherscanLink
-              value={primary.token}
-              chain={JB_CHAINS[primary.chainId].chain}
-              className="font-medium"
-            >
-              {formatEthAddress(primary.token)}
-            </EtherscanLink>
-          </TokenField>
-          <Pipe />
-          <TokenField label="On">
-            <span className="inline-flex items-center -space-x-0.5">
-              {states
-                .filter((state) => state.token)
-                .map((state) => (
-                  <EtherscanLink
-                    key={state.chainId}
-                    value={state.token!}
-                    chain={JB_CHAINS[state.chainId].chain}
-                    className="inline-flex rounded-full"
-                  >
-                    <ChainLogo chainId={state.chainId} width={18} height={18} standalone />
-                  </EtherscanLink>
-                ))}
-            </span>
-          </TokenField>
+        <div className="overflow-x-clip">
+          <div
+            className={`-ml-8 flex flex-wrap items-center gap-y-2 text-sm${
+              tokenState.isFetching ? " revalidating" : ""
+            }`}
+            aria-busy={tokenState.isFetching || undefined}
+          >
+            <TokenField label="Name">{primary.name ?? primary.symbol ?? "Token"}</TokenField>
+            <TokenField label="Symbol">{primary.symbol ?? "—"}</TokenField>
+            <TokenField label="Type">ERC-20</TokenField>
+            <TokenField label="Address">
+              <EtherscanLink
+                value={primary.token}
+                chain={JB_CHAINS[primary.chainId].chain}
+                className="font-medium"
+              >
+                {formatEthAddress(primary.token)}
+              </EtherscanLink>
+            </TokenField>
+            <TokenField label="On">
+              <span className="inline-flex items-center -space-x-0.5">
+                {states
+                  .filter((state) => state.token)
+                  .map((state) => (
+                    <EtherscanLink
+                      key={state.chainId}
+                      value={state.token!}
+                      chain={JB_CHAINS[state.chainId].chain}
+                      className="inline-flex rounded-full"
+                    >
+                      <ChainLogo chainId={state.chainId} width={18} height={18} standalone />
+                    </EtherscanLink>
+                  ))}
+              </span>
+            </TokenField>
+          </div>
         </div>
       ) : (
         <div className="max-w-3xl">
