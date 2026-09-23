@@ -267,7 +267,7 @@ export function Header(props: Props) {
                             <EtherscanLink
                               value={operator.address}
                               chain={chainId ? JB_CHAINS[chainId]?.chain : undefined}
-                              className="ml-1 inline-block min-h-11 min-w-0 break-all font-medium text-zinc-900 sm:min-h-0"
+                              className="ml-1 inline-flex min-h-11 min-w-0 items-center break-all font-medium text-zinc-900 sm:min-h-0"
                             >
                               {operator.displayName}
                             </EtherscanLink>
