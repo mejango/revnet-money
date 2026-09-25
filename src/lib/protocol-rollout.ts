@@ -88,9 +88,6 @@ export async function readRouterPath(
   return { registry, terminal, gateway, router };
 }
 
-export const RETAINED_FEE_NOTE =
-  "Eligible failed fee routes stay in the gateway for retry. They are not settled payments or forgiven fees. A successful retry settles the route; a qualified finalization can return funds to the source project.";
-
 /** Recognize only actual attached registry/gateway/router entries, retaining historical routers. */
 export function routerEntriesFor(chainId: number, terminals: readonly Address[]): Address[] {
   return terminals.filter((terminal) =>
