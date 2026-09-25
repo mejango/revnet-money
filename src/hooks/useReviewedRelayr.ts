@@ -298,6 +298,10 @@ function verifyBundleIdentity(
     throw new RelayrVerificationError(
       "Relayr's response does not match the signed bundle and destination count. Do not pay again.",
     );
+  // Relayr lists tx_uuids out of request order, so a record is bound by its
+  // exact request; its ID only has to be one this quote issued, used once.
+  const quotedIds = new Set(expected.map((item) => item.transactionUuid));
+  const seenIds = new Set<string>();
   const seen = new Set<number>();
   for (const transaction of bundle.transactions) {
     const request = transaction.request;
@@ -311,7 +315,8 @@ function verifyBundleIdentity(
     if (
       !identity ||
       seen.has(request.chain) ||
-      transaction.tx_uuid !== identity.transactionUuid ||
+      !quotedIds.has(transaction.tx_uuid) ||
+      seenIds.has(transaction.tx_uuid) ||
       request.target?.toLowerCase() !== identity.target.toLowerCase() ||
       request.data?.toLowerCase() !== identity.data.toLowerCase() ||
       value !== BigInt(identity.value)
@@ -320,6 +325,7 @@ function verifyBundleIdentity(
         "Relayr's destination call does not match the signed request. Do not pay again.",
       );
     seen.add(request.chain);
+    seenIds.add(transaction.tx_uuid);
   }
 }
 
