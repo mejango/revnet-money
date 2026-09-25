@@ -9,7 +9,11 @@ import {
   type ReviewedRelayrRequest,
 } from "@/hooks/useReviewedRelayr";
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
-import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import {
+  isSafeConnector,
+  requireOnchainExecution,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import {
   readAuthorityIdentity,
   readBoundedSafeNonce,
@@ -217,7 +221,12 @@ export function SafeQueueCard({
   fallbackOperator?: string;
   fallbackProject: ChainProjectRow;
 }) {
-  const { address } = useAccount();
+  const { address, connector } = useAccount();
+  // Opened as a Safe App, the connected account is a Safe, not an owner: it
+  // cannot sign for itself, and executing or paying Relayr from it would take
+  // the very nonce the queued transaction needs. Safe{Wallet}'s own queue is
+  // where its owners sign and execute.
+  const viaSafeApp = isSafeConnector(connector);
   const { signSafeTransactionAsync } = useReviewedSafeSignature();
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -667,7 +676,13 @@ export function SafeQueueCard({
         <p className="text-sm text-melon-800">
           Safe signers can inspect, co-sign, and execute operator proposals without leaving Revnet.
         </p>
-        {canBatch ? (
+        {viaSafeApp ? (
+          <p className="w-full text-sm text-melon-800">
+            You are connected as a Safe. Its owners sign and execute these in
+            Safe&#123;Wallet&#125;: use Open in Safe on each chain.
+          </p>
+        ) : null}
+        {canBatch && !viaSafeApp ? (
           <button
             type="button"
             className="bg-melon-700 px-3 py-1 text-sm text-white disabled:opacity-50"
@@ -702,7 +717,7 @@ export function SafeQueueCard({
                   rel="noreferrer"
                   href={safeQueueLink(row.chainId, row.safe)!}
                 >
-                  Safe fallback ↗
+                  Open in Safe ↗
                 </a>
               ) : null}
             </div>
@@ -710,7 +725,7 @@ export function SafeQueueCard({
               <p className="mt-2 text-sm text-red-700" role="alert">
                 {row.queueError}
                 {safeQueueLink(row.chainId, row.safe)
-                  ? " Use the Safe fallback above to inspect the queue."
+                  ? " Use Open in Safe above to inspect the queue."
                   : " Inspect this Safe in a client that supports this chain."}
               </p>
             ) : row.transactions.length === 0 ? (
@@ -788,7 +803,7 @@ export function SafeQueueCard({
                         </p>
                       ) : null}
                       <div className="mt-2 flex gap-2">
-                        {!handleError && !signed && !ready ? (
+                        {!viaSafeApp && !handleError && !signed && !ready ? (
                           <button
                             type="button"
                             className="border border-melon-500 px-3 py-1 disabled:opacity-50"
@@ -804,7 +819,7 @@ export function SafeQueueCard({
                         {signed && !ready ? (
                           <span className="py-1 text-zinc-600">You signed</span>
                         ) : null}
-                        {!handleError && ready ? (
+                        {!viaSafeApp && !handleError && ready ? (
                           <button
                             type="button"
                             className="bg-melon-700 px-3 py-1 text-white disabled:opacity-50"
