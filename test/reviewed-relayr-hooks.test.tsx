@@ -1,8 +1,16 @@
 import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
+import { SAFE_EXEC_ABI } from "@/lib/safe-queue";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import { act, renderHook } from "@testing-library/react";
-import { encodeFunctionData, type Address, type Hex } from "viem";
+import {
+  encodeAbiParameters,
+  encodeFunctionData,
+  toFunctionSelector,
+  zeroAddress,
+  type Address,
+  type Hex,
+} from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACCOUNT,
@@ -1016,5 +1024,111 @@ describe("reviewed Relayr payment hook", () => {
     await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
       /already has a submitted payment/,
     );
+  });
+});
+
+describe("Safe execution bundles", () => {
+  const SAFE = "0x0000000000000000000000000000000000005afe" as Address;
+  const SAFE_TX_HASH = `0x${"ef".repeat(32)}` as Hex;
+  const NONCE = toFunctionSelector("function nonce()");
+  const TX_HASH = toFunctionSelector(
+    "function getTransactionHash(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,uint256)",
+  );
+  let liveNonce = 7n;
+  const exec = encodeFunctionData({
+    abi: SAFE_EXEC_ABI,
+    functionName: "execTransaction",
+    args: [TARGET, 0n, "0x1234", 0, 0n, 0n, 0n, zeroAddress, zeroAddress, SIGNATURE],
+  });
+  const safeExec = (chainId: 1 | 10) => ({
+    chainId,
+    version: 6 as const,
+    relayrMode: "safe-exec" as const,
+    expectedSafeExecution: { safe: SAFE, safeTxHash: SAFE_TX_HASH, nonce: 7 },
+    data: { from: ACCOUNT, to: SAFE, value: 0n, gas: 200_000n, data: exec },
+    review: { label: `Execute Safe transaction #7 on ${chainId}` },
+  });
+  const bundleQuote = () => ({ ...quote(), txn_uuids: ["tx-1", "tx-10"] });
+
+  beforeEach(() => {
+    liveNonce = 7n;
+    mocks.clientCall.mockImplementation(async ({ data }: { data?: Hex }) => ({
+      data: data?.startsWith(NONCE)
+        ? encodeAbiParameters([{ type: "uint256" }], [liveNonce])
+        : data?.startsWith(TX_HASH)
+          ? SAFE_TX_HASH
+          : "0x",
+    }));
+  });
+
+  it("reviews every Safe execution once, pins nonce and hash, and never switches chains", async () => {
+    const { hooks, review, activity } = await freshHarness();
+    const reviews: unknown[] = [];
+    review.registerTransactionReviewHandler(async (request) => {
+      reviews.push(request);
+      return true;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(bundleQuote()), { status: 200 })),
+    );
+    const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
+    });
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]).toMatchObject({
+      kind: "transaction",
+      calls: [
+        { chainId: 1, to: SAFE, data: exec },
+        { chainId: 10, to: SAFE, data: exec },
+      ],
+    });
+    expect(mocks.switchChain).not.toHaveBeenCalled();
+    expect(mocks.signTypedData).not.toHaveBeenCalled();
+    const posted = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string);
+    expect(posted.transactions.map((row: { target: Address }) => row.target)).toEqual([SAFE, SAFE]);
+    const [expected] = activity.transactionActivitySnapshot()[0].relayrExpectedTransactions!;
+    expect(expected.expectedSafeExecution).toEqual({
+      safe: SAFE,
+      safeTxHash: SAFE_TX_HASH,
+      nonce: 7,
+    });
+    expect(expected.preconditions).toHaveLength(2);
+  });
+
+  it("refuses the payment when a Safe nonce moved after the quote", async () => {
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(bundleQuote()), { status: 200 })),
+    );
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
+    });
+    liveNonce = 8n;
+    const payer = renderHook(() => hooks.useSendRelayrTx());
+    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
+      /reviewed state changed/,
+    );
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Safe call that is not execTransaction, and mixed bundles", async () => {
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", vi.fn());
+    const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+    await expect(
+      result.current.getRelayrTxQuote([
+        { ...safeExec(1), data: { ...safeExec(1).data, data: "0x1234" } },
+      ]),
+    ).rejects.toThrow(/not execTransaction/);
+    await expect(
+      result.current.getRelayrTxQuote([safeExec(1), { ...REQUEST, chainId: 10 as const }]),
+    ).rejects.toThrow(/bundle of their own/);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,13 @@
 "use client";
 
+import { EthereumAddress } from "@/components/EthereumAddress";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import {
+  useGetRelayrTxQuote,
+  useSendRelayrTx,
+  waitForRelayrBundle,
+  type ReviewedRelayrRequest,
+} from "@/hooks/useReviewedRelayr";
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import {
@@ -20,6 +27,7 @@ import {
   type ProjectSafeQueueTarget,
   type QueuedProjectHandleBinding,
 } from "@/lib/queuedProjectHandle";
+import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { describeQueuedBatch, queuedBatchCalls } from "@/lib/safe-batch";
 import {
   SAFE_EXEC_ABI,
@@ -38,7 +46,7 @@ import {
   holdTransactionActivityForVerification,
   releaseTransactionActivityVerification,
 } from "@/lib/transaction-activity";
-import { requireTransactionReview } from "@/lib/transaction-review";
+import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
@@ -51,7 +59,6 @@ import {
   publicClientFor,
   type ChainProjectRow,
 } from "./operatorLib";
-import { EthereumAddress } from "@/components/EthereumAddress";
 import { OperatorSection } from "./OperatorSection";
 import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
 
@@ -68,6 +75,31 @@ type QueueRow = ProjectSafeQueueTarget & {
 };
 
 type LiveSafePolicy = SafePolicy & { identity: SafeAuthorityIdentity };
+
+/** One chain's next fully signed transaction in an Execute all bundle. */
+type BatchRow = { row: QueueRow; tx: SafeQueuedTransaction };
+
+type BatchRun = {
+  rows: BatchRow[];
+  status: Record<number, string>;
+  running: boolean;
+  done: boolean;
+  message: string | null;
+  error: string | null;
+};
+
+function queueLabel(chainId: number, tx: SafeQueuedTransaction): string {
+  return (
+    describeQueuedBatch(tx) ?? protocolQueueLabel(chainId, tx) ?? tx.data?.slice(0, 10) ?? "0x"
+  );
+}
+
+function relayrRowStatus(state?: string): string {
+  const normalized = state?.trim().toLowerCase();
+  if (normalized === "success" || normalized === "completed") return "Landed | verifying";
+  if (normalized === "failed") return "Failed";
+  return "Executing…";
+}
 
 type ReviewedExecution = {
   policy: LiveSafePolicy;
@@ -254,6 +286,9 @@ export function SafeQueueCard({
     },
   });
 
+  const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
+  const { sendRelayrTx } = useSendRelayrTx();
+  const [batch, setBatch] = useState<BatchRun | null>(null);
   const queue = useQuery({
     queryKey: ["revnet-safe-queues", operatorKey],
     enabled: !operators.isLoading && queueTargets.length > 0,
@@ -345,6 +380,127 @@ export function SafeQueueCard({
       return results.filter((row): row is QueueRow => row !== null);
     },
   });
+
+  // Relayr can run each chain's next fully signed transaction from one
+  // payment. Handle writes and same-nonce alternatives execute on their own.
+  const batchRows: BatchRow[] = (queue.data ?? []).flatMap((row) => {
+    if (row.handleOnly) return [];
+    const atNonce = row.transactions.filter(
+      ({ transaction }) => Number(transaction.nonce) === row.policy.nonce,
+    );
+    if (atNonce.length !== 1) return [];
+    const [{ transaction: tx, handleBinding, handleError }] = atNonce;
+    if (handleBinding || handleError) return [];
+    if (usableSafeConfirmations(tx, row.policy.owners).length < row.policy.threshold) return [];
+    return [{ row, tx }];
+  });
+  const batchChains = batchRows.map(({ row }) => row.chainId);
+  const canBatch =
+    batchRows.length >= 2 &&
+    new Set(batchChains).size === batchChains.length &&
+    batchChains.every(isRelayrSupportedChain) &&
+    areRelayrChainsCompatible(batchChains);
+
+  const setRowStatus = (chainId: number, status: string) =>
+    setBatch((current) =>
+      current ? { ...current, status: { ...current.status, [chainId]: status } } : current,
+    );
+  const setBatchMessage = (message: string | null) =>
+    setBatch((current) => (current ? { ...current, message } : current));
+
+  const executeAll = async () => {
+    if (!address || !batch) return;
+    const { rows } = batch;
+    setBusy("execute-all");
+    setBatch((current) => (current ? { ...current, running: true, error: null } : current));
+    try {
+      // Check 1 of 2: live operator, policy, nonce and signatures per chain,
+      // then the quote pins each Safe's nonce and exact transaction hash and
+      // simulates it. Check 2 runs in sendRelayrTx right before paying.
+      const requests: ReviewedRelayrRequest[] = [];
+      for (const { row, tx } of rows) {
+        setRowStatus(row.chainId, "Checking…");
+        try {
+          await verifyLiveQueuedTransaction(row, tx);
+          const policy = await readLiveSafePolicy(row);
+          if (policy.nonce !== Number(tx.nonce))
+            throw new Error(
+              `Safe transaction #${tx.nonce} is no longer next on ${chainName(row.chainId)}.`,
+            );
+          if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold)
+            throw new Error(
+              `Safe transaction #${tx.nonce} on ${chainName(row.chainId)} no longer has enough current-owner confirmations.`,
+            );
+          const args = safeExecutionArgs(tx, policy.owners);
+          const data = encodeFunctionData({
+            abi: SAFE_EXEC_ABI,
+            functionName: "execTransaction",
+            args,
+          });
+          const gas = await publicClientFor(row.chainId).estimateGas({
+            account: address,
+            to: row.safe,
+            data,
+          });
+          requests.push({
+            chainId: row.chainId as JBChainId,
+            version: 6,
+            relayrMode: "safe-exec",
+            expectedSafeExecution: {
+              safe: row.safe,
+              safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
+              nonce: Number(tx.nonce),
+            },
+            data: { from: address, to: row.safe, value: 0n, gas, data },
+            review: {
+              abi: SAFE_EXEC_ABI,
+              functionName: "execTransaction",
+              args,
+              label: `Execute Safe transaction #${tx.nonce} on ${chainName(row.chainId)}`,
+              contractName: "Safe",
+            },
+          });
+        } catch (cause) {
+          setRowStatus(row.chainId, "Check failed");
+          throw cause;
+        }
+        setRowStatus(row.chainId, "Ready");
+      }
+      setBatchMessage("Review the executions, then choose where to pay Relayr…");
+      const quote = await getRelayrTxQuote(requests);
+      if (!quote) throw new Error("Relayr did not return a quote.");
+      const payment = await chooseRelayrPayment(quote.payment_info);
+      setBatchMessage("Confirm the Relayr payment in your wallet…");
+      await sendRelayrTx(payment);
+      rows.forEach(({ row }) => setRowStatus(row.chainId, "Executing…"));
+      setBatchMessage("Relayr is executing on every chain…");
+      await waitForRelayrBundle(quote.bundle_uuid, (bundle) => {
+        for (const transaction of bundle.transactions)
+          setRowStatus(transaction.request.chain, relayrRowStatus(transaction.status?.state));
+      });
+      rows.forEach(({ row }) => setRowStatus(row.chainId, "Executed"));
+      resetRelayr();
+      setBatch((current) =>
+        current
+          ? { ...current, done: true, message: `Executed ${rows.length} Safe transactions.` }
+          : current,
+      );
+      await queue.refetch();
+    } catch (cause) {
+      setBatch((current) =>
+        current
+          ? {
+              ...current,
+              error:
+                cause instanceof Error ? cause.message : "Could not execute the Safe transactions.",
+            }
+          : current,
+      );
+    } finally {
+      setBusy(null);
+      setBatch((current) => (current ? { ...current, running: false } : current));
+    }
+  };
 
   if (queue.isLoading || !queue.data?.length) return null;
 
@@ -507,9 +663,30 @@ export function SafeQueueCard({
 
   return (
     <OperatorSection title="Pending multisig transactions">
-      <p className="mt-1 text-sm text-melon-800">
-        Safe signers can inspect, co-sign, and execute operator proposals without leaving Revnet.
-      </p>
+      <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+        <p className="text-sm text-melon-800">
+          Safe signers can inspect, co-sign, and execute operator proposals without leaving Revnet.
+        </p>
+        {canBatch ? (
+          <button
+            type="button"
+            className="bg-melon-700 px-3 py-1 text-sm text-white disabled:opacity-50"
+            disabled={busy !== null || !address}
+            onClick={() =>
+              setBatch({
+                rows: batchRows,
+                status: {},
+                running: false,
+                done: false,
+                message: null,
+                error: null,
+              })
+            }
+          >
+            Execute {batchRows.length} ready
+          </button>
+        ) : null}
+      </div>
       <div className="mt-4 space-y-4">
         {queue.data.map((row) => (
           <div key={`${row.chainId}:${row.safe}`} className="border border-melon-200 bg-white p-3">
@@ -554,12 +731,8 @@ export function SafeQueueCard({
                     <li key={`${tx.nonce}:${tx.safeTxHash ?? tx.data}`} className="py-3 text-xs">
                       <details>
                         <summary className="cursor-pointer font-bold">
-                          #{tx.nonce} |{" "}
-                          {describeQueuedBatch(tx) ??
-                            protocolQueueLabel(row.chainId, tx) ??
-                            tx.data?.slice(0, 10) ??
-                            "0x"}{" "}
-                          | {confirmations.length}/{row.policy.threshold} signatures
+                          #{tx.nonce} | {queueLabel(row.chainId, tx)} | {confirmations.length}/
+                          {row.policy.threshold} signatures
                           {queuedBatchCalls(tx)?.length ? (
                             <ol className="mt-1 list-decimal pl-5 font-normal text-zinc-700">
                               {queuedBatchCalls(tx)!.map((call, index) => (
@@ -628,7 +801,9 @@ export function SafeQueueCard({
                             {busy === `sign:${row.chainId}:${tx.nonce}` ? "Signing…" : "Sign"}
                           </button>
                         ) : null}
-                        {signed && !ready ? <span className="py-1 text-zinc-600">You signed</span> : null}
+                        {signed && !ready ? (
+                          <span className="py-1 text-zinc-600">You signed</span>
+                        ) : null}
                         {!handleError && ready ? (
                           <button
                             type="button"
@@ -710,6 +885,29 @@ export function SafeQueueCard({
             {review.row.policy.threshold}
           </SummaryRow>
         </TxConfirmDialog>
+      ) : null}
+      {batch ? (
+        <TxConfirmDialog
+          open
+          onOpenChange={(next) => {
+            if (next || batch.running) return;
+            setBatch(null);
+          }}
+          title={`Execute ${batch.rows.length} Safe transactions`}
+          chainId={batch.rows[0].row.chainId as JBChainId}
+          stepsIntro="One Relayr payment runs each chain's next fully signed transaction. Later nonces need a new review after these land."
+          steps={batch.rows.map(({ row, tx }) => ({
+            key: String(row.chainId),
+            title: `${chainName(row.chainId)} #${tx.nonce} | ${queueLabel(row.chainId, tx)}`,
+            detail: batch.status[row.chainId] ?? "Waiting",
+          }))}
+          activeIndex={-1}
+          action={batch.done ? "Done" : `Pay once and execute ${batch.rows.length}`}
+          onConfirm={batch.done ? () => setBatch(null) : () => void executeAll()}
+          busy={batch.running}
+          status={batch.message}
+          error={batch.error}
+        />
       ) : null}
     </OperatorSection>
   );

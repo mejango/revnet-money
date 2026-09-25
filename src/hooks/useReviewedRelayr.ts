@@ -3,10 +3,12 @@
 import { gasWithHeadroom } from "@/lib/gas";
 import {
   requireRawPayerCall,
+  requireRawSafeExecution,
   verifyActionReceipt,
   verifyCallPreconditions,
   type CallPrecondition,
   type ExpectedPayerDeployment,
+  type ExpectedSafeExecution,
   type RejectedReceiptEvent,
   type ReservedReceiptGuard,
 } from "@/lib/multichain-guards";
@@ -19,6 +21,7 @@ import type {
 import type { ExpectedPayoutReceipt } from "@/lib/payout-receipts";
 import { verifyMetadataSource, type MetadataSourceGuard } from "@/lib/project-metadata-write";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { requireSafeExecutionSuccess } from "@/lib/safe-queue";
 import {
   dismissTransactionActivity,
   recordTransactionActivity,
@@ -78,7 +81,9 @@ export type ReviewedRelayrRequest = {
   /** Groups a non-idempotent workflow whose retries may change calldata. */
   recoveryScope?: string;
   metadataSource?: MetadataSourceGuard;
-  relayrMode?: "raw" | "forwarded";
+  /** "safe-exec" runs a fully signed Safe execTransaction; see requireRawSafeExecution. */
+  relayrMode?: "raw" | "forwarded" | "safe-exec";
+  expectedSafeExecution?: ExpectedSafeExecution;
   preconditions?: CallPrecondition[];
   expectedDeployment?: ExpectedPayerDeployment;
   rejectEvents?: RejectedReceiptEvent[];
@@ -386,6 +391,19 @@ async function verifyDestinationReceipts(
           : "The destination action result could not be verified.",
       );
     }
+    if (identity.expectedSafeExecution) {
+      try {
+        requireSafeExecutionSuccess(
+          receipt,
+          identity.expectedSafeExecution.safe,
+          identity.expectedSafeExecution.safeTxHash,
+        );
+      } catch (cause) {
+        throw new RelayrVerificationError(
+          cause instanceof Error ? cause.message : "The Safe execution could not be verified.",
+        );
+      }
+    }
   }
 }
 
@@ -626,7 +644,7 @@ export function useGetRelayrTxQuote() {
         const callKeys = requests.flatMap((request) => [
           requestKey(address, [request]),
           ...(request.recoveryScope ? [scopeKey(address, request.recoveryScope)] : []),
-          ...(request.relayrMode === "raw"
+          ...(request.relayrMode === "raw" || request.relayrMode === "safe-exec"
             ? []
             : [
                 scopeKey(
@@ -672,6 +690,7 @@ export function useGetRelayrTxQuote() {
               requests.some(
                 (request) =>
                   request.relayrMode !== "raw" &&
+                  request.relayrMode !== "safe-exec" &&
                   request.chainId === expected.chainId &&
                   expected.target.toLowerCase() ===
                     jbContractAddress[request.version ?? 6].ERC2771Forwarder[
@@ -696,7 +715,63 @@ export function useGetRelayrTxQuote() {
             value: string;
             version?: JBVersion;
           }> = [];
+          const safeExecutions = requests.filter(
+            (request) => request.relayrMode === "safe-exec",
+          ).length;
+          if (safeExecutions && safeExecutions !== requests.length)
+            throw new Error("Safe executions are quoted as a Relayr bundle of their own.");
+          if (safeExecutions) {
+            // One review for the whole bundle: every chain's exact execTransaction.
+            await requireTransactionReview({
+              kind: "transaction",
+              title: `Review ${requests.length} Safe executions`,
+              description:
+                "Relayr submits each fully signed Safe transaction below from its own account; the Safe signatures authorize it. A separate payment funds the bundle.",
+              confirmLabel: "Agree & request Relayr quote",
+              calls: requests.map((request) => ({
+                chainId: request.chainId,
+                from: address,
+                to: request.data.to,
+                value: request.data.value,
+                data: request.data.data,
+                ...request.review,
+              })),
+            });
+            if (getAccount(config).address?.toLowerCase() !== address.toLowerCase())
+              throw new Error("Connected account changed. Review the Safe executions again.");
+          }
           for (const request of requests) {
+            if (request.relayrMode === "safe-exec") {
+              // Reads only, so no chain switch: pin the Safe's live nonce and
+              // exact transaction hash, then simulate the execution.
+              const client = getPublicClient(config, { chainId: request.chainId });
+              if (!client) throw new Error(`Relayr is unavailable on chain ${request.chainId}.`);
+              request.preconditions = [
+                ...(request.preconditions ?? []),
+                ...requireRawSafeExecution(
+                  request.data.to,
+                  request.data.data,
+                  request.data.value,
+                  request.expectedSafeExecution,
+                ),
+              ];
+              await verifyCallPreconditions(client, request.preconditions);
+              await client.call({
+                account: address,
+                to: request.data.to,
+                data: request.data.data,
+                value: request.data.value,
+              });
+              executionGas.push(gasWithHeadroom(request.data.gas + 100_000n).toString());
+              transactions.push({
+                chain: request.chainId,
+                target: request.data.to,
+                data: request.data.data,
+                value: request.data.value.toString(),
+                version: request.version,
+              });
+              continue;
+            }
             await switchChainAsync({ chainId: request.chainId });
             const current = getAccount(config);
             if (!current.address || current.address.toLowerCase() !== address.toLowerCase()) {
@@ -905,6 +980,7 @@ export function useGetRelayrTxQuote() {
               gas: executionGas[index],
               metadataSource: requests[index].metadataSource,
               preconditions: requests[index].preconditions,
+              expectedSafeExecution: requests[index].expectedSafeExecution,
               expectedDeployment: requests[index].expectedDeployment,
               rejectEvents: requests[index].rejectEvents,
               reservedReceipt: requests[index].reservedReceipt,
@@ -946,6 +1022,7 @@ export function useGetRelayrTxQuote() {
             gas: executionGas[index],
             metadataSource: requests[index].metadataSource,
             preconditions: requests[index].preconditions,
+            expectedSafeExecution: requests[index].expectedSafeExecution,
             expectedDeployment: requests[index].expectedDeployment,
             rejectEvents: requests[index].rejectEvents,
             reservedReceipt: requests[index].reservedReceipt,

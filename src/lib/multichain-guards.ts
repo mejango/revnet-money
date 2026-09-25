@@ -1,7 +1,9 @@
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import {
   decodeEventLog,
+  decodeFunctionData,
   decodeFunctionResult,
+  encodeAbiParameters,
   encodeFunctionData,
   isAddressEqual,
   parseAbi,
@@ -14,6 +16,7 @@ import {
 import { verifyPayoutReceipt, type ExpectedPayoutReceipt } from "./payout-receipts";
 import { verifyRouterPendingReceipt, type RouterPendingReceiptGuard } from "./pending-router-calls";
 import { routerGatewayAbi } from "./router-gateway-abi";
+import { SAFE_EXEC_ABI } from "./safe-queue";
 
 /** Exact read-only source snapshots. Hex keeps the durable journal independent of ABI/BigInt JSON. */
 export type CallPrecondition = { address: Address; data: Hex; expected: Hex };
@@ -98,6 +101,68 @@ export async function readRouterPendingAdvance(
   if (current.count > 0 && current.lastFailureAt > previous.lastFailureAt) {
     return "retried-externally";
   }
+}
+
+/** A fully signed Safe transaction that Relayr may execute. */
+export type ExpectedSafeExecution = { safe: Address; safeTxHash: Hex; nonce: number };
+
+const SAFE_STATE_ABI = parseAbi([
+  "function nonce() view returns (uint256)",
+  "function getTransactionHash(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 _nonce) view returns (bytes32)",
+]);
+
+/**
+ * Raw Relayr may also run an already-signed Safe transaction: execTransaction
+ * on that Safe with no value. Its signatures, not the relayer, authorize it,
+ * so the sender does not matter. Returns the live-state guards that pin it to
+ * the Safe's current nonce and the exact reviewed Safe transaction hash; they
+ * run when quoting and again right before the payment is sent.
+ */
+export function requireRawSafeExecution(
+  target: Address,
+  data: Hex,
+  value: bigint,
+  expected?: ExpectedSafeExecution,
+): CallPrecondition[] {
+  if (!expected || !isAddressEqual(target, expected.safe) || value !== 0n)
+    throw new Error("Only a reviewed Safe execution supports raw Relayr calls to a Safe.");
+  let args;
+  try {
+    const decoded = decodeFunctionData({ abi: SAFE_EXEC_ABI, data });
+    if (decoded.functionName !== "execTransaction") throw new Error();
+    args = decoded.args;
+  } catch {
+    throw new Error("The raw Safe call is not execTransaction.");
+  }
+  const [to, txValue, txData, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver] =
+    args;
+  return [
+    {
+      address: expected.safe,
+      data: encodeFunctionData({ abi: SAFE_STATE_ABI, functionName: "nonce" }),
+      expected: encodeAbiParameters([{ type: "uint256" }], [BigInt(expected.nonce)]),
+    },
+    {
+      address: expected.safe,
+      data: encodeFunctionData({
+        abi: SAFE_STATE_ABI,
+        functionName: "getTransactionHash",
+        args: [
+          to,
+          txValue,
+          txData,
+          operation,
+          safeTxGas,
+          baseGas,
+          gasPrice,
+          gasToken,
+          refundReceiver,
+          BigInt(expected.nonce),
+        ],
+      }),
+      expected: expected.safeTxHash,
+    },
+  ];
 }
 
 /** Raw Relayr is deliberately limited to the caller-independent canonical payer factory. */

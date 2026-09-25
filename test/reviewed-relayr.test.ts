@@ -1,4 +1,6 @@
 import type { RelayrGetBundleResponse } from "@/lib/nana/types";
+import { SAFE_EXEC_ABI } from "@/lib/safe-queue";
+import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACCOUNT,
@@ -51,7 +53,11 @@ function bundle(
   };
 }
 
-async function freshModules() {
+async function freshModules(expectedSafeExecution?: {
+  safe: `0x${string}`;
+  safeTxHash: `0x${string}`;
+  nonce: number;
+}) {
   vi.resetModules();
   const [relayr, activity] = await Promise.all([
     import("@/hooks/useReviewedRelayr"),
@@ -70,7 +76,14 @@ async function freshModules() {
     relayrPaymentStatus: "submitted",
     relayrPayment: { target: PAYMENT_TARGET, data: payment().calldata, value: "16" },
     relayrExpectedTransactions: [
-      { chainId: 1, target: TARGET, data: "0x1234", value: "0", transactionUuid: "transaction" },
+      {
+        chainId: 1,
+        target: TARGET,
+        data: "0x1234",
+        value: "0",
+        transactionUuid: "transaction",
+        ...(expectedSafeExecution ? { expectedSafeExecution } : {}),
+      },
     ],
   });
   return { relayr, activity };
@@ -111,6 +124,39 @@ afterEach(() => {
 });
 
 describe("Relayr destination transaction tracking", () => {
+  it("requires the Safe's exact ExecutionSuccess before completing a Safe execution", async () => {
+    const safeTxHash = `0x${"ab".repeat(32)}` as const;
+    const [executionSuccess] = encodeEventTopics({
+      abi: SAFE_EXEC_ABI,
+      eventName: "ExecutionSuccess",
+    });
+    const withLogs = (logs: unknown[]) => {
+      let receiptReads = 0;
+      mocks.getTransactionReceipt.mockImplementation(async () =>
+        ++receiptReads % 2
+          ? onchain(PAYMENT_TARGET, payment().calldata)
+          : { ...onchain(TARGET, "0x1234", 0n), logs },
+      );
+    };
+    const executed = {
+      address: TARGET,
+      topics: [executionSuccess, safeTxHash],
+      data: encodeAbiParameters([{ type: "uint256" }], [0n]),
+    };
+
+    withLogs([]);
+    const failing = await freshModules({ safe: TARGET, safeTxHash, nonce: 5 });
+    respond();
+    await expect(failing.relayr.waitForRelayrBundle(BUNDLE_UUID)).rejects.toThrow(
+      /ExecutionSuccess/,
+    );
+
+    withLogs([executed]);
+    const passing = await freshModules({ safe: TARGET, safeTxHash, nonce: 5 });
+    respond();
+    await expect(passing.relayr.waitForRelayrBundle(BUNDLE_UUID)).resolves.toBeTruthy();
+  });
+
   it("checks canonical funding and destination calls before exposing completion", async () => {
     const { relayr, activity } = await freshModules();
     const response = bundle();

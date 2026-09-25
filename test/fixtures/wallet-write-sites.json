@@ -665,6 +665,34 @@
         ],
         [
           "reviewed-relayr-payment",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "executeAll",
+          "sendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-payment-hook",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "SafeQueueCard",
+          "useSendRelayrTx",
+          1
+        ],
+        [
+          "reviewed-relayr-quote",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "executeAll",
+          "getRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-relayr-quote-hook",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "SafeQueueCard",
+          "useGetRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-relayr-payment",
           "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
           "runWrites",
           "sendRelayrTx",

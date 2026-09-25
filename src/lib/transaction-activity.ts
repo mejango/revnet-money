@@ -7,6 +7,7 @@ import type { Address, Hex } from "viem";
 import type {
   CallPrecondition,
   ExpectedPayerDeployment,
+  ExpectedSafeExecution,
   RejectedReceiptEvent,
   ReservedReceiptGuard,
 } from "./multichain-guards";
@@ -29,6 +30,7 @@ export type RelayrExpectedTransaction = {
   rejectEvents?: RejectedReceiptEvent[];
   reservedReceipt?: ReservedReceiptGuard;
   expectedPayout?: ExpectedPayoutReceipt;
+  expectedSafeExecution?: ExpectedSafeExecution;
 };
 
 export type TransactionActivity = {

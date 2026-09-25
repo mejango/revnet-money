@@ -1,9 +1,11 @@
 import {
   requireRawPayerCall,
+  requireRawSafeExecution,
   verifyActionReceipt,
   verifyCallPreconditions,
   type ExpectedPayerDeployment,
 } from "@/lib/multichain-guards";
+import { SAFE_EXEC_ABI } from "@/lib/safe-queue";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import {
   encodeAbiParameters,
@@ -11,6 +13,8 @@ import {
   encodeFunctionData,
   parseAbi,
   parseAbiParameters,
+  toFunctionSelector,
+  zeroAddress,
   type Address,
   type Hex,
   type PublicClient,
@@ -186,5 +190,43 @@ describe("multichain source and exact recipient-result guards", () => {
         { topic, address: OWNER },
       ]),
     ).rejects.toThrow(/incomplete recipient/);
+  });
+});
+
+describe("raw Safe executions", () => {
+  const SAFE = "0x0000000000000000000000000000000000005afe" as Address;
+  const SAFE_TX_HASH = `0x${"ab".repeat(32)}` as Hex;
+  const exec = encodeFunctionData({
+    abi: SAFE_EXEC_ABI,
+    functionName: "execTransaction",
+    args: [SAFE, 0n, "0x1234", 0, 0n, 0n, 0n, zeroAddress, zeroAddress, "0x"],
+  });
+  const expected = { safe: SAFE, safeTxHash: SAFE_TX_HASH, nonce: 7 };
+
+  it("pins execTransaction on that Safe to its live nonce and exact transaction hash", () => {
+    const [nonce, hash] = requireRawSafeExecution(SAFE, exec, 0n, expected);
+    expect(nonce).toEqual({
+      address: SAFE,
+      data: toFunctionSelector("function nonce()"),
+      expected: encodeAbiParameters(parseAbiParameters("uint256"), [7n]),
+    });
+    expect(hash.address).toBe(SAFE);
+    expect(hash.expected).toBe(SAFE_TX_HASH);
+    expect(
+      hash.data.startsWith(
+        toFunctionSelector(
+          "function getTransactionHash(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,uint256)",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects another target, value, a missing review, or a call that is not execTransaction", () => {
+    expect(() => requireRawSafeExecution(PAYER, exec, 0n, expected)).toThrow(/reviewed Safe/);
+    expect(() => requireRawSafeExecution(SAFE, exec, 1n, expected)).toThrow(/reviewed Safe/);
+    expect(() => requireRawSafeExecution(SAFE, exec, 0n)).toThrow(/reviewed Safe/);
+    expect(() => requireRawSafeExecution(SAFE, "0x1234", 0n, expected)).toThrow(
+      /not execTransaction/,
+    );
   });
 });
