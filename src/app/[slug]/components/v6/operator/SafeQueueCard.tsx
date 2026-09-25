@@ -43,7 +43,7 @@ import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { encodeFunctionData, isAddressEqual, type Hex } from "viem";
+import { encodeFunctionData, isAddressEqual, type Address, type Hex } from "viem";
 import { useAccount } from "wagmi";
 import {
   chainName,
@@ -51,6 +51,7 @@ import {
   publicClientFor,
   type ChainProjectRow,
 } from "./operatorLib";
+import { EthereumAddress } from "@/components/EthereumAddress";
 import { OperatorSection } from "./OperatorSection";
 import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
 
@@ -158,6 +159,21 @@ async function verifyLiveQueuedTransaction(
     clientFor: publicClientFor,
   });
   return binding;
+}
+
+/** Signers by ENS name when they have one, with the connected wallet marked. */
+function SignerList({ owners, you }: { owners: readonly Address[]; you?: string }) {
+  return (
+    <>
+      {owners.map((owner, index) => (
+        <span key={owner}>
+          {index ? ", " : null}
+          <EthereumAddress address={owner} short withEnsName />
+          {you && owner.toLowerCase() === you.toLowerCase() ? " (you)" : null}
+        </span>
+      ))}
+    </>
+  );
 }
 
 export function SafeQueueCard({
@@ -568,6 +584,31 @@ export function SafeQueueCard({
                           <p>Data: {tx.data ?? "0x"}</p>
                         </div>
                       </details>
+                      <p className="mt-1 text-zinc-600">
+                        Signed:{" "}
+                        {confirmations.length ? (
+                          <SignerList
+                            owners={confirmations.map((confirmation) => confirmation.owner)}
+                            you={address}
+                          />
+                        ) : (
+                          "none"
+                        )}
+                        {!ready ? (
+                          <>
+                            {" | "}needs {row.policy.threshold - confirmations.length} of:{" "}
+                            <SignerList
+                              owners={row.policy.owners.filter(
+                                (owner) =>
+                                  !confirmations.some((confirmation) =>
+                                    isAddressEqual(confirmation.owner, owner),
+                                  ),
+                              )}
+                              you={address}
+                            />
+                          </>
+                        ) : null}
+                      </p>
                       {handleError ? (
                         <p className="mt-2 text-red-700" role="alert">
                           Handle transaction blocked: {handleError}
@@ -587,6 +628,7 @@ export function SafeQueueCard({
                             {busy === `sign:${row.chainId}:${tx.nonce}` ? "Signing…" : "Sign"}
                           </button>
                         ) : null}
+                        {signed && !ready ? <span className="py-1 text-zinc-600">You signed</span> : null}
                         {!handleError && ready ? (
                           <button
                             type="button"
