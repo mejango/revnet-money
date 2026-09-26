@@ -670,6 +670,7 @@ const graphqlHandlers = {
                   decimals: 6,
                   isRevnet: true,
                   logoUri: null,
+                  metadataUri: null,
                   name: browserProject.metadata.name,
                   projectId,
                   projectTagline: browserProject.metadata.projectTagline,

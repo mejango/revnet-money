@@ -1,6 +1,7 @@
 import type { ActivityEventsQuery } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { exactNumber, formatCompact, formatDecimals, prettyNumber } from "@/lib/number";
+import { isStickyHook } from "@/lib/sticky";
 import { JBProjectToken } from "@bananapus/nana-sdk-core";
 import { Address, formatUnits } from "viem";
 import { formatUsd, usdFromScaled } from "../v6/extras/projectPayers";
@@ -534,7 +535,14 @@ export function mapActivityEvents(
         chainId,
         tokenCount: prettyNumber(new JBProjectToken(BigInt(e.tokenCount)).format(6)),
         rawTokenCount: String(e.tokenCount),
-        detail: e.splitProjectId > 0 ? `project #${e.splitProjectId}` : undefined,
+        ...(e.hook && isStickyHook(e.hook, chainId)
+          ? {
+              sticky: {
+                projectId: BigInt(e.splitProjectId),
+                beneficiary: e.beneficiary as Address,
+              },
+            }
+          : { detail: e.splitProjectId > 0 ? `project #${e.splitProjectId}` : undefined }),
       });
     }
   }

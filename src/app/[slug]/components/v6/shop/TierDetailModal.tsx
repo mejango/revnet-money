@@ -2,8 +2,10 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { StickyRecipient } from "@/components/sticky/StickyRecipient";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { isStickyHook } from "@/lib/sticky";
 import {
   getJBContractAddress,
   jb721TiersHookStoreAbi,
@@ -368,7 +370,9 @@ function TierSaleRouting({
             return (
               <div key={index} className="flex items-start justify-between gap-4">
                 <dt className="min-w-0 text-zinc-900">
-                  {toProject ? (
+                  {isStickyHook(split.hook, chainId) ? (
+                    <StickyRecipient split={split} chainId={chainId} />
+                  ) : toProject ? (
                     `Project #${split.projectId.toString()}`
                   ) : (
                     <EthereumAddress

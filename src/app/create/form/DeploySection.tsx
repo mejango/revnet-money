@@ -1,13 +1,22 @@
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { StickyRecipient } from "@/components/sticky/StickyRecipient";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { isSafeConnector } from "@/hooks/useReviewedWriteContract";
 import { hasErrors } from "@/lib/forms";
 import type { JBChainId } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import {
+  stickyDraftGroupId,
+  stickyGroupDraftError,
+  stickyGroupOf,
+  stickySplitsProblem,
+} from "@/lib/sticky";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { useState } from "react";
+import { isAddress, type Address, type PublicClient } from "viem";
 import { useAccount } from "wagmi";
+import { getPublicClient } from "wagmi/actions";
 import { formatFormErrors } from "../helpers/formatFormErrors";
 import { useCreateForm } from "./useCreateForm";
 
@@ -29,6 +38,53 @@ export function DeploySection({
     submitCount,
   } = useCreateForm();
   const [review, setReview] = useState(false);
+  const [stickyProblem, setStickyProblem] = useState<string | null>(null);
+  const [checkingSticky, setCheckingSticky] = useState(false);
+  // Sticky rows pay a token's holders on every chain. The distributor never reverts, so an
+  // unregistered token would quietly pay group 0: check each one on each chain first.
+  const stickySplits = values.stages.flatMap((stage, index) =>
+    stage.splits
+      .filter((split) => split.kind === "sticky" && isAddress(split.defaultBeneficiary))
+      .flatMap((split) => {
+        const group = stickyGroupOf(split);
+        return stickyGroupDraftError(group)
+          ? []
+          : [
+              {
+                stage: index + 1,
+                beneficiary: split.defaultBeneficiary as Address,
+                projectId: stickyDraftGroupId(group),
+              },
+            ];
+      }),
+  );
+  const openReview = async () => {
+    setStickyProblem(null);
+    if (stickySplits.length > 0) {
+      setCheckingSticky(true);
+      try {
+        const problem = await stickySplitsProblem(stickySplits, values.chainIds, (chainId) => {
+          const client = getPublicClient(wagmiConfig, {
+            chainId: chainId as JBChainId,
+          }) as PublicClient | undefined;
+          if (!client) throw new Error(`Could not connect to ${chainDisplayName(chainId)}.`);
+          return client;
+        });
+        if (problem) {
+          setStickyProblem(problem);
+          return;
+        }
+      } catch (error) {
+        setStickyProblem(
+          error instanceof Error ? error.message : "Could not check the Sticky tokens.",
+        );
+        return;
+      } finally {
+        setCheckingSticky(false);
+      }
+    }
+    setReview(true);
+  };
   // The explicit config keeps this section renderable outside a WagmiProvider.
   const { connector, chainId: connectedChainId } = useAccount({ config: wagmiConfig });
 
@@ -83,11 +139,11 @@ export function DeploySection({
                   : undefined
             }
             size="lg"
-            loading={isSubmitting}
-            disabled={isSubmitting || disabled || unsupportedMultichain}
+            loading={isSubmitting || checkingSticky}
+            disabled={isSubmitting || checkingSticky || disabled || unsupportedMultichain}
             onClick={() => {
               if (hasErrors(errors)) void submitForm();
-              else setReview(true);
+              else void openReview();
             }}
             connectWalletText="Connect Wallet"
             className="bg-teal-500 text-melon-950 hover:bg-teal-600"
@@ -95,6 +151,14 @@ export function DeploySection({
             {validBundle ? "Quote complete" : action}
           </ButtonWithWallet>
         </div>
+        {stickyProblem ? (
+          <p
+            role="alert"
+            className="mt-3 max-w-xl border-l-2 border-red-500 pl-3 text-sm text-red-700"
+          >
+            {stickyProblem}
+          </p>
+        ) : null}
         {review && values.chainIds[0] ? (
           <TxConfirmDialog
             open
@@ -132,6 +196,16 @@ export function DeploySection({
             <SummaryRow label="Token">${revnetTokenSymbol}</SummaryRow>
             <SummaryRow label="On">{chainNames.join(", ")}</SummaryRow>
             <SummaryRow label="Backed by">{reserveAssetSymbol}</SummaryRow>
+            {stickySplits.length > 0 ? (
+              <SummaryRow label="Sticky">
+                {stickySplits.map((split, index) => (
+                  <span key={index} className="block">
+                    Stage {split.stage}:{" "}
+                    <StickyRecipient split={split} chainId={values.chainIds[0]} />
+                  </span>
+                ))}
+              </SummaryRow>
+            ) : null}
           </TxConfirmDialog>
         ) : null}
         {submitCount > 0 && !isValid ? (

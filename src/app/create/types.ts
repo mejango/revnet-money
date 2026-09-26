@@ -1,4 +1,5 @@
 import type { DraftItem } from "@/components/shop/itemDraft";
+import type { StickyGroupDraft } from "@/lib/sticky";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 
 export type StageData = {
@@ -18,18 +19,27 @@ export type StageData = {
     chainId: JBChainId;
   }[];
 
-  splits: {
-    percentage: string;
-    defaultBeneficiary: string;
-    beneficiary?: {
-      chainId: JBChainId;
-      address: string;
-    }[];
-  }[];
+  splits: SplitDraft[];
   stageStart: string;
   stageStartCuts?: string;
   futureStartTimestamp?: number;
 };
+
+/**
+ * A reserved-token split row. An address row pays `defaultBeneficiary` (or a
+ * per-chain override). A Sticky row pays the holders of the Sticky token in
+ * `defaultBeneficiary`, in the chosen group, on every chain. Rows without a
+ * `kind` are address rows (drafts from before Sticky).
+ */
+export type SplitDraft = {
+  percentage: string;
+  defaultBeneficiary: string;
+  beneficiary?: {
+    chainId: JBChainId;
+    address: string;
+  }[];
+  kind?: "address" | "sticky";
+} & Partial<StickyGroupDraft>;
 
 export type CustomReserveAsset = {
   address: string;

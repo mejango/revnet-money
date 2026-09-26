@@ -326,6 +326,8 @@ export type ActivityEventsQuery = {
             tokenCount: BigNumberish;
             beneficiary: string;
             splitProjectId: number;
+            /** The split hook; a Sticky split's splitProjectId is its holder group. */
+            hook?: string;
           })
         | null;
     }>;

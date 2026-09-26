@@ -251,7 +251,10 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
     expect(
       within(laterStage).queryByRole("combobox", { name: "New token pricing currency" }),
     ).not.toBeInTheDocument();
-    expect(laterStage.querySelectorAll("select")).toHaveLength(0);
+    // Split rows carry their own recipient-type picker; no other select may appear.
+    expect(laterStage.querySelectorAll('select:not([aria-label="Recipient type"])')).toHaveLength(
+      0,
+    );
     expect(issuanceSuffixText(laterStage)).toMatch(/^SAFE \/\s*ETH$/);
 
     // And it quotes the current value, including one just picked in stage 1.

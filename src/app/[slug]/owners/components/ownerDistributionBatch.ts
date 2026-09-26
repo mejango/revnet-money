@@ -1,6 +1,7 @@
 import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import type { MultichainCall } from "@/lib/multichain-batch";
 import type { JBChainId } from "@/lib/nana/types";
+import { isStickyHook, stickyRecipientLabel } from "@/lib/sticky";
 import {
   jbControllerAbi,
   jbDirectoryAbi,
@@ -162,7 +163,7 @@ export async function prepareReservedDistribution(
       { label: "Current ruleset", value: String(ruleset.id) },
       ...splits.map((split, index) => ({
         label: `Recipient ${index + 1}`,
-        value: `${Number(split.percent) / 10_000_000}% → ${split.hook !== zeroAddress ? `hook ${split.hook}` : split.projectId > 0n ? `project ${split.projectId} (${split.beneficiary === zeroAddress ? account : split.beneficiary})` : split.beneficiary === zeroAddress ? account : split.beneficiary}`,
+        value: `${Number(split.percent) / 10_000_000}% → ${isStickyHook(split.hook, identity.chainId) ? stickyRecipientLabel(split, split.beneficiary) : split.hook !== zeroAddress ? `hook ${split.hook}` : split.projectId > 0n ? `project ${split.projectId} (${split.beneficiary === zeroAddress ? account : split.beneficiary})` : split.beneficiary === zeroAddress ? account : split.beneficiary}`,
       })),
       { label: "Remainder recipient", value: owner },
     ],
