@@ -7,6 +7,7 @@ import { hasErrors } from "@/lib/forms";
 import type { JBChainId } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import {
+  isStickyRow,
   stickyDraftGroupId,
   stickyGroupDraftError,
   stickyGroupOf,
@@ -44,7 +45,7 @@ export function DeploySection({
   // unregistered token would quietly pay group 0: check each one on each chain first.
   const stickySplits = values.stages.flatMap((stage, index) =>
     stage.splits
-      .filter((split) => split.kind === "sticky" && isAddress(split.defaultBeneficiary))
+      .filter((split) => isStickyRow(split) && isAddress(split.defaultBeneficiary))
       .flatMap((split) => {
         const group = stickyGroupOf(split);
         return stickyGroupDraftError(group)

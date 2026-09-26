@@ -47,6 +47,29 @@ export function isStickyHook(hook: string, chainId: number): boolean {
   }
 }
 
+/** A split row that pays Sticky holders: a hook row whose hook is the Sticky distributor. */
+export function isStickyRow(row: { kind?: unknown; hookKind?: unknown }): boolean {
+  return row.kind === "hook" && row.hookKind === "sticky";
+}
+
+/** The chains in `chainIds` with no StickyDistributor, where Sticky splits can't be encoded. */
+function chainsWithoutSticky(chainIds: readonly number[]): number[] {
+  return chainIds.filter((chainId) => {
+    try {
+      stickyDistributorAddress(chainId as JBChainId);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+}
+
+/** Why Sticky can't be offered on `chainIds`, or null when it can. */
+export function stickyUnavailableReason(chainIds: readonly number[]): string | null {
+  const gap = chainsWithoutSticky(chainIds);
+  return gap.length > 0 ? `Sticky is not deployed on ${gap.map(chainName).join(", ")}.` : null;
+}
+
 /** The StickyDistributor to encode on `chainId`, throwing where Sticky is not deployed. */
 export function requireStickyDistributor(chainId: number): Address {
   try {

@@ -27,7 +27,8 @@ const WHY_REVNET_POINTS = [
   },
   {
     lead: "Fully interoperable and AI compatible.",
-    detail: "People, apps, and agents all pay, cash out, and borrow through the same public contracts.",
+    detail:
+      "People, apps, and agents all pay, cash out, and borrow through the same public contracts.",
   },
 ];
 

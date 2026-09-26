@@ -1,7 +1,12 @@
 // https://github.com/rev-net/revnet-core/blob/main/script/Deploy.s.sol
 import { USDC_DECIMALS } from "@/app/constants";
 import { buildTierConfigs } from "@/components/shop/itemDraft";
-import { requireStickyDistributor, stickyDraftGroupId, stickyGroupOf } from "@/lib/sticky";
+import {
+  isStickyRow,
+  requireStickyDistributor,
+  stickyDraftGroupId,
+  stickyGroupOf,
+} from "@/lib/sticky";
 import {
   CashOutTaxRate,
   ETH_CURRENCY_ID,
@@ -143,7 +148,7 @@ export function parseDeployData(
     const splits = stage.splits.map((split, splitIdx) => {
       // A Sticky row pays one token's holders on every chain: the distributor is the hook,
       // the token is the beneficiary, and the group rides in projectId.
-      if (split.kind === "sticky") {
+      if (isStickyRow(split)) {
         return {
           preferAddToBalance: false,
           lockedUntil: 0,

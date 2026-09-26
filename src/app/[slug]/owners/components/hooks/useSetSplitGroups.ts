@@ -19,6 +19,7 @@ import { gasWithHeadroom } from "@/lib/gas";
 import { useJBContractContext } from "@/lib/nana/project";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import {
+  isStickyRow,
   requireStickyDistributor,
   stickyDraftGroupId,
   stickyGroupDraft,
@@ -258,7 +259,7 @@ function prepareSplits(chain: ChainFormData) {
   );
 
   return chain.splits.map((split, index) =>
-    split.kind === "sticky"
+    isStickyRow(split)
       ? {
           preferAddToBalance: false,
           lockedUntil: split.lockedUntil ?? 0,

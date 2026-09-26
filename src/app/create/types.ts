@@ -27,9 +27,10 @@ export type StageData = {
 
 /**
  * A reserved-token split row. An address row pays `defaultBeneficiary` (or a
- * per-chain override). A Sticky row pays the holders of the Sticky token in
- * `defaultBeneficiary`, in the chosen group, on every chain. Rows without a
- * `kind` are address rows (drafts from before Sticky).
+ * per-chain override). A Sticky hook row (`kind` "hook", `hookKind` "sticky")
+ * pays the holders of the Sticky token in `defaultBeneficiary`, in the chosen
+ * group, on every chain. Rows without a `kind` are address rows (drafts from
+ * before Sticky).
  */
 export type SplitDraft = {
   percentage: string;
@@ -38,7 +39,8 @@ export type SplitDraft = {
     chainId: JBChainId;
     address: string;
   }[];
-  kind?: "address" | "sticky";
+  kind?: "address" | "hook";
+  hookKind?: "sticky";
 } & Partial<StickyGroupDraft>;
 
 export type CustomReserveAsset = {

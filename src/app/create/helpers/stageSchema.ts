@@ -1,5 +1,10 @@
 import { isRecord, issue, schema, ValidationIssue } from "@/lib/formValidation";
-import { stickyGroupDraftError, stickyGroupOf, type StickyGroupDraft } from "@/lib/sticky";
+import {
+  isStickyRow,
+  stickyGroupDraftError,
+  stickyGroupOf,
+  type StickyGroupDraft,
+} from "@/lib/sticky";
 import { isAddress } from "viem";
 import type { StageData } from "../types";
 
@@ -169,7 +174,7 @@ export function validateStage(
       );
       splitTotal += Number(entry.percentage) || 0;
       validateAddress(entry.defaultBeneficiary, [...path, "defaultBeneficiary"], issues);
-      if (entry.kind === "sticky") {
+      if (isStickyRow(entry)) {
         // The token is the beneficiary on every chain; the group must be one the distributor honors.
         const groupError = stickyGroupDraftError(stickyGroupOf(entry as Partial<StickyGroupDraft>));
         if (groupError) issue(issues, [...path, "stickyMinWeeks"], groupError);

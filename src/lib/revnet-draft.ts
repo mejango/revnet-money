@@ -4,7 +4,7 @@ import type { RevnetFormData, StageData } from "@/app/create/types";
 import { newDraftItem } from "@/components/shop/itemDraft";
 import { readAllProjectRulesets } from "@/lib/nana/rulesets";
 import type { JBChainId } from "@/lib/nana/types";
-import { isStickyHook, stickyGroupDraft } from "@/lib/sticky";
+import { isStickyHook, isStickyRow, stickyGroupDraft } from "@/lib/sticky";
 import {
   JBCoreContracts,
   NATIVE_TOKEN,
@@ -85,13 +85,15 @@ function sanitizeStage(value: unknown): StageData {
     splits: splits.slice(0, 100).map((raw) => {
       const row = (raw ?? {}) as Record<string, unknown>;
       const beneficiaries = Array.isArray(row.beneficiary) ? row.beneficiary : [];
-      const sticky = row.kind === "sticky";
+      // Drafts saved before Sticky became a hook type carry kind "sticky".
+      const sticky = row.kind === "sticky" || isStickyRow(row);
       return {
         percentage: numericText(row.percentage),
         defaultBeneficiary: text(row.defaultBeneficiary, 64),
         ...(sticky
           ? {
-              kind: "sticky" as const,
+              kind: "hook" as const,
+              hookKind: "sticky" as const,
               stickyGroup: row.stickyGroup === "tenure" ? ("tenure" as const) : ("all" as const),
               stickyMinWeeks: numericText(row.stickyMinWeeks).slice(0, 3),
               stickyMaxWeeks: numericText(row.stickyMaxWeeks).slice(0, 3),
@@ -397,7 +399,8 @@ export async function buildRevnetDraft({
         return {
           percentage,
           defaultBeneficiary: split.beneficiary,
-          kind: "sticky" as const,
+          kind: "hook" as const,
+          hookKind: "sticky" as const,
           ...stickyGroupDraft(split.projectId),
         };
       }

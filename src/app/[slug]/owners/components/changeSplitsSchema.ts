@@ -1,12 +1,22 @@
 import { isRecord, issue, schema, ValidationIssue } from "@/lib/formValidation";
-import { stickyGroupDraftError, stickyGroupOf, type StickyGroupDraft } from "@/lib/sticky";
+import {
+  isStickyRow,
+  stickyGroupDraftError,
+  stickyGroupOf,
+  type StickyGroupDraft,
+} from "@/lib/sticky";
 import { isAddress } from "viem";
 
 export type ChangeSplitsValues = {
   chains: Array<{
     chainId: number;
     selected: boolean;
-    splits: Array<{ beneficiary: string; percentage: string; kind?: "address" | "sticky" }>;
+    splits: Array<{
+      beneficiary: string;
+      percentage: string;
+      kind?: "address" | "hook";
+      hookKind?: "sticky";
+    }>;
   }>;
 };
 
@@ -51,7 +61,7 @@ export const changeSplitsSchema = schema<ChangeSplitsValues>((input) => {
       }
       total += numericPercentage || 0;
 
-      if (split.kind === "sticky") {
+      if (isStickyRow(split)) {
         const groupError = stickyGroupDraftError(stickyGroupOf(split as Partial<StickyGroupDraft>));
         if (groupError) issue(issues, [...splitPath, "stickyMinWeeks"], groupError);
       }
