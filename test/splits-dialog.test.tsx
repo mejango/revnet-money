@@ -1,5 +1,6 @@
 import { ChangeSplitRecipientsDialog } from "@/app/[slug]/owners/components/ChangeSplitRecipientsDialog";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { stickyDistributorAddress } from "@bananapus/nana-sdk-core/v6";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -48,6 +49,9 @@ vi.mock("@/app/[slug]/owners/components/hooks/useSetSplitGroups", () => ({
   }),
 }));
 
+// The token status reads the chain; these tests cover the recipient controls.
+vi.mock("@/components/sticky/StickyTokenStatus", () => ({ StickyTokenStatus: () => null }));
+
 const BENEFICIARY = "0x000000000000000000000000000000000000dEaD";
 
 function chain(overrides: Partial<ChainSplit> = {}): ChainSplit {
@@ -93,6 +97,45 @@ describe("ChangeSplitRecipientsDialog stage labelling", () => {
     expect((dialog.querySelector('input[type="text"]') as HTMLInputElement).value).toBe(
       BENEFICIARY,
     );
+  });
+});
+
+describe("ChangeSplitRecipientsDialog Sticky hook", () => {
+  const optionsOf = (select: HTMLElement) =>
+    Array.from((select as HTMLSelectElement).options).map((option) => option.textContent);
+
+  it("offers Sticky as a hook type, never as a recipient type", async () => {
+    const dialog = within(await openDialog(0));
+    const kind = dialog.getByRole("combobox", { name: "Recipient type" });
+    expect(optionsOf(kind)).toEqual(["Address", "Hook"]);
+    expect(dialog.queryByRole("combobox", { name: "Hook type" })).toBeNull();
+
+    fireEvent.change(kind, { target: { value: "hook" } });
+    const hook = await dialog.findByRole("combobox", { name: "Hook type" });
+    expect(optionsOf(hook)).toEqual(["Sticky"]);
+    expect(dialog.getByRole("textbox", { name: "Sticky token" })).toBeInTheDocument();
+  });
+
+  it("loads a live Sticky split as Hook > Sticky", async () => {
+    state.chainSplits = [
+      {
+        ...chain(),
+        splits: [
+          {
+            percent: 1_000_000_000,
+            beneficiary: BENEFICIARY,
+            projectId: 0n,
+            hook: stickyDistributorAddress(8453),
+            lockedUntil: 0,
+            preferAddToBalance: false,
+          },
+        ],
+      },
+    ];
+    const dialog = within(await openDialog(0));
+    expect(dialog.getByRole("combobox", { name: "Recipient type" })).toHaveValue("hook");
+    expect(dialog.getByRole("combobox", { name: "Hook type" })).toHaveValue("sticky");
+    expect(dialog.getByRole("textbox", { name: "Sticky token" })).toHaveValue(BENEFICIARY);
   });
 });
 

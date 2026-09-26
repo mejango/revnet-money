@@ -43,7 +43,8 @@ const STICKY_HOOK = jbContractAddress["6"].StickyHook[CHAIN] as Address;
 const stickyRow = (patch: Partial<SplitDraft> = {}): SplitDraft => ({
   percentage: "25",
   defaultBeneficiary: TOKEN,
-  kind: "sticky",
+  kind: "hook",
+  hookKind: "sticky",
   stickyGroup: "tenure",
   stickyMinWeeks: "4",
   stickyMaxWeeks: "52",
@@ -143,12 +144,35 @@ describe("Sticky splits in revnet create", () => {
       }),
     );
     expect(parsed.stages[0].splits[0]).toMatchObject({
-      kind: "sticky",
+      kind: "hook",
+      hookKind: "sticky",
       defaultBeneficiary: TOKEN,
       stickyGroup: "tenure",
       stickyMinWeeks: "4",
       stickyMaxWeeks: "52",
     });
+  });
+});
+
+it("loads a draft saved with the old sticky kind as a Sticky hook row", () => {
+  const { kind: _kind, hookKind: _hookKind, ...legacy } = stickyRow();
+  const parsed = parseRevnetDraft(
+    JSON.stringify({
+      v: 1,
+      app: "revnet.money",
+      data: {
+        name: "A revnet",
+        tokenSymbol: "REV",
+        chainIds: [CHAIN],
+        stages: [{ splits: [{ ...legacy, kind: "sticky" }], autoIssuance: [], stageStart: "0" }],
+      },
+    }),
+  );
+  expect(parsed.stages[0].splits[0]).toMatchObject({
+    kind: "hook",
+    hookKind: "sticky",
+    defaultBeneficiary: TOKEN,
+    stickyMinWeeks: "4",
   });
 });
 
@@ -164,11 +188,18 @@ describe("Sticky splits in the owners editor", () => {
   it("encodes a new Sticky row and re-sends a stored group verbatim", () => {
     const [, , groups] = prepareArgs(
       chain([
-        { percentage: "50", beneficiary: TOKEN, kind: "sticky", stickyGroup: "all" },
         {
           percentage: "50",
           beneficiary: TOKEN,
-          kind: "sticky",
+          kind: "hook",
+          hookKind: "sticky",
+          stickyGroup: "all",
+        },
+        {
+          percentage: "50",
+          beneficiary: TOKEN,
+          kind: "hook",
+          hookKind: "sticky",
           // Stored as 3, which the distributor reads as group 0; untouched, it stays 3.
           projectId: 3n,
           hook: stickyDistributorAddress(CHAIN),
@@ -192,7 +223,8 @@ describe("Sticky splits in the owners editor", () => {
       splitRouting({
         percentage: "1",
         beneficiary: TOKEN,
-        kind: "sticky",
+        kind: "hook",
+        hookKind: "sticky",
         projectId: 4052n,
         hook: stickyDistributorAddress(CHAIN),
       }),
@@ -205,7 +237,9 @@ describe("Sticky splits in the owners editor", () => {
         {
           chainId: CHAIN,
           selected: true,
-          splits: [{ percentage: "100", beneficiary: TOKEN, kind: "sticky", ...patch }],
+          splits: [
+            { percentage: "100", beneficiary: TOKEN, kind: "hook", hookKind: "sticky", ...patch },
+          ],
         },
       ],
     });

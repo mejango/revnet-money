@@ -17,7 +17,7 @@ import { toast } from "@/components/ui/use-toast";
 import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
-import { stickyGroupOf } from "@/lib/sticky";
+import { isStickyRow, stickyGroupOf, stickyUnavailableReason } from "@/lib/sticky";
 import { cn, sortChains } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { cloneElement, useState, useSyncExternalStore } from "react";
@@ -106,6 +106,9 @@ export function AddStageDialog({
   // Chains are picked in the form's first section, so every chain-dependent
   // input in this dialog can specialize per selected chain inline.
   const sortedChainIds = sortChains(chainIds);
+  // Sticky is a hook type, offered only where every launch chain has the distributor.
+  // A revnet deploys its ERC-20 at launch, so reserved tokens can always reach it.
+  const stickyReason = stickyUnavailableReason(sortedChainIds);
   const perChainInputClassName =
     "h-9 flex-1 border-2 border-melon-300 bg-melon-25 px-3 py-1.5 text-md placeholder:text-zinc-500 hover:border-melon-400 focus-visible:border-melon-600 focus-visible:outline-none focus-visible:ring-0";
 
@@ -416,39 +419,49 @@ export function AddStageDialog({
                                     <label htmlFor={`splits.${index}.defaultBeneficiary`}>to</label>
                                     <select
                                       aria-label="Recipient type"
-                                      value={split.kind === "sticky" ? "sticky" : "address"}
+                                      value={isStickyRow(split) ? "hook" : "address"}
                                       onChange={(e) => {
-                                        const sticky = e.target.value === "sticky";
+                                        const hook = e.target.value === "hook";
                                         // A Sticky row's beneficiary is a token, never a wallet,
                                         // and it is the same token on every chain.
                                         setFieldValue(`splits.${index}`, {
                                           percentage: split.percentage,
                                           defaultBeneficiary: "",
-                                          ...(sticky
-                                            ? { kind: "sticky", ...stickyGroupOf({}) }
+                                          ...(hook
+                                            ? {
+                                                kind: "hook",
+                                                hookKind: "sticky",
+                                                ...stickyGroupOf({}),
+                                              }
                                             : {}),
                                         });
                                       }}
                                       className="h-9 border-2 border-melon-300 bg-melon-25 px-2 py-0 pr-8 text-md hover:border-melon-400 focus:border-melon-600 focus:outline-none focus:ring-0"
                                     >
                                       <option value="address">Address</option>
-                                      <option value="sticky">Sticky</option>
+                                      {!stickyReason || isStickyRow(split) ? (
+                                        <option value="hook">Hook</option>
+                                      ) : null}
                                     </select>
+                                    {isStickyRow(split) ? (
+                                      <select
+                                        aria-label="Hook type"
+                                        value="sticky"
+                                        onChange={() => {}}
+                                        className="h-9 border-2 border-melon-300 bg-melon-25 px-2 py-0 pr-8 text-md hover:border-melon-400 focus:border-melon-600 focus:outline-none focus:ring-0"
+                                      >
+                                        <option value="sticky">Sticky</option>
+                                      </select>
+                                    ) : null}
                                     <Field
                                       id={`splits.${index}.defaultBeneficiary`}
                                       name={`splits.${index}.defaultBeneficiary`}
-                                      aria-label={
-                                        split.kind === "sticky" ? "Sticky token" : undefined
-                                      }
+                                      aria-label={isStickyRow(split) ? "Sticky token" : undefined}
                                       className="h-9"
                                       width="min-w-40 flex-1"
-                                      placeholder={
-                                        split.kind === "sticky" ? "0x… (Sticky token)" : "0x"
-                                      }
+                                      placeholder={isStickyRow(split) ? "0x… (Sticky token)" : "0x"}
                                       required
-                                      defaultValue={
-                                        split.kind === "sticky" ? undefined : namedOperator
-                                      }
+                                      defaultValue={isStickyRow(split) ? undefined : namedOperator}
                                     />
                                     <Button
                                       variant="ghost"
@@ -459,7 +472,11 @@ export function AddStageDialog({
                                       <TrashIcon className="h-4 w-4" />
                                     </Button>
                                   </div>
-                                  {split.kind === "sticky" ? (
+                                  {isStickyRow(split) && stickyReason ? (
+                                    <p role="alert" className="mt-2 text-sm text-red-500">
+                                      {stickyReason}
+                                    </p>
+                                  ) : isStickyRow(split) ? (
                                     <>
                                       <StickyGroupFields
                                         value={stickyGroupOf(split)}
@@ -476,7 +493,7 @@ export function AddStageDialog({
                                       />
                                     </>
                                   ) : null}
-                                  {chainIds.length > 1 && split.kind !== "sticky" && (
+                                  {chainIds.length > 1 && !isStickyRow(split) && (
                                     <div className="mt-2">
                                       <label
                                         className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
