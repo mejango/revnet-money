@@ -25,6 +25,10 @@ const WHY_REVNET_POINTS = [
     lead: "Check the rules and the money.",
     detail: "Anyone can inspect the contracts, balances, and transactions.",
   },
+  {
+    lead: "Fully interoperable and AI compatible.",
+    detail: "People, apps, and agents all pay, cash out, and borrow through the same public contracts.",
+  },
 ];
 
 export default function Page() {
@@ -53,7 +57,7 @@ export default function Page() {
             id="how-revnets-work"
             className="text-center text-2xl font-semibold md:text-left md:text-3xl"
           >
-            A shape that stands the test of time.
+            Shape that stands the test of time.
           </h2>
           <p className="mt-4">
             A revnet receives money and shares tokens with the people who take part. Those tokens
@@ -109,7 +113,7 @@ export default function Page() {
             className="text-center text-2xl font-semibold md:text-left md:text-3xl"
           >
             <span className="block">Simple enough for startups.</span>
-            <span className="block">Powerful enough for global organizations.</span>
+            <span className="block">Powerful enough for decentralized organizations.</span>
           </h2>
 
           <ol className="mt-8 ml-8 list-outside list-decimal space-y-5 marker:font-semibold marker:text-teal-700 sm:ml-10">

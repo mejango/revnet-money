@@ -498,7 +498,7 @@ test("home and discover shells stay contained and deterministic", async ({ page,
 
   const homeResponse = await page.goto("/", { waitUntil: "domcontentloaded" });
   expectSecurityHeaders(homeResponse);
-  await expect(page.locator("main").getByText("A shape that stands the test of time.")).toBeVisible();
+  await expect(page.locator("main").getByText("Shape that stands the test of time.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Create yours" })).toBeVisible();
   // The Top and Trending panels are the dashboard's project rows, and the layout
   // hides both below the tablet breakpoint — mobile home is the activity feed. Above
