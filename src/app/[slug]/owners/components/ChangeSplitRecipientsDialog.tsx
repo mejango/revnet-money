@@ -3,6 +3,9 @@
 import { chainDisplayName } from "@/app/constants";
 import { Field } from "@/app/create/form/Fields";
 import { ChainLogo } from "@/components/ChainLogo";
+import { StickyGroupFields } from "@/components/sticky/StickyGroupFields";
+import { StickyRecipient } from "@/components/sticky/StickyRecipient";
+import { StickyTokenStatus } from "@/components/sticky/StickyTokenStatus";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,19 +22,29 @@ import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import {
+  isStickyHook,
+  stickyGroupDraft,
+  stickyGroupOf,
+  stickySplitsProblem,
+  type StickyGroupDraft,
+} from "@/lib/sticky";
+import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { useEffect, useMemo, useState } from "react";
-import { Address, zeroAddress } from "viem";
+import { Address, zeroAddress, type PublicClient } from "viem";
+import { getPublicClient } from "wagmi/actions";
 import { changeSplitsSchema } from "./changeSplitsSchema";
 import { useChainSplits } from "./hooks/useChainSplits";
-import { useSetSplitGroups } from "./hooks/useSetSplitGroups";
+import { stickySplitGroupId, useSetSplitGroups } from "./hooks/useSetSplitGroups";
 import { emptySaveBlockMessage } from "./splitsLib";
 
 /**
  * A row in the editor. `percentage` and `beneficiary` are what the form edits;
  * the rest is carried verbatim from the on-chain `JBSplit` so a save can't
  * silently drop a split's hook, project routing, or lock. Rows the user adds
- * have none of it — a plain address payout.
+ * have none of it — a plain address payout, or Sticky holders (`kind`
+ * "sticky": `beneficiary` is the Sticky token and the group fields pick who).
  */
 export type SplitFormData = {
   percentage: string;
@@ -40,7 +53,8 @@ export type SplitFormData = {
   hook?: Address;
   lockedUntil?: number;
   preferAddToBalance?: boolean;
-};
+  kind?: "address" | "sticky";
+} & Partial<StickyGroupDraft>;
 
 export type ChainFormData = {
   chainId: JBChainId;
@@ -57,6 +71,7 @@ function trimTrailingZeros(fixed: string): string {
 }
 
 export function splitRouting(split: SplitFormData) {
+  if (split.kind === "sticky") return null;
   if (split.hook && split.hook !== zeroAddress)
     return { kind: "hook", address: split.hook } as const;
   if (split.projectId) return { kind: "project", projectId: split.projectId } as const;
@@ -122,6 +137,10 @@ export function ChangeSplitRecipientsDialog(props: Props) {
         hook: split.hook,
         lockedUntil: split.lockedUntil,
         preferAddToBalance: split.preferAddToBalance,
+        // A Sticky split's projectId is its holder group, never a project.
+        ...(isStickyHook(split.hook, chainData.chainId)
+          ? { kind: "sticky" as const, ...stickyGroupDraft(split.projectId) }
+          : {}),
       })),
     }));
 
@@ -150,6 +169,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       (chainId) => JB_CHAINS[chainId as JBChainId]?.name ?? `chain ${chainId}`,
     );
 
+  const [stickyProblem, setStickyProblem] = useState<string | null>(null);
   const handleSubmit = async (values: FormData) => {
     const selectedChains = values.chains.filter((c) => c.selected);
     if (selectedChains.length === 0) {
@@ -157,6 +177,31 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       return;
     }
     if (blockMessageFor(values.chains)) return;
+    // The distributor never reverts, so an unregistered token would quietly pay group 0.
+    // Check every Sticky token on the chain it is saved to before anything is signed.
+    setStickyProblem(null);
+    try {
+      for (const chain of selectedChains) {
+        const sticky = chain.splits
+          .filter((split) => split.kind === "sticky")
+          .map((split) => ({
+            beneficiary: split.beneficiary as Address,
+            projectId: stickySplitGroupId(split),
+          }));
+        if (sticky.length === 0) continue;
+        const client = getPublicClient(wagmiConfig, { chainId: chain.chainId }) as PublicClient;
+        const problem = await stickySplitsProblem(sticky, [chain.chainId], () => client);
+        if (problem) {
+          setStickyProblem(problem);
+          return;
+        }
+      }
+    } catch (error) {
+      setStickyProblem(
+        error instanceof Error ? error.message : "Could not check the Sticky tokens.",
+      );
+      return;
+    }
     setReviewing(selectedChains);
   };
 
@@ -224,11 +269,23 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                     return (
                       <span key={index} className="block text-xs text-zinc-500">
                         {trimTrailingZeros(Number(split.percentage).toFixed(7))}% to{" "}
-                        {routing
-                          ? routing.kind === "hook"
-                            ? `split hook ${routing.address}`
-                            : `project #${routing.projectId}`
-                          : split.beneficiary}
+                        {split.kind === "sticky" ? (
+                          <StickyRecipient
+                            split={{
+                              projectId: stickySplitGroupId(split),
+                              beneficiary: split.beneficiary as Address,
+                            }}
+                            chainId={chain.chainId}
+                          />
+                        ) : routing ? (
+                          routing.kind === "hook" ? (
+                            `split hook ${routing.address}`
+                          ) : (
+                            `project #${routing.projectId}`
+                          )
+                        ) : (
+                          split.beneficiary
+                        )}
                       </span>
                     );
                   })}
@@ -319,13 +376,15 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                                     {chain.splits.map((split, splitIdx) => {
                                       const routing = splitRouting(split);
                                       const locked = splitIsLocked(split, nowSeconds);
+                                      const sticky = split.kind === "sticky";
+                                      const rowName = `chains.${chainIdx}.splits.${splitIdx}`;
                                       return (
                                         <div key={splitIdx} className="flex gap-2 items-start">
                                           <div className="flex-1">
                                             <label className="text-sm text-zinc-600 mb-1 block">
                                               {splitIdx === 0 ? "Split" : "... and"}
                                             </label>
-                                            <div className="flex gap-2 items-start">
+                                            <div className="flex flex-wrap gap-2 items-start">
                                               <Field
                                                 name={`chains.${chainIdx}.splits.${splitIdx}.percentage`}
                                                 type="number"
@@ -340,7 +399,37 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                                               <span className="flex items-center text-zinc-600 mt-2">
                                                 to
                                               </span>
-                                              {routing ? (
+                                              {!routing && !locked ? (
+                                                <select
+                                                  aria-label="Recipient type"
+                                                  value={sticky ? "sticky" : "address"}
+                                                  onChange={(e) =>
+                                                    setFieldValue(rowName, {
+                                                      percentage: split.percentage,
+                                                      beneficiary: "",
+                                                      ...(e.target.value === "sticky"
+                                                        ? { kind: "sticky", ...stickyGroupOf({}) }
+                                                        : {}),
+                                                    })
+                                                  }
+                                                  className="h-9 border-2 border-melon-300 bg-melon-25 px-2 py-0 pr-8 text-md hover:border-melon-400 focus:border-melon-600 focus:outline-none focus:ring-0"
+                                                >
+                                                  <option value="address">Address</option>
+                                                  <option value="sticky">Sticky</option>
+                                                </select>
+                                              ) : null}
+                                              {sticky && locked ? (
+                                                <div className="flex-1 mt-2 text-sm text-zinc-600 break-all">
+                                                  <StickyRecipient
+                                                    split={{
+                                                      projectId: stickySplitGroupId(split),
+                                                      beneficiary: split.beneficiary as Address,
+                                                    }}
+                                                    chainId={chain.chainId}
+                                                  />{" "}
+                                                  (locked)
+                                                </div>
+                                              ) : routing ? (
                                                 <div className="flex-1 mt-2 text-sm text-zinc-600 break-all">
                                                   {routing.kind === "hook"
                                                     ? `split hook ${routing.address}`
@@ -351,12 +440,33 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                                                 <Field
                                                   name={`chains.${chainIdx}.splits.${splitIdx}.beneficiary`}
                                                   type="text"
-                                                  className="h-9 flex-1"
-                                                  placeholder="0x..."
+                                                  aria-label={sticky ? "Sticky token" : undefined}
+                                                  className="h-9"
+                                                  width="min-w-40 flex-1"
+                                                  placeholder={
+                                                    sticky ? "0x… (Sticky token)" : "0x..."
+                                                  }
                                                   required
                                                 />
                                               )}
                                             </div>
+                                            {sticky && !locked ? (
+                                              <>
+                                                <StickyGroupFields
+                                                  value={stickyGroupOf(split)}
+                                                  onChange={(patch) =>
+                                                    setFieldValue(rowName, { ...split, ...patch })
+                                                  }
+                                                />
+                                                <StickyTokenStatus
+                                                  row={{
+                                                    ...stickyGroupOf(split),
+                                                    token: split.beneficiary,
+                                                  }}
+                                                  chainIds={[chain.chainId]}
+                                                />
+                                              </>
+                                            ) : null}
                                           </div>
                                           <Button
                                             type="button"
@@ -417,6 +527,11 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                   </FieldArray>
                 </div>
 
+                {stickyProblem ? (
+                  <p role="alert" className="mt-4 text-sm text-red-600">
+                    {stickyProblem}
+                  </p>
+                ) : null}
                 <DialogFooter className="mt-6">
                   <Button
                     type="button"

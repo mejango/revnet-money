@@ -4,6 +4,7 @@ import { chainDisplayName, RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { StickyRecipient } from "@/components/sticky/StickyRecipient";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -19,6 +20,7 @@ import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawList
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { pickRevnetOperator } from "@/lib/revnetOperator";
+import { isStickyHook } from "@/lib/sticky";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
   formatUnits,
@@ -47,6 +49,8 @@ type Split = {
   beneficiary: `0x${string}`;
   hook: `0x${string}`;
   percent: number;
+  /** A Sticky split's holder group; otherwise the project the split pays. */
+  projectId: bigint;
 };
 
 /**
@@ -297,19 +301,25 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                           return (
                             <TableRow key={`${shown}-${i}`}>
                               <TableCell>
-                                <span className="inline-flex items-center gap-2 text-sm">
-                                  <EthereumAddress
-                                    address={shown}
-                                    chain={JB_CHAINS[c.chainId].chain}
-                                    short
-                                    withEnsAvatar
-                                    withEnsName
-                                  />
-                                  {routesToHook && <span className="text-zinc-400">(hook)</span>}
-                                  {isBurn && !routesToHook && (
-                                    <span className="text-zinc-400">(burn)</span>
-                                  )}
-                                </span>
+                                {isStickyHook(split.hook, c.chainId) ? (
+                                  <span className="text-sm">
+                                    <StickyRecipient split={split} chainId={c.chainId} />
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-2 text-sm">
+                                    <EthereumAddress
+                                      address={shown}
+                                      chain={JB_CHAINS[c.chainId].chain}
+                                      short
+                                      withEnsAvatar
+                                      withEnsName
+                                    />
+                                    {routesToHook && <span className="text-zinc-400">(hook)</span>}
+                                    {isBurn && !routesToHook && (
+                                      <span className="text-zinc-400">(burn)</span>
+                                    )}
+                                  </span>
+                                )}
                               </TableCell>
                               <TableCell>
                                 {splitLimitBps !== undefined ? (

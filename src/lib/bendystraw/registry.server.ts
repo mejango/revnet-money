@@ -101,7 +101,7 @@ const ACTIVITY_EVENT_FIELDS = `
   }
   sendReservedTokensToSplitsEvent { txHash timestamp from tokenCount }
   sendReservedTokensToSplitEvent {
-    id txHash timestamp from tokenCount beneficiary splitProjectId
+    id txHash timestamp from tokenCount beneficiary splitProjectId hook
   }
 `;
 

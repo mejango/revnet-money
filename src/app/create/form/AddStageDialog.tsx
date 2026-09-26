@@ -1,6 +1,8 @@
 import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { ChainSelector } from "@/components/ChainSelector";
+import { StickyGroupFields } from "@/components/sticky/StickyGroupFields";
+import { StickyTokenStatus } from "@/components/sticky/StickyTokenStatus";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +17,7 @@ import { toast } from "@/components/ui/use-toast";
 import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
+import { stickyGroupOf } from "@/lib/sticky";
 import { cn, sortChains } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { cloneElement, useState, useSyncExternalStore } from "react";
@@ -411,14 +414,41 @@ export function AddStageDialog({
                                       placeholder="100"
                                     />
                                     <label htmlFor={`splits.${index}.defaultBeneficiary`}>to</label>
+                                    <select
+                                      aria-label="Recipient type"
+                                      value={split.kind === "sticky" ? "sticky" : "address"}
+                                      onChange={(e) => {
+                                        const sticky = e.target.value === "sticky";
+                                        // A Sticky row's beneficiary is a token, never a wallet,
+                                        // and it is the same token on every chain.
+                                        setFieldValue(`splits.${index}`, {
+                                          percentage: split.percentage,
+                                          defaultBeneficiary: "",
+                                          ...(sticky
+                                            ? { kind: "sticky", ...stickyGroupOf({}) }
+                                            : {}),
+                                        });
+                                      }}
+                                      className="h-9 border-2 border-melon-300 bg-melon-25 px-2 py-0 pr-8 text-md hover:border-melon-400 focus:border-melon-600 focus:outline-none focus:ring-0"
+                                    >
+                                      <option value="address">Address</option>
+                                      <option value="sticky">Sticky</option>
+                                    </select>
                                     <Field
                                       id={`splits.${index}.defaultBeneficiary`}
                                       name={`splits.${index}.defaultBeneficiary`}
+                                      aria-label={
+                                        split.kind === "sticky" ? "Sticky token" : undefined
+                                      }
                                       className="h-9"
                                       width="min-w-40 flex-1"
-                                      placeholder="0x"
+                                      placeholder={
+                                        split.kind === "sticky" ? "0x… (Sticky token)" : "0x"
+                                      }
                                       required
-                                      defaultValue={namedOperator}
+                                      defaultValue={
+                                        split.kind === "sticky" ? undefined : namedOperator
+                                      }
                                     />
                                     <Button
                                       variant="ghost"
@@ -429,7 +459,24 @@ export function AddStageDialog({
                                       <TrashIcon className="h-4 w-4" />
                                     </Button>
                                   </div>
-                                  {chainIds.length > 1 && (
+                                  {split.kind === "sticky" ? (
+                                    <>
+                                      <StickyGroupFields
+                                        value={stickyGroupOf(split)}
+                                        onChange={(patch) =>
+                                          setFieldValue(`splits.${index}`, { ...split, ...patch })
+                                        }
+                                      />
+                                      <StickyTokenStatus
+                                        row={{
+                                          ...stickyGroupOf(split),
+                                          token: split.defaultBeneficiary,
+                                        }}
+                                        chainIds={sortedChainIds}
+                                      />
+                                    </>
+                                  ) : null}
+                                  {chainIds.length > 1 && split.kind !== "sticky" && (
                                     <div className="mt-2">
                                       <label
                                         className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
@@ -548,6 +595,10 @@ export function AddStageDialog({
                                 A recipient can be a contract that handles the tokens automatically,
                                 called a split hook.
                               </span>
+                            </li>
+                            <li className="flex">
+                              <span className="mr-2">•</span>A Sticky recipient pays the holders of
+                              a Sticky token instead of one address.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>

@@ -4,8 +4,10 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { DateRelative } from "@/components/DateRelative";
 import EtherscanLink from "@/components/EtherscanLink";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { StickyRecipient } from "@/components/sticky/StickyRecipient";
 import { useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
+import { stickyRecipientLabel } from "@/lib/sticky";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { Address } from "viem";
@@ -55,6 +57,8 @@ export interface ActivityEvent {
   payee?: Address;
   /** A 721 mint: which item, what was paid for it, and for which project. */
   item?: { projectId: number; tierId: number; amountPaid: string };
+  /** A reserved-split receipt paid to Sticky holders: the group and the Sticky token. */
+  sticky?: { projectId: bigint; beneficiary: Address };
 }
 
 /** A tx with several pays reads "<total> from <payer>" and names who got what. */
@@ -111,6 +115,8 @@ type DescriptionParts = {
   post?: string;
   /** An address the sentence ends on, rendered as a profile link. */
   recipient?: Address;
+  /** Sticky holders the sentence ends on, named by group and token. */
+  sticky?: { projectId: bigint; beneficiary: Address };
 };
 
 function descriptionParts(
@@ -181,6 +187,7 @@ function descriptionParts(
       // Under its distribution a receipt names who got what; on its own it
       // is what the account received.
       if (!distributed) return { pre: "received ", strong: count, post: " from a reserved split" };
+      if (event.sticky) return { pre: "", strong: count, post: " to ", sticky: event.sticky };
       return event.detail
         ? { pre: "", strong: count, post: ` to ${event.detail}` }
         : { pre: "", strong: count, post: " to ", recipient: event.beneficiary };
@@ -196,7 +203,7 @@ function eventDescription(
   const parts = descriptionParts(event, projectTokenSymbol, distributed, fanOut);
   const shortAddress = (address?: Address) =>
     address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "";
-  return `${shortAddress(parts.lead)}${parts.pre}${parts.strong ?? ""}${parts.post ?? ""}${shortAddress(parts.recipient)}`;
+  return `${shortAddress(parts.lead)}${parts.pre}${parts.strong ?? ""}${parts.post ?? ""}${shortAddress(parts.recipient)}${parts.sticky ? stickyRecipientLabel(parts.sticky) : ""}`;
 }
 
 /** Hand-rolled markers: the dot sits flush left while wrapped lines keep hanging-indent alignment with the first line's text. */
@@ -299,6 +306,7 @@ export function ActivityItemRow({
         {parts.strong ? <span className="font-medium">{parts.strong}</span> : null}
         {parts.post}
         {parts.recipient ? <ProfileAvatar address={parts.recipient} short chain={chain} /> : null}
+        {parts.sticky ? <StickyRecipient split={parts.sticky} chainId={entry.chainId} /> : null}
       </li>
     );
   });

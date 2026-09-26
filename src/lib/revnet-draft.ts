@@ -4,6 +4,7 @@ import type { RevnetFormData, StageData } from "@/app/create/types";
 import { newDraftItem } from "@/components/shop/itemDraft";
 import { readAllProjectRulesets } from "@/lib/nana/rulesets";
 import type { JBChainId } from "@/lib/nana/types";
+import { isStickyHook, stickyGroupDraft } from "@/lib/sticky";
 import {
   JBCoreContracts,
   NATIVE_TOKEN,
@@ -84,9 +85,18 @@ function sanitizeStage(value: unknown): StageData {
     splits: splits.slice(0, 100).map((raw) => {
       const row = (raw ?? {}) as Record<string, unknown>;
       const beneficiaries = Array.isArray(row.beneficiary) ? row.beneficiary : [];
+      const sticky = row.kind === "sticky";
       return {
         percentage: numericText(row.percentage),
         defaultBeneficiary: text(row.defaultBeneficiary, 64),
+        ...(sticky
+          ? {
+              kind: "sticky" as const,
+              stickyGroup: row.stickyGroup === "tenure" ? ("tenure" as const) : ("all" as const),
+              stickyMinWeeks: numericText(row.stickyMinWeeks).slice(0, 3),
+              stickyMaxWeeks: numericText(row.stickyMaxWeeks).slice(0, 3),
+            }
+          : {}),
         beneficiary: beneficiaries.slice(0, 16).flatMap((beneficiary) => {
           const item = (beneficiary ?? {}) as Record<string, unknown>;
           const chainId = Number(item.chainId);
@@ -375,6 +385,22 @@ export async function buildRevnetDraft({
             (Number(entry.ruleset.start) - Number(stageReads[index - 1].ruleset.start)) / 86_400,
           );
     const splits = entry.splits.map((split) => {
+      const percentage = String(
+        Number((reservedPercent * (Number(split.percent) / SPLITS_TOTAL)).toFixed(6)),
+      );
+      // A Sticky split redeploys onto each chain's distributor; the token and group carry over.
+      if (
+        isStickyHook(split.hook, chainId) &&
+        !split.preferAddToBalance &&
+        Number(split.lockedUntil) === 0
+      ) {
+        return {
+          percentage,
+          defaultBeneficiary: split.beneficiary,
+          kind: "sticky" as const,
+          ...stickyGroupDraft(split.projectId),
+        };
+      }
       if (
         split.projectId > 0n ||
         split.hook.toLowerCase() !== zeroAddress ||
@@ -385,12 +411,7 @@ export async function buildRevnetDraft({
           "A deployed reserved-token split uses routing or locking the Revnet create flow cannot reproduce.",
         );
       }
-      return {
-        percentage: String(
-          Number((reservedPercent * (Number(split.percent) / SPLITS_TOTAL)).toFixed(6)),
-        ),
-        defaultBeneficiary: split.beneficiary,
-      };
+      return { percentage, defaultBeneficiary: split.beneficiary };
     });
     const stored = autoIssuances
       .filter((row) => row.stageIndex === index)

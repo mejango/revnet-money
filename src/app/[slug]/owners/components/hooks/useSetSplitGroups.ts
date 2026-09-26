@@ -18,6 +18,12 @@ import {
 import { gasWithHeadroom } from "@/lib/gas";
 import { useJBContractContext } from "@/lib/nana/project";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import {
+  requireStickyDistributor,
+  stickyDraftGroupId,
+  stickyGroupDraft,
+  stickyGroupOf,
+} from "@/lib/sticky";
 import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
@@ -26,7 +32,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Address, encodeFunctionData, zeroAddress, type Hash } from "viem";
 import { useAccount, useConfig, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
-import { ChainFormData } from "../ChangeSplitRecipientsDialog";
+import type { ChainFormData, SplitFormData } from "../ChangeSplitRecipientsDialog";
 
 export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }) {
   const { onSuccess } = props;
@@ -251,12 +257,43 @@ function prepareSplits(chain: ChainFormData) {
     ),
   );
 
-  return chain.splits.map((split, index) => ({
-    preferAddToBalance: split.preferAddToBalance ?? false,
-    lockedUntil: split.lockedUntil ?? 0,
-    percent: shares[index],
-    projectId: split.projectId ?? 0n,
-    beneficiary: split.beneficiary as Address,
-    hook: split.hook ?? zeroAddress,
-  }));
+  return chain.splits.map((split, index) =>
+    split.kind === "sticky"
+      ? {
+          preferAddToBalance: false,
+          lockedUntil: split.lockedUntil ?? 0,
+          percent: shares[index],
+          projectId: stickySplitGroupId(split),
+          beneficiary: split.beneficiary as Address,
+          hook: requireStickyDistributor(chain.chainId),
+        }
+      : {
+          preferAddToBalance: split.preferAddToBalance ?? false,
+          lockedUntil: split.lockedUntil ?? 0,
+          percent: shares[index],
+          projectId: split.projectId ?? 0n,
+          beneficiary: split.beneficiary as Address,
+          hook: split.hook ?? zeroAddress,
+        },
+  );
+}
+
+/**
+ * A Sticky row's group ID. An untouched group re-sends the stored ID verbatim, so a locked
+ * split (or one saved with a group the distributor reads as 0) stays byte-exact.
+ */
+export function stickySplitGroupId(split: SplitFormData): bigint {
+  const group = stickyGroupOf(split);
+  const stored = split.projectId;
+  if (stored !== undefined) {
+    const decoded = stickyGroupDraft(stored);
+    if (
+      decoded.stickyGroup === group.stickyGroup &&
+      decoded.stickyMinWeeks === group.stickyMinWeeks.trim() &&
+      decoded.stickyMaxWeeks === group.stickyMaxWeeks.trim()
+    ) {
+      return stored;
+    }
+  }
+  return stickyDraftGroupId(group);
 }

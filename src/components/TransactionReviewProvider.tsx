@@ -11,6 +11,7 @@ import { rolloutContractName } from "@/lib/protocol-rollout";
 import { canCheckRelayrBundle } from "@/lib/relayr-activity";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import { safeSetupAbi, safeToL2SetupAbi } from "@/lib/safeDeployment";
+import { isStickyHook } from "@/lib/sticky";
 import {
   dismissTransactionActivity,
   updateTransactionActivity,
@@ -41,7 +42,7 @@ import {
   USDC_ADDRESSES,
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
-import { JBPermissionCatalogV6 } from "@bananapus/nana-sdk-core/v6";
+import { describeStickySplit, JBPermissionCatalogV6 } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from "react";
 import {
   decodeAbiParameters,
@@ -1137,12 +1138,18 @@ export function describeSplitGroups(chainId: number, value: unknown): PrettyStep
         return null;
       }
       total += split.percent;
+      // A Sticky split's projectId is its holder group and its beneficiary is the Sticky token.
+      const sticky = typeof split.hook === "string" && isStickyHook(split.hook, chainId);
       const parts = [
-        split.projectId !== 0n
-          ? `project #${split.projectId} (beneficiary ${split.beneficiary})`
-          : v4AddressLabel(chainId, split.beneficiary),
+        sticky
+          ? `${describeStickySplit({ projectId: split.projectId })} → Sticky token ${v4AddressLabel(chainId, split.beneficiary)}`
+          : split.projectId !== 0n
+            ? `project #${split.projectId} (beneficiary ${split.beneficiary})`
+            : v4AddressLabel(chainId, split.beneficiary),
       ];
-      if (typeof split.hook === "string" && split.hook.toLowerCase() !== zeroAddress) {
+      if (sticky) {
+        parts.push(`via StickyDistributor ${split.hook}`);
+      } else if (typeof split.hook === "string" && split.hook.toLowerCase() !== zeroAddress) {
         parts.push(`via hook ${split.hook}`);
       }
       if (split.preferAddToBalance === true) parts.push("prefers add-to-balance");
