@@ -12,19 +12,20 @@ export function RotatingTagline() {
     return () => clearInterval(id);
   }, []);
 
-  // Block-level grid: the phrase always sits on its own line, and every phrase
-  // shares one cell so the height never changes either.
+  const phrase = PHRASES[index];
+  // The tagline is monospace, so `ch` is the phrase's exact width. Easing the
+  // width slides the centered line as phrases of different lengths come up.
   return (
-    <span className="grid whitespace-nowrap text-center">
-      {PHRASES.map((phrase, i) => (
-        <span
-          key={phrase}
-          aria-hidden={i !== index}
-          className={`col-start-1 row-start-1 ${i === index ? "animate-in fade-in-0 duration-500" : "invisible"}`}
-        >
-          {phrase}
-        </span>
-      ))}
+    <span
+      className="inline-block overflow-hidden whitespace-nowrap text-left align-bottom transition-[width] duration-500 ease-out motion-reduce:transition-none"
+      style={{ width: `${phrase.length}ch` }}
+    >
+      <span
+        key={phrase}
+        className="inline-block animate-in fade-in-0 slide-in-from-bottom-3 duration-500 motion-reduce:animate-none"
+      >
+        {phrase}
+      </span>
     </span>
   );
 }

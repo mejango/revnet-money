@@ -53,7 +53,7 @@ export default function Page() {
             id="how-revnets-work"
             className="text-center text-2xl font-semibold md:text-left md:text-3xl"
           >
-            How a revnet works.
+            A shape that stands the test of time.
           </h2>
           <p className="mt-4">
             A revnet receives money and shares tokens with the people who take part. Those tokens
