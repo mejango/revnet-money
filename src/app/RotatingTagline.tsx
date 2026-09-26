@@ -2,7 +2,24 @@
 
 import { useEffect, useState } from "react";
 
-const PHRASES = ["business model", "shared project", "community fund", "revenue network"];
+// Each phrase follows "A", so none may start with a vowel sound. Keep them
+// 18 characters or fewer so they share a line with "A" on a 320px screen.
+const PHRASES = [
+  "business model",
+  "revenue network",
+  "community fund",
+  "money engine",
+  "token economy",
+  "loyalty program",
+  "tip jar with rules",
+  "stranger co-op",
+  "meme with money",
+  "payroll for anons",
+  "bank for bots",
+  "zine collective",
+  "DAO without drama",
+  "patronage machine",
+];
 
 export function RotatingTagline() {
   const [index, setIndex] = useState(0);
