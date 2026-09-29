@@ -222,7 +222,6 @@ export async function proposeSafeBatch(
       calls: encoded.map((call, index) => ({
         chainId,
         from: account,
-        safeTxGas: 0n,
         abi: calls[index]!.abi,
         functionName: calls[index]!.functionName,
         args: calls[index]!.args,
