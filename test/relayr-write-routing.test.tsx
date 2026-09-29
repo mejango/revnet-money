@@ -88,6 +88,7 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
     isLoading: false,
   }),
   isSafeConnection: () => mocks.safe,
+  useSafeConnection: () => mocks.safe,
   submittedViaSafe: () => false,
 }));
 vi.mock("@/lib/transaction-review", () => ({

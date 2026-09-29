@@ -17,7 +17,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
-  getPublicClient: () => ({ simulateCalls: mocks.simulateCalls }),
+  getPublicClient: () => ({
+    simulateCalls: mocks.simulateCalls,
+    // A safeTxHash is never a transaction, so tracking polls the Safe service.
+    getTransaction: async () => {
+      throw new Error("Transaction not found");
+    },
+  }),
   simulateContract: mocks.simulateContract,
   switchChain: mocks.switchChain,
 }));

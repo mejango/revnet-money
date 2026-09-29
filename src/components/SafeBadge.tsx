@@ -1,21 +1,11 @@
 "use client";
 
+import { SAFE_PREFIX } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Address } from "viem";
 import { isAddress } from "viem";
-
-const SAFE_PREFIX: Partial<Record<number, string>> = {
-  1: "eth",
-  10: "oeth",
-  8453: "base",
-  42161: "arb1",
-  11155111: "sep",
-  11155420: "opsepolia",
-  84532: "basesep",
-  421614: "arb1-sep",
-};
 
 /** A chain-specific Safe badge. The address link remains a separate action. */
 export function SafeBadge({ address, chainId }: { address: string; chainId: number }) {

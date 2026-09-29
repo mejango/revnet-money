@@ -2,7 +2,7 @@ import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { StickyRecipient } from "@/components/sticky/StickyRecipient";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
-import { isSafeConnector } from "@/hooks/useReviewedWriteContract";
+import { useSafeConnection } from "@/hooks/useReviewedWriteContract";
 import { hasErrors } from "@/lib/forms";
 import type { JBChainId } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
@@ -87,15 +87,16 @@ export function DeploySection({
     setReview(true);
   };
   // The explicit config keeps this section renderable outside a WagmiProvider.
-  const { connector, chainId: connectedChainId } = useAccount({ config: wagmiConfig });
+  const { chainId: connectedChainId } = useAccount({ config: wagmiConfig });
+  const viaSafe = useSafeConnection(wagmiConfig);
 
   // A Safe proposal executes arbitrarily later, but the request encodes stage
   // 1's start time now. REVDeployer locks cash-outs and loans for 7 days when
   // that start is already past at execution, so warn before proposing.
-  const deploysViaSafe = isSafeConnector(connector) && values.chainIds.length === 1;
+  const deploysViaSafe = viaSafe && values.chainIds.length === 1;
   const singleChain = values.chainIds.length === 1;
   const unsupportedMultichain =
-    !singleChain && (isSafeConnector(connector) || !areRelayrChainsCompatible(values.chainIds));
+    !singleChain && (viaSafe || !areRelayrChainsCompatible(values.chainIds));
   const chainNames = values.chainIds.map((chainId) => chainDisplayName(chainId));
   const action = singleChain ? "Deploy the revnet" : "Sign and get quote";
 
@@ -125,7 +126,7 @@ export function DeploySection({
             role="alert"
             className="mb-4 border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800"
           >
-            {isSafeConnector(connector)
+            {viaSafe
               ? "For a Safe deployment, select one chain."
               : "Choose either live chains or test chains, not a mix."}
           </p>

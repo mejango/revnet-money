@@ -1,3 +1,4 @@
+import { safeServiceBase } from "@bananapus/nana-sdk-core/safe-service";
 import {
   decodeFunctionData,
   encodeFunctionData,
@@ -28,7 +29,6 @@ import {
   type CrossChainHandleAuthority,
   type SafeAuthorityIdentity,
 } from "./cross-chain-authority";
-import { SAFE_TX_SERVICE_PREFIX } from "./safeOwners";
 
 export const safeSetupAbi = [
   {
@@ -81,9 +81,9 @@ export type SafeCreation = {
 };
 
 export function safeCreationUrl(chainId: number, safe: string): string | null {
-  const prefix = SAFE_TX_SERVICE_PREFIX[chainId];
-  if (!prefix || !isAddress(safe)) return null;
-  return `https://api.safe.global/tx-service/${prefix}/api/v1/safes/${getAddress(safe)}/creation/`;
+  const base = safeServiceBase(chainId);
+  if (!base || !isAddress(safe)) return null;
+  return `${base}/api/v1/safes/${getAddress(safe)}/creation/`;
 }
 
 /** Strictly parse the untrusted Safe Transaction Service creation payload. */

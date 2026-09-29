@@ -82,7 +82,7 @@ vi.mock("@/components/EtherscanLink", () => ({
 }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeConnection: () => mocks.safe,
+  useSafeConnection: () => mocks.safe,
   submittedViaSafe: () => mocks.safeProposal,
   requireOnchainExecution: () => {
     if (mocks.safeProposal)

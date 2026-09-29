@@ -65,6 +65,7 @@ vi.mock("@/hooks/useAllowance", () => ({
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   isSafeConnection: () => true,
   submittedViaSafe: () => false,
+  useSafeConnection: () => true,
   proposeSafeBatch: mocks.proposeSafeBatch,
   useWriteContract: () => ({ writeContractAsync: mocks.writeContractAsync, isPending: false }),
 }));

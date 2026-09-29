@@ -21,6 +21,7 @@ import {
   isSafeConnection,
   proposeSafeBatch,
   submittedViaSafe,
+  useSafeConnection,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -608,6 +609,7 @@ export function AddLiquidityForm({
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
+  const viaSafe = useSafeConnection(wagmiConfig);
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
   const { ensureAllowance, isApproving } = useAllowance(chainId);
@@ -1101,11 +1103,7 @@ export function AddLiquidityForm({
           preparing={!review}
           steps={reviewSteps}
           activeIndex={busy ? stepIndex : -1}
-          stepsIntro={
-            isSafeConnection(wagmiConfig) && reviewSteps.length > 1
-              ? safeBatchIntro(reviewSteps)
-              : undefined
-          }
+          stepsIntro={viaSafe && reviewSteps.length > 1 ? safeBatchIntro(reviewSteps) : undefined}
           action={mode === "market" ? "Make the market" : "Add liquidity"}
           onConfirm={() => void execute()}
           busy={disabled}

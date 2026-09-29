@@ -80,9 +80,9 @@ vi.mock("@/components/ButtonWithWallet", () => ({
 }));
 
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeConnector: () => mocks.safe,
   requireOnchainExecution: mocks.requireOnchainExecution,
   submittedViaSafe: () => false,
+  useSafeConnection: () => mocks.safe,
   useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false }),
   useWriteContract: () => ({
     data: undefined,

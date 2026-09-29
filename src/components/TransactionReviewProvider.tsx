@@ -44,6 +44,7 @@ import {
   USDC_ADDRESSES,
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
+import { safeQueueUrl } from "@bananapus/nana-sdk-core/safe-service";
 import { describeStickySplit, JBPermissionCatalogV6 } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from "react";
 import {
@@ -60,7 +61,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { useAccount } from "wagmi";
+import { useAccount, useConfig } from "wagmi";
 import { FeeBuybackNotice, useFeeBuybackReview } from "./FeeBuybackNotice";
 
 type PendingReview = {
@@ -85,13 +86,6 @@ function cancelPending(pending: Pending) {
   else pending.resolve(null);
 }
 
-const SAFE_PREFIX: Partial<Record<number, string>> = {
-  1: "eth",
-  10: "oeth",
-  8453: "base",
-  42161: "arb1",
-  11155111: "sep",
-};
 function json(value: unknown): string {
   return JSON.stringify(value, (_, item) => (typeof item === "bigint" ? item.toString() : item), 2);
 }
@@ -1580,12 +1574,12 @@ function TransactionStatusCenter() {
           {activity.status === "safe-proposed" &&
           activity.chainId &&
           activity.account &&
-          SAFE_PREFIX[activity.chainId] ? (
+          safeQueueUrl(activity.chainId, activity.account) ? (
             <a
               className="mt-2 block break-all font-mono text-[10px] underline"
               target="_blank"
               rel="noreferrer"
-              href={`https://app.safe.global/transactions/queue?safe=${SAFE_PREFIX[activity.chainId]}:${activity.account}`}
+              href={safeQueueUrl(activity.chainId, activity.account)!}
             >
               Open pending Safe proposal | {activity.safeProposalHash ?? activity.hash}
             </a>
@@ -1618,12 +1612,12 @@ function TransactionStatusCenter() {
           activity.status !== "safe-proposed" &&
           activity.account &&
           activity.chainId &&
-          SAFE_PREFIX[activity.chainId] ? (
+          safeQueueUrl(activity.chainId, activity.account) ? (
             <a
               className="mt-1 block break-all font-mono text-[10px] underline"
               target="_blank"
               rel="noreferrer"
-              href={`https://app.safe.global/transactions/queue?safe=${SAFE_PREFIX[activity.chainId]}:${activity.account}`}
+              href={safeQueueUrl(activity.chainId, activity.account)!}
             >
               Safe proposal | {activity.safeProposalHash}
             </a>
@@ -1707,6 +1701,7 @@ function FundingChainChoice({
 }
 
 export function TransactionReviewProvider({ children }: PropsWithChildren) {
+  const config = useConfig();
   const { address } = useAccount();
   const account = useRef(address);
   account.current = address;
@@ -1757,7 +1752,7 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     [enqueueFundingChoice],
   );
   useEffect(() => resumePendingRelayrBundles(), []);
-  useEffect(() => resumeSafeProposalTracking(), []);
+  useEffect(() => resumeSafeProposalTracking(config), [config]);
   useEffect(
     () => () => {
       if (activeRef.current) cancelPending(activeRef.current);

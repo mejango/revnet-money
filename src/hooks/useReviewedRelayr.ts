@@ -20,6 +20,7 @@ import type {
 import type { ExpectedPayoutReceipt } from "@/lib/payout-receipts";
 import { verifyMetadataSource, type MetadataSourceGuard } from "@/lib/project-metadata-write";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { isSafeConnection } from "@/lib/safe-connector";
 import { requireSafeExecutionSuccess } from "@/lib/safe-queue";
 import {
   dismissTransactionActivity,
@@ -466,11 +467,6 @@ function stateIsFailed(state?: string): boolean {
   return state === "Failed" || state === "Reverted" || state === "Dropped";
 }
 
-function safeConnection(config: ReturnType<typeof useConfig>): boolean {
-  const connector = getAccount(config).connector;
-  return `${connector?.id ?? ""} ${connector?.name ?? ""}`.toLowerCase().includes("safe");
-}
-
 async function fetchBundle(bundleUuid: string): Promise<RelayrGetBundleResponse> {
   const response = await fetch(`${RELAYR_API}/v1/bundle/${bundleUuid}`, {
     signal: AbortSignal.timeout(15_000),
@@ -623,7 +619,7 @@ export function useGetRelayrTxQuote() {
         requests = requests.map((request) => ({ ...request, data: { ...request.data } }));
         if (!address) throw new Error("Connect a wallet first.");
         if (!requests.length) throw new Error("There are no Relayr calls to quote.");
-        if (safeConnection(config)) {
+        if (isSafeConnection(config)) {
           throw new Error(
             "A Safe cannot authorize these ERC-2771 requests as an EOA. Submit each action through the Safe proposal flow instead.",
           );
@@ -1089,7 +1085,7 @@ export function useSendRelayrTx() {
     async (offeredPayment: ChainPayment): Promise<Hex> => {
       requireNoViewAs();
       if (!address) throw new Error("Connect a wallet first.");
-      if (safeConnection(config))
+      if (isSafeConnection(config))
         throw new Error(
           "Submit each action through the Safe proposal flow instead of paying an EOA Relayr quote.",
         );
@@ -1111,7 +1107,7 @@ export function useSendRelayrTx() {
             !current.address ||
             current.address.toLowerCase() !== address.toLowerCase() ||
             current.chainId !== payment.chain ||
-            safeConnection(config)
+            isSafeConnection(config)
           )
             throw new Error("Connected account or chain changed. Review the Relayr payment again.");
         };

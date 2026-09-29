@@ -4,6 +4,7 @@ import { TransactionReviewProvider } from "@/components/TransactionReviewProvide
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { IS_DETERMINISTIC_BROWSER, PARA_EMBEDDED_WALLET_ENABLED } from "@/lib/browserEnvironment";
 import { installQueryPersistence } from "@/lib/query-persist";
+import { watchSafeWalletPeer } from "@/lib/safe-connector";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { connectParaSession } from "@/providers/para-bridge";
 import { verifyMarkedParaSession } from "@/providers/para-session";
@@ -91,6 +92,10 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
       teardown?.();
     };
   }, [queryClient]);
+
+  // Safe{Wallet} over WalletConnect is a Safe, and only its live session says so.
+  React.useEffect(() => watchSafeWalletPeer(wagmiConfig), []);
+
   const [paraHostLoaded, setParaHostLoaded] = React.useState(false);
   const [paraRequestId, setParaRequestId] = React.useState(0);
   const [paraRequest, setParaRequest] = React.useState<ParaRequest>({ kind: "auth" });

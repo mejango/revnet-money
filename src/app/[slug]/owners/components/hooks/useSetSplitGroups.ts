@@ -12,6 +12,7 @@ import {
 import {
   isSafeConnection,
   submittedViaSafe,
+  useSafeConnection,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -43,6 +44,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   const { address: userAddress, chainId: connectedChainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const config = useConfig();
+  const viaSafe = useSafeConnection(config);
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
   const [onSuccessCalled, setOnSuccessCalled] = useState(false);
@@ -228,7 +230,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
     isPending,
     isTxLoading,
     isSuccess,
-    relayrAvailable: !isSafeConnection(config),
+    relayrAvailable: !viaSafe,
   };
 }
 

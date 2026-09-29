@@ -62,6 +62,7 @@ vi.mock("wagmi", () => ({
   useAccount: () => ({
     address: "0x1111111111111111111111111111111111111111",
   }),
+  useConfig: () => ({}),
 }));
 
 describe("TransactionReviewProvider", () => {

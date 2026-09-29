@@ -26,8 +26,8 @@ import {
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import {
-  isSafeConnector,
   submittedViaSafe,
+  useSafeConnection,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import type { Project } from "@/lib/bendystraw/types";
@@ -136,10 +136,11 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
   const displayedChainId = useJBChainId();
   const { toast } = useToast();
   const router = useRouter();
-  const { address, chainId: connectedChainId, connector } = useAccount();
+  const { address, chainId: connectedChainId } = useAccount();
+  const viaSafe = useSafeConnection(wagmiConfig);
   const relayed =
     projects.length > 1 &&
-    !isSafeConnector(connector) &&
+    !viaSafe &&
     areRelayrChainsCompatible(projects.map((project) => project.chainId));
 
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
