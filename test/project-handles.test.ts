@@ -1,6 +1,7 @@
 import {
   JB_PROJECT_HANDLES_ADDRESS,
   PROJECT_HANDLE_CHAIN_ID,
+  PROJECT_HANDLE_TEXT_WRITE_SIMULATION_GAS,
   canonicalProjectHandle,
   ensTextResolverAbi,
   jbProjectHandlesAbi,
@@ -166,9 +167,10 @@ describe("project handles", () => {
     const client = { request } as unknown as PublicClient;
     const account = "0x1111111111111111111111111111111111111111";
 
+    expect(PROJECT_HANDLE_TEXT_WRITE_SIMULATION_GAS).toBe(500_000n);
     await expect(
       simulateExactEnsTextWrite(client, RESOLVER, NODE, "8453:42", account),
-    ).resolves.toBe(500_000n);
+    ).resolves.toBe(PROJECT_HANDLE_TEXT_WRITE_SIMULATION_GAS);
     expect(request).toHaveBeenCalledWith({
       method: "eth_call",
       params: [

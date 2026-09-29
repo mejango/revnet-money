@@ -221,7 +221,7 @@ export function SafeQueueCard({
   fallbackOperator?: string;
   fallbackProject: ChainProjectRow;
 }) {
-  const { address, connector } = useAccount();
+  const { address, chainId: connectedChainId, connector } = useAccount();
   // Opened as a Safe App, the connected account is a Safe, not an owner: it
   // cannot sign for itself, and executing or paying Relayr from it would take
   // the very nonce the queued transaction needs. Safe{Wallet}'s own queue is
@@ -478,7 +478,7 @@ export function SafeQueueCard({
       setBatchMessage("Review the executions, then choose where to pay Relayr…");
       const quote = await getRelayrTxQuote(requests);
       if (!quote) throw new Error("Relayr did not return a quote.");
-      const payment = await chooseRelayrPayment(quote.payment_info);
+      const payment = await chooseRelayrPayment(quote.payment_info, connectedChainId);
       setBatchMessage("Confirm the Relayr payment in your wallet…");
       await sendRelayrTx(payment);
       rows.forEach(({ row }) => setRowStatus(row.chainId, "Executing…"));

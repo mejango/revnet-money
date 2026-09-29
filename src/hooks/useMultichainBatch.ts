@@ -8,10 +8,10 @@ import {
 } from "@/hooks/useReviewedRelayr";
 import {
   isSafeConnection,
+  SAFE_NONCE_GUIDANCE,
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import { gasWithHeadroom } from "@/lib/gas";
 import {
   batchCallKey,
   createMultichainBatch,
@@ -37,6 +37,7 @@ import {
 } from "@/lib/transaction-activity";
 import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { useCallback, useRef, useState } from "react";
 import {
   decodeEventLog,
@@ -242,7 +243,7 @@ export function useMultichainBatch() {
   const direct = useRef<{ batch: MultichainBatch; index: number } | null>(null);
   const { getRelayrTxQuote } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
-  const { writeContractAsync } = useWriteContract({
+  const writeOptions: NonNullable<Parameters<typeof useWriteContract>[0]> = {
     manualReceiptVerification: () => true,
     allowSafeManualReceiptVerification: true,
     preflightSimulation: async (_variables, account) => {
@@ -302,6 +303,13 @@ export function useMultichainBatch() {
       active.batch.calls[active.index].state = "submitting";
       saveMultichainBatch(active.batch);
     },
+  };
+  // A resumed batch was reviewed in an earlier run, so each call is reviewed as it is sent.
+  const { writeContractAsync } = useWriteContract(writeOptions);
+  // The batch review in this run already showed these exact calls.
+  const { writeContractAsync: writeReviewedAsync } = useWriteContract({
+    ...writeOptions,
+    reviewedInParent: true,
   });
   const getPendingBatch = useCallback(
     (scope: string) => {
@@ -325,7 +333,7 @@ export function useMultichainBatch() {
   const runBatch = useCallback(
     async (input: BatchInput): Promise<BatchResult> => {
       requireNoViewAs();
-      const account = getAccount(config).address;
+      const { address: account, chainId: startChainId } = getAccount(config);
       if (!account) throw new Error("Connect a wallet first.");
       const lock = `revnet:multichain:${account.toLowerCase()}`;
       if (running.has(lock))
@@ -333,6 +341,8 @@ export function useMultichainBatch() {
       const execute = async (): Promise<BatchResult> => {
         setIsPending(true);
         let batch: MultichainBatch | undefined;
+        // True once this run showed the batch review of every exact call.
+        let reviewedHere = false;
         const progress = (message: string) => {
           input.onProgress?.(message);
           if (batch) updateTransactionActivity(batch.id, { message });
@@ -430,19 +440,21 @@ export function useMultichainBatch() {
               relayr ? "relayr" : "direct",
             );
             for (const call of input.calls) await call.validate?.();
+            // A Safe proposes each call with gas 0, so its reviewed envelope is
+            // safeTxGas 0 rather than the EOA gas limit.
+            const safe = isSafeConnection(config);
             await requireTransactionReview({
               title: `Review ${input.label}`,
               description: relayr
                 ? `All ${batch.calls.length} selected calls are retained in ${batch.rounds.length} round(s). Each round uses one funding payment for its independent destinations. Confirmed rounds are skipped when resuming.`
-                : "Calls are submitted in order on their selected chains. A Safe proposal must execute before the next call. Confirmed calls are skipped when resuming.",
-              confirmLabel: "Agree & prepare batch",
+                : `Calls are submitted in order on their selected chains. A Safe proposal must execute before the next call. Confirmed calls are skipped when resuming.${safe ? `\n\n${SAFE_NONCE_GUIDANCE}` : ""}`,
+              confirmLabel: safe ? "Agree & propose to Safe" : "Agree & prepare batch",
               calls: batch.calls.map((call) => ({
                 chainId: call.chainId,
                 from: account,
                 to: call.address,
                 value: call.value,
-                gas: call.gas,
-                safeTxGas: isSafeConnection(config) ? 0n : undefined,
+                ...(safe ? { safeTxGas: 0n } : { gas: call.gas }),
                 data: call.data,
                 abi: call.abi,
                 functionName: call.functionName,
@@ -450,6 +462,7 @@ export function useMultichainBatch() {
                 contractName: call.contractName,
               })),
             });
+            reviewedHere = true;
             requireAccount();
             for (const call of batch.calls) {
               const client = getPublicClient(config, { chainId: call.chainId });
@@ -517,6 +530,8 @@ export function useMultichainBatch() {
                     chainId: call.chainId as JBChainId,
                     version: 6 as const,
                     relayrMode: call.relayrMode,
+                    // The batch review in this run showed this exact call.
+                    reviewedInParent: reviewedHere,
                     recoveryScope: call.recoveryScope ?? `${batch.scope}:${call.chainId}:${index}`,
                     preconditions: call.preconditions,
                     expectedDeployment: call.expectedDeployment,
@@ -544,10 +559,7 @@ export function useMultichainBatch() {
                 round.bundleUuid = quote.bundle_uuid;
                 round.state = "quoted";
                 saveMultichainBatch(batch);
-                const payment = await chooseRelayrPayment(
-                  quote.payment_info,
-                  getAccount(config).chainId,
-                );
+                const payment = await chooseRelayrPayment(quote.payment_info, startChainId);
                 requireAccount();
                 round.state = "funding";
                 saveMultichainBatch(batch);
@@ -614,16 +626,19 @@ export function useMultichainBatch() {
               if (await reconcileReadyCall(call, index)) continue;
               await verifyCallPreconditions(client, call.preconditions);
               direct.current = { batch, index };
+              const variables = {
+                chainId: call.chainId,
+                address: call.address,
+                abi: call.abi,
+                functionName: call.functionName,
+                args: call.args,
+                value: call.value,
+                gas: call.gas,
+              };
               try {
-                call.hash = await writeContractAsync({
-                  chainId: call.chainId,
-                  address: call.address,
-                  abi: call.abi,
-                  functionName: call.functionName,
-                  args: call.args,
-                  value: call.value,
-                  gas: call.gas,
-                });
+                call.hash = reviewedHere
+                  ? await writeReviewedAsync(variables)
+                  : await writeContractAsync(variables);
               } catch (cause) {
                 if (explicitRejection(cause)) {
                   call.state = "ready";
@@ -702,7 +717,7 @@ export function useMultichainBatch() {
         running.delete(lock);
       }
     },
-    [config, getRelayrTxQuote, sendRelayrTx, writeContractAsync],
+    [config, getRelayrTxQuote, sendRelayrTx, writeContractAsync, writeReviewedAsync],
   );
   return { runBatch, getPendingBatch, isPending };
 }

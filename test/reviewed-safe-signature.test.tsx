@@ -65,7 +65,9 @@ describe("reviewed Safe signature boundary", () => {
       events.push("review");
       expect(request).toMatchObject({
         kind: "authorization",
-        calls: [{ chainId: 8453, from: ACCOUNT, to: TARGET, value: 7n, data: "0x1234" }],
+        calls: [
+          { chainId: 8453, from: ACCOUNT, to: TARGET, value: 7n, safeTxGas: 100n, data: "0x1234" },
+        ],
         authorization: {
           type: "EIP-712 SafeTx",
           safe: SAFE,

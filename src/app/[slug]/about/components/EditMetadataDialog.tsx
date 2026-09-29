@@ -33,7 +33,6 @@ import {
 import type { Project } from "@/lib/bendystraw/types";
 import { FormProvider, type FormHelpers } from "@/lib/forms";
 import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
-import { gasWithHeadroom } from "@/lib/gas";
 import { ipfsUri } from "@/lib/ipfs";
 import {
   useJBChainId,
@@ -47,9 +46,11 @@ import {
   type MetadataDestination,
 } from "@/lib/project-metadata-write";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData, type PublicClient } from "viem";
@@ -427,10 +428,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
 
       setRelayrQuote(quote);
       // Signing may switch the wallet; prefer the chain captured before this submission.
-      selectPayment(
-        quote.payment_info.find((payment: ChainPayment) => payment.chain === connectedChainId) ??
-          null,
-      );
+      selectPayment(preselectedRelayrPayment(quote.payment_info, connectedChainId));
       return true;
     } catch (e: unknown) {
       const message = formatWalletError(e) || "Failed to update metadata";
@@ -714,10 +712,13 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             ))}
             {relayrQuote ? (
               <RelayrPaymentSelect
-                payments={relayrQuote.payment_info}
-                tokenSymbol="ETH"
-                selectedPayment={selectedPayment}
-                onSelectPayment={selectPayment}
+                options={relayrPaymentOptions(relayrQuote.payment_info)}
+                value={selectedPayment?.chain ?? null}
+                onValueChange={(chainId) =>
+                  selectPayment(
+                    relayrQuote.payment_info.find((payment) => payment.chain === chainId) ?? null,
+                  )
+                }
                 disabled={busy}
               />
             ) : null}

@@ -6,6 +6,7 @@ import {
   isSafeConnection,
   proposeSafeBatch,
   requireOnchainExecution,
+  SAFE_NONCE_GUIDANCE,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@/lib/cross-chain-authority";
@@ -385,16 +386,19 @@ export function useSafeBatchSubmit() {
               description: `${next.signers.length} of ${live.threshold} owners have approved this batch, counting you. Executing runs every step in order.`,
               confirmLabel: "Agree & execute",
             };
+      // A Safe connection proposes this write with gas 0, reviewed as its Safe gas.
+      const viaSafe = isSafeConnection(config);
       await requireTransactionReview({
         title: write.label,
-        description: write.description,
-        confirmLabel: write.confirmLabel,
+        description: viaSafe ? `${write.description}\n\n${SAFE_NONCE_GUIDANCE}` : write.description,
+        confirmLabel: viaSafe ? "Agree & propose to Safe" : write.confirmLabel,
         authorization,
         calls: [
           {
             chainId,
             to: safe,
             value: 0n,
+            ...(viaSafe ? { safeTxGas: 0n } : {}),
             data: encodeFunctionData({
               abi: write.abi,
               functionName: write.functionName,
@@ -410,6 +414,12 @@ export function useSafeBatchSubmit() {
         ],
       });
       await reverify(account);
+      if (
+        getAccount(config).address?.toLowerCase() !== account.toLowerCase() ||
+        isSafeConnection(config) !== viaSafe
+      ) {
+        throw new Error("Wallet connection changed. Review the batch again.");
+      }
       onProgress(`Confirm the ${write.functionName} transaction on ${name} in your wallet…`);
       const hash = await writeReviewedAsync({
         chainId,

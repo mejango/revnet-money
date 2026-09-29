@@ -1,6 +1,7 @@
 import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { SAFE_EXEC_ABI } from "@/lib/safe-queue";
+import type { TransactionReviewRequest } from "@/lib/transaction-review";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import { act, renderHook } from "@testing-library/react";
 import {
@@ -205,6 +206,33 @@ describe("reviewed Relayr authorization hook", () => {
     expect(response?.bundle_uuid).toBe(BUNDLE_UUID);
     expect(events).toEqual(["switch", "simulate", "nonce", "review", "sign", "post"]);
   });
+
+  it.each([
+    ["the measured gas with headroom", 80_000n, 160_000n],
+    ["the caller's larger gas", 21_000n, 100_000n],
+  ])(
+    "shows the gas the forward request signs (%s) as the reviewed gas limit",
+    async (_, estimate, signed) => {
+      const { review, hooks } = await freshHarness();
+      mocks.estimateGas.mockResolvedValue(estimate);
+      const reviewer = vi.fn(async (_request: TransactionReviewRequest) => true);
+      review.registerTransactionReviewHandler(reviewer);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
+      );
+      const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+      await act(async () => {
+        await result.current.getRelayrTxQuote([REQUEST]);
+      });
+      const [request] = reviewer.mock.calls[0];
+      expect(request.calls[0].gas).toBe(signed);
+      expect(request.authorization).toMatchObject({ message: { gas: signed } });
+      expect(mocks.signTypedData).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ message: expect.objectContaining({ gas: signed }) }),
+      );
+    },
+  );
 
   it("rejects mismatched senders and same-chain nonce collisions before signing", async () => {
     const { review, hooks } = await freshHarness();
@@ -599,6 +627,31 @@ describe("raw payer publication and durable source guards", () => {
       activity.transactionActivitySnapshot()[0].relayrExpectedTransactions?.[0].expectedDeployment,
     ).toEqual(deployment);
   });
+  it.each([
+    ["raw call's duplicate review", () => ({ ...raw, reviewedInParent: true }), 0],
+    ["forwarded call's signature review", () => ({ ...REQUEST, reviewedInParent: true }), 1],
+  ] as const)("a parent review skips only a %s", async (_, request, reviews) => {
+    const { hooks, review } = await freshHarness();
+    const reviewer = vi.fn(async (_request: TransactionReviewRequest) => true);
+    review.registerTransactionReviewHandler(reviewer);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
+    );
+    const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await result.current.getRelayrTxQuote([request()]);
+    });
+    expect(reviewer).toHaveBeenCalledTimes(reviews);
+    if (reviews) {
+      expect(reviewer).toHaveBeenCalledWith(expect.objectContaining({ kind: "authorization" }));
+    } else {
+      expect(mocks.clientCall).toHaveBeenCalledWith(
+        expect.objectContaining({ to: JB_PROJECT_PAYER_DEPLOYER, data: raw.data.data }),
+      );
+    }
+    expect(fetch).toHaveBeenCalledOnce();
+  });
   it("retains a raw deployment publication after response loss and rejects changed intent", async () => {
     const { hooks, review } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
@@ -856,6 +909,7 @@ describe("reviewed Relayr payment hook", () => {
         from: ACCOUNT,
         to: PAYMENT_TARGET,
         value: 16n,
+        gas: 150_000n,
         data: payment().calldata,
       });
       return true;
@@ -864,7 +918,13 @@ describe("reviewed Relayr payment hook", () => {
       await expect(result.current.sendRelayrTx(payment())).resolves.toBe(HASH);
     });
     expect(mocks.sendTransaction).toHaveBeenCalledWith(
-      expect.objectContaining({ account: ACCOUNT, chainId: 1, to: PAYMENT_TARGET, value: 16n }),
+      expect.objectContaining({
+        account: ACCOUNT,
+        chainId: 1,
+        to: PAYMENT_TARGET,
+        value: 16n,
+        gas: 150_000n,
+      }),
     );
     expect(activity.transactionActivityForHash(HASH)).toMatchObject({
       kind: "relayr-bundle",
@@ -873,6 +933,41 @@ describe("reviewed Relayr payment hook", () => {
         expect.objectContaining({ chainId: 1, transactionUuid: "tx-reviewed" }),
       ],
     });
+  });
+
+  it("simulates the payment at its reviewed gas and sends exactly that gas", async () => {
+    const { result } = await quotedPayment();
+    mocks.estimateGas.mockClear();
+    await act(async () => {
+      await expect(result.current.sendRelayrTx(payment())).resolves.toBe(HASH);
+    });
+    expect(mocks.clientCall).toHaveBeenCalledWith({
+      account: ACCOUNT,
+      to: PAYMENT_TARGET,
+      value: 16n,
+      data: payment().calldata,
+      gas: 150_000n,
+    });
+    expect(mocks.clientCall.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      mocks.sendTransaction.mock.invocationCallOrder[0],
+    );
+    expect(mocks.estimateGas).not.toHaveBeenCalled();
+    expect(mocks.sendTransaction).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ to: PAYMENT_TARGET, gas: 150_000n }),
+    );
+  });
+
+  it.each([
+    ["reverts", () => Promise.reject(new Error("payment reverted: out of gas")), /out of gas/],
+    ["returns data", () => Promise.resolve({ data: "0x01" }), /unexpected result/],
+  ])("sends nothing when the payment %s at its reviewed gas", async (_, simulate, error) => {
+    const { activity, result } = await quotedPayment();
+    mocks.clientCall.mockImplementation(async ({ to }: { to: Address }) =>
+      to === PAYMENT_TARGET ? simulate() : { data: "0x" },
+    );
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(error);
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    expect(activity.transactionActivitySnapshot()[0].relayrPaymentStatus).toBe("unfunded");
   });
 
   it("rejects payments that were not returned by an authorized quote", async () => {

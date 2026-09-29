@@ -247,7 +247,7 @@ describe("EditMetadataDialog Relayr payment choice", () => {
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
     fireEvent.click(picker);
-    fireEvent.click(screen.getByRole("option", { name: /ETH on Base Sepolia/ }));
+    fireEvent.click(screen.getByRole("option", { name: "Base Sepolia (1 ETH)" }));
     fireEvent.click(confirm);
     await waitFor(() =>
       expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(testnetPayments[1]),
@@ -277,10 +277,25 @@ describe("EditMetadataDialog Relayr payment choice", () => {
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
 
     fireEvent.click(picker);
-    fireEvent.click(screen.getByRole("option", { name: /1\.00000000 ETH on Base/ }));
+    fireEvent.click(screen.getByRole("option", { name: "Base (1 ETH)" }));
     expect(confirm).not.toBeDisabled();
     expect(confirm).toHaveAttribute("data-target-chain", "8453");
     expect(screen.getByText("Pay 1.00000000 ETH to relay")).toBeInTheDocument();
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledWith(payments[1]));
+  });
+
+  it("preselects a lone quote when the connected chain is not quoted", async () => {
+    mocks.connectedChainId = 10;
+    mocks.getRelayrTxQuote.mockResolvedValue({ ...quote, payment_info: [payments[1]] });
+    await openDialog(projects);
+    await prefilledAdvancedTextarea();
+    await save();
+
+    const picker = await screen.findByRole("combobox");
+    await waitFor(() => expect(picker).toHaveTextContent("Base (1 ETH)"));
+    const confirm = screen.getByRole("button", { name: "Pay and submit" });
+    expect(confirm).not.toBeDisabled();
     fireEvent.click(confirm);
     await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledWith(payments[1]));
   });
@@ -300,7 +315,7 @@ describe("EditMetadataDialog Relayr payment choice", () => {
     await save();
 
     const picker = await screen.findByRole("combobox");
-    await waitFor(() => expect(picker).toHaveTextContent("1.00000000 ETH on Base"));
+    await waitFor(() => expect(picker).toHaveTextContent("Base (1 ETH)"));
     const confirm = screen.getByRole("button", { name: "Pay and submit" });
     expect(confirm).not.toBeDisabled();
     expect(confirm).toHaveAttribute("data-target-chain", "8453");

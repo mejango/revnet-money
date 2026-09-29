@@ -997,7 +997,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     ],
     paragraphs: [
       "Right before signing, refresh the reads that set bounds and permissions, rebuild, simulate with the real account, then decode the calldata and present it. After submission, keep wallet rejection, Safe proposal, inclusion, revert, and confirmed success as separate states. Only confirmed success invalidates reads.",
-      "This site enforces it mechanically: requireTransactionReview re-encodes the request after the user has seen it and throws if anything changed, and a build-time script rejects any wallet write outside the four reviewed hooks.",
+      "This site enforces it mechanically: requireContractTransactionReview re-encodes the call after the user has seen it and throws if anything changed, and a build-time script rejects any wallet write outside the four reviewed hooks.",
     ],
     codePoints: [
       {

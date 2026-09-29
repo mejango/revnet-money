@@ -20,6 +20,7 @@ import type {
   RelayrGetBundleResponse,
   RelayrPostBundleResponse,
 } from "@/lib/nana/types";
+import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
@@ -32,6 +33,8 @@ import { GoToProjectButton } from "./GoToProjectButton";
 interface PaymentAndDeploySectionProps {
   relayrResponse: RelayrPostBundleResponse;
   revnetTokenSymbol: string;
+  /** The chain the wallet was on before signing switched it. */
+  preferredPaymentChainId?: number;
   quotedStageStart?: QuotedStageStart;
   rebuildStaleQuote?: () => Promise<RelayrPostBundleResponse>;
 }
@@ -57,10 +60,13 @@ function destinationHash(transaction: RelayrGetBundleResponse["transactions"][nu
 export function PayAndDeploy({
   relayrResponse,
   revnetTokenSymbol,
+  preferredPaymentChainId,
   quotedStageStart,
   rebuildStaleQuote,
 }: PaymentAndDeploySectionProps) {
-  const [selectedPayment, selectPayment] = useState<ChainPayment | null>(null);
+  const [selectedPayment, selectPayment] = useState<ChainPayment | null>(() =>
+    preselectedRelayrPayment(relayrResponse.payment_info, preferredPaymentChainId),
+  );
   const [payIsProcessing, setPayIsProcessing] = useState(false);
   const [paymentSubmitted, setPaymentSubmitted] = useState(false);
   const [safeProposalSubmitted, setSafeProposalSubmitted] = useState(false);
@@ -85,10 +91,13 @@ export function PayAndDeploy({
   return (
     <div>
       <RelayrPaymentSelect
-        payments={relayrResponse.payment_info}
-        tokenSymbol="ETH"
-        selectedPayment={selectedPayment}
-        onSelectPayment={selectPayment}
+        options={relayrPaymentOptions(relayrResponse.payment_info)}
+        value={selectedPayment?.chain ?? null}
+        onValueChange={(chainId) =>
+          selectPayment(
+            relayrResponse.payment_info.find((payment) => payment.chain === chainId) ?? null,
+          )
+        }
         disabled={payIsProcessing || paymentLocked}
       />
       <div className="flex justify-end md:col-span-3 mt-4">

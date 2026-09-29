@@ -3,7 +3,7 @@
 import { CallRow, ExactCallCard } from "@/components/ExactCallCard";
 import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { resumePendingRelayrBundles, waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
 import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
 import { PERMIT2_ADDRESS, UNIVERSAL_ROUTER_BY_CHAIN } from "@/lib/directPaySwap";
@@ -19,8 +19,10 @@ import {
 } from "@/lib/transaction-activity";
 import {
   buildTransactionReviewPrompt,
+  registerFundingChainSelectionHandler,
   registerTransactionReviewHandler,
   transactionReviewJson,
+  type FundingChainOption,
   type TransactionReviewCall,
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
@@ -62,10 +64,26 @@ import { useAccount } from "wagmi";
 import { FeeBuybackNotice, useFeeBuybackReview } from "./FeeBuybackNotice";
 
 type PendingReview = {
+  kind: "review";
   id: number;
   request: TransactionReviewRequest;
   resolve: (approved: boolean) => void;
 };
+
+type PendingFundingChoice = {
+  kind: "funding";
+  id: number;
+  options: readonly FundingChainOption[];
+  initialChainId: number | null;
+  resolve: (chainId: number | null) => void;
+};
+
+type Pending = PendingReview | PendingFundingChoice;
+
+function cancelPending(pending: Pending) {
+  if (pending.kind === "review") pending.resolve(false);
+  else pending.resolve(null);
+}
 
 const SAFE_PREFIX: Partial<Record<number, string>> = {
   1: "eth",
@@ -1218,16 +1236,25 @@ function specialArgumentView(
     const steps = describeSplitGroups(call.chainId, value);
     if (steps) return <UrPlanView steps={steps} />;
   }
-  if (fn.name === "multiSend" && inputName === "transactions" && call.calls?.length) {
-    return (
-      <div className="mt-2 space-y-2">
-        {call.calls.map((inner, index) => (
-          <PrettyCall key={index} call={inner} index={index} total={call.calls!.length} />
-        ))}
-      </div>
-    );
+  if (callsUnderArgument(fn) && inputName === "transactions" && call.calls?.length) {
+    return <NestedCalls calls={call.calls} />;
   }
   return null;
+}
+
+/** MultiSend shows the calls it makes under its packed `transactions` argument. */
+function callsUnderArgument(fn: AbiFunction | null): boolean {
+  return fn?.name === "multiSend" && fn.inputs.some((input) => input.name === "transactions");
+}
+
+function NestedCalls({ calls }: { calls: readonly TransactionReviewCall[] }) {
+  return (
+    <div className="mt-2 space-y-2">
+      {calls.map((inner, index) => (
+        <PrettyCall key={index} call={inner} index={index} total={calls.length} />
+      ))}
+    </div>
+  );
 }
 
 function functionOf(call: TransactionReviewCall): AbiFunction | null {
@@ -1247,10 +1274,13 @@ function PrettyCall({
   call,
   index,
   total,
+  auditRequest,
 }: {
   call: TransactionReviewCall;
   index: number;
   total: number;
+  /** The request the card's prompt copies. Defaults to this call alone. */
+  auditRequest?: TransactionReviewRequest;
 }) {
   const fn = functionOf(call);
   const contract = knownContract(call);
@@ -1271,7 +1301,7 @@ function PrettyCall({
         args: call.args,
         data: call.data,
       })}
-      auditRequest={{ title: call.label ?? fn?.name, calls: [call] }}
+      auditRequest={auditRequest ?? { title: call.label ?? fn?.name, calls: [call] }}
     >
       <dl className="mt-2 space-y-1">
         {call.from ? <CallRow label="From">{call.from}</CallRow> : null}
@@ -1279,14 +1309,17 @@ function PrettyCall({
           {formatEther(call.value ?? 0n)} native | {(call.value ?? 0n).toString()} wei
         </CallRow>
         {call.safeTxGas !== undefined ? (
-          <CallRow label="Safe transaction gas">
-            {call.safeTxGas.toString()} (signed envelope)
+          <CallRow label="Safe gas">
+            {call.safeTxGas.toLocaleString("en-US")}
+            {call.safeTxGas !== 0n ? (
+              <span className="block">
+                If this call fails, the Safe still executes and uses this nonce.
+              </span>
+            ) : null}
           </CallRow>
         ) : null}
         {call.gas !== undefined ? (
-          <CallRow label={call.safeTxGas !== undefined ? "Preflight gas limit" : "Gas limit"}>
-            {call.gas.toString()}
-          </CallRow>
+          <CallRow label="Gas limit">{call.gas.toLocaleString("en-US")}</CallRow>
         ) : null}
       </dl>
       {fn ? (
@@ -1325,6 +1358,14 @@ function PrettyCall({
           calldata in Raw.
         </div>
       )}
+      {/* Any other call that carries a batch (a Safe approveHash or
+          execTransaction of a MultiSend) shows it after its own arguments. */}
+      {call.calls?.length && !callsUnderArgument(fn) ? (
+        <div className="mt-3 border-t border-melon-200 pt-2">
+          <p className="text-zinc-500">Calls it makes, in order</p>
+          <NestedCalls calls={call.calls} />
+        </div>
+      ) : null}
     </ExactCallCard>
   );
 }
@@ -1340,6 +1381,8 @@ function ReviewModal({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const feeReview = useFeeBuybackReview(pending.request.calls);
   const authorization = pending.request.kind === "authorization";
+  const singleCall = pending.request.calls.length === 1;
+  const requestWide = !singleCall || pending.request.authorization !== undefined;
   // Callers assemble the description from optional fragments, so a blank string
   // means "nothing extra to say" and must fall back to the standing guidance
   // rather than render an empty banner.
@@ -1347,7 +1390,13 @@ function ReviewModal({
     pending.request.description?.trim() ||
     (authorization
       ? "This signature authorizes the exact typed data and resulting calls below; it does not itself prove those calls have executed."
-      : "These are the exact app-controlled fields your wallet will be asked to send. Wallet-selected nonce and network fees are not shown.");
+      : `This is the exact destination, native value, and calldata the app will ask your wallet to send.${
+          pending.request.calls.every(
+            (call) => call.gas !== undefined || call.safeTxGas !== undefined,
+          )
+            ? " Your wallet adds the nonce and network fees."
+            : " Your wallet shows the gas limit and network fees before you send."
+        }`);
 
   // The review is the last thing opened before a wallet prompt. Transaction
   // starters close any summary dialog first, leaving this as the only active
@@ -1384,10 +1433,10 @@ function ReviewModal({
           <p className="border border-amber-300 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900">
             {description}
           </p>
-          {/* Single-call requests carry the audit prompt and raw data on the
-              card itself (the same chrome the pay flow uses); the request-wide
-              versions only add value when there is more than one call. */}
-          {pending.request.calls.length !== 1 ? (
+          {/* A single call carries the audit prompt and raw data on its card
+              (the same chrome the pay flow uses). The request-wide versions
+              show every call and any signed authorization. */}
+          {requestWide ? (
             <button
               type="button"
               className="mt-4 border border-melon-600 bg-melon-100 px-4 py-2 text-xs font-bold hover:bg-melon-200"
@@ -1417,10 +1466,11 @@ function ReviewModal({
                 call={call}
                 index={index}
                 total={pending.request.calls.length}
+                auditRequest={singleCall ? pending.request : undefined}
               />
             ))}
           </div>
-          {pending.request.calls.length !== 1 ? (
+          {requestWide ? (
             <details className="mt-4 border border-melon-300 bg-melon-50">
               <summary className="cursor-pointer px-4 py-3 text-sm font-bold">
                 Raw transaction payload
@@ -1621,43 +1671,33 @@ function TransactionStatusCenter() {
   );
 }
 
-function RelayrPaymentChoice({
+function FundingChainChoice({
   pending,
   finish,
 }: {
-  pending: PendingReview;
-  finish: (approved: boolean) => void;
+  pending: PendingFundingChoice;
+  finish: (chainId: number | null) => void;
 }) {
-  const selection = pending.request.relayrPaymentSelection!;
-  const [payment, setPayment] = useState(
-    selection.payments.find((option) => option.chain === selection.preferredChainId) ?? null,
-  );
+  const [chainId, setChainId] = useState(pending.initialChainId);
   return (
-    <Dialog open onOpenChange={(open) => !open && finish(false)}>
+    <Dialog open onOpenChange={(open) => !open && finish(null)}>
       <DialogContent>
-        <DialogTitle>Choose where to pay Relayr</DialogTitle>
-        <p className="text-sm text-melon-700">
-          One payment funds the signed calls on every selected chain. You will review the exact
-          payment before your wallet sends it.
-        </p>
+        <DialogTitle>Choose where to pay</DialogTitle>
+        <DialogDescription className="text-melon-700">
+          One payment covers every chain. You&apos;ll review it before your wallet sends it.
+        </DialogDescription>
         <RelayrPaymentSelect
-          payments={[...selection.payments]}
-          tokenSymbol="ETH"
-          selectedPayment={payment}
-          onSelectPayment={setPayment}
+          label="Pay on"
+          placeholder="Choose a chain"
+          options={pending.options}
+          value={chainId}
+          onValueChange={setChainId}
         />
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => finish(false)}>
+          <Button variant="outline" onClick={() => finish(null)}>
             Cancel
           </Button>
-          <Button
-            disabled={!payment}
-            onClick={() => {
-              if (!payment) return;
-              selection.select(payment);
-              finish(true);
-            }}
-          >
+          <Button disabled={chainId === null} onClick={() => finish(chainId)}>
             Continue to payment review
           </Button>
         </div>
@@ -1670,15 +1710,24 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   const { address } = useAccount();
   const account = useRef(address);
   account.current = address;
-  const activeRef = useRef<PendingReview | null>(null);
-  const queued = useRef<PendingReview[]>([]);
+  const activeRef = useRef<Pending | null>(null);
+  const queued = useRef<Pending[]>([]);
   const nextId = useRef(1);
-  const [active, setActive] = useState<PendingReview | null>(null);
+  const [active, setActive] = useState<Pending | null>(null);
+
+  const enqueuePending = useCallback((item: Pending) => {
+    if (activeRef.current) queued.current.push(item);
+    else {
+      activeRef.current = item;
+      setActive(item);
+    }
+  }, []);
 
   const enqueue = useCallback(
     (request: TransactionReviewRequest) =>
-      new Promise<boolean>((resolve) => {
-        const item: PendingReview = {
+      new Promise<boolean>((resolve) =>
+        enqueuePending({
+          kind: "review",
           id: nextId.current++,
           request: {
             ...request,
@@ -1689,44 +1738,60 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
             })),
           },
           resolve,
-        };
-        if (activeRef.current) queued.current.push(item);
-        else {
-          activeRef.current = item;
-          setActive(item);
-        }
-      }),
-    [],
+        }),
+      ),
+    [enqueuePending],
+  );
+
+  const enqueueFundingChoice = useCallback(
+    (options: readonly FundingChainOption[], initialChainId: number | null) =>
+      new Promise<number | null>((resolve) =>
+        enqueuePending({ kind: "funding", id: nextId.current++, options, initialChainId, resolve }),
+      ),
+    [enqueuePending],
   );
 
   useEffect(() => registerTransactionReviewHandler(enqueue), [enqueue]);
+  useEffect(
+    () => registerFundingChainSelectionHandler(enqueueFundingChoice),
+    [enqueueFundingChoice],
+  );
   useEffect(() => resumePendingRelayrBundles(), []);
   useEffect(() => resumeSafeProposalTracking(), []);
   useEffect(
     () => () => {
-      activeRef.current?.resolve(false);
-      queued.current.forEach((item) => item.resolve(false));
+      if (activeRef.current) cancelPending(activeRef.current);
+      queued.current.forEach(cancelPending);
     },
     [],
   );
 
-  const finish = useCallback((approved: boolean) => {
+  const finish = useCallback((id: number, result: boolean | number | null) => {
     const current = activeRef.current;
-    if (!current) return;
+    if (current?.id !== id) return;
     const next = queued.current.shift() ?? null;
     activeRef.current = next;
     setActive(next);
-    current.resolve(approved);
+    if (current.kind === "review") current.resolve(result === true);
+    else current.resolve(typeof result === "number" ? result : null);
   }, []);
 
   return (
     <>
       {children}
       <TransactionStatusCenter />
-      {active?.request.relayrPaymentSelection ? (
-        <RelayrPaymentChoice key={active.id} pending={active} finish={finish} />
+      {active?.kind === "funding" ? (
+        <FundingChainChoice
+          key={active.id}
+          pending={active}
+          finish={(chainId) => finish(active.id, chainId)}
+        />
       ) : active ? (
-        <ReviewModal key={active.id} pending={active} finish={finish} />
+        <ReviewModal
+          key={active.id}
+          pending={active}
+          finish={(approved) => finish(active.id, approved)}
+        />
       ) : null}
     </>
   );

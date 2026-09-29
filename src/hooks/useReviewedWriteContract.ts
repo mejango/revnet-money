@@ -1,6 +1,5 @@
 "use client";
 
-import { gasWithHeadroom } from "@/lib/gas";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -17,6 +16,7 @@ import {
 } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
 import { useCallback, useMemo } from "react";
@@ -43,7 +43,7 @@ const SAFE_PREFIX: Partial<Record<number, string>> = {
   42161: "arb1",
   11155111: "sep",
 };
-const SAFE_NONCE_GUIDANCE =
+export const SAFE_NONCE_GUIDANCE =
   "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
 const safeInflight = new Map<string, Promise<void>>();
 
@@ -222,7 +222,6 @@ export async function proposeSafeBatch(
       calls: encoded.map((call, index) => ({
         chainId,
         from: account,
-        safeTxGas: 0n,
         abi: calls[index]!.abi,
         functionName: calls[index]!.functionName,
         args: calls[index]!.args,
@@ -415,6 +414,8 @@ export function useWriteContract(
             "This execution requires exact onchain result verification and cannot be proposed through a Safe connector. Connect an EOA owner of the executing Safe.",
           );
         }
+        // A bounded preflight fixes the gas before review, so the review shows it.
+        const reviewedGas = preflightSimulation && !safe ? variables.gas : undefined;
         if (!reviewedInParent) {
           await requireContractTransactionReview(
             {
@@ -424,7 +425,7 @@ export function useWriteContract(
               functionName,
               args: variables.args,
               value: variables.value,
-              gas: preflightSimulation ? variables.gas : undefined,
+              gas: reviewedGas,
               account: initialAddress,
               safeTxGas: safe ? 0n : undefined,
             },
@@ -478,6 +479,13 @@ export function useWriteContract(
           : await publicClient.estimateContractGas(
               estimateRequest as Parameters<typeof publicClient.estimateContractGas>[0],
             );
+        // Safe Apps maps the Ethereum gas field directly to Safe's signed
+        // safeTxGas. Keep its canonical envelope at zero and let Safe estimate
+        // execution gas; the bounded preflight above remains mandatory.
+        const gas = safe ? 0n : (boundedPreflight?.gas ?? gasWithHeadroom(estimate));
+        if (reviewedGas !== undefined && gas !== reviewedGas) {
+          throw new Error("The gas limit changed after review. Nothing was sent; review it again.");
+        }
         const liveAccount = getAccount(config).address;
         if (!liveAccount || liveAccount.toLowerCase() !== reviewedAccount.toLowerCase()) {
           throw new Error("Connected account changed. Review the transaction again.");
@@ -498,10 +506,7 @@ export function useWriteContract(
         await beforeSubmission?.();
         const hash = await mutation.writeContractAsync({
           ...simulation.request,
-          // Safe Apps maps the Ethereum gas field directly to Safe's signed
-          // safeTxGas. Keep its canonical envelope at zero and let Safe estimate
-          // execution gas; the bounded preflight above remains mandatory.
-          gas: safe ? 0n : (boundedPreflight?.gas ?? gasWithHeadroom(estimate)),
+          gas,
         } as Parameters<typeof mutation.writeContractAsync>[0]);
         followSubmission(
           config,

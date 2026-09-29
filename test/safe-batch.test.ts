@@ -93,7 +93,10 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     expect(
       seen!.calls.map((call) => ({ to: call.to, value: call.value, data: call.data })),
     ).toEqual(expected);
-    expect(seen!.calls.every((call) => call.from === ACCOUNT && call.safeTxGas === 0n)).toBe(true);
+    // wallet_sendCalls carries no Safe gas; Safe{Wallet} picks it, so the review claims none.
+    expect(seen!.calls.every((call) => call.from === ACCOUNT && call.safeTxGas === undefined)).toBe(
+      true,
+    );
     expect(seen!.description).toContain("one batch");
     expect(mocks.simulateCalls).toHaveBeenCalledWith({ account: ACCOUNT, calls: expected });
     expect(mocks.simulateContract).not.toHaveBeenCalled();

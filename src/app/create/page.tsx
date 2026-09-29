@@ -14,11 +14,11 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
-import { gasWithHeadroom } from "@/lib/gas";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { useRef, useState } from "react";
 import { encodeFunctionData, PublicClient } from "viem";
@@ -44,6 +44,7 @@ export default function Page() {
   const { getRelayrTxQuote, data, reset } = useGetRelayrTxQuote();
   const [directDeployment, setDirectDeployment] = useState<DirectDeployment | null>(null);
   const [quotedStageStart, setQuotedStageStart] = useState<QuotedStageStart>();
+  const [paymentChainId, setPaymentChainId] = useState<number>();
   const quotedFormData = useRef<RevnetFormData | null>(null);
 
   async function deployProject(
@@ -257,6 +258,7 @@ export default function Page() {
         onSubmit={async (formData: RevnetFormData, { setSubmitting }) => {
           try {
             setSubmitting(true);
+            setPaymentChainId(connectedChainId);
             await deployProject({
               ...formData,
               stages: calculateFinalStageStarts(formData.stages),
@@ -276,6 +278,7 @@ export default function Page() {
         <DeployRevnetForm
           relayrResponse={data}
           resetRelayrResponse={reset}
+          preferredPaymentChainId={paymentChainId}
           directDeployment={directDeployment}
           quotedStageStart={quotedStageStart}
           rebuildStaleQuote={rebuildStaleQuote}

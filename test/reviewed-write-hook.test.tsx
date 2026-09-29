@@ -288,18 +288,50 @@ describe("reviewed write hook", () => {
     const { review, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async (request) => {
       expect(request.calls[0].safeTxGas).toBe(0n);
+      expect(request.calls[0].gas).toBeUndefined();
+      return true;
+    });
+    const preflightSimulation = vi.fn().mockResolvedValue({ gas: 500_000n });
+    const { result } = renderHook(() => hooks.useWriteContract({ preflightSimulation }));
+    const call = { ...CALL, gas: 500_000n };
+
+    await act(async () => {
+      await result.current.writeContractAsync(call as never);
+    });
+
+    expect(preflightSimulation).toHaveBeenCalledWith(call, ACCOUNT);
+    expect(mocks.estimateContractGas).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ gas: 0n }));
+  });
+
+  it("reviews the fixed gas limit a raw preflight sends", async () => {
+    const { review, hooks } = await freshHarness();
+    let reviewedGas: bigint | undefined;
+    review.registerTransactionReviewHandler(async (request) => {
+      reviewedGas = request.calls[0].gas;
       return true;
     });
     const preflightSimulation = vi.fn().mockResolvedValue({ gas: 500_000n });
     const { result } = renderHook(() => hooks.useWriteContract({ preflightSimulation }));
 
     await act(async () => {
-      await result.current.writeContractAsync(CALL as never);
+      await result.current.writeContractAsync({ ...CALL, gas: 500_000n } as never);
     });
 
-    expect(preflightSimulation).toHaveBeenCalledWith(CALL, ACCOUNT);
-    expect(mocks.estimateContractGas).not.toHaveBeenCalled();
-    expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ gas: 0n }));
+    expect(reviewedGas).toBe(500_000n);
+    expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ gas: reviewedGas }));
+  });
+
+  it("sends nothing when a preflight's gas differs from the reviewed gas limit", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const preflightSimulation = vi.fn().mockResolvedValue({ gas: 600_000n });
+    const { result } = renderHook(() => hooks.useWriteContract({ preflightSimulation }));
+
+    await expect(
+      result.current.writeContractAsync({ ...CALL, gas: 500_000n } as never),
+    ).rejects.toThrow("The gas limit changed after review");
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 
   it("fails closed before simulation when reviewed state changes", async () => {

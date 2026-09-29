@@ -74,6 +74,8 @@ export function useReviewedSafeSignature() {
             from: before.address,
             to: tx.to,
             value: BigInt(tx.value ?? 0),
+            // The signature commits to this call's Safe gas.
+            safeTxGas: BigInt(tx.safeTxGas ?? 0),
             data: tx.data ?? "0x",
             label: `Safe transaction #${tx.nonce}`,
             ...review,

@@ -22,12 +22,15 @@ export type DirectDeployment = { chainId: JBChainId; hash: string };
 export function DeployRevnetForm({
   relayrResponse,
   resetRelayrResponse,
+  preferredPaymentChainId,
   directDeployment,
   quotedStageStart,
   rebuildStaleQuote,
 }: {
   relayrResponse?: RelayrPostBundleResponse;
   resetRelayrResponse: () => void;
+  /** The chain the wallet was on when the launch started, before signing switched it. */
+  preferredPaymentChainId?: number;
   /** The submitted transaction when a single-chain deploy went straight to the wallet. */
   directDeployment?: DirectDeployment | null;
   /** The stage 1 start time encoded in the current quote. */
@@ -89,6 +92,7 @@ export function DeployRevnetForm({
         <QuoteResponse
           relayrResponse={relayrResponse}
           reset={resetRelayrResponse}
+          preferredPaymentChainId={preferredPaymentChainId}
           quotedStageStart={quotedStageStart}
           rebuildStaleQuote={rebuildStaleQuote}
         />

@@ -206,7 +206,7 @@ describe("token panel Relayr funding", () => {
       );
       expect(mocks.writeContractAsync).not.toHaveBeenCalled();
       fireEvent.click(picker);
-      fireEvent.click(screen.getByRole("option", { name: /ETH on Base Sepolia/ }));
+      fireEvent.click(screen.getByRole("option", { name: "Base Sepolia (1 ETH)" }));
       fireEvent.click(confirm);
       await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(payments[1]));
       expect(mocks.waitForRelayrBundle).toHaveBeenCalledExactlyOnceWith(QUOTE.bundle_uuid);
@@ -238,7 +238,7 @@ describe("token panel Relayr funding", () => {
     ]);
 
     fireEvent.click(picker);
-    fireEvent.click(screen.getByRole("option", { name: /1\.00000000 ETH on Base/ }));
+    fireEvent.click(screen.getByRole("option", { name: "Base (1 ETH)" }));
     expect(confirm).not.toBeDisabled();
     expect(confirm).toHaveAttribute("data-target-chain", "8453");
     expect(screen.getByText("Pay 1.00000000 ETH to relay")).toBeInTheDocument();
@@ -262,9 +262,21 @@ describe("token panel Relayr funding", () => {
     });
     await openConfirmation([1, 8453], true);
     const picker = await screen.findByRole("combobox");
-    await waitFor(() => expect(picker).toHaveTextContent("1.00000000 ETH on Base"));
+    await waitFor(() => expect(picker).toHaveTextContent("Base (1 ETH)"));
     const confirm = screen.getByRole("button", { name: "Pay and submit" });
     expect(confirm).toHaveAttribute("data-target-chain", "8453");
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(PAYMENTS[1]));
+  });
+
+  it("preselects a lone quote when the connected chain is not quoted", async () => {
+    mocks.chainId = 10;
+    mocks.getRelayrTxQuote.mockResolvedValue({ ...QUOTE, payment_info: [PAYMENTS[1]] });
+    await openConfirmation([1, 8453]);
+    const picker = await screen.findByRole("combobox");
+    await waitFor(() => expect(picker).toHaveTextContent("Base (1 ETH)"));
+    const confirm = screen.getByRole("button", { name: "Pay and submit" });
+    expect(confirm).not.toBeDisabled();
     fireEvent.click(confirm);
     await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(PAYMENTS[1]));
   });
