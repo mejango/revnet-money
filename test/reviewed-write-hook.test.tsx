@@ -736,7 +736,7 @@ describe("reviewed write hook", () => {
 
   it.each([
     ["with", 11155111],
-    ["without", 84532],
+    ["without", 11155420],
   ])(
     "resumes a saved proposal on a chain %s a Safe service through the chain's client",
     async (_service, chainId) => {
@@ -771,7 +771,7 @@ describe("reviewed write hook", () => {
 
   it.each([
     ["keeps asking Safe after a minute of chain checks", 11155111],
-    ["stops after a minute of chain checks without a Safe service", 84532],
+    ["stops after a minute of chain checks without a Safe service", 11155420],
   ])("tracks a proposal that never becomes a transaction: %s", async (_name, chainId) => {
     vi.useFakeTimers();
     const { activity, hooks } = await freshHarness();
@@ -797,7 +797,7 @@ describe("reviewed write hook", () => {
 
     // An execution sent at once reaches the chain within a minute of the reply.
     expect(mocks.getTransaction).toHaveBeenCalledTimes(12);
-    if (chainId === 84532) expect(service).not.toHaveBeenCalled();
+    if (chainId === 11155420) expect(service).not.toHaveBeenCalled();
     else expect(service.mock.calls.length).toBeGreaterThan(12);
     expect(activity.transactionActivityForHash(HASH)).toMatchObject({ status: "safe-proposed" });
   });

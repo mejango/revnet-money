@@ -105,7 +105,10 @@ describe("Safe creation discovery", () => {
     expect(safeCreationUrl(8453, SAFE)).toBe(
       `https://api.safe.global/tx-service/base/api/v1/safes/${SAFE}/creation/`,
     );
-    expect(safeCreationUrl(84532, SAFE)).toBeNull();
+    expect(safeCreationUrl(84532, SAFE)).toBe(
+      `https://api.safe.global/tx-service/basesep/api/v1/safes/${SAFE}/creation/`,
+    );
+    expect(safeCreationUrl(11155420, SAFE)).toBeNull();
     expect(safeCreationUrl(1, "not-an-address")).toBeNull();
   });
 

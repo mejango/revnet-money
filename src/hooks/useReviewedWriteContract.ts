@@ -18,6 +18,7 @@ import {
 import { requireNoViewAs } from "@/lib/view-as";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { safeServiceBase } from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
 import { useCallback, useMemo } from "react";
@@ -41,13 +42,6 @@ import { getAccount, getPublicClient, simulateContract, switchChain } from "wagm
 
 export { isSafeConnection, isSafeConnector, useSafeConnection } from "@/lib/safe-connector";
 
-const SAFE_PREFIX: Partial<Record<number, string>> = {
-  1: "eth",
-  10: "oeth",
-  8453: "base",
-  42161: "arb1",
-  11155111: "sep",
-};
 export const SAFE_NONCE_GUIDANCE =
   "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
 const safeInflight = new Map<string, Promise<void>>();
@@ -65,8 +59,8 @@ async function watchSafeProposal(
   chainId: number,
   client: PublicClient | undefined,
 ): Promise<void> {
-  const prefix = SAFE_PREFIX[chainId];
-  if (!prefix && !client) return;
+  const service = safeServiceBase(chainId);
+  if (!service && !client) return;
   const existing = safeInflight.get(id);
   if (existing) return existing;
   const tracked = () => refreshTransactionActivities().find((activity) => activity.id === id);
@@ -84,7 +78,7 @@ async function watchSafeProposal(
   };
   const request = (async () => {
     // Without a Safe service only the chain can show an execution.
-    for (let attempt = 0; attempt < (prefix ? 720 : SAFE_EXECUTION_CHECKS); attempt += 1) {
+    for (let attempt = 0; attempt < (service ? 720 : SAFE_EXECUTION_CHECKS); attempt += 1) {
       if (tracked()?.obsoleteSafeNonce !== undefined) return;
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
       // when the owner executes at once. A safeTxHash is never a transaction.
@@ -111,11 +105,9 @@ async function watchSafeProposal(
         executed(receipt.status === "success" && !failed, hash);
         return;
       }
-      if (prefix) {
+      if (service) {
         try {
-          const response = await fetch(
-            `https://api.safe.global/tx-service/${prefix}/api/v1/multisig-transactions/${hash}/`,
-          );
+          const response = await fetch(`${service}/api/v1/multisig-transactions/${hash}/`);
           if (response.ok) {
             const transaction = (await response.json()) as {
               isExecuted?: boolean;

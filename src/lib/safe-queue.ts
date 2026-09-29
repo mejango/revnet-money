@@ -1,6 +1,7 @@
 "use client";
 
 import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@/lib/safe-batch";
+import { SAFE_PREFIX, safeQueueUrl, safeServiceBase } from "@bananapus/nana-sdk-core/safe-service";
 import {
   getAddress,
   hashTypedData,
@@ -159,18 +160,7 @@ export const SAFE_TX_TYPES = {
   ],
 } as const;
 
-const SAFE_SERVICE_PREFIX: Partial<Record<number, string>> = {
-  1: "eth",
-  10: "oeth",
-  8453: "base",
-  42161: "arb1",
-  11155111: "sep",
-};
-
-function serviceBase(chainId: number): string | null {
-  const prefix = SAFE_SERVICE_PREFIX[chainId];
-  return prefix ? `https://api.safe.global/tx-service/${prefix}` : null;
-}
+const serviceBase = safeServiceBase;
 
 /** Whether Safe's hosted transaction service covers the chain; without it, owners approve onchain. */
 export function hasSafeService(chainId: number): boolean {
@@ -218,8 +208,7 @@ export function onchainApprovalStep({
 }
 
 export function safeQueueLink(chainId: number, safe: Address): string | null {
-  const prefix = SAFE_SERVICE_PREFIX[chainId];
-  return prefix ? `https://app.safe.global/transactions/queue?safe=${prefix}:${safe}` : null;
+  return safeQueueUrl(chainId, safe);
 }
 
 export function safeTransactionLink(
@@ -227,7 +216,7 @@ export function safeTransactionLink(
   safe: Address,
   safeTxHash: Hex,
 ): string | null {
-  const prefix = SAFE_SERVICE_PREFIX[chainId];
+  const prefix = SAFE_PREFIX[chainId];
   return prefix
     ? `https://app.safe.global/transactions/tx?safe=${prefix}:${safe}&id=multisig_${safe}_${safeTxHash}`
     : null;
