@@ -52,6 +52,7 @@ const RELAYR_API = "https://api.relayr.ba5ed.com";
 const RELAYR_PAYMENT_ADDRESS = "0x1c05f7841379d4393574c0ffa17908ec40ffd97d";
 const RELAYR_PAYMENT_CODE_HASH =
   "0x6006b5acadb4cd60aa5c00cb844c34563e182dff83d4f4ff4fde226f7df16fa6";
+const RELAYR_PAYMENT_GAS = 150_000n;
 const RELAYR_NATIVE_TOKEN = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TRUSTED_FORWARDER_ABI = [
@@ -83,6 +84,11 @@ export type ReviewedRelayrRequest = {
   metadataSource?: MetadataSourceGuard;
   /** "safe-exec" runs a fully signed Safe execTransaction; see requireRawSafeExecution. */
   relayrMode?: "raw" | "forwarded" | "safe-exec";
+  /**
+   * A parent review already showed this exact raw call, so its duplicate review
+   * is skipped. A forwarded call's signature is always reviewed.
+   */
+  reviewedInParent?: boolean;
   expectedSafeExecution?: ExpectedSafeExecution;
   preconditions?: CallPrecondition[];
   expectedDeployment?: ExpectedPayerDeployment;
@@ -797,23 +803,24 @@ export function useGetRelayrTxQuote() {
                 request.data.value,
                 request.expectedDeployment,
               );
-              await requireTransactionReview({
-                kind: "transaction",
-                title: `Review payer deployment on chain ${request.chainId}`,
-                description:
-                  "Relayr deploys this payer from its own sending account. The exact owner, project, beneficiary and settings below are independent of that sender. A separate payment funds the selected deployments.",
-                confirmLabel: "Agree & request Relayr quote",
-                calls: [
-                  {
-                    chainId: request.chainId,
-                    from: address,
-                    to: request.data.to,
-                    value: request.data.value,
-                    data: request.data.data,
-                    ...request.review,
-                  },
-                ],
-              });
+              if (!request.reviewedInParent)
+                await requireTransactionReview({
+                  kind: "transaction",
+                  title: `Review payer deployment on chain ${request.chainId}`,
+                  description:
+                    "Relayr deploys this payer from its own sending account. The exact owner, project, beneficiary and settings below are independent of that sender. A separate payment funds the selected deployments.",
+                  confirmLabel: "Agree & request Relayr quote",
+                  calls: [
+                    {
+                      chainId: request.chainId,
+                      from: address,
+                      to: request.data.to,
+                      value: request.data.value,
+                      data: request.data.data,
+                      ...request.review,
+                    },
+                  ],
+                });
               if (getAccount(config).address?.toLowerCase() !== address.toLowerCase())
                 throw new Error("Connected account changed. Review the deployment again.");
               await verifyCallPreconditions(client, request.preconditions);
@@ -910,6 +917,8 @@ export function useGetRelayrTxQuote() {
                   from: address,
                   to: request.data.to,
                   value: request.data.value,
+                  // The forwarder runs the call with exactly the signed gas.
+                  gas: message.gas,
                   data: request.data.data,
                   abi: request.review?.abi,
                   functionName: request.review?.functionName,
@@ -1119,6 +1128,7 @@ export function useSendRelayrTx() {
               from: address,
               to: payment.target,
               value,
+              gas: RELAYR_PAYMENT_GAS,
               data: payment.calldata,
               label: "Pay Relayr bundle fee",
             },
@@ -1130,14 +1140,6 @@ export function useSendRelayrTx() {
         const code = await publicClient.getCode({ address: payment.target });
         if (!code || keccak256(code) !== RELAYR_PAYMENT_CODE_HASH)
           throw new Error("Relayr payment contract code is not recognized.");
-        const gas = gasWithHeadroom(
-          await publicClient.estimateGas({
-            account: address,
-            to: payment.target,
-            value,
-            data: payment.calldata,
-          }),
-        );
         // Funding may be approved long after signing. Re-run the exact signed
         // forwarder calls against live state so consumed nonces, expired signatures,
         // changed permissions and destination reverts cannot receive a payment.
@@ -1159,6 +1161,16 @@ export function useSendRelayrTx() {
             stateOverride: [{ address, balance: maxUint256 }],
           });
         }
+        // The payment is sent with the reviewed gas, so it must succeed within it.
+        const simulation = await publicClient.call({
+          account: address,
+          to: payment.target,
+          value,
+          data: payment.calldata,
+          gas: RELAYR_PAYMENT_GAS,
+        });
+        if (simulation.data && simulation.data !== "0x")
+          throw new Error("Relayr payment simulation returned an unexpected result.");
         requireAccount();
         paymentDetails(payment, remembered.bundleUuid, remembered.chainIds);
         requireUnfunded(remembered);
@@ -1191,7 +1203,7 @@ export function useSendRelayrTx() {
             to: payment.target,
             value,
             data: payment.calldata,
-            gas,
+            gas: RELAYR_PAYMENT_GAS,
           });
         } catch (error) {
           // Only an explicit wallet rejection proves that no transaction was broadcast.

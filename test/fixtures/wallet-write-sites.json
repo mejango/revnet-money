@@ -19,7 +19,7 @@
           "getRelayrTxQuote",
           1
         ],
-        ["reviewed-write", "src/hooks/useMultichainBatch.ts", "execute", "writeContractAsync", 1],
+        ["reviewed-write", "src/hooks/useMultichainBatch.ts", "execute", "writeContractAsync", 2],
         [
           "reviewed-relayr-payment-hook",
           "src/hooks/useMultichainBatch.ts",
@@ -39,7 +39,7 @@
           "src/hooks/useMultichainBatch.ts",
           "useMultichainBatch",
           "useWriteContract",
-          1
+          2
         ],
         [
           "raw-wallet-import",

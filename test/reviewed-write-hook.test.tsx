@@ -322,6 +322,18 @@ describe("reviewed write hook", () => {
     expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ gas: reviewedGas }));
   });
 
+  it("sends nothing when a preflight's gas differs from the reviewed gas limit", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const preflightSimulation = vi.fn().mockResolvedValue({ gas: 600_000n });
+    const { result } = renderHook(() => hooks.useWriteContract({ preflightSimulation }));
+
+    await expect(
+      result.current.writeContractAsync({ ...CALL, gas: 500_000n } as never),
+    ).rejects.toThrow("The gas limit changed after review");
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
   it("fails closed before simulation when reviewed state changes", async () => {
     const { review, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);

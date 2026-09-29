@@ -1236,16 +1236,25 @@ function specialArgumentView(
     const steps = describeSplitGroups(call.chainId, value);
     if (steps) return <UrPlanView steps={steps} />;
   }
-  if (fn.name === "multiSend" && inputName === "transactions" && call.calls?.length) {
-    return (
-      <div className="mt-2 space-y-2">
-        {call.calls.map((inner, index) => (
-          <PrettyCall key={index} call={inner} index={index} total={call.calls!.length} />
-        ))}
-      </div>
-    );
+  if (callsUnderArgument(fn) && inputName === "transactions" && call.calls?.length) {
+    return <NestedCalls calls={call.calls} />;
   }
   return null;
+}
+
+/** MultiSend shows the calls it makes under its packed `transactions` argument. */
+function callsUnderArgument(fn: AbiFunction | null): boolean {
+  return fn?.name === "multiSend" && fn.inputs.some((input) => input.name === "transactions");
+}
+
+function NestedCalls({ calls }: { calls: readonly TransactionReviewCall[] }) {
+  return (
+    <div className="mt-2 space-y-2">
+      {calls.map((inner, index) => (
+        <PrettyCall key={index} call={inner} index={index} total={calls.length} />
+      ))}
+    </div>
+  );
 }
 
 function functionOf(call: TransactionReviewCall): AbiFunction | null {
@@ -1349,6 +1358,14 @@ function PrettyCall({
           calldata in Raw.
         </div>
       )}
+      {/* Any other call that carries a batch (a Safe approveHash or
+          execTransaction of a MultiSend) shows it after its own arguments. */}
+      {call.calls?.length && !callsUnderArgument(fn) ? (
+        <div className="mt-3 border-t border-melon-200 pt-2">
+          <p className="text-zinc-500">Calls it makes, in order</p>
+          <NestedCalls calls={call.calls} />
+        </div>
+      ) : null}
     </ExactCallCard>
   );
 }
@@ -1373,7 +1390,13 @@ function ReviewModal({
     pending.request.description?.trim() ||
     (authorization
       ? "This signature authorizes the exact typed data and resulting calls below; it does not itself prove those calls have executed."
-      : "These are the exact app-controlled fields your wallet will be asked to send. Wallet-selected nonce and network fees are not shown.");
+      : `This is the exact destination, native value, and calldata the app will ask your wallet to send.${
+          pending.request.calls.every(
+            (call) => call.gas !== undefined || call.safeTxGas !== undefined,
+          )
+            ? " Your wallet adds the nonce and network fees."
+            : " Your wallet shows the gas limit and network fees before you send."
+        }`);
 
   // The review is the last thing opened before a wallet prompt. Transaction
   // starters close any summary dialog first, leaving this as the only active

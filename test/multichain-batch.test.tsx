@@ -84,14 +84,10 @@ const mocks = vi.hoisted(() => ({
   simulate: vi.fn(),
   rawCall: vi.fn(),
   review: vi.fn(),
+  callReview: vi.fn(),
   transaction: vi.fn(),
   receipt: vi.fn(),
   block: vi.fn(),
-  options: {} as {
-    reverify?: () => Promise<void>;
-    beforeSubmission?: () => Promise<void>;
-    preflightSimulation?: (variables: unknown, account: Address) => Promise<{ gas: bigint } | void>;
-  },
 }));
 vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
 vi.mock("wagmi/actions", () => ({
@@ -114,12 +110,19 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   requireRelayrRecoveryScopeAvailable: mocks.scopeAvailable,
 }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
+  SAFE_NONCE_GUIDANCE: "Safe nonce guidance.",
   isSafeConnection: () => mocks.safe,
   submittedViaSafe: () => mocks.safe,
-  useWriteContract: (options: typeof mocks.options) => {
-    mocks.options = options;
+  useWriteContract: (options: {
+    reviewedInParent?: boolean;
+    reverify?: () => Promise<void>;
+    beforeSubmission?: () => Promise<void>;
+    preflightSimulation?: (variables: unknown, account: Address) => Promise<{ gas: bigint } | void>;
+  }) => {
     return {
       writeContractAsync: async (variables: { chainId: number }) => {
+        // The reviewed wrapper reviews each call unless a parent review showed it.
+        if (!options.reviewedInParent) await mocks.callReview(variables);
         // The reviewed direct wrapper switches to each destination before its
         // final source/account checks and wallet submission.
         mocks.chainId = variables.chainId;
@@ -914,6 +917,113 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
     expect(mocks.quote).not.toHaveBeenCalled();
     expect(readMultichainBatches()[0].calls.map((row) => row.state)).toEqual(["safe", "ready"]);
   });
+  it("reviews a fresh EOA batch once and sends each call it showed without a second review", async () => {
+    // A canonical reverted routing receipt settles its call without replay.
+    mocks.receipt.mockResolvedValue({
+      transactionHash: HASH,
+      status: "reverted",
+      blockHash: HASH,
+      blockNumber: 1n,
+      logs: [],
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await result.current.runBatch({
+        scope: "one-review",
+        label: "Route fees",
+        calls: [1, 10].map((chainId) => retryCall(chainId)),
+      });
+    });
+    expect(mocks.review).toHaveBeenCalledOnce();
+    const request = mocks.review.mock.calls[0][0];
+    expect(request.confirmLabel).toBe("Agree & prepare batch");
+    expect(request.description).not.toContain("Safe nonce guidance.");
+    expect(request.calls).toEqual([
+      expect.objectContaining({ chainId: 1, to: TARGET, gas: 6_600_000n }),
+      expect.objectContaining({ chainId: 10, to: TARGET, gas: 6_600_000n }),
+    ]);
+    expect(request.calls.some((row: { safeTxGas?: bigint }) => "safeTxGas" in row)).toBe(false);
+    expect(mocks.callReview).not.toHaveBeenCalled();
+    expect(mocks.write.mock.calls.map(([variables]) => [variables.chainId, variables.gas])).toEqual(
+      [
+        [1, 6_600_000n],
+        [10, 6_600_000n],
+      ],
+    );
+  });
+
+  it("reviews a fresh Safe batch as a Safe proposal and proposes without a second review", async () => {
+    mocks.safe = true;
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({
+          scope: "safe-review",
+          label: "Route fee",
+          calls: [retryCall(1)],
+        }),
+      ).resolves.toMatchObject({ status: "pending" });
+    });
+    expect(mocks.review).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        confirmLabel: "Agree & propose to Safe",
+        description: expect.stringMatching(/\n\nSafe nonce guidance\.$/),
+        calls: [expect.objectContaining({ chainId: 1, to: TARGET, safeTxGas: 0n })],
+      }),
+    );
+    expect(mocks.review.mock.calls[0][0].calls[0]).not.toHaveProperty("gas");
+    expect(mocks.callReview).not.toHaveBeenCalled();
+    expect(mocks.write).toHaveBeenCalledOnce();
+    expect(readMultichainBatches()[0].calls[0].state).toBe("safe");
+  });
+
+  it("reviews each remaining call of a resumed batch as it is sent", async () => {
+    const batch = createMultichainBatch(ACCOUNT, "resumed", "Claim", [call(1)], "direct");
+    saveMultichainBatch(batch);
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await result.current.runBatch({ scope: "resumed", label: "Claim", calls: [] });
+    });
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.callReview).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ chainId: 1, address: TARGET, args: [1n] }),
+    );
+    expect(mocks.write).toHaveBeenCalledOnce();
+  });
+
+  it("tells Relayr the batch review showed its calls only in the run that showed it", async () => {
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await result.current.runBatch({
+        scope: "relayr-review",
+        label: "Deploy payers",
+        calls: [call(1), call(10)].map((row) => ({ ...row, relayrMode: "raw" as const })),
+      });
+    });
+    expect(mocks.review).toHaveBeenCalledOnce();
+    expect(mocks.quote.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ chainId: 1, relayrMode: "raw", reviewedInParent: true }),
+      expect.objectContaining({ chainId: 10, relayrMode: "raw", reviewedInParent: true }),
+    ]);
+
+    const saved = createMultichainBatch(
+      ACCOUNT,
+      "relayr-resume",
+      "Deploy payers",
+      [call(1, 2n), call(10, 2n)].map((row) => ({ ...row, relayrMode: "raw" as const })),
+      "relayr",
+    );
+    saveMultichainBatch(saved);
+    await act(async () => {
+      await result.current.runBatch({ scope: "relayr-resume", label: "Deploy payers", calls: [] });
+    });
+    expect(mocks.review).toHaveBeenCalledOnce();
+    expect(mocks.quote.mock.calls[1][0]).toEqual([
+      expect.objectContaining({ chainId: 1, reviewedInParent: false }),
+      expect.objectContaining({ chainId: 10, reviewedInParent: false }),
+    ]);
+  });
+
   it("never sends when the recovery journal cannot be persisted", async () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("quota");

@@ -1,6 +1,13 @@
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { ChainPayment } from "@/lib/nana/types";
+import { encodeMultiSend, MULTI_SEND_ABI, MULTI_SEND_CALL_ONLY } from "@/lib/safe-batch";
+import {
+  SAFE_APPROVE_HASH_ABI,
+  SAFE_EXEC_ABI,
+  safeBatchProposalFor,
+  safeExecutionArgs,
+} from "@/lib/safe-queue";
 import {
   chooseRelayrPayment,
   fundingChainLabel,
@@ -10,7 +17,7 @@ import {
 } from "@/lib/transaction-review";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
-import { encodeFunctionData } from "viem";
+import { encodeFunctionData, parseAbi, type Abi } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { isBlockedByModalDialog, openModalDialogs } from "./native-dialog-shim";
 
@@ -344,7 +351,9 @@ describe("TransactionReviewProvider", () => {
       expect(paragraph.textContent?.trim()).not.toBe("");
     }
     expect(
-      screen.getByText(/These are the exact app-controlled fields your wallet will be asked/),
+      screen.getByText(
+        "This is the exact destination, native value, and calldata the app will ask your wallet to send. Your wallet shows the gas limit and network fees before you send.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -359,9 +368,68 @@ describe("TransactionReviewProvider", () => {
 
     await screen.findByRole("dialog", { name: "Review pay" });
     expect(screen.getByText("This Safe proposal executes later.")).toBeInTheDocument();
+    expect(screen.queryByText(/This is the exact destination/)).toBeNull();
+  });
+
+  it.each([
+    [
+      "no call fixes its gas",
+      [{}],
+      "Your wallet shows the gas limit and network fees before you send.",
+    ],
+    [
+      "only some calls fix their gas",
+      [{ gas: 150_000n }, {}],
+      "Your wallet shows the gas limit and network fees before you send.",
+    ],
+    [
+      "the lone call has a gas limit",
+      [{ gas: 150_000n }],
+      "Your wallet adds the nonce and network fees.",
+    ],
+    [
+      "every call has a gas limit or Safe gas",
+      [{ gas: 150_000n }, { safeTxGas: 0n }],
+      "Your wallet adds the nonce and network fees.",
+    ],
+  ] as const)("defaults to the truthful guidance when %s", async (_, envelopes, fees) => {
+    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+
+    void requireTransactionReview({
+      title: "Review calls",
+      calls: envelopes.map((envelope) => ({
+        chainId: 8453,
+        to: `0x${"22".repeat(20)}` as const,
+        data: "0x12345678" as const,
+        ...envelope,
+      })),
+    }).catch(() => undefined);
+
+    await screen.findByRole("dialog", { name: "Review calls" });
     expect(
-      screen.queryByText(/These are the exact app-controlled fields your wallet will be asked/),
-    ).toBeNull();
+      screen.getByText(
+        `This is the exact destination, native value, and calldata the app will ask your wallet to send. ${fees}`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the signature guidance for an authorization", async () => {
+    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+
+    void requireTransactionReview({
+      kind: "authorization",
+      title: "Review signature",
+      authorization: { primaryType: "ForwardRequest" },
+      calls: [{ chainId: 8453, to: `0x${"22".repeat(20)}`, data: "0x12345678", gas: 1n }],
+    }).catch(() => undefined);
+
+    await screen.findByRole("dialog", { name: "Review signature" });
+    expect(
+      screen.getByText(
+        "This signature authorizes the exact typed data and resulting calls below; it does not itself prove those calls have executed.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/This is the exact destination/)).toBeNull();
   });
 
   it("labels the Permit2 approval destination, USDC token, and Uniswap spender", async () => {
@@ -477,5 +545,102 @@ describe("TransactionReviewProvider", () => {
     expect(within(dialog).getAllByRole("button", { name: "[copy tx audit prompt]" })).toHaveLength(
       1,
     );
+  });
+  describe("a batch carried by a Safe call", () => {
+    const SAFE = `0x${"33".repeat(20)}` as const;
+    const STEP_ABI = parseAbi(["function setValue(uint256 value)"]);
+    const steps = ([1n, 2n] as const).map((value, index) => ({
+      chainId: 8453,
+      to: `0x${"44".repeat(20)}` as const,
+      data: encodeFunctionData({ abi: STEP_ABI, functionName: "setValue", args: [value] }),
+      abi: STEP_ABI,
+      functionName: "setValue",
+      args: [value],
+      label: `Batch step ${index + 1}`,
+    }));
+    const batch = safeBatchProposalFor(steps, 3);
+
+    const reviewBatch = (
+      call: {
+        abi: Abi;
+        functionName: string;
+        args: readonly unknown[];
+        to?: `0x${string}`;
+      },
+      calls: readonly (typeof steps)[number][] = steps,
+    ) =>
+      void requireTransactionReview({
+        title: "Review batch",
+        calls: [
+          {
+            chainId: 8453,
+            to: call.to ?? SAFE,
+            data: encodeFunctionData({
+              abi: call.abi,
+              functionName: call.functionName,
+              args: call.args,
+            } as Parameters<typeof encodeFunctionData>[0]),
+            ...call,
+            calls,
+          },
+        ],
+      }).catch(() => undefined);
+
+    it.each([
+      ["approveHash", { abi: SAFE_APPROVE_HASH_ABI, args: [`0x${"ab".repeat(32)}`] }],
+      [
+        "execTransaction",
+        {
+          abi: SAFE_EXEC_ABI,
+          args: safeExecutionArgs({ ...batch, confirmations: [{ owner: SAFE }] }, [SAFE]),
+        },
+      ],
+    ] as const)("shows every call a Safe %s runs", async (functionName, call) => {
+      render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+      reviewBatch({ ...call, functionName });
+
+      const dialog = await screen.findByRole("dialog", { name: "Review batch" });
+      expect(within(dialog).getByText(`${functionName}(`, { exact: false })).toBeInTheDocument();
+      expect(within(dialog).getByText("Calls it makes, in order")).toBeInTheDocument();
+      for (const [index, step] of steps.entries()) {
+        expect(within(dialog).getByText(step.label)).toBeInTheDocument();
+        expect(within(dialog).getAllByText(new RegExp(`^Call ${index + 1} of 2 \\|`))).toHaveLength(
+          1,
+        );
+      }
+    });
+
+    it("renders no nested section for an empty calls list", async () => {
+      render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+      reviewBatch(
+        {
+          abi: SAFE_APPROVE_HASH_ABI,
+          functionName: "approveHash",
+          args: [`0x${"ab".repeat(32)}`],
+        },
+        [],
+      );
+
+      const dialog = await screen.findByRole("dialog", { name: "Review batch" });
+      expect(within(dialog).getByText("approveHash(", { exact: false })).toBeInTheDocument();
+      expect(within(dialog).queryByText("Calls it makes, in order")).toBeNull();
+      expect(within(dialog).queryByText(/^Call 1 of/)).toBeNull();
+    });
+
+    it("shows a MultiSend's calls once, under its transactions argument", async () => {
+      render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+      reviewBatch({
+        to: MULTI_SEND_CALL_ONLY,
+        abi: MULTI_SEND_ABI,
+        functionName: "multiSend",
+        args: [encodeMultiSend(steps)],
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: "Review batch" });
+      expect(within(dialog).queryByText("Calls it makes, in order")).toBeNull();
+      for (const step of steps) {
+        expect(within(dialog).getAllByText(step.label)).toHaveLength(1);
+      }
+    });
   });
 });
