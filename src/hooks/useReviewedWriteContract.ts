@@ -1,6 +1,5 @@
 "use client";
 
-import { gasWithHeadroom } from "@/lib/gas";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -17,6 +16,7 @@ import {
 } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
 import { useCallback, useMemo } from "react";

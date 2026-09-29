@@ -14,11 +14,11 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
-import { gasWithHeadroom } from "@/lib/gas";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { useRef, useState } from "react";
 import { encodeFunctionData, PublicClient } from "viem";

@@ -31,7 +31,6 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
-import { gasWithHeadroom } from "@/lib/gas";
 import {
   useJBContractContext,
   useJBProjectMetadataContext,
@@ -50,6 +49,7 @@ import {
   jbDirectoryAbi,
   jbProjectsAbi,
 } from "@bananapus/nana-sdk-core";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { getTokenAddress, hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";

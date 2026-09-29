@@ -12,7 +12,6 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@/lib/cross-chain-authority";
-import { gasWithHeadroom } from "@/lib/gas";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import {
   listPendingSafeTransactions,
@@ -23,6 +22,7 @@ import {
   submitSafeConfirmation,
 } from "@/lib/safe-queue";
 import { chooseRelayrPayment } from "@/lib/transaction-review";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { useQueryClient } from "@tanstack/react-query";
 import { Address, encodeFunctionData, isAddressEqual } from "viem";
 import { useConfig } from "wagmi";

@@ -1,5 +1,6 @@
 "use client";
 
+import { feeBuybackContext } from "@/lib/fee-buyback-client";
 import {
   checkFeeBuyback,
   createFeeWatch,
@@ -7,8 +8,7 @@ import {
   feeReceipt,
   type FeeCall,
   type FeeResult,
-} from "@/lib/fee-buyback";
-import { feeBuybackContext } from "@/lib/fee-buyback-client";
+} from "@bananapus/nana-sdk-core/v6/fee-buyback";
 import { useEffect, useRef, useState } from "react";
 
 type Call = FeeCall & { chainId: number; functionName?: string };

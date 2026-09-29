@@ -15,7 +15,6 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import { gasWithHeadroom } from "@/lib/gas";
 import { useJBContractContext } from "@/lib/nana/project";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import {
@@ -28,6 +27,7 @@ import {
 import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
 import { Address, encodeFunctionData, zeroAddress, type Hash } from "viem";

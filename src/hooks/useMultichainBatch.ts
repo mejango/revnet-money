@@ -11,7 +11,6 @@ import {
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import { gasWithHeadroom } from "@/lib/gas";
 import {
   batchCallKey,
   createMultichainBatch,
@@ -37,6 +36,7 @@ import {
 } from "@/lib/transaction-activity";
 import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { useCallback, useRef, useState } from "react";
 import {
   decodeEventLog,

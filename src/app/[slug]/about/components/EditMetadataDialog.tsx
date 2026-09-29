@@ -33,7 +33,6 @@ import {
 import type { Project } from "@/lib/bendystraw/types";
 import { FormProvider, type FormHelpers } from "@/lib/forms";
 import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
-import { gasWithHeadroom } from "@/lib/gas";
 import { ipfsUri } from "@/lib/ipfs";
 import {
   useJBChainId,
@@ -50,6 +49,7 @@ import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData, type PublicClient } from "viem";

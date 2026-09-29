@@ -1,6 +1,5 @@
 "use client";
 
-import { gasWithHeadroom } from "@/lib/gas";
 import {
   requireRawPayerCall,
   requireRawSafeExecution,
@@ -34,6 +33,7 @@ import {
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { useCallback, useEffect, useState } from "react";
 import {
   encodeFunctionData,
