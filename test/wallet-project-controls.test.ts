@@ -317,9 +317,10 @@ describe("project handle ENS authorization", () => {
     expect(source).toContain("releaseTransactionActivityVerification");
     expect(source).toContain("failTransactionActivityVerification");
     expect(source).toContain("handleExecutionHash = undefined");
-    // Opened as a Safe App the connected Safe cannot sign or execute its own
-    // queue; every action button defers to Safe{Wallet}.
-    expect(source).toContain("const viaSafeApp = isSafeConnector(connector)");
+    // Connected as a Safe (the Safe app, or Safe{Wallet} over WalletConnect),
+    // the Safe cannot sign or execute its own queue; every action button
+    // defers to Safe{Wallet}, and renders again once the peer is known.
+    expect(source).toContain("const viaSafeApp = useSafeConnection(config)");
     expect(source).toContain("canBatch && !viaSafeApp");
     expect(source).toContain("!viaSafeApp && !handleError && !signed && !ready");
     expect(source).toContain("!viaSafeApp && !handleError && ready");

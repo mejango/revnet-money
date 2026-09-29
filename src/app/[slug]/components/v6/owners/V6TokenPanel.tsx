@@ -25,9 +25,9 @@ import {
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import {
-  isSafeConnection,
   requireOnchainExecution,
   submittedViaSafe,
+  useSafeConnection,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
@@ -298,9 +298,10 @@ function TokenEditDialog({
   const { sendRelayrTx } = useSendRelayrTx();
   const { toast } = useToast();
   const { projectId: homeProjectId } = useJBContractContext();
+  const viaSafe = useSafeConnection(wagmiConfig);
   const relayed =
     states.length > 1 &&
-    !isSafeConnection(wagmiConfig) &&
+    !viaSafe &&
     areRelayrChainsCompatible(states.map((state) => state.chainId));
   // A partial deployment cannot safely replay if a later direct transaction fails.
   const deploymentRouteError =

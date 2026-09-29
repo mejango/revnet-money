@@ -18,7 +18,7 @@ vi.mock("@/components/EtherscanLink", () => ({
 }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeConnection: () => false,
+  useSafeConnection: () => false,
   submittedViaSafe: () => false,
   requireOnchainExecution: vi.fn(),
   useWriteContract: () => ({ writeContractAsync: vi.fn() }),

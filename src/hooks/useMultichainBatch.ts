@@ -40,10 +40,10 @@ import { requireNoViewAs } from "@/lib/view-as";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { useCallback, useRef, useState } from "react";
 import {
-  decodeEventLog,
   decodeFunctionData,
   isAddressEqual,
   parseAbi,
+  toEventSelector,
   type Address,
   type Hash,
   type PublicClient,
@@ -72,8 +72,9 @@ type BatchInput = {
 const running = new Set<string>();
 const SAFE_ABI = parseAbi([
   "function execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures) returns(bool)",
-  "event ExecutionSuccess(bytes32 txHash,uint256 payment)",
 ]);
+// Safe 1.4 indexes the event's txHash; Safe 1.3 puts it in the first data word.
+const SAFE_EXECUTION_SUCCESS = toEventSelector("ExecutionSuccess(bytes32,uint256)");
 
 function explicitRejection(cause: unknown): boolean {
   const seen = new Set<unknown>();
@@ -176,21 +177,17 @@ async function verifyDirectResult(
       decoded.args[3] !== 0
     )
       throw new Error("The Safe execution does not match the saved destination call.");
-    const success = receipt.logs.some((log) => {
-      if (!isAddressEqual(log.address, batch.account)) return false;
-      try {
-        return (
-          decodeEventLog({
-            abi: SAFE_ABI,
-            eventName: "ExecutionSuccess",
-            topics: log.topics,
-            data: log.data,
-          }).args.txHash.toLowerCase() === call.hash?.toLowerCase()
-        );
-      } catch {
-        return false;
-      }
-    });
+    // Over WalletConnect, Safe{Wallet} replies with the execution itself when
+    // the owner executes at once. The execTransaction checked above is then
+    // the proposal, and its Safe's ExecutionSuccess is the result.
+    const atOnce = hash.toLowerCase() === call.hash!.toLowerCase();
+    const success = receipt.logs.some(
+      (log) =>
+        isAddressEqual(log.address, batch.account) &&
+        log.topics[0]?.toLowerCase() === SAFE_EXECUTION_SUCCESS &&
+        (atOnce ||
+          (log.topics[1] ?? log.data.slice(0, 66)).toLowerCase() === call.hash!.toLowerCase()),
+    );
     if (!success) throw new Error("The exact Safe proposal has not executed successfully.");
   } else if (
     !transaction.to ||

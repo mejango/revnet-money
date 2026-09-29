@@ -7,6 +7,7 @@ import {
   isSafeConnection,
   proposeSafeBatch,
   submittedViaSafe,
+  useSafeConnection,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -107,6 +108,7 @@ export function MarketEditPanel({
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
+  const viaSafe = useSafeConnection(wagmiConfig);
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
   const queryClient = useQueryClient();
@@ -508,9 +510,7 @@ export function MarketEditPanel({
           steps={current?.steps ?? []}
           activeIndex={busy ? stepIndex : -1}
           stepsIntro={
-            isSafeConnection(wagmiConfig) && (current?.steps.length ?? 0) > 1
-              ? safeBatchIntro(current!.steps)
-              : undefined
+            viaSafe && (current?.steps.length ?? 0) > 1 ? safeBatchIntro(current!.steps) : undefined
           }
           action="Edit the market"
           onConfirm={() => void execute()}

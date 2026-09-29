@@ -10,8 +10,12 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // assertions at the bottom of this file are what protect first paint.
 // SDK 2.14.0's shared review measured 2599.8 KiB with one review per batch; a
 // fee-return check for every fee-paying call in a batch review brings it to
-// 2600.1 KiB, so the budget moves up by the minimum 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2601);
+// 2600.1 KiB, so the budget moved up by the minimum 1 KiB. Detecting a Safe by
+// connector and WalletConnect peer, and settling an execution Safe{Wallet}
+// sends at once from its receipt, measured 2600.1 KiB before and 2601.1 KiB
+// after (useReviewedWriteContract ships in four chunks), so it moves up by the
+// minimum 1 KiB again.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2602);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

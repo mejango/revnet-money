@@ -60,7 +60,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { useAccount } from "wagmi";
+import { useAccount, useConfig } from "wagmi";
 import { FeeBuybackNotice, useFeeBuybackReview } from "./FeeBuybackNotice";
 
 type PendingReview = {
@@ -1707,6 +1707,7 @@ function FundingChainChoice({
 }
 
 export function TransactionReviewProvider({ children }: PropsWithChildren) {
+  const config = useConfig();
   const { address } = useAccount();
   const account = useRef(address);
   account.current = address;
@@ -1757,7 +1758,7 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     [enqueueFundingChoice],
   );
   useEffect(() => resumePendingRelayrBundles(), []);
-  useEffect(() => resumeSafeProposalTracking(), []);
+  useEffect(() => resumeSafeProposalTracking(config), [config]);
   useEffect(
     () => () => {
       if (activeRef.current) cancelPending(activeRef.current);

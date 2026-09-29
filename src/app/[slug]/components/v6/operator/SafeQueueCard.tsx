@@ -10,8 +10,8 @@ import {
 } from "@/hooks/useReviewedRelayr";
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import {
-  isSafeConnector,
   requireOnchainExecution,
+  useSafeConnection,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import {
@@ -56,7 +56,7 @@ import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { encodeFunctionData, isAddressEqual, type Address, type Hex } from "viem";
-import { useAccount } from "wagmi";
+import { useAccount, useConfig } from "wagmi";
 import {
   chainName,
   isLiveRevnetOperator,
@@ -221,12 +221,13 @@ export function SafeQueueCard({
   fallbackOperator?: string;
   fallbackProject: ChainProjectRow;
 }) {
-  const { address, chainId: connectedChainId, connector } = useAccount();
-  // Opened as a Safe App, the connected account is a Safe, not an owner: it
-  // cannot sign for itself, and executing or paying Relayr from it would take
-  // the very nonce the queued transaction needs. Safe{Wallet}'s own queue is
-  // where its owners sign and execute.
-  const viaSafeApp = isSafeConnector(connector);
+  const config = useConfig();
+  const { address, chainId: connectedChainId } = useAccount();
+  // Connected as a Safe (the Safe app, or Safe{Wallet} over WalletConnect), the
+  // account is a Safe, not an owner: it cannot sign for itself, and executing
+  // or paying Relayr from it would take the very nonce the queued transaction
+  // needs. Safe{Wallet}'s own queue is where its owners sign and execute.
+  const viaSafeApp = useSafeConnection(config);
   const { signSafeTransactionAsync } = useReviewedSafeSignature();
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

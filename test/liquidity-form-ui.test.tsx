@@ -37,6 +37,7 @@ vi.mock("@/hooks/useAllowance", () => ({
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   isSafeConnection: () => false,
   submittedViaSafe: () => false,
+  useSafeConnection: () => false,
   useWaitForTransactionReceipt: () => ({}),
   useWriteContract: () => ({ writeContractAsync: vi.fn(), isPending: false }),
 }));

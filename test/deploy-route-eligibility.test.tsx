@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("wagmi", () => ({ useAccount: () => mocks.account }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeConnector: (connector: { id: string }) => connector.id === "safe",
+  useSafeConnection: () => mocks.account.connector.id === "safe",
 }));
 vi.mock("@/app/create/form/useCreateForm", () => ({ useCreateForm: () => mocks.form }));
 vi.mock("@/components/ButtonWithWallet", () => ({

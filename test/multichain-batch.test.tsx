@@ -9,7 +9,7 @@ import {
   type MultichainCall,
 } from "@/lib/multichain-batch";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
-import { safeProposalFor, safeTransactionHash } from "@/lib/safe-queue";
+import { SAFE_EXEC_ABI, safeProposalFor, safeTransactionHash } from "@/lib/safe-queue";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -22,6 +22,7 @@ import {
   encodeFunctionResult,
   parseAbi,
   parseAbiParameters,
+  zeroAddress,
   zeroHash,
   type Address,
   type Hash,
@@ -455,6 +456,146 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
       expect(mocks.write).not.toHaveBeenCalled();
     },
   );
+
+  describe("Safe execution verification", () => {
+    const EXECUTION = `0x${"ef".repeat(32)}` as Hash;
+    const SAFE_13_ABI = parseAbi(["event ExecutionSuccess(bytes32 txHash,uint256 payment)"]);
+
+    /** A saved Safe call whose execution was reported; `reply` is what the wallet answered. */
+    function savedSafeCall(reply: "at-once" | "proposal") {
+      const batch = createMultichainBatch(
+        ACCOUNT,
+        "safe-verify",
+        "Distribute",
+        [call(1)],
+        "direct",
+      );
+      const data = batch.calls[0].data;
+      const safeTxHash = safeTransactionHash(1, ACCOUNT, safeProposalFor({ to: TARGET, data }, 7));
+      // Over WalletConnect, Safe{Wallet} answers with the execution itself when
+      // the owner executes at once.
+      const replyHash = reply === "at-once" ? EXECUTION : safeTxHash;
+      batch.calls[0].hash = replyHash;
+      batch.calls[0].state = "safe";
+      saveMultichainBatch(batch);
+      recordTransactionActivity({
+        id: `tx:1:${replyHash}`,
+        kind: "safe",
+        title: "Distribute",
+        status: "pending",
+        message: "Safe execution was reported.",
+        safeProposalHash: replyHash,
+        executionHash: EXECUTION,
+        manualVerificationRequired: true,
+        chainId: 1,
+        account: ACCOUNT,
+      });
+      mocks.transaction.mockResolvedValue({
+        hash: EXECUTION,
+        from: TARGET,
+        to: ACCOUNT,
+        input: encodeFunctionData({
+          abi: SAFE_EXEC_ABI,
+          functionName: "execTransaction",
+          args: [TARGET, 0n, data, 0, 0n, 0n, 0n, zeroAddress, zeroAddress, "0x"],
+        }),
+        value: 0n,
+        blockHash: HASH,
+        blockNumber: 1n,
+      });
+      return safeTxHash;
+    }
+
+    function receiptWith(logs: Array<{ address: Address; topics: Hash[]; data: Hash }>) {
+      mocks.receipt.mockResolvedValue({
+        transactionHash: EXECUTION,
+        status: "success",
+        blockHash: HASH,
+        blockNumber: 1n,
+        logs,
+      });
+    }
+
+    /** Resumes the saved batch and checks how the attempt settles. */
+    async function resume(settles: (attempt: Promise<unknown>) => Promise<unknown>) {
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await settles(
+          result.current.runBatch({ scope: "safe-verify", label: "Distribute", calls: [] }),
+        );
+      });
+    }
+
+    it.each([
+      ["an execution Safe{Wallet} sent at once", "at-once", "1.4"],
+      ["a Safe 1.4 proposal", "proposal", "1.4"],
+      ["a Safe 1.3 proposal", "proposal", "1.3"],
+    ] as const)("verifies %s from its Safe's ExecutionSuccess", async (_name, reply, layout) => {
+      const safeTxHash = savedSafeCall(reply);
+      receiptWith([
+        layout === "1.4"
+          ? {
+              address: ACCOUNT,
+              topics: encodeEventTopics({
+                abi: SAFE_EXEC_ABI,
+                eventName: "ExecutionSuccess",
+                args: { txHash: safeTxHash },
+              }) as Hash[],
+              data: encodeAbiParameters(parseAbiParameters("uint256"), [0n]),
+            }
+          : {
+              address: ACCOUNT,
+              topics: encodeEventTopics({
+                abi: SAFE_13_ABI,
+                eventName: "ExecutionSuccess",
+              }) as Hash[],
+              data: encodeAbiParameters(parseAbiParameters("bytes32, uint256"), [safeTxHash, 0n]),
+            },
+      ]);
+
+      await resume((attempt) => expect(attempt).resolves.toMatchObject({ status: "success" }));
+      expect(readMultichainBatches()[0].calls[0].state).toBe("success");
+      expect(mocks.write).not.toHaveBeenCalled();
+    });
+
+    it("keeps a proposal unverified when its Safe's ExecutionSuccess names another", async () => {
+      savedSafeCall("proposal");
+      receiptWith([
+        {
+          address: ACCOUNT,
+          topics: encodeEventTopics({
+            abi: SAFE_EXEC_ABI,
+            eventName: "ExecutionSuccess",
+            args: { txHash: zeroHash },
+          }) as Hash[],
+          data: encodeAbiParameters(parseAbiParameters("uint256"), [0n]),
+        },
+      ]);
+
+      await resume((attempt) => expect(attempt).rejects.toThrow("has not executed successfully"));
+      expect(readMultichainBatches()[0].calls[0].state).toBe("safe");
+    });
+
+    it("keeps an at-once execution unverified without its Safe's ExecutionSuccess", async () => {
+      savedSafeCall("at-once");
+      // Another contract's event with the same signature proves nothing.
+      receiptWith([
+        {
+          address: TARGET,
+          topics: encodeEventTopics({
+            abi: SAFE_EXEC_ABI,
+            eventName: "ExecutionSuccess",
+            args: { txHash: zeroHash },
+          }) as Hash[],
+          data: encodeAbiParameters(parseAbiParameters("uint256"), [0n]),
+        },
+      ]);
+
+      await resume((attempt) => expect(attempt).rejects.toThrow("has not executed successfully"));
+      expect(readMultichainBatches()[0].calls[0].state).toBe("safe");
+      expect(mocks.write).not.toHaveBeenCalled();
+    });
+  });
 
   it.each([
     ["direct", "resolved-externally"],

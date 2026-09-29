@@ -1,5 +1,6 @@
 "use client";
 
+import { isSafeConnection } from "@/lib/safe-connector";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -22,11 +23,13 @@ import { sendCalls } from "@wagmi/core";
 import { useCallback, useMemo } from "react";
 import {
   encodeFunctionData,
+  isAddressEqual,
   keccak256,
   stringToHex,
   type Abi,
   type Address,
   type Hex,
+  type PublicClient,
   type TransactionReceipt,
 } from "viem";
 import {
@@ -35,6 +38,8 @@ import {
   useWriteContract as useWagmiWriteContract,
 } from "wagmi";
 import { getAccount, getPublicClient, simulateContract, switchChain } from "wagmi/actions";
+
+export { isSafeConnection, isSafeConnector, useSafeConnection } from "@/lib/safe-connector";
 
 const SAFE_PREFIX: Partial<Record<number, string>> = {
   1: "eth",
@@ -46,78 +51,108 @@ const SAFE_PREFIX: Partial<Record<number, string>> = {
 export const SAFE_NONCE_GUIDANCE =
   "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
 const safeInflight = new Map<string, Promise<void>>();
+// Safe emits ExecutionFailure instead of reverting only when safeTxGas or gasPrice is set.
+const SAFE_EXECUTION_FAILURE = keccak256(stringToHex("ExecutionFailure(bytes32,uint256)"));
+// Chain checks per watch: an execution Safe{Wallet} sent at once reaches the
+// chain within a minute of its reply, and a resumed watch finds it at once.
+const SAFE_EXECUTION_CHECKS = 12;
+const RECEIPT_UNCONFIRMED =
+  "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
 
-async function watchSafeProposal(id: string, hash: Hex, chainId: number): Promise<void> {
+async function watchSafeProposal(
+  id: string,
+  hash: Hex,
+  chainId: number,
+  client: PublicClient | undefined,
+): Promise<void> {
   const prefix = SAFE_PREFIX[chainId];
-  if (!prefix) return;
+  if (!prefix && !client) return;
   const existing = safeInflight.get(id);
   if (existing) return existing;
+  const tracked = () => refreshTransactionActivities().find((activity) => activity.id === id);
+  const executed = (isSuccessful: boolean, transactionHash: Hex | undefined) => {
+    const needsReceiptVerification = tracked()?.manualVerificationRequired === true;
+    updateTransactionActivity(id, {
+      status: needsReceiptVerification ? "pending" : isSuccessful ? "success" : "failed",
+      executionHash: transactionHash,
+      message: needsReceiptVerification
+        ? "Safe execution was reported. Its exact transaction and recipient results still require verification; resume the saved batch."
+        : !isSuccessful
+          ? "Safe executed this proposal, but the onchain transaction failed."
+          : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
+    });
+  };
   const request = (async () => {
-    for (let attempt = 0; attempt < 720; attempt += 1) {
+    // Without a Safe service only the chain can show an execution.
+    for (let attempt = 0; attempt < (prefix ? 720 : SAFE_EXECUTION_CHECKS); attempt += 1) {
+      if (tracked()?.obsoleteSafeNonce !== undefined) return;
+      // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
+      // when the owner executes at once. A safeTxHash is never a transaction.
       if (
-        refreshTransactionActivities().find((activity) => activity.id === id)?.obsoleteSafeNonce !==
-        undefined
-      )
-        return;
-      try {
-        const response = await fetch(
-          `https://api.safe.global/tx-service/${prefix}/api/v1/multisig-transactions/${hash}/`,
+        client &&
+        attempt < SAFE_EXECUTION_CHECKS &&
+        (await client.getTransaction({ hash }).then(
+          () => true,
+          () => false,
+        ))
+      ) {
+        const receipt = await waitForReceiptWithRetry(client, hash).catch(() => undefined);
+        if (!receipt) {
+          updateTransactionActivity(id, { executionHash: hash, message: RECEIPT_UNCONFIRMED });
+          return;
+        }
+        const account = tracked()?.account;
+        const failed = receipt.logs.some(
+          (log) =>
+            !!account &&
+            isAddressEqual(log.address, account) &&
+            log.topics[0]?.toLowerCase() === SAFE_EXECUTION_FAILURE,
         );
-        if (response.ok) {
-          const transaction = (await response.json()) as {
-            isExecuted?: boolean;
-            isSuccessful?: boolean | null;
-            transactionHash?: Hex | null;
-            confirmations?: unknown[];
-            confirmationsRequired?: number;
-          };
-          if (
-            refreshTransactionActivities().find((activity) => activity.id === id)
-              ?.obsoleteSafeNonce !== undefined
-          )
-            return;
-          if (transaction.isExecuted) {
-            if (transaction.isSuccessful == null) {
-              updateTransactionActivity(id, {
-                status: "safe-proposed",
-                executionHash: transaction.transactionHash ?? undefined,
-                message:
-                  "Safe reports this proposal as executed, but its success result is not available yet. Do not submit it again while confirmation is unresolved.",
-              });
-              await new Promise((resolve) => window.setTimeout(resolve, 5_000));
-              continue;
+        executed(receipt.status === "success" && !failed, hash);
+        return;
+      }
+      if (prefix) {
+        try {
+          const response = await fetch(
+            `https://api.safe.global/tx-service/${prefix}/api/v1/multisig-transactions/${hash}/`,
+          );
+          if (response.ok) {
+            const transaction = (await response.json()) as {
+              isExecuted?: boolean;
+              isSuccessful?: boolean | null;
+              transactionHash?: Hex | null;
+              confirmations?: unknown[];
+              confirmationsRequired?: number;
+            };
+            if (tracked()?.obsoleteSafeNonce !== undefined) return;
+            if (transaction.isExecuted) {
+              if (transaction.isSuccessful == null) {
+                updateTransactionActivity(id, {
+                  status: "safe-proposed",
+                  executionHash: transaction.transactionHash ?? undefined,
+                  message:
+                    "Safe reports this proposal as executed, but its success result is not available yet. Do not submit it again while confirmation is unresolved.",
+                });
+                await new Promise((resolve) => window.setTimeout(resolve, 5_000));
+                continue;
+              }
+              executed(transaction.isSuccessful, transaction.transactionHash ?? undefined);
+              return;
             }
-            const needsReceiptVerification =
-              refreshTransactionActivities().find((activity) => activity.id === id)
-                ?.manualVerificationRequired === true;
+            const approvals = transaction.confirmations?.length ?? 0;
+            const required = transaction.confirmationsRequired;
             updateTransactionActivity(id, {
-              status: needsReceiptVerification
-                ? "pending"
-                : transaction.isSuccessful
-                  ? "success"
-                  : "failed",
-              executionHash: transaction.transactionHash ?? undefined,
-              message: needsReceiptVerification
-                ? "Safe execution was reported. Its exact transaction and recipient results still require verification; resume the saved batch."
-                : !transaction.isSuccessful
-                  ? "Safe executed this proposal, but the onchain transaction failed."
-                  : `Safe approvals completed and the proposal executed onchain${transaction.transactionHash ? ` as ${transaction.transactionHash}` : ""}.`,
+              status: "safe-proposed",
+              message: `Safe proposal is not executed${required ? ` | ${approvals}/${required} approvals` : ""}. It remains asynchronous; do not submit it again.`,
             });
-            return;
           }
-          const approvals = transaction.confirmations?.length ?? 0;
-          const required = transaction.confirmationsRequired;
+        } catch {
           updateTransactionActivity(id, {
             status: "safe-proposed",
-            message: `Safe proposal is not executed${required ? ` | ${approvals}/${required} approvals` : ""}. It remains asynchronous; do not submit it again.`,
+            message:
+              "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
           });
         }
-      } catch {
-        updateTransactionActivity(id, {
-          status: "safe-proposed",
-          message:
-            "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
-        });
       }
       await new Promise((resolve) => window.setTimeout(resolve, 5_000));
     }
@@ -252,18 +287,18 @@ export async function proposeSafeBatch(
     : submit();
 }
 
-export function resumeSafeProposalTracking(): void {
+export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
   transactionActivitySnapshot()
     .filter((activity) => activity.status === "safe-proposed" && activity.hash && activity.chainId)
-    .forEach((activity) => void watchSafeProposal(activity.id, activity.hash!, activity.chainId!));
-}
-
-export function isSafeConnector(connector: { id?: string; name?: string } | undefined): boolean {
-  return `${connector?.id ?? ""} ${connector?.name ?? ""}`.toLowerCase().includes("safe");
-}
-
-export function isSafeConnection(config: ReturnType<typeof useConfig>): boolean {
-  return isSafeConnector(getAccount(config).connector);
+    .forEach(
+      (activity) =>
+        void watchSafeProposal(
+          activity.id,
+          activity.hash!,
+          activity.chainId!,
+          getPublicClient(config, { chainId: activity.chainId! }),
+        ),
+    );
 }
 
 export function followSubmission(
@@ -299,12 +334,12 @@ export function followSubmission(
     });
     return;
   }
+  const publicClient = getPublicClient(config, { chainId });
   if (safe) {
-    void watchSafeProposal(id, hash, chainId);
+    void watchSafeProposal(id, hash, chainId, publicClient);
     return;
   }
   updateTransactionActivity(id, { status: "pending", message: "Pending onchain confirmation." });
-  const publicClient = getPublicClient(config, { chainId });
   if (!publicClient) return;
   void waitForReceiptWithRetry(publicClient, hash)
     .then((receipt) => {
@@ -319,8 +354,7 @@ export function followSubmission(
     .catch(() => {
       updateTransactionActivity(id, {
         status: "pending",
-        message:
-          "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.",
+        message: RECEIPT_UNCONFIRMED,
       });
     });
 }
