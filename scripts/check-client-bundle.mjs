@@ -11,11 +11,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // SDK 2.14.0's shared review measured 2599.8 KiB with one review per batch; a
 // fee-return check for every fee-paying call in a batch review brings it to
 // 2600.1 KiB, so the budget moved up by the minimum 1 KiB. Detecting a Safe by
-// connector and WalletConnect peer, and settling an execution Safe{Wallet}
-// sends at once from its receipt, measured 2600.1 KiB before and 2601.1 KiB
-// after (useReviewedWriteContract ships in four chunks), so it moves up by the
-// minimum 1 KiB again.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2602);
+// connector and WalletConnect peer measures 2600.9 KiB with the SDK's shared
+// Safe maps replacing revnet's five copies, still within it.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2601);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
