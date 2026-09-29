@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     connector: { id: "injected", name: "Injected" },
   },
   form: {} as RevnetFormData,
+  formProps: {} as { preferredPaymentChainId?: number },
   quote: vi.fn<(requests: ReviewedRelayrRequest[]) => Promise<undefined>>(),
   recoveryGuard: vi.fn(),
   pinMetadata: vi.fn(),
@@ -63,7 +64,12 @@ vi.mock("@/app/create/helpers/pinProjectMetaData", () => ({
 vi.mock("@/app/create/helpers/feedReachability", () => ({
   assertLaunchFeedsReachable: (...args: unknown[]) => mocks.feeds(...args),
 }));
-vi.mock("@/app/create/form/DeployRevnetForm", () => ({ DeployRevnetForm: () => null }));
+vi.mock("@/app/create/form/DeployRevnetForm", () => ({
+  DeployRevnetForm: (props: { preferredPaymentChainId?: number }) => {
+    mocks.formProps = props;
+    return null;
+  },
+}));
 vi.mock("@/lib/forms", () => ({
   FormProvider: ({
     children,
@@ -108,6 +114,21 @@ async function submitFixture() {
 }
 
 describe("wallet-action:create-revnet — creation submit routing", () => {
+  it("offers the launch fee on the chain the wallet was on before signing switched it", async () => {
+    mocks.quote.mockImplementation(async () => {
+      mocks.account = { ...mocks.account, chainId: 421614 };
+      return undefined;
+    });
+
+    const view = render(<Page />);
+    fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
+    await waitFor(() => expect(mocks.setSubmitting).toHaveBeenLastCalledWith(false));
+    view.rerender(<Page />);
+
+    expect(mocks.quote).toHaveBeenCalledTimes(1);
+    expect(mocks.formProps.preferredPaymentChainId).toBe(84532);
+  });
+
   it("quotes all four testnet deployments with their encoded calls and exact per-chain fees", async () => {
     await submitFixture();
 

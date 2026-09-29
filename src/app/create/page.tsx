@@ -44,6 +44,7 @@ export default function Page() {
   const { getRelayrTxQuote, data, reset } = useGetRelayrTxQuote();
   const [directDeployment, setDirectDeployment] = useState<DirectDeployment | null>(null);
   const [quotedStageStart, setQuotedStageStart] = useState<QuotedStageStart>();
+  const [paymentChainId, setPaymentChainId] = useState<number>();
   const quotedFormData = useRef<RevnetFormData | null>(null);
 
   async function deployProject(
@@ -257,6 +258,7 @@ export default function Page() {
         onSubmit={async (formData: RevnetFormData, { setSubmitting }) => {
           try {
             setSubmitting(true);
+            setPaymentChainId(connectedChainId);
             await deployProject({
               ...formData,
               stages: calculateFinalStageStarts(formData.stages),
@@ -276,6 +278,7 @@ export default function Page() {
         <DeployRevnetForm
           relayrResponse={data}
           resetRelayrResponse={reset}
+          preferredPaymentChainId={paymentChainId}
           directDeployment={directDeployment}
           quotedStageStart={quotedStageStart}
           rebuildStaleQuote={rebuildStaleQuote}

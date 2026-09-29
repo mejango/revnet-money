@@ -424,7 +424,7 @@ export function useWriteContract(
               functionName,
               args: variables.args,
               value: variables.value,
-              gas: preflightSimulation ? variables.gas : undefined,
+              gas: preflightSimulation && !safe ? variables.gas : undefined,
               account: initialAddress,
               safeTxGas: safe ? 0n : undefined,
             },

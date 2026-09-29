@@ -39,6 +39,7 @@ import {
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PERSIST } from "@/lib/query-persist";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatEthAddress, formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -466,11 +467,7 @@ function TokenEditDialog({
       if (!relayrQuote) throw new Error("Relayr did not return a quote.");
       setQuote(relayrQuote);
       // Signing may switch the wallet; prefer the chain captured before this submission.
-      setSelectedPayment(
-        relayrQuote.payment_info.find(
-          (payment: ChainPayment) => payment.chain === connectedChainId,
-        ) ?? null,
-      );
+      setSelectedPayment(preselectedRelayrPayment(relayrQuote.payment_info, connectedChainId));
       return true;
     } catch (cause) {
       setError(formatWalletError(cause));
@@ -611,10 +608,13 @@ function TokenEditDialog({
           ) : null}
           {quote ? (
             <RelayrPaymentSelect
-              payments={quote.payment_info}
-              tokenSymbol="ETH"
-              selectedPayment={selectedPayment}
-              onSelectPayment={setSelectedPayment}
+              options={relayrPaymentOptions(quote.payment_info)}
+              value={selectedPayment?.chain ?? null}
+              onValueChange={(chainId) =>
+                setSelectedPayment(
+                  quote.payment_info.find((payment) => payment.chain === chainId) ?? null,
+                )
+              }
               disabled={busy}
             />
           ) : null}

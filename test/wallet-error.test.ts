@@ -1,3 +1,4 @@
+import { TransactionReviewCancelledError } from "@/lib/transaction-review";
 import { formatWalletError } from "@/lib/utils";
 import { describe, expect, test } from "vitest";
 
@@ -16,5 +17,16 @@ describe("formatWalletError", () => {
     expect(formatWalletError("wallet unavailable")).toBe("wallet unavailable");
     expect(formatWalletError(null, "Try again later")).toBe("Try again later");
     expect(formatWalletError({ message: 123 }, "Try again later")).toBe("Try again later");
+  });
+
+  test("keeps a closed review's own message", () => {
+    expect(formatWalletError(new TransactionReviewCancelledError())).toBe(
+      "Review closed. Nothing was sent.",
+    );
+    expect(
+      formatWalletError(
+        new TransactionReviewCancelledError("Funding chain selection cancelled. Nothing was sent."),
+      ),
+    ).toBe("Funding chain selection cancelled. Nothing was sent.");
   });
 });

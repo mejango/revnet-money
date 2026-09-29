@@ -627,6 +627,25 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
     expect(readMultichainBatches()[0].route).toBe("relayr");
   });
 
+  it("offers the Relayr fee on the chain the batch started on after signing switches it", async () => {
+    mocks.chainId = 11155420;
+    const quote = mocks.quote.getMockImplementation()!;
+    mocks.quote.mockImplementation(async (requests: MultichainCall[]) => {
+      mocks.chainId = 84532;
+      return quote(requests);
+    });
+    mocks.choose.mockResolvedValue({ chain: 11155111 });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await result.current.runBatch({
+        scope: "testnet-start-chain",
+        label: "Distribute",
+        calls: [call(11155111), call(84532)],
+      });
+    });
+    expect(mocks.choose).toHaveBeenCalledExactlyOnceWith([{ chain: 11155111 }], 11155420);
+  });
+
   it("rejects a fresh mixed mainnet/testnet EOA batch before review, publication, or saving", async () => {
     const { result } = renderHook(() => useMultichainBatch());
     await act(async () => {

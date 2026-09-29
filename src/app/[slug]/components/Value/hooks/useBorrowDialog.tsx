@@ -19,6 +19,7 @@ import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nan
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import { TransactionReviewCancelledError } from "@/lib/transaction-review";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
@@ -501,6 +502,10 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         }
         setBorrowStatus("permission-granted");
       } catch (err) {
+        if (err instanceof TransactionReviewCancelledError) {
+          setBorrowStatus("idle");
+          return false;
+        }
         if (isSafeProposalPendingError(err)) {
           setBorrowStatus("pending");
           toast({

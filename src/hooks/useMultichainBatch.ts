@@ -325,7 +325,7 @@ export function useMultichainBatch() {
   const runBatch = useCallback(
     async (input: BatchInput): Promise<BatchResult> => {
       requireNoViewAs();
-      const account = getAccount(config).address;
+      const { address: account, chainId: startChainId } = getAccount(config);
       if (!account) throw new Error("Connect a wallet first.");
       const lock = `revnet:multichain:${account.toLowerCase()}`;
       if (running.has(lock))
@@ -544,10 +544,7 @@ export function useMultichainBatch() {
                 round.bundleUuid = quote.bundle_uuid;
                 round.state = "quoted";
                 saveMultichainBatch(batch);
-                const payment = await chooseRelayrPayment(
-                  quote.payment_info,
-                  getAccount(config).chainId,
-                );
+                const payment = await chooseRelayrPayment(quote.payment_info, startChainId);
                 requireAccount();
                 round.state = "funding";
                 saveMultichainBatch(batch);

@@ -76,7 +76,7 @@ function component() {
 
 async function confirmPayment() {
   fireEvent.click(screen.getByRole("combobox"));
-  fireEvent.click(screen.getByRole("option", { name: /ETH on Ethereum/ }));
+  fireEvent.click(screen.getByRole("option", { name: "Ethereum (1 ETH)" }));
   fireEvent.click(screen.getByRole("button", { name: "Pay and launch" }));
   const dialog = await screen.findByRole("dialog", { name: "Confirm payment" });
   fireEvent.click(within(dialog).getByRole("button", { name: "Pay and launch" }));
@@ -100,6 +100,32 @@ beforeEach(() => {
 });
 
 describe("wallet-action:create-revnet — PayAndDeploy settlement", () => {
+  const BASE_PAYMENT: ChainPayment = { ...PAYMENT, chain: 8453, amount: "0x38d7ea4c68000" };
+
+  it.each([
+    { preferred: 8453, payments: [PAYMENT, BASE_PAYMENT], shown: "Base (0.001 ETH)" },
+    { preferred: 10, payments: [PAYMENT], shown: "Ethereum (1 ETH)" },
+    { preferred: 10, payments: [PAYMENT, BASE_PAYMENT], shown: "Select chain" },
+    { preferred: undefined, payments: [PAYMENT, BASE_PAYMENT], shown: "Select chain" },
+  ])(
+    "preselects $shown for chain $preferred and $payments.length quotes",
+    ({ preferred, payments, shown }) => {
+      render(
+        <PayAndDeploy
+          relayrResponse={{ ...QUOTE, payment_info: payments }}
+          preferredPaymentChainId={preferred}
+          revnetTokenSymbol="REV"
+        />,
+      );
+
+      expect(screen.getByRole("combobox")).toHaveTextContent(shown);
+      expect(screen.getByRole("button", { name: "Pay and launch" })).toHaveProperty(
+        "disabled",
+        shown === "Select chain",
+      );
+    },
+  );
+
   it("shows a verification failure without a bundle response and keeps funding locked", async () => {
     const view = render(component());
     await confirmPayment();

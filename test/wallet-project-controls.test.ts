@@ -246,6 +246,14 @@ describe("project handle ENS authorization", () => {
     expect(source).not.toContain("fresh.ensController.toLowerCase()");
   });
 
+  it("reviews the gas limit its ENS record write simulates and sends", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("gas: PROJECT_HANDLE_TEXT_WRITE_SIMULATION_GAS,");
+  });
+
   it("live-checks the server fallback across every Operator authority surface", () => {
     for (const file of [
       "src/app/[slug]/components/v6/operator/OperatorAccountCard.tsx",
