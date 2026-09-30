@@ -256,6 +256,10 @@ export function mapActivityEvents(
   };
 
   const isHookRemint = (key: string) => cashOutTxs.has(key) && sellSwapTxs.has(key);
+  // With no reserve cut, the remint is the pool output the swap row already
+  // names. A fan-out hides its swaps, so its remints stay: they say who got what.
+  const restatesSwap = (key: string, swapAmount: string | undefined, count: bigint) =>
+    swapAmount === count.toString() && (payTotalsByTx.get(key)?.count ?? 0) < 2;
 
   const events: ActivityEvent[] = [];
   for (const event of items) {
@@ -323,6 +327,10 @@ export function mapActivityEvents(
       const tokenCount = new JBProjectToken(BigInt(event.cashOutTokensEvent.cashOutCount)).format(
         6,
       );
+      // Sold through the buyback pool, the terminal reclaims nothing: the
+      // same-tx sale carries the amount the holder got.
+      const soldInPool =
+        sellSwapTxs.has(txKey) && BigInt(event.cashOutTokensEvent.reclaimAmount) === 0n;
 
       events.push({
         id: event.id,
@@ -331,10 +339,12 @@ export function mapActivityEvents(
         timestamp: event.cashOutTokensEvent.timestamp,
         beneficiary: event.cashOutTokensEvent.beneficiary as Address,
         chainId,
-        ...flowAmount(
-          event.cashOutTokensEvent.reclaimAmount,
-          event.cashOutTokensEvent.reclaimAmountUsd,
-        ),
+        ...(soldInPool
+          ? {}
+          : flowAmount(
+              event.cashOutTokensEvent.reclaimAmount,
+              event.cashOutTokensEvent.reclaimAmountUsd,
+            )),
         tokenCount,
       });
     } else if (event.addToBalanceEvent) {
@@ -353,12 +363,12 @@ export function mapActivityEvents(
     } else if (event.mintTokensEvent) {
       if (mintCoveredTxs.has(txKey) || isHookRemint(txKey)) continue;
       const e = event.mintTokensEvent;
+      const count = BigInt(e.beneficiaryTokenCount);
+      const swapAmount = pairedSwapAmount(txKey, mintCountsByTx, count);
+      if (restatesSwap(txKey, swapAmount, count)) continue;
       // Paired with a same-tx buyback swap, this mint is the reserved-rate
       // remint of the swap output — name the reserve instead of "minted".
-      const reservePercent = reservePercentLabel(
-        pairedSwapAmount(txKey, mintCountsByTx, BigInt(e.beneficiaryTokenCount)),
-        e.beneficiaryTokenCount,
-      );
+      const reservePercent = reservePercentLabel(swapAmount, e.beneficiaryTokenCount);
       events.push({
         id: event.id,
         type: "mint",
@@ -373,12 +383,12 @@ export function mapActivityEvents(
     } else if (event.manualMintTokensEvent) {
       if (autoIssueTxs.has(txKey) || isHookRemint(txKey)) continue;
       const e = event.manualMintTokensEvent;
+      const count = BigInt(e.beneficiaryTokenCount);
+      const swapAmount = pairedSwapAmount(txKey, manualMintCountsByTx, count);
+      if (restatesSwap(txKey, swapAmount, count)) continue;
       // The buyback remint arrives as a manual mint (a direct mintTokensOf
       // call) — same reserved-rate story as the mintTokensEvent branch.
-      const reservePercent = reservePercentLabel(
-        pairedSwapAmount(txKey, manualMintCountsByTx, BigInt(e.beneficiaryTokenCount)),
-        e.beneficiaryTokenCount,
-      );
+      const reservePercent = reservePercentLabel(swapAmount, e.beneficiaryTokenCount);
       events.push({
         id: event.id,
         type: "mint",

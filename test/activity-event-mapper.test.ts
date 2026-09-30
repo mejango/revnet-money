@@ -231,6 +231,52 @@ describe("mapActivityEvents", () => {
     expect(manualRow?.tokenCount).toBe("17k");
   });
 
+  it("names a buyback buy's tokens once when the revnet reserves none of them", () => {
+    // Base tx 0x8dfa28a2…: the hook burned its 3.32 SBB pool output and reminted
+    // all of it to the payer, indexed as both a mint and a manual mint.
+    const count = "3323155319487796108";
+    const buybackPay = payItem({
+      payEvent: { ...payItem().payEvent!, newlyIssuedTokenCount: "0" },
+    });
+    const swap: ActivityEventItem = {
+      ...payItem({ payEvent: null }),
+      id: "swap-1",
+      swapEvent: {
+        txHash: "0xaaa",
+        timestamp: 1_700_000_000,
+        direction: "buy",
+        terminalTokenAmount: "37304382220177",
+        projectTokenAmount: count,
+        caller: "0x498581ff718922c3f8e6a244956af099b2652b2b",
+        from: "0x1111111111111111111111111111111111111111",
+      },
+    };
+    const remint = {
+      id: "mint-event-1",
+      txHash: "0xaaa",
+      timestamp: 1_700_000_000,
+      from: "0x2222222222222222222222222222222222222222",
+      caller: "0x2222222222222222222222222222222222222222",
+      beneficiary: "0x1111111111111111111111111111111111111111",
+      beneficiaryTokenCount: count,
+      memo: null,
+    };
+
+    const [row] = groupSameTxEvents(
+      mapActivityEvents(
+        [
+          buybackPay,
+          swap,
+          { ...payItem({ payEvent: null }), id: "mint-1", mintTokensEvent: remint },
+          { ...payItem({ payEvent: null }), id: "manual-1", manualMintTokensEvent: remint },
+        ],
+        () => ({ tokenSymbol: "ETH", decimals: 18 }),
+      ),
+    );
+
+    expect(combinedDescription(row, "SBB")).toBe("bought 3.32 SBB via the buyback pool");
+  });
+
   it("hides the hook's own remint when a cash out sells through the buyback pool", () => {
     // The terminal burns the holder's tokens, then the hook remints the same
     // count to itself and sells it. That mint is plumbing, not a receipt.
@@ -284,6 +330,9 @@ describe("mapActivityEvents", () => {
     }));
 
     expect(events.map((event) => event.id)).toEqual(["cashout-1", "swap-1"]);
+    // The terminal reclaimed nothing: the row's amount is what the sale paid.
+    const [row] = groupSameTxEvents(events);
+    expect(`${row.baseAmount} ${row.baseTokenSymbol}`).toBe("0.001 ETH");
   });
 
   it("pairs each remint with its own swap when one tx holds two buyback pays", () => {
@@ -410,6 +459,24 @@ describe("mapActivityEvents", () => {
     expect(row.baseAmount).toBe("0.01");
     expect(combinedDescription(row, "ART")).toBe(
       "0x3333…3333 got 62 ART after the 38% split and 0x2222…2222 got 124 ART after the 38% split",
+    );
+
+    // With no reserve the remints still name who got what: a fan-out hides its swaps.
+    const [unreserved] = groupSameTxEvents(
+      mapActivityEvents(
+        [
+          payOf("pay-1", other, "4000000000000000"),
+          swapOf("swap-1", "100000000000000000000"),
+          mintOf("mint-1", other, "100000000000000000000"),
+          payOf("pay-2", payer, "6000000000000000"),
+          swapOf("swap-2", "200000000000000000000"),
+          mintOf("mint-2", payer, "200000000000000000000"),
+        ],
+        () => ({ tokenSymbol: "ETH", decimals: 18 }),
+      ),
+    );
+    expect(combinedDescription(unreserved, "ART")).toBe(
+      "0x3333…3333 got 100 ART and 0x2222…2222 got 200 ART",
     );
   });
 });

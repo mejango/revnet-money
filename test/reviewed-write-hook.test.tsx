@@ -587,6 +587,30 @@ describe("reviewed write hook", () => {
     expect(mocks.getTransactionReceipt).toHaveBeenCalledWith({ hash: HASH });
   });
 
+  it.each(["success", "failed"] as const)(
+    "reports no result for an unsent write when a finished batch's %s row has no hash",
+    async (status) => {
+      const { activity, hooks } = await freshHarness();
+      // A multichain batch is tracked under its batch id, without a transaction hash.
+      activity.recordTransactionActivity({
+        id: "batch:1",
+        kind: "direct",
+        title: "Add items",
+        status,
+        message: "Batch finished.",
+        account: ACCOUNT,
+      });
+
+      const { result } = renderHook(() => hooks.useWaitForTransactionReceipt({ hash: undefined }));
+
+      expect(result.current).toMatchObject({
+        isSuccess: false,
+        isError: false,
+        statusMessage: undefined,
+      });
+    },
+  );
+
   it("persists Safe proposal locks through terminal-history churn and blocks duplicate execution", async () => {
     mocks.account = {
       address: ACCOUNT,

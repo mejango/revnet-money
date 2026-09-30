@@ -603,8 +603,10 @@ export function useWaitForTransactionReceipt(
 ) {
   const activities = useTransactionActivities();
   const hash = parameters.hash as Hex | undefined;
+  // A write not yet sent has no hash; a hashless row (a multichain batch) is not its result.
   const tracked = useMemo(
-    () => activities.find((row) => row.hash?.toLowerCase() === hash?.toLowerCase()),
+    () =>
+      hash ? activities.find((row) => row.hash?.toLowerCase() === hash.toLowerCase()) : undefined,
     [activities, hash],
   );
   const isSafeSubmission = tracked?.kind === "safe";
