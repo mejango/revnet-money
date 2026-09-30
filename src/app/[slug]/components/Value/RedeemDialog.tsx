@@ -133,7 +133,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     ? JBProjectToken.parse(redeemAmount, projectTokenDecimals).value
     : 0n;
 
-  const { writeContractAsync, isPending: isWriteLoading, data: hash } = useWriteContract();
+  const { writeContractAsync, isPending: isWriteLoading, data: hash, reset } = useWriteContract();
   const {
     writeContractAsync: writeApprovalAsync,
     isPending: approvalSigning,
@@ -350,12 +350,23 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   }, [approvalConfirmed, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
 
   return (
-    <Dialog open={disabled === true ? false : undefined}>
+    <Dialog
+      open={disabled === true ? false : undefined}
+      onOpenChange={(open) => {
+        // The dialog stays mounted: a finished cash out must not greet the next one.
+        if (!open) {
+          reset();
+          setRedeemAmount(undefined);
+          setReview(false);
+          setError(null);
+        }
+      }}
+    >
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Cash out</DialogTitle>
-          <DialogDescription>
+          <DialogDescription asChild>
             <div className="my-4">
               {isSuccess ? (
                 <div>Success! You can close this window.</div>
@@ -420,7 +431,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                           <Input
                             id="amount"
                             name="amount"
-                            value={redeemAmount}
+                            value={redeemAmount ?? ""}
                             onChange={(e) => setRedeemAmount(e.target.value?.trim())}
                           />
                           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 z-10">

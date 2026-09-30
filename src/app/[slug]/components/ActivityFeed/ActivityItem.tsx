@@ -390,12 +390,12 @@ export function ActivityItemRow({
           </span>
         </div>
         {hasTitle && (
-          <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500">
+          <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500">
             {isOutflow ? "to" : isInflow ? "from" : "by"}{" "}
             <span className="min-w-0 truncate">
               <ProfileAvatar address={event.beneficiary} short chain={chain} />
             </span>
-          </p>
+          </div>
         )}
         {event.memo && (
           <p className="text-sm text-zinc-700 break-all mt-3">
