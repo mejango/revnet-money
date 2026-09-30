@@ -137,7 +137,7 @@ describe("Bendystraw proxy failures", () => {
       "BendystrawRequestError: Bendystraw request failed (403)",
     ],
   ])(
-    "answers the same bare message for %s, and logs the cause once",
+    "answers %s with its own status and message, and logs the cause once",
     async (_name, failure, status, message, logged) => {
       mocks.queryBendystraw.mockRejectedValue(failure);
 

@@ -2,6 +2,7 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { WalletButton, WalletConnectButton } from "@/components/WalletButton";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
 import { ParaAuthContext } from "@/providers/ParaAuthContext";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Address } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,9 +16,13 @@ const wallet = vi.hoisted(() => ({
   disconnectAsync: vi.fn(),
   jbChainId: vi.fn(),
   logoutParaSession: vi.fn(),
+  project: vi.fn(),
   readContract: vi.fn(),
   reset: vi.fn(),
+  suckerBalances: vi.fn(),
+  suckers: vi.fn(),
   switchChainAsync: vi.fn(),
+  tokenContext: vi.fn(),
 }));
 
 /** Whether Para reports a live session when Disconnect asks. */
@@ -57,11 +62,12 @@ vi.mock("@/providers/para-config", () => ({
 
 vi.mock("@/lib/nana/project", () => ({
   useJBChainId: wallet.jbChainId,
-  useJBProject: () => undefined,
-  useJBTokenContext: vi.fn(),
+  useJBProject: wallet.project,
+  useJBTokenContext: wallet.tokenContext,
 }));
 vi.mock("@/lib/nana/suckers", () => ({
-  useSuckersUserTokenBalance: vi.fn(),
+  useSuckers: wallet.suckers,
+  useSuckersUserTokenBalance: wallet.suckerBalances,
 }));
 vi.mock("@/hooks/ens/useEnsName", () => ({ useEnsName: () => ({ data: null }) }));
 vi.mock("@/providers/para-logout", async (importOriginal) => {
@@ -79,6 +85,7 @@ describe("local wallet controls", () => {
       isConnected: false,
     });
     wallet.balance.mockReturnValue({ data: undefined });
+    wallet.project.mockReturnValue(undefined);
     wallet.readContract.mockReturnValue({ data: undefined });
     wallet.chainId.mockReturnValue(1);
     wallet.jbChainId.mockReturnValue(1);
@@ -236,6 +243,12 @@ describe("local wallet controls", () => {
       ["the smallest amount that is not dust", "0.0001", 10n ** 14n],
       ["a whole amount", "1", 10n ** 18n],
       ["more decimals than four, rounded", "1.2346", 1_234_567_890_000_000_000n],
+      ["a decimal tie in the fifth place, rounded up", "0.0002", 150_000_000_000_000n],
+      [
+        "a decimal tie in the fifth place of a larger amount, rounded up",
+        "12.3457",
+        12_345_650_000_000_000_000n,
+      ],
       ["thousands, grouped", "1,234.5", 1_234_500_000_000_000_000_000n],
       ["millions, grouped", "1,000,000", 10n ** 24n],
     ])("reads %s as %s ETH", async (_name, expected, wei) => {
@@ -258,6 +271,60 @@ describe("local wallet controls", () => {
 
       expect(screen.getByText("1,234.5 ETH")).toBeVisible();
       expect(screen.getByText("12.5 USDC")).toBeVisible();
+    });
+  });
+
+  describe("the project token balance", () => {
+    const address = "0x1234567890abcdef1234567890abcdef12345678";
+
+    // A project is in view, with no project chains to read, so the ETH and USDC rows make no request and the token row is the one under test.
+    function signedInOnAProject(...perChain: bigint[]) {
+      wallet.account.mockReturnValue({
+        address,
+        chain: { id: 1, name: "Ethereum" },
+        isConnected: true,
+      });
+      wallet.project.mockReturnValue({});
+      wallet.suckers.mockReturnValue({ data: [], isLoading: false });
+      wallet.suckerBalances.mockReturnValue({
+        data: perChain.map((value) => ({ balance: { value } })),
+        isLoading: false,
+      });
+      wallet.tokenContext.mockReturnValue({
+        token: { isLoading: false, data: { symbol: "$REV" } },
+      });
+    }
+
+    async function openMenu() {
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <WalletButton />
+        </QueryClientProvider>,
+      );
+      fireEvent.click(await screen.findByRole("button", { name: /0x1234.*5678/i }));
+    }
+
+    it.each([
+      ["nothing", "0", [0n]],
+      ["dust, to its first significant figure", "0.00003", [30_000_000_000_000n]],
+      [
+        "thousands, grouped, summed across chains",
+        "1,234.5",
+        [1_000_000_000_000_000_000_000n, 234_500_000_000_000_000_000n],
+      ],
+    ])("reads %s as %s REV", async (_name, expected, perChain) => {
+      signedInOnAProject(...perChain);
+      await openMenu();
+
+      expect(screen.getByText(`${expected} REV`)).toBeVisible();
+    });
+
+    it("says it is loading while the balances are", async () => {
+      signedInOnAProject();
+      wallet.suckerBalances.mockReturnValue({ data: undefined, isLoading: true });
+      await openMenu();
+
+      expect(screen.getByText("Loading…")).toBeVisible();
     });
   });
 

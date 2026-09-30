@@ -7,7 +7,6 @@ import { useEnsName } from "@/hooks/ens/useEnsName";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
 import { useJBProject, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
-import { exactNumber } from "@/lib/number";
 import { cn, formatEthAddress, formatTokenSymbol } from "@/lib/utils";
 import { useViewAs } from "@/lib/view-as";
 import {
@@ -17,7 +16,7 @@ import {
 } from "@/providers/para-logout";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import { preloadParaHost } from "@/providers/preload-para";
-import { JBProjectToken, USDC_ADDRESSES, type JBChainId } from "@bananapus/nana-sdk-core";
+import { USDC_ADDRESSES, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { getConnections } from "@wagmi/core";
 import Link from "next/link";
@@ -45,9 +44,12 @@ const MENU_ITEM_SELECTOR = '[role="menuitem"]:not([disabled])';
 
 function formattedWalletBalance(value: bigint, decimals: number, symbol: string) {
   const amount = Number(formatUnits(value, decimals));
-  // A real amount never reads as nothing: below four places, keep the places its first significant figure needs.
-  const places = amount > 0 && amount < 0.0001 ? Math.ceil(-Math.log10(amount)) : 4;
-  return `${exactNumber(amount, places)} ${symbol}`;
+  // A real amount never reads as nothing: below the digit budget, show its first significant figure.
+  const text =
+    amount > 0 && amount < 0.0001
+      ? amount.toFixed(Math.ceil(-Math.log10(amount))).replace(/0+$/, "")
+      : amount.toLocaleString("en-US", { maximumFractionDigits: 4 });
+  return `${text} ${symbol}`;
 }
 
 function BalanceRow({ label, value }: { label: string; value: string }) {
@@ -62,15 +64,13 @@ function BalanceRow({ label, value }: { label: string; value: string }) {
 function ProjectWalletBalance() {
   const { data: balances, isLoading } = useSuckersUserTokenBalance();
   const { token } = useJBTokenContext();
-  const total = new JBProjectToken(
-    balances?.reduce((sum, balance) => sum + balance.balance.value, 0n) ?? 0n,
-  );
+  const total = balances?.reduce((sum, balance) => sum + balance.balance.value, 0n) ?? 0n;
   const symbol = formatTokenSymbol(token) || "tokens";
 
   return (
     <BalanceRow
       label={symbol}
-      value={isLoading || token.isLoading ? "Loading…" : `${total.format(4)} ${symbol}`}
+      value={isLoading || token.isLoading ? "Loading…" : formattedWalletBalance(total, 18, symbol)}
     />
   );
 }

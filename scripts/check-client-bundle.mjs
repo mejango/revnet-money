@@ -12,8 +12,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // fee-return check for every fee-paying call in a batch review brings it to
 // 2600.1 KiB, so the budget moved up by the minimum 1 KiB. Detecting a Safe by
 // connector and WalletConnect peer measures 2600.9 KiB with the SDK's shared
-// Safe maps replacing revnet's five copies, still within it.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2601);
+// Safe maps replacing revnet's five copies, still within it. Formatting wallet
+// balances as Juicebox Money does (rounded by decimal digits, dust kept visible)
+// brings it to about 2601 KiB, so the budget moved up by the minimum 1 KiB again.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2602);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
