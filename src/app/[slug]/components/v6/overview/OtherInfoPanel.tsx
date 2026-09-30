@@ -3,6 +3,7 @@
 import { chainSortIndex } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
+import { ProjectLink } from "@/components/ProjectLink";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -15,7 +16,6 @@ import {
 import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
 import { pickRevnetOperator } from "@/lib/revnetOperator";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import Link from "next/link";
 import { Address, isAddress } from "viem";
 import { ProjectItem } from "../shared";
 
@@ -59,13 +59,13 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
                     </span>
                   </TableCell>
                   <TableCell className="whitespace-nowrap px-3 py-3">
-                    <Link
+                    <ProjectLink
                       href={`/${chain.slug}:${p.projectId}`}
                       className="underline hover:text-black/70"
                       title={`Open #${p.projectId} on ${chain.name}`}
                     >
                       #{p.projectId}
-                    </Link>
+                    </ProjectLink>
                   </TableCell>
                   <TableCell className="whitespace-nowrap px-3 py-3">
                     <OperatorCell chainId={chainId} projectId={p.projectId} />
