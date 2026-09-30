@@ -15,7 +15,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Safe maps replacing revnet's five copies, still within it. Formatting wallet
 // balances as Juicebox Money does (rounded by decimal digits, dust kept visible)
 // brings it to about 2601 KiB, so the budget moved up by the minimum 1 KiB again.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2602);
+// axios 1.20.0 in Para's lazy chunk (+3.1), DOMPurify 3.4.16 (+0.4) and Next 16.3.8's
+// client runtime (+0.2) measure 2604.7 KiB against 2601.1 KiB before, so the budget
+// moves up by 4 KiB. The route budgets are unchanged.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2606);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
