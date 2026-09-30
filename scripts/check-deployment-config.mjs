@@ -70,10 +70,10 @@ if (packageManifest.scripts?.["dependencies:check"] !== "npm ls --depth=0") {
   throw new Error("The installed dependency tree must have an explicit npm integrity gate");
 }
 if (
-  packageManifest.dependencies?.next !== "16.3.3" ||
-  packageManifest.devDependencies?.["eslint-config-next"] !== "16.3.3"
+  packageManifest.dependencies?.next !== "16.3.8" ||
+  packageManifest.devDependencies?.["eslint-config-next"] !== "16.3.8"
 ) {
-  throw new Error("Next and eslint-config-next must remain on the supported 16.3.3 baseline");
+  throw new Error("Next and eslint-config-next must remain on the supported 16.3.8 baseline");
 }
 for (const [name, workflow] of [
   ["CI", ci],
