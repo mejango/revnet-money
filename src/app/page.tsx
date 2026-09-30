@@ -1,4 +1,5 @@
 import { Nav } from "@/components/layout/Nav";
+import { ProjectLink } from "@/components/ProjectLink";
 import Image from "next/image";
 import Link from "next/link";
 import { HomepageDiscovery } from "./HomepageDiscovery";
@@ -140,9 +141,9 @@ export default function Page() {
             Join us
           </h2>
           <p className="mt-4">
-            <Link href="/eth:3#project-top" prefetch={false} className="underline">
+            <ProjectLink href="/eth:3#project-top" className="underline">
               Participate in REV
-            </Link>
+            </ProjectLink>
             , the revnet that supports this network.
           </p>
         </section>
