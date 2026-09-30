@@ -7,6 +7,7 @@ import { useEnsName } from "@/hooks/ens/useEnsName";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
 import { useJBProject, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import { exactNumber } from "@/lib/number";
 import { cn, formatEthAddress, formatTokenSymbol } from "@/lib/utils";
 import { useViewAs } from "@/lib/view-as";
 import {
@@ -43,9 +44,10 @@ type WalletConnectButtonProps = Omit<ButtonProps, "children"> & {
 const MENU_ITEM_SELECTOR = '[role="menuitem"]:not([disabled])';
 
 function formattedWalletBalance(value: bigint, decimals: number, symbol: string) {
-  return `${Number(formatUnits(value, decimals)).toLocaleString(undefined, {
-    maximumFractionDigits: 4,
-  })} ${symbol}`;
+  const amount = Number(formatUnits(value, decimals));
+  // A real amount never reads as nothing: below four places, keep the places its first significant figure needs.
+  const places = amount > 0 && amount < 0.0001 ? Math.ceil(-Math.log10(amount)) : 4;
+  return `${exactNumber(amount, places)} ${symbol}`;
 }
 
 function BalanceRow({ label, value }: { label: string; value: string }) {

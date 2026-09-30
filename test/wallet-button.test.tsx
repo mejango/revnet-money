@@ -213,6 +213,54 @@ describe("local wallet controls", () => {
     paraSessionLive.value = false;
   });
 
+  describe("the wallet balance amounts", () => {
+    const address = "0x1234567890abcdef1234567890abcdef12345678";
+
+    async function openMenu(ether: bigint, usdc?: bigint) {
+      wallet.account.mockReturnValue({
+        address,
+        chain: { id: 1, name: "Ethereum" },
+        isConnected: true,
+      });
+      wallet.balance.mockReturnValue({ data: { value: ether, decimals: 18, symbol: "ETH" } });
+      wallet.readContract.mockReturnValue({ data: usdc });
+      render(<WalletButton />);
+      fireEvent.click(await screen.findByRole("button", { name: /0x1234.*5678/i }));
+    }
+
+    it.each([
+      ["nothing", "0", 0n],
+      ["dust, to its first significant figure", "0.00003", 30_000_000_000_000n],
+      ["a tiny amount, cut to its first significant figure", "0.00001", 12_300_000_000_000n],
+      ["a single wei", "0.000000000000000001", 1n],
+      ["the smallest amount that is not dust", "0.0001", 10n ** 14n],
+      ["a whole amount", "1", 10n ** 18n],
+      ["more decimals than four, rounded", "1.2346", 1_234_567_890_000_000_000n],
+      ["thousands, grouped", "1,234.5", 1_234_500_000_000_000_000_000n],
+      ["millions, grouped", "1,000,000", 10n ** 24n],
+    ])("reads %s as %s ETH", async (_name, expected, wei) => {
+      await openMenu(wei);
+
+      expect(screen.getByText(`${expected} ETH`)).toBeVisible();
+    });
+
+    it("reads the same in every locale", async () => {
+      const toLocaleString = Number.prototype.toLocaleString;
+      vi.spyOn(Number.prototype, "toLocaleString").mockImplementation(function (
+        this: number,
+        locales?: never,
+        options?: never,
+      ) {
+        return toLocaleString.call(this, locales ?? "de-DE", options);
+      } as never);
+
+      await openMenu(1_234_500_000_000_000_000_000n, 12_500_000n);
+
+      expect(screen.getByText("1,234.5 ETH")).toBeVisible();
+      expect(screen.getByText("12.5 USDC")).toBeVisible();
+    });
+  });
+
   it("offers connection before chain switching when the user is disconnected", () => {
     wallet.chainId.mockReturnValue(1);
     wallet.jbChainId.mockReturnValue(10);
