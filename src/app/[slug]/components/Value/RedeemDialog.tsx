@@ -36,6 +36,7 @@ import {
   permit2Abi,
   quoteDirectSellSwap,
 } from "@/lib/directPaySwap";
+import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
@@ -626,7 +627,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   setIsApproving(needsErc20Approval || needsRouterApproval);
                   if (needsErc20Approval) {
                     await writeApprovalAsync({
-                      abi: erc20Abi,
+                      abi: erc20ApproveAbi,
                       functionName: "approve",
                       chainId: selectedChainId,
                       address: projectTokenAddress,

@@ -26,6 +26,7 @@ import {
   quoteDirectPaySwap,
   UNIVERSAL_ROUTER_BY_CHAIN,
 } from "@/lib/directPaySwap";
+import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
@@ -649,13 +650,13 @@ export function V6PayCard() {
               label: `Approve ${selected.symbol} access`,
               request: {
                 address: selected.token,
-                abi: erc20Abi,
+                abi: erc20ApproveAbi,
                 functionName: "approve",
                 args: [approvalSpender, amountRaw] as const,
                 value: 0n,
               },
               calldata: encodeFunctionData({
-                abi: erc20Abi,
+                abi: erc20ApproveAbi,
                 functionName: "approve",
                 args: [approvalSpender, amountRaw],
               }),
@@ -789,13 +790,13 @@ export function V6PayCard() {
                 label: `Approve ${selected.symbol} access`,
                 request: {
                   address: selected.token,
-                  abi: erc20Abi,
+                  abi: erc20ApproveAbi,
                   functionName: "approve",
                   args: [terminal, amountRaw],
                   value: 0n,
                 },
                 calldata: encodeFunctionData({
-                  abi: erc20Abi,
+                  abi: erc20ApproveAbi,
                   functionName: "approve",
                   args: [terminal, amountRaw],
                 }),

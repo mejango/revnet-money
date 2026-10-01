@@ -1,6 +1,7 @@
 "use client";
 
 import { submittedViaSafe, type proposeSafeBatch } from "@/hooks/useReviewedWriteContract";
+import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { erc20Abi, parseUnits, type Address, type Hex, type PublicClient } from "viem";
@@ -140,7 +141,7 @@ export function liquidityBatchCalls({
     step.approval?.kind === "erc20"
       ? {
           address: step.approval.currency,
-          abi: erc20Abi,
+          abi: erc20ApproveAbi,
           functionName: "approve",
           args: [PERMIT2_ADDRESS, step.approval.max],
         }

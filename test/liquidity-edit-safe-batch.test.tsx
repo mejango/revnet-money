@@ -12,10 +12,11 @@ import {
 } from "@/app/[slug]/components/v6/owners/market/lib";
 import { liquidityBatchCalls } from "@/app/[slug]/components/v6/owners/market/liquidityWrite";
 import { MarketEditPanel } from "@/app/[slug]/components/v6/owners/market/MarketEditPanel";
+import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
-import { erc20Abi, type Address, type Hex } from "viem";
+import { type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // wallet-action:liquidity-management
@@ -198,7 +199,12 @@ function expectOneOrderedBatch(title: string) {
   expect(
     calls.map((call: { functionName: string; address: Address }) => call.functionName),
   ).toEqual(["approve", "approve", "modifyLiquidities"]);
-  expect(calls[0]).toMatchObject({ address: USDC, abi: erc20Abi, args: [PERMIT2_ADDRESS, 5_000n] });
+  // No declared return, so a token whose approve returns nothing (USDT) still simulates.
+  expect(calls[0]).toMatchObject({
+    address: USDC,
+    abi: erc20ApproveAbi,
+    args: [PERMIT2_ADDRESS, 5_000n],
+  });
   expect(calls[1]).toMatchObject({ address: PERMIT2_ADDRESS, functionName: "approve" });
   expect(calls[1].args.slice(0, 3)).toEqual([USDC, POSITION_MANAGER_BY_CHAIN[8453], 5_000n]);
   expect(calls[2]).toMatchObject({

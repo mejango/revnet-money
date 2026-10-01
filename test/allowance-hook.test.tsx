@@ -1,3 +1,4 @@
+import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { act, renderHook } from "@testing-library/react";
 import { type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -91,6 +92,8 @@ describe("wallet-action:allowance — allowance hook", () => {
       expect.objectContaining({
         chainId: 11155111,
         address: TOKEN,
+        // No declared return: a token whose approve returns nothing (USDT) still simulates.
+        abi: erc20ApproveAbi,
         functionName: "approve",
         args: [SPENDER, 75n],
       }),
