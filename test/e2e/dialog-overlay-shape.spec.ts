@@ -127,3 +127,57 @@ test("an open dialog inerts the page, stacks, and restores it on close", async (
     document.getElementById("stacked-probe")?.remove();
   });
 });
+
+test("layout utilities on a dialog surface win over the shell's defaults", async ({ page }) => {
+  await installBrowserBoundary(page);
+  const response = await page.goto("/create", { waitUntil: "domcontentloaded" });
+  expectSecurityHeaders(response);
+  await expect(page.getByRole("heading", { name: "Create a revnet" })).toBeVisible();
+
+  // The transaction review, shared with Juicebox Money, lays out its dialog
+  // surface with utilities (ModalDialog's className). Every other dialog keeps
+  // the shell's centered, unpadded defaults.
+  const layout = await page.evaluate(() => {
+    const read = (className: string) => {
+      const dialog = document.createElement("dialog");
+      dialog.className = className;
+      dialog.appendChild(document.createElement("div"));
+      document.body.appendChild(dialog);
+      dialog.showModal();
+      const style = getComputedStyle(dialog);
+      const result = {
+        display: style.display,
+        alignItems: style.alignItems,
+        justifyContent: style.justifyContent,
+        paddingLeft: style.paddingLeft,
+        paddingTop: style.paddingTop,
+        backdrop: getComputedStyle(dialog, "::backdrop").backgroundColor,
+      };
+      dialog.close();
+      dialog.remove();
+      return result;
+    };
+    return {
+      wide: window.matchMedia("(min-width: 40rem)").matches,
+      shell: read("ui-dialog"),
+      review: read("ui-dialog items-start justify-center px-3 py-5 sm:px-6 sm:py-10"),
+    };
+  });
+
+  expect(layout.shell).toEqual({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingLeft: "0px",
+    paddingTop: "0px",
+    backdrop: "rgba(0, 0, 0, 0.8)",
+  });
+  expect(layout.review).toEqual({
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    paddingLeft: layout.wide ? "24px" : "12px",
+    paddingTop: layout.wide ? "40px" : "20px",
+    backdrop: "rgba(0, 0, 0, 0.8)",
+  });
+});

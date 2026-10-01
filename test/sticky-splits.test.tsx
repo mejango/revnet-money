@@ -12,10 +12,10 @@ import { parseDeployData } from "@/app/create/helpers/parseDeployData";
 import { stageSchema } from "@/app/create/helpers/stageSchema";
 import type { SplitDraft, StageData } from "@/app/create/types";
 import { StickyRecipient } from "@/components/sticky/StickyRecipient";
-import { describeSplitGroups } from "@/components/TransactionReviewProvider";
 import { parseRevnetDraft } from "@/lib/revnet-draft";
 import { checkStickyToken, stickySplitsProblem } from "@/lib/sticky";
 import { jbContractAddress, type JBChainId } from "@bananapus/nana-sdk-core";
+import { describeSplitGroups } from "@bananapus/nana-sdk-core/review/decode";
 import { stickyDistributorAddress } from "@bananapus/nana-sdk-core/v6";
 import { renderToStaticMarkup } from "react-dom/server";
 import {

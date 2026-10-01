@@ -42,6 +42,8 @@ verifies that these SDKs remain lazy.
 ## What the suite protects
 
 - Transaction review tests assert exact chain, account, destination, calldata, selector, arguments, ordering, and mutation detection before a wallet prompt. Hook tests exercise the complete review → account recheck → simulation → account recheck → submission order and reject duplicate direct and Safe submissions.
+- Every review call that carries an ABI must decode with the SDK's `functionFromCall` (its `args` encode to exactly its calldata), or the review shows it as raw bytes. `test/review-calls-setup.ts` checks each test's mock calls and every call the review dialog renders, and fails the test that produced one that does not decode.
+- A confirm hosted in a dialog holds that dialog open while it is busy: Escape, a backdrop press and the dialog's × are refused until the send settles (`modal-shell.test.tsx`).
 - Activity tests assert durable, deduplicated status reporting and fail-safe recovery from malformed browser storage.
 - Safe tests ensure a proposal hash is never mistaken for an executed transaction.
 - Relayr tests distinguish payment from destination-chain completion, deduplicate polling, retain transaction hashes, and fail visibly when any destination fails. Hook tests pin sender/chain identity, same-chain nonce collision rejection, EIP-712 review ordering, account changes before and after signing, payment expiry, simulation, receipt uncertainty, and Safe proposal handling.
@@ -89,7 +91,7 @@ GitHub Actions uses Ubuntu 24.04, Node 26.5.0, npm 12.0.1, read-only repository 
 
 Bendystraw documents live only in the server-side fixed-operation registry. Browser callers send a reviewed operation ID and bounded variables through the same-origin BFF; they cannot submit arbitrary GraphQL. When an indexed shape changes, update its narrow DTO, query, runtime guard, deterministic fixture, and operation test together.
 
-The bundle gate measures gzip-compressed JavaScript referenced by Next 16's per-route client-reference manifests, including shared runtime chunks, and every emitted client chunk, including lazy chunks. Its conservative limits are 900 KiB for any app route, 1,100 KiB across unique route-referenced JavaScript, and 2,000 KiB across all client JavaScript. Override variables exist for local diagnosis, but CI should change a budget only alongside a reviewed explanation and measured user impact. Chart-heavy owner subtabs and wallet-only dialogs stay in on-demand chunks so the default project surface does not pay for unopened workflows.
+The bundle gate measures gzip-compressed JavaScript referenced by Next 16's per-route client-reference manifests, including shared runtime chunks, and every emitted client chunk, including lazy chunks. Its conservative limits are 900 KiB for any app route, 1,100 KiB across unique route-referenced JavaScript, and 2,611 KiB across all client JavaScript. Override variables exist for local diagnosis, but CI should change a budget only alongside a reviewed explanation and measured user impact. Chart-heavy owner subtabs and wallet-only dialogs stay in on-demand chunks so the default project surface does not pay for unopened workflows.
 
 ## Deliberate follow-ups
 

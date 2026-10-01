@@ -18,7 +18,14 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // axios 1.20.0 in Para's lazy chunk (+3.1), DOMPurify 3.4.16 (+0.4) and Next 16.3.8's
 // client runtime (+0.2) measure 2604.7 KiB against 2601.1 KiB before, so the budget
 // moves up by 4 KiB. The route budgets are unchanged.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2606);
+// The transaction review moved into a provider plus a dialog loaded on the first
+// request: every route's first load fell 7.5-27.3 KiB and route-referenced
+// JavaScript 897.4 -> 883.0 KiB, but all client JavaScript measures 2610.7 KiB
+// against 2605.2 KiB (SDK 2.17.0 alone changes nothing). The eager review held the
+// select, wagmi config and other small shared modules in a chunk the layout and the
+// pages shared; without it Next copies each into the page and lazy chunks that use
+// it (the select alone is +10.0 KiB). The budget moves up by the minimum 5 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2611);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

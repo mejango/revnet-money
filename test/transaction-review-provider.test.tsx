@@ -43,26 +43,10 @@ const BASE_FEE = "Base (0.00012 ETH)";
 const OPTIMISM_FEE = "Optimism (0.0003 ETH)";
 const PICKER = "Choose where to pay";
 
-vi.mock("@/hooks/useReviewedRelayr", () => ({
-  resumePendingRelayrBundles: vi.fn(),
-  waitForRelayrBundle: vi.fn(),
-}));
-
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  resumeSafeProposalTracking: vi.fn(),
-}));
-
-vi.mock("@/lib/transaction-activity", () => ({
-  dismissTransactionActivity: vi.fn(),
-  updateTransactionActivity: vi.fn(),
-  useTransactionActivities: () => [],
-}));
-
 vi.mock("wagmi", () => ({
   useAccount: () => ({
     address: "0x1111111111111111111111111111111111111111",
   }),
-  useConfig: () => ({}),
 }));
 
 describe("TransactionReviewProvider", () => {
@@ -78,9 +62,14 @@ describe("TransactionReviewProvider", () => {
 
     const dialog = await screen.findByRole("dialog", { name: PICKER });
     expect(dialog).toHaveAccessibleDescription(
-      "One payment covers every chain. You'll review it before your wallet sends it.",
+      "One payment covers every chain. You’ll review it before your wallet sends it.",
     );
-    expect(screen.getByRole("combobox", { name: "Pay on" })).toHaveTextContent("Base (0.001 ETH)");
+    // The select names its value once its options have registered.
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Pay on" })).toHaveTextContent(
+        "Base (0.001 ETH)",
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Continue to payment review" }));
     await expect(choice).resolves.toBe(8453);
   });
@@ -92,7 +81,7 @@ describe("TransactionReviewProvider", () => {
 
     const dialog = await screen.findByRole("dialog", { name: PICKER });
     const picker = screen.getByRole("combobox", { name: "Pay on" });
-    expect(picker).toHaveTextContent(BASE_FEE);
+    await waitFor(() => expect(picker).toHaveTextContent(BASE_FEE));
     expect(selected).not.toHaveBeenCalled();
 
     fireEvent.click(picker);
@@ -117,7 +106,9 @@ describe("TransactionReviewProvider", () => {
     const choice = chooseRelayrPayment([relayrPayments[0]], 42161);
 
     await screen.findByRole("dialog", { name: PICKER });
-    expect(screen.getByRole("combobox", { name: "Pay on" })).toHaveTextContent(BASE_FEE);
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Pay on" })).toHaveTextContent(BASE_FEE),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Continue to payment review" }));
     await expect(choice).resolves.toBe(relayrPayments[0]);
   });
@@ -141,7 +132,10 @@ describe("TransactionReviewProvider", () => {
 
   it.each([
     ["Cancel", () => fireEvent.click(screen.getByRole("button", { name: "Cancel" }))],
-    ["the close button", () => fireEvent.click(screen.getByRole("button", { name: "Close" }))],
+    [
+      "the close button",
+      () => fireEvent.click(screen.getByRole("button", { name: "Cancel funding chain selection" })),
+    ],
     ["Escape", () => fireEvent.keyDown(document, { key: "Escape" })],
     ["the backdrop", () => fireEvent.pointerDown(screen.getByRole("dialog", { name: PICKER }))],
   ])("cancels the funding choice from %s without paying", async (_, dismiss) => {
@@ -172,7 +166,9 @@ describe("TransactionReviewProvider", () => {
     await expect(review).resolves.toBeUndefined();
 
     await screen.findByRole("dialog", { name: PICKER });
-    expect(screen.getByRole("combobox", { name: "Pay on" })).toHaveTextContent(OPTIMISM_FEE);
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Pay on" })).toHaveTextContent(OPTIMISM_FEE),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Continue to payment review" }));
     await expect(choice).resolves.toBe(relayrPayments[1]);
   });
@@ -427,7 +423,7 @@ describe("TransactionReviewProvider", () => {
     await screen.findByRole("dialog", { name: "Review signature" });
     expect(
       screen.getByText(
-        "This signature authorizes the exact typed data and resulting calls below; it does not itself prove those calls have executed.",
+        "This authorization commits to the exact destination, native value, and calldata below. A Safe or relayer can submit that call onchain after you continue.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/This is the exact destination/)).toBeNull();
@@ -470,7 +466,9 @@ describe("TransactionReviewProvider", () => {
     }).catch(() => undefined);
 
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("Permit2 | 0x000000000022D473030F116dDEE9F6B43aC78BA3");
+    expect(dialog).toHaveTextContent(
+      "Destination | Permit20x000000000022D473030F116dDEE9F6B43aC78BA3",
+    );
     expect(dialog).toHaveTextContent("USDC |");
     expect(dialog).toHaveTextContent("Uniswap Universal Router |");
   });
@@ -490,25 +488,29 @@ describe("TransactionReviewProvider", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Review gas" });
     const [zeroSafeGas, nonzeroSafeGas, noGas] = dialog.querySelectorAll("section");
-    const row = (card: Element, label: string) =>
-      within(card as HTMLElement).queryByText(`${label}:`)?.nextElementSibling;
+    const row = (card: Element, label: string) => {
+      const term = [...card.querySelectorAll("dt")].find((node) => node.textContent === label);
+      return term
+        ? [...term.parentElement!.querySelectorAll("dd")].map((node) => node.textContent)
+        : null;
+    };
     const warning = "If this call fails, the Safe still executes and uses this nonce.";
 
-    expect(row(zeroSafeGas, "Safe gas")).toHaveTextContent(/^0$/);
-    expect(row(zeroSafeGas, "Gas limit")).toHaveTextContent(/^1,234,567$/);
+    expect(row(zeroSafeGas, "Safe gas")).toEqual(["0"]);
+    expect(row(zeroSafeGas, "Gas limit")).toEqual(["1,234,567"]);
     expect(within(zeroSafeGas as HTMLElement).queryByText(warning)).toBeNull();
 
-    expect(row(nonzeroSafeGas, "Safe gas")).toHaveTextContent(`50,000${warning}`);
-    expect(row(nonzeroSafeGas, "Gas limit")).toBeUndefined();
+    expect(row(nonzeroSafeGas, "Safe gas")).toEqual(["50,000", warning]);
+    expect(row(nonzeroSafeGas, "Gas limit")).toBeNull();
 
-    expect(row(noGas, "Safe gas")).toBeUndefined();
-    expect(row(noGas, "Gas limit")).toBeUndefined();
+    expect(row(noGas, "Safe gas")).toBeNull();
+    expect(row(noGas, "Gas limit")).toBeNull();
     expect(dialog).not.toHaveTextContent(
       /Preflight gas limit|Safe transaction gas|signed envelope/,
     );
   });
 
-  it("keeps the signed authorization in the request-wide and single-call prompts", async () => {
+  it("keeps the signed authorization in the request's one audit prompt", async () => {
     const writeText = vi.fn(async (_text: string) => undefined);
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
     render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
@@ -522,31 +524,34 @@ describe("TransactionReviewProvider", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Review Relayr authorization" });
     expect(within(dialog).getByText("Raw transaction payload")).toBeInTheDocument();
-    const prompts = within(dialog).getAllByRole("button", { name: "[copy tx audit prompt]" });
-    expect(prompts).toHaveLength(2);
-
-    for (const prompt of prompts) fireEvent.click(prompt);
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
-    for (const [copied] of writeText.mock.calls) {
-      expect(copied).toContain('"primaryType": "ForwardRequest"');
-      expect(copied).toContain('"resultingCall"');
-    }
+    fireEvent.click(within(dialog).getByRole("button", { name: "[copy tx audit prompt]" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const [[copied]] = writeText.mock.calls;
+    expect(copied).toContain('"primaryType": "ForwardRequest"');
+    expect(copied).toContain('"resultingCall"');
   });
 
-  it("shows a lone call's prompt and raw data only on its card", async () => {
-    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+  it.each([1, 2])(
+    "shows one audit prompt and one raw payload for a request of %i calls",
+    async (count) => {
+      render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
 
-    void requireTransactionReview({
-      title: "Review one call",
-      calls: [{ chainId: 8453, to: `0x${"22".repeat(20)}`, data: "0x12345678" }],
-    }).catch(() => undefined);
+      void requireTransactionReview({
+        title: "Review calls",
+        calls: Array.from({ length: count }, () => ({
+          chainId: 8453,
+          to: `0x${"22".repeat(20)}` as const,
+          data: "0x12345678" as const,
+        })),
+      }).catch(() => undefined);
 
-    const dialog = await screen.findByRole("dialog", { name: "Review one call" });
-    expect(within(dialog).queryByText("Raw transaction payload")).toBeNull();
-    expect(within(dialog).getAllByRole("button", { name: "[copy tx audit prompt]" })).toHaveLength(
-      1,
-    );
-  });
+      const dialog = await screen.findByRole("dialog", { name: "Review calls" });
+      expect(within(dialog).getAllByText("Raw transaction payload")).toHaveLength(1);
+      expect(
+        within(dialog).getAllByRole("button", { name: "[copy tx audit prompt]" }),
+      ).toHaveLength(1);
+    },
+  );
   describe("a batch carried by a Safe call", () => {
     const SAFE = `0x${"33".repeat(20)}` as const;
     const STEP_ABI = parseAbi(["function setValue(uint256 value)"]);
@@ -605,9 +610,7 @@ describe("TransactionReviewProvider", () => {
       expect(within(dialog).getByText("Calls it makes, in order")).toBeInTheDocument();
       for (const [index, step] of steps.entries()) {
         expect(within(dialog).getByText(step.label)).toBeInTheDocument();
-        expect(within(dialog).getAllByText(new RegExp(`^Call ${index + 1} of 2 \\|`))).toHaveLength(
-          1,
-        );
+        expect(within(dialog).getAllByText(`Call ${index + 1} of 2`)).toHaveLength(1);
       }
     });
 
