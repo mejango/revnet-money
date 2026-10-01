@@ -36,6 +36,7 @@ import {
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { simulateCallSequence } from "@bananapus/nana-sdk-core/review";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   decodeFunctionData,
@@ -110,18 +111,12 @@ export type SafeBatchOutcome =
   | { kind: "executed"; hash: Hex; calls: number }
   | { kind: "sent"; transactions: number };
 
-function isMissingMethod(cause: { code?: number; message?: string }): boolean {
-  return (
-    cause.code === -32601 ||
-    cause.code === -32004 ||
-    /not (?:allowed|supported|found|implemented)/i.test(cause.message ?? "")
-  );
-}
-
 /**
- * The whole sequence simulated from the Safe where the RPC offers
- * eth_simulateV1; otherwise each standalone call on its own, leaving a call
- * that depends on an earlier one to Safe's own batch simulation before signing.
+ * The whole sequence simulated from the Safe by the SDK: as one sequence where
+ * the RPC offers eth_simulateV1, otherwise each standalone call on its own,
+ * leaving a call that depends on an earlier one to Safe's own batch simulation
+ * before signing. Only a node that lacks the method takes the fallback; a
+ * revert or a lagging node stops the batch.
  */
 async function simulateFromSafe(
   chainId: number,
@@ -129,45 +124,17 @@ async function simulateFromSafe(
   steps: readonly BatchStep[],
   calls: readonly BatchCall[],
 ): Promise<void> {
-  const client = publicClientFor(chainId as JBChainId);
-  const sequence = await client
-    .simulateCalls({
-      account: safe,
-      calls: calls.map(({ to, data, value }) => ({ to, data, value })),
-    })
-    .then((simulated) => simulated.results)
-    .catch((cause: { code?: number; message?: string }) => {
-      if (isMissingMethod(cause)) return null;
-      throw cause;
-    });
-  for (const [index, step] of steps.entries()) {
-    if (sequence) {
-      const result = sequence[index];
-      if (result?.status === "success") continue;
-      throw new Error(
-        `${step.label} (step ${index + 1}) reverts in simulation from the Safe${
-          result && "error" in result && result.error ? `: ${(result.error as Error).message}` : "."
-        }`,
-      );
-    }
-    if (calls[index]!.dependsOnPrior) continue;
-    try {
-      await client.simulateContract({
-        account: safe,
-        address: step.to,
-        abi: step.abi,
-        functionName: step.functionName,
-        args: step.args as unknown[],
-      });
-    } catch (cause) {
-      throw new Error(
-        `${step.label} (step ${index + 1}) reverts in simulation from the Safe: ${
-          (cause as { shortMessage?: string; message?: string }).shortMessage ??
-          (cause as Error).message
-        }`,
-      );
-    }
-  }
+  await simulateCallSequence(publicClientFor(chainId as JBChainId), {
+    from: safe,
+    chainName: chainName(chainId),
+    calls: calls.map((call, index) => ({
+      to: call.to,
+      data: call.data,
+      value: call.value,
+      label: `${steps[index]!.label} (step ${index + 1})`,
+      dependsOnPrior: call.dependsOnPrior,
+    })),
+  });
 }
 
 export function useSafeBatchSubmit() {
