@@ -18,6 +18,7 @@ import {
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
+  ACCOUNT_CHANGED,
   isSafeConnection,
   proposeSafeBatch,
   submittedViaSafe,
@@ -628,6 +629,8 @@ export function AddLiquidityForm({
     reviewed: ReviewedPlan;
     steps: LiquidityStep[];
     snapshot: string;
+    /** The mint's recipient: the position goes to the account that reviewed it. */
+    account: Address;
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
@@ -804,6 +807,7 @@ export function AddLiquidityForm({
               },
         ],
         snapshot,
+        account: address,
       });
       // The headroom is still worth naming when it outruns the balance — the
       // mint reverts if the price moves against the position before it lands.
@@ -827,7 +831,12 @@ export function AddLiquidityForm({
 
   const execute = async () => {
     if (!address || !publicClient || !reviewed || reviewed.snapshot !== snapshot) return;
-    const { reviewed: built, steps } = reviewed;
+    const { reviewed: built, steps, account } = reviewed;
+    if (account.toLowerCase() !== address.toLowerCase()) {
+      setReviewed(null);
+      setStatus(ACCOUNT_CHANGED);
+      return;
+    }
     const plan = built.plan;
     setBusy(true);
     setStatus(null);
@@ -846,6 +855,7 @@ export function AddLiquidityForm({
             unlockData: plan.unlockData,
             value: plan.value,
           }),
+          account,
         );
         setStatus(
           "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity.",
@@ -858,7 +868,7 @@ export function AddLiquidityForm({
         if (step.approval) {
           const outcome = await runApprovalStep(step, {
             chainId: state.chainId,
-            address,
+            address: account,
             publicClient: publicClient as PublicClient,
             ensureAllowance,
             approvePermit2: (args) =>
@@ -868,6 +878,7 @@ export function AddLiquidityForm({
                 abi: PERMIT2_ABI,
                 functionName: "approve",
                 args,
+                account,
               }),
           });
           if (outcome === "safe-proposed") {
@@ -888,6 +899,8 @@ export function AddLiquidityForm({
           functionName: "modifyLiquidities",
           args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
           value: plan.value,
+          // The position goes to the reviewed account: only it may fund the mint.
+          account,
         });
         if (submittedViaSafe(hash)) {
           setStatus("Liquidity mint was proposed to Safe and awaits approvals and execution.");
@@ -1288,6 +1301,8 @@ function ChainPositionRows({
   const [reviewed, setReviewed] = useState<{
     position: UserLpPosition;
     plan: ReturnType<typeof prepareRemoveLiquidity>;
+    /** Both sides go back to the account that reviewed the removal. */
+    account: Address;
   } | null>(null);
   // The position whose holdings/band are being edited in the panel below, or
   // the market (two sides) being edited or removed.
@@ -1300,6 +1315,7 @@ function ChainPositionRows({
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
   const [claiming, setClaiming] = useState<bigint | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [claimReview, setClaimReview] = useState<UserLpPosition[] | null>(null);
   const client = usePublicClient({ chainId }) as PublicClient | undefined;
   const {
@@ -1373,6 +1389,7 @@ function ChainPositionRows({
       setReviewed({
         position: fresh,
         plan: prepareRemoveLiquidity(pool, fresh, address, isSafeConnection(wagmiConfig)),
+        account: address,
       });
     } catch (cause) {
       setError(txMessage(cause, "Could not refresh this position."));
@@ -1403,6 +1420,7 @@ function ChainPositionRows({
         abi: POSITION_MANAGER_ABI,
         functionName: "modifyLiquidities",
         args: [unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
+        account: address,
       });
       setClaimReview(null);
     } catch (cause) {
@@ -1414,9 +1432,15 @@ function ChainPositionRows({
 
   const remove = async () => {
     if (!reviewed) return;
+    if (reviewed.account.toLowerCase() !== address.toLowerCase()) {
+      setReviewed(null);
+      setError(ACCOUNT_CHANGED);
+      return;
+    }
     setError(null);
+    setRemoving(true);
     try {
-      const fresh = await refreshUserLpPosition(pool, reviewed.position.tokenId, address);
+      const fresh = await refreshUserLpPosition(pool, reviewed.position.tokenId, reviewed.account);
       if (fresh.liquidity < reviewed.position.liquidity) {
         throw new Error("This position changed. Review its current return before removing it.");
       }
@@ -1429,9 +1453,12 @@ function ChainPositionRows({
         // deadline is re-stamped, so a slow review can't ship an already-expired
         // window.
         args: [reviewed.plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
+        account: reviewed.account,
       });
     } catch (cause) {
       setError(txMessage(cause, "Could not remove liquidity."));
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -1755,7 +1782,7 @@ function ChainPositionRows({
           activeIndex={isPending ? 0 : -1}
           action="Remove the position"
           onConfirm={() => void remove()}
-          busy={isPending}
+          busy={isPending || removing}
           error={error}
         >
           {reviewed ? (

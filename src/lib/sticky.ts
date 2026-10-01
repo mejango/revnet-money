@@ -1,4 +1,5 @@
 import { chainDisplayName as chainName } from "@/app/constants";
+import { chainRevert } from "@/lib/contract-revert";
 import { jbContractAddress, type JBChainId } from "@bananapus/nana-sdk-core";
 import {
   STICKY_CRITERIA_BASE,
@@ -12,7 +13,6 @@ import {
 } from "@bananapus/nana-sdk-core/v6";
 import {
   BaseError,
-  ContractFunctionRevertedError,
   ContractFunctionZeroDataError,
   erc20Abi,
   isAddressEqual,
@@ -170,12 +170,9 @@ export type StickyTokenCheck = { ok: true; symbol: string } | { ok: false; reaso
 
 function reverted(error: unknown): boolean {
   return (
-    error instanceof BaseError &&
-    !!error.walk(
-      (cause) =>
-        cause instanceof ContractFunctionRevertedError ||
-        cause instanceof ContractFunctionZeroDataError,
-    )
+    chainRevert(error) !== null ||
+    (error instanceof BaseError &&
+      !!error.walk((cause) => cause instanceof ContractFunctionZeroDataError))
   );
 }
 

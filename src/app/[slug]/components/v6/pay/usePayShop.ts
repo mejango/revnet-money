@@ -1,6 +1,7 @@
 "use client";
 
 import { useViewedAccount } from "@/hooks/useViewedAccount";
+import { chainRevert } from "@/lib/contract-revert";
 import { payTokenKey, V6PayTokenOption } from "@/lib/v6/pay";
 import {
   jb721TiersHookAbi,
@@ -12,7 +13,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { BASE_CURRENCY_ETH, BASE_CURRENCY_USD } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { Address, BaseError, ContractFunctionRevertedError, PublicClient } from "viem";
+import { Address, PublicClient } from "viem";
 import { usePublicClient } from "wagmi";
 import { loadShopInventory } from "../shop/shopLib";
 
@@ -228,10 +229,7 @@ export function usePayShopRoutes(
 /** A revert (as opposed to a transport failure) means the chain answered — so the absence of
  *  a feed is a fact about the protocol, not about the network. */
 function contractReverted(error: unknown): boolean {
-  return (
-    error instanceof BaseError &&
-    !!error.walk((cause) => cause instanceof ContractFunctionRevertedError)
-  );
+  return chainRevert(error) !== null;
 }
 
 export { BASE_CURRENCY_ETH, BASE_CURRENCY_USD };

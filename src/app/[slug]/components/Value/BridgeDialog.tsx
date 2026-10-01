@@ -261,7 +261,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         minTokensReclaimed: reviewedQuote.minTokensReclaimed,
         token: terminalToken,
       });
-      await writeContractAsync({ ...request, chainId: sourceChainId });
+      await writeContractAsync({ ...request, chainId: sourceChainId, account: address });
     } catch (error) {
       console.error(error);
       if (isSafeProposalPendingError(error)) {

@@ -36,6 +36,7 @@ import {
   permit2Abi,
   quoteDirectSellSwap,
 } from "@/lib/directPaySwap";
+import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
@@ -85,6 +86,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   );
   const chainId = useJBChainId();
   const [isApproving, setIsApproving] = useState(false);
+  // From Confirm until the write returns: the quote and route reads before
+  // the wallet prompt are part of the send, and the dialog must not close
+  // under them.
+  const [submitting, setSubmitting] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -601,9 +606,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       ? "Sell on market"
                       : "Cash out"
             }
-            busy={loading || isApproving}
+            busy={loading || isApproving || submitting}
             error={error}
             onConfirm={async () => {
+              setSubmitting(true);
               try {
                 if (
                   !cashOutTerminal ||
@@ -621,7 +627,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   setIsApproving(needsErc20Approval || needsRouterApproval);
                   if (needsErc20Approval) {
                     await writeApprovalAsync({
-                      abi: erc20Abi,
+                      abi: erc20ApproveAbi,
                       functionName: "approve",
                       chainId: selectedChainId,
                       address: projectTokenAddress,
@@ -670,15 +676,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       "Selling no longer pays more than cashing out. Review the new estimate.",
                     );
                   }
-                  await writeContractAsync(
-                    buildDirectSellSwapTx({
+                  // The sale pays `address`: only `address` may send it.
+                  await writeContractAsync({
+                    ...buildDirectSellSwapTx({
                       chainId: selectedChainId,
                       quote: fresh,
                       amount: redeemAmountBN,
                       recipient: address,
                       deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
                     }),
-                  );
+                    account: address,
+                  });
                   return;
                 }
 
@@ -698,7 +706,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   );
                 }
 
-                await writeContractAsync(prepared.transaction);
+                await writeContractAsync({ ...prepared.transaction, account: address });
               } catch (err) {
                 setIsApproving(false);
                 console.error("Cashout failed:", err);
@@ -708,6 +716,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   title: "Cashout Failed",
                   description: cashOutExecutionErrorMessage(err) ?? formatWalletError(err),
                 });
+              } finally {
+                setSubmitting(false);
               }
             }}
           >

@@ -33,7 +33,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // every chunk that uses it, so all client JavaScript measures 2618.7-2618.8 KiB against
 // 2614.0 KiB (largest route /[slug]/operator 655.1 -> 660.6 KiB). Builds vary by about
 // 0.1 KiB, so the budget moves up 5 KiB to keep a clear margin.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2620);
+// The send-safety fixes (the dialog hold through every send, the reviewed-account check,
+// one output-less approve ABI, the SDK's sequence simulation in both Safe batch paths,
+// the revert rule and the isolated reads of project-chosen tokens) measure 2623.9 KiB
+// against 2618.8 KiB; the budget moves up to 2625 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2625);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

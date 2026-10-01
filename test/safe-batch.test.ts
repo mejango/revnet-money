@@ -13,12 +13,14 @@ const mocks = vi.hoisted(() => ({
   sendCalls: vi.fn(),
   simulateContract: vi.fn(),
   simulateCalls: vi.fn(),
+  request: vi.fn(),
 }));
 
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
   getPublicClient: () => ({
     simulateCalls: mocks.simulateCalls,
+    request: mocks.request,
     // A safeTxHash is never a transaction, so tracking polls the Safe service.
     getTransaction: async () => {
       throw new Error("Transaction not found");
@@ -133,24 +135,48 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     mocks.simulateCalls.mockRejectedValue(
       Object.assign(new Error("JSON-RPC method is not allowed"), { code: -32601 }),
     );
+    mocks.request.mockReset().mockResolvedValue("0x");
     const [first, second] = calls();
     await proposeSafeBatch(mocks.config as never, 8453, "Make the market", [
       first!,
       { ...second!, dependsOnPrior: true },
     ]);
-    expect(mocks.simulateContract).toHaveBeenCalledTimes(1);
-    expect(mocks.simulateContract.mock.calls[0]![1]).toMatchObject({
-      account: ACCOUNT,
-      address: TOKEN,
-      functionName: "approve",
+    // Only the standalone approval runs alone; the dependent call is left to Safe.
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(mocks.request.mock.calls[0]![0]).toMatchObject({
+      method: "eth_call",
+      params: [{ from: ACCOUNT, to: TOKEN }, "latest"],
     });
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
 
-    mocks.simulateContract.mockRejectedValueOnce(new Error("allowance"));
+    mocks.request.mockRejectedValueOnce(new Error("allowance"));
     await expect(
       proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
     ).rejects.toThrow("step 1");
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops on a lagging node or a revert instead of skipping the dependent call's simulation", async () => {
+    // viem's message quotes the request body, which names eth_simulateV1; only
+    // the node's own details and the code say what failed.
+    for (const failure of [
+      Object.assign(new Error('header not found\n\nRequest body: {"method":"eth_simulateV1"}'), {
+        code: -32000,
+        details: "header not found",
+      }),
+      Object.assign(new Error("execution reverted: not allowed"), {
+        code: 3,
+        details: "execution reverted: not allowed",
+      }),
+    ]) {
+      mocks.simulateCalls.mockRejectedValueOnce(failure);
+      mocks.request.mockReset().mockResolvedValue("0x");
+      await expect(
+        proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
+      ).rejects.toThrow("could not be simulated");
+      expect(mocks.request).not.toHaveBeenCalled();
+    }
+    expect(mocks.sendCalls).not.toHaveBeenCalled();
   });
 
   it("sends nothing when the review is closed", async () => {
@@ -167,5 +193,18 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
       proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
     ).rejects.toThrow("Safe connection");
     expect(mocks.sendCalls).not.toHaveBeenCalled();
+  });
+
+  it("refuses a batch built for another account, such as a mint to the account that reviewed it", async () => {
+    const other = "0x000000000000000000000000000000000000bEEF" as Address;
+    await expect(
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls(), other),
+    ).rejects.toThrow("The connected account changed. Review again.");
+    expect(mocks.simulateCalls).not.toHaveBeenCalled();
+    expect(seen).toBeNull();
+    expect(mocks.sendCalls).not.toHaveBeenCalled();
+
+    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls(), ACCOUNT);
+    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 });

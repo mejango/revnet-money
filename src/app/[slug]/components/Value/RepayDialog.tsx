@@ -14,6 +14,7 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
+import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { repayCeilingFor, repayPrincipalFor } from "@/lib/loanFees";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
@@ -442,7 +443,7 @@ export function RepayDialog({
       const approveHash = await repayLoanAsync({
         chainId,
         address: baseTokenAddress,
-        abi: erc20Abi,
+        abi: erc20ApproveAbi,
         functionName: "approve",
         // Approve exactly what this repayment can pull, not the whole loan.
         args: [revLoansContractAddress as Address, finalRepayAmount],
@@ -529,7 +530,7 @@ export function RepayDialog({
           const approveHash = await repayLoanAsync({
             chainId,
             address: baseTokenAddress,
-            abi: erc20Abi,
+            abi: erc20ApproveAbi,
             functionName: "approve",
             args: [revLoansContractAddress as Address, maxRepayBorrowAmount],
           });
@@ -566,6 +567,7 @@ export function RepayDialog({
         // underfund the repay. Send the ceiling (principal + accrued source fee + buffer); the
         // contract refunds the excess.
         value: isNativeToken(chainTokenConfig.token) ? maxRepayBorrowAmount : 0n,
+        account: userAddress as Address,
       });
 
       setRepayTxHash(txHash);

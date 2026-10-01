@@ -17,7 +17,7 @@ import {
 } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom, simulateCallSequence } from "@bananapus/nana-sdk-core/review";
 import { safeServiceBase } from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
@@ -44,6 +44,26 @@ export { isSafeConnection, isSafeConnector, useSafeConnection } from "@/lib/safe
 
 export const SAFE_NONCE_GUIDANCE =
   "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
+/** Why a send was refused: its plan names one account (a beneficiary, a recipient, a position's owner) and another is connected. */
+export const ACCOUNT_CHANGED = "The connected account changed. Review again.";
+
+/**
+ * Refuses a send whose plan was built for `planned` while another account is
+ * connected: the plan pays out to `planned`, and the connected account would
+ * pay for it. A plan that names no account may be sent by any.
+ */
+function requirePlannedAccount(planned: unknown, connected: Address): void {
+  const address =
+    typeof planned === "string"
+      ? planned
+      : planned && typeof planned === "object" && "address" in planned
+        ? String((planned as { address: unknown }).address)
+        : undefined;
+  if (address !== undefined && address.toLowerCase() !== connected.toLowerCase()) {
+    throw new Error(ACCOUNT_CHANGED);
+  }
+}
+
 const safeInflight = new Map<string, Promise<void>>();
 // Safe emits ExecutionFailure instead of reverting only when safeTxGas or gasPrice is set.
 const SAFE_EXECUTION_FAILURE = keccak256(stringToHex("ExecutionFailure(bytes32,uint256)"));
@@ -168,10 +188,13 @@ export async function proposeSafeBatch(
     /** Needs an earlier call's effect (an allowance), so it cannot simulate alone. */
     dependsOnPrior?: boolean;
   })[],
+  /** The account the calls were built for, when they name one (a mint's recipient). */
+  plannedAccount?: Address,
 ): Promise<Hex> {
   requireNoViewAs();
   const account = getAccount(config).address;
   if (!account) throw new Error("Connect a wallet first.");
+  requirePlannedAccount(plannedAccount, account);
   if (!isSafeConnection(config)) {
     throw new Error("A batch can only be proposed through a Safe connection.");
   }
@@ -194,56 +217,23 @@ export async function proposeSafeBatch(
     if (duplicate?.hash) throw new SafeProposalPendingError(duplicate.hash, title);
 
     // The calls depend on each other (an allowance, then the spend), so the
-    // batch simulates as one sequence where the RPC offers eth_simulateV1.
-    // Where it does not, each standalone call simulates on its own and the
-    // dependent one is left to Safe's batch simulation before signing.
+    // SDK simulates them as one sequence where the RPC offers eth_simulateV1,
+    // and otherwise each standalone call on its own, leaving a dependent one to
+    // Safe's batch simulation before signing. Only a node that lacks the method
+    // takes the fallback; a revert or a lagging node stops the proposal.
     const publicClient = getPublicClient(config, { chainId });
     if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
-    const sequence = await publicClient
-      .simulateCalls({ account, calls: encoded })
-      .then((simulated) => simulated.results)
-      .catch((cause: { code?: number; message?: string }) => {
-        if (
-          cause.code === -32601 ||
-          cause.code === -32004 ||
-          /not (?:allowed|supported|found|implemented)/i.test(cause.message ?? "")
-        ) {
-          return null;
-        }
-        throw cause;
-      });
-    for (const [index, call] of calls.entries()) {
-      if (sequence) {
-        const result = sequence[index];
-        if (result?.status === "success") continue;
-        throw new Error(
-          `${call.functionName} (step ${index + 1}) reverts in simulation${
-            result && "error" in result && result.error
-              ? `: ${(result.error as Error).message}`
-              : "."
-          }`,
-        );
-      }
-      if (call.dependsOnPrior) continue;
-      try {
-        await simulateContract(config, {
-          chainId,
-          account,
-          address: call.address,
-          abi: call.abi,
-          functionName: call.functionName,
-          args: call.args,
-          value: call.value,
-        } as Parameters<typeof simulateContract>[1]);
-      } catch (cause) {
-        throw new Error(
-          `${call.functionName} (step ${index + 1}) reverts in simulation: ${
-            (cause as { shortMessage?: string; message?: string }).shortMessage ??
-            (cause as Error).message
-          }`,
-        );
-      }
-    }
+    await simulateCallSequence(publicClient, {
+      from: account,
+      chainName: publicClient.chain?.name ?? `chain ${chainId}`,
+      calls: encoded.map((call, index) => ({
+        to: call.to,
+        data: call.data,
+        value: call.value,
+        label: `${calls[index]!.functionName} (step ${index + 1})`,
+        dependsOnPrior: calls[index]!.dependsOnPrior,
+      })),
+    });
 
     await requireTransactionReview({
       calls: encoded.map((call, index) => ({
@@ -404,6 +394,9 @@ export function useWriteContract(
       requireNoViewAs();
       const before = getAccount(config);
       if (!before.address) throw new Error("Connect a wallet first.");
+      // `account` names the account the call was built for. Every check below
+      // binds the send to the account connected now, so the two must agree.
+      requirePlannedAccount(variables.account, before.address);
       const initialAddress = before.address;
       const chainId = Number(variables.chainId ?? before.chainId);
       if (!chainId) throw new Error("Select a network before continuing.");

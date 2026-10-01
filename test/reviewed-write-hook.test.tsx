@@ -452,6 +452,34 @@ describe("reviewed write hook", () => {
     expect(mocks.submit).not.toHaveBeenCalled();
   });
 
+  it("refuses a call built for another account before its review, and sends one built for this account", async () => {
+    const { review, hooks } = await freshHarness();
+    const reviewer = vi.fn().mockResolvedValue(true);
+    review.registerTransactionReviewHandler(reviewer);
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    // The plan pays RECIPIENT on behalf of OTHER_ACCOUNT, but ACCOUNT is connected.
+    for (const planned of [OTHER_ACCOUNT, { address: OTHER_ACCOUNT, type: "json-rpc" }]) {
+      await expect(
+        result.current.writeContractAsync({ ...CALL, account: planned } as never),
+      ).rejects.toThrow(hooks.ACCOUNT_CHANGED);
+    }
+    expect(hooks.ACCOUNT_CHANGED).toBe("The connected account changed. Review again.");
+    expect(reviewer).not.toHaveBeenCalled();
+    expect(mocks.simulateContract).not.toHaveBeenCalled();
+    expect(mocks.submit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.writeContractAsync({
+        ...CALL,
+        account: ACCOUNT.toLowerCase(),
+      } as never);
+    });
+    expect(mocks.submit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ account: ACCOUNT, address: TARGET }),
+    );
+  });
+
   it("deduplicates identical pending direct writes before opening another review", async () => {
     const { review, hooks } = await freshHarness();
     const reviewer = vi.fn().mockResolvedValue(true);

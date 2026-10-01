@@ -1,4 +1,5 @@
 import type { ProjectQuery } from "@/lib/bendystraw/types";
+import { revertedNonexistentToken } from "@/lib/contract-revert";
 import { fetchIpfsMetadata } from "@/lib/projectMetadataFill.server";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
@@ -13,20 +14,10 @@ import {
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
 import { cache } from "react";
-import {
-  BaseError,
-  ContractFunctionRevertedError,
-  erc20Abi,
-  zeroAddress,
-  type Address,
-} from "viem";
+import { erc20Abi, zeroAddress, type Address } from "viem";
 import { getProject } from "./getProject";
 
 type ProjectRow = NonNullable<ProjectQuery["project"]>;
-
-const isRevertError = (err: unknown) =>
-  err instanceof BaseError &&
-  Boolean(err.walk((cause) => cause instanceof ContractFunctionRevertedError));
 
 /**
  * Build a minimal project row straight from the chain for projects that
@@ -51,8 +42,9 @@ const getOnchainProjectFallback = cache(
         args: [id],
       });
     } catch (err) {
-      // ownerOf reverts for a token that was never minted.
-      if (isRevertError(err)) return null;
+      // ownerOf reverts with ERC721NonexistentToken for a project that was
+      // never minted. Any other failure, a node's -32603 included, rethrows.
+      if (revertedNonexistentToken(err)) return null;
       throw err;
     }
 

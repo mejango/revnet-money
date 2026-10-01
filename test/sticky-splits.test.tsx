@@ -17,6 +17,7 @@ import { checkStickyToken, stickySplitsProblem } from "@/lib/sticky";
 import { jbContractAddress, type JBChainId } from "@bananapus/nana-sdk-core";
 import { describeSplitGroups } from "@bananapus/nana-sdk-core/review/decode";
 import { stickyDistributorAddress } from "@bananapus/nana-sdk-core/v6";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   ContractFunctionExecutionError,
@@ -32,7 +33,7 @@ import { EMPTY_SUCKER_CONFIG, TEST_SALT, TEST_TIMESTAMP, validRevnetForm } from 
 
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
-  useReadContract: () => ({ data: "STICKY" }),
+  usePublicClient: () => ({}),
 }));
 
 const CHAIN = 84532 as JBChainId;
@@ -309,9 +310,18 @@ describe("Sticky split display", () => {
   });
 
   it("names the token symbol", () => {
-    expect(renderToStaticMarkup(<StickyRecipient split={split} chainId={CHAIN} />)).toContain(
-      "Sticky holders stuck 4 to 52 weeks → STICKY",
+    const client = new QueryClient();
+    client.setQueryData(
+      ["sticky-recipient-symbol", CHAIN, split.beneficiary.toLowerCase()],
+      "STICKY",
     );
+    expect(
+      renderToStaticMarkup(
+        <QueryClientProvider client={client}>
+          <StickyRecipient split={split} chainId={CHAIN} />
+        </QueryClientProvider>,
+      ),
+    ).toContain("Sticky holders stuck 4 to 52 weeks → STICKY");
   });
 
   it("names Sticky holders in a reserved distribution row", () => {

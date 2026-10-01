@@ -4,6 +4,7 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
+  ACCOUNT_CHANGED,
   isSafeConnection,
   proposeSafeBatch,
   submittedViaSafe,
@@ -13,7 +14,14 @@ import {
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
-import { erc20Abi, formatUnits, zeroAddress, type Hex, type PublicClient } from "viem";
+import {
+  erc20Abi,
+  formatUnits,
+  zeroAddress,
+  type Address,
+  type Hex,
+  type PublicClient,
+} from "viem";
 import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { chainName, fmtUnits } from "../settlement/lib";
 import { describeEditLiquidityPlan } from "./formView";
@@ -125,6 +133,8 @@ export function EditPositionPanel({
     plan: EditLiquidityPlan;
     steps: LiquidityStep[];
     snapshot: string;
+    /** Freed funds and any new position go to the account that reviewed the edit. */
+    account: Address;
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
@@ -288,6 +298,7 @@ export function EditPositionPanel({
         plan,
         steps: [...approvals, FINAL_STEP[plan.kind]],
         snapshot,
+        account: address,
       });
       const tight = [
         plan.tokenFunding > held.token ? tokenSymbol : null,
@@ -309,13 +320,18 @@ export function EditPositionPanel({
 
   const execute = async () => {
     if (!address || !publicClient || !current) return;
-    const { plan, steps } = current;
+    const { plan, steps, account } = current;
+    if (account.toLowerCase() !== address.toLowerCase()) {
+      setReviewed(null);
+      setStatus(ACCOUNT_CHANGED);
+      return;
+    }
     setBusy(true);
     setStatus(null);
     try {
       // ponytail: Safe app only; other EIP-5792 wallets keep the sequential path.
       if (isSafeConnection(wagmiConfig) && steps.length > 1) {
-        await reverifyEditLiquidity(current.pool, plan, address);
+        await reverifyEditLiquidity(current.pool, plan, account);
         await proposeSafeBatch(
           wagmiConfig,
           chainId,
@@ -326,6 +342,7 @@ export function EditPositionPanel({
             unlockData: plan.unlockData,
             value: plan.value,
           }),
+          account,
         );
         setStatus(
           "Proposed to Safe as one batch. The position shows its new state under Your liquidity once it executes.",
@@ -339,7 +356,7 @@ export function EditPositionPanel({
         if (step.approval) {
           const outcome = await runApprovalStep(step, {
             chainId: state.chainId,
-            address,
+            address: account,
             publicClient: publicClient as PublicClient,
             ensureAllowance,
             approvePermit2: (args) =>
@@ -349,6 +366,7 @@ export function EditPositionPanel({
                 abi: PERMIT2_ABI,
                 functionName: "approve",
                 args,
+                account,
               }),
           });
           if (outcome === "safe-proposed") {
@@ -371,6 +389,7 @@ export function EditPositionPanel({
           // the deadline is stamped at send time.
           args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
           value: plan.value,
+          account,
         });
         if (submittedViaSafe(hash)) {
           setStatus("The edit was proposed to Safe and awaits approvals and execution.");

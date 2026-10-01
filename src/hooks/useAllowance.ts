@@ -1,6 +1,7 @@
 "use client";
 
 import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useCallback, useRef, useState } from "react";
 import { erc20Abi, type Hex, type TransactionReceipt } from "viem";
@@ -34,7 +35,7 @@ export function useAllowance(chainId: number, options?: { reviewedInParent?: boo
         const hash = await writeContractAsync({
           chainId,
           address: tokenAddress,
-          abi: erc20Abi,
+          abi: erc20ApproveAbi,
           functionName: "approve",
           args: [spender, value],
         });

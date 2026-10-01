@@ -584,6 +584,10 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         return;
       }
 
+      // Busy from here, as the standard path is: the reads before the wallet
+      // prompt are part of the send, and its dialog must not close under them.
+      setBorrowStatus("checking");
+
       // Adding collateral burns project tokens, exactly as the standard borrow path does, so
       // it needs the same BURN_TOKENS grant. Skipping this left the user at a simulation
       // failure with no grant step offered.
@@ -608,8 +612,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
         setBorrowStatus("waiting-signature");
 
-        await reallocateCollateralAsync(
-          buildProtectedReallocateCollateralTx({
+        await reallocateCollateralAsync({
+          ...buildProtectedReallocateCollateralTx({
             chainId: Number(cashOutChainId) as JBChainId,
             loanId: BigInt(internalSelectedLoan.id),
             collateralCountToTransfer,
@@ -619,7 +623,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             beneficiary: address,
             prepaidFeePercent: feePercent,
           }),
-        );
+          account: address,
+        });
       } catch (err) {
         setBorrowStatus("error");
         toast({
@@ -665,8 +670,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           });
 
           setBorrowStatus("waiting-signature");
-          await writeContractAsync(
-            buildProtectedBorrowTx({
+          await writeContractAsync({
+            ...buildProtectedBorrowTx({
               chainId: Number(cashOutChainId) as JBChainId,
               revnetId: effectiveProjectId,
               token: selectedChainTokenConfig.token,
@@ -676,7 +681,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
               prepaidFeePercent: BigInt(feeBasisPoints),
               holder: address as `0x${string}`,
             }),
-          );
+            account: address,
+          });
         } catch (err) {
           setBorrowStatus("error");
           toast({
