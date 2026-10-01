@@ -2,6 +2,8 @@
 
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { resumePendingRelayrBundles } from "@/hooks/useReviewedRelayr";
+import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
 import { IS_DETERMINISTIC_BROWSER, PARA_EMBEDDED_WALLET_ENABLED } from "@/lib/browserEnvironment";
 import { installQueryPersistence } from "@/lib/query-persist";
 import { watchSafeWalletPeer } from "@/lib/safe-connector";
@@ -95,6 +97,11 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
 
   // Safe{Wallet} over WalletConnect is a Safe, and only its live session says so.
   React.useEffect(() => watchSafeWalletPeer(wagmiConfig), []);
+
+  // Every page load follows the paid Relayr bundles and Safe proposals the
+  // transaction journal still has in flight.
+  React.useEffect(() => resumePendingRelayrBundles(), []);
+  React.useEffect(() => resumeSafeProposalTracking(wagmiConfig), []);
 
   const [paraHostLoaded, setParaHostLoaded] = React.useState(false);
   const [paraRequestId, setParaRequestId] = React.useState(0);

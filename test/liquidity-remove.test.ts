@@ -635,7 +635,7 @@ describe("Revnet LP market", () => {
 
 describe("Review-dialog V4 plan decoding", () => {
   it("renders a move plan as readable burn/mint/close steps", async () => {
-    const { describeV4UnlockData } = await import("@/components/TransactionReviewProvider");
+    const { describeV4UnlockData } = await import("@bananapus/nana-sdk-core/review/decode");
     const plan = prepareEditLiquidity(
       livePool,
       livePosition,
@@ -663,7 +663,7 @@ describe("Review-dialog V4 plan decoding", () => {
   });
 
   it("renders a top-up as an increase step with its maxima", async () => {
-    const { describeV4UnlockData } = await import("@/components/TransactionReviewProvider");
+    const { describeV4UnlockData } = await import("@bananapus/nana-sdk-core/review/decode");
     const plan = prepareEditLiquidity(
       livePool,
       livePosition,
