@@ -1300,6 +1300,7 @@ function ChainPositionRows({
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<bigint | null>(null);
   const [claiming, setClaiming] = useState<bigint | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [claimReview, setClaimReview] = useState<UserLpPosition[] | null>(null);
   const client = usePublicClient({ chainId }) as PublicClient | undefined;
   const {
@@ -1415,6 +1416,7 @@ function ChainPositionRows({
   const remove = async () => {
     if (!reviewed) return;
     setError(null);
+    setRemoving(true);
     try {
       const fresh = await refreshUserLpPosition(pool, reviewed.position.tokenId, address);
       if (fresh.liquidity < reviewed.position.liquidity) {
@@ -1432,6 +1434,8 @@ function ChainPositionRows({
       });
     } catch (cause) {
       setError(txMessage(cause, "Could not remove liquidity."));
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -1755,7 +1759,7 @@ function ChainPositionRows({
           activeIndex={isPending ? 0 : -1}
           action="Remove the position"
           onConfirm={() => void remove()}
-          busy={isPending}
+          busy={isPending || removing}
           error={error}
         >
           {reviewed ? (

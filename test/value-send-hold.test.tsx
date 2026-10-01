@@ -1,0 +1,311 @@
+import { BorrowDialog } from "@/app/[slug]/components/Value/BorrowDialog";
+import { BridgeDialog } from "@/app/[slug]/components/Value/BridgeDialog";
+import { ReallocateDialog } from "@/app/[slug]/components/Value/ReallocateDialog";
+import { RedeemDialog } from "@/app/[slug]/components/Value/RedeemDialog";
+import { RepayDialog } from "@/app/[slug]/components/Value/RepayDialog";
+import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState, type ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Cash out, bridge, borrow, refinance and repay each host their confirm in
+// their own dialog, whose owner resets and closes it on any request. While a
+// send is in flight, from Confirm through the reads that precede the wallet
+// prompt, the confirm must hold that dialog: before the hold, Escape, a
+// backdrop press or the × dropped the run's only view while it kept going, and
+// the next open could send again.
+
+const mocks = vi.hoisted(() => ({
+  write: vi.fn(),
+  prepareCashOut: vi.fn(),
+  freshBorrowable: vi.fn(),
+  ensureAllowance: vi.fn(),
+}));
+
+const tokenBalance = (chainId: number, projectId: number) => ({
+  chainId,
+  projectId,
+  balance: { value: 5n * 10n ** 18n, format: () => "5" },
+});
+
+vi.mock("wagmi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("wagmi")>()),
+  useAccount: () => ({ address: "0x1111111111111111111111111111111111111111" }),
+  usePublicClient: () => ({ readContract: async () => 0n }),
+  useWalletClient: () => ({ data: {} }),
+  useSimulateContract: () => ({ isLoading: false, error: null }),
+  useReadContract: ({ functionName }: { functionName?: string }) => {
+    const loan = { amount: 10n ** 18n, collateral: 2n * 10n ** 18n };
+    const answers: Record<string, unknown> = {
+      PERMISSIONS: "0x4444444444444444444444444444444444444444",
+      suckerPairsOf: [{ local: "0x3333333333333333333333333333333333333333", remoteChainId: 10n }],
+      loanOf: loan,
+      determineSourceFeeAmount: 1_000n,
+      borrowableAmountFrom: [0n, 5n * 10n ** 17n],
+    };
+    return { data: functionName ? answers[functionName] : undefined, isLoading: false };
+  },
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("@/lib/cache", () => ({ revalidateCacheTag: async () => undefined }));
+vi.mock("@/components/ButtonWithWallet", () => ({
+  ButtonWithWallet: ({
+    children,
+    loading: _loading,
+    targetChainId: _chain,
+    connectWalletText: _connect,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: {
+    children: ReactNode;
+    loading?: boolean;
+    targetChainId?: unknown;
+    connectWalletText?: string;
+    variant?: string;
+    size?: string;
+  }) => <button {...props}>{children}</button>,
+}));
+vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
+vi.mock("@/app/[slug]/components/Value/SimulatedLoanCard", () => ({
+  SimulatedLoanCard: () => null,
+}));
+vi.mock("@/components/ui/use-toast", () => ({
+  toast: vi.fn(),
+  useToast: () => ({ toast: vi.fn() }),
+}));
+vi.mock("@/hooks/useReviewedWriteContract", () => ({
+  isSafeProposalPendingError: () => false,
+  requireOnchainExecution: () => undefined,
+  useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false }),
+  useWriteContract: () => ({
+    writeContractAsync: mocks.write,
+    isPending: false,
+    data: undefined,
+    reset: vi.fn(),
+  }),
+}));
+vi.mock("@/hooks/useAllowance", () => ({
+  useAllowance: () => ({ ensureAllowance: mocks.ensureAllowance, isApproving: false }),
+}));
+vi.mock("@/hooks/useProjectBaseToken", () => ({
+  useProjectBaseToken: () => ({ symbol: "ETH", decimals: 18, tokenMap: {} }),
+}));
+vi.mock("@/hooks/useBorrowableAmountFrom", () => ({
+  useBorrowableAmountFrom: () => ({ data: 10n ** 18n, capacity: 2n * 10n ** 18n }),
+}));
+vi.mock("@/hooks/useCashOutRoute", () => ({
+  useCashOutRoute: () => ({
+    data: { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n },
+    isFetching: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("@/lib/cashOutQuote", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/cashOutQuote")>()),
+  cashOutPoolBufferBps: () => null,
+}));
+vi.mock("@/lib/bendystraw", () => ({
+  ProjectOperation: { id: "Project" },
+  SuckerGroupOperation: { id: "SuckerGroup" },
+  useBendystrawQuery: () => ({ data: undefined }),
+}));
+vi.mock("@/lib/nana/project", () => ({
+  useJBChainId: () => 1,
+  useJBContractContext: () => ({
+    contractAddress: () => "0x5555555555555555555555555555555555555555",
+  }),
+  useJBTokenContext: () => ({ token: { data: { decimals: 18, symbol: "REV" } } }),
+}));
+vi.mock("@/lib/nana/suckers", () => ({
+  useSuckers: () => ({ data: [{ peerChainId: 1, projectId: 7n }] }),
+  useSuckersUserTokenBalance: () => ({
+    data: [tokenBalance(1, 7), tokenBalance(10, 8)],
+    isLoading: false,
+  }),
+}));
+vi.mock("@/lib/tokenUtils", () => ({
+  getTokenConfigForChain: () => ({
+    token: "0x000000000000000000000000000000000000EEEe",
+    decimals: 18,
+    currency: 61166,
+    symbol: "ETH",
+  }),
+  getTokenSymbolFromAddress: () => "ETH",
+  isNativeToken: () => true,
+}));
+vi.mock("@/lib/token", () => ({
+  getTokenAddress: async () => "0x2222222222222222222222222222222222222222",
+}));
+vi.mock("@/lib/bridgePrepare", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/bridgePrepare")>()),
+  quoteBridgePrepare: async () => ({
+    netReclaimAmount: 10n ** 17n,
+    minTokensReclaimed: 9n * 10n ** 16n,
+    tokenDecimals: 18,
+  }),
+}));
+vi.mock("@/lib/loanTransactions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/loanTransactions")>()),
+  readFreshBorrowableAmount: mocks.freshBorrowable,
+}));
+vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
+  getTokenAddress: async () => "0x2222222222222222222222222222222222222222",
+  hasPermissions: async () => true,
+  prepareHookAwareCashOut: mocks.prepareCashOut,
+}));
+
+/** A read or wallet prompt that has not answered yet. */
+const never = () => new Promise<never>(() => undefined);
+
+function renderWithQueries(ui: ReactNode) {
+  return render(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
+}
+
+const dialogNamed = (name: string) => screen.getByRole("dialog", { name }) as HTMLDialogElement;
+const confirmPanel = async () => {
+  await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).not.toBeNull());
+  return document.querySelector<HTMLElement>("[data-tx-confirm]")!;
+};
+const hostClose = (dialog: HTMLDialogElement) =>
+  [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => !button.closest("[data-tx-confirm]") && button.textContent === "Close",
+  )!;
+
+/** Every way out of the dialog while the send is in flight; none may close it. */
+function tryEveryWayOut(name: string) {
+  const dialog = dialogNamed(name);
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.pointerDown(dialog);
+  fireEvent.click(hostClose(dialog));
+  expect(dialog.open).toBe(true);
+  expect(dialogNamed(name)).toBe(dialog);
+  expect(document.querySelector("[data-tx-confirm]")).not.toBeNull();
+}
+
+beforeEach(() => {
+  mocks.write.mockReset().mockImplementation(never);
+  mocks.prepareCashOut.mockReset().mockImplementation(never);
+  mocks.freshBorrowable.mockReset().mockImplementation(never);
+  mocks.ensureAllowance.mockReset().mockResolvedValue(null);
+});
+
+describe("value flows hold their dialog while a send is in flight", () => {
+  it("cash out, from Confirm through the route read before the wallet prompt", async () => {
+    renderWithQueries(
+      <RedeemDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open cash out</button>
+      </RedeemDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+    fireEvent.click(await screen.findByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
+    fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cash out" }));
+    const confirm = await confirmPanel();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cash out" }));
+    await waitFor(() => expect(mocks.prepareCashOut).toHaveBeenCalledTimes(1));
+    tryEveryWayOut("Cash out");
+  });
+
+  it("bridge", async () => {
+    renderWithQueries(
+      <BridgeDialog
+        projects={[
+          { projectId: 7, chainId: 1, token: NATIVE_TOKEN },
+          { projectId: 8, chainId: 10, token: NATIVE_TOKEN },
+        ]}
+      >
+        <button type="button">Open move</button>
+      </BridgeDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open move" }));
+    const [, to] = await screen.findAllByRole("combobox");
+    fireEvent.click(to);
+    fireEvent.click(await screen.findByRole("option", { name: /Optimism/ }));
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const move = screen.getByRole("button", { name: "Move REV" });
+    await waitFor(() => expect(move).toBeEnabled());
+    fireEvent.click(move);
+    const confirm = await confirmPanel();
+    await waitFor(() =>
+      expect(within(confirm).getByRole("button", { name: "Move REV" })).toBeEnabled(),
+    );
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Move REV" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    tryEveryWayOut("Move between networks");
+  });
+
+  it("borrow, from Confirm through the fresh quote read before the wallet prompt", async () => {
+    renderWithQueries(
+      <BorrowDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open borrow</button>
+      </BorrowDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open borrow" }));
+    fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
+    const open = screen.getByRole("button", { name: "Open loan" });
+    await waitFor(() => expect(open).toBeEnabled());
+    fireEvent.click(open);
+    const confirm = await confirmPanel();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+    await waitFor(() => expect(mocks.freshBorrowable).toHaveBeenCalledTimes(1));
+    tryEveryWayOut("New loan");
+  });
+
+  it("refinance, from Confirm through the fresh quote read before the wallet prompt", async () => {
+    renderWithQueries(
+      <ReallocateDialog projectId={7n} tokenSymbol="REV" selectedLoan={LOAN}>
+        <button type="button">Open refinance</button>
+      </ReallocateDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open refinance" }));
+    const refinance = await screen.findByRole("button", { name: "Refinance loan" });
+    await waitFor(() => expect(refinance).toBeEnabled());
+    fireEvent.click(refinance);
+    const confirm = await confirmPanel();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Refinance loan" }));
+    await waitFor(() => expect(mocks.freshBorrowable).toHaveBeenCalledTimes(1));
+    tryEveryWayOut("Refinance loan");
+  });
+
+  it("repay", async () => {
+    function Loans() {
+      const [open, setOpen] = useState(true);
+      return (
+        <RepayDialog
+          loanId="3"
+          chainId={1 as JBChainId}
+          projectId={7n}
+          loanProjectId={7n}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      );
+    }
+    renderWithQueries(<Loans />);
+    const repay = await screen.findByRole("button", { name: "Repay loan" });
+    await waitFor(() => expect(repay).toBeEnabled());
+    fireEvent.click(repay);
+    const confirm = await confirmPanel();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Repay loan" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    tryEveryWayOut("Repay loan");
+  });
+});
+
+const LOAN = {
+  id: "3",
+  chainId: 1,
+  borrowAmount: (10n ** 18n).toString(),
+  collateral: (2n * 10n ** 18n).toString(),
+  projectId: 7,
+};

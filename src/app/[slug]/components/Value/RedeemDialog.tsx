@@ -85,6 +85,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   );
   const chainId = useJBChainId();
   const [isApproving, setIsApproving] = useState(false);
+  // From Confirm until the write returns: the quote and route reads before
+  // the wallet prompt are part of the send, and the dialog must not close
+  // under them.
+  const [submitting, setSubmitting] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -601,9 +605,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       ? "Sell on market"
                       : "Cash out"
             }
-            busy={loading || isApproving}
+            busy={loading || isApproving || submitting}
             error={error}
             onConfirm={async () => {
+              setSubmitting(true);
               try {
                 if (
                   !cashOutTerminal ||
@@ -708,6 +713,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   title: "Cashout Failed",
                   description: cashOutExecutionErrorMessage(err) ?? formatWalletError(err),
                 });
+              } finally {
+                setSubmitting(false);
               }
             }}
           >

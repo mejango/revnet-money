@@ -300,14 +300,30 @@ export function useNativeModalDialog({
     lockBody();
 
     let closingForReact = false;
+    // React owns the open state: only unmounting closes the dialog. Escape
+    // asks instead, so an owner that refuses (a send in flight) keeps a live
+    // dialog, not a hidden one React still renders over a page that cannot
+    // scroll. Preventing the event `onEscapeKeyDown` gets refuses Escape alone.
+    const requestClose = () => {
+      const request = new Event("cancel", { cancelable: true });
+      callbacks.current.onEscapeKeyDown?.(request);
+      if (!request.defaultPrevented) callbacks.current.onOpenChange(false);
+    };
     const handleCancel = (event: Event) => {
-      // Escape reaches only the topmost dialog. Preventing the cancel is how a
-      // caller refuses dismissal, for instance while a send is in flight.
-      callbacks.current.onEscapeKeyDown?.(event);
+      // Escape reaches only the topmost dialog.
+      event.preventDefault();
+      requestClose();
     };
     const handleClose = () => {
       if (closingForReact) return;
-      callbacks.current.onOpenChange(false);
+      // The browser closed it anyway: Chrome does not let a page cancel a
+      // second Escape pressed with no click or key between the two. React
+      // still renders the dialog, so show it again and ask, as for any Escape.
+      if (!dialog.open) {
+        dialog.showModal();
+        dialog.focus({ preventScroll: true });
+      }
+      requestClose();
     };
     dialog.addEventListener("cancel", handleCancel);
     dialog.addEventListener("close", handleClose);
@@ -329,8 +345,8 @@ const DIALOG_PANEL_CLASS =
 
 interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement> {
   /**
-   * Runs on the native `cancel` event. Calling `preventDefault()` on it keeps
-   * the dialog open, which is the only supported way to refuse a dismissal.
+   * Runs when Escape asks to close the dialog. Calling `preventDefault()` on
+   * its event keeps the dialog open; refusing in `onOpenChange` does too.
    */
   onEscapeKeyDown?: (event: Event) => void;
   /** Off for dialogs that render their own dismissal control. */
@@ -346,7 +362,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
       dialogRef,
       enabled: portalNode !== null,
       onEscapeKeyDown: (event) => {
-        // Unprevented, Escape closes the native dialog before React can refuse it.
+        // A held dialog refuses Escape before its owner hears of it.
         if (context.held) event.preventDefault();
         else onEscapeKeyDown?.(event);
       },
