@@ -1,9 +1,11 @@
 "use client";
 
+import { readEach } from "@/lib/read-each";
 import { stickyRecipientLabel } from "@/lib/sticky";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { useQuery } from "@tanstack/react-query";
 import { erc20Abi, type Address } from "viem";
-import { useReadContract } from "wagmi";
+import { usePublicClient } from "wagmi";
 
 /**
  * A Sticky split's recipient: "Sticky holders stuck 4 to 52 weeks → STICKY".
@@ -17,12 +19,19 @@ export function StickyRecipient({
   split: { projectId: bigint; beneficiary: Address };
   chainId: JBChainId;
 }) {
-  const { data: symbol } = useReadContract({
-    address: split.beneficiary,
-    abi: erc20Abi,
-    functionName: "symbol",
-    chainId,
-    query: { staleTime: Infinity },
+  const client = usePublicClient({ chainId });
+  // The beneficiary is a token the project chose, so its read stays apart from
+  // the page's others: one that burns its gas fails only itself.
+  const { data: symbol } = useQuery({
+    queryKey: ["sticky-recipient-symbol", chainId, split.beneficiary.toLowerCase()],
+    enabled: !!client,
+    staleTime: Infinity,
+    queryFn: async () => {
+      const [read] = await readEach(client!, [
+        { address: split.beneficiary, abi: erc20Abi, functionName: "symbol" },
+      ]);
+      return read?.status === "success" && typeof read.result === "string" ? read.result : null;
+    },
   });
-  return <span title={split.beneficiary}>{stickyRecipientLabel(split, symbol)}</span>;
+  return <span title={split.beneficiary}>{stickyRecipientLabel(split, symbol ?? undefined)}</span>;
 }
