@@ -40,7 +40,7 @@ function bundle(
           data: "0x1234",
           value: "0x0",
           gas_limit: "0x5208",
-          virtual_nonce: null,
+          virtual_nonce: 0,
         },
         status:
           state === "Success"
@@ -171,6 +171,17 @@ describe("Relayr destination transaction tracking", () => {
     });
     expect(mocks.getTransaction).toHaveBeenCalledTimes(2);
     expect(mocks.getBlock).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledWith(
+      `https://api.relayr.ba5ed.com/v1/bundle/${BUNDLE_UUID}`,
+      expect.objectContaining({ cache: "no-store" }),
+    );
+  });
+
+  it("accepts Relayr's echo of the bundle ID in any case", async () => {
+    const { relayr, activity } = await freshModules();
+    respond({ ...bundle(), bundle_uuid: BUNDLE_UUID.toUpperCase() });
+    await expect(relayr.waitForRelayrBundle(BUNDLE_UUID)).resolves.toBeTruthy();
+    expect(activity.transactionActivitySnapshot()[0].status).toBe("success");
   });
 
   it("retains failed destinations for recovery without permitting another payment", async () => {
@@ -224,10 +235,19 @@ describe("Relayr destination transaction tracking", () => {
     expect(activity.transactionActivitySnapshot()[0].status).toBe("failed");
   });
 
-  it("does not trust a success label without a destination hash", async () => {
+  it.each([
+    ["no destination hash", { state: "Completed" as const }],
+    [
+      "a malformed destination hash",
+      {
+        state: "Completed" as const,
+        data: { block_hash: BLOCK_HASH, transaction: { hash: "0x1234" as const } },
+      },
+    ],
+  ])("does not trust a success label with %s", async (_, status) => {
     const { relayr } = await freshModules();
     const response = bundle();
-    response.transactions[0].status = { state: "Completed" };
+    response.transactions[0].status = status;
     respond(response);
     await expect(relayr.waitForRelayrBundle(BUNDLE_UUID)).rejects.toThrow(
       /without a destination transaction hash/,

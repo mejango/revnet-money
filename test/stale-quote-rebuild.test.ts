@@ -46,7 +46,7 @@ function chainPayment(chain: number, token = "0x00000000000000000000000000000000
 }
 
 function bundle(uuid: string, payments: ChainPayment[]): RelayrPostBundleResponse {
-  return { bundle_uuid: uuid, payment_info: payments, per_txn: [], txn_uuids: [] };
+  return { bundle_uuid: uuid, payment_info: payments };
 }
 
 describe("stale-quote rebuild — frozen stage starts and the 7-day cash-out delay", () => {

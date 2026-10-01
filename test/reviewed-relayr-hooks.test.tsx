@@ -1,5 +1,5 @@
 import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
-import type { RelayrPostBundleResponse } from "@/lib/nana/types";
+import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { SAFE_EXEC_ABI } from "@/lib/safe-queue";
 import type { TransactionReviewRequest } from "@/lib/transaction-review";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
@@ -19,11 +19,14 @@ import {
   BUNDLE_UUID,
   HASH,
   NOW,
+  onchain,
+  OTHER_BUNDLE_UUID,
+  payment,
   PAYMENT_RUNTIME,
   PAYMENT_TARGET,
+  relayrApi,
   TARGET,
-  onchain,
-  payment,
+  TX_UUIDS,
 } from "./relayr-fixtures";
 
 const mocks = vi.hoisted(() => ({
@@ -88,12 +91,7 @@ const REQUEST = {
 };
 
 function quote(row = payment()): RelayrPostBundleResponse {
-  return {
-    bundle_uuid: BUNDLE_UUID,
-    payment_info: [row],
-    per_txn: [],
-    txn_uuids: ["tx-reviewed"],
-  };
+  return { bundle_uuid: BUNDLE_UUID, payment_info: [row] };
 }
 
 async function freshHarness() {
@@ -183,9 +181,15 @@ describe("reviewed Relayr authorization hook", () => {
       expect(request.message).toMatchObject({ from: ACCOUNT, nonce: 4n });
       return SIGNATURE;
     });
+    const relayr = relayrApi();
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (_url: string, init?: RequestInit) => {
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method !== "POST") {
+          events.push("read");
+          expect(init).toMatchObject({ cache: "no-store" });
+          return relayr(url, init);
+        }
         events.push("post");
         const body = JSON.parse(String(init?.body)) as {
           transactions: Array<{ chain: number; target: Address; data: Hex; value: string }>;
@@ -193,7 +197,7 @@ describe("reviewed Relayr authorization hook", () => {
         expect(body.transactions).toHaveLength(1);
         expect(body.transactions[0]).toMatchObject({ chain: 1, value: "3" });
         expect(body.transactions[0].data).toMatch(/^0x[0-9a-f]+$/);
-        return new Response(JSON.stringify(quote()), { status: 200 });
+        return relayr(url, init);
       }),
     );
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -204,7 +208,8 @@ describe("reviewed Relayr authorization hook", () => {
     });
 
     expect(response?.bundle_uuid).toBe(BUNDLE_UUID);
-    expect(events).toEqual(["switch", "simulate", "nonce", "review", "sign", "post"]);
+    // Relayr's records are read and bound before the quote, and its payment, are offered.
+    expect(events).toEqual(["switch", "simulate", "nonce", "review", "sign", "post", "read"]);
   });
 
   it.each([
@@ -217,10 +222,7 @@ describe("reviewed Relayr authorization hook", () => {
       mocks.estimateGas.mockResolvedValue(estimate);
       const reviewer = vi.fn(async (_request: TransactionReviewRequest) => true);
       review.registerTransactionReviewHandler(reviewer);
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
-      );
+      vi.stubGlobal("fetch", relayrApi());
       const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
       await act(async () => {
         await result.current.getRelayrTxQuote([REQUEST]);
@@ -294,34 +296,21 @@ describe("reviewed Relayr authorization hook", () => {
       vi
         .fn()
         .mockResolvedValue(
-          new Response(
-            JSON.stringify({ bundle_uuid: "", payment_info: [], per_txn: [], txn_uuids: [] }),
-            { status: 200 },
-          ),
+          new Response(JSON.stringify({ bundle_uuid: "", payment_info: [], tx_uuids: [] }), {
+            status: 200,
+          }),
         ),
     );
     const incomplete = renderHook(() => second.hooks.useGetRelayrTxQuote());
     await expect(incomplete.result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
-      /incomplete quote/i,
+      "Relayr returned no valid bundle ID. Nothing was paid.",
     );
     expect(mocks.signTypedData).toHaveBeenCalledOnce();
   });
   it("signs one authorization per destination and posts them in one bundle", async () => {
     const { review, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url, init?: RequestInit) => {
-        const body = JSON.parse(String(init?.body));
-        expect(
-          body.transactions.map((transaction: { chain: number }) => transaction.chain),
-        ).toEqual([1, 10]);
-        expect(body.virtual_nonce_mode).toBe("Disabled");
-        return new Response(JSON.stringify({ ...quote(), txn_uuids: ["ethereum", "optimism"] }), {
-          status: 200,
-        });
-      }),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
       await result.current.getRelayrTxQuote([REQUEST, { ...REQUEST, chainId: 10 }]);
@@ -329,7 +318,106 @@ describe("reviewed Relayr authorization hook", () => {
     expect(mocks.signTypedData.mock.calls.map(([request]) => request.domain.chainId)).toEqual([
       1, 10,
     ]);
-    expect(fetch).toHaveBeenCalledOnce();
+    const posted = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    expect(posted.virtual_nonce_mode).toBe("ChainIndependent");
+    expect(
+      posted.transactions.map(
+        ({ chain, virtual_nonce }: { chain: number; virtual_nonce: number }) => [
+          chain,
+          virtual_nonce,
+        ],
+      ),
+    ).toEqual([
+      [1, 0],
+      [10, 0],
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("binds each signed call to the record carrying its exact request when Relayr lists IDs out of order", async () => {
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    // Relayr gives chain 1 the first ID and chain 10 the second, but lists both
+    // out of posted order, here under the legacy txn_uuids name.
+    const relayr = relayrApi({
+      quote: (quoted) => ({ txn_uuids: [...quoted].reverse() }),
+      records: (echoed) => [...echoed].reverse(),
+    });
+    vi.stubGlobal("fetch", relayr);
+    const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await result.current.getRelayrTxQuote([REQUEST, { ...REQUEST, chainId: 10 }]);
+    });
+    expect(
+      activity
+        .transactionActivitySnapshot()[0]
+        .relayrExpectedTransactions?.map(({ chainId, transactionUuid }) => [
+          chainId,
+          transactionUuid,
+        ]),
+    ).toEqual([
+      [1, TX_UUIDS[0]],
+      [10, TX_UUIDS[1]],
+    ]);
+    expect(relayr).toHaveBeenLastCalledWith(
+      `https://api.relayr.ba5ed.com/v1/bundle/${BUNDLE_UUID}`,
+      expect.objectContaining({ cache: "no-store" }),
+    );
+  });
+
+  const UNBOUND = "Relayr did not bind every quoted transaction to a unique ID. Nothing was paid.";
+  const UNRETURNED = "Relayr did not return the quoted transactions. Nothing was paid.";
+  it.each<[string, Parameters<typeof relayrApi>[0], string]>([
+    [
+      "an extra record",
+      { records: (echoed) => [...echoed, { ...echoed[0], tx_uuid: TX_UUIDS[2] }] },
+      UNBOUND,
+    ],
+    [
+      "a repeated record ID",
+      { records: (echoed) => echoed.map((record) => ({ ...record, tx_uuid: TX_UUIDS[0] })) },
+      UNBOUND,
+    ],
+    [
+      "a repeated quoted ID",
+      { quote: ([first]) => ({ tx_uuids: [first, first], txn_uuids: [first, first] }) },
+      UNBOUND,
+    ],
+    ["a foreign bundle_uuid", { bundle: { bundle_uuid: OTHER_BUNDLE_UUID } }, UNRETURNED],
+    ["a missing signed call", { records: (echoed) => echoed.slice(0, 1) }, UNBOUND],
+    [
+      "a changed signed call",
+      {
+        records: (echoed) =>
+          echoed.map((record, index) =>
+            index ? { ...record, request: { ...record.request, data: "0x5678" } } : record,
+          ),
+      },
+      UNBOUND,
+    ],
+  ])("offers no payment for a bundle with %s", async (_, api, message) => {
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi(api));
+    const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await expect(
+        result.current.getRelayrTxQuote([REQUEST, { ...REQUEST, chainId: 10 }]),
+      ).rejects.toThrow(message);
+    });
+    expect(result.current.data).toBeUndefined();
+    // Only the publication lock for the signed calls remains: no payable quote.
+    expect(activity.transactionActivitySnapshot()).toEqual([
+      expect.objectContaining({
+        title: "Relayr authorization publication",
+        relayrPaymentStatus: "unfunded",
+      }),
+    ]);
+    const payer = renderHook(() => hooks.useSendRelayrTx());
+    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
+      /does not belong to a reviewed Relayr quote/,
+    );
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
@@ -408,14 +496,7 @@ describe("reviewed Relayr authorization hook", () => {
   it("blocks a newly selected subset of calls from an unresolved bundle", async () => {
     const { review, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ ...quote(), txn_uuids: ["ethereum", "optimism"] }), {
-          status: 200,
-        }),
-      ),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
       await result.current.getRelayrTxQuote([REQUEST, { ...REQUEST, chainId: 10 }]);
@@ -424,7 +505,7 @@ describe("reviewed Relayr authorization hook", () => {
       /already has published authorizations/,
     );
     expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it.each([false, true])(
@@ -432,10 +513,7 @@ describe("reviewed Relayr authorization hook", () => {
     async (legacyActivity) => {
       const { review, activity, hooks } = await freshHarness();
       review.registerTransactionReviewHandler(async () => true);
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
-      );
+      vi.stubGlobal("fetch", relayrApi());
       const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
       await act(async () => {
         await result.current.getRelayrTxQuote([{ ...REQUEST, recoveryScope: "metadata:1:4" }]);
@@ -453,7 +531,7 @@ describe("reviewed Relayr authorization hook", () => {
         ]),
       ).rejects.toThrow(/published authorizations/);
       expect(mocks.signTypedData).toHaveBeenCalledOnce();
-      expect(fetch).toHaveBeenCalledOnce();
+      expect(fetch).toHaveBeenCalledTimes(2);
     },
   );
 
@@ -531,10 +609,7 @@ describe("reviewed Relayr authorization hook", () => {
   it("resumes a persisted unpaid quote after reload without signing or publishing again", async () => {
     const first = await freshHarness();
     first.review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     const initial = renderHook(() => first.hooks.useGetRelayrTxQuote());
     await act(async () => {
       await initial.result.current.getRelayrTxQuote([REQUEST]);
@@ -548,7 +623,7 @@ describe("reviewed Relayr authorization hook", () => {
       });
     });
     expect(mocks.signTypedData).toHaveBeenCalledOnce();
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -560,12 +635,7 @@ describe("reviewed Relayr authorization hook", () => {
   ])("does not expose an unauthenticated payment option: %j", async (override) => {
     const { review, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(new Response(JSON.stringify(quote(payment(override))), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", relayrApi({ payments: [payment(override)] }));
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
       /Relayr|quote deadline/,
@@ -604,10 +674,7 @@ describe("raw payer publication and durable source guards", () => {
   it("reviews and publishes exact canonical payer calldata without a forwarder signature", async () => {
     const { hooks, review, activity } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
       await result.current.getRelayrTxQuote([raw]);
@@ -634,10 +701,7 @@ describe("raw payer publication and durable source guards", () => {
     const { hooks, review } = await freshHarness();
     const reviewer = vi.fn(async (_request: TransactionReviewRequest) => true);
     review.registerTransactionReviewHandler(reviewer);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
       await result.current.getRelayrTxQuote([request()]);
@@ -650,7 +714,7 @@ describe("raw payer publication and durable source guards", () => {
         expect.objectContaining({ to: JB_PROJECT_PAYER_DEPLOYER, data: raw.data.data }),
       );
     }
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
   it("retains a raw deployment publication after response loss and rejects changed intent", async () => {
     const { hooks, review } = await freshHarness();
@@ -666,10 +730,7 @@ describe("raw payer publication and durable source guards", () => {
   it("persists raw source guards and refuses funding when they change after quote review", async () => {
     const { hooks, review, activity } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     mocks.clientCall.mockResolvedValue({ data: "0x01" });
     const source = { address: TARGET, data: "0xabcd" as Hex, expected: "0x01" as Hex };
     const authorizer = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -738,10 +799,7 @@ describe("metadata source guards in Relayr", () => {
             : originalRead(request),
     );
     review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     const authorizer = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
       await authorizer.result.current.getRelayrTxQuote([{ ...REQUEST, metadataSource: source }]);
@@ -763,14 +821,11 @@ describe("metadata source guards in Relayr", () => {
 
 async function quotedPayment(
   requests: ReviewedRelayrRequest[] = [REQUEST],
-  offeredQuote = quote(),
+  payments: ChainPayment[] = [payment()],
 ) {
   const harness = await freshHarness();
   harness.review.registerTransactionReviewHandler(async () => true);
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(new Response(JSON.stringify(offeredQuote), { status: 200 })),
-  );
+  vi.stubGlobal("fetch", relayrApi({ payments }));
   const authorization = renderHook(() => harness.hooks.useGetRelayrTxQuote());
   await act(async () => {
     await authorization.result.current.getRelayrTxQuote(requests);
@@ -795,11 +850,7 @@ describe("reviewed Relayr payment hook", () => {
     const selectedPayment = payment({ chain: 84532 });
     const harness = await quotedPayment(
       chainIds.map((chainId) => ({ ...REQUEST, chainId })),
-      {
-        ...quote(),
-        payment_info: [payment(), payment({ chain: 11155111 }), selectedPayment],
-        txn_uuids: chainIds.map((chainId) => `tx-${chainId}`),
-      },
+      [payment(), payment({ chain: 11155111 }), selectedPayment],
     );
     expect(mocks.signTypedData.mock.calls.map(([request]) => request.domain.chainId)).toEqual(
       chainIds,
@@ -824,10 +875,7 @@ describe("reviewed Relayr payment hook", () => {
   it("retains an unusable publication when the service offers only mainnet funding for testnets", async () => {
     const { review, hooks, activity } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify(quote()), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     const authorizer = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(
       authorizer.result.current.getRelayrTxQuote([{ ...REQUEST, chainId: 11155111 }]),
@@ -848,7 +896,7 @@ describe("reviewed Relayr payment hook", () => {
       ...quote(),
       payment_info: [payment(), payment({ chain: 84532 })],
     };
-    const initial = await quotedPayment([request], offeredQuote);
+    const initial = await quotedPayment([request], offeredQuote.payment_info);
     initial.activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
       relayrQuote: offeredQuote,
     });
@@ -869,7 +917,7 @@ describe("reviewed Relayr payment hook", () => {
   it("isolates persisted testnet fees from returned quote mutations before and after recovery", async () => {
     const request = { ...REQUEST, chainId: 11155111 as const };
     const offeredPayment = payment({ chain: 84532 });
-    const initial = await quotedPayment([request], quote(offeredPayment));
+    const initial = await quotedPayment([request], [offeredPayment]);
     initial.quote!.payment_info[0].amount = "0x100";
     initial.activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
       message: "Still awaiting the original reviewed payment.",
@@ -930,7 +978,7 @@ describe("reviewed Relayr payment hook", () => {
       kind: "relayr-bundle",
       relayrPaymentStatus: "confirmed",
       relayrExpectedTransactions: [
-        expect.objectContaining({ chainId: 1, transactionUuid: "tx-reviewed" }),
+        expect.objectContaining({ chainId: 1, transactionUuid: TX_UUIDS[0] }),
       ],
     });
   });
@@ -984,7 +1032,7 @@ describe("reviewed Relayr payment hook", () => {
     async (chainId) => {
       const { result } = await quotedPayment(
         [{ ...REQUEST, chainId }],
-        quote(payment({ chain: chainId })),
+        [payment({ chain: chainId })],
       );
       await expect(
         result.current.sendRelayrTx(payment({ chain: chainId, amount: "0x100" })),
@@ -1073,17 +1121,7 @@ describe("reviewed Relayr payment hook", () => {
   it("blocks a second funding option after the first has been paid", async () => {
     const harness = await freshHarness();
     harness.review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(
-            JSON.stringify({ ...quote(), payment_info: [payment(), payment({ chain: 10 })] }),
-            { status: 200 },
-          ),
-        ),
-    );
+    vi.stubGlobal("fetch", relayrApi({ payments: [payment(), payment({ chain: 10 })] }));
     const authorizer = renderHook(() => harness.hooks.useGetRelayrTxQuote());
     await act(async () => {
       await authorizer.result.current.getRelayrTxQuote([REQUEST]);
@@ -1143,7 +1181,6 @@ describe("Safe execution bundles", () => {
     data: { from: ACCOUNT, to: SAFE, value: 0n, gas: 200_000n, data: exec },
     review: { label: `Execute Safe transaction #7 on ${chainId}` },
   });
-  const bundleQuote = () => ({ ...quote(), txn_uuids: ["tx-1", "tx-10"] });
 
   beforeEach(() => {
     liveNonce = 7n;
@@ -1163,10 +1200,7 @@ describe("Safe execution bundles", () => {
       reviews.push(request);
       return true;
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify(bundleQuote()), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
       await result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
@@ -1195,10 +1229,7 @@ describe("Safe execution bundles", () => {
   it("refuses the payment when a Safe nonce moved after the quote", async () => {
     const { hooks, review } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify(bundleQuote()), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
       await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);

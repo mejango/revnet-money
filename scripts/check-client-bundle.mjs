@@ -25,7 +25,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // select, wagmi config and other small shared modules in a chunk the layout and the
 // pages shared; without it Next copies each into the page and lazy chunks that use
 // it (the select alone is +10.0 KiB). The budget moves up by the minimum 5 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2611);
+// SDK 2.17's Relayr quote binding (`bindRelayrQuote`, its bundle read and
+// `relayrDestinationHash`) adds about 1.4 KiB on top of that, and the budget moves up to cover it.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2613);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

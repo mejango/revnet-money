@@ -66,8 +66,6 @@ const PAYMENT: ChainPayment = {
 const QUOTE: RelayrPostBundleResponse = {
   bundle_uuid: "deploy-bundle",
   payment_info: [PAYMENT],
-  per_txn: [],
-  txn_uuids: ["ethereum-deploy", "base-deploy"],
 };
 
 function component() {

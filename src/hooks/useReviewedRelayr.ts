@@ -35,6 +35,13 @@ import { requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import {
+  bindRelayrQuote,
+  RELAYR_API,
+  relayrBundleRequest,
+  relayrDestinationHash,
+  type RelayrEntry,
+} from "@bananapus/nana-sdk-core/review/relayr";
 import { useCallback, useEffect, useState } from "react";
 import {
   encodeFunctionData,
@@ -49,7 +56,6 @@ import {
 import { useAccount, useConfig, useSendTransaction, useSignTypedData, useSwitchChain } from "wagmi";
 import { getAccount, getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
 
-const RELAYR_API = "https://api.relayr.ba5ed.com";
 const RELAYR_PAYMENT_ADDRESS = "0x1c05f7841379d4393574c0ffa17908ec40ffd97d";
 const RELAYR_PAYMENT_CODE_HASH =
   "0x6006b5acadb4cd60aa5c00cb844c34563e182dff83d4f4ff4fde226f7df16fa6";
@@ -303,7 +309,8 @@ function verifyBundleIdentity(
   expected: RelayrExpectedTransaction[],
 ): void {
   if (
-    bundle.bundle_uuid !== bundleUuid ||
+    typeof bundle.bundle_uuid !== "string" ||
+    bundle.bundle_uuid.toLowerCase() !== bundleUuid.toLowerCase() ||
     !Array.isArray(bundle.transactions) ||
     bundle.transactions.length !== expected.length
   )
@@ -347,10 +354,8 @@ async function verifyDestinationReceipts(
 ): Promise<void> {
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
   for (const transaction of bundle.transactions) {
-    const data = transaction.status?.data as
-      { hash?: Hex; transaction?: { hash?: Hex } } | undefined;
-    const hash = data?.hash ?? data?.transaction?.hash;
-    if (!hash || !/^0x[0-9a-f]{64}$/i.test(hash))
+    const hash = relayrDestinationHash(transaction);
+    if (!hash)
       throw new RelayrVerificationError(
         "Relayr reported completion without a destination transaction hash. Do not pay again.",
       );
@@ -467,8 +472,10 @@ function stateIsFailed(state?: string): boolean {
   return state === "Failed" || state === "Reverted" || state === "Dropped";
 }
 
+/** Never from a cache: a stale answer could hide a payment or a destination result. */
 async function fetchBundle(bundleUuid: string): Promise<RelayrGetBundleResponse> {
   const response = await fetch(`${RELAYR_API}/v1/bundle/${bundleUuid}`, {
+    cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`Relayr bundle check failed (${response.status}).`);
@@ -478,24 +485,18 @@ async function fetchBundle(bundleUuid: string): Promise<RelayrGetBundleResponse>
 function bundleSummary(bundle: RelayrGetBundleResponse): string {
   return bundle.transactions
     .map((transaction) => {
-      const data = transaction.status?.data as
-        { hash?: Hex; transaction?: { hash?: Hex } } | undefined;
-      const hash = data?.hash ?? data?.transaction?.hash;
+      const hash = relayrDestinationHash(transaction);
       return `Chain ${transaction.request.chain}: ${transaction.status?.state ?? "Pending"}${hash ? ` (${hash})` : ""}`;
     })
     .join(" | ");
 }
 
 function bundleChainStates(bundle: RelayrGetBundleResponse) {
-  return bundle.transactions.map((transaction) => {
-    const data = transaction.status?.data as
-      { hash?: Hex; transaction?: { hash?: Hex } } | undefined;
-    return {
-      chainId: Number(transaction.request.chain),
-      status: transaction.status?.state ?? "Pending",
-      hash: data?.hash ?? data?.transaction?.hash,
-    };
-  });
+  return bundle.transactions.map((transaction) => ({
+    chainId: Number(transaction.request.chain),
+    status: transaction.status?.state ?? "Pending",
+    hash: relayrDestinationHash(transaction) ?? undefined,
+  }));
 }
 
 export async function waitForRelayrBundle(
@@ -710,13 +711,7 @@ export function useGetRelayrTxQuote() {
         try {
           let authorizationExpiresAt = Infinity;
           const executionGas: string[] = [];
-          const transactions: Array<{
-            chain: JBChainId;
-            data: Hex;
-            target: Address;
-            value: string;
-            version?: JBVersion;
-          }> = [];
+          const transactions: RelayrEntry[] = [];
           const safeExecutions = requests.filter(
             (request) => request.relayrMode === "safe-exec",
           ).length;
@@ -770,7 +765,6 @@ export function useGetRelayrTxQuote() {
                 target: request.data.to,
                 data: request.data.data,
                 value: request.data.value.toString(),
-                version: request.version,
               });
               continue;
             }
@@ -832,7 +826,6 @@ export function useGetRelayrTxQuote() {
                 target: request.data.to,
                 data: request.data.data,
                 value: request.data.value.toString(),
-                version: request.version,
               });
               continue;
             }
@@ -962,9 +955,9 @@ export function useGetRelayrTxQuote() {
               target: forwarder,
               data: signedData,
               value: request.data.value.toString(),
-              version: request.version,
             });
           }
+          const bundleRequest = relayrBundleRequest(transactions);
           // A response can be lost after Relayr receives executable signatures. Persist
           // the intent first so a reload cannot authorize a fresh copy of the same calls.
           requireUnfunded({ bundleUuid: "", callKey, callKeys });
@@ -1002,28 +995,15 @@ export function useGetRelayrTxQuote() {
             method: "POST",
             signal: AbortSignal.timeout(45_000),
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ transactions, virtual_nonce_mode: "Disabled" }),
+            body: JSON.stringify(bundleRequest),
           });
-          if (!response.ok) throw new Error(await response.text());
-          const receivedQuote = (await response.json()) as RelayrPostBundleResponse;
-          if (
-            !UUID_PATTERN.test(receivedQuote.bundle_uuid) ||
-            !Array.isArray(receivedQuote.payment_info) ||
-            !receivedQuote.payment_info.length
-          ) {
-            throw new Error("Relayr returned an incomplete quote without a payable bundle.");
-          }
-          const quote = quoteForDestinationChains(receivedQuote, [...requestChains]);
-          if (
-            !Array.isArray(quote.txn_uuids) ||
-            quote.txn_uuids.length !== transactions.length ||
-            new Set(quote.txn_uuids).size !== transactions.length ||
-            quote.txn_uuids.some((uuid) => typeof uuid !== "string" || !uuid.trim())
-          )
-            throw new Error(
-              "Relayr returned an incomplete quote without the signed transaction identities.",
-            );
-          const expectedTransactions = transactions.map((transaction, index) => ({
+          // Relayr's records must be exactly the signed calls before any payment is offered.
+          const bound = await bindRelayrQuote(response, bundleRequest);
+          const quote = quoteForDestinationChains(
+            { bundle_uuid: bound.bundle_uuid, payment_info: bound.payment_info as ChainPayment[] },
+            [...requestChains],
+          );
+          const expectedTransactions = bound.expectedTransactions.map((binding, index) => ({
             gas: executionGas[index],
             metadataSource: requests[index].metadataSource,
             preconditions: requests[index].preconditions,
@@ -1032,11 +1012,11 @@ export function useGetRelayrTxQuote() {
             rejectEvents: requests[index].rejectEvents,
             reservedReceipt: requests[index].reservedReceipt,
             expectedPayout: requests[index].expectedPayout,
-            chainId: transaction.chain,
-            target: transaction.target,
-            data: transaction.data,
-            value: transaction.value,
-            transactionUuid: quote.txn_uuids[index],
+            chainId: binding.chain,
+            target: binding.entry.target,
+            data: binding.entry.data,
+            value: binding.entry.value,
+            transactionUuid: binding.txUuid,
           }));
           recordTransactionActivity({
             id: `relayr:${quote.bundle_uuid}`,
