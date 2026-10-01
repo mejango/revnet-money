@@ -198,13 +198,97 @@ function scopeKey(account: Address, scope: string): string {
   return `${account.toLowerCase()}:relayr-scope:${scope}`;
 }
 
+const EXPIRED_QUOTE = "This Relayr quote expired. Review the action again for a new quote.";
+
+/**
+ * An unpaid quote stops reserving its calls once nothing can fund it: no
+ * saved payment option passes `paymentDetails` any more, every forward
+ * request it signed has expired, or it was replaced. A bundle that broadcast
+ * a payment is never released here; only the SDK's retry rule clears it.
+ */
+function unpaidQuoteReleased(activity: TransactionActivity): boolean {
+  if (activity.kind !== "relayr-bundle" || sentPayments(activity).length) return false;
+  if (activity.relayrPaymentStatus === "expired") return true;
+  if (activity.relayrPaymentStatus !== "unfunded") return false;
+  if (
+    typeof activity.relayrAuthorizationExpiresAt === "number" &&
+    activity.relayrAuthorizationExpiresAt <= Date.now()
+  )
+    return true;
+  const quote = activity.relayrQuote;
+  const chains = activity.relayrExpectedTransactions?.map((transaction) => transaction.chainId);
+  if (!quote || !Array.isArray(quote.payment_info) || !chains?.length) return false;
+  return !quote.payment_info.some((payment) => {
+    try {
+      paymentDetails(payment, quote.bundle_uuid, chains);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Mark every unpaid quote nothing can fund any more as expired, so it no longer reads as pending. */
+function expireUnpaidQuotes(): void {
+  for (const activity of refreshTransactionActivities())
+    if (activity.relayrPaymentStatus === "unfunded" && unpaidQuoteReleased(activity))
+      updateTransactionActivity(activity.id, {
+        status: "failed",
+        relayrPaymentStatus: "expired",
+        message:
+          "This unpaid Relayr quote expired. Nothing was paid; review the action again for a new quote.",
+      });
+}
+
+/**
+ * Give up an unpaid quote the user is replacing, so its calls stop reserving
+ * their scope. It can never be paid afterwards. Refuses a bundle that
+ * broadcast a payment, and one whose payment is in progress in any tab.
+ */
+export async function releaseUnpaidRelayrQuote(bundleUuid: string): Promise<void> {
+  requireTransactionActivityPersistence();
+  const find = () =>
+    refreshTransactionActivities().find(
+      (activity) => activity.bundleUuid?.toLowerCase() === bundleUuid.toLowerCase(),
+    );
+  const release = () => {
+    const activity = find();
+    if (activity && !unpaidQuoteReleased(activity)) {
+      if (
+        activity.kind !== "relayr-bundle" ||
+        activity.relayrPaymentStatus !== "unfunded" ||
+        sentPayments(activity).length ||
+        paymentInflight.has(activity.callKey ?? "")
+      )
+        throw new Error(
+          "This Relayr quote has a payment in progress or sent. Check it in account activity; do not pay again.",
+        );
+      updateTransactionActivity(activity.id, {
+        status: "failed",
+        relayrPaymentStatus: "expired",
+        message: "This unpaid Relayr quote was replaced by a new one. Nothing was paid.",
+      });
+    }
+    for (const [key, quote] of quotes)
+      if (quote.bundleUuid.toLowerCase() === bundleUuid.toLowerCase()) quotes.delete(key);
+  };
+  const callKey = find()?.callKey;
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (!locks || !callKey) return release();
+  await locks.request(`revnet:relayr:${callKey}`, { ifAvailable: true }, (lock) => {
+    if (!lock) throw new Error("A payment for this Relayr quote is in progress. Do not pay again.");
+    release();
+  });
+}
+
 /** A changed payload or direct route must not bypass a published operation. */
 export function requireRelayrRecoveryScopeAvailable(account: Address, scope: string): void {
   requireTransactionActivityPersistence();
   const existing = refreshTransactionActivities().find(
     (activity) =>
       activity.relayrCallKeys?.includes(scopeKey(account, scope)) &&
-      (activity.status !== "success" || activity.manualVerificationRequired),
+      (activity.status !== "success" || activity.manualVerificationRequired) &&
+      !unpaidQuoteReleased(activity),
   );
   if (existing)
     throw new Error(
@@ -222,14 +306,22 @@ function requireUnfunded(
     throw new Error(
       "This Relayr action already has a submitted payment. Do not pay again; check the existing bundle.",
     );
-  const existing = refreshTransactionActivities().find(
+  const activities = refreshTransactionActivities();
+  if (
+    activities.some(
+      (activity) => activity.bundleUuid === quote.bundleUuid && unpaidQuoteReleased(activity),
+    )
+  )
+    throw new Error(EXPIRED_QUOTE);
+  const existing = activities.find(
     (activity) =>
       (activity.bundleUuid === quote.bundleUuid ||
         ((activity.callKey === quote.callKey ||
           activity.relayrCallKeys?.some((key) => quote.callKeys.includes(key))) &&
           activity.status !== "success")) &&
       !(activity.bundleUuid === quote.bundleUuid && activity.relayrPaymentStatus === "unfunded") &&
-      !(activity.bundleUuid === quote.bundleUuid && activity.relayrPaymentStatus === "reverted"),
+      !(activity.bundleUuid === quote.bundleUuid && activity.relayrPaymentStatus === "reverted") &&
+      !unpaidQuoteReleased(activity),
   );
   if (existing)
     throw new Error(
@@ -314,7 +406,7 @@ function paymentDetails(payment: ChainPayment, bundleUuid: string, destinationCh
     ? Number(payment.payment_deadline)
     : Math.floor(Date.parse(payment.payment_deadline) / 1_000);
   if (!Number.isSafeInteger(deadline) || deadline <= Math.floor(Date.now() / 1_000) + 15)
-    throw new Error("This Relayr quote expired. Review the action again for a new quote.");
+    throw new Error(EXPIRED_QUOTE);
   const encodedDeadline = BigInt(`0x${data.slice(74)}`);
   if (encodedDeadline > 0xffffffffffn || encodedDeadline !== BigInt(deadline))
     throw new Error("Relayr payment calldata does not match the quote deadline.");
@@ -634,6 +726,7 @@ export async function waitForRelayrBundle(
 }
 
 export function resumePendingRelayrBundles(): void {
+  expireUnpaidQuotes();
   transactionActivitySnapshot()
     .filter(
       (activity) =>
@@ -704,12 +797,14 @@ export function useGetRelayrTxQuote() {
                 ),
               ]),
         ]);
+        expireUnpaidQuotes();
         const existingQuote = refreshTransactionActivities().find(
           (activity) =>
             activity.callKey === callKey &&
             (activity.relayrPaymentStatus === "unfunded" ||
               activity.relayrPaymentStatus === "reverted") &&
-            activity.relayrQuote,
+            activity.relayrQuote &&
+            !unpaidQuoteReleased(activity),
         );
         if (existingQuote?.relayrQuote && existingQuote.relayrExpectedTransactions) {
           const quote = quoteForDestinationChains(existingQuote.relayrQuote, [...requestChains]);
@@ -737,6 +832,7 @@ export function useGetRelayrTxQuote() {
           (activity) =>
             activity.account?.toLowerCase() === address.toLowerCase() &&
             (activity.status !== "success" || activity.manualVerificationRequired) &&
+            !unpaidQuoteReleased(activity) &&
             activity.relayrExpectedTransactions?.some((expected) =>
               requests.some(
                 (request) =>

@@ -54,7 +54,8 @@ export type TransactionActivity = {
   relayrCallKeys?: string[];
   relayrQuote?: RelayrPostBundleResponse;
   relayrAuthorizationExpiresAt?: number;
-  relayrPaymentStatus?: "unfunded" | "submitted" | "confirmed" | "reverted";
+  /** "expired": an unpaid quote nothing can fund any more, which no longer reserves its calls. */
+  relayrPaymentStatus?: "unfunded" | "submitted" | "confirmed" | "reverted" | "expired";
   /** A caller-specific receipt/postcondition check must pass before success is trusted. */
   manualVerificationRequired?: boolean;
   chainStates?: Array<{

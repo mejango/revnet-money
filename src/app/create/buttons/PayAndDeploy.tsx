@@ -32,7 +32,7 @@ interface PaymentAndDeploySectionProps {
   /** The chain the wallet was on before signing switched it. */
   preferredPaymentChainId?: number;
   quotedStageStart?: QuotedStageStart;
-  rebuildStaleQuote?: () => Promise<RelayrPostBundleResponse>;
+  rebuildStaleQuote?: (stale: RelayrPostBundleResponse) => Promise<RelayrPostBundleResponse>;
 }
 
 const statusToIcon = (status: string) => {

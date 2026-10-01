@@ -36,7 +36,7 @@ export function DeployRevnetForm({
   /** The stage 1 start time encoded in the current quote. */
   quotedStageStart?: QuotedStageStart;
   /** Rebuilds the deploy request and quote with a fresh shared timestamp. */
-  rebuildStaleQuote?: () => Promise<RelayrPostBundleResponse>;
+  rebuildStaleQuote?: (stale: RelayrPostBundleResponse) => Promise<RelayrPostBundleResponse>;
 }) {
   // Type `testdata` into the console to fill the form (development builds only).
   useTestData();

@@ -495,7 +495,8 @@ export function useMultichainBatch() {
                 );
                 if (
                   activity?.relayrPaymentStatus === "unfunded" ||
-                  activity?.relayrPaymentStatus === "reverted"
+                  activity?.relayrPaymentStatus === "reverted" ||
+                  activity?.relayrPaymentStatus === "expired"
                 ) {
                   round.state = "quoted";
                   saveMultichainBatch(batch);
@@ -569,7 +570,8 @@ export function useMultichainBatch() {
                   );
                   if (
                     activity?.relayrPaymentStatus === "unfunded" ||
-                    activity?.relayrPaymentStatus === "reverted"
+                    activity?.relayrPaymentStatus === "reverted" ||
+                    activity?.relayrPaymentStatus === "expired"
                   ) {
                     round.state = "quoted";
                     saveMultichainBatch(batch);

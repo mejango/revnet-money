@@ -18,14 +18,18 @@ export const TX_UUIDS = [
 export const NOW = 1_750_000_000;
 export const PAYMENT_RUNTIME =
   "0x608060405260043610156010575f80fd5b5f3560e01c63103903a7146022575f80fd5b604036600319011260ef576004356fffffffffffffffffffffffffffffffff19811680910360ef5760243564ffffffffff811680910360ef5780421160ce575f341560c6575b5f8080809373755ff2f75a0a586ecfa2b9a3c959cb662458a1053491f11560bb5760407fb96b060a9c075a83da0cf1f9405deeb5df21df681a762de16c3d5eaf99531cd8918151903482526020820152a2005b6040513d5f823e3d90fd5b506108fc6068565b90630f01bd8760e21b5f5260045260245264ffffffffff421660445260645ffd5b5f80fdfea26469706673582212206ea0d2ba1e0cb26cc9293b24f1a7aecc1de7e328ca83d6b3bf5382ac44c7390064736f6c634300081a0033" as Hex;
-export function payment(overrides: Partial<ChainPayment> = {}): ChainPayment {
+/** A payment option Relayr quotes for `bundleUuid`, payable until `deadline`. */
+export function payment(
+  overrides: Partial<ChainPayment> = {},
+  { bundleUuid = BUNDLE_UUID, deadline = NOW + 600 } = {},
+): ChainPayment {
   return {
     amount: "0x10",
-    calldata: `0x103903a7${BUNDLE_UUID.replaceAll("-", "")}${"0".repeat(32)}${BigInt(NOW + 600)
+    calldata: `0x103903a7${bundleUuid.replaceAll("-", "")}${"0".repeat(32)}${BigInt(deadline)
       .toString(16)
       .padStart(64, "0")}`,
     chain: 1,
-    payment_deadline: String(NOW + 600),
+    payment_deadline: String(deadline),
     target: PAYMENT_TARGET,
     token: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
     ...overrides,
@@ -66,18 +70,19 @@ function json(body: unknown): Response {
 /**
  * Relayr's API for one quote, as it answers live: the POST returns the bundle,
  * its payment options and one ID per posted transaction (under the current
- * and the legacy name) without the records,
- * and `GET /v1/bundle/{uuid}` returns a record per transaction echoing the
- * request it was posted with. `records` rewrites that GET's records and
- * `bundle` its other fields.
+ * and the legacy name) without the records, and `GET /v1/bundle/{uuid}`
+ * returns a record per transaction echoing the request it was posted with.
+ * `records` rewrites that GET's records and `bundle` its other fields.
  */
 export function relayrApi({
-  payments = [payment()],
+  bundleUuid = BUNDLE_UUID,
+  payments = [payment({}, { bundleUuid })],
   ids = TX_UUIDS,
   quote = (quoted) => ({ tx_uuids: quoted, txn_uuids: quoted }),
   records = (echoed) => echoed,
   bundle = {},
 }: {
+  bundleUuid?: string;
   payments?: ChainPayment[];
   ids?: string[];
   quote?: (quoted: string[], posted: PostedRelayrTransaction[]) => Record<string, unknown>;
@@ -90,19 +95,19 @@ export function relayrApi({
     if (url.endsWith("/v1/bundle/prepaid")) {
       posted = JSON.parse(String(init?.body)).transactions;
       return json({
-        bundle_uuid: BUNDLE_UUID,
+        bundle_uuid: bundleUuid,
         payment_info: payments,
         ...quote(ids.slice(0, posted.length), posted),
       });
     }
-    if (url.endsWith(`/v1/bundle/${BUNDLE_UUID}`)) {
+    if (url.endsWith(`/v1/bundle/${bundleUuid}`)) {
       const echoed = posted.map((request, index) => ({
         tx_uuid: ids[index],
         request,
         status: { state: "Pending" },
       }));
       return json({
-        bundle_uuid: BUNDLE_UUID,
+        bundle_uuid: bundleUuid,
         payment_received: false,
         transactions: records(echoed),
         ...bundle,
