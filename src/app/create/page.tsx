@@ -4,6 +4,7 @@ import { Nav } from "@/components/layout/Nav";
 import { pinDraftItems } from "@/components/shop/itemDraft";
 import { useToast } from "@/components/ui/use-toast";
 import {
+  releaseUnpaidRelayrQuote,
   requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
 } from "@/hooks/useReviewedRelayr";
@@ -233,14 +234,18 @@ export default function Page() {
   // starts. Paying a stale quote therefore rebuilds the whole request from the
   // same form data: `deployProject` captures one fresh timestamp shared by
   // every chain, keeping the encoded configuration byte-identical across
-  // chains so suckers still pair.
-  async function rebuildStaleQuote(): Promise<RelayrPostBundleResponse> {
+  // chains so suckers still pair. The stale quote is released first, so it
+  // can never be paid and no longer holds the launch scope.
+  async function rebuildStaleQuote(
+    stale: RelayrPostBundleResponse,
+  ): Promise<RelayrPostBundleResponse> {
     const formData = quotedFormData.current;
     if (!formData) {
       throw new Error(
         "The original launch request is unavailable. Clear the quote and get a new one.",
       );
     }
+    await releaseUnpaidRelayrQuote(stale.bundle_uuid);
     const quote = await deployProject(formData);
     if (!quote) {
       throw new Error("Could not refresh the quote. Clear it and try again.");

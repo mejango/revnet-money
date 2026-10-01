@@ -30,11 +30,20 @@ import {
   transactionActivitySnapshot,
   updateTransactionActivity,
   type RelayrExpectedTransaction,
+  type TransactionActivity,
 } from "@/lib/transaction-activity";
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import {
+  bindRelayrQuote,
+  RELAYR_API,
+  relayrBundleRequest,
+  relayrDestinationHash,
+  requireRelayrPaymentRetry,
+  type RelayrEntry,
+} from "@bananapus/nana-sdk-core/review/relayr";
 import { useCallback, useEffect, useState } from "react";
 import {
   encodeFunctionData,
@@ -49,7 +58,6 @@ import {
 import { useAccount, useConfig, useSendTransaction, useSignTypedData, useSwitchChain } from "wagmi";
 import { getAccount, getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
 
-const RELAYR_API = "https://api.relayr.ba5ed.com";
 const RELAYR_PAYMENT_ADDRESS = "0x1c05f7841379d4393574c0ffa17908ec40ffd97d";
 const RELAYR_PAYMENT_CODE_HASH =
   "0x6006b5acadb4cd60aa5c00cb844c34563e182dff83d4f4ff4fde226f7df16fa6";
@@ -190,13 +198,97 @@ function scopeKey(account: Address, scope: string): string {
   return `${account.toLowerCase()}:relayr-scope:${scope}`;
 }
 
+const EXPIRED_QUOTE = "This Relayr quote expired. Review the action again for a new quote.";
+
+/**
+ * An unpaid quote stops reserving its calls once nothing can fund it: no
+ * saved payment option passes `paymentDetails` any more, every forward
+ * request it signed has expired, or it was replaced. A bundle that broadcast
+ * a payment is never released here; only the SDK's retry rule clears it.
+ */
+function unpaidQuoteReleased(activity: TransactionActivity): boolean {
+  if (activity.kind !== "relayr-bundle" || sentPayments(activity).length) return false;
+  if (activity.relayrPaymentStatus === "expired") return true;
+  if (activity.relayrPaymentStatus !== "unfunded") return false;
+  if (
+    typeof activity.relayrAuthorizationExpiresAt === "number" &&
+    activity.relayrAuthorizationExpiresAt <= Date.now()
+  )
+    return true;
+  const quote = activity.relayrQuote;
+  const chains = activity.relayrExpectedTransactions?.map((transaction) => transaction.chainId);
+  if (!quote || !Array.isArray(quote.payment_info) || !chains?.length) return false;
+  return !quote.payment_info.some((payment) => {
+    try {
+      paymentDetails(payment, quote.bundle_uuid, chains);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Mark every unpaid quote nothing can fund any more as expired, so it no longer reads as pending. */
+function expireUnpaidQuotes(): void {
+  for (const activity of refreshTransactionActivities())
+    if (activity.relayrPaymentStatus === "unfunded" && unpaidQuoteReleased(activity))
+      updateTransactionActivity(activity.id, {
+        status: "failed",
+        relayrPaymentStatus: "expired",
+        message:
+          "This unpaid Relayr quote expired. Nothing was paid; review the action again for a new quote.",
+      });
+}
+
+/**
+ * Give up an unpaid quote the user is replacing, so its calls stop reserving
+ * their scope. It can never be paid afterwards. Refuses a bundle that
+ * broadcast a payment, and one whose payment is in progress in any tab.
+ */
+export async function releaseUnpaidRelayrQuote(bundleUuid: string): Promise<void> {
+  requireTransactionActivityPersistence();
+  const find = () =>
+    refreshTransactionActivities().find(
+      (activity) => activity.bundleUuid?.toLowerCase() === bundleUuid.toLowerCase(),
+    );
+  const release = () => {
+    const activity = find();
+    if (activity && !unpaidQuoteReleased(activity)) {
+      if (
+        activity.kind !== "relayr-bundle" ||
+        activity.relayrPaymentStatus !== "unfunded" ||
+        sentPayments(activity).length ||
+        paymentInflight.has(activity.callKey ?? "")
+      )
+        throw new Error(
+          "This Relayr quote has a payment in progress or sent. Check it in account activity; do not pay again.",
+        );
+      updateTransactionActivity(activity.id, {
+        status: "failed",
+        relayrPaymentStatus: "expired",
+        message: "This unpaid Relayr quote was replaced by a new one. Nothing was paid.",
+      });
+    }
+    for (const [key, quote] of quotes)
+      if (quote.bundleUuid.toLowerCase() === bundleUuid.toLowerCase()) quotes.delete(key);
+  };
+  const callKey = find()?.callKey;
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (!locks || !callKey) return release();
+  await locks.request(`revnet:relayr:${callKey}`, { ifAvailable: true }, (lock) => {
+    if (!lock) throw new Error("A payment for this Relayr quote is in progress. Do not pay again.");
+    release();
+  });
+}
+
 /** A changed payload or direct route must not bypass a published operation. */
 export function requireRelayrRecoveryScopeAvailable(account: Address, scope: string): void {
   requireTransactionActivityPersistence();
   const existing = refreshTransactionActivities().find(
     (activity) =>
       activity.relayrCallKeys?.includes(scopeKey(account, scope)) &&
-      (activity.status !== "success" || activity.manualVerificationRequired),
+      (activity.status !== "success" || activity.manualVerificationRequired) &&
+      !unpaidQuoteReleased(activity),
   );
   if (existing)
     throw new Error(
@@ -214,19 +306,73 @@ function requireUnfunded(
     throw new Error(
       "This Relayr action already has a submitted payment. Do not pay again; check the existing bundle.",
     );
-  const existing = refreshTransactionActivities().find(
+  const activities = refreshTransactionActivities();
+  if (
+    activities.some(
+      (activity) => activity.bundleUuid === quote.bundleUuid && unpaidQuoteReleased(activity),
+    )
+  )
+    throw new Error(EXPIRED_QUOTE);
+  const existing = activities.find(
     (activity) =>
       (activity.bundleUuid === quote.bundleUuid ||
         ((activity.callKey === quote.callKey ||
           activity.relayrCallKeys?.some((key) => quote.callKeys.includes(key))) &&
           activity.status !== "success")) &&
       !(activity.bundleUuid === quote.bundleUuid && activity.relayrPaymentStatus === "unfunded") &&
-      !(activity.bundleUuid === quote.bundleUuid && activity.relayrPaymentStatus === "reverted"),
+      !(activity.bundleUuid === quote.bundleUuid && activity.relayrPaymentStatus === "reverted") &&
+      !unpaidQuoteReleased(activity),
   );
   if (existing)
     throw new Error(
       `This Relayr action already has ${existing.relayrPaymentStatus === "unfunded" ? "published authorizations" : "a submitted payment"}${existing.hash ? ` (${existing.hash})` : existing.relayrPaymentStatus === "unfunded" ? " awaiting reconciliation" : " with an uncertain wallet result"}. Do not authorize or pay again; check the existing bundle.`,
     );
+}
+
+type SentPayment = NonNullable<TransactionActivity["relayrPayments"]>[number];
+
+/** Every payment broadcast for a bundle. A row that lists none names its one payment by `hash`. */
+function sentPayments(activity: TransactionActivity | undefined): SentPayment[] {
+  if (activity?.relayrPayments?.length) return activity.relayrPayments;
+  return activity?.hash && activity.relayrPayment && activity.chainId
+    ? [{ hash: activity.hash, chainId: activity.chainId, ...activity.relayrPayment }]
+    : [];
+}
+
+/**
+ * A bundle that was paid before is paid again only on the SDK's rule: every
+ * payment sent for it canonically reverted, its quote is still open, and
+ * Relayr, read without a cache, reports it unpaid with every call pending.
+ */
+async function requirePaymentRetry(
+  config: ReturnType<typeof useConfig>,
+  account: Address,
+  bundleUuid: string,
+  sent: SentPayment[],
+): Promise<void> {
+  const byPayment = new Map<string, { payment: SentPayment; hashes: Hex[] }>();
+  for (const sentPayment of sent) {
+    const key = `${sentPayment.chainId}:${sentPayment.target.toLowerCase()}:${sentPayment.data.toLowerCase()}:${sentPayment.value}`;
+    const group = byPayment.get(key) ?? { payment: sentPayment, hashes: [] };
+    group.hashes.push(sentPayment.hash);
+    byPayment.set(key, group);
+  }
+  for (const { payment, hashes } of byPayment.values()) {
+    const client = getPublicClient(config, { chainId: payment.chainId as JBChainId });
+    if (!client)
+      throw new Error("The funding RPC is unavailable. Do not pay again; check this bundle later.");
+    await requireRelayrPaymentRetry(client, {
+      hashes,
+      from: account,
+      payment: {
+        chainId: payment.chainId,
+        target: payment.target,
+        calldata: payment.data,
+        amount: payment.value,
+        bundleUuid,
+      },
+    });
+  }
 }
 
 function paymentDetails(payment: ChainPayment, bundleUuid: string, destinationChains: number[]) {
@@ -260,7 +406,7 @@ function paymentDetails(payment: ChainPayment, bundleUuid: string, destinationCh
     ? Number(payment.payment_deadline)
     : Math.floor(Date.parse(payment.payment_deadline) / 1_000);
   if (!Number.isSafeInteger(deadline) || deadline <= Math.floor(Date.now() / 1_000) + 15)
-    throw new Error("This Relayr quote expired. Review the action again for a new quote.");
+    throw new Error(EXPIRED_QUOTE);
   const encodedDeadline = BigInt(`0x${data.slice(74)}`);
   if (encodedDeadline > 0xffffffffffn || encodedDeadline !== BigInt(deadline))
     throw new Error("Relayr payment calldata does not match the quote deadline.");
@@ -303,7 +449,8 @@ function verifyBundleIdentity(
   expected: RelayrExpectedTransaction[],
 ): void {
   if (
-    bundle.bundle_uuid !== bundleUuid ||
+    typeof bundle.bundle_uuid !== "string" ||
+    bundle.bundle_uuid.toLowerCase() !== bundleUuid.toLowerCase() ||
     !Array.isArray(bundle.transactions) ||
     bundle.transactions.length !== expected.length
   )
@@ -347,10 +494,8 @@ async function verifyDestinationReceipts(
 ): Promise<void> {
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
   for (const transaction of bundle.transactions) {
-    const data = transaction.status?.data as
-      { hash?: Hex; transaction?: { hash?: Hex } } | undefined;
-    const hash = data?.hash ?? data?.transaction?.hash;
-    if (!hash || !/^0x[0-9a-f]{64}$/i.test(hash))
+    const hash = relayrDestinationHash(transaction);
+    if (!hash)
       throw new RelayrVerificationError(
         "Relayr reported completion without a destination transaction hash. Do not pay again.",
       );
@@ -467,8 +612,10 @@ function stateIsFailed(state?: string): boolean {
   return state === "Failed" || state === "Reverted" || state === "Dropped";
 }
 
+/** Never from a cache: a stale answer could hide a payment or a destination result. */
 async function fetchBundle(bundleUuid: string): Promise<RelayrGetBundleResponse> {
   const response = await fetch(`${RELAYR_API}/v1/bundle/${bundleUuid}`, {
+    cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`Relayr bundle check failed (${response.status}).`);
@@ -478,24 +625,18 @@ async function fetchBundle(bundleUuid: string): Promise<RelayrGetBundleResponse>
 function bundleSummary(bundle: RelayrGetBundleResponse): string {
   return bundle.transactions
     .map((transaction) => {
-      const data = transaction.status?.data as
-        { hash?: Hex; transaction?: { hash?: Hex } } | undefined;
-      const hash = data?.hash ?? data?.transaction?.hash;
+      const hash = relayrDestinationHash(transaction);
       return `Chain ${transaction.request.chain}: ${transaction.status?.state ?? "Pending"}${hash ? ` (${hash})` : ""}`;
     })
     .join(" | ");
 }
 
 function bundleChainStates(bundle: RelayrGetBundleResponse) {
-  return bundle.transactions.map((transaction) => {
-    const data = transaction.status?.data as
-      { hash?: Hex; transaction?: { hash?: Hex } } | undefined;
-    return {
-      chainId: Number(transaction.request.chain),
-      status: transaction.status?.state ?? "Pending",
-      hash: data?.hash ?? data?.transaction?.hash,
-    };
-  });
+  return bundle.transactions.map((transaction) => ({
+    chainId: Number(transaction.request.chain),
+    status: transaction.status?.state ?? "Pending",
+    hash: relayrDestinationHash(transaction) ?? undefined,
+  }));
 }
 
 export async function waitForRelayrBundle(
@@ -585,6 +726,7 @@ export async function waitForRelayrBundle(
 }
 
 export function resumePendingRelayrBundles(): void {
+  expireUnpaidQuotes();
   transactionActivitySnapshot()
     .filter(
       (activity) =>
@@ -655,12 +797,14 @@ export function useGetRelayrTxQuote() {
                 ),
               ]),
         ]);
+        expireUnpaidQuotes();
         const existingQuote = refreshTransactionActivities().find(
           (activity) =>
             activity.callKey === callKey &&
             (activity.relayrPaymentStatus === "unfunded" ||
               activity.relayrPaymentStatus === "reverted") &&
-            activity.relayrQuote,
+            activity.relayrQuote &&
+            !unpaidQuoteReleased(activity),
         );
         if (existingQuote?.relayrQuote && existingQuote.relayrExpectedTransactions) {
           const quote = quoteForDestinationChains(existingQuote.relayrQuote, [...requestChains]);
@@ -688,6 +832,7 @@ export function useGetRelayrTxQuote() {
           (activity) =>
             activity.account?.toLowerCase() === address.toLowerCase() &&
             (activity.status !== "success" || activity.manualVerificationRequired) &&
+            !unpaidQuoteReleased(activity) &&
             activity.relayrExpectedTransactions?.some((expected) =>
               requests.some(
                 (request) =>
@@ -710,13 +855,7 @@ export function useGetRelayrTxQuote() {
         try {
           let authorizationExpiresAt = Infinity;
           const executionGas: string[] = [];
-          const transactions: Array<{
-            chain: JBChainId;
-            data: Hex;
-            target: Address;
-            value: string;
-            version?: JBVersion;
-          }> = [];
+          const transactions: RelayrEntry[] = [];
           const safeExecutions = requests.filter(
             (request) => request.relayrMode === "safe-exec",
           ).length;
@@ -770,7 +909,6 @@ export function useGetRelayrTxQuote() {
                 target: request.data.to,
                 data: request.data.data,
                 value: request.data.value.toString(),
-                version: request.version,
               });
               continue;
             }
@@ -832,7 +970,6 @@ export function useGetRelayrTxQuote() {
                 target: request.data.to,
                 data: request.data.data,
                 value: request.data.value.toString(),
-                version: request.version,
               });
               continue;
             }
@@ -962,9 +1099,9 @@ export function useGetRelayrTxQuote() {
               target: forwarder,
               data: signedData,
               value: request.data.value.toString(),
-              version: request.version,
             });
           }
+          const bundleRequest = relayrBundleRequest(transactions);
           // A response can be lost after Relayr receives executable signatures. Persist
           // the intent first so a reload cannot authorize a fresh copy of the same calls.
           requireUnfunded({ bundleUuid: "", callKey, callKeys });
@@ -1002,28 +1139,15 @@ export function useGetRelayrTxQuote() {
             method: "POST",
             signal: AbortSignal.timeout(45_000),
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ transactions, virtual_nonce_mode: "Disabled" }),
+            body: JSON.stringify(bundleRequest),
           });
-          if (!response.ok) throw new Error(await response.text());
-          const receivedQuote = (await response.json()) as RelayrPostBundleResponse;
-          if (
-            !UUID_PATTERN.test(receivedQuote.bundle_uuid) ||
-            !Array.isArray(receivedQuote.payment_info) ||
-            !receivedQuote.payment_info.length
-          ) {
-            throw new Error("Relayr returned an incomplete quote without a payable bundle.");
-          }
-          const quote = quoteForDestinationChains(receivedQuote, [...requestChains]);
-          if (
-            !Array.isArray(quote.txn_uuids) ||
-            quote.txn_uuids.length !== transactions.length ||
-            new Set(quote.txn_uuids).size !== transactions.length ||
-            quote.txn_uuids.some((uuid) => typeof uuid !== "string" || !uuid.trim())
-          )
-            throw new Error(
-              "Relayr returned an incomplete quote without the signed transaction identities.",
-            );
-          const expectedTransactions = transactions.map((transaction, index) => ({
+          // Relayr's records must be exactly the signed calls before any payment is offered.
+          const bound = await bindRelayrQuote(response, bundleRequest);
+          const quote = quoteForDestinationChains(
+            { bundle_uuid: bound.bundle_uuid, payment_info: bound.payment_info as ChainPayment[] },
+            [...requestChains],
+          );
+          const expectedTransactions = bound.expectedTransactions.map((binding, index) => ({
             gas: executionGas[index],
             metadataSource: requests[index].metadataSource,
             preconditions: requests[index].preconditions,
@@ -1032,11 +1156,11 @@ export function useGetRelayrTxQuote() {
             rejectEvents: requests[index].rejectEvents,
             reservedReceipt: requests[index].reservedReceipt,
             expectedPayout: requests[index].expectedPayout,
-            chainId: transaction.chain,
-            target: transaction.target,
-            data: transaction.data,
-            value: transaction.value,
-            transactionUuid: quote.txn_uuids[index],
+            chainId: binding.chain,
+            target: binding.entry.target,
+            data: binding.entry.data,
+            value: binding.entry.value,
+            transactionUuid: binding.txUuid,
           }));
           recordTransactionActivity({
             id: `relayr:${quote.bundle_uuid}`,
@@ -1167,6 +1291,10 @@ export function useSendRelayrTx() {
         });
         if (simulation.data && simulation.data !== "0x")
           throw new Error("Relayr payment simulation returned an unexpected result.");
+        const sent = sentPayments(
+          refreshTransactionActivities().find((row) => row.id === activityId),
+        );
+        if (sent.length) await requirePaymentRetry(config, address, remembered.bundleUuid, sent);
         requireAccount();
         paymentDetails(payment, remembered.bundleUuid, remembered.chainIds);
         requireUnfunded(remembered);
@@ -1186,6 +1314,7 @@ export function useSendRelayrTx() {
             data: payment.calldata,
             value: value.toString(),
           },
+          relayrPayments: sent,
           relayrPaymentStatus: "submitted",
           chainStates: remembered.chainIds.map((chainId) => ({ chainId, status: "Pending" })),
           callKey: remembered.callKey,
@@ -1230,6 +1359,16 @@ export function useSendRelayrTx() {
         fundedBundles.add(remembered.bundleUuid);
         updateTransactionActivity(activityId, {
           hash,
+          relayrPayments: [
+            ...sent,
+            {
+              hash,
+              chainId: payment.chain,
+              target: payment.target,
+              data: payment.calldata,
+              value: value.toString(),
+            },
+          ],
           message: "Relayr payment submitted. Do not pay again while its receipt is pending.",
         });
         try {

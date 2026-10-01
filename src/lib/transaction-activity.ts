@@ -49,10 +49,13 @@ export type TransactionActivity = {
   bundleUuid?: string;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];
   relayrPayment?: { target: Address; data: Hex; value: string };
+  /** Every funding payment the wallet broadcast for this bundle, oldest first. */
+  relayrPayments?: Array<{ hash: Hex; chainId: number; target: Address; data: Hex; value: string }>;
   relayrCallKeys?: string[];
   relayrQuote?: RelayrPostBundleResponse;
   relayrAuthorizationExpiresAt?: number;
-  relayrPaymentStatus?: "unfunded" | "submitted" | "confirmed" | "reverted";
+  /** "expired": an unpaid quote nothing can fund any more, which no longer reserves its calls. */
+  relayrPaymentStatus?: "unfunded" | "submitted" | "confirmed" | "reverted" | "expired";
   /** A caller-specific receipt/postcondition check must pass before success is trusted. */
   manualVerificationRequired?: boolean;
   chainStates?: Array<{

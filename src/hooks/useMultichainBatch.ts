@@ -38,6 +38,7 @@ import {
 import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
 import { useCallback, useRef, useState } from "react";
 import {
   decodeFunctionData,
@@ -494,7 +495,8 @@ export function useMultichainBatch() {
                 );
                 if (
                   activity?.relayrPaymentStatus === "unfunded" ||
-                  activity?.relayrPaymentStatus === "reverted"
+                  activity?.relayrPaymentStatus === "reverted" ||
+                  activity?.relayrPaymentStatus === "expired"
                 ) {
                   round.state = "quoted";
                   saveMultichainBatch(batch);
@@ -568,7 +570,8 @@ export function useMultichainBatch() {
                   );
                   if (
                     activity?.relayrPaymentStatus === "unfunded" ||
-                    activity?.relayrPaymentStatus === "reverted"
+                    activity?.relayrPaymentStatus === "reverted" ||
+                    activity?.relayrPaymentStatus === "expired"
                   ) {
                     round.state = "quoted";
                     saveMultichainBatch(batch);
@@ -588,9 +591,7 @@ export function useMultichainBatch() {
                 const transaction = bundle.transactions.find(
                   (item) => item.request.chain === call.chainId,
                 );
-                const data = transaction?.status.data as
-                  { hash?: Hash; transaction?: { hash?: Hash } } | undefined;
-                const hash = data?.hash ?? data?.transaction?.hash;
+                const hash = transaction && relayrDestinationHash(transaction);
                 if (!hash) throw new Error("The destination result has no verified hash.");
                 call.hash = hash;
                 call.state = "success";

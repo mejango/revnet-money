@@ -11,7 +11,7 @@ interface Props {
   reset: () => void;
   preferredPaymentChainId?: number;
   quotedStageStart?: QuotedStageStart;
-  rebuildStaleQuote?: () => Promise<RelayrPostBundleResponse>;
+  rebuildStaleQuote?: (stale: RelayrPostBundleResponse) => Promise<RelayrPostBundleResponse>;
 }
 
 export function QuoteResponse(props: Props) {

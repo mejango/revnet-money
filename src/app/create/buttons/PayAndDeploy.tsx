@@ -15,17 +15,13 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxBundle, useSendRelayrTx } from "@/hooks/useReviewedRelayr";
 import { submittedViaSafe } from "@/hooks/useReviewedWriteContract";
-import type {
-  ChainPayment,
-  RelayrGetBundleResponse,
-  RelayrPostBundleResponse,
-} from "@/lib/nana/types";
+import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
 import { useState } from "react";
 import { twMerge } from "tailwind-merge";
-import { Hash } from "viem";
 import { useCreateForm } from "../form/useCreateForm";
 import { ensureFreshQuote, type QuotedStageStart } from "../helpers/staleQuote";
 import { GoToProjectButton } from "./GoToProjectButton";
@@ -36,7 +32,7 @@ interface PaymentAndDeploySectionProps {
   /** The chain the wallet was on before signing switched it. */
   preferredPaymentChainId?: number;
   quotedStageStart?: QuotedStageStart;
-  rebuildStaleQuote?: () => Promise<RelayrPostBundleResponse>;
+  rebuildStaleQuote?: (stale: RelayrPostBundleResponse) => Promise<RelayrPostBundleResponse>;
 }
 
 const statusToIcon = (status: string) => {
@@ -50,12 +46,6 @@ const statusToIcon = (status: string) => {
     return <CheckCircle className="w-5 h-5 text-emerald-500 fade-in-50" />;
   return <CircleXIcon className="w-5 h-5 text-red-500 fade-in-50" />;
 };
-
-function destinationHash(transaction: RelayrGetBundleResponse["transactions"][number]) {
-  const data = transaction.status?.data as
-    { hash?: Hash; transaction?: { hash?: Hash } } | undefined;
-  return data?.hash ?? data?.transaction?.hash;
-}
 
 export function PayAndDeploy({
   relayrResponse,
@@ -234,10 +224,10 @@ export function PayAndDeploy({
                     <div>{statusToIcon(txn.status.state)}</div>
                     <div>{txn.status.state}</div>
                   </div>
-                  {destinationHash(txn) ? (
+                  {relayrDestinationHash(txn) ? (
                     <div className="flex flex-row space-x-1 items-center">
                       <EtherscanLink
-                        value={destinationHash(txn)}
+                        value={relayrDestinationHash(txn) ?? undefined}
                         type="tx"
                         chain={JB_CHAINS[txn.request.chain as JBChainId].chain}
                         truncateTo={6}
@@ -252,7 +242,7 @@ export function PayAndDeploy({
           )}
           {isComplete && bundleResponse.transactions[0] ? (
             <GoToProjectButton
-              txHash={destinationHash(bundleResponse.transactions[0])}
+              txHash={relayrDestinationHash(bundleResponse.transactions[0]) ?? undefined}
               chainId={bundleResponse.transactions[0].request.chain}
             />
           ) : bundleError ? null : hasFailed ? (
