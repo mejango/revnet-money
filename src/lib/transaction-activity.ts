@@ -49,6 +49,8 @@ export type TransactionActivity = {
   bundleUuid?: string;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];
   relayrPayment?: { target: Address; data: Hex; value: string };
+  /** Every funding payment the wallet broadcast for this bundle, oldest first. */
+  relayrPayments?: Array<{ hash: Hex; chainId: number; target: Address; data: Hex; value: string }>;
   relayrCallKeys?: string[];
   relayrQuote?: RelayrPostBundleResponse;
   relayrAuthorizationExpiresAt?: number;

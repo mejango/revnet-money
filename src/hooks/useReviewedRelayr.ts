@@ -30,6 +30,7 @@ import {
   transactionActivitySnapshot,
   updateTransactionActivity,
   type RelayrExpectedTransaction,
+  type TransactionActivity,
 } from "@/lib/transaction-activity";
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
@@ -40,6 +41,7 @@ import {
   RELAYR_API,
   relayrBundleRequest,
   relayrDestinationHash,
+  requireRelayrPaymentRetry,
   type RelayrEntry,
 } from "@bananapus/nana-sdk-core/review/relayr";
 import { useCallback, useEffect, useState } from "react";
@@ -233,6 +235,52 @@ function requireUnfunded(
     throw new Error(
       `This Relayr action already has ${existing.relayrPaymentStatus === "unfunded" ? "published authorizations" : "a submitted payment"}${existing.hash ? ` (${existing.hash})` : existing.relayrPaymentStatus === "unfunded" ? " awaiting reconciliation" : " with an uncertain wallet result"}. Do not authorize or pay again; check the existing bundle.`,
     );
+}
+
+type SentPayment = NonNullable<TransactionActivity["relayrPayments"]>[number];
+
+/** Every payment broadcast for a bundle. A row that lists none names its one payment by `hash`. */
+function sentPayments(activity: TransactionActivity | undefined): SentPayment[] {
+  if (activity?.relayrPayments?.length) return activity.relayrPayments;
+  return activity?.hash && activity.relayrPayment && activity.chainId
+    ? [{ hash: activity.hash, chainId: activity.chainId, ...activity.relayrPayment }]
+    : [];
+}
+
+/**
+ * A bundle that was paid before is paid again only on the SDK's rule: every
+ * payment sent for it canonically reverted, its quote is still open, and
+ * Relayr, read without a cache, reports it unpaid with every call pending.
+ */
+async function requirePaymentRetry(
+  config: ReturnType<typeof useConfig>,
+  account: Address,
+  bundleUuid: string,
+  sent: SentPayment[],
+): Promise<void> {
+  const byPayment = new Map<string, { payment: SentPayment; hashes: Hex[] }>();
+  for (const sentPayment of sent) {
+    const key = `${sentPayment.chainId}:${sentPayment.target.toLowerCase()}:${sentPayment.data.toLowerCase()}:${sentPayment.value}`;
+    const group = byPayment.get(key) ?? { payment: sentPayment, hashes: [] };
+    group.hashes.push(sentPayment.hash);
+    byPayment.set(key, group);
+  }
+  for (const { payment, hashes } of byPayment.values()) {
+    const client = getPublicClient(config, { chainId: payment.chainId as JBChainId });
+    if (!client)
+      throw new Error("The funding RPC is unavailable. Do not pay again; check this bundle later.");
+    await requireRelayrPaymentRetry(client, {
+      hashes,
+      from: account,
+      payment: {
+        chainId: payment.chainId,
+        target: payment.target,
+        calldata: payment.data,
+        amount: payment.value,
+        bundleUuid,
+      },
+    });
+  }
 }
 
 function paymentDetails(payment: ChainPayment, bundleUuid: string, destinationChains: number[]) {
@@ -1147,6 +1195,10 @@ export function useSendRelayrTx() {
         });
         if (simulation.data && simulation.data !== "0x")
           throw new Error("Relayr payment simulation returned an unexpected result.");
+        const sent = sentPayments(
+          refreshTransactionActivities().find((row) => row.id === activityId),
+        );
+        if (sent.length) await requirePaymentRetry(config, address, remembered.bundleUuid, sent);
         requireAccount();
         paymentDetails(payment, remembered.bundleUuid, remembered.chainIds);
         requireUnfunded(remembered);
@@ -1166,6 +1218,7 @@ export function useSendRelayrTx() {
             data: payment.calldata,
             value: value.toString(),
           },
+          relayrPayments: sent,
           relayrPaymentStatus: "submitted",
           chainStates: remembered.chainIds.map((chainId) => ({ chainId, status: "Pending" })),
           callKey: remembered.callKey,
@@ -1210,6 +1263,16 @@ export function useSendRelayrTx() {
         fundedBundles.add(remembered.bundleUuid);
         updateTransactionActivity(activityId, {
           hash,
+          relayrPayments: [
+            ...sent,
+            {
+              hash,
+              chainId: payment.chain,
+              target: payment.target,
+              data: payment.calldata,
+              value: value.toString(),
+            },
+          ],
           message: "Relayr payment submitted. Do not pay again while its receipt is pending.",
         });
         try {

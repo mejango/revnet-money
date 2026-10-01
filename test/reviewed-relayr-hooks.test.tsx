@@ -293,13 +293,11 @@ describe("reviewed Relayr authorization hook", () => {
     second.review.registerTransactionReviewHandler(async () => true);
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(JSON.stringify({ bundle_uuid: "", payment_info: [], tx_uuids: [] }), {
-            status: 200,
-          }),
-        ),
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ bundle_uuid: "", payment_info: [], tx_uuids: [] }), {
+          status: 200,
+        }),
+      ),
     );
     const incomplete = renderHook(() => second.hooks.useGetRelayrTxQuote());
     await expect(incomplete.result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
@@ -1256,5 +1254,149 @@ describe("Safe execution bundles", () => {
       result.current.getRelayrTxQuote([safeExec(1), { ...REQUEST, chainId: 10 as const }]),
     ).rejects.toThrow(/bundle of their own/);
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("paying a reverted Relayr payment again", () => {
+  const SECOND_HASH = `0x${"ef".repeat(32)}` as Hex;
+
+  /** The funding chain's receipt status for each payment hash. */
+  function fundingChain(statuses: Record<Hex, "success" | "reverted">) {
+    mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => ({
+      ...onchain(PAYMENT_TARGET, payment().calldata),
+      hash,
+    }));
+    mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) => ({
+      ...onchain(PAYMENT_TARGET, payment().calldata),
+      hash,
+      transactionHash: hash,
+      status: statuses[hash],
+    }));
+  }
+
+  /** Relayr's bundle as a read of `GET /v1/bundle/{uuid}` returns it. */
+  function relayrReports(bundle: Record<string, unknown> = {}) {
+    const read = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            bundle_uuid: BUNDLE_UUID,
+            payment_received: false,
+            transactions: [{ tx_uuid: TX_UUIDS[0], status: { state: "Pending" } }],
+            ...bundle,
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", read);
+    return read;
+  }
+
+  async function revertedPayment() {
+    const harness = await quotedPayment();
+    fundingChain({ [HASH]: "reverted" });
+    await expect(harness.result.current.sendRelayrTx(payment())).rejects.toThrow(
+      /confirmation is uncertain/,
+    );
+    expect(harness.activity.transactionActivitySnapshot()[0]).toMatchObject({
+      relayrPaymentStatus: "reverted",
+    });
+    return harness;
+  }
+
+  it("pays again only after proving each sent payment reverted and reading Relayr's bundle unpaid and unrun", async () => {
+    const { activity, result } = await revertedPayment();
+    const read = relayrReports();
+    fundingChain({ [HASH]: "reverted", [SECOND_HASH]: "success" });
+    mocks.sendTransaction.mockResolvedValueOnce(SECOND_HASH);
+    await act(async () => {
+      await expect(result.current.sendRelayrTx(payment())).resolves.toBe(SECOND_HASH);
+    });
+    expect(mocks.sendTransaction).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenCalledWith(
+      `https://api.relayr.ba5ed.com/v1/bundle/${BUNDLE_UUID}`,
+      expect.objectContaining({ cache: "no-store" }),
+    );
+    expect(read.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.sendTransaction.mock.invocationCallOrder[1],
+    );
+    expect(
+      activity.transactionActivityForHash(SECOND_HASH)?.relayrPayments?.map(({ hash }) => hash),
+    ).toEqual([HASH, SECOND_HASH]);
+  });
+
+  it("does not pay again when Relayr reports a payment from another device", async () => {
+    const { result } = await revertedPayment();
+    relayrReports({ payment_received: true });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
+      "Relayr already reports a payment for this bundle. Do not pay again.",
+    );
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
+
+  it.each<[string, Record<string, unknown>, RegExp]>([
+    [
+      "a call is running",
+      { transactions: [{ tx_uuid: TX_UUIDS[0], status: { state: "Included" } }] },
+      /running or run/,
+    ],
+    [
+      "a call names a destination hash",
+      {
+        transactions: [
+          { tx_uuid: TX_UUIDS[0], status: { state: "Pending", data: { hash: SECOND_HASH } } },
+        ],
+      },
+      /running or run/,
+    ],
+    ["Relayr does not say whether it was paid", { payment_received: null }, /has not said/],
+    ["the read names another bundle", { bundle_uuid: OTHER_BUNDLE_UUID }, /has not said/],
+  ])("does not pay again when %s", async (_, bundle, message) => {
+    const { result } = await revertedPayment();
+    relayrReports(bundle);
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(message);
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("does not pay again while Relayr is unreachable", async () => {
+    const { result } = await revertedPayment();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("network down")));
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(/has not said/);
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("does not pay again once the quote expires", async () => {
+    const { result } = await revertedPayment();
+    relayrReports();
+    vi.setSystemTime(new Date((NOW + 590) * 1_000));
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
+      "This Relayr quote expired. Review the action again for a new quote.",
+    );
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("proves every payment the session sent, including one before a declined retry", async () => {
+    const { activity, result } = await revertedPayment();
+    relayrReports();
+    fundingChain({ [HASH]: "reverted", [SECOND_HASH]: "reverted" });
+    mocks.sendTransaction.mockResolvedValueOnce(SECOND_HASH);
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
+      /confirmation is uncertain/,
+    );
+    mocks.sendTransaction.mockRejectedValueOnce({ code: 4001 });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toEqual({ code: 4001 });
+    expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+      relayrPaymentStatus: "unfunded",
+      relayrPayments: [
+        expect.objectContaining({ hash: HASH }),
+        expect.objectContaining({ hash: SECOND_HASH }),
+      ],
+    });
+    // The first payment now reads as successful: a later one reverting proves nothing.
+    fundingChain({ [HASH]: "success", [SECOND_HASH]: "reverted" });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
+      "This Relayr payment succeeded onchain, so its bundle is paid. Do not pay again.",
+    );
+    expect(mocks.sendTransaction).toHaveBeenCalledTimes(3);
   });
 });

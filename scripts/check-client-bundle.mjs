@@ -26,8 +26,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // pages shared; without it Next copies each into the page and lazy chunks that use
 // it (the select alone is +10.0 KiB). The budget moves up by the minimum 5 KiB.
 // SDK 2.17's Relayr quote binding (`bindRelayrQuote`, its bundle read and
-// `relayrDestinationHash`) adds about 1.4 KiB on top of that, and the budget moves up to cover it.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2613);
+// `relayrDestinationHash`) and its payment retry check (`requireRelayrPaymentRetry`,
+// with its onchain payment proof) add about 4 KiB on top of that, and the budget
+// moves up to cover it.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2616);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

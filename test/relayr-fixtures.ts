@@ -31,10 +31,11 @@ export function payment(overrides: Partial<ChainPayment> = {}): ChainPayment {
     ...overrides,
   };
 }
-export function onchain(to: Address, input: Hex, value = 16n) {
+export function onchain(to: Address, input: Hex, value = 16n, chainId = 1) {
   return {
     hash: HASH,
     transactionHash: HASH,
+    chainId,
     from: ACCOUNT,
     to,
     input,
