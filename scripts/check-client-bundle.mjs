@@ -27,9 +27,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // it (the select alone is +10.0 KiB). The budget moves up by the minimum 5 KiB.
 // SDK 2.17's Relayr quote binding (`bindRelayrQuote`, its bundle read and
 // `relayrDestinationHash`) and its payment retry check (`requireRelayrPaymentRetry`,
-// with its onchain payment proof) add about 4 KiB on top of that, and the budget
-// moves up to cover it.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2616);
+// with its onchain payment proof) bring all client JavaScript to 2614.0 KiB against
+// 2610.7 KiB, so the budget moves up by the minimum 4 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2615);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
