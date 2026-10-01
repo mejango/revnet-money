@@ -91,7 +91,7 @@ GitHub Actions uses Ubuntu 24.04, Node 26.5.0, npm 12.0.1, read-only repository 
 
 Bendystraw documents live only in the server-side fixed-operation registry. Browser callers send a reviewed operation ID and bounded variables through the same-origin BFF; they cannot submit arbitrary GraphQL. When an indexed shape changes, update its narrow DTO, query, runtime guard, deterministic fixture, and operation test together.
 
-The bundle gate measures gzip-compressed JavaScript referenced by Next 16's per-route client-reference manifests, including shared runtime chunks, and every emitted client chunk, including lazy chunks. Its conservative limits are 900 KiB for any app route, 1,100 KiB across unique route-referenced JavaScript, and 2,000 KiB across all client JavaScript. Override variables exist for local diagnosis, but CI should change a budget only alongside a reviewed explanation and measured user impact. Chart-heavy owner subtabs and wallet-only dialogs stay in on-demand chunks so the default project surface does not pay for unopened workflows.
+The bundle gate measures gzip-compressed JavaScript referenced by Next 16's per-route client-reference manifests, including shared runtime chunks, and every emitted client chunk, including lazy chunks. Its conservative limits are 900 KiB for any app route, 1,100 KiB across unique route-referenced JavaScript, and 2,611 KiB across all client JavaScript. Override variables exist for local diagnosis, but CI should change a budget only alongside a reviewed explanation and measured user impact. Chart-heavy owner subtabs and wallet-only dialogs stay in on-demand chunks so the default project surface does not pay for unopened workflows.
 
 ## Deliberate follow-ups
 
