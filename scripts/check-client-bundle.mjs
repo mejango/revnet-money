@@ -29,7 +29,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // `relayrDestinationHash`) and its payment retry check (`requireRelayrPaymentRetry`,
 // with its onchain payment proof) bring all client JavaScript to 2614.0 KiB against
 // 2610.7 KiB, so the budget moves up by the minimum 4 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2615);
+// SDK 2.18.0 puts each generated ABI in a module of its own. Webpack copies each one into
+// every chunk that uses it, so all client JavaScript measures 2618.7-2618.8 KiB against
+// 2614.0 KiB (largest route /[slug]/operator 655.1 -> 660.6 KiB). Builds vary by about
+// 0.1 KiB, so the budget moves up 5 KiB to keep a clear margin.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2620);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
