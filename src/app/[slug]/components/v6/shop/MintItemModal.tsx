@@ -186,7 +186,7 @@ export function MintItemModal({
           : null;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Mint {itemName} without payment</DialogTitle>

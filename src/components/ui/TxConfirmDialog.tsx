@@ -7,9 +7,9 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  useEnclosingDialogPanel,
 } from "@/components/ui/dialog";
 import { X } from "@/components/ui/icons";
+import { useEnclosingModalCard, useHoldEnclosingModal } from "@/components/ui/ModalShell";
 import { TxSteps } from "@/components/ui/TxSteps";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, type ComponentProps } from "react";
@@ -85,7 +85,10 @@ export function TxConfirmDialog({
   );
 
   // While the confirm is mounted in a host dialog, the host shows nothing else.
-  const host = useEnclosingDialogPanel();
+  const host = useEnclosingModalCard();
+  // Hosted, the confirm has no dialog of its own: while busy it keeps the host
+  // open, or Escape there would drop a send in flight.
+  useHoldEnclosingModal(open && busy);
   useEffect(() => {
     if (!host || !open) return;
     const hidden = Array.from(host.children).filter(

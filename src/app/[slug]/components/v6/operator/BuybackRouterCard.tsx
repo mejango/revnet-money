@@ -429,9 +429,6 @@ function ActionRow({
 }) {
   const action = ACTIONS[kind];
   const [open, setOpen] = useState(false);
-  // A running write owns the dialog: dismissing it would hide the only progress
-  // report for a transaction that keeps going regardless.
-  const [busy, setBusy] = useState(false);
   const available = states.filter((state) => isKindAvailable(kind, state));
 
   return (
@@ -530,7 +527,7 @@ function ActionRow({
       </Button>
 
       {open ? (
-        <Dialog open onOpenChange={(next) => !next && !busy && setOpen(false)}>
+        <Dialog open onOpenChange={(next) => !next && setOpen(false)}>
           <DialogContent className="max-w-xl">
             <DialogTitle className="text-base font-medium">{action.title}</DialogTitle>
             <p className="text-xs text-zinc-500">{action.description}</p>
@@ -538,7 +535,6 @@ function ActionRow({
               kind={kind}
               available={available}
               authorityByChain={authorityByChain}
-              onBusyChange={setBusy}
               onDone={() => {
                 setOpen(false);
                 onDone();
@@ -579,13 +575,11 @@ function BuybackActionForm({
   kind,
   available,
   authorityByChain,
-  onBusyChange,
   onDone,
 }: {
   kind: ActionKind;
   available: BuybackChainState[];
   authorityByChain: ReadonlyMap<number, Address>;
-  onBusyChange: (busy: boolean) => void;
   onDone: () => void;
 }) {
   const action = ACTIONS[kind];
@@ -626,11 +620,7 @@ function BuybackActionForm({
   const [twapWindow, setTwapWindow] = useState(String(livePool?.twap ?? 1800));
   const [sqrtPriceX96, setSqrtPriceX96] = useState("");
   const [ack, setAck] = useState(false);
-  const [busy, setBusyState] = useState(false);
-  const setBusy = (next: boolean) => {
-    setBusyState(next);
-    onBusyChange(next);
-  };
+  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<ChainWrite[] | null>(null);

@@ -42,6 +42,7 @@ verifies that these SDKs remain lazy.
 ## What the suite protects
 
 - Transaction review tests assert exact chain, account, destination, calldata, selector, arguments, ordering, and mutation detection before a wallet prompt. Hook tests exercise the complete review → account recheck → simulation → account recheck → submission order and reject duplicate direct and Safe submissions.
+- A confirm hosted in a dialog holds that dialog open while it is busy: Escape, a backdrop press and the dialog's × are refused until the send settles (`modal-shell.test.tsx`).
 - Activity tests assert durable, deduplicated status reporting and fail-safe recovery from malformed browser storage.
 - Safe tests ensure a proposal hash is never mistaken for an executed transaction.
 - Relayr tests distinguish payment from destination-chain completion, deduplicate polling, retain transaction hashes, and fail visibly when any destination fails. Hook tests pin sender/chain identity, same-chain nonce collision rejection, EIP-712 review ordering, account changes before and after signing, payment expiry, simulation, receipt uncertainty, and Safe proposal handling.

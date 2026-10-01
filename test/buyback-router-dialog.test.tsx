@@ -1,5 +1,5 @@
 import { BuybackRouterCard } from "@/app/[slug]/components/v6/operator/BuybackRouterCard";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 // The card reads chain state on mount; stub it so the test is about the shell,
@@ -33,8 +33,9 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   isSafeProposalPendingError: () => false,
 }));
+const writes = vi.hoisted(() => ({ runWrites: vi.fn() }));
 vi.mock("@/app/[slug]/components/v6/operator/useOperatorWrites", () => ({
-  useOperatorWrites: () => ({ runWrites: vi.fn() }),
+  useOperatorWrites: () => ({ runWrites: writes.runWrites }),
 }));
 // The live operator read needs bendystraw + RPC; the shell test has neither.
 vi.mock("@/app/[slug]/components/v6/operator/useLiveRevnetOperators", () => ({
@@ -46,9 +47,18 @@ vi.mock("@/components/EthereumAddress", () => ({
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/components/ButtonWithWallet", () => ({
-  ButtonWithWallet: ({ children, ...props }: { children: React.ReactNode }) => (
-    <button {...props}>{children}</button>
-  ),
+  ButtonWithWallet: ({
+    children,
+    connectWalletText: _connectWalletText,
+    loading: _loading,
+    targetChainId: _targetChainId,
+    ...props
+  }: {
+    children: React.ReactNode;
+    connectWalletText?: string;
+    loading?: boolean;
+    targetChainId?: number;
+  }) => <button {...props}>{children}</button>,
 }));
 
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
@@ -99,5 +109,37 @@ describe("BuybackRouterCard", () => {
     // USDC on Base, not the native sentinel — ART has no native pool.
     expect(values).toContain("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
     expect(values).toContain("172800");
+  });
+
+  it("keeps an action's dialog open while its confirm is sending", async () => {
+    let finish!: (result: unknown) => void;
+    writes.runWrites.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Set TWAP window" }));
+    const dialog = (await screen.findByRole("dialog", {
+      name: "Set TWAP window",
+    })) as HTMLDialogElement;
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /I verified every selected/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set TWAP window" }));
+    // The confirm replaces the form inside the same dialog.
+    await waitFor(() => expect(dialog.querySelector("[data-tx-confirm]")).not.toBeNull());
+    const confirm = dialog.querySelector<HTMLElement>("[data-tx-confirm]")!;
+    fireEvent.click(within(confirm).getByRole("button", { name: "Set TWAP window" }));
+    await waitFor(() => expect(writes.runWrites).toHaveBeenCalledTimes(1));
+
+    // Every way out is refused while the write is in flight.
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.pointerDown(dialog);
+    const close = [...dialog.querySelectorAll("button")].find(
+      (button) => button.textContent === "Close",
+    )!;
+    expect(close).toBeDisabled();
+    fireEvent.click(close);
+    expect(dialog.open).toBe(true);
+    expect(screen.getByRole("dialog", { name: "Set TWAP window" })).toBe(dialog);
+
+    await act(async () => finish({ chains: 1, safeQueued: 0, safeConfirmed: 0 }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
