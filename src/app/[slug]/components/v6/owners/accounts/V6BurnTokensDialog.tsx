@@ -154,6 +154,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
           tokenCount: count,
           memo,
         }),
+        account: address,
       });
       setHash(txHash);
       setReviewing(false);

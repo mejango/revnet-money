@@ -675,15 +675,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       "Selling no longer pays more than cashing out. Review the new estimate.",
                     );
                   }
-                  await writeContractAsync(
-                    buildDirectSellSwapTx({
+                  // The sale pays `address`: only `address` may send it.
+                  await writeContractAsync({
+                    ...buildDirectSellSwapTx({
                       chainId: selectedChainId,
                       quote: fresh,
                       amount: redeemAmountBN,
                       recipient: address,
                       deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
                     }),
-                  );
+                    account: address,
+                  });
                   return;
                 }
 
@@ -703,7 +705,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   );
                 }
 
-                await writeContractAsync(prepared.transaction);
+                await writeContractAsync({ ...prepared.transaction, account: address });
               } catch (err) {
                 setIsApproving(false);
                 console.error("Cashout failed:", err);

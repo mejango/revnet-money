@@ -193,112 +193,159 @@ beforeEach(() => {
   mocks.ensureAllowance.mockReset().mockResolvedValue(null);
 });
 
+/** Each flow, opened as the app opens it, run up to its confirm's action. */
+async function confirmCashOut() {
+  renderWithQueries(
+    <RedeemDialog projectId={7n} tokenSymbol="REV">
+      <button type="button">Open cash out</button>
+    </RedeemDialog>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+  fireEvent.click(await screen.findByRole("combobox"));
+  fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
+  fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Cash out" }));
+  const confirm = await confirmPanel();
+  fireEvent.click(within(confirm).getByRole("button", { name: "Cash out" }));
+}
+
+async function confirmBridge() {
+  renderWithQueries(
+    <BridgeDialog
+      projects={[
+        { projectId: 7, chainId: 1, token: NATIVE_TOKEN },
+        { projectId: 8, chainId: 10, token: NATIVE_TOKEN },
+      ]}
+    >
+      <button type="button">Open move</button>
+    </BridgeDialog>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open move" }));
+  const [, to] = await screen.findAllByRole("combobox");
+  fireEvent.click(to);
+  fireEvent.click(await screen.findByRole("option", { name: /Optimism/ }));
+  fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+  const move = screen.getByRole("button", { name: "Move REV" });
+  await waitFor(() => expect(move).toBeEnabled());
+  fireEvent.click(move);
+  const confirm = await confirmPanel();
+  await waitFor(() =>
+    expect(within(confirm).getByRole("button", { name: "Move REV" })).toBeEnabled(),
+  );
+  fireEvent.click(within(confirm).getByRole("button", { name: "Move REV" }));
+}
+
+async function confirmBorrow() {
+  renderWithQueries(
+    <BorrowDialog projectId={7n} tokenSymbol="REV">
+      <button type="button">Open borrow</button>
+    </BorrowDialog>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open borrow" }));
+  fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
+  const open = screen.getByRole("button", { name: "Open loan" });
+  await waitFor(() => expect(open).toBeEnabled());
+  fireEvent.click(open);
+  const confirm = await confirmPanel();
+  fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+}
+
+async function confirmRefinance() {
+  renderWithQueries(
+    <ReallocateDialog projectId={7n} tokenSymbol="REV" selectedLoan={LOAN}>
+      <button type="button">Open refinance</button>
+    </ReallocateDialog>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open refinance" }));
+  const refinance = await screen.findByRole("button", { name: "Refinance loan" });
+  await waitFor(() => expect(refinance).toBeEnabled());
+  fireEvent.click(refinance);
+  const confirm = await confirmPanel();
+  fireEvent.click(within(confirm).getByRole("button", { name: "Refinance loan" }));
+}
+
+async function confirmRepay() {
+  function Loans() {
+    const [open, setOpen] = useState(true);
+    return (
+      <RepayDialog
+        loanId="3"
+        chainId={1 as JBChainId}
+        projectId={7n}
+        loanProjectId={7n}
+        open={open}
+        onOpenChange={setOpen}
+      />
+    );
+  }
+  renderWithQueries(<Loans />);
+  const repay = await screen.findByRole("button", { name: "Repay loan" });
+  await waitFor(() => expect(repay).toBeEnabled());
+  fireEvent.click(repay);
+  const confirm = await confirmPanel();
+  fireEvent.click(within(confirm).getByRole("button", { name: "Repay loan" }));
+}
+
 describe("value flows hold their dialog while a send is in flight", () => {
   it("cash out, from Confirm through the route read before the wallet prompt", async () => {
-    renderWithQueries(
-      <RedeemDialog projectId={7n} tokenSymbol="REV">
-        <button type="button">Open cash out</button>
-      </RedeemDialog>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
-    fireEvent.click(await screen.findByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
-    fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Cash out" }));
-    const confirm = await confirmPanel();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cash out" }));
+    await confirmCashOut();
     await waitFor(() => expect(mocks.prepareCashOut).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Cash out");
   });
 
   it("bridge", async () => {
-    renderWithQueries(
-      <BridgeDialog
-        projects={[
-          { projectId: 7, chainId: 1, token: NATIVE_TOKEN },
-          { projectId: 8, chainId: 10, token: NATIVE_TOKEN },
-        ]}
-      >
-        <button type="button">Open move</button>
-      </BridgeDialog>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Open move" }));
-    const [, to] = await screen.findAllByRole("combobox");
-    fireEvent.click(to);
-    fireEvent.click(await screen.findByRole("option", { name: /Optimism/ }));
-    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
-    const move = screen.getByRole("button", { name: "Move REV" });
-    await waitFor(() => expect(move).toBeEnabled());
-    fireEvent.click(move);
-    const confirm = await confirmPanel();
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Move REV" })).toBeEnabled(),
-    );
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Move REV" }));
+    await confirmBridge();
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Move between networks");
   });
 
   it("borrow, from Confirm through the fresh quote read before the wallet prompt", async () => {
-    renderWithQueries(
-      <BorrowDialog projectId={7n} tokenSymbol="REV">
-        <button type="button">Open borrow</button>
-      </BorrowDialog>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Open borrow" }));
-    fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
-    const open = screen.getByRole("button", { name: "Open loan" });
-    await waitFor(() => expect(open).toBeEnabled());
-    fireEvent.click(open);
-    const confirm = await confirmPanel();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+    await confirmBorrow();
     await waitFor(() => expect(mocks.freshBorrowable).toHaveBeenCalledTimes(1));
     tryEveryWayOut("New loan");
   });
 
   it("refinance, from Confirm through the fresh quote read before the wallet prompt", async () => {
-    renderWithQueries(
-      <ReallocateDialog projectId={7n} tokenSymbol="REV" selectedLoan={LOAN}>
-        <button type="button">Open refinance</button>
-      </ReallocateDialog>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Open refinance" }));
-    const refinance = await screen.findByRole("button", { name: "Refinance loan" });
-    await waitFor(() => expect(refinance).toBeEnabled());
-    fireEvent.click(refinance);
-    const confirm = await confirmPanel();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Refinance loan" }));
+    await confirmRefinance();
     await waitFor(() => expect(mocks.freshBorrowable).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Refinance loan");
   });
 
   it("repay", async () => {
-    function Loans() {
-      const [open, setOpen] = useState(true);
-      return (
-        <RepayDialog
-          loanId="3"
-          chainId={1 as JBChainId}
-          projectId={7n}
-          loanProjectId={7n}
-          open={open}
-          onOpenChange={setOpen}
-        />
-      );
-    }
-    renderWithQueries(<Loans />);
-    const repay = await screen.findByRole("button", { name: "Repay loan" });
-    await waitFor(() => expect(repay).toBeEnabled());
-    fireEvent.click(repay);
-    const confirm = await confirmPanel();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Repay loan" }));
+    await confirmRepay();
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Repay loan");
+  });
+});
+
+// Each send pays out to the account that pressed Confirm (the cash out, the
+// sale, the loan, the bridged tokens, the returned collateral), so each names
+// it: the reviewed write refuses it from any other account, such as one the
+// wallet switched to while an approval or a quote was still in flight.
+describe("value sends name the account they pay", () => {
+  it.each([
+    ["cash out", confirmCashOut],
+    ["bridge", confirmBridge],
+    ["borrow", confirmBorrow],
+    ["refinance", confirmRefinance],
+    ["repay", confirmRepay],
+  ])("%s", async (_, confirmFlow) => {
+    mocks.prepareCashOut.mockResolvedValue({
+      route: { expectedReturn: 10n ** 17n },
+      transaction: {
+        chainId: 1,
+        address: "0x6666666666666666666666666666666666666666",
+        abi: [],
+        functionName: "cashOutTokensOf",
+        args: [],
+      },
+    });
+    mocks.freshBorrowable.mockResolvedValue(10n ** 18n);
+    await confirmFlow();
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    expect(mocks.write.mock.calls[0]![0]).toMatchObject({
+      account: "0x1111111111111111111111111111111111111111",
+    });
   });
 });
 

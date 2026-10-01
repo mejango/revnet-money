@@ -908,7 +908,7 @@
       "id": "pay",
       "risk": "money",
       "files": ["src/app/[slug]/components/v6/pay/V6PayCard.tsx"],
-      "tests": ["test/pay-route.test.ts"]
+      "tests": ["test/pay-route.test.ts", "test/pay-account-binding.test.tsx"]
     },
     {
       "id": "allowance",
@@ -955,7 +955,11 @@
         "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
         "src/app/[slug]/components/v6/owners/market/liquidityWrite.tsx"
       ],
-      "tests": ["test/liquidity-remove.test.ts", "test/liquidity-edit-safe-batch.test.tsx"]
+      "tests": [
+        "test/liquidity-remove.test.ts",
+        "test/liquidity-edit-safe-batch.test.tsx",
+        "test/liquidity-account-binding.test.tsx"
+      ]
     },
     {
       "id": "split-hook",

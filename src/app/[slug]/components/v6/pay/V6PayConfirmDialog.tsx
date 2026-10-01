@@ -51,6 +51,8 @@ interface PreparedV6SignatureAction {
 
 /** A fully resolved, encodable pay/add-to-balance transaction. */
 export interface PreparedV6Pay {
+  /** The account it was built for: a payment's tokens go to it. */
+  account: Address;
   mode: V6PayMode;
   chainId: JBChainId;
   token: V6PayTokenOption;

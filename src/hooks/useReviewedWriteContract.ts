@@ -44,6 +44,26 @@ export { isSafeConnection, isSafeConnector, useSafeConnection } from "@/lib/safe
 
 export const SAFE_NONCE_GUIDANCE =
   "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
+/** Why a send was refused: its plan names one account (a beneficiary, a recipient, a position's owner) and another is connected. */
+export const ACCOUNT_CHANGED = "The connected account changed. Review again.";
+
+/**
+ * Refuses a send whose plan was built for `planned` while another account is
+ * connected: the plan pays out to `planned`, and the connected account would
+ * pay for it. A plan that names no account may be sent by any.
+ */
+function requirePlannedAccount(planned: unknown, connected: Address): void {
+  const address =
+    typeof planned === "string"
+      ? planned
+      : planned && typeof planned === "object" && "address" in planned
+        ? String((planned as { address: unknown }).address)
+        : undefined;
+  if (address !== undefined && address.toLowerCase() !== connected.toLowerCase()) {
+    throw new Error(ACCOUNT_CHANGED);
+  }
+}
+
 const safeInflight = new Map<string, Promise<void>>();
 // Safe emits ExecutionFailure instead of reverting only when safeTxGas or gasPrice is set.
 const SAFE_EXECUTION_FAILURE = keccak256(stringToHex("ExecutionFailure(bytes32,uint256)"));
@@ -168,10 +188,13 @@ export async function proposeSafeBatch(
     /** Needs an earlier call's effect (an allowance), so it cannot simulate alone. */
     dependsOnPrior?: boolean;
   })[],
+  /** The account the calls were built for, when they name one (a mint's recipient). */
+  plannedAccount?: Address,
 ): Promise<Hex> {
   requireNoViewAs();
   const account = getAccount(config).address;
   if (!account) throw new Error("Connect a wallet first.");
+  requirePlannedAccount(plannedAccount, account);
   if (!isSafeConnection(config)) {
     throw new Error("A batch can only be proposed through a Safe connection.");
   }
@@ -404,6 +427,9 @@ export function useWriteContract(
       requireNoViewAs();
       const before = getAccount(config);
       if (!before.address) throw new Error("Connect a wallet first.");
+      // `account` names the account the call was built for. Every check below
+      // binds the send to the account connected now, so the two must agree.
+      requirePlannedAccount(variables.account, before.address);
       const initialAddress = before.address;
       const chainId = Number(variables.chainId ?? before.chainId);
       if (!chainId) throw new Error("Select a network before continuing.");

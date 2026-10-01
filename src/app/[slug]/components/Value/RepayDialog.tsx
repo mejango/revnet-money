@@ -566,6 +566,7 @@ export function RepayDialog({
         // underfund the repay. Send the ceiling (principal + accrued source fee + buffer); the
         // contract refunds the excess.
         value: isNativeToken(chainTokenConfig.token) ? maxRepayBorrowAmount : 0n,
+        account: userAddress as Address,
       });
 
       setRepayTxHash(txHash);

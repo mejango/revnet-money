@@ -168,4 +168,17 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     ).rejects.toThrow("Safe connection");
     expect(mocks.sendCalls).not.toHaveBeenCalled();
   });
+
+  it("refuses a batch built for another account, such as a mint to the account that reviewed it", async () => {
+    const other = "0x000000000000000000000000000000000000bEEF" as Address;
+    await expect(
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls(), other),
+    ).rejects.toThrow("The connected account changed. Review again.");
+    expect(mocks.simulateCalls).not.toHaveBeenCalled();
+    expect(seen).toBeNull();
+    expect(mocks.sendCalls).not.toHaveBeenCalled();
+
+    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls(), ACCOUNT);
+    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
+  });
 });

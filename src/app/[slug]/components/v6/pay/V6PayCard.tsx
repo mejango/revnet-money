@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAllowance } from "@/hooks/useAllowance";
 import { useReviewedPermit2Signature } from "@/hooks/useReviewedPermit2Signature";
 import {
+  ACCOUNT_CHANGED,
   isSafeProposalPendingError,
   requireOnchainExecution,
   submittedViaSafe,
@@ -714,6 +715,7 @@ export function V6PayCard() {
               }
             : null;
         next = {
+          account: address,
           mode,
           chainId,
           token: selected,
@@ -764,6 +766,7 @@ export function V6PayCard() {
           amountRaw,
         );
         next = {
+          account: address,
           mode,
           chainId,
           token: selected,
@@ -837,6 +840,14 @@ export function V6PayCard() {
       setPhase("preparing");
       return;
     }
+    if (prepared.account.toLowerCase() !== address.toLowerCase()) {
+      // The plan pays its tokens to the account it was built for. Build it
+      // again for this one, and let the payer review that before it sends.
+      setPrepared(null);
+      setTxError(ACCOUNT_CHANGED);
+      setPhase("preparing");
+      return;
+    }
     setTxError(null);
     try {
       // Keep the newest prerequisite block. Base RPC providers are load
@@ -871,7 +882,7 @@ export function V6PayCard() {
         await nextUiPaint();
         try {
           const signature = await signPermit2Async({
-            expectedAccount: address,
+            expectedAccount: prepared.account,
             authorization: prepared.routerSignature.authorization,
           });
           const signedRequest = addPermit2SignatureToDirectPaySwap(
@@ -950,6 +961,7 @@ export function V6PayCard() {
         const approvalHash = await writeContractAsync({
           chainId: prepared.chainId,
           ...routerApproval.request,
+          account: prepared.account,
         });
         requireOnchainExecution(approvalHash, "Swap authorization");
         const approvalReceipt = await waitForReceiptWithRetry(
@@ -992,7 +1004,7 @@ export function V6PayCard() {
         functionName: paymentRequest.functionName,
         args: paymentRequest.args as unknown[],
         value: paymentRequest.value,
-        account: address,
+        account: prepared.account,
         blockNumber: approvalBlock,
       } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
       setPhase("signing");
@@ -1003,6 +1015,7 @@ export function V6PayCard() {
         functionName: paymentRequest.functionName,
         args: paymentRequest.args as unknown[],
         value: paymentRequest.value,
+        account: prepared.account,
       } as unknown as Parameters<typeof writeContractAsync>[0]);
       setTxHash(hash);
       setPhase("pending");
