@@ -13,7 +13,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    setupFiles: ["./test/setup.ts"],
+    setupFiles: ["./test/setup.ts", "./test/review-calls-setup.ts"],
     include: ["test/**/*.test.{ts,tsx}"],
     clearMocks: true,
     mockReset: true,

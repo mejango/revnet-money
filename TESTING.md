@@ -42,6 +42,7 @@ verifies that these SDKs remain lazy.
 ## What the suite protects
 
 - Transaction review tests assert exact chain, account, destination, calldata, selector, arguments, ordering, and mutation detection before a wallet prompt. Hook tests exercise the complete review → account recheck → simulation → account recheck → submission order and reject duplicate direct and Safe submissions.
+- Every review call that carries an ABI must decode with the SDK's `functionFromCall` (its `args` encode to exactly its calldata), or the review shows it as raw bytes. `test/review-calls-setup.ts` checks each test's mock calls and every call the review dialog renders, and fails the test that produced one that does not decode.
 - A confirm hosted in a dialog holds that dialog open while it is busy: Escape, a backdrop press and the dialog's × are refused until the send settles (`modal-shell.test.tsx`).
 - Activity tests assert durable, deduplicated status reporting and fail-safe recovery from malformed browser storage.
 - Safe tests ensure a proposal hash is never mistaken for an executed transaction.
