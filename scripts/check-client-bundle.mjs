@@ -54,7 +54,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Binding each Safe proposal's result to the calls it was reviewed to run, its live
 // approval count, the cached creation records and the unproven Ethereum handles line
 // measure 2641.3 KiB against 2640.0 KiB; the aggregate budget rises by the minimum 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2642);
+// Ending every Safe proposal the app can't follow (the watch's give-up rules and its read of a
+// replaced nonce), the account's Dismiss and one bounded creation read for the page as well
+// measure 2642.0 KiB against 2641.5 KiB, at the budget; it rises by the minimum 1 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2643);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
