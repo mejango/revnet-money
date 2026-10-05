@@ -58,11 +58,24 @@ Para's own JavaScript is identical in jbm and revnet, so one audit covers both. 
 
 Spec: sticky-next-port/.superpowers/sdd/2026-09-29-sticky-next-port/safe-adoption-spec.md.
 
-- [ ] Authority identity and cross-chain trust from `@bananapus/nana-sdk-core/safe`; the handle authority reads the
+- [x] Authority identity and cross-chain trust from `@bananapus/nana-sdk-core/safe`; the handle authority reads the
       Safe's creation record from the project chain's Safe service (client and server); R90 line for an unproven Safe.
-- [ ] Same-address Safe deployment from the SDK (`prepareSafeSameAddressDeployment`).
-- [ ] Safe transactions and the service from `@bananapus/nana-sdk-core/safe-service`: queue card and tray guarded
+- [x] Same-address Safe deployment from the SDK (`prepareSafeSameAddressDeployment`).
+- [x] Safe transactions and the service from `@bananapus/nana-sdk-core/safe-service`: queue card and tray guarded
       by `hasSafeService`, current owners for confirmations, refund transactions refused (R93), execution confirmed
       only by `safeExecutionResult` for the reviewed hash (EOA executions and Safe connector replies).
-- [ ] Distribution receipts from `@bananapus/nana-sdk-core/v6` (payouts and reserved tokens with their splits).
-- [ ] Tests ported to the call sites; spec tests added; gate; budget; PR.
+- [x] Distribution receipts from `@bananapus/nana-sdk-core/v6` (payouts and reserved tokens with their splits).
+- [x] Tests ported to the call sites; spec tests added; gate; budget. The controller pushes and opens the PR.
+
+### Review
+
+The local copies are gone: `cross-chain-authority.ts`, `safeDeployment.ts`, `safe-queue.ts`, `safeOwners.ts`,
+`payout-receipts.ts` and the MultiSend codec. What stays in revnet is wiring: `handle-authority.ts` (the creation
+record for the handle authority, the R90 line) and `safe-transactions.ts` (the proposal origin, the R93 and
+no-service lines, and `confirmSafeExecution`). Kept stricter than the SDK: no refund in the reviewed execution's
+event, a JSON number nonce in an obsolete proposal's record, and the rejected recipient events of any project.
+
+Gate: dependencies, dead code, environment, deployment, types, lint, formatting ratchet, source, protocol and
+wallet-write checks pass; unit and coverage 1,811 passed, one skipped; browser build, standalone and browser checks
+(121 passed, four skipped); the production build passes last. All client JavaScript measures 2,640.0 KiB, so its
+budget rises from 2,627 to 2,641 KiB (the SDK's checks are larger than the copies); route budgets are unchanged.
