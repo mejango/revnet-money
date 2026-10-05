@@ -262,6 +262,17 @@ export function failTransactionActivityVerification(hash: Hex, message: string):
   });
 }
 
+/** Settle a mined write whose verification proved it failed: nothing changed, so it may be sent again. */
+export function settleTransactionActivityFailure(hash: Hex, message: string): void {
+  const current = transactionActivityForHash(hash);
+  if (!current) return;
+  updateTransactionActivity(current.id, {
+    status: "failed",
+    message,
+    manualVerificationRequired: false,
+  });
+}
+
 export function releaseTransactionActivityVerification(hash: Hex, message: string): void {
   const current = transactionActivityForHash(hash);
   if (!current) return;

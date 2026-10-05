@@ -5,6 +5,7 @@ import {
   failTransactionActivityVerification,
   holdTransactionActivityForVerification,
   releaseTransactionActivityVerification,
+  settleTransactionActivityFailure,
 } from "@/lib/transaction-activity";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { multiSendCallsOf } from "@bananapus/nana-sdk-core/safe";
@@ -86,7 +87,8 @@ export function requireRefundFreeSafeExecution(
 /**
  * Settles the journal entry of an `execTransaction` sent as `hash`, whose write left its receipt
  * to the caller: success only when the receipt proves `safeTxHash` succeeded with no refund and
- * `confirm` (the action's own postcondition) passes. Anything else marks it unverified and throws.
+ * `confirm` (the action's own postcondition) passes. A reverted transaction or an ExecutionFailure
+ * settles failed and may be sent again; anything else marks it unverified. Both throw.
  */
 export async function confirmSafeExecution({
   client,
@@ -102,17 +104,27 @@ export async function confirmSafeExecution({
   confirm?: (receipt: TransactionReceipt) => Promise<void>;
 }): Promise<TransactionReceipt> {
   holdTransactionActivityForVerification(hash, "Confirming the Safe's execution event.");
+  let failed = false;
   try {
     const receipt = await waitForReceiptWithRetry(client, hash);
+    const { status } = safeExecutionResult(receipt, safe, safeTxHash);
+    failed = status === "reverted" || status === "failed";
     requireRefundFreeSafeExecution(receipt, safe, safeTxHash);
     await confirm?.(receipt);
     releaseTransactionActivityVerification(hash, "The Safe's execution was confirmed onchain.");
     return receipt;
   } catch (cause) {
-    failTransactionActivityVerification(
-      hash,
-      "The Safe transaction was submitted, but its result failed verification. Inspect it and do not submit it again yet.",
-    );
+    if (failed) {
+      settleTransactionActivityFailure(
+        hash,
+        "The Safe transaction failed onchain. Its intended state changes did not occur.",
+      );
+    } else {
+      failTransactionActivityVerification(
+        hash,
+        "The Safe transaction was submitted, but its result failed verification. Inspect it and do not submit it again yet.",
+      );
+    }
     throw cause;
   }
 }

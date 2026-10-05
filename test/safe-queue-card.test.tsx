@@ -182,14 +182,15 @@ describe("Safe queue card", () => {
   });
 
   describe("executing a queued transaction from an owner's wallet", () => {
-    async function execute(logs: ReturnType<typeof executionLog>[]) {
+    async function execute(
+      logs: ReturnType<typeof executionLog>[] | ((safeTxHash: Hex) => object),
+    ) {
       const row = baseQueue(safeProposalFor({ to: TARGET, data: "0x1234" }, 5));
-      mocks.receipt.mockResolvedValue({
-        status: "success",
-        transactionHash: EXECUTION,
-        blockNumber: 1n,
-        logs,
-      });
+      mocks.receipt.mockResolvedValue(
+        typeof logs === "function"
+          ? logs(row.safeTxHash!)
+          : { status: "success", transactionHash: EXECUTION, blockNumber: 1n, logs },
+      );
       renderCard(8453);
       fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
       const dialog = await screen.findByRole("dialog");
@@ -215,6 +216,34 @@ describe("Safe queue card", () => {
         manualVerificationRequired: true,
       });
       expect(screen.queryByText(/Executed Safe transaction/)).toBeNull();
+    });
+
+    it.each([
+      [
+        "its transaction reverted",
+        () => ({ status: "reverted", transactionHash: EXECUTION, blockNumber: 1n, logs: [] }),
+        "reverted",
+      ],
+      [
+        "the Safe's call failed",
+        (safeTxHash: Hex) => ({
+          status: "success",
+          transactionHash: EXECUTION,
+          blockNumber: 1n,
+          logs: [executionLog(SAFE.address, safeTxHash, "ExecutionFailure")],
+        }),
+        "ExecutionFailure",
+      ],
+    ])("is settled failed, and can be sent again, when %s", async (_case, receipt, reason) => {
+      await execute(receipt);
+
+      expect(await screen.findByText(new RegExp(reason))).toBeVisible();
+      await waitFor(() =>
+        expect(transactionActivityForHash(EXECUTION)).toMatchObject({
+          status: "failed",
+          manualVerificationRequired: false,
+        }),
+      );
     });
 
     it("is confirmed by the Safe's ExecutionSuccess for its hash", async () => {
