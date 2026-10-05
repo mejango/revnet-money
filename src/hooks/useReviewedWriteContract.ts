@@ -18,13 +18,19 @@ import {
 import { requireNoViewAs } from "@/lib/view-as";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { gasWithHeadroom, simulateCallSequence } from "@bananapus/nana-sdk-core/review";
-import { safeServiceBase } from "@bananapus/nana-sdk-core/safe-service";
+import {
+  hasSafeService,
+  readSafeTransaction,
+  SAFE_NONCE_GUIDANCE,
+  safeExecutionResult,
+  type SafeQueuedTransaction,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
 import { useCallback, useMemo } from "react";
 import {
   encodeFunctionData,
-  isAddressEqual,
+  isHash,
   keccak256,
   stringToHex,
   type Abi,
@@ -42,8 +48,6 @@ import { getAccount, getPublicClient, simulateContract, switchChain } from "wagm
 
 export { isSafeConnection, isSafeConnector, useSafeConnection } from "@/lib/safe-connector";
 
-export const SAFE_NONCE_GUIDANCE =
-  "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
 /** Why a send was refused: its plan names one account (a beneficiary, a recipient, a position's owner) and another is connected. */
 export const ACCOUNT_CHANGED = "The connected account changed. Review again.";
 
@@ -65,13 +69,13 @@ function requirePlannedAccount(planned: unknown, connected: Address): void {
 }
 
 const safeInflight = new Map<string, Promise<void>>();
-// Safe emits ExecutionFailure instead of reverting only when safeTxGas or gasPrice is set.
-const SAFE_EXECUTION_FAILURE = keccak256(stringToHex("ExecutionFailure(bytes32,uint256)"));
 // Chain checks per watch: an execution Safe{Wallet} sent at once reaches the
 // chain within a minute of its reply, and a resumed watch finds it at once.
 const SAFE_EXECUTION_CHECKS = 12;
 const RECEIPT_UNCONFIRMED =
   "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
+const SAFE_RESULT_UNCONFIRMED =
+  "The receipt doesn't show this Safe transaction's result. Check it in Safe before retrying.";
 
 async function watchSafeProposal(
   id: string,
@@ -79,7 +83,7 @@ async function watchSafeProposal(
   chainId: number,
   client: PublicClient | undefined,
 ): Promise<void> {
-  const service = safeServiceBase(chainId);
+  const service = hasSafeService(chainId);
   if (!service && !client) return;
   const existing = safeInflight.get(id);
   if (existing) return existing;
@@ -96,6 +100,27 @@ async function watchSafeProposal(
           : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
     });
   };
+  /**
+   * Settles the proposal from its execution's receipt: only the Safe's own
+   * event for this proposal decides, never the receipt's status alone or
+   * another proposal's event in the same receipt.
+   */
+  const settle = async (executionHash: Hex) => {
+    const receipt = client
+      ? await waitForReceiptWithRetry(client, executionHash).catch(() => undefined)
+      : undefined;
+    const safe = tracked()?.account;
+    if (!receipt || !safe) {
+      updateTransactionActivity(id, { executionHash, message: RECEIPT_UNCONFIRMED });
+      return;
+    }
+    const result = safeExecutionResult(receipt, safe, hash);
+    if (result.status === "unproven") {
+      updateTransactionActivity(id, { executionHash, message: SAFE_RESULT_UNCONFIRMED });
+      return;
+    }
+    executed(result.status === "success", executionHash);
+  };
   const request = (async () => {
     // Without a Safe service only the chain can show an execution.
     for (let attempt = 0; attempt < (service ? 720 : SAFE_EXECUTION_CHECKS); attempt += 1) {
@@ -110,60 +135,54 @@ async function watchSafeProposal(
           () => false,
         ))
       ) {
-        const receipt = await waitForReceiptWithRetry(client, hash).catch(() => undefined);
-        if (!receipt) {
-          updateTransactionActivity(id, { executionHash: hash, message: RECEIPT_UNCONFIRMED });
-          return;
-        }
-        const account = tracked()?.account;
-        const failed = receipt.logs.some(
-          (log) =>
-            !!account &&
-            isAddressEqual(log.address, account) &&
-            log.topics[0]?.toLowerCase() === SAFE_EXECUTION_FAILURE,
-        );
-        executed(receipt.status === "success" && !failed, hash);
+        await settle(hash);
         return;
       }
-      if (service) {
+      const safe = tracked()?.account;
+      if (service && safe) {
+        // The status of the service's answer tells "not indexed yet" (404)
+        // apart from an outage without reading its error message.
+        let status = 0;
+        const observed: typeof fetch = async (input, init) => {
+          const response = await fetch(input, init);
+          status = response.status;
+          return response;
+        };
         try {
-          const response = await fetch(`${service}/api/v1/multisig-transactions/${hash}/`);
-          if (response.ok) {
-            const transaction = (await response.json()) as {
-              isExecuted?: boolean;
-              isSuccessful?: boolean | null;
-              transactionHash?: Hex | null;
-              confirmations?: unknown[];
-              confirmationsRequired?: number;
-            };
-            if (tracked()?.obsoleteSafeNonce !== undefined) return;
-            if (transaction.isExecuted) {
-              if (transaction.isSuccessful == null) {
-                updateTransactionActivity(id, {
-                  status: "safe-proposed",
-                  executionHash: transaction.transactionHash ?? undefined,
-                  message:
-                    "Safe reports this proposal as executed, but its success result is not available yet. Do not submit it again while confirmation is unresolved.",
-                });
-                await new Promise((resolve) => window.setTimeout(resolve, 5_000));
-                continue;
-              }
-              executed(transaction.isSuccessful, transaction.transactionHash ?? undefined);
+          // The record must name this Safe and hash to this proposal.
+          const proposal = (await readSafeTransaction(chainId, safe, hash, {
+            fetch: observed,
+          })) as SafeQueuedTransaction & {
+            transactionHash?: unknown;
+            confirmationsRequired?: number;
+          };
+          if (tracked()?.obsoleteSafeNonce !== undefined) return;
+          if (proposal.isExecuted) {
+            if (typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)) {
+              await settle(proposal.transactionHash);
               return;
             }
-            const approvals = transaction.confirmations?.length ?? 0;
-            const required = transaction.confirmationsRequired;
+            updateTransactionActivity(id, {
+              status: "safe-proposed",
+              message:
+                "Safe reports this proposal as executed, but its transaction is not available yet. Do not submit it again while confirmation is unresolved.",
+            });
+          } else {
+            const approvals = proposal.confirmations?.length ?? 0;
+            const required = proposal.confirmationsRequired;
             updateTransactionActivity(id, {
               status: "safe-proposed",
               message: `Safe proposal is not executed${required ? ` | ${approvals}/${required} approvals` : ""}. It remains asynchronous; do not submit it again.`,
             });
           }
         } catch {
-          updateTransactionActivity(id, {
-            status: "safe-proposed",
-            message:
-              "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
-          });
+          if (status !== 404) {
+            updateTransactionActivity(id, {
+              status: "safe-proposed",
+              message:
+                "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
+            });
+          }
         }
       }
       await new Promise((resolve) => window.setTimeout(resolve, 5_000));

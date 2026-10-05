@@ -105,13 +105,9 @@ vi.mock("@bananapus/nana-sdk-core/safe", async (importOriginal) => ({
   readAuthorityIdentity: mocks.readAuthorityIdentity,
   readBoundedSafeNonce: vi.fn(async () => null),
 }));
-vi.mock("@/lib/safe-queue", () => ({
+vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe-service")>()),
   listPendingSafeTransactions: mocks.listPendingSafeTransactions,
-  nextProposalNonce: vi.fn(),
-  proposeSafeTransaction: vi.fn(),
-  queuedTransactionMatchesCall: vi.fn(),
-  safeProposalFor: vi.fn(),
-  submitSafeConfirmation: vi.fn(),
 }));
 vi.mock("@/hooks/useReviewedSafeSignature", () => ({
   useReviewedSafeSignature: () => ({ signSafeTransactionAsync: vi.fn() }),

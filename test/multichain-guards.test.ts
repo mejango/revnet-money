@@ -5,7 +5,7 @@ import {
   verifyCallPreconditions,
   type ExpectedPayerDeployment,
 } from "@/lib/multichain-guards";
-import { SAFE_EXEC_ABI } from "@/lib/safe-queue";
+import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import {
   encodeAbiParameters,

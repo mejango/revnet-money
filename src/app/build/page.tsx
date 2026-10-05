@@ -931,7 +931,10 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     links: [
       { href: `${REFERENCE_ROOT}/src/hooks/useReviewedWriteContract.ts`, label: "Reviewed write" },
       { href: `${REFERENCE_ROOT}/src/hooks/useReviewedRelayr.ts`, label: "Relayr bundle" },
-      { href: `${REFERENCE_ROOT}/src/lib/safe-queue.ts`, label: "Safe queue" },
+      {
+        href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/v6/operator/SafeQueueCard.tsx`,
+        label: "Safe queue",
+      },
       { href: `${REFERENCE_ROOT}/src/lib/wagmiConfig.ts`, label: "Wallet config" },
       {
         href: `${SKILLS}/jb-relayr/SKILL.md`,

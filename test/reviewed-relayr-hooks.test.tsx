@@ -1,7 +1,7 @@
 import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
-import { SAFE_EXEC_ABI } from "@/lib/safe-queue";
 import type { TransactionReviewRequest } from "@/lib/transaction-review";
+import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import { act, renderHook } from "@testing-library/react";
 import {

@@ -1010,6 +1010,7 @@
       "tests": [
         "test/wallet-project-controls.test.ts",
         "test/operator-safe-route.test.ts",
+        "test/operator-safe-proposal.test.tsx",
         "test/relayr-write-routing.test.tsx"
       ]
     },
@@ -1017,7 +1018,7 @@
       "id": "safe-queue",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/operator/SafeQueueCard.tsx"],
-      "tests": ["test/safe-queue.test.ts"]
+      "tests": ["test/safe-queue-card.test.tsx"]
     },
     {
       "id": "safe-batch",

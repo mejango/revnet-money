@@ -1,3 +1,4 @@
+import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import {
   decodeEventLog,
@@ -16,7 +17,6 @@ import {
 import { verifyPayoutReceipt, type ExpectedPayoutReceipt } from "./payout-receipts";
 import { verifyRouterPendingReceipt, type RouterPendingReceiptGuard } from "./pending-router-calls";
 import { routerGatewayAbi } from "./router-gateway-abi";
-import { SAFE_EXEC_ABI } from "./safe-queue";
 
 /** Exact read-only source snapshots. Hex keeps the durable journal independent of ABI/BigInt JSON. */
 export type CallPrecondition = { address: Address; data: Hex; expected: Hex };

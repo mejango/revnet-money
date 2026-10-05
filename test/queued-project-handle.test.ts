@@ -11,12 +11,12 @@ import {
   verifyQueuedProjectHandlePostcondition,
   verifyQueuedProjectHandleTransaction,
 } from "@/lib/queuedProjectHandle";
-import type { SafeQueuedTransaction } from "@/lib/safe-queue";
 import {
   RevnetCoreContracts,
   getJBContractAddress,
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
+import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
 import {
   encodeFunctionData,
   encodeFunctionResult,

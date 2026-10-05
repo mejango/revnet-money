@@ -21,7 +21,7 @@ import type { ExpectedPayoutReceipt } from "@/lib/payout-receipts";
 import { verifyMetadataSource, type MetadataSourceGuard } from "@/lib/project-metadata-write";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { isSafeConnection } from "@/lib/safe-connector";
-import { requireSafeExecutionSuccess } from "@/lib/safe-queue";
+import { requireRefundFreeSafeExecution } from "@/lib/safe-transactions";
 import {
   dismissTransactionActivity,
   recordTransactionActivity,
@@ -545,7 +545,7 @@ async function verifyDestinationReceipts(
     }
     if (identity.expectedSafeExecution) {
       try {
-        requireSafeExecutionSuccess(
+        requireRefundFreeSafeExecution(
           receipt,
           identity.expectedSafeExecution.safe,
           identity.expectedSafeExecution.safeTxHash,

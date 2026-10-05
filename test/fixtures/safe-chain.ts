@@ -8,7 +8,15 @@ import {
   type SafeCreation,
 } from "@bananapus/nana-sdk-core/safe";
 import {
+  SAFE_EXEC_ABI,
+  safeTransactionHash,
+  type SafeConfirmation,
+  type SafeQueuedTransaction,
+} from "@bananapus/nana-sdk-core/safe-service";
+import {
   decodeFunctionData,
+  encodeAbiParameters,
+  encodeEventTopics,
   encodeFunctionResult,
   padHex,
   parseAbi,
@@ -183,4 +191,54 @@ export function creationService(safe: SafeFixture, prefix: string) {
       ? new Response(JSON.stringify(safe.servicePayload), { status: 200 })
       : new Response("Not found", { status: 404 }),
   );
+}
+
+/** A row as Safe's transaction service lists it: `tx` for `safe`, with its own hash. */
+export function queuedRow(
+  chainId: number,
+  safe: Address,
+  tx: SafeQueuedTransaction,
+  confirmations: SafeConfirmation[] = [],
+): SafeQueuedTransaction {
+  const row = { ...tx, safe, confirmations };
+  return { ...row, safeTxHash: safeTransactionHash(chainId, safe, row) };
+}
+
+/**
+ * Safe's transaction service on `prefix` for `safe`: it lists `pending`, accepts proposals and
+ * confirmations (recorded in `posts`), and answers anything else with a 404.
+ */
+export function safeTransactionService(
+  prefix: string,
+  safe: Address,
+  pending: readonly SafeQueuedTransaction[] = [],
+) {
+  const base = `https://api.safe.global/tx-service/${prefix}/api/v1`;
+  const posts: { url: string; body: Record<string, unknown> }[] = [];
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "POST") {
+      posts.push({ url, body: JSON.parse(String(init.body)) });
+      return new Response("{}", { status: 201 });
+    }
+    if (url.startsWith(`${base}/safes/${safe}/multisig-transactions/?`)) {
+      return new Response(JSON.stringify({ next: null, results: pending }));
+    }
+    return new Response("Not found", { status: 404 });
+  });
+  return { fetch, posts };
+}
+
+/** A Safe 1.4 ExecutionSuccess or ExecutionFailure log of `safe` for `safeTxHash`. */
+export function executionLog(
+  safe: Address,
+  safeTxHash: Hex,
+  eventName: "ExecutionSuccess" | "ExecutionFailure" = "ExecutionSuccess",
+  payment = 0n,
+) {
+  return {
+    address: safe,
+    topics: encodeEventTopics({ abi: SAFE_EXEC_ABI, eventName, args: { txHash: safeTxHash } }),
+    data: encodeAbiParameters([{ type: "uint256" }], [payment]),
+  };
 }

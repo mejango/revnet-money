@@ -1,4 +1,3 @@
-import type { SafeQueuedTransaction } from "@/lib/safe-queue";
 import {
   JBCoreContracts,
   RevnetCoreContracts,
@@ -7,6 +6,7 @@ import {
   revOwnerAbi,
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
+import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
 import {
   decodeFunctionData,
   encodeFunctionData,
@@ -174,7 +174,7 @@ function assertCanonicalHandleSafeEnvelope(tx: SafeQueuedTransaction): void {
     ["gasToken", tx.gasToken],
     ["refundReceiver", tx.refundReceiver],
   ] as const) {
-    if (!isAddress(value)) {
+    if (typeof value !== "string" || !isAddress(value)) {
       throw new Error(`The queued transaction has a malformed ${field}.`);
     }
     if (!isAddressEqual(value, zeroAddress)) {

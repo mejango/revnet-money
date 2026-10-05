@@ -1,31 +1,57 @@
-import { routeSafeBatch } from "@/app/[slug]/components/v6/operator/useSafeBatchSubmit";
-import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@/lib/safe-batch";
 import {
-  hasSafeService,
-  onchainApprovalStep,
-  proposeSafeTransaction,
-  queuedTransactionMatchesCall,
+  routeSafeBatch,
+  useSafeBatchSubmit,
+} from "@/app/[slug]/components/v6/operator/useSafeBatchSubmit";
+import { buildStep, composeBatch } from "@/lib/safe-batch";
+import {
+  encodeMultiSend,
+  MULTI_SEND_CALL_ONLY,
+  type AuthorityIdentity,
+} from "@bananapus/nana-sdk-core/safe";
+import {
   safeBatchProposalFor,
-  safeExecutionArgs,
-  safeProposalFor,
   safeTransactionHash,
-} from "@/lib/safe-queue";
-import type { AuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
-import { getAddress, type Address, type Hex } from "viem";
-import { describe, expect, it, vi } from "vitest";
+  type SafeQueuedTransaction,
+} from "@bananapus/nana-sdk-core/safe-service";
+import { act, renderHook } from "@testing-library/react";
+import type { Address, Hex } from "viem";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { provenSafe, queuedRow, safeChain, safeTransactionService } from "./fixtures/safe-chain";
 
 // wallet-action:safe-batch
 
 const SIGNER = "0x1111111111111111111111111111111111111111" as Address;
 const OTHER = "0x2222222222222222222222222222222222222222" as Address;
 const SAFE = "0x3333333333333333333333333333333333333333" as Address;
-const REGISTRY = "0x72F55a54CD53410a5Ff175508a5A384227081788" as Address;
-const ROUTER_REGISTRY = "0xe0427F250fdb0379c8E98e884Ee4570521208CbC" as Address;
+const HOOK = "0xB222Da5A71e8FB89a5A38b7c920EaB5DfbC74B91" as Address;
+const SIGNATURE = `0x${"12".repeat(64)}1b` as Hex;
 
-const calls = [
-  { to: REGISTRY, data: "0x779b0290aa" as Hex, value: 0n },
-  { to: ROUTER_REGISTRY, data: "0xf3e37d01bb" as Hex, value: 0n },
-];
+const mocks = vi.hoisted(() => ({
+  account: "0x2222222222222222222222222222222222222222",
+  sign: vi.fn(),
+  client: undefined as unknown,
+}));
+
+vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
+vi.mock("wagmi/actions", () => ({ getAccount: () => ({ address: mocks.account, chainId: 8453 }) }));
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+}));
+vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
+vi.mock("@/hooks/useReviewedWriteContract", () => ({
+  followSubmission: vi.fn(),
+  isSafeConnection: () => false,
+  proposeSafeBatch: vi.fn(),
+  requireOnchainExecution: vi.fn(),
+  useWriteContract: () => ({ writeContractAsync: vi.fn() }),
+}));
+vi.mock("@/hooks/useReviewedSafeSignature", () => ({
+  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
+}));
+vi.mock("@/app/[slug]/components/v6/operator/operatorLib", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/app/[slug]/components/v6/operator/operatorLib")>()),
+  publicClientFor: () => mocks.client,
+}));
 
 const safeIdentity = (owners: Address[]): AuthorityIdentity => ({
   kind: "safe",
@@ -43,71 +69,108 @@ const safeIdentity = (owners: Address[]): AuthorityIdentity => ({
   ownersAreEoas: true,
 });
 
-describe("Safe batch proposal (operation 1)", () => {
-  it("shapes one MultiSendCallOnly delegatecall at the given nonce", () => {
-    const tx = safeBatchProposalFor(calls, 9);
-    expect(tx).toEqual({
-      to: MULTI_SEND_CALL_ONLY,
-      value: "0",
-      data: encodeMultiSend(calls),
-      operation: 1,
-      safeTxGas: "0",
-      baseGas: "0",
-      gasPrice: "0",
-      gasToken: "0x0000000000000000000000000000000000000000",
-      refundReceiver: "0x0000000000000000000000000000000000000000",
-      nonce: 9,
-      confirmations: [],
-    });
-    expect(tx.data!.slice(0, 10)).toBe("0x8d80ff0a");
-  });
+describe("a batch signed for the operator Safe on a chain with a Safe service", () => {
+  const OPERATOR_SAFE = provenSafe();
+  const [SIGNING_OWNER, CO_SIGNER] = OPERATOR_SAFE.owners;
+  const steps = [
+    buildStep({ kind: "setHookFor", chainId: 8453, projectId: 2, values: { hook: HOOK } }),
+  ];
+  const batch = (nonce: number) => safeBatchProposalFor(composeBatch(steps).calls, nonce);
 
-  it("matches a queued batch only on the same target, bytes, and operation", () => {
-    const tx = safeBatchProposalFor(calls, 9);
-    const batchCall = { to: MULTI_SEND_CALL_ONLY, data: encodeMultiSend(calls), operation: 1 };
-    expect(queuedTransactionMatchesCall(tx, batchCall)).toBe(true);
-    expect(queuedTransactionMatchesCall(tx, { ...batchCall, operation: 0 })).toBe(false);
-    expect(queuedTransactionMatchesCall(tx, { ...batchCall, operation: undefined })).toBe(false);
-    expect(
-      queuedTransactionMatchesCall(tx, {
-        ...batchCall,
-        data: encodeMultiSend([calls[1]!, calls[0]!]),
+  function queue(pending: SafeQueuedTransaction[] = []) {
+    const service = safeTransactionService("base", OPERATOR_SAFE.address, pending);
+    vi.stubGlobal("fetch", service.fetch);
+    return service;
+  }
+
+  async function submit() {
+    const { result } = renderHook(() => useSafeBatchSubmit());
+    let outcome: Awaited<ReturnType<ReturnType<typeof useSafeBatchSubmit>["submit"]>>;
+    await act(async () => {
+      outcome = await result.current.submit({
+        chainId: 8453,
+        steps,
+        route: {
+          kind: "safe-signer",
+          safe: OPERATOR_SAFE.address,
+          owners: OPERATOR_SAFE.owners,
+          threshold: 2,
+        },
+        onProgress: vi.fn(),
+        onStep: vi.fn(),
+      });
+    });
+    return outcome!;
+  }
+
+  beforeEach(() => {
+    mocks.account = SIGNING_OWNER;
+    mocks.sign.mockResolvedValue(SIGNATURE);
+    const chain = safeChain(OPERATOR_SAFE.address, { nonce: 5n });
+    mocks.client = {
+      ...chain.client,
+      getCode: async ({ address }: { address: Address }) =>
+        address.toLowerCase() === MULTI_SEND_CALL_ONLY.toLowerCase()
+          ? "0x6080"
+          : chain.getCode({ address }),
+      simulateCalls: async ({ calls }: { calls: unknown[] }) => ({
+        results: calls.map(() => ({ status: "success" })),
       }),
-    ).toBe(false);
-    // A plain CALL proposal never passes for the batch, nor the batch for it.
-    const plain = safeProposalFor({ to: MULTI_SEND_CALL_ONLY, data: encodeMultiSend(calls) }, 9);
-    expect(queuedTransactionMatchesCall(plain, batchCall)).toBe(false);
-    expect(queuedTransactionMatchesCall(plain, { ...batchCall, operation: 0 })).toBe(true);
+    };
   });
 
-  it("signs the operation into the EIP-712 hash", () => {
-    const batch = safeBatchProposalFor(calls, 9);
-    const plain = safeProposalFor({ to: MULTI_SEND_CALL_ONLY, data: encodeMultiSend(calls) }, 9);
-    expect(safeTransactionHash(8453, SAFE, batch)).not.toBe(safeTransactionHash(8453, SAFE, plain));
+  it("proposes one MultiSend delegatecall with this app's origin", async () => {
+    const service = queue();
+
+    const outcome = await submit();
+    const hash = safeTransactionHash(8453, OPERATOR_SAFE.address, batch(5));
+    expect(outcome).toEqual({ kind: "proposed", hash, calls: 1 });
+    expect(service.posts).toEqual([
+      {
+        url: `https://api.safe.global/tx-service/base/api/v1/safes/${OPERATOR_SAFE.address}/multisig-transactions/`,
+        body: expect.objectContaining({
+          to: MULTI_SEND_CALL_ONLY,
+          data: encodeMultiSend(composeBatch(steps).calls),
+          operation: 1,
+          nonce: "5",
+          contractTransactionHash: hash,
+          sender: SIGNING_OWNER,
+          signature: SIGNATURE,
+          origin: "revnet.money",
+        }),
+      },
+    ]);
   });
 
-  it("posts the exact operation-1 payload to the Safe service and returns its hash", async () => {
-    const fetchMock = vi.fn(async () => new Response("{}", { status: 201 }));
-    vi.stubGlobal("fetch", fetchMock);
-    const tx = safeBatchProposalFor(calls, 9);
-    const hash = await proposeSafeTransaction(8453, SAFE, tx, SIGNER, "0x99");
+  it("confirms the identical queued batch instead of proposing it twice", async () => {
+    const queued = queuedRow(8453, OPERATOR_SAFE.address, batch(5), [
+      { owner: CO_SIGNER, signature: SIGNATURE },
+    ]);
+    const service = queue([queued]);
 
-    expect(hash).toBe(safeTransactionHash(8453, SAFE, tx));
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe(
-      `https://api.safe.global/tx-service/base/api/v1/safes/${getAddress(SAFE)}/multisig-transactions/`,
-    );
-    expect(JSON.parse(String(init.body))).toMatchObject({
-      to: MULTI_SEND_CALL_ONLY,
-      value: "0",
-      data: encodeMultiSend(calls),
-      operation: 1,
-      nonce: "9",
-      contractTransactionHash: hash,
-      sender: getAddress(SIGNER),
-      signature: "0x99",
-      origin: "revnet.money",
+    await expect(submit()).resolves.toEqual({
+      kind: "confirmed",
+      hash: queued.safeTxHash,
+      calls: 1,
     });
+    expect(service.posts).toEqual([
+      {
+        url: `https://api.safe.global/tx-service/base/api/v1/multisig-transactions/${queued.safeTxHash}/confirmations/`,
+        body: { signature: SIGNATURE },
+      },
+    ]);
+  });
+
+  it("signs nothing more when its own confirmation already counts", async () => {
+    const service = queue([
+      queuedRow(8453, OPERATOR_SAFE.address, batch(5), [
+        { owner: SIGNING_OWNER, signature: SIGNATURE },
+      ]),
+    ]);
+
+    await expect(submit()).resolves.toMatchObject({ kind: "confirmed" });
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(service.posts).toEqual([]);
   });
 });
 
@@ -194,54 +257,5 @@ describe("batch routing", () => {
         safeConnection: false,
       }),
     ).toMatchObject({ kind: "refused", message: "Connect a wallet first." });
-  });
-});
-
-describe("onchain approval on chains with no Safe service", () => {
-  const THIRD = "0x0444444444444444444444444444444444444444" as Address;
-
-  it("knows which chains have the hosted service", () => {
-    expect(hasSafeService(11155111)).toBe(true);
-    expect(hasSafeService(421614)).toBe(false);
-    expect(hasSafeService(11155420)).toBe(false);
-  });
-
-  it("approves, waits, or executes once this owner meets the threshold", () => {
-    expect(onchainApprovalStep({ account: SIGNER, approved: [], threshold: 3 })).toEqual({
-      kind: "approve",
-    });
-    expect(onchainApprovalStep({ account: SIGNER, approved: [SIGNER], threshold: 3 })).toEqual({
-      kind: "waiting",
-    });
-    expect(onchainApprovalStep({ account: SIGNER, approved: [OTHER], threshold: 3 })).toEqual({
-      kind: "approve",
-    });
-    expect(
-      onchainApprovalStep({ account: SIGNER, approved: [SIGNER, OTHER], threshold: 3 }),
-    ).toEqual({
-      kind: "waiting",
-    });
-    // Safe counts the executor, so the owner reaching the threshold skips approveHash.
-    expect(
-      onchainApprovalStep({ account: SIGNER, approved: [OTHER, THIRD], threshold: 3 }),
-    ).toEqual({
-      kind: "execute",
-      signers: [OTHER, THIRD, SIGNER],
-    });
-    expect(onchainApprovalStep({ account: SIGNER, approved: [], threshold: 1 })).toEqual({
-      kind: "execute",
-      signers: [SIGNER],
-    });
-  });
-
-  it("executes with pre-validated signatures in ascending owner order", () => {
-    const tx = safeBatchProposalFor(calls, 3);
-    const signatures = safeExecutionArgs(
-      { ...tx, confirmations: [OTHER, THIRD, SIGNER].map((owner) => ({ owner })) },
-      [SIGNER, OTHER, THIRD],
-    )[9];
-    const approved = (owner: Address) =>
-      `${owner.slice(2).toLowerCase().padStart(64, "0")}${"0".repeat(64)}01`;
-    expect(signatures).toBe(`0x${approved(THIRD)}${approved(SIGNER)}${approved(OTHER)}`);
   });
 });

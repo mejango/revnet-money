@@ -10,10 +10,10 @@ import {
   type PendingProject,
   type PendingRouterPayment,
 } from "@/lib/pending-router-calls";
-import { safeQueueLink } from "@/lib/safe-queue";
 import { formatWalletError } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
+import { safeQueueUrl } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useSyncExternalStore } from "react";
 import { useAccount } from "wagmi";
@@ -236,7 +236,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               proposals.{" "}
               <a
                 className="underline"
-                href={safeQueueLink(proposal.chainId, proposal.safe) ?? undefined}
+                href={safeQueueUrl(proposal.chainId, proposal.safe) ?? undefined}
                 target="_blank"
                 rel="noreferrer"
               >

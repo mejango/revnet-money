@@ -14,8 +14,8 @@ import {
   writeBatch,
   type BatchStep,
 } from "@/lib/safe-batch";
-import { hasSafeService } from "@/lib/safe-queue";
 import { formatWalletError } from "@/lib/utils";
+import { hasSafeService } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import type { AbiFunction, Address } from "viem";
