@@ -164,9 +164,16 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
       }),
     );
 
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
-    ).rejects.toBeInstanceOf(SafeProposalPendingError);
+    const refused = await proposeSafeBatch(
+      mocks.config as never,
+      8453,
+      "Make the market",
+      CALLS,
+    ).catch((cause: unknown) => cause);
+    expect(refused).toBeInstanceOf(SafeProposalPendingError);
+    expect((refused as Error).message).toContain(
+      "Check it in Safe, then dismiss it in your account activity.",
+    );
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
 
     dismissTransactionActivity(transactionActivityForHash(proposal)!.id);

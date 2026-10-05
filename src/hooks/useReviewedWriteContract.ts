@@ -333,7 +333,9 @@ export async function proposeSafeBatch(
           activity.status === "pending" ||
           activity.status === "safe-proposed"),
     );
-    if (duplicate?.hash) throw new SafeProposalPendingError(duplicate.hash, title);
+    if (duplicate?.hash) {
+      throw new SafeProposalPendingError(duplicate.hash, title, duplicate.safeResultUnconfirmed);
+    }
 
     // The calls depend on each other (an allowance, then the spend), so the
     // SDK simulates them as one sequence where the RPC offers eth_simulateV1,
@@ -561,7 +563,11 @@ export function useWriteContract(
         );
         if (duplicate?.hash) {
           if (duplicate.status === "safe-proposed") {
-            throw new SafeProposalPendingError(duplicate.hash, functionName);
+            throw new SafeProposalPendingError(
+              duplicate.hash,
+              functionName,
+              duplicate.safeResultUnconfirmed,
+            );
           }
           throw new Error(
             `An identical ${functionName} transaction is already pending as ${duplicate.hash}. Check it before submitting again.`,
@@ -792,12 +798,16 @@ export function submittedViaSafe(hash?: Hex): boolean {
 export class SafeProposalPendingError extends Error {
   readonly name = "SafeProposalPendingError";
 
+  /** `unconfirmed`: the app can't confirm the proposal's result, so its account dismisses it. */
   constructor(
     readonly hash: Hex,
     action: string,
+    unconfirmed = false,
   ) {
     super(
-      `${action} was proposed to Safe as ${hash}, but it has not executed. Complete its approvals and execution in Safe, then resume; do not submit it again.`,
+      unconfirmed
+        ? `${action} was proposed to Safe as ${hash}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`
+        : `${action} was proposed to Safe as ${hash}, but it has not executed. Complete its approvals and execution in Safe, then resume; do not submit it again.`,
     );
   }
 }
