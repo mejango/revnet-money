@@ -107,3 +107,18 @@ rises by 1 KiB to 2,642 KiB. Left closed: the SDK's `multiSendCallsOf` knows Mul
 Gate on the final commit: the same checks pass; unit and coverage 1,839 passed, one skipped; browser checks 121
 passed, four skipped; the production build passes last. All client JavaScript measures 2,641.5 KiB, within 2,642 KiB.
 SDK 2.20.0 teaches `multiSendCallsOf` MultiSendCallOnly 1.4.1; a follow-up takes it.
+
+### Fix round 3
+
+- [x] An unconfirmed proposal's card, and its Dismiss, stay in the account's activity once its hash is indexed.
+- [x] Every proposal the app can't follow ends unconfirmed: a chain without a service after a minute; a proposal the
+      service never lists, a record it can't authenticate, one reported executed without its transaction, one whose
+      nonce another transaction took, or a receipt that never comes, when the watch gives up or an hour after the
+      proposal was made. A proposal awaiting approvals, or behind an outage, is followed on the next load.
+- [x] An identical call refused by an unconfirmed proposal says to check it in Safe and dismiss it.
+- [x] The reload filter is the only guard against watching a marked entry again, and its test fails without it.
+- [x] Every creation record read, the page's too, is one 4 second try with a 429 refused.
+
+Gate on the final commit: the same checks pass; unit and coverage 1,849 passed, one skipped; browser checks 121
+passed, four skipped; the production build passes. All client JavaScript measures 2,641.9 KiB; the budget rose by
+1 KiB to 2,643 KiB when a build measured 2,642.0 KiB at the old budget.
