@@ -5,7 +5,15 @@ import {
   type SafeQueuedTransaction,
 } from "@bananapus/nana-sdk-core/safe-service";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { encodeFunctionData, parseAbi, zeroAddress, type Address, type Hex } from "viem";
+import {
+  encodeFunctionData,
+  HttpRequestError,
+  parseAbi,
+  TransactionNotFoundError,
+  zeroAddress,
+  type Address,
+  type Hex,
+} from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executionLog, SAFE_OWNER_A, safeChain } from "./fixtures/safe-chain";
 
@@ -170,7 +178,7 @@ beforeEach(() => {
   mocks.waitForTransactionReceipt.mockImplementation(() => new Promise(() => undefined));
   mocks.getTransactionReceipt.mockRejectedValue(new Error("Receipt not found"));
   // A Safe proposal hash is never a transaction the chain knows.
-  mocks.getTransaction.mockRejectedValue(new Error("Transaction not found"));
+  mocks.getTransaction.mockRejectedValue(new TransactionNotFoundError({ hash: HASH }));
   mocks.safeReads = safeChain(ACCOUNT);
   mocks.wagmiReceipt.mockReturnValue({
     data: undefined,
@@ -1163,6 +1171,36 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();
     }
   });
+
+  it.each([
+    ["every one of its chain checks fails", () => true],
+    ["its last chain check fails", (check: number) => check === 12],
+  ])(
+    "follows a proposal again on the next load, on a chain without a Safe service, when %s",
+    async (_case, fails) => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      const proposal = safeTransactionHash(11155420, ACCOUNT, PROPOSED);
+      savedProposal(activity, proposal, 11155420);
+      let checks = 0;
+      mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => {
+        checks += 1;
+        // A node that can't be reached says nothing about the transaction.
+        throw fails(checks)
+          ? new HttpRequestError({ url: "https://rpc.example", details: "fetch failed" })
+          : new TransactionNotFoundError({ hash });
+      });
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(20 * 5_000);
+
+      expect(mocks.getTransaction).toHaveBeenCalledTimes(12);
+      expect(activity.transactionActivityForHash(proposal)).toMatchObject({
+        status: "safe-proposed",
+      });
+      expect(activity.transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();
+    },
+  );
 
   describe("a proposal the app can't follow to a result", () => {
     const EXECUTION = `0x${"34".repeat(32)}` as Hex;

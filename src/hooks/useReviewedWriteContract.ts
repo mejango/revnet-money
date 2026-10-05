@@ -40,6 +40,7 @@ import {
   isHash,
   keccak256,
   stringToHex,
+  TransactionNotFoundError,
   type Abi,
   type Address,
   type Hex,
@@ -267,6 +268,14 @@ async function watchSafeProposal(
       return "live";
     }
   };
+  /**
+   * The chain's transaction with the proposal's hash: null when the chain has none, and undefined
+   * when the node can't be reached, which says nothing about it.
+   */
+  const findExecution = (chain: PublicClient) =>
+    chain
+      .getTransaction({ hash })
+      .catch((error: unknown) => (error instanceof TransactionNotFoundError ? null : undefined));
   // Without a Safe service or a client for its chain, nothing can follow the proposal.
   if (!service && !client) {
     unconfirmed();
@@ -286,16 +295,18 @@ async function watchSafeProposal(
       // The SDK then reads the Safe's one execution event in that receipt,
       // whatever its hash, so the execution must run the reviewed calls.
       const execution =
-        client && attempt < SAFE_EXECUTION_CHECKS
-          ? await client.getTransaction({ hash }).catch(() => undefined)
-          : undefined;
+        client && attempt < SAFE_EXECUTION_CHECKS ? await findExecution(client) : null;
       if (execution) {
         if (executesReviewed(execution)) await settle(hash);
         else unconfirmed();
         return;
       }
       const safe = safeOf();
-      const look = service && safe ? await askService(safe) : "stuck";
+      let look: "done" | "live" | "stuck";
+      if (service) look = safe ? await askService(safe) : "stuck";
+      // Without a Safe service only the chain answers, and a check it couldn't answer leaves the
+      // proposal live.
+      else look = execution === undefined ? "live" : "stuck";
       if (look === "done") return;
       stuckLooks = look === "stuck" ? stuckLooks + 1 : 0;
       // What the app still can't follow an hour after the proposal was made, it never will.
