@@ -20,31 +20,34 @@ const PROVEN_CREATION_TTL_MS = 24 * 60 * 60_000;
 const UNPROVEN_CREATION_TTL_MS = 60_000;
 const MAX_CACHED_CREATIONS = 500;
 
-type CachedCreation = { creation: SafeCreation | null; proven: boolean; expires: number };
-
 /** Each Safe's creation record per chain, kept for the life of the page or the server process. */
-const creations = new Map<string, CachedCreation>();
+const creations = new Map<string, { read: Promise<SafeCreation | null>; expires: number }>();
 
 function creationKey(chainId: number, safe: Address): string {
   return `${chainId}:${safe.toLowerCase()}`;
 }
 
-function cachedCreation(chainId: number, safe: Address): CachedCreation | undefined {
+/** The read of `safe`'s creation record on `chainId` while it is cached, finished or not. */
+function cachedCreation(chainId: number, safe: Address): Promise<SafeCreation | null> | undefined {
   const cached = creations.get(creationKey(chainId, safe));
-  return cached && cached.expires > Date.now() ? cached : undefined;
+  return cached && cached.expires > Date.now() ? cached.read : undefined;
 }
 
-async function readCreation(
+/**
+ * The record of how `safe` was made, from `chainId`'s Safe service. Reads of one Safe share a
+ * request, as Juicebox Money's do; a record that proves the Safe's address is kept for a day,
+ * anything else for a minute.
+ */
+function readCreation(
   chainId: number,
   safe: Address,
   options: SafeServiceOptions,
-): Promise<CachedCreation> {
-  const creation = await fetchSafeCreation(safe, chainId, options);
-  const proven = creation !== null && proveSafeCreation(creation, safe).valid;
+): Promise<SafeCreation | null> {
+  const cached = cachedCreation(chainId, safe);
+  if (cached) return cached;
   const entry = {
-    creation,
-    proven,
-    expires: Date.now() + (proven ? PROVEN_CREATION_TTL_MS : UNPROVEN_CREATION_TTL_MS),
+    read: fetchSafeCreation(safe, chainId, options),
+    expires: Date.now() + UNPROVEN_CREATION_TTL_MS,
   };
   const key = creationKey(chainId, safe);
   creations.delete(key);
@@ -52,7 +55,12 @@ async function readCreation(
   if (creations.size > MAX_CACHED_CREATIONS) {
     creations.delete(creations.keys().next().value!);
   }
-  return entry;
+  void entry.read.then((creation) => {
+    if (creation && proveSafeCreation(creation, safe).valid) {
+      entry.expires = Date.now() + PROVEN_CREATION_TTL_MS;
+    }
+  });
+  return entry.read;
 }
 
 /**
@@ -60,29 +68,30 @@ async function readCreation(
  * creation record it needs before it trusts a Safe on another chain. The record comes from the
  * project chain's Safe service, only for a Safe, and is cached per chain and Safe. Without a
  * record that proves the Safe's address (no service, a failed request, another Safe's record) a
- * Safe reads `unproven-creation` and is not allowed.
+ * Safe reads `unproven-creation` and is not allowed. A Safe's first check without a cached record
+ * asks the SDK twice: once to learn it is a Safe, and again with a record that proves it.
  */
 export async function readHandleAuthority(
   args: HandleAuthorityArgs,
   options: SafeServiceOptions = {},
 ): Promise<HandleAuthority> {
   const known = cachedCreation(args.sourceChainId, args.authority);
-  const authority = await readCrossChainHandleAuthority({
-    ...args,
-    creation: known?.creation ?? null,
-  });
+  const creation = known ? await known : null;
+  const authority = await readCrossChainHandleAuthority({ ...args, creation });
   // The SDK reads the authority on its project chain; only a Safe there needs a record.
-  if (known || authority.source?.kind !== "safe") {
-    return { ...authority, creation: known?.creation ?? null };
-  }
+  if (known || authority.source?.kind !== "safe") return { ...authority, creation };
   const read = await readCreation(args.sourceChainId, args.authority, options);
   // The record decides the verdict only for an otherwise matching Safe: the SDK weighs it then.
-  if (authority.status !== "unproven-creation" || !read.proven) {
-    return { ...authority, creation: read.creation };
+  if (
+    authority.status !== "unproven-creation" ||
+    !read ||
+    !proveSafeCreation(read, args.authority).valid
+  ) {
+    return { ...authority, creation: read };
   }
   return {
-    ...(await readCrossChainHandleAuthority({ ...args, creation: read.creation })),
-    creation: read.creation,
+    ...(await readCrossChainHandleAuthority({ ...args, creation: read })),
+    creation: read,
   };
 }
 

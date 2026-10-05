@@ -173,7 +173,17 @@ describe("project handle authority across chains", () => {
     expect(missing).toHaveBeenCalledTimes(2);
   });
 
-  it("reads the project chain's authority once per check", async () => {
+  it("asks the Safe service once for checks of one Safe that start together", async () => {
+    const proven = creationService(SAFE, "base");
+    vi.stubGlobal("fetch", proven);
+
+    const checks = await Promise.all([1, 2, 3].map(() => readHandleAuthority(onBaseAndEthereum())));
+
+    expect(checks.map((check) => check.status)).toEqual(["valid-safe", "valid-safe", "valid-safe"]);
+    expect(proven).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the project chain's authority once per check of an authority that is not a Safe", async () => {
     const source = safeChain(null);
     await readHandleAuthority({
       sourceChainId: 10,
