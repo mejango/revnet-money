@@ -194,9 +194,21 @@ async function watchSafeProposal(
       : undefined;
     const safe = safeOf();
     if (!receipt || !safe) {
-      // A receipt still missing an hour after the proposal was made is not coming.
-      if (pastHorizon()) unconfirmed(executionHash);
-      else updateTransactionActivity(id, { executionHash, message: RECEIPT_UNCONFIRMED });
+      // A receipt still missing an hour after this execution was first seen is not coming.
+      const seen = tracked();
+      const seenAt =
+        seen?.executionHash?.toLowerCase() === executionHash.toLowerCase()
+          ? (seen.executionSeenAt ?? Date.now())
+          : Date.now();
+      if (Date.now() - seenAt >= SAFE_RESULT_HORIZON_MS) {
+        unconfirmed(executionHash);
+        return;
+      }
+      updateTransactionActivity(id, {
+        executionHash,
+        executionSeenAt: seenAt,
+        message: RECEIPT_UNCONFIRMED,
+      });
       return;
     }
     const result = safeExecutionResult(receipt, safe, hash);

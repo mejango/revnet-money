@@ -98,6 +98,8 @@ const PROPOSAL = safeTransactionHash(11155111, ACCOUNT, PROPOSED);
 const OTHER_PROPOSAL = `0x${"56".repeat(32)}` as Hex;
 const UNCONFIRMED =
   "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
+const RECEIPT_UNCONFIRMED =
+  "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
 const SIGNATURE = `0x${"12".repeat(64)}1b` as Hex;
 
 /**
@@ -1382,10 +1384,11 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });
 
-    it("ends unconfirmed, an hour after it was made, when the chain never returns its execution's receipt", async () => {
+    it("ends unconfirmed when the chain still returns no receipt an hour after its execution was first seen", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
-      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
+      // Made two hours ago, and reported executed only now.
+      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - 2 * HOUR);
       serviceAnswering(
         () =>
           new Response(
@@ -1393,7 +1396,7 @@ describe("reviewed write hook", () => {
               ...PROPOSED,
               safe: ACCOUNT,
               isExecuted: true,
-              transactionHash: `0x${"34".repeat(32)}`,
+              transactionHash: EXECUTION,
             }),
           ),
       );
@@ -1401,9 +1404,22 @@ describe("reviewed write hook", () => {
 
       hooks.resumeSafeProposalTracking(mocks.config as never);
       await vi.advanceTimersByTimeAsync(5 * 60_000);
+      // Its execution is minutes old, so its receipt may still come.
+      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "safe-proposed",
+        executionHash: EXECUTION,
+        message: RECEIPT_UNCONFIRMED,
+      });
+      expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
+
+      // A load an hour later still gets no receipt for it.
+      await vi.advanceTimersByTimeAsync(HOUR);
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
 
       expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
         status: "safe-proposed",
+        executionHash: EXECUTION,
         message: UNCONFIRMED,
         safeResultUnconfirmed: true,
       });

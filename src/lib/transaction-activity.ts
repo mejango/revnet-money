@@ -53,6 +53,8 @@ export type TransactionActivity = {
    */
   safeResultUnconfirmed?: boolean;
   executionHash?: Hex;
+  /** When a Safe proposal's `executionHash` was first recorded without its receipt. */
+  executionSeenAt?: number;
   bundleUuid?: string;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];
   relayrPayment?: { target: Address; data: Hex; value: string };
