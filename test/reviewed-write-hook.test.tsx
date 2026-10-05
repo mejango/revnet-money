@@ -121,6 +121,11 @@ function savedProposal(
 }
 
 const HOUR = 60 * 60_000;
+/** The raw call that reads a Safe's nonce. */
+const NONCE_CALL = encodeFunctionData({
+  abi: parseAbi(["function nonce() view returns (uint256)"]),
+  functionName: "nonce",
+});
 
 /** The Safe's own transaction running `call`, as the chain returns it for an execution sent at once. */
 function executionOf(call: { to: Address; data: Hex }, safe: Address = ACCOUNT) {
@@ -1251,6 +1256,26 @@ describe("reviewed write hook", () => {
           activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed,
         ).toBeUndefined();
       }
+    });
+
+    it("reads the Safe's nonce at most once a minute", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      mocks.safeReads = safeChain(ACCOUNT, { nonce: 7n });
+      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
+      const service = serviceAnswering(
+        () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false })),
+      );
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+      expect(service.mock.calls.length).toBeGreaterThanOrEqual(60);
+      const nonceReads = mocks.safeReads.request.mock.calls.filter(
+        ([args]) => (args.params[0] as { data?: Hex } | undefined)?.data === NONCE_CALL,
+      );
+      expect(nonceReads.length).toBeGreaterThanOrEqual(5);
+      expect(nonceReads.length).toBeLessThanOrEqual(6);
     });
 
     it.each([

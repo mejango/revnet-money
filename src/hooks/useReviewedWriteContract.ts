@@ -156,6 +156,10 @@ async function watchSafeProposal(
       ? { owners: identity.owners, threshold: identity.threshold }
       : null;
   });
+  /** The Safe's live nonce, or null when it can't be read. */
+  const liveNonce = rereadEveryMinute(async (safe) =>
+    client ? await readBoundedSafeNonce(client, safe).catch(() => null) : null,
+  );
   const executed = (isSuccessful: boolean, transactionHash: Hex | undefined) => {
     const needsReceiptVerification = tracked()?.manualVerificationRequired === true;
     updateTransactionActivity(id, {
@@ -251,8 +255,7 @@ async function watchSafeProposal(
       // A nonce the Safe has moved past was taken by another transaction, or by this proposal's
       // own execution that the service has yet to list, which the watch's run of looks waits out.
       // It is read only after the hour, when the watch may end the proposal.
-      const nonce =
-        pastHorizon() && client ? await readBoundedSafeNonce(client, safe).catch(() => null) : null;
+      const nonce = pastHorizon() ? await liveNonce(safe) : null;
       return nonce !== null && nonce > message.nonce ? "stuck" : "live";
     } catch {
       if (status === 404 || (status >= 200 && status < 300)) return "stuck";
