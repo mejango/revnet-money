@@ -1,14 +1,12 @@
 import { Nav } from "@/components/layout/Nav";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
 import { formatProjectPreviewBalance, projectPreviewSlogan } from "@/lib/project-link-preview";
-import { PROJECT_HANDLE_CHAIN_ID, readExactProjectHandle } from "@/lib/projectHandles";
 import { indexedGroupStatus } from "@/lib/projectIndexStatus";
 import { decodeProjectRouteSlug, slugFor } from "@/lib/slug";
-import { getViemPublicClient } from "@/lib/wagmiTransports";
 import type { Metadata } from "next";
-import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import { PropsWithChildren } from "react";
+import { lookupCanonicalHandle } from "./canonicalHandle.server";
 import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
 import { Header } from "./components/Header/Header";
 import { NewProjectNotice } from "./components/NewProjectNotice";
@@ -18,7 +16,7 @@ import { ResponsiveProjectLayout } from "./components/ResponsiveProjectLayout";
 import { ShopCartProvider } from "./components/v6/ShopCartContext";
 import { getProject } from "./getProject";
 import { getProjectWithFallback } from "./getProjectFallback";
-import { getIndexedProjectOperatorAddresses, getProjectOperator } from "./getProjectOperator";
+import { getProjectOperator } from "./getProjectOperator";
 import { getIndexedSuckerGroup, getSuckerGroup } from "./getSuckerGroup";
 import { ProjectProviders } from "./ProjectProviders";
 import { resolveProjectRoute } from "./resolveProjectRoute.server";
@@ -67,43 +65,6 @@ function ProjectJsonLd({
     />
   );
 }
-
-/**
- * The verified handle names the revnet, so it is the canonical URL for every
- * route that reaches it — each chain's slug and the handle itself. The
- * registry keys handles by (chainId, projectId), so every deployment in the
- * group is checked, and only the operator (the callable authority) counts as
- * a trusted setter. handleOf() already enforces the bidirectional ENS check.
- */
-const lookupCanonicalHandle = unstable_cache(
-  async (
-    chainId: number,
-    projectId: number,
-    suckerGroupId: string | null,
-  ): Promise<string | null> => {
-    const operators = await getIndexedProjectOperatorAddresses(projectId, chainId).catch(() => []);
-    if (!operators.length) return null;
-    const deployments: [number, number][] = [[chainId, projectId]];
-    if (suckerGroupId) {
-      const group = await getSuckerGroup(suckerGroupId, chainId);
-      for (const sibling of group?.projects?.items ?? []) {
-        const pair: [number, number] = [Number(sibling.chainId), Number(sibling.projectId)];
-        if (!deployments.some(([chain, id]) => chain === pair[0] && id === pair[1])) {
-          deployments.push(pair);
-        }
-      }
-    }
-    const client = getViemPublicClient(PROJECT_HANDLE_CHAIN_ID);
-    const handles = await Promise.all(
-      deployments.flatMap(([chain, id]) =>
-        operators.map((operator) => readExactProjectHandle(client, chain, id, operator)),
-      ),
-    );
-    return handles.find((handle) => handle) ?? null;
-  },
-  ["project-canonical-handle"],
-  { revalidate: 900 },
-);
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
