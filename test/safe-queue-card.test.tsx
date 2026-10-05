@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   writeOptions: undefined as undefined | { manualReceiptVerification?: () => boolean },
   receipt: vi.fn(),
   review: vi.fn(),
+  sign: vi.fn(),
+  quote: vi.fn(),
 }));
 
 vi.mock("wagmi", () => ({
@@ -56,12 +58,12 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
   },
 }));
 vi.mock("@/hooks/useReviewedRelayr", () => ({
-  useGetRelayrTxQuote: () => ({ getRelayrTxQuote: vi.fn(), reset: vi.fn() }),
+  useGetRelayrTxQuote: () => ({ getRelayrTxQuote: mocks.quote, reset: vi.fn() }),
   useSendRelayrTx: () => ({ sendRelayrTx: vi.fn() }),
   waitForRelayrBundle: vi.fn(),
 }));
 vi.mock("@/hooks/useReviewedSafeSignature", () => ({
-  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: vi.fn() }),
+  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
 }));
 vi.mock("@/lib/transaction-review", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/transaction-review")>()),
@@ -99,16 +101,30 @@ vi.mock("@/components/ui/TxConfirmDialog", () => ({
     ) : null,
 }));
 
-function renderCard(chainId: 8453 | 11155420) {
+function renderCard(...chainIds: (8453 | 10 | 11155420)[]) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const rows = chainIds.map((chainId) => ({ chainId, projectId: 42 }));
+  render(
     <QueryClientProvider client={queryClient}>
-      <SafeQueueCard
-        rows={[{ chainId, projectId: 42 }]}
-        fallbackProject={{ chainId, projectId: 42 }}
-      />
+      <SafeQueueCard rows={rows} fallbackProject={rows[0]!} />
     </QueryClientProvider>,
   );
+  return queryClient;
+}
+
+/**
+ * The listed transaction the card holds for `chainId`, as its review holds it: a test changes it
+ * after the review opens to reach the guards behind the hidden buttons.
+ */
+function listedTransaction(queryClient: QueryClient, chainId: number) {
+  const [queue] = queryClient.getQueryCache().findAll({ queryKey: ["revnet-safe-queues"] });
+  const rows = queue!.state.data as {
+    chainId: number;
+    handleOnly: boolean;
+    transactions: { transaction: SafeQueuedTransaction }[];
+  }[];
+  return rows.find((row) => row.chainId === chainId && !row.handleOnly)!.transactions[0]!
+    .transaction;
 }
 
 /** Base's queue holds `tx` at the Safe's nonce, confirmed by both current owners. */
@@ -275,6 +291,79 @@ describe("Safe queue card", () => {
         status: "success",
         manualVerificationRequired: false,
       });
+    });
+  });
+
+  describe("refusing a transaction that pays a gas refund at every action", () => {
+    const pays = (tx: SafeQueuedTransaction) => (tx.gasPrice = "1");
+
+    it("in a signature", async () => {
+      baseQueue(safeProposalFor({ to: TARGET, data: "0x1234" }, 5));
+      // Only the other owner has signed, so this owner may sign.
+      const row = queuedRow(
+        8453,
+        SAFE.address,
+        safeProposalFor({ to: TARGET, data: "0x1234" }, 5),
+        [{ owner: OWNERS[1]!, signature: signature(OWNERS[1]!) }],
+      );
+      vi.stubGlobal("fetch", safeTransactionService("base", SAFE.address, [row]).fetch);
+      const queryClient = renderCard(8453);
+      fireEvent.click(await screen.findByRole("button", { name: "Sign" }));
+      const dialog = await screen.findByRole("dialog");
+      pays(listedTransaction(queryClient, 8453));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Sign" }));
+
+      expect(
+        await within(dialog).findByText(
+          "This transaction pays a gas refund, so it can't be executed here.",
+        ),
+      ).toBeVisible();
+      expect(mocks.sign).not.toHaveBeenCalled();
+    });
+
+    it("in an execution", async () => {
+      baseQueue(safeProposalFor({ to: TARGET, data: "0x1234" }, 5));
+      const queryClient = renderCard(8453);
+      fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
+      const dialog = await screen.findByRole("dialog");
+      pays(listedTransaction(queryClient, 8453));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Execute" }));
+
+      expect(
+        await within(dialog).findByText(
+          "This transaction pays a gas refund, so it can't be executed here.",
+        ),
+      ).toBeVisible();
+      expect(mocks.write).not.toHaveBeenCalled();
+    });
+
+    it("in Execute all", async () => {
+      const ready = (chainId: number) =>
+        queuedRow(
+          chainId,
+          SAFE.address,
+          safeProposalFor({ to: TARGET, data: "0x1234" }, 5),
+          OWNERS.map((owner) => ({ owner, signature: signature(owner) })),
+        );
+      const base = safeTransactionService("base", SAFE.address, [ready(8453)]);
+      const optimism = safeTransactionService("oeth", SAFE.address, [ready(10)]);
+      vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input).includes("/tx-service/oeth/")
+          ? optimism.fetch(input, init)
+          : base.fetch(input, init),
+      );
+      const queryClient = renderCard(8453, 10);
+      fireEvent.click(await screen.findByRole("button", { name: "Execute 2 ready" }));
+      const dialog = await screen.findByRole("dialog");
+      pays(listedTransaction(queryClient, 8453));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Pay once and execute 2" }));
+
+      expect(
+        await within(dialog).findByText(
+          "This transaction pays a gas refund, so it can't be executed here.",
+        ),
+      ).toBeVisible();
+      expect(mocks.quote).not.toHaveBeenCalled();
     });
   });
 });
