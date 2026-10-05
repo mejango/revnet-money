@@ -68,20 +68,14 @@ function recordedReads(client: DistributionClient, preconditions: DistributionPr
 }
 
 type DistributionIdentity = DistributionProject & { directory: Address; projects: Address };
-type ReservedSplit = { percent: number; beneficiary: Address; hook: Address; projectId: bigint };
-
-export function intentionalReservedBurn(amount: bigint, splits: readonly ReservedSplit[]) {
-  return splits.reduce(
-    (total, split) =>
-      total +
-      (split.hook.toLowerCase() === zeroAddress &&
-      split.projectId === 0n &&
-      split.beneficiary.toLowerCase() === "0x000000000000000000000000000000000000dead"
-        ? (amount * BigInt(split.percent)) / 1_000_000_000n
-        : 0n),
-    0n,
-  );
-}
+type ReservedSplit = {
+  percent: number;
+  projectId: bigint;
+  beneficiary: Address;
+  preferAddToBalance: boolean;
+  lockedUntil: number;
+  hook: Address;
+};
 
 export async function prepareReservedDistribution(
   client: DistributionClient,
@@ -99,7 +93,7 @@ export async function prepareReservedDistribution(
     projectId,
   ]);
   if (amount <= 0n) throw new Error(`There are no pending reserved tokens on chain ${chainId}.`);
-  const [ruleset] = await read<readonly [{ id: bigint }, unknown]>(
+  const [ruleset] = await read<readonly [{ id: bigint; cycleNumber: number }, unknown]>(
     controller,
     jbControllerAbi,
     "currentRulesetOf",
@@ -138,12 +132,25 @@ export async function prepareReservedDistribution(
         }),
       ),
     })),
+    // What the receipt must prove: every reviewed split's exact share, in order. Kept
+    // JSON-safe, since the journal saves it with the submitted call.
     reservedReceipt: {
       controller,
-      tokenRegistry,
+      tokens: tokenRegistry,
       projectId: String(projectId),
-      amount: String(amount),
-      intentionalBurn: String(intentionalReservedBurn(amount, splits)),
+      rulesetId: String(ruleset.id),
+      cycleNumber: String(ruleset.cycleNumber),
+      owner,
+      caller: account,
+      tokenCount: String(amount),
+      splits: splits.map((split) => ({
+        percent: Number(split.percent),
+        projectId: String(split.projectId),
+        beneficiary: split.beneficiary,
+        preferAddToBalance: split.preferAddToBalance,
+        lockedUntil: Number(split.lockedUntil),
+        hook: split.hook,
+      })),
     },
   };
   await client.simulateContract({

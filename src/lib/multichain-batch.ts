@@ -1,3 +1,4 @@
+import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import {
   encodeFunctionData,
   keccak256,
@@ -11,9 +12,7 @@ import type {
   CallPrecondition,
   ExpectedPayerDeployment,
   RejectedReceiptEvent,
-  ReservedReceiptGuard,
 } from "./multichain-guards";
-import type { ExpectedPayoutReceipt } from "./payout-receipts";
 import type { RouterPendingReceiptGuard } from "./pending-router-calls";
 
 export type MultichainCall = {
@@ -31,7 +30,7 @@ export type MultichainCall = {
   preconditions?: CallPrecondition[];
   expectedDeployment?: ExpectedPayerDeployment;
   rejectEvents?: RejectedReceiptEvent[];
-  reservedReceipt?: ReservedReceiptGuard;
+  reservedReceipt?: ExpectedReservedReceipt;
   expectedPayout?: ExpectedPayoutReceipt;
   expectedRouterPending?: RouterPendingReceiptGuard;
   validate?: () => Promise<void>;

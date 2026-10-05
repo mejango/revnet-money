@@ -2,6 +2,7 @@
 
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import type { MetadataSourceGuard } from "@/lib/project-metadata-write";
+import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import { useSyncExternalStore } from "react";
 import type { Address, Hex } from "viem";
 import type {
@@ -9,9 +10,7 @@ import type {
   ExpectedPayerDeployment,
   ExpectedSafeExecution,
   RejectedReceiptEvent,
-  ReservedReceiptGuard,
 } from "./multichain-guards";
-import type { ExpectedPayoutReceipt } from "./payout-receipts";
 
 export type TransactionActivityStatus =
   "submitted" | "pending" | "safe-proposed" | "success" | "failed";
@@ -28,7 +27,7 @@ export type RelayrExpectedTransaction = {
   preconditions?: CallPrecondition[];
   expectedDeployment?: ExpectedPayerDeployment;
   rejectEvents?: RejectedReceiptEvent[];
-  reservedReceipt?: ReservedReceiptGuard;
+  reservedReceipt?: ExpectedReservedReceipt;
   expectedPayout?: ExpectedPayoutReceipt;
   expectedSafeExecution?: ExpectedSafeExecution;
 };
