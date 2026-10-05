@@ -103,7 +103,7 @@ const actionExpectations: Array<{
           'functionName: "setEnsNamePartsFor"',
           'functionName: "createProxyWithNonce"',
           "isLiveRevnetOperator",
-          "simulateSafeProxyDeployment",
+          "prepareSafeSameAddressDeployment",
           "requireOnchainExecution",
         ],
       },
@@ -297,9 +297,9 @@ describe("project handle ENS authorization", () => {
     );
     expect(source).toContain("confirmedResolver.toLowerCase() !== fresh.resolver.toLowerCase()");
     expect(source).toContain("const confirmedRecord = await readExactEnsText");
-    expect(source).toContain("const confirmedAuthority = await readCrossChainHandleAuthority");
+    expect(source).toContain("const confirmedAuthority = await readHandleAuthority");
     expect(source).toContain("const confirmed = await readHandleSetup");
-    expect(source.match(/readCrossChainHandleAuthority/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
+    expect(source.match(/readHandleAuthority\(/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
   });
 
   it("mines and semantically confirms handle-scoped Safe executions only", () => {

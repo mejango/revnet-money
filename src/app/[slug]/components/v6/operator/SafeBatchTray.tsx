@@ -11,7 +11,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
-import { readBoundedSafeNonce } from "@/lib/cross-chain-authority";
 import {
   addStepsToBatch,
   clearBatch,
@@ -31,6 +30,7 @@ import {
   usableSafeConfirmations,
   type SafeQueuedTransaction,
 } from "@/lib/safe-queue";
+import { readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Address } from "viem";

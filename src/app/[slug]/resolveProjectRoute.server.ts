@@ -1,6 +1,6 @@
 import "server-only";
 
-import { readCrossChainHandleAuthority } from "@/lib/cross-chain-authority";
+import { readHandleAuthority } from "@/lib/handle-authority";
 import {
   ENS_REGISTRY_ADDRESS,
   ensRegistryAbi,
@@ -26,6 +26,12 @@ import {
 import { cache } from "react";
 import { namehash, zeroAddress, type Address } from "viem";
 import { getIndexedProjectOperatorAddresses } from "./getProjectOperator";
+
+/** A route render waits on Safe's service at most this long per request. */
+const SAFE_SERVICE_TIMEOUT_MS = 5_000;
+
+const boundedSafeServiceFetch: typeof fetch = (input, init) =>
+  fetch(input, { ...init, signal: AbortSignal.timeout(SAFE_SERVICE_TIMEOUT_MS) });
 
 export type ResolvedProjectRoute = ReturnType<typeof parseSlug> & {
   /** Present only when an @handle route live-verified this exact setter. */
@@ -104,15 +110,19 @@ export async function resolveProjectRouteUncached(
     const candidateVerifies = async (candidate: Address) => {
       // The reverse claim is written on Ethereum even for L2 revnets. Address
       // equality alone is not proof that a contract operator has the same
-      // controller on both chains.
-      const authority = await readCrossChainHandleAuthority({
-        sourceChainId: record.chainId,
-        sourceClient: projectClient,
-        mainnetClient: client,
-        authority: candidate,
-        sourceBlockNumber: projectBlock,
-        mainnetBlockNumber: blockNumber,
-      });
+      // controller on both chains, and a Safe needs its creation record from
+      // the project chain's Safe service: without it the route stays unproven.
+      const authority = await readHandleAuthority(
+        {
+          sourceChainId: record.chainId,
+          sourceClient: projectClient,
+          mainnetClient: client,
+          authority: candidate,
+          sourceBlockNumber: projectBlock,
+          mainnetBlockNumber: blockNumber,
+        },
+        { fetch: boundedSafeServiceFetch },
+      );
       if (!authority.allowed) return false;
 
       const verified = await readExactProjectHandle(

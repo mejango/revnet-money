@@ -912,7 +912,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
         [
           "Safe",
-          "The Safe App connector plus the transaction service: proposals are polled, never reported as done; a same-address Safe can be deployed on a new chain from src/lib/safeDeployment.ts",
+          "The Safe App connector plus the transaction service: proposals are polled, never reported as done; a Safe is trusted on another chain, or deployed at its address there, only when its creation record proves it is the same Safe",
         ],
         [
           "Relayr",

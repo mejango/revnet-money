@@ -1,5 +1,4 @@
 import { operatorWriteRoute } from "@/app/[slug]/components/v6/operator/operatorLib";
-import type { AuthorityIdentity } from "@/lib/cross-chain-authority";
 import {
   nextProposalNonce,
   proposeSafeTransaction,
@@ -8,6 +7,7 @@ import {
   safeTransactionHash,
   type SafeQueuedTransaction,
 } from "@/lib/safe-queue";
+import type { AuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
 import { getAddress, type Address, type Hex } from "viem";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -30,6 +30,7 @@ const safeIdentity = (owners: Address[]): AuthorityIdentity => ({
   fallbackHandlerCodeHash: null,
   guard: OTHER,
   hasModules: false,
+  modules: [],
   ownersAreEoas: true,
 });
 

@@ -9,7 +9,6 @@ import {
   SAFE_NONCE_GUIDANCE,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import { readAuthorityIdentity, readBoundedSafeNonce } from "@/lib/cross-chain-authority";
 import {
   composeBatch,
   encodeMultiSend,
@@ -37,6 +36,7 @@ import { requireTransactionReview } from "@/lib/transaction-review";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { simulateCallSequence } from "@bananapus/nana-sdk-core/review";
+import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   decodeFunctionData,
@@ -247,7 +247,7 @@ export function useSafeBatchSubmit() {
     await simulateFromSafe(chainId, safe, steps, calls);
 
     onProgress(`Reading the Safe queue on ${name}…`);
-    const nonce = await readBoundedSafeNonce(client, safe);
+    const nonce = await readBoundedSafeNonce(client, safe).catch(() => null);
     if (nonce === null || nonce > BigInt(Number.MAX_SAFE_INTEGER)) {
       throw new Error(`The operator Safe's nonce on ${name} could not be read.`);
     }

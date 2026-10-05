@@ -53,3 +53,16 @@ The separate production audit still fails on inherited node-forge GHSA-86w9-cpqp
 Para's own JavaScript is identical in jbm and revnet, so one audit covers both. The new gate failed live on the old lockfile and named only source-map-js, then passed on 1.2.2.
 
 `npm run check` passed with Node 26.7.0 / npm 12.0.1: dependency, dead-code, environment, deployment, type, lint, formatting, source, protocol (fixture mode), wallet-write (140 call sites), coverage (1,840 tests passed, one skipped), browser build, standalone, bundle (2,627.0 of 2,628 KiB) and browser checks (121 passed, four skipped, inside the shared gate lock). The first coverage run timed out one persist-scope test at 10 s while two browser suites ran; the file passed alone (107 tests) and the full rerun passed. `next build --webpack` passed last.
+
+## The SDK's Safe checks, with the Safe creation proof (2026-10-05, W1-R1)
+
+Spec: sticky-next-port/.superpowers/sdd/2026-09-29-sticky-next-port/safe-adoption-spec.md.
+
+- [ ] Authority identity and cross-chain trust from `@bananapus/nana-sdk-core/safe`; the handle authority reads the
+      Safe's creation record from the project chain's Safe service (client and server); R90 line for an unproven Safe.
+- [ ] Same-address Safe deployment from the SDK (`prepareSafeSameAddressDeployment`).
+- [ ] Safe transactions and the service from `@bananapus/nana-sdk-core/safe-service`: queue card and tray guarded
+      by `hasSafeService`, current owners for confirmations, refund transactions refused (R93), execution confirmed
+      only by `safeExecutionResult` for the reviewed hash (EOA executions and Safe connector replies).
+- [ ] Distribution receipts from `@bananapus/nana-sdk-core/v6` (payouts and reserved tokens with their splits).
+- [ ] Tests ported to the call sites; spec tests added; gate; budget; PR.

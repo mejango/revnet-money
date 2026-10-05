@@ -11,7 +11,6 @@ import {
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import { readAuthorityIdentity, readBoundedSafeNonce } from "@/lib/cross-chain-authority";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import {
   listPendingSafeTransactions,
@@ -23,6 +22,7 @@ import {
 } from "@/lib/safe-queue";
 import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import { useQueryClient } from "@tanstack/react-query";
 import { Address, encodeFunctionData, isAddressEqual } from "viem";
 import { useConfig } from "wagmi";
@@ -162,7 +162,7 @@ export function useOperatorWrites() {
       });
 
       onProgress(`Reading the Safe queue on ${name}…`);
-      const nonce = await readBoundedSafeNonce(client, route.safe);
+      const nonce = await readBoundedSafeNonce(client, route.safe).catch(() => null);
       if (nonce === null || nonce > BigInt(Number.MAX_SAFE_INTEGER)) {
         throw new Error(`The operator Safe's nonce on ${name} could not be read.`);
       }

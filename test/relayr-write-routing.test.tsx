@@ -100,9 +100,10 @@ vi.mock("@/app/[slug]/components/v6/operator/operatorLib", () => ({
   publicClientFor: () => ({ estimateContractGas: mocks.estimateContractGas }),
   operatorWriteRoute: mocks.operatorWriteRoute,
 }));
-vi.mock("@/lib/cross-chain-authority", () => ({
+vi.mock("@bananapus/nana-sdk-core/safe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe")>()),
   readAuthorityIdentity: mocks.readAuthorityIdentity,
-  readBoundedSafeNonce: vi.fn(),
+  readBoundedSafeNonce: vi.fn(async () => null),
 }));
 vi.mock("@/lib/safe-queue", () => ({
   listPendingSafeTransactions: mocks.listPendingSafeTransactions,

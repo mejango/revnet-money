@@ -43,7 +43,8 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
 vi.mock("@/hooks/useReviewedSafeSignature", () => ({
   useReviewedSafeSignature: () => ({ signSafeTransactionAsync: vi.fn() }),
 }));
-vi.mock("@/lib/cross-chain-authority", () => ({
+vi.mock("@bananapus/nana-sdk-core/safe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe")>()),
   readAuthorityIdentity: async () => ({ kind: "safe", owners: [SIGNER, OTHER], threshold: 2 }),
   readBoundedSafeNonce: async () => 3n,
 }));

@@ -10,6 +10,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { decodeFunctionData, encodeFunctionResult } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { creationService, provenSafe, safeChain } from "./fixtures/safe-chain";
 
 const OPERATOR = "0x1111111111111111111111111111111111111111";
 const STALE_OPERATOR = "0x3333333333333333333333333333333333333333";
@@ -28,8 +29,11 @@ const mocks = vi.hoisted(() => ({
   mainnetRead: vi.fn(),
   mainnetRequest: vi.fn(),
   mainnetBlockNumber: vi.fn(),
-  mainnetBytecode: vi.fn(),
-  projectBytecode: vi.fn(),
+  mainnetCode: vi.fn(),
+  mainnetStorage: vi.fn(),
+  projectCode: vi.fn(),
+  projectStorage: vi.fn(),
+  projectRequest: vi.fn(),
   projectBlockNumber: vi.fn(),
   projectGetLogs: vi.fn(),
   projectRead: vi.fn(),
@@ -43,11 +47,14 @@ vi.mock("@/lib/wagmiTransports", () => ({
           readContract: mocks.mainnetRead,
           request: mocks.mainnetRequest,
           getBlockNumber: mocks.mainnetBlockNumber,
-          getBytecode: mocks.mainnetBytecode,
+          getCode: mocks.mainnetCode,
+          getStorageAt: mocks.mainnetStorage,
         }
       : {
           readContract: mocks.projectRead,
-          getBytecode: mocks.projectBytecode,
+          getCode: mocks.projectCode,
+          getStorageAt: mocks.projectStorage,
+          request: mocks.projectRequest,
           getBlockNumber: mocks.projectBlockNumber,
           getLogs: mocks.projectGetLogs,
         },
@@ -57,6 +64,30 @@ vi.mock("@/app/[slug]/getProjectOperator", () => ({
 }));
 
 import { resolveProjectRouteUncached } from "@/app/[slug]/resolveProjectRoute.server";
+
+/** Ethereum's ENS resolver text and JBProjectHandles reverse claim, as raw eth_calls. */
+async function ensAndHandles({ params }: { params: readonly unknown[] }) {
+  const call = params[0] as { to: string; data: `0x${string}` };
+  if (call.to.toLowerCase() === RESOLVER.toLowerCase()) {
+    return encodeFunctionResult({
+      abi: ensTextResolverAbi,
+      functionName: "text",
+      result: mocks.ensRecord,
+    });
+  }
+  if (call.to.toLowerCase() === JB_PROJECT_HANDLES_ADDRESS.toLowerCase()) {
+    const decoded = decodeFunctionData({ abi: jbProjectHandlesAbi, data: call.data });
+    if (decoded.functionName !== "handleOf") throw new Error("Unexpected Handles call");
+    const setter = decoded.args[2];
+    mocks.handleSetters.push(setter);
+    return encodeFunctionResult({
+      abi: jbProjectHandlesAbi,
+      functionName: "handleOf",
+      result: mocks.handleBySetter[setter.toLowerCase()] ?? mocks.verifiedHandle,
+    });
+  }
+  throw new Error(`Unexpected raw call: ${call.to}`);
+}
 
 describe("project handle routes", () => {
   beforeEach(() => {
@@ -72,33 +103,10 @@ describe("project handle routes", () => {
       if (functionName === "resolver") return RESOLVER;
       throw new Error(`Unexpected mainnet read: ${functionName}`);
     });
-    mocks.mainnetRequest.mockImplementation(
-      async ({ params }: { params: readonly [{ to: string; data: `0x${string}` }] }) => {
-        const call = params[0];
-        if (call.to.toLowerCase() === RESOLVER.toLowerCase()) {
-          return encodeFunctionResult({
-            abi: ensTextResolverAbi,
-            functionName: "text",
-            result: mocks.ensRecord,
-          });
-        }
-        if (call.to.toLowerCase() === JB_PROJECT_HANDLES_ADDRESS.toLowerCase()) {
-          const decoded = decodeFunctionData({ abi: jbProjectHandlesAbi, data: call.data });
-          if (decoded.functionName !== "handleOf") throw new Error("Unexpected Handles call");
-          const setter = decoded.args[2];
-          mocks.handleSetters.push(setter);
-          return encodeFunctionResult({
-            abi: jbProjectHandlesAbi,
-            functionName: "handleOf",
-            result: mocks.handleBySetter[setter.toLowerCase()] ?? mocks.verifiedHandle,
-          });
-        }
-        throw new Error(`Unexpected raw call: ${call.to}`);
-      },
-    );
+    mocks.mainnetRequest.mockImplementation(ensAndHandles);
     mocks.mainnetBlockNumber.mockResolvedValue(1_234n);
-    mocks.mainnetBytecode.mockResolvedValue("0x");
-    mocks.projectBytecode.mockResolvedValue("0x");
+    mocks.mainnetCode.mockResolvedValue("0x");
+    mocks.projectCode.mockResolvedValue("0x");
     mocks.projectBlockNumber.mockResolvedValue(47_398_760n);
     mocks.projectGetLogs.mockResolvedValue([]);
     mocks.projectRead.mockImplementation(
@@ -159,16 +167,62 @@ describe("project handle routes", () => {
     });
   });
 
+  describe("with a Safe operator on Base", () => {
+    const SAFE = provenSafe();
+
+    beforeEach(() => {
+      const base = safeChain(SAFE.address);
+      const ethereum = safeChain(SAFE.address, { otherRequest: ensAndHandles });
+      mocks.currentOperator = SAFE.address;
+      mocks.operatorCandidates = [SAFE.address];
+      mocks.projectCode.mockImplementation(base.getCode);
+      mocks.projectStorage.mockImplementation(base.getStorageAt);
+      mocks.projectRequest.mockImplementation(base.request);
+      mocks.mainnetCode.mockImplementation(ethereum.getCode);
+      mocks.mainnetStorage.mockImplementation(ethereum.getStorageAt);
+      mocks.mainnetRequest.mockImplementation(ethereum.request);
+    });
+
+    it("routes when Base's Safe service proves the Safe is the same on Ethereum", async () => {
+      const service = creationService(SAFE, "base");
+      vi.stubGlobal("fetch", service);
+
+      await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toEqual({
+        chainId: 8453,
+        projectId: 42n,
+        verifiedOperator: SAFE.address,
+      });
+      // A route render never waits on Safe's service without a bound.
+      expect(service).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
+    it.each([
+      ["is unreachable", vi.fn(async () => Promise.reject(new Error("offline")))],
+      ["fails", vi.fn(async () => new Response("unavailable", { status: 503 }))],
+      ["has no record", vi.fn(async () => new Response("Not found", { status: 404 }))],
+    ])("leaves the route unproven when the Safe service %s", async (_case, service) => {
+      vi.stubGlobal("fetch", service);
+
+      await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toBeNull();
+      expect(service).toHaveBeenCalled();
+      // An unproven Safe never reaches the reverse claim.
+      expect(mocks.handleSetters).toEqual([]);
+    });
+  });
+
   it("routes exact delegated EOAs but rejects contracts which only share the EIP-7702 prefix", async () => {
-    mocks.projectBytecode.mockResolvedValue(DELEGATED_EOA_CODE);
-    mocks.mainnetBytecode.mockResolvedValue("0x");
+    mocks.projectCode.mockResolvedValue(DELEGATED_EOA_CODE);
+    mocks.mainnetCode.mockResolvedValue("0x");
     await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toMatchObject({
       chainId: 8453,
       projectId: 42n,
       verifiedOperator: OPERATOR,
     });
 
-    mocks.projectBytecode.mockResolvedValue(`${DELEGATED_EOA_CODE}00`);
+    mocks.projectCode.mockResolvedValue(`${DELEGATED_EOA_CODE}00`);
     await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toBeNull();
   });
 
@@ -280,8 +334,9 @@ describe("project handle routes", () => {
     await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toBeNull();
 
     mocks.projectOwner = REV_OWNER;
-    mocks.projectBytecode.mockResolvedValueOnce("0x60006000");
+    mocks.projectCode.mockResolvedValue("0x60006000");
     await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toBeNull();
+    mocks.projectCode.mockResolvedValue("0x");
 
     mocks.currentOperator = null;
     await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toBeNull();

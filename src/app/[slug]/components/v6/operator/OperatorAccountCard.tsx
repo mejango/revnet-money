@@ -9,10 +9,10 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
-import { readAuthorityIdentity } from "@/lib/cross-chain-authority";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
+import { readAuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Address, isAddress, zeroAddress } from "viem";
@@ -110,7 +110,7 @@ export function OperatorAccountCard({
             if (!identity) {
               return { ...row, operator, accountType: "Unknown", safe: null };
             }
-            if (identity.kind === "eoa") {
+            if (identity.kind === "eoa" || identity.kind === "delegated-eoa") {
               return { ...row, operator, accountType: "EOA", safe: null };
             }
             if (identity.kind === "safe") {

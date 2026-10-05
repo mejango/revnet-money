@@ -14,12 +14,7 @@ import {
   useSafeConnection,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import {
-  readAuthorityIdentity,
-  readBoundedSafeNonce,
-  readCrossChainHandleAuthority,
-  type SafeAuthorityIdentity,
-} from "@/lib/cross-chain-authority";
+import { readHandleAuthority, unprovenSafeMessage } from "@/lib/handle-authority";
 import { PROJECT_HANDLE_CHAIN_ID } from "@/lib/projectHandles";
 import { protocolQueueLabel } from "@/lib/protocol-queue-label";
 import {
@@ -53,6 +48,11 @@ import {
 import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import {
+  readAuthorityIdentity,
+  readBoundedSafeNonce,
+  type SafeAuthorityIdentity,
+} from "@bananapus/nana-sdk-core/safe";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { encodeFunctionData, isAddressEqual, type Address, type Hex } from "viem";
@@ -117,6 +117,7 @@ async function readLiveSafePolicy(
 ): Promise<LiveSafePolicy> {
   const mainnetClient = publicClientFor(PROJECT_HANDLE_CHAIN_ID);
   let hasLiveAuthority = false;
+  let unprovenCreation = false;
   for (const authorityRow of row.authorityRows) {
     const sourceClient = publicClientFor(authorityRow.chainId);
     if (!(await isLiveRevnetOperator(sourceClient, authorityRow, row.safe))) continue;
@@ -124,7 +125,7 @@ async function readLiveSafePolicy(
       hasLiveAuthority = true;
       break;
     }
-    const authority = await readCrossChainHandleAuthority({
+    const authority = await readHandleAuthority({
       sourceChainId: authorityRow.chainId,
       sourceClient,
       mainnetClient,
@@ -134,16 +135,22 @@ async function readLiveSafePolicy(
       hasLiveAuthority = true;
       break;
     }
+    unprovenCreation ||= authority.status === "unproven-creation";
   }
   if (!hasLiveAuthority) {
-    throw new Error("This Safe is no longer the live revnet operator.");
+    throw new Error(
+      unprovenCreation
+        ? unprovenSafeMessage(PROJECT_HANDLE_CHAIN_ID)
+        : "This Safe is no longer the live revnet operator.",
+    );
   }
   const client = publicClientFor(row.chainId);
   const identity = await readAuthorityIdentity(client, row.safe);
   if (identity?.kind !== "safe") {
     throw new Error("The operator no longer has a supported canonical Safe identity.");
   }
-  const nonce = await readBoundedSafeNonce(client, row.safe);
+  // An RPC failure reads as an unverified nonce, never as a raw node error.
+  const nonce = await readBoundedSafeNonce(client, row.safe).catch(() => null);
   if (nonce === null || nonce > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error("The Safe nonce could not be verified.");
   }

@@ -22,7 +22,7 @@ import {
   type Hex,
   type PublicClient,
 } from "viem";
-import { readCrossChainHandleAuthority } from "./cross-chain-authority";
+import { readHandleAuthority, unprovenSafeMessage } from "./handle-authority";
 import {
   ENS_REGISTRY_ADDRESS,
   JB_PROJECT_HANDLES_ADDRESS,
@@ -347,7 +347,7 @@ async function assertLiveProjectHandleAuthority({
     safe,
   });
 
-  const authority = await readCrossChainHandleAuthority({
+  const authority = await readHandleAuthority({
     sourceChainId: source.chainId,
     sourceClient,
     mainnetClient,
@@ -357,7 +357,9 @@ async function assertLiveProjectHandleAuthority({
   });
   if (!authority.allowed) {
     throw new Error(
-      `The queued handle's cross-chain authority is no longer valid (${authority.status}).`,
+      authority.status === "unproven-creation"
+        ? unprovenSafeMessage(PROJECT_HANDLE_CHAIN_ID)
+        : `The queued handle's cross-chain authority is no longer valid (${authority.status}).`,
     );
   }
 }

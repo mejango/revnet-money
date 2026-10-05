@@ -36,7 +36,7 @@ export function SafeBadge({ address, chainId }: { address: string; chainId: numb
     queryFn: async () => {
       try {
         const [{ readAuthorityIdentity }, { getViemPublicClient }] = await Promise.all([
-          import("@/lib/cross-chain-authority"),
+          import("@bananapus/nana-sdk-core/safe"),
           import("@/lib/wagmiTransports"),
         ]);
         const identity = await readAuthorityIdentity(

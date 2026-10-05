@@ -1,5 +1,4 @@
 import { routeSafeBatch } from "@/app/[slug]/components/v6/operator/useSafeBatchSubmit";
-import type { AuthorityIdentity } from "@/lib/cross-chain-authority";
 import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@/lib/safe-batch";
 import {
   hasSafeService,
@@ -11,6 +10,7 @@ import {
   safeProposalFor,
   safeTransactionHash,
 } from "@/lib/safe-queue";
+import type { AuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
 import { getAddress, type Address, type Hex } from "viem";
 import { describe, expect, it, vi } from "vitest";
 
@@ -39,6 +39,7 @@ const safeIdentity = (owners: Address[]): AuthorityIdentity => ({
   fallbackHandlerCodeHash: null,
   guard: OTHER,
   hasModules: false,
+  modules: [],
   ownersAreEoas: true,
 });
 
