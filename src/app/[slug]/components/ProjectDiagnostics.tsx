@@ -10,10 +10,10 @@ import {
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useState, useTransition, type PropsWithChildren } from "react";
+import { useState, useTransition, type PropsWithChildren } from "react";
 import { isAddress, type Address } from "viem";
+import { CheckDeploymentButton, DiagnosticsContext } from "./CheckDeploymentButton";
 
-const DiagnosticsContext = createContext<(() => void) | null>(null);
 const statusLabels = {
   passed: "Verified",
   mismatch: "Needs attention",
@@ -213,20 +213,6 @@ export function ProjectDiagnosticsProvider({
         </DialogContent>
       </Dialog>
     </DiagnosticsContext.Provider>
-  );
-}
-
-export function CheckDeploymentButton({
-  className = "min-h-11 underline",
-}: {
-  className?: string;
-}) {
-  const open = useContext(DiagnosticsContext);
-  if (!open) return null;
-  return (
-    <button type="button" className={className} onClick={open}>
-      Check deployment
-    </button>
   );
 }
 

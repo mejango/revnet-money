@@ -41,7 +41,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // truthful data states and SDK deployment validation measure 2626.9 KiB against
 // origin/main's 2623.3 KiB. The aggregate budget rises by the minimum 2 KiB;
 // route and route-referenced budgets remain unchanged.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2627);
+// Moving the shared diagnostics trigger into Extras adds 191 bytes for the
+// section and button (2,689,893 -> 2,690,084 bytes gzip). The dialog stays in one chunk;
+// only the aggregate ceiling moves up by the minimum 1 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2628);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

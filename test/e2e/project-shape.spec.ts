@@ -528,7 +528,7 @@ test("home and discover shells stay contained and deterministic", async ({ page,
   expectBoundaryToStayLocal(boundary);
 });
 
-test("deployment diagnostics are available from the project menu without a wallet", async ({
+test("deployment diagnostics are available from Extras without a wallet", async ({
   page,
   context,
   request,
@@ -537,6 +537,13 @@ test("deployment diagnostics are available from the project menu without a walle
   await expect(page.getByRole("dialog", { name: "Check deployment" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Check deployment" })).toHaveCount(0);
   await page.getByRole("button", { name: "More project sections" }).click();
+  await expect(page.getByRole("button", { name: "Check deployment" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Extras" }).click();
+  await expect(page.getByRole("heading", { name: "Deployment", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Check deployment" }).scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: `test-results/deployment-extras-${page.viewportSize()?.width}.png`,
+  });
   await page.getByRole("button", { name: "Check deployment" }).click();
   const dialog = page.getByRole("dialog", { name: "Check deployment" });
   await expect(dialog).toBeVisible();
