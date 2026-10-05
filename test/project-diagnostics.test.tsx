@@ -1,5 +1,5 @@
+import { CheckDeploymentButton } from "@/app/[slug]/components/CheckDeploymentButton";
 import {
-  CheckDeploymentButton,
   ProjectDataNotice,
   ProjectDiagnosticsProvider,
 } from "@/app/[slug]/components/ProjectDiagnostics";

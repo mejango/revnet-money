@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useSelectedLayoutSegment } from "next/navigation";
 import { PropsWithChildren, useState } from "react";
-import { CheckDeploymentButton } from "./ProjectDiagnostics";
+import { CheckDeploymentButton } from "./CheckDeploymentButton";
 import { ProjectOverflowIcon, ProjectTabIcon } from "./ProjectTabIcon";
 
 export function ProjectMenu({
