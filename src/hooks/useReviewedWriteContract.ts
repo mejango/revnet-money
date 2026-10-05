@@ -92,6 +92,12 @@ const SAFE_POLICY_REFRESH_MS = 60_000;
  * watch polls the Safe service for.
  */
 const SAFE_RESULT_HORIZON_MS = 60 * 60_000;
+/**
+ * Looks at the Safe service in a row, ten minutes of them, that must each find the proposal where
+ * the app can't follow it before it ends unconfirmed. A single look proves nothing on its own: the
+ * Safe's nonce moves when an execution is mined, and the service may list that execution later.
+ */
+const SAFE_STUCK_LOOKS = (10 * 60_000) / SAFE_LOOK_MS;
 
 async function watchSafeProposal(
   id: string,
@@ -235,8 +241,9 @@ async function watchSafeProposal(
         status: "safe-proposed",
         message: `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
       });
-      // Another transaction took its nonce, so it can never execute. The nonce is read only after
-      // the hour, so a service that indexes an execution late is not taken for that.
+      // A nonce the Safe has moved past was taken by another transaction, or by this proposal's
+      // own execution that the service has yet to list, which the watch's run of looks waits out.
+      // It is read only after the hour, when the watch may end the proposal.
       const nonce =
         pastHorizon() && client ? await readBoundedSafeNonce(client, safe).catch(() => null) : null;
       return nonce !== null && nonce > message.nonce ? "stuck" : "live";
@@ -256,10 +263,12 @@ async function watchSafeProposal(
     return;
   }
   const request = (async () => {
-    // Whether the last look left the proposal where the app can't follow it to a result.
-    let stuck = true;
-    // Without a Safe service only the chain can show an execution.
+    // Looks in a row that left the proposal where the app can't follow it to a result.
+    let stuckLooks = 0;
+    // Without a Safe service only the chain can show an execution, and every one of its checks
+    // must find none.
     const looks = service ? SAFE_RESULT_HORIZON_MS / SAFE_LOOK_MS : SAFE_EXECUTION_CHECKS;
+    const stuckFor = service ? SAFE_STUCK_LOOKS : SAFE_EXECUTION_CHECKS;
     for (let attempt = 0; attempt < looks; attempt += 1) {
       if (tracked()?.obsoleteSafeNonce !== undefined) return;
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
@@ -278,17 +287,17 @@ async function watchSafeProposal(
       const safe = safeOf();
       const look = service && safe ? await askService(safe) : "stuck";
       if (look === "done") return;
-      stuck = look === "stuck";
-      // What the app can't follow an hour after the proposal was made, it never will.
-      if (stuck && pastHorizon()) {
+      stuckLooks = look === "stuck" ? stuckLooks + 1 : 0;
+      // What the app still can't follow an hour after the proposal was made, it never will.
+      if (stuckLooks >= stuckFor && pastHorizon()) {
         unconfirmed();
         return;
       }
       await new Promise((resolve) => window.setTimeout(resolve, SAFE_LOOK_MS));
     }
-    // The watch gives up. A proposal still awaiting approvals, or behind a service outage, is
-    // followed again on the next load; anything else ends unconfirmed.
-    if (stuck) unconfirmed();
+    // The watch gives up. A proposal still awaiting approvals, behind a service outage, or not
+    // stuck for long enough is followed again on the next load; anything else ends unconfirmed.
+    if (stuckLooks >= stuckFor) unconfirmed();
   })();
   safeInflight.set(id, request);
   void request.finally(() => safeInflight.delete(id)).catch(() => undefined);
