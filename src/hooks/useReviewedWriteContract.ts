@@ -85,8 +85,8 @@ const RECEIPT_UNCONFIRMED =
   "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
 const SAFE_RESULT_UNCONFIRMED =
   "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
-/** A watch reads its Safe's owners and threshold at most this often, for the approvals line. */
-const SAFE_POLICY_REFRESH_MS = 60_000;
+/** A watch reads its Safe's state at most this often. */
+const SAFE_REREAD_MS = 60_000;
 /**
  * A proposal the app still can't follow this long after it was made ends unconfirmed: the hour a
  * watch polls the Safe service for.
@@ -98,6 +98,17 @@ const SAFE_RESULT_HORIZON_MS = 60 * 60_000;
  * Safe's nonce moves when an execution is mined, and the service may list that execution later.
  */
 const SAFE_STUCK_LOOKS = (10 * 60_000) / SAFE_LOOK_MS;
+
+/** `read` of a Safe, answered from its last read for a minute after each one. */
+function rereadEveryMinute<T>(read: (safe: Address) => Promise<T>): (safe: Address) => Promise<T> {
+  let last: { at: number; value: Promise<T> } | undefined;
+  return (safe) => {
+    if (!last || Date.now() - last.at >= SAFE_REREAD_MS) {
+      last = { at: Date.now(), value: read(safe) };
+    }
+    return last.value;
+  };
+}
 
 async function watchSafeProposal(
   id: string,
@@ -138,17 +149,13 @@ async function watchSafeProposal(
       return false;
     }
   };
-  let policy: { owners: Address[]; threshold: number } | null = null;
-  let policyReadAt = -Infinity;
-  /** The Safe's live owners and threshold, read at most once a minute. */
-  const livePolicy = async (safe: Address) => {
-    if (Date.now() - policyReadAt < SAFE_POLICY_REFRESH_MS) return policy;
-    policyReadAt = Date.now();
+  /** The Safe's live owners and threshold, for the approvals line. */
+  const livePolicy = rereadEveryMinute(async (safe) => {
     const identity = client ? await readAuthorityIdentity(client, safe).catch(() => null) : null;
-    policy =
-      identity?.kind === "safe" ? { owners: identity.owners, threshold: identity.threshold } : null;
-    return policy;
-  };
+    return identity?.kind === "safe"
+      ? { owners: identity.owners, threshold: identity.threshold }
+      : null;
+  });
   const executed = (isSuccessful: boolean, transactionHash: Hex | undefined) => {
     const needsReceiptVerification = tracked()?.manualVerificationRequired === true;
     updateTransactionActivity(id, {
