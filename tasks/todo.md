@@ -79,3 +79,19 @@ Gate: dependencies, dead code, environment, deployment, types, lint, formatting 
 wallet-write checks pass; unit and coverage 1,811 passed, one skipped; browser build, standalone and browser checks
 (121 passed, four skipped); the production build passes last. All client JavaScript measures 2,640.0 KiB, so its
 budget rises from 2,627 to 2,641 KiB (the SDK's checks are larger than the copies); route budgets are unchanged.
+
+### Fix round 1
+
+- [x] The route server reads the Safe service once, within 4 seconds, and refuses a 429; creation records are cached
+      per chain and Safe (24 hours when they prove the Safe's address, 60 seconds otherwise), in the page too.
+- [x] The canonical handle counts only when its own route resolves it to the project.
+- [x] A Safe proposal settles only when what executed, or what the service records, runs the reviewed calls; the
+      approval count uses the current owners and the live threshold.
+- [x] A reverted execution or an ExecutionFailure settles failed and may be sent again.
+- [x] The Ethereum handles row of an unproven Safe shows the R90 line; the refund refusal is tested in each action.
+- [x] The source scans parse once (persisted queries) or get a 60 second timeout (ERC-20 approve).
+
+Gate on the final commit: the same checks pass; unit and coverage 1,833 passed, one skipped; browser checks 121
+passed, four skipped; the production build passes last. All client JavaScript measures 2,641.3 KiB, so its budget
+rises by 1 KiB to 2,642 KiB. Left closed: the SDK's `multiSendCallsOf` knows MultiSendCallOnly 1.3.0 only, so a
+1.4.1 Safe's batch stays unconfirmed.
