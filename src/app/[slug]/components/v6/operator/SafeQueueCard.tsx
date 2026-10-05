@@ -412,7 +412,7 @@ export function SafeQueueCard({
   const batchRows: BatchRow[] = (queue.data ?? []).flatMap((row) => {
     if (row.handleOnly) return [];
     const atNonce = row.transactions.filter(
-      ({ transaction }) => Number(transaction.nonce) === row.policy.nonce,
+      ({ transaction }) => transaction.nonce === row.policy.nonce,
     );
     if (atNonce.length !== 1) return [];
     const [{ transaction: tx, handleBinding, handleError }] = atNonce;
@@ -450,7 +450,7 @@ export function SafeQueueCard({
           if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL);
           await verifyLiveQueuedTransaction(row, tx);
           const policy = await readLiveSafePolicy(row);
-          if (policy.nonce !== Number(tx.nonce))
+          if (policy.nonce !== tx.nonce)
             throw new Error(
               `Safe transaction #${tx.nonce} is no longer next on ${chainName(row.chainId)}.`,
             );
@@ -476,7 +476,7 @@ export function SafeQueueCard({
             expectedSafeExecution: {
               safe: row.safe,
               safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
-              nonce: Number(tx.nonce),
+              nonce: tx.nonce,
             },
             data: { from: address, to: row.safe, value: 0n, gas, data },
             review: {
@@ -584,7 +584,7 @@ export function SafeQueueCard({
       if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL);
       const handleBinding = await verifyLiveQueuedTransaction(row, tx);
       const policy = await readLiveSafePolicy(row);
-      if (policy.nonce !== Number(tx.nonce)) {
+      if (policy.nonce !== tx.nonce) {
         throw new Error(`Safe nonce ${policy.nonce} must execute first.`);
       }
       if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold) {
@@ -749,7 +749,7 @@ export function SafeQueueCard({
                       address && confirmation.owner.toLowerCase() === address.toLowerCase(),
                   );
                   const ready = confirmations.length >= row.policy.threshold;
-                  const current = Number(tx.nonce) === row.policy.nonce;
+                  const current = tx.nonce === row.policy.nonce;
                   const refund = safeTransactionHasRefund(tx);
                   return (
                     <li key={`${tx.nonce}:${tx.safeTxHash ?? tx.data}`} className="py-3 text-xs">

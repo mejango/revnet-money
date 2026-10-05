@@ -387,7 +387,7 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
     },
   );
 
-  it.each(["valid", "safe", "hash", "call", "unavailable"])(
+  it.each(["valid", "safe", "hash", "call", "unavailable", "text nonce"])(
     "archives an obsolete Safe proposal only after exact authentication: %s",
     async (mode) => {
       const batch = createMultichainBatch(
@@ -422,7 +422,8 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
             JSON.stringify({
               ...proposal,
               safe: mode === "safe" ? TARGET : ACCOUNT,
-              nonce: mode === "hash" ? 8 : 7,
+              // A text nonce hashes the same, but the service never writes one.
+              nonce: mode === "hash" ? 8 : mode === "text nonce" ? "7" : 7,
             }),
             { status: mode === "unavailable" ? 503 : 200 },
           ),

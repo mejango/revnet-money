@@ -116,10 +116,11 @@ async function verifyDirectResult(
           "resolved-externally"
       ) {
         // The service's record of the proposal, authenticated against its hash.
-        const proposal = safeTransactionMessage(
-          await readSafeTransaction(call.chainId, batch.account, call.hash!),
-        );
+        const record = await readSafeTransaction(call.chainId, batch.account, call.hash!);
+        const proposal = safeTransactionMessage(record);
         if (
+          // The service writes a nonce as a JSON number; any other form is refused.
+          typeof record.nonce !== "number" ||
           !isAddressEqual(proposal.to, call.address) ||
           proposal.value !== (call.value ?? 0n) ||
           proposal.data.toLowerCase() !== call.data.toLowerCase() ||
