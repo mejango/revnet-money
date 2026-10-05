@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useSelectedLayoutSegment } from "next/navigation";
 import { PropsWithChildren, useState } from "react";
-import { CheckDeploymentButton } from "./CheckDeploymentButton";
 import { ProjectOverflowIcon, ProjectTabIcon } from "./ProjectTabIcon";
 
 export function ProjectMenu({
@@ -77,9 +76,6 @@ export function ProjectMenu({
               <ProjectTabIcon label="Operator" />
               Operator
             </MenuOption>
-            <li className="flex shrink-0 items-start">
-              <CheckDeploymentButton className="flex min-h-11 items-center whitespace-nowrap pb-2 text-base font-medium uppercase text-zinc-500 hover:text-zinc-800" />
-            </li>
           </>
         ) : null}
         <li className="flex shrink-0 items-start">

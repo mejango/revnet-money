@@ -28,6 +28,7 @@ import { formatTokenSymbol } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { useMemo, useState } from "react";
 import { getPublicClient } from "wagmi/actions";
+import { CheckDeploymentButton } from "../../CheckDeploymentButton";
 import { ProjectItem } from "../shared";
 import { PayerAddressList } from "./PayerAddressList";
 import { PayerDeployForm } from "./PayerDeployForm";
@@ -201,6 +202,15 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
             isError={payersQuery.isError}
           />
         </div>
+      </section>
+      <section className="max-w-screen-sm">
+        <h3 className="mb-2 text-base font-semibold text-zinc-700">Deployment</h3>
+        <p className="text-sm text-zinc-500">
+          Check this project&apos;s deployment and data availability.
+        </p>
+        <Button variant="outline" className="mt-4" asChild>
+          <CheckDeploymentButton />
+        </Button>
       </section>
     </div>
   );
