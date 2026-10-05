@@ -510,12 +510,14 @@ describe("queued project-handle live verification", () => {
 });
 
 describe("queued project-handle writes from a Safe operator", () => {
-  const OPERATOR_SAFE = provenSafe();
+  // Creation records are cached per chain and Safe, so each case has a Safe of its own.
+  const UNPROVEN_SAFE = provenSafe({ saltNonce: 21n });
+  const PROVEN_SAFE = provenSafe({ saltNonce: 22n });
 
   /** Base holds the revnet and its operator Safe; Ethereum holds the same Safe and the ENS record. */
-  function chains() {
+  function chains(safe: Address) {
     const base = {
-      ...safeChain(OPERATOR_SAFE.address).client,
+      ...safeChain(safe).client,
       getBlockNumber: vi.fn().mockResolvedValue(200n),
       readContract: vi.fn(async ({ functionName }: { functionName: string }) => {
         if (functionName === "ownerOf") {
@@ -526,7 +528,7 @@ describe("queued project-handle writes from a Safe operator", () => {
       }),
     } as unknown as PublicClient;
     const ethereum = {
-      ...safeChain(OPERATOR_SAFE.address, {
+      ...safeChain(safe, {
         otherRequest: async () =>
           encodeFunctionResult({
             abi: ensTextResolverAbi,
@@ -544,22 +546,22 @@ describe("queued project-handle writes from a Safe operator", () => {
     await expect(
       verifyQueuedProjectHandleTransaction({
         executionChainId: 1,
-        safe: OPERATOR_SAFE.address,
+        safe: UNPROVEN_SAFE.address,
         transaction: setHandleTx(),
-        clientFor: chains(),
+        clientFor: chains(UNPROVEN_SAFE.address),
       }),
     ).rejects.toThrow(/^Can't verify this Safe is the same on Ethereum\.$/);
   });
 
   it("accepts the write once the Safe's creation record proves it", async () => {
-    vi.stubGlobal("fetch", creationService(OPERATOR_SAFE, "base"));
+    vi.stubGlobal("fetch", creationService(PROVEN_SAFE, "base"));
 
     await expect(
       verifyQueuedProjectHandleTransaction({
         executionChainId: 1,
-        safe: OPERATOR_SAFE.address,
+        safe: PROVEN_SAFE.address,
         transaction: setHandleTx(),
-        clientFor: chains(),
+        clientFor: chains(PROVEN_SAFE.address),
       }),
     ).resolves.toMatchObject({ kind: "project-handle" });
   });

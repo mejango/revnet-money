@@ -1,6 +1,5 @@
-import { readHandleAuthority, unprovenSafeMessage } from "@/lib/handle-authority";
 import type { Address, Hex } from "viem";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   creationService,
   provenSafe,
@@ -10,6 +9,13 @@ import {
 } from "./fixtures/safe-chain";
 
 const SAFE = provenSafe();
+// The module caches creation records per chain and Safe; each test starts with none.
+let readHandleAuthority: typeof import("@/lib/handle-authority").readHandleAuthority;
+let unprovenSafeMessage: typeof import("@/lib/handle-authority").unprovenSafeMessage;
+beforeEach(async () => {
+  vi.resetModules();
+  ({ readHandleAuthority, unprovenSafeMessage } = await import("@/lib/handle-authority"));
+});
 const EOA = "0x1111111111111111111111111111111111111111" as Address;
 const MODULE = "0x6666666666666666666666666666666666666666" as Address;
 const DELEGATED_EOA_CODE = `0xef0100${MODULE.slice(2)}` as Hex;
@@ -138,6 +144,44 @@ describe("project handle authority across chains", () => {
     expect(mainnet.getCode.mock.calls.map(([args]) => args)).toEqual(
       mainnet.getCode.mock.calls.map(() => expect.objectContaining({ blockNumber: 100n })),
     );
+  });
+
+  it("reads a proven creation record once, and a missing one again after a minute", async () => {
+    vi.useFakeTimers();
+    const proven = creationService(SAFE, "base");
+    vi.stubGlobal("fetch", proven);
+    for (let check = 0; check < 3; check += 1) {
+      await expect(readHandleAuthority(onBaseAndEthereum())).resolves.toMatchObject({
+        status: "valid-safe",
+      });
+    }
+    // The record proves the Safe's address, which never changes.
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    await readHandleAuthority(onBaseAndEthereum());
+    expect(proven).toHaveBeenCalledTimes(1);
+
+    const other = provenSafe({ saltNonce: 9n });
+    const missing = vi.fn(async () => new Response("Not found", { status: 404 }));
+    vi.stubGlobal("fetch", missing);
+    await readHandleAuthority(onBaseAndEthereum(other));
+    await readHandleAuthority(onBaseAndEthereum(other));
+    expect(missing).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(61_000);
+    await expect(readHandleAuthority(onBaseAndEthereum(other))).resolves.toMatchObject({
+      status: "unproven-creation",
+    });
+    expect(missing).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the project chain's authority once per check", async () => {
+    const source = safeChain(null);
+    await readHandleAuthority({
+      sourceChainId: 10,
+      sourceClient: source.client,
+      mainnetClient: safeChain(null).client,
+      authority: EOA,
+    });
+    expect(source.getCode).toHaveBeenCalledTimes(1);
   });
 
   it("names the chain a Safe can't be verified on in one line", () => {

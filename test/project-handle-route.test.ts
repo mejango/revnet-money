@@ -168,29 +168,35 @@ describe("project handle routes", () => {
   });
 
   describe("with a Safe operator on Base", () => {
-    const SAFE = provenSafe();
-
-    beforeEach(() => {
-      const base = safeChain(SAFE.address);
-      const ethereum = safeChain(SAFE.address, { otherRequest: ensAndHandles });
-      mocks.currentOperator = SAFE.address;
-      mocks.operatorCandidates = [SAFE.address];
+    // Creation records are cached per chain and Safe, so each case has a Safe of its own.
+    let salt = 100n;
+    function operatorSafe() {
+      salt += 1n;
+      const safe = provenSafe({ saltNonce: salt });
+      const base = safeChain(safe.address);
+      const ethereum = safeChain(safe.address, { otherRequest: ensAndHandles });
+      mocks.currentOperator = safe.address;
+      mocks.operatorCandidates = [safe.address];
       mocks.projectCode.mockImplementation(base.getCode);
       mocks.projectStorage.mockImplementation(base.getStorageAt);
       mocks.projectRequest.mockImplementation(base.request);
       mocks.mainnetCode.mockImplementation(ethereum.getCode);
       mocks.mainnetStorage.mockImplementation(ethereum.getStorageAt);
       mocks.mainnetRequest.mockImplementation(ethereum.request);
-    });
+      return safe;
+    }
+    const creationRequests = (service: ReturnType<typeof vi.fn>) =>
+      service.mock.calls.filter(([url]) => String(url).endsWith("/creation/")).length;
 
     it("routes when Base's Safe service proves the Safe is the same on Ethereum", async () => {
-      const service = creationService(SAFE, "base");
+      const safe = operatorSafe();
+      const service = creationService(safe, "base");
       vi.stubGlobal("fetch", service);
 
       await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toEqual({
         chainId: 8453,
         projectId: 42n,
-        verifiedOperator: SAFE.address,
+        verifiedOperator: safe.address,
       });
       // A route render never waits on Safe's service without a bound.
       expect(service).toHaveBeenCalledWith(
@@ -199,17 +205,70 @@ describe("project handle routes", () => {
       );
     });
 
+    it("reads a proven creation record once across route renders", async () => {
+      const safe = operatorSafe();
+      const service = creationService(safe, "base");
+      vi.stubGlobal("fetch", service);
+
+      for (let render = 0; render < 3; render += 1) {
+        await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toMatchObject({
+          verifiedOperator: safe.address,
+        });
+      }
+      expect(creationRequests(service)).toBe(1);
+    });
+
     it.each([
       ["is unreachable", vi.fn(async () => Promise.reject(new Error("offline")))],
       ["fails", vi.fn(async () => new Response("unavailable", { status: 503 }))],
       ["has no record", vi.fn(async () => new Response("Not found", { status: 404 }))],
     ])("leaves the route unproven when the Safe service %s", async (_case, service) => {
+      operatorSafe();
       vi.stubGlobal("fetch", service);
 
       await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toBeNull();
       expect(service).toHaveBeenCalled();
       // An unproven Safe never reaches the reverse claim.
       expect(mocks.handleSetters).toEqual([]);
+    });
+
+    it("refuses a 429 at once instead of waiting out its Retry-After", async () => {
+      operatorSafe();
+      const service = vi.fn(
+        async () => new Response("slow down", { status: 429, headers: { "retry-after": "3600" } }),
+      );
+      vi.stubGlobal("fetch", service);
+
+      await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toBeNull();
+      expect(creationRequests(service)).toBe(1);
+    });
+
+    it("gives up on a Safe service that never answers after 4 seconds", async () => {
+      operatorSafe();
+      vi.useFakeTimers();
+      let asked!: () => void;
+      const reached = new Promise<void>((resolve) => (asked = resolve));
+      const service = vi.fn(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            asked();
+            init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+          }),
+      );
+      vi.stubGlobal("fetch", service);
+
+      let settled = false;
+      const route = resolveProjectRouteUncached("@design.juicebox");
+      void route.then(() => (settled = true));
+      await reached;
+      await vi.advanceTimersByTimeAsync(3_999);
+      expect(settled).toBe(false);
+      // At 4 seconds the read is abandoned and the route settles without more waiting.
+      await vi.advanceTimersByTimeAsync(1);
+      for (let turn = 0; turn < 20 && !settled; turn += 1) await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(true);
+      await expect(route).resolves.toBeNull();
+      expect(creationRequests(service)).toBe(1);
     });
   });
 
