@@ -518,7 +518,10 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         toast({
           variant: "destructive",
           title: "Permission Denied",
-          description: "Permission was not granted. Approve it to continue.",
+          description: formatWalletError(
+            err,
+            "Permission was not granted. Approve it to continue.",
+          ),
         });
         return false;
       }

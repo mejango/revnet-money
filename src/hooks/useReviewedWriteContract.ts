@@ -839,6 +839,7 @@ export function submittedViaSafe(hash?: Hex): boolean {
   return transactionActivityForHash(hash)?.status === "safe-proposed";
 }
 
+/** Refuses a call while its Safe proposal is journaled and not yet settled. */
 export class SafeProposalPendingError extends Error {
   readonly name = "SafeProposalPendingError";
 
@@ -846,7 +847,7 @@ export class SafeProposalPendingError extends Error {
   constructor(
     readonly hash: Hex,
     action: string,
-    unconfirmed = false,
+    readonly unconfirmed = false,
   ) {
     super(
       unconfirmed
@@ -856,12 +857,21 @@ export class SafeProposalPendingError extends Error {
   }
 }
 
+/**
+ * Whether `error` refused a call because its Safe proposal still awaits the Safe. A proposal whose
+ * result can't be confirmed awaits nothing the app can follow: callers show that refusal as they
+ * show any error, with its line to check it in Safe and dismiss it.
+ */
 export function isSafeProposalPendingError(error: unknown): error is SafeProposalPendingError {
-  return error instanceof SafeProposalPendingError;
+  return error instanceof SafeProposalPendingError && !error.unconfirmed;
 }
 
 /** Stop dependent steps after a Safe connector returns an asynchronous proposal hash. */
 export function requireOnchainExecution(hash: Hex, action: string): void {
   if (!submittedViaSafe(hash)) return;
-  throw new SafeProposalPendingError(hash, action);
+  throw new SafeProposalPendingError(
+    hash,
+    action,
+    transactionActivityForHash(hash)?.safeResultUnconfirmed,
+  );
 }
