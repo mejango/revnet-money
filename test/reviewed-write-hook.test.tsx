@@ -1,12 +1,13 @@
 import {
+  SAFE_EXEC_ABI,
   safeProposalFor,
   safeTransactionHash,
   type SafeQueuedTransaction,
 } from "@bananapus/nana-sdk-core/safe-service";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { encodeFunctionData, parseAbi, type Address, type Hex } from "viem";
+import { encodeFunctionData, parseAbi, zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { executionLog } from "./fixtures/safe-chain";
+import { executionLog, SAFE_OWNER_A, safeChain } from "./fixtures/safe-chain";
 
 const mocks = vi.hoisted(() => ({
   config: { id: "test-config", chains: [{ id: 8453, name: "Base" }] },
@@ -26,6 +27,8 @@ const mocks = vi.hoisted(() => ({
   getTransaction: vi.fn(),
   submit: vi.fn(),
   wagmiReceipt: vi.fn(),
+  // The connected Safe's own reads: its owners and threshold.
+  safeReads: undefined as unknown as ReturnType<typeof import("./fixtures/safe-chain").safeChain>,
 }));
 
 vi.mock("wagmi/actions", () => ({
@@ -36,6 +39,9 @@ vi.mock("wagmi/actions", () => ({
     waitForTransactionReceipt: mocks.waitForTransactionReceipt,
     getTransactionReceipt: mocks.getTransactionReceipt,
     getTransaction: mocks.getTransaction,
+    getCode: (args: never) => mocks.safeReads.getCode(args),
+    getStorageAt: (args: never) => mocks.safeReads.getStorageAt(args),
+    request: (args: never) => mocks.safeReads.request(args),
   }),
   simulateContract: mocks.simulateContract,
   switchChain: mocks.switchChain,
@@ -82,12 +88,16 @@ const CALL = {
 const PROPOSED = safeProposalFor({ to: TARGET, data: "0x1234" }, 7);
 const PROPOSAL = safeTransactionHash(11155111, ACCOUNT, PROPOSED);
 const OTHER_PROPOSAL = `0x${"56".repeat(32)}` as Hex;
+const UNCONFIRMED =
+  "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
+const SIGNATURE = `0x${"12".repeat(64)}1b` as Hex;
 
-/** A Safe proposal the tracker resumes after a reload. */
+/** A Safe proposal the tracker resumes after a reload, journaled with the call it was reviewed to run. */
 function savedProposal(
   activity: typeof import("@/lib/transaction-activity"),
   hash: Hex,
   chainId: number,
+  reviewed: { to: Address; data: Hex } = { to: TARGET, data: "0x1234" },
 ) {
   activity.recordTransactionActivity({
     id: `tx:${chainId}:${hash}`,
@@ -99,8 +109,26 @@ function savedProposal(
     account: ACCOUNT,
     hash,
     safeProposalHash: hash,
+    safeProposal: { safe: ACCOUNT, calls: [{ ...reviewed, value: "0" }], batch: false },
   });
 }
+
+/** The Safe's own transaction running `call`, as the chain returns it for an execution sent at once. */
+function executionOf(call: { to: Address; data: Hex }, safe: Address = ACCOUNT) {
+  return {
+    hash: HASH,
+    to: safe,
+    input: encodeFunctionData({
+      abi: SAFE_EXEC_ABI,
+      functionName: "execTransaction",
+      args: [call.to, 0n, call.data, 0, 0n, 0n, 0n, zeroAddress, zeroAddress, "0x"],
+    }),
+  };
+}
+const TRANSFER_7 = {
+  to: TARGET,
+  data: encodeFunctionData({ abi: ABI, functionName: "transfer", args: [RECIPIENT, 7n] }),
+};
 
 async function freshHarness() {
   vi.resetModules();
@@ -129,6 +157,7 @@ beforeEach(() => {
   mocks.getTransactionReceipt.mockRejectedValue(new Error("Receipt not found"));
   // A Safe proposal hash is never a transaction the chain knows.
   mocks.getTransaction.mockRejectedValue(new Error("Transaction not found"));
+  mocks.safeReads = safeChain(ACCOUNT);
   mocks.wagmiReceipt.mockReturnValue({
     data: undefined,
     error: null,
@@ -793,8 +822,9 @@ describe("reviewed write hook", () => {
       };
       const service = vi.fn();
       vi.stubGlobal("fetch", service);
-      // Safe{Wallet} replied with the execution's own hash: the chain knows it.
-      mocks.getTransaction.mockResolvedValue({ hash: HASH });
+      // Safe{Wallet} replied with the execution's own hash: the chain knows it,
+      // and it runs exactly the reviewed call from this Safe.
+      mocks.getTransaction.mockResolvedValue(executionOf(TRANSFER_7));
       mocks.waitForTransactionReceipt.mockResolvedValue({
         status: "success",
         transactionHash: HASH,
@@ -821,6 +851,47 @@ describe("reviewed write hook", () => {
   );
 
   it.each([
+    [
+      "another call",
+      executionOf({
+        ...TRANSFER_7,
+        data: encodeFunctionData({ abi: ABI, functionName: "transfer", args: [RECIPIENT, 8n] }),
+      }),
+    ],
+    ["another Safe's execution", executionOf(TRANSFER_7, OTHER_ACCOUNT)],
+    ["no execTransaction", { hash: HASH, to: ACCOUNT, input: TRANSFER_7.data }],
+  ])("leaves a reply unconfirmed that executes %s", async (_case, execution) => {
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: { id: "safe", name: "Safe" },
+    };
+    vi.stubGlobal("fetch", vi.fn());
+    mocks.getTransaction.mockResolvedValue(execution);
+    // The receipt shows one success of this Safe: the at-once reading alone would accept it.
+    mocks.waitForTransactionReceipt.mockResolvedValue({
+      status: "success",
+      transactionHash: HASH,
+      logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
+    });
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    await waitFor(() =>
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+        status: "safe-proposed",
+        message: UNCONFIRMED,
+      }),
+    );
+    expect(activity.transactionActivityForHash(HASH)?.executionHash).toBeUndefined();
+  });
+
+  it.each([
     ["no execution event of its Safe", [executionLog(OTHER_ACCOUNT, OTHER_PROPOSAL)]],
     [
       "two execution events of its Safe",
@@ -829,7 +900,7 @@ describe("reviewed write hook", () => {
   ])("leaves an execution unconfirmed whose receipt has %s", async (_case, logs) => {
     const { activity, hooks } = await freshHarness();
     savedProposal(activity, HASH, 11155420);
-    mocks.getTransaction.mockResolvedValue({ hash: HASH });
+    mocks.getTransaction.mockResolvedValue(executionOf({ to: TARGET, data: "0x1234" }));
     mocks.waitForTransactionReceipt.mockResolvedValue({
       status: "success",
       transactionHash: HASH,
@@ -842,8 +913,7 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         status: "safe-proposed",
         executionHash: HASH,
-        message:
-          "The receipt doesn't show this Safe transaction's result. Check it in Safe before retrying.",
+        message: UNCONFIRMED,
       }),
     );
   });
@@ -858,7 +928,7 @@ describe("reviewed write hook", () => {
       savedProposal(activity, HASH, chainId);
       const service = vi.fn();
       vi.stubGlobal("fetch", service);
-      mocks.getTransaction.mockResolvedValue({ hash: HASH });
+      mocks.getTransaction.mockResolvedValue(executionOf({ to: TARGET, data: "0x1234" }));
       mocks.waitForTransactionReceipt.mockResolvedValue({
         status: "success",
         transactionHash: HASH,
@@ -949,6 +1019,27 @@ describe("reviewed write hook", () => {
       );
     });
 
+    it("leaves a proposal unconfirmed that is not the call it was reviewed to run", async () => {
+      const { activity, hooks } = await freshHarness();
+      savedProposal(activity, PROPOSAL, 11155111, { to: TARGET, data: "0xabcd" });
+      executedRecord(PROPOSED);
+      mocks.waitForTransactionReceipt.mockResolvedValue({
+        status: "success",
+        transactionHash: EXECUTION,
+        logs: [executionLog(ACCOUNT, PROPOSAL)],
+      });
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+
+      await waitFor(() =>
+        expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+          status: "safe-proposed",
+          message: UNCONFIRMED,
+        }),
+      );
+      expect(mocks.waitForTransactionReceipt).not.toHaveBeenCalled();
+    });
+
     it("never trusts a record whose fields are another proposal's", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
@@ -980,8 +1071,13 @@ describe("reviewed write hook", () => {
             ...PROPOSED,
             safe: ACCOUNT,
             isExecuted: false,
-            confirmations: [],
-            confirmationsRequired: 2,
+            // One current owner, and one address that does not own the Safe.
+            confirmations: [
+              { owner: SAFE_OWNER_A, signature: SIGNATURE },
+              { owner: OTHER_ACCOUNT, signature: SIGNATURE },
+            ],
+            // The service's own count, which the journal does not use.
+            confirmationsRequired: 1,
           }),
         ),
     );
@@ -997,7 +1093,7 @@ describe("reviewed write hook", () => {
     expect(activity.transactionActivityForHash(proposal)).toMatchObject(
       chainId === 11155420
         ? { status: "safe-proposed" }
-        : { status: "safe-proposed", message: expect.stringContaining("0/2 approvals") },
+        : { status: "safe-proposed", message: expect.stringContaining("| 1/2 approvals.") },
     );
   });
 });

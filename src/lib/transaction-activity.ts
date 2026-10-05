@@ -11,6 +11,7 @@ import type {
   ExpectedSafeExecution,
   RejectedReceiptEvent,
 } from "./multichain-guards";
+import type { ReviewedSafeProposal } from "./safe-transactions";
 
 export type TransactionActivityStatus =
   "submitted" | "pending" | "safe-proposed" | "success" | "failed";
@@ -42,6 +43,8 @@ export type TransactionActivity = {
   account?: Address;
   hash?: Hex;
   safeProposalHash?: Hex;
+  /** The Safe a proposal was made to and the calls it was reviewed to run, values as strings. */
+  safeProposal?: ReviewedSafeProposal;
   /** Its authenticated call became permanently obsolete; keep nonce cancellation guidance. */
   obsoleteSafeNonce?: number;
   executionHash?: Hex;

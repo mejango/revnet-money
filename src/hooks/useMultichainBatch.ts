@@ -29,6 +29,7 @@ import {
 import type { JBChainId } from "@/lib/nana/types";
 import { simulatePendingRouterCall } from "@/lib/pending-router-calls";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -76,6 +77,11 @@ type BatchInput = {
 };
 const running = new Set<string>();
 
+/** The one call a saved batch call proposes to its Safe. */
+function savedCall(call: FrozenBatchCall) {
+  return { to: call.address, value: call.value ?? 0n, data: call.data };
+}
+
 function explicitRejection(cause: unknown): boolean {
   const seen = new Set<unknown>();
   while (cause && typeof cause === "object" && !seen.has(cause)) {
@@ -121,10 +127,7 @@ async function verifyDirectResult(
         if (
           // The service writes a nonce as a JSON number; any other form is refused.
           typeof record.nonce !== "number" ||
-          !isAddressEqual(proposal.to, call.address) ||
-          proposal.value !== (call.value ?? 0n) ||
-          proposal.data.toLowerCase() !== call.data.toLowerCase() ||
-          proposal.operation !== 0
+          !safeTransactionRunsCalls(proposal, [savedCall(call)], false)
         )
           throw new Error(
             "The authenticated Safe proposal does not match this exact routing call.",
@@ -175,10 +178,16 @@ async function verifyDirectResult(
       !transaction.to ||
       !isAddressEqual(transaction.to, batch.account) ||
       decoded.functionName !== "execTransaction" ||
-      !isAddressEqual(decoded.args[0], call.address) ||
-      decoded.args[1] !== (call.value ?? 0n) ||
-      decoded.args[2].toLowerCase() !== call.data.toLowerCase() ||
-      decoded.args[3] !== 0
+      !safeTransactionRunsCalls(
+        {
+          to: decoded.args[0],
+          value: decoded.args[1],
+          data: decoded.args[2],
+          operation: decoded.args[3],
+        },
+        [savedCall(call)],
+        false,
+      )
     )
       throw new Error("The Safe execution does not match the saved destination call.");
     // Over WalletConnect, Safe{Wallet} replies with the execution itself when

@@ -451,7 +451,20 @@ export function useSafeBatchSubmit() {
     const callKey = `batch:${account.toLowerCase()}:${chainId}:${keccak256(
       stringToHex(calls.map((call) => `${call.to}:${call.value}:${call.data}`).join("|")),
     )}`;
-    followSubmission(config, hash, chainId, title, account, callKey, true, false);
+    followSubmission(
+      config,
+      hash,
+      chainId,
+      title,
+      account,
+      callKey,
+      {
+        safe,
+        calls: calls.map((call) => ({ to: call.to, value: String(call.value), data: call.data })),
+        batch: true,
+      },
+      false,
+    );
     return { kind: "proposed", hash, calls: steps.length };
   };
 

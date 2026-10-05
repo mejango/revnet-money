@@ -112,6 +112,12 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     const activity = transactionActivitySnapshot().find((row) => row.hash === SAFE_TX_HASH);
     expect(activity?.status).toBe("safe-proposed");
     expect(activity?.kind).toBe("safe");
+    // The journal keeps what the proposal must run, so only that batch can confirm it.
+    expect(activity?.safeProposal).toEqual({
+      safe: ACCOUNT,
+      calls: expected.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
+      batch: true,
+    });
 
     // The same batch again is the pending proposal, not a second one.
     await expect(

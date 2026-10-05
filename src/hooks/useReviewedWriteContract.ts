@@ -1,6 +1,7 @@
 "use client";
 
 import { isSafeConnection } from "@/lib/safe-connector";
+import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -18,18 +19,24 @@ import {
 import { requireNoViewAs } from "@/lib/view-as";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { gasWithHeadroom, simulateCallSequence } from "@bananapus/nana-sdk-core/review";
+import { readAuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
 import {
   hasSafeService,
   readSafeTransaction,
+  SAFE_EXEC_ABI,
   SAFE_NONCE_GUIDANCE,
   safeExecutionResult,
+  safeTransactionMessage,
+  usableSafeConfirmations,
   type SafeQueuedTransaction,
 } from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
 import { useCallback, useMemo } from "react";
 import {
+  decodeFunctionData,
   encodeFunctionData,
+  isAddressEqual,
   isHash,
   keccak256,
   stringToHex,
@@ -75,7 +82,9 @@ const SAFE_EXECUTION_CHECKS = 12;
 const RECEIPT_UNCONFIRMED =
   "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
 const SAFE_RESULT_UNCONFIRMED =
-  "The receipt doesn't show this Safe transaction's result. Check it in Safe before retrying.";
+  "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
+/** A watch reads its Safe's owners and threshold at most this often, for the approvals line. */
+const SAFE_POLICY_REFRESH_MS = 60_000;
 
 async function watchSafeProposal(
   id: string,
@@ -88,6 +97,40 @@ async function watchSafeProposal(
   const existing = safeInflight.get(id);
   if (existing) return existing;
   const tracked = () => refreshTransactionActivities().find((activity) => activity.id === id);
+  // A proposal journaled before its Safe was recorded was made by the Safe itself.
+  const safeOf = () => tracked()?.safeProposal?.safe ?? tracked()?.account;
+  /** Whether a Safe transaction runs exactly what this proposal was reviewed to run. */
+  const runsReviewed = (tx: Parameters<typeof safeTransactionRunsCalls>[0]) => {
+    const proposal = tracked()?.safeProposal;
+    return !!proposal && safeTransactionRunsCalls(tx, proposal.calls, proposal.batch);
+  };
+  /** Whether an execution the chain knows is this Safe's execTransaction of the reviewed calls. */
+  const executesReviewed = (transaction: { to?: Address | null; input?: Hex }) => {
+    const safe = safeOf();
+    if (!safe || !transaction.to || !isAddressEqual(transaction.to, safe)) return false;
+    try {
+      const { functionName, args } = decodeFunctionData({
+        abi: SAFE_EXEC_ABI,
+        data: transaction.input ?? "0x",
+      });
+      if (functionName !== "execTransaction") return false;
+      const [to, value, data, operation] = args;
+      return runsReviewed({ to, value, data, operation });
+    } catch {
+      return false;
+    }
+  };
+  let policy: { owners: Address[]; threshold: number } | null = null;
+  let policyReadAt = -Infinity;
+  /** The Safe's live owners and threshold, read at most once a minute. */
+  const livePolicy = async (safe: Address) => {
+    if (Date.now() - policyReadAt < SAFE_POLICY_REFRESH_MS) return policy;
+    policyReadAt = Date.now();
+    const identity = client ? await readAuthorityIdentity(client, safe).catch(() => null) : null;
+    policy =
+      identity?.kind === "safe" ? { owners: identity.owners, threshold: identity.threshold } : null;
+    return policy;
+  };
   const executed = (isSuccessful: boolean, transactionHash: Hex | undefined) => {
     const needsReceiptVerification = tracked()?.manualVerificationRequired === true;
     updateTransactionActivity(id, {
@@ -109,7 +152,7 @@ async function watchSafeProposal(
     const receipt = client
       ? await waitForReceiptWithRetry(client, executionHash).catch(() => undefined)
       : undefined;
-    const safe = tracked()?.account;
+    const safe = safeOf();
     if (!receipt || !safe) {
       updateTransactionActivity(id, { executionHash, message: RECEIPT_UNCONFIRMED });
       return;
@@ -127,18 +170,18 @@ async function watchSafeProposal(
       if (tracked()?.obsoleteSafeNonce !== undefined) return;
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
       // when the owner executes at once. A safeTxHash is never a transaction.
-      if (
-        client &&
-        attempt < SAFE_EXECUTION_CHECKS &&
-        (await client.getTransaction({ hash }).then(
-          () => true,
-          () => false,
-        ))
-      ) {
-        await settle(hash);
+      // The SDK then reads the Safe's one execution event in that receipt,
+      // whatever its hash, so the execution must run the reviewed calls.
+      const execution =
+        client && attempt < SAFE_EXECUTION_CHECKS
+          ? await client.getTransaction({ hash }).catch(() => undefined)
+          : undefined;
+      if (execution) {
+        if (executesReviewed(execution)) await settle(hash);
+        else updateTransactionActivity(id, { message: SAFE_RESULT_UNCONFIRMED });
         return;
       }
-      const safe = tracked()?.account;
+      const safe = safeOf();
       if (service && safe) {
         // The status of the service's answer tells "not indexed yet" (404)
         // apart from an outage without reading its error message.
@@ -152,11 +195,12 @@ async function watchSafeProposal(
           // The record must name this Safe and hash to this proposal.
           const proposal = (await readSafeTransaction(chainId, safe, hash, {
             fetch: observed,
-          })) as SafeQueuedTransaction & {
-            transactionHash?: unknown;
-            confirmationsRequired?: number;
-          };
+          })) as SafeQueuedTransaction & { transactionHash?: unknown };
           if (tracked()?.obsoleteSafeNonce !== undefined) return;
+          if (!runsReviewed(safeTransactionMessage(proposal))) {
+            updateTransactionActivity(id, { message: SAFE_RESULT_UNCONFIRMED });
+            return;
+          }
           if (proposal.isExecuted) {
             if (typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)) {
               await settle(proposal.transactionHash);
@@ -168,11 +212,14 @@ async function watchSafeProposal(
                 "Safe reports this proposal as executed, but its transaction is not available yet. Do not submit it again while confirmation is unresolved.",
             });
           } else {
-            const approvals = proposal.confirmations?.length ?? 0;
-            const required = proposal.confirmationsRequired;
+            // Only the Safe's current owners' well-formed confirmations count.
+            const live = await livePolicy(safe);
+            const approvals = live
+              ? ` | ${usableSafeConfirmations(proposal, live.owners).length}/${live.threshold} approvals`
+              : "";
             updateTransactionActivity(id, {
               status: "safe-proposed",
-              message: `Safe proposal is not executed${required ? ` | ${approvals}/${required} approvals` : ""}. It remains asynchronous; do not submit it again.`,
+              message: `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
             });
           }
         } catch {
@@ -279,7 +326,20 @@ export async function proposeSafeBatch(
     }
     const { id } = await sendCalls(config, { chainId, calls: encoded });
     const hash = id as Hex;
-    followSubmission(config, hash, chainId, title, account, callKey, true, false);
+    followSubmission(
+      config,
+      hash,
+      chainId,
+      title,
+      account,
+      callKey,
+      {
+        safe: account,
+        calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
+        batch: true,
+      },
+      false,
+    );
     return hash;
   };
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
@@ -302,6 +362,10 @@ export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>)
     );
 }
 
+/**
+ * Journal a submitted write and follow it to its result. `safe` is what a Safe proposal was
+ * reviewed to run, or false for a transaction the wallet sent.
+ */
 export function followSubmission(
   config: ReturnType<typeof useConfig>,
   hash: Hex,
@@ -309,7 +373,7 @@ export function followSubmission(
   title: string,
   account: Address,
   callKey: string,
-  safe: boolean,
+  safe: ReviewedSafeProposal | false,
   manualReceiptVerification: boolean,
 ): void {
   const id = `tx:${chainId}:${hash.toLowerCase()}`;
@@ -325,6 +389,7 @@ export function followSubmission(
     account,
     hash,
     safeProposalHash: safe ? hash : undefined,
+    safeProposal: safe || undefined,
     callKey,
     manualVerificationRequired: manualReceiptVerification || undefined,
   });
@@ -420,13 +485,12 @@ export function useWriteContract(
       const chainId = Number(variables.chainId ?? before.chainId);
       if (!chainId) throw new Error("Select a network before continuing.");
       const functionName = String(variables.functionName);
-      const callKey = `${initialAddress.toLowerCase()}:${chainId}:${variables.address.toLowerCase()}:${variables.value ?? 0n}:${encodeFunctionData(
-        {
-          abi: variables.abi as Abi,
-          functionName,
-          args: variables.args,
-        },
-      )}`;
+      const data = encodeFunctionData({
+        abi: variables.abi as Abi,
+        functionName,
+        args: variables.args,
+      });
+      const callKey = `${initialAddress.toLowerCase()}:${chainId}:${variables.address.toLowerCase()}:${variables.value ?? 0n}:${data}`;
       const submitReviewedCall = async () => {
         const duplicate = refreshTransactionActivities().find(
           (activity) =>
@@ -553,7 +617,11 @@ export function useWriteContract(
           functionName,
           reviewedAccount,
           callKey,
-          safe,
+          safe && {
+            safe: reviewedAccount,
+            calls: [{ to: variables.address, value: String(variables.value ?? 0n), data }],
+            batch: false,
+          },
           ownsReceiptLifecycle,
         );
         return hash;
