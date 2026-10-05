@@ -122,3 +122,19 @@ SDK 2.20.0 teaches `multiSendCallsOf` MultiSendCallOnly 1.4.1; a follow-up takes
 Gate on the final commit: the same checks pass; unit and coverage 1,849 passed, one skipped; browser checks 121
 passed, four skipped; the production build passes. All client JavaScript measures 2,641.9 KiB; the budget rose by
 1 KiB to 2,643 KiB when a build measured 2,642.0 KiB at the old budget.
+
+### Fix round 4
+
+- [x] No Safe proposal ends unconfirmed on one look. With a service, every class the watch can't follow (not listed,
+      a record it can't authenticate, executed without its transaction, a nonce the Safe moved past) ends it only
+      after ten minutes of looks in a row past the hour, and the service's report of its own execution settles it
+      meanwhile. Without a service, every chain check of the minute must find no transaction; a check the node can't
+      answer leaves it live.
+- [x] A missing execution receipt's hour counts from when the execution was first seen, not from the proposal.
+- [x] The Safe's nonce is read at most once a minute, through the reader the owners and threshold use.
+- [x] A refusal by an unconfirmed proposal, a dependent step's too, says to check it in Safe and dismiss it, and every
+      flow shows it as an error; the loan permission toast says why the grant failed.
+- [x] The no-service, no-client rule and the single call's unconfirmed refusal have tests that fail without them.
+
+Gate on the final commit: the same checks pass; unit and coverage 1,860 passed, one skipped; browser checks 121
+passed, four skipped; the production build passes last. All client JavaScript measures 2,642.2 KiB, within 2,643 KiB.
