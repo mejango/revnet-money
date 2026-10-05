@@ -82,6 +82,12 @@ type QueueRow = ProjectSafeQueueTarget & {
   queueError?: string;
 };
 
+/** A queue the card names but can't read, with the one line that says why. */
+type QueueNotice = ProjectSafeQueueTarget & { notice: string };
+
+/** The operator Safe's creation does not prove it is the same Safe on the handle chain. */
+class UnprovenSafeError extends Error {}
+
 type LiveSafePolicy = SafePolicy & { identity: SafeAuthorityIdentity };
 
 /** One chain's next fully signed transaction in an Execute all bundle. */
@@ -142,11 +148,9 @@ async function readLiveSafePolicy(
     unprovenCreation ||= authority.status === "unproven-creation";
   }
   if (!hasLiveAuthority) {
-    throw new Error(
-      unprovenCreation
-        ? unprovenSafeMessage(PROJECT_HANDLE_CHAIN_ID)
-        : "This Safe is no longer the live revnet operator.",
-    );
+    throw unprovenCreation
+      ? new UnprovenSafeError(unprovenSafeMessage(PROJECT_HANDLE_CHAIN_ID))
+      : new Error("This Safe is no longer the live revnet operator.");
   }
   const client = publicClientFor(row.chainId);
   const identity = await readAuthorityIdentity(client, row.safe);
@@ -316,9 +320,9 @@ export function SafeQueueCard({
     queryKey: ["revnet-safe-queues", operatorKey],
     enabled: !operators.isLoading && queueTargets.length > 0,
     staleTime: 15_000,
-    queryFn: async (): Promise<QueueRow[]> => {
+    queryFn: async (): Promise<(QueueRow | QueueNotice)[]> => {
       const results = await Promise.all(
-        queueTargets.map(async (target): Promise<QueueRow | null> => {
+        queueTargets.map(async (target): Promise<QueueRow | QueueNotice | null> => {
           try {
             const livePolicy = await readLiveSafePolicy(target);
             const policy = {
@@ -398,19 +402,20 @@ export function SafeQueueCard({
               transactions,
               queueError,
             };
-          } catch {
-            return null;
+          } catch (cause) {
+            // The Safe still operates the project; only its Ethereum handle queue goes unread.
+            return cause instanceof UnprovenSafeError ? { ...target, notice: cause.message } : null;
           }
         }),
       );
-      return results.filter((row): row is QueueRow => row !== null);
+      return results.filter((row) => row !== null);
     },
   });
 
   // Relayr can run each chain's next fully signed transaction from one
   // payment. Handle writes and same-nonce alternatives execute on their own.
   const batchRows: BatchRow[] = (queue.data ?? []).flatMap((row) => {
-    if (row.handleOnly) return [];
+    if (row.handleOnly || "notice" in row) return [];
     const atNonce = row.transactions.filter(
       ({ transaction }) => transaction.nonce === row.policy.nonce,
     );
@@ -713,10 +718,10 @@ export function SafeQueueCard({
           <div key={`${row.chainId}:${row.safe}`} className="border border-melon-200 bg-white p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-bold">
-                {row.handleOnly ? "Ethereum handles" : chainName(row.chainId)} | nonce{" "}
-                {row.policy.nonce}
+                {row.handleOnly ? "Ethereum handles" : chainName(row.chainId)}
+                {"notice" in row ? null : ` | nonce ${row.policy.nonce}`}
               </span>
-              {safeQueueUrl(row.chainId, row.safe) ? (
+              {!("notice" in row) && safeQueueUrl(row.chainId, row.safe) ? (
                 <a
                   className="text-xs underline"
                   target="_blank"
@@ -727,7 +732,9 @@ export function SafeQueueCard({
                 </a>
               ) : null}
             </div>
-            {row.queueUnavailable ? (
+            {"notice" in row ? (
+              <p className="mt-2 text-sm text-zinc-500">{row.notice}</p>
+            ) : row.queueUnavailable ? (
               <p className="mt-2 text-sm text-zinc-500">{queueUnavailableMessage(row.chainId)}</p>
             ) : row.queueError ? (
               <p className="mt-2 text-sm text-red-700" role="alert">

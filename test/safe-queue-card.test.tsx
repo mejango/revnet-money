@@ -146,6 +146,16 @@ beforeEach(() => {
 });
 
 describe("Safe queue card", () => {
+  it("states in one line why the operator Safe's Ethereum handle queue can't be read", async () => {
+    baseQueue(safeProposalFor({ to: TARGET, data: "0x1234" }, 5));
+    renderCard(8453);
+
+    expect(await screen.findByText("Ethereum handles")).toBeVisible();
+    expect(
+      screen.getByText("Can't verify this Safe is the same on Ethereum.", { exact: true }),
+    ).toBeVisible();
+  });
+
   it("states in one line, and asks no service, where Safe hosts no transaction service", async () => {
     const service = vi.fn();
     vi.stubGlobal("fetch", service);
