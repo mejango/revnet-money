@@ -37,7 +37,7 @@ const mocks = vi.hoisted(() => ({
   wagmiReceipt: vi.fn(),
   // The connected Safe's own reads: its owners and threshold.
   safeReads: undefined as unknown as ReturnType<typeof import("./fixtures/safe-chain").safeChain>,
-  // No chain has a client.
+  // When set, no chain has a client.
   noClient: false,
 }));
 
