@@ -37,20 +37,25 @@ const mocks = vi.hoisted(() => ({
   wagmiReceipt: vi.fn(),
   // The connected Safe's own reads: its owners and threshold.
   safeReads: undefined as unknown as ReturnType<typeof import("./fixtures/safe-chain").safeChain>,
+  // No chain has a client.
+  noClient: false,
 }));
 
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
-  getPublicClient: () => ({
-    chain: { id: 11155111 },
-    estimateContractGas: mocks.estimateContractGas,
-    waitForTransactionReceipt: mocks.waitForTransactionReceipt,
-    getTransactionReceipt: mocks.getTransactionReceipt,
-    getTransaction: mocks.getTransaction,
-    getCode: (args: never) => mocks.safeReads.getCode(args),
-    getStorageAt: (args: never) => mocks.safeReads.getStorageAt(args),
-    request: (args: never) => mocks.safeReads.request(args),
-  }),
+  getPublicClient: () =>
+    mocks.noClient
+      ? undefined
+      : {
+          chain: { id: 11155111 },
+          estimateContractGas: mocks.estimateContractGas,
+          waitForTransactionReceipt: mocks.waitForTransactionReceipt,
+          getTransactionReceipt: mocks.getTransactionReceipt,
+          getTransaction: mocks.getTransaction,
+          getCode: (args: never) => mocks.safeReads.getCode(args),
+          getStorageAt: (args: never) => mocks.safeReads.getStorageAt(args),
+          request: (args: never) => mocks.safeReads.request(args),
+        },
   simulateContract: mocks.simulateContract,
   switchChain: mocks.switchChain,
   watchAccount: () => () => undefined,
@@ -182,6 +187,7 @@ beforeEach(() => {
   // A Safe proposal hash is never a transaction the chain knows.
   mocks.getTransaction.mockRejectedValue(new TransactionNotFoundError({ hash: HASH }));
   mocks.safeReads = safeChain(ACCOUNT);
+  mocks.noClient = false;
   mocks.wagmiReceipt.mockReturnValue({
     data: undefined,
     error: null,
@@ -767,6 +773,39 @@ describe("reviewed write hook", () => {
     expect(mocks.waitForTransactionReceipt).not.toHaveBeenCalled();
   });
 
+  it("refuses the identical call while its proposal's result can't be confirmed, saying to check it in Safe and dismiss it", async () => {
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: { id: "safe", name: "Safe" },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => undefined)),
+    );
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    // Its watch ended without a result the app can confirm.
+    activity.updateTransactionActivity(`tx:11155111:${HASH}`, {
+      message: UNCONFIRMED,
+      safeResultUnconfirmed: true,
+    });
+
+    const refused = await result.current
+      .writeContractAsync(CALL as never)
+      .catch((cause: unknown) => cause);
+
+    expect(refused).toBeInstanceOf(hooks.SafeProposalPendingError);
+    expect((refused as Error).message).toBe(
+      `transfer was proposed to Safe as ${HASH}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
+    );
+    expect(mocks.submit).toHaveBeenCalledTimes(1);
+  });
+
   it("fails closed before review when no wallet account or chain is available", async () => {
     const { hooks } = await freshHarness();
     const { result } = renderHook(() => hooks.useWriteContract());
@@ -1203,6 +1242,24 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();
     },
   );
+
+  it("ends a proposal unconfirmed at once on a chain with neither a Safe service nor a client", async () => {
+    const { activity, hooks } = await freshHarness();
+    const proposal = safeTransactionHash(11155420, ACCOUNT, PROPOSED);
+    savedProposal(activity, proposal, 11155420);
+    const service = vi.fn();
+    vi.stubGlobal("fetch", service);
+    mocks.noClient = true;
+
+    hooks.resumeSafeProposalTracking(mocks.config as never);
+
+    expect(activity.transactionActivityForHash(proposal)).toMatchObject({
+      status: "safe-proposed",
+      message: UNCONFIRMED,
+      safeResultUnconfirmed: true,
+    });
+    expect(service).not.toHaveBeenCalled();
+  });
 
   describe("a proposal the app can't follow to a result", () => {
     const EXECUTION = `0x${"34".repeat(32)}` as Hex;
