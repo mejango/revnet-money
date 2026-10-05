@@ -16,6 +16,7 @@ import {
   jbSplitsAbi,
   jbTerminalStoreAbi,
   jbTokensAbi,
+  revDeployerAbi,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
 import { createHash } from "node:crypto";
@@ -1178,6 +1179,19 @@ registerCall({
       `isOperatorOf operator=${operator}`,
     );
     return true;
+  },
+});
+// This modeled legacy revnet predates the canonical shop configuration.
+registerCall({
+  abi: revDeployerAbi,
+  functionName: "hashedEncodedConfigurationOf",
+  address: addressOf(RevnetCoreContracts.REVDeployer),
+  result: ([requestedProjectId]) => {
+    requireFixture(
+      requestedProjectId === 1n,
+      `hashedEncodedConfigurationOf projectId=${requestedProjectId}`,
+    );
+    return zeroHash;
   },
 });
 registerCall({

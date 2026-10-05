@@ -48,20 +48,25 @@ export function Header(props: Props) {
   const { metadata } = useJBProjectMetadataContext();
   const { token: tokenContext } = useJBTokenContext();
 
+  const hasParticipantGroup = Boolean(projects[0]?.suckerGroupId);
   const participantsQuery = useCompleteParticipants(
     {
-      suckerGroupId: projects[0].suckerGroupId,
+      suckerGroupId: projects[0]?.suckerGroupId ?? "",
       balance_gt: "0",
     },
     Number(chainId),
-    Boolean(projects[0].suckerGroupId),
+    hasParticipantGroup,
   );
 
   const holderSummary = useMemo(
     () => participantCountSummary(participantsQuery.data, participantsQuery.data?.length),
     [participantsQuery.data],
   );
-  const holderValue = participantsQuery.isError
+  const holderUnavailable =
+    !hasParticipantGroup ||
+    participantsQuery.isError ||
+    (!participantsQuery.isLoading && !participantsQuery.data);
+  const holderValue = holderUnavailable
     ? "—"
     : participantsQuery.isLoading
       ? "…"
@@ -219,7 +224,7 @@ export function Header(props: Props) {
                   <span
                     className="font-medium text-black-500"
                     title={
-                      participantsQuery.isError
+                      holderUnavailable
                         ? "Owner data is unavailable."
                         : holderSummary.exact
                           ? undefined
@@ -248,7 +253,7 @@ export function Header(props: Props) {
             </div> */}
               </div>
               <Suspense>
-                {(hasOperator || website || hasCreated || suckers?.length) && (
+                {(hasOperator || website || hasCreated || Boolean(suckers?.length)) && (
                   <div
                     ref={(node) => {
                       metadataRef.current = node;

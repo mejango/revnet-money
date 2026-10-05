@@ -37,7 +37,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // one output-less approve ABI, the SDK's sequence simulation in both Safe batch paths,
 // the revert rule and the isolated reads of project-chosen tokens) measure 2623.9 KiB
 // against 2618.8 KiB; the budget moves up to 2625 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2625);
+// Deployment diagnostics keep contract reads on the server; their opt-in dialog,
+// truthful data states and SDK deployment validation measure 2626.9 KiB against
+// origin/main's 2623.3 KiB. The aggregate budget rises by the minimum 2 KiB;
+// route and route-referenced budgets remain unchanged.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2627);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
