@@ -62,7 +62,10 @@ vi.mock("@/lib/wagmiTransports", () => ({
 vi.mock("@/app/[slug]/getProjectOperator", () => ({
   getIndexedProjectOperatorAddresses: mocks.getOperators,
 }));
+vi.mock("@/app/[slug]/getSuckerGroup", () => ({ getSuckerGroup: async () => null }));
+vi.mock("next/cache", () => ({ unstable_cache: <T>(read: T) => read }));
 
+import { readCanonicalHandle } from "@/app/[slug]/canonicalHandle.server";
 import { resolveProjectRouteUncached } from "@/app/[slug]/resolveProjectRoute.server";
 
 /** Ethereum's ENS resolver text and JBProjectHandles reverse claim, as raw eth_calls. */
@@ -230,6 +233,23 @@ describe("project handle routes", () => {
       expect(service).toHaveBeenCalled();
       // An unproven Safe never reaches the reverse claim.
       expect(mocks.handleSetters).toEqual([]);
+    });
+
+    it("gives an unproven operator Safe no canonical handle", async () => {
+      operatorSafe();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("Not found", { status: 404 })),
+      );
+
+      await expect(readCanonicalHandle(8453, 42, null)).resolves.toBeNull();
+    });
+
+    it("makes a proven operator Safe's handle canonical", async () => {
+      const safe = operatorSafe();
+      vi.stubGlobal("fetch", creationService(safe, "base"));
+
+      await expect(readCanonicalHandle(8453, 42, null)).resolves.toBe("design.juicebox");
     });
 
     it("refuses a 429 at once instead of waiting out its Retry-After", async () => {
@@ -419,5 +439,52 @@ describe("project handle routes", () => {
     await expect(resolveProjectRouteUncached("%E0%A4%A")).resolves.toBeNull();
     await expect(resolveProjectRouteUncached("%2540design.juicebox")).resolves.toBeNull();
     expect(mocks.mainnetRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("canonical project handle", () => {
+  beforeEach(() => {
+    mocks.ensRecord = "8453:42";
+    mocks.verifiedHandle = "design.juicebox";
+    mocks.handleBySetter = {};
+    mocks.handleSetters = [];
+    mocks.currentOperator = OPERATOR;
+    mocks.projectOwner = REV_OWNER;
+    mocks.operatorCandidates = [OPERATOR];
+    mocks.getOperators.mockImplementation(async () => mocks.operatorCandidates);
+    mocks.mainnetRead.mockImplementation(async ({ functionName }: { functionName: string }) => {
+      if (functionName === "resolver") return RESOLVER;
+      throw new Error(`Unexpected mainnet read: ${functionName}`);
+    });
+    mocks.mainnetRequest.mockImplementation(ensAndHandles);
+    mocks.mainnetBlockNumber.mockResolvedValue(1_234n);
+    mocks.mainnetCode.mockResolvedValue("0x");
+    mocks.projectCode.mockResolvedValue("0x");
+    mocks.projectBlockNumber.mockResolvedValue(47_398_760n);
+    mocks.projectGetLogs.mockResolvedValue([]);
+    mocks.projectRead.mockImplementation(
+      async ({ functionName, args }: { functionName: string; args: readonly unknown[] }) => {
+        if (functionName === "ownerOf") return mocks.projectOwner;
+        if (functionName === "isOperatorOf") return args[1] === mocks.currentOperator;
+        throw new Error(`Unexpected project read: ${functionName}`);
+      },
+    );
+  });
+
+  it("is a handle whose own route verifies it for this project", async () => {
+    await expect(readCanonicalHandle(8453, 42, null)).resolves.toBe("design.juicebox");
+  });
+
+  it("is never a handle whose ENS record names another project", async () => {
+    mocks.ensRecord = "8453:43";
+
+    await expect(readCanonicalHandle(8453, 42, null)).resolves.toBeNull();
+  });
+
+  it("is never a handle its setter no longer operates", async () => {
+    mocks.currentOperator = STALE_OPERATOR;
+    mocks.operatorCandidates = [OPERATOR];
+
+    await expect(readCanonicalHandle(8453, 42, null)).resolves.toBeNull();
   });
 });
