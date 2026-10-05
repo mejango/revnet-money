@@ -186,6 +186,4 @@ digest so the artifact is byte-for-byte identical.
 
 ## Shared SDK deployment checks
 
-The app pins its SDK to the archive in `vendor/` so `npm ci` and container builds include the shared deployment checks before the next public SDK release. The release is tracked in [Juice SDK PR #168](https://github.com/Bananapus/juice-sdk-v4/pull/168). `vendor/sdk-snapshot.json` records its source commit, source-file hashes, artifact SHA-256 and npm integrity. The SDK source remains the owner of these checks.
-
-To regenerate, run `node scripts/pack-deployment-preview.mjs . <output-directory>` in the matching Juice SDK checkout. Use the same generated archive in Revnet Money and Juicebox Money, update the dependency and lockfile, and verify the artifact integrity before building. This script rebuilds both module formats from clean output. Registry migration can use the equivalent released version; no source copy belongs in this app.
+The app pins `@bananapus/nana-sdk-core` to published version `2.19.0`. The lockfile records the npm registry archive and integrity used by `npm ci` and container builds. This release includes the shared deployment configuration and diagnostics helpers from [Juice SDK PR #168](https://github.com/Bananapus/juice-sdk-v4/pull/168). The SDK source remains the owner of these checks.

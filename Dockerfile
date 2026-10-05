@@ -7,7 +7,6 @@ RUN npm install --global npm@12.0.1 --no-audit --no-fund
 
 FROM base AS dependencies
 COPY package.json package-lock.json ./
-COPY vendor ./vendor
 RUN npm ci --ignore-scripts --no-audit --no-fund
 
 FROM base AS builder
