@@ -76,6 +76,8 @@ function requirePlannedAccount(planned: unknown, connected: Address): void {
 }
 
 const safeInflight = new Map<string, Promise<void>>();
+/** A watch looks for its proposal's result this often. */
+const SAFE_LOOK_MS = 5_000;
 // Chain checks per watch: an execution Safe{Wallet} sent at once reaches the
 // chain within a minute of its reply, and a resumed watch finds it at once.
 const SAFE_EXECUTION_CHECKS = 12;
@@ -257,7 +259,7 @@ async function watchSafeProposal(
     // Whether the last look left the proposal where the app can't follow it to a result.
     let stuck = true;
     // Without a Safe service only the chain can show an execution.
-    const looks = service ? SAFE_RESULT_HORIZON_MS / 5_000 : SAFE_EXECUTION_CHECKS;
+    const looks = service ? SAFE_RESULT_HORIZON_MS / SAFE_LOOK_MS : SAFE_EXECUTION_CHECKS;
     for (let attempt = 0; attempt < looks; attempt += 1) {
       if (tracked()?.obsoleteSafeNonce !== undefined) return;
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
@@ -282,7 +284,7 @@ async function watchSafeProposal(
         unconfirmed();
         return;
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 5_000));
+      await new Promise((resolve) => window.setTimeout(resolve, SAFE_LOOK_MS));
     }
     // The watch gives up. A proposal still awaiting approvals, or behind a service outage, is
     // followed again on the next load; anything else ends unconfirmed.
