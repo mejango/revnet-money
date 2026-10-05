@@ -1,5 +1,6 @@
 import type { ProjectQuery } from "@/lib/bendystraw/types";
 import { revertedNonexistentToken } from "@/lib/contract-revert";
+import type { IndexedReadStatus } from "@/lib/projectIndexStatus";
 import { fetchIpfsMetadata } from "@/lib/projectMetadataFill.server";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
@@ -15,7 +16,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { cache } from "react";
 import { erc20Abi, zeroAddress, type Address } from "viem";
-import { getProject } from "./getProject";
+import { getIndexedProject } from "./getProject";
 
 type ProjectRow = NonNullable<ProjectQuery["project"]>;
 
@@ -137,26 +138,30 @@ const getOnchainProjectFallback = cache(
  * and falling back to on-chain data when the row is missing or incomplete.
  *
  * `degraded: true` signals that indexed data was unavailable so the page
- * should render with reduced stats and a "still indexing" note.
+ * should render with reduced stats and the observed availability reason.
  */
 export const getProjectWithFallback = cache(
   async (
     projectId: number | bigint,
     chainId: JBChainId,
-  ): Promise<{ project: ProjectRow; degraded: boolean } | null> => {
-    const indexed = await getProject(Number(projectId), chainId);
-    if (indexed?.token) return { project: indexed, degraded: false };
+  ): Promise<{ project: ProjectRow; degraded: boolean; indexStatus: IndexedReadStatus } | null> => {
+    const { data: indexed, status: indexStatus } = await getIndexedProject(
+      Number(projectId),
+      chainId,
+    );
+    if (indexed && indexStatus === "available")
+      return { project: indexed, degraded: false, indexStatus };
 
     const fallback = await getOnchainProjectFallback(Number(projectId), chainId);
     if (!fallback) return null;
 
-    if (!indexed) return { project: fallback, degraded: true };
+    if (!indexed) return { project: fallback, degraded: true, indexStatus };
 
     // Keep every indexed field that is populated; fill the gaps on-chain.
     const merged = { ...fallback } as Record<string, unknown>;
     for (const [key, value] of Object.entries(indexed)) {
       if (value !== null && value !== undefined) merged[key] = value;
     }
-    return { project: merged as ProjectRow, degraded: true };
+    return { project: merged as ProjectRow, degraded: true, indexStatus };
   },
 );

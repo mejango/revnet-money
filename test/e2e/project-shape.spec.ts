@@ -527,3 +527,49 @@ test("home and discover shells stay contained and deterministic", async ({ page,
   await page.waitForTimeout(250);
   expectBoundaryToStayLocal(boundary);
 });
+
+test("deployment diagnostics are available from the project menu without a wallet", async ({
+  page,
+  context,
+  request,
+}) => {
+  const boundary = await openFixtureProject(page);
+  await expect(page.getByRole("dialog", { name: "Check deployment" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Check deployment" })).toHaveCount(0);
+  await page.getByRole("button", { name: "More project sections" }).click();
+  await page.getByRole("button", { name: "Check deployment" }).click();
+  const dialog = page.getByRole("dialog", { name: "Check deployment" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Onchain deployment" })).toBeVisible();
+  await expect(dialog.getByText("Project exists", { exact: false })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Project data service" })).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Operator address (optional)" })).toBeVisible();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await dialog.getByRole("button", { name: "Copy diagnostics" }).click();
+  await expect(dialog.getByText("Diagnostics copied.")).toBeVisible();
+  const report = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+  expect(report).toMatchObject({
+    chainId: 1,
+    projectId: "1",
+    indexer: { project: "available", group: "available" },
+  });
+  expect(report.deployment.checkedBlock).toBeTruthy();
+  expect(
+    report.deployment.checks.some(
+      (check: { id: string; status: string }) =>
+        check.id === "project.owner" && check.status === "passed",
+    ),
+  ).toBe(true);
+  await expectNoBlockingAccessibilityFindings(page);
+  await expectContained(page, ["dialog [data-state='open']"]);
+  await dialog.locator("[data-state='open']").evaluate((panel) => {
+    panel.scrollTop = 0;
+  });
+  await page.screenshot({
+    path: `test-results/deployment-diagnostics-${page.viewportSize()?.width}.png`,
+  });
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect((await fixtureStatus(request)).unknownRequests).toEqual([]);
+  expectBoundaryToStayLocal(boundary);
+});

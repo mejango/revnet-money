@@ -167,6 +167,7 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
       where: { suckerGroupId },
     },
     Number(projects[0]?.chainId ?? 1),
+    Boolean(suckerGroupId),
   );
 
   const items = data ?? [];
@@ -226,7 +227,7 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
       </div>
       <ProfilesProvider addresses={addresses}>
         <div className="pr-1">
-          {isError ? (
+          {!suckerGroupId || isError ? (
             <p className="py-4 text-center text-sm text-red-600">
               Activity is temporarily unavailable. Try again shortly.
             </p>

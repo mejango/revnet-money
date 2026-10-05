@@ -103,7 +103,7 @@ describe("getProjectWithFallback", () => {
 
     const result = await getProjectWithFallback(PROJECT_ID, CHAIN_ID);
 
-    expect(result).toEqual({ project: indexedRow(), degraded: false });
+    expect(result).toEqual({ project: indexedRow(), degraded: false, indexStatus: "available" });
     expect(mocks.readContract).not.toHaveBeenCalled();
   });
 
@@ -114,6 +114,7 @@ describe("getProjectWithFallback", () => {
     const result = await getProjectWithFallback(PROJECT_ID, CHAIN_ID);
 
     expect(result?.degraded).toBe(true);
+    expect(result?.indexStatus).toBe("unavailable");
     expect(result?.project).toMatchObject({
       projectId: PROJECT_ID,
       version: 6,
@@ -131,6 +132,7 @@ describe("getProjectWithFallback", () => {
 
     const result = await getProjectWithFallback(PROJECT_ID, CHAIN_ID);
 
+    expect(result?.indexStatus).toBe("missing");
     expect(result?.project.tokenSymbol).toBe("ETH");
     const symbolReads = mocks.readContract.mock.calls.filter(
       (call) => (call[0] as { functionName: string }).functionName === "symbol",
@@ -242,6 +244,7 @@ describe("getProjectWithFallback", () => {
     const result = await getProjectWithFallback(PROJECT_ID, CHAIN_ID);
 
     expect(result?.degraded).toBe(true);
+    expect(result?.indexStatus).toBe("incomplete");
     // Indexed fields win where present; on-chain fills the gaps.
     expect(result?.project.name).toBe("Indexed Revnet");
     expect(result?.project.suckerGroupId).toBe("group-1");

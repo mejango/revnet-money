@@ -2,6 +2,7 @@ import { Nav } from "@/components/layout/Nav";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
 import { formatProjectPreviewBalance, projectPreviewSlogan } from "@/lib/project-link-preview";
 import { PROJECT_HANDLE_CHAIN_ID, readExactProjectHandle } from "@/lib/projectHandles";
+import { indexedGroupStatus } from "@/lib/projectIndexStatus";
 import { decodeProjectRouteSlug, slugFor } from "@/lib/slug";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import type { Metadata } from "next";
@@ -12,12 +13,13 @@ import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
 import { Header } from "./components/Header/Header";
 import { NewProjectNotice } from "./components/NewProjectNotice";
 import { PayCard } from "./components/PayCard/PayCard";
+import { ProjectDataNotice, ProjectDiagnosticsProvider } from "./components/ProjectDiagnostics";
 import { ResponsiveProjectLayout } from "./components/ResponsiveProjectLayout";
 import { ShopCartProvider } from "./components/v6/ShopCartContext";
 import { getProject } from "./getProject";
 import { getProjectWithFallback } from "./getProjectFallback";
 import { getIndexedProjectOperatorAddresses, getProjectOperator } from "./getProjectOperator";
-import { getSuckerGroup } from "./getSuckerGroup";
+import { getIndexedSuckerGroup, getSuckerGroup } from "./getSuckerGroup";
 import { ProjectProviders } from "./ProjectProviders";
 import { resolveProjectRoute } from "./resolveProjectRoute.server";
 import { getRulesets } from "./terms/getRulesets";
@@ -183,24 +185,26 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
     ? Promise.resolve({ address: route.verifiedOperator })
     : getProjectOperator(Number(projectId), chainId).catch(() => undefined);
   const suckerGroupPromise = project.suckerGroupId
-    ? getSuckerGroup(project.suckerGroupId, chainId)
-    : Promise.resolve(null);
+    ? getIndexedSuckerGroup(project.suckerGroupId, chainId)
+    : Promise.resolve({ data: null, status: "not-checked" as const });
   const isRevnet = project.isRevnet !== false;
   const rulesetsPromise = isRevnet
     ? getRulesets(projectId.toString(), chainId)
     : Promise.resolve([]);
 
-  const [indexedSuckerGroup, rulesets] = await Promise.all([suckerGroupPromise, rulesetsPromise]);
+  const [indexedGroup, rulesets] = await Promise.all([suckerGroupPromise, rulesetsPromise]);
 
-  // A missing sucker group means the indexer hasn't caught up (or is down),
-  // not that the project is gone: render a degraded page from what the chain
-  // provides instead of a false 404.
-  const degraded = resolved.degraded || !indexedSuckerGroup;
-  const suckerGroup = indexedSuckerGroup ?? {
+  const indexStatus = {
+    project: resolved.indexStatus,
+    group:
+      indexedGroup.status === "unavailable" || indexedGroup.status === "not-checked"
+        ? indexedGroup.status
+        : indexedGroupStatus(indexedGroup.data, Number(projectId), chainId),
+  };
+  const degraded = resolved.degraded || indexStatus.group !== "available";
+  // Incomplete groups must not omit the requested project or leave the header with no rows.
+  const suckerGroup = (indexStatus.group === "available" ? indexedGroup.data : null) ?? {
     id: project.suckerGroupId,
-    paymentsCount: 0,
-    tokenSupply: "0",
-    volumeUsd: "0",
     projects: {
       items: [
         {
@@ -240,43 +244,42 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
         project={project}
         projects={projects}
       >
-        <ShopCartProvider>
-          <div id="project-top">
-            <Nav wide />
-          </div>
-
-          {degraded && (
-            <div className="w-full px-4 sm:container pt-4">
-              <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                This project was found onchain but hasn't finished indexing. Some stats may be
-                missing or out of date.
-              </p>
+        <ProjectDiagnosticsProvider chainId={chainId} projectId={projectId}>
+          <ShopCartProvider>
+            <div id="project-top">
+              <Nav wide />
             </div>
-          )}
-          <div className="w-full px-4 sm:container pt-6">
-            <Header
-              isRevnet={isRevnet}
-              operatorPromise={operatorPromise}
-              projects={projects}
-              createdAt={project.createdAt}
-            />
-          </div>
-          {isRevnet ? (
-            <ResponsiveProjectLayout
-              sidebar={
-                <>
-                  {startDate && <NewProjectNotice startDate={startDate} />}
-                  <div className="mt-1 mb-4">
-                    <PayCard />
-                  </div>
-                </>
-              }
-              activity={<ActivityFeed suckerGroupId={suckerGroup.id} projects={projects} />}
-            >
-              {children}
-            </ResponsiveProjectLayout>
-          ) : null}
-        </ShopCartProvider>
+
+            {degraded && (
+              <div className="w-full px-4 sm:container pt-4">
+                <ProjectDataNotice status={indexStatus} />
+              </div>
+            )}
+            <div className="w-full px-4 sm:container pt-6">
+              <Header
+                isRevnet={isRevnet}
+                operatorPromise={operatorPromise}
+                projects={projects}
+                createdAt={project.createdAt}
+              />
+            </div>
+            {isRevnet ? (
+              <ResponsiveProjectLayout
+                sidebar={
+                  <>
+                    {startDate && <NewProjectNotice startDate={startDate} />}
+                    <div className="mt-1 mb-4">
+                      <PayCard />
+                    </div>
+                  </>
+                }
+                activity={<ActivityFeed suckerGroupId={suckerGroup.id} projects={projects} />}
+              >
+                {children}
+              </ResponsiveProjectLayout>
+            ) : null}
+          </ShopCartProvider>
+        </ProjectDiagnosticsProvider>
       </ProjectProviders>
     </>
   );

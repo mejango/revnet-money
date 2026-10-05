@@ -22,23 +22,18 @@ import {
   build721RulesetMetadata,
   buildAccountingContext,
   buildDeployRevnetTx,
+  buildRevnet721Config,
   buildRevnetStageConfig,
   fillSplitPercents,
+  resolve721PricingContext,
   REV_METADATA_ALLOW_SUCKER_DEPLOYMENT,
   RULESET_WEIGHT_INHERIT,
   tokenCurrencyId,
 } from "@bananapus/nana-sdk-core/v6";
-import { Address, ContractFunctionArgs, parseUnits, zeroAddress } from "viem";
+import { Address, parseUnits, zeroAddress } from "viem";
 import { RevnetFormData } from "../types";
 
-// Standard reserves use the 4-arg `deployFor` overload. Custom reserves use the
-// 6-arg overload so the empty 721 store can inherit the ERC-20's own decimals.
-// Keep both argument shapes typed against the deployer ABI.
-type RevDeployerAbi = ReturnType<typeof buildDeployRevnetTx>["abi"];
-type DeployForArgs = ContractFunctionArgs<RevDeployerAbi, "payable", "deployFor">;
-export type DeployRevnetRequest = Omit<ReturnType<typeof buildDeployRevnetTx>, "args"> & {
-  args: DeployForArgs;
-};
+export type DeployRevnetRequest = ReturnType<typeof buildDeployRevnetTx>;
 
 export function parseDeployData(
   _formData: RevnetFormData,
@@ -212,62 +207,37 @@ export function parseDeployData(
     });
   });
 
-  // The v6 REVDeployer bakes in the terminals, buyback hook, and loans contract.
-  // `buildDeployRevnetTx` sends the creation fee as the transaction's value
-  // (revnetId defaults to 0n: a new revnet).
-  // Every revnet gets a store: REVDeployer's four-argument `deployFor` deploys an empty 721
-  // hook itself when none is given (REVDeployer.sol:594-605). It hardcodes 18 price decimals
-  // there, which mis-prices a USD- or USDC-denominated store by twelve orders of magnitude, and
-  // grants the operator every 721 permission. So the config is always ours to send.
-  //
-  // Item prices are denominated in the revnet's own base currency by default — the same unit
-  // its issuance is quoted in — or in USD when the store is priced that way. The decimals must
-  // follow the CURRENCY, not the reserve token: a USD-denominated revnet holding ETH prices its
-  // items with 6 decimals, not 18.
-  const storePricing =
-    formData.store.pricing === "USD"
-      ? { currency: USD_CURRENCY_ID(6), decimals: 6 }
-      : {
-          currency: baseCurrency,
-          decimals:
-            formData.reserveAsset === "CUSTOM"
-              ? tokenDecimals
-              : formData.issuanceBaseCurrency === "USD"
-                ? 6
-                : NATIVE_TOKEN_DECIMALS,
-        };
+  // Shop prices follow their currency, independently of the reserve token.
+  const storePricing = resolve721PricingContext({
+    currency: formData.store.pricing === "USD" ? USD_CURRENCY_ID(6) : baseCurrency,
+    accountingContexts: accountingContextsToAccept,
+  });
 
   const tiers = buildTierConfigs(formData.store.items, storePricing.decimals, extra.chainId);
   if (typeof tiers === "string") throw new Error(tiers);
 
-  const tiered721Config = {
-    baseline721HookConfiguration: {
-      name: formData.store.collectionName.trim() || `${formData.name} Store`,
-      symbol: formData.store.collectionSymbol.trim() || `${formData.tokenSymbol}STORE`,
-      baseUri: "ipfs://",
-      tokenUriResolver: zeroAddress,
-      contractUri: extra.metadataCid,
-      tiersConfig: {
-        tiers,
-        currency: storePricing.currency,
-        decimals: storePricing.decimals,
-      },
-      flags: {
-        noNewTiersWithReserves: formData.store.noNewTiersWithReserves,
-        noNewTiersWithVotes: formData.store.noNewTiersWithVotes,
-        noNewTiersWithOwnerMinting: formData.store.noNewTiersWithOwnerMinting,
-        preventOverspending: formData.store.preventOverspending,
-      },
-    },
+  const tiered721Config = buildRevnet721Config({
+    name: formData.store.collectionName.trim() || `${formData.name} Store`,
+    symbol: formData.store.collectionSymbol.trim() || `${formData.tokenSymbol}STORE`,
+    contractUri: extra.metadataCid,
     salt: extra.salt,
-    // The form asks what the operator MAY do; the deployer takes what it may NOT.
-    preventOperatorAdjustingTiers: !formData.store.operatorCanAdjustTiers,
-    preventOperatorUpdatingMetadata: !formData.store.operatorCanUpdateMetadata,
-    preventOperatorMinting: !formData.store.operatorCanMint,
-    preventOperatorIncreasingDiscountPercent: !formData.store.operatorCanIncreaseDiscount,
-  };
+    pricing: storePricing,
+    tiers,
+    flags: {
+      noNewTiersWithReserves: formData.store.noNewTiersWithReserves,
+      noNewTiersWithVotes: formData.store.noNewTiersWithVotes,
+      noNewTiersWithOwnerMinting: formData.store.noNewTiersWithOwnerMinting,
+      preventOverspending: formData.store.preventOverspending,
+    },
+    operatorPermissions: {
+      canAdjustTiers: formData.store.operatorCanAdjustTiers,
+      canUpdateMetadata: formData.store.operatorCanUpdateMetadata,
+      canMint: formData.store.operatorCanMint,
+      canIncreaseDiscountPercent: formData.store.operatorCanIncreaseDiscount,
+    },
+  });
 
-  const request = buildDeployRevnetTx({
+  return buildDeployRevnetTx({
     chainId: extra.chainId,
     config: {
       description: {
@@ -290,17 +260,4 @@ export function parseDeployData(
     tiered721Config,
     allowedPosts: [],
   });
-
-  // Viem cannot reliably disambiguate overloaded tuple-heavy functions when
-  // one overload contains empty arrays. Keep only the selected deployFor
-  // overload so encoding, simulation, review, and wallet submission all use
-  // the same selector.
-  const argCount = request.args.length;
-  return {
-    ...request,
-    abi: request.abi.filter(
-      (item) =>
-        item.type !== "function" || item.name !== "deployFor" || item.inputs.length === argCount,
-    ) as unknown as RevDeployerAbi,
-  } as DeployRevnetRequest;
 }
