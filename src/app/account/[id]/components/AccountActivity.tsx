@@ -136,6 +136,8 @@ export function AccountActivity({ address }: { address: Address }) {
       (activity.status !== "success" || activity.manualVerificationRequired)
     )
       return true;
+    // A Safe proposal the app can't confirm stays, with its Dismiss, until its account dismisses it.
+    if (activity.safeResultUnconfirmed) return true;
     const hashes = [
       activity.hash,
       activity.executionHash,

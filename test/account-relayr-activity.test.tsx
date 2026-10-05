@@ -113,4 +113,29 @@ describe("a Safe proposal whose result can't be confirmed here", () => {
     fireEvent.click(dismiss[0]!);
     expect(mocks.dismiss).toHaveBeenCalledExactlyOnceWith("safe:unconfirmed");
   });
+
+  it.each(["hash", "executionHash"] as const)(
+    "stays, with its Dismiss, once its %s is indexed",
+    (field) => {
+      mocks.activities = [
+        activity({
+          id: "safe:unconfirmed",
+          kind: "safe",
+          status: "safe-proposed",
+          bundleUuid: undefined,
+          relayrPaymentStatus: undefined,
+          title: "Make the market",
+          hash: `0x${"bb".repeat(32)}`,
+          [field]: HASH,
+          safeResultUnconfirmed: true,
+        }),
+      ];
+      mocks.indexed = [{ id: "indexed-execution", txHash: HASH, chainId: 8453 }];
+      render(<AccountActivity address={ACCOUNT} />);
+
+      expect(screen.getByText("Make the market")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(mocks.dismiss).toHaveBeenCalledExactlyOnceWith("safe:unconfirmed");
+    },
+  );
 });
