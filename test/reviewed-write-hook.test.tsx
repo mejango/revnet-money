@@ -94,13 +94,14 @@ const SIGNATURE = `0x${"12".repeat(64)}1b` as Hex;
 
 /**
  * A Safe proposal the tracker resumes after a reload, journaled with the call it was reviewed to
- * run, or, as before this app kept them, with none (`reviewed` null).
+ * run, or with none (`reviewed` null), and made at `createdAt`.
  */
 function savedProposal(
   activity: typeof import("@/lib/transaction-activity"),
   hash: Hex,
   chainId: number,
   reviewed: { to: Address; data: Hex } | null = { to: TARGET, data: "0x1234" },
+  createdAt?: number,
 ) {
   activity.recordTransactionActivity({
     id: `tx:${chainId}:${hash}`,
@@ -115,8 +116,11 @@ function savedProposal(
     ...(reviewed
       ? { safeProposal: { safe: ACCOUNT, calls: [{ ...reviewed, value: "0" }], batch: false } }
       : {}),
+    createdAt,
   });
 }
+
+const HOUR = 60 * 60_000;
 
 /** The Safe's own transaction running `call`, as the chain returns it for an execution sent at once. */
 function executionOf(call: { to: Address; data: Hex }, safe: Address = ACCOUNT) {
@@ -897,7 +901,7 @@ describe("reviewed write hook", () => {
     expect(activity.transactionActivityForHash(HASH)?.executionHash).toBeUndefined();
   });
 
-  it("settles a reply journaled before its reviewed calls were by its Safe's one execution, as before", async () => {
+  it("settles a reply journaled without reviewed calls by its Safe's one execution", async () => {
     const { activity, hooks } = await freshHarness();
     savedProposal(activity, HASH, 11155420, null);
     mocks.getTransaction.mockResolvedValue(executionOf(TRANSFER_7));
@@ -1047,7 +1051,7 @@ describe("reviewed write hook", () => {
       );
     });
 
-    it("settles a proposal journaled before its reviewed calls were from its Safe's event for this proposal", async () => {
+    it("settles a proposal journaled without reviewed calls from its Safe's event for this proposal", async () => {
       const { activity, hooks } = await freshHarness();
       savedProposal(activity, PROPOSAL, 11155111, null);
       executedRecord(PROPOSED);
@@ -1147,8 +1151,118 @@ describe("reviewed write hook", () => {
     else expect(service.mock.calls.length).toBeGreaterThan(12);
     expect(activity.transactionActivityForHash(proposal)).toMatchObject(
       chainId === 11155420
-        ? { status: "safe-proposed" }
+        ? { status: "safe-proposed", message: UNCONFIRMED, safeResultUnconfirmed: true }
         : { status: "safe-proposed", message: expect.stringContaining("| 1/2 approvals.") },
     );
+    if (chainId === 11155111) {
+      expect(activity.transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();
+    }
+  });
+
+  describe("a proposal the app can't follow to a result", () => {
+    /** The Safe service answering every request for the proposal with `answer`. */
+    function serviceAnswering(answer: () => Response) {
+      const service = vi.fn(async () => answer());
+      vi.stubGlobal("fetch", service);
+      return service;
+    }
+
+    it("ends unconfirmed when its watch gives up on a proposal Safe never lists", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      savedProposal(activity, PROPOSAL, 11155111);
+      serviceAnswering(() => new Response("Not found", { status: 404 }));
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(HOUR - 60_000);
+      expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+
+      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "safe-proposed",
+        message: UNCONFIRMED,
+        safeResultUnconfirmed: true,
+      });
+    });
+
+    it.each([
+      ["Safe never lists", () => new Response("Not found", { status: 404 })],
+      [
+        "Safe lists with another proposal's fields",
+        () => new Response(JSON.stringify({ ...PROPOSED, nonce: 8, safe: ACCOUNT })),
+      ],
+      [
+        "Safe reports executed without its transaction",
+        () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: true })),
+      ],
+    ])("ends unconfirmed at once, an hour after it was made, when %s", async (_case, answer) => {
+      const { activity, hooks } = await freshHarness();
+      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
+      serviceAnswering(answer);
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+
+      await waitFor(() =>
+        expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+          status: "safe-proposed",
+          message: UNCONFIRMED,
+          safeResultUnconfirmed: true,
+        }),
+      );
+    });
+
+    it.each([
+      ["another transaction took its nonce, ends unconfirmed", 8n, true],
+      ["its nonce is still to come, keeps following it", 7n, false],
+    ])("an hour after it was made, when %s", async (_case, safeNonce, ended) => {
+      const { activity, hooks } = await freshHarness();
+      mocks.safeReads = safeChain(ACCOUNT, { nonce: safeNonce });
+      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
+      serviceAnswering(
+        () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false })),
+      );
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+
+      await waitFor(() =>
+        expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject(
+          ended
+            ? { message: UNCONFIRMED, safeResultUnconfirmed: true }
+            : { message: expect.stringContaining("approvals") },
+        ),
+      );
+      if (!ended) {
+        expect(
+          activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed,
+        ).toBeUndefined();
+      }
+    });
+
+    it("ends unconfirmed, an hour after it was made, when the chain never returns its execution's receipt", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
+      serviceAnswering(
+        () =>
+          new Response(
+            JSON.stringify({
+              ...PROPOSED,
+              safe: ACCOUNT,
+              isExecuted: true,
+              transactionHash: `0x${"34".repeat(32)}`,
+            }),
+          ),
+      );
+      mocks.waitForTransactionReceipt.mockRejectedValue(new Error("timed out"));
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "safe-proposed",
+        message: UNCONFIRMED,
+        safeResultUnconfirmed: true,
+      });
+    });
   });
 });

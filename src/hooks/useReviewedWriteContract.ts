@@ -19,7 +19,7 @@ import {
 import { requireNoViewAs } from "@/lib/view-as";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { gasWithHeadroom, simulateCallSequence } from "@bananapus/nana-sdk-core/review";
-import { readAuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
+import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   hasSafeService,
   readSafeTransaction,
@@ -85,6 +85,11 @@ const SAFE_RESULT_UNCONFIRMED =
   "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
 /** A watch reads its Safe's owners and threshold at most this often, for the approvals line. */
 const SAFE_POLICY_REFRESH_MS = 60_000;
+/**
+ * A proposal the app still can't follow this long after it was made ends unconfirmed: the hour a
+ * watch polls the Safe service for.
+ */
+const SAFE_RESULT_HORIZON_MS = 60 * 60_000;
 
 async function watchSafeProposal(
   id: string,
@@ -93,16 +98,15 @@ async function watchSafeProposal(
   client: PublicClient | undefined,
 ): Promise<void> {
   const service = hasSafeService(chainId);
-  if (!service && !client) return;
   const existing = safeInflight.get(id);
   if (existing) return existing;
   const tracked = () => refreshTransactionActivities().find((activity) => activity.id === id);
-  // A proposal journaled before its Safe was recorded was made by the Safe itself.
+  // A proposal journaled without its Safe was made by the Safe it names as its account.
   const safeOf = () => tracked()?.safeProposal?.safe ?? tracked()?.account;
   /**
    * Whether a Safe transaction runs exactly what this proposal was reviewed to run. A proposal
-   * journaled before the app kept its reviewed calls has none, and keeps the earlier rule: its
-   * authenticated hash and the Safe's own event decide.
+   * journaled without reviewed calls is held to its authenticated hash and the Safe's own event
+   * for it alone.
    */
   const runsReviewed = (tx: Parameters<typeof safeTransactionRunsCalls>[0]) => {
     const proposal = tracked()?.safeProposal;
@@ -110,7 +114,7 @@ async function watchSafeProposal(
   };
   /** Whether an execution the chain knows is this Safe's execTransaction of the reviewed calls. */
   const executesReviewed = (transaction: { to?: Address | null; input?: Hex }) => {
-    // The earlier rule, as in runsReviewed: the Safe's one execution in its receipt decides.
+    // Without reviewed calls, the Safe's one execution in the receipt decides (see runsReviewed).
     if (!tracked()?.safeProposal) return true;
     const safe = safeOf();
     if (!safe || !transaction.to || !isAddressEqual(transaction.to, safe)) return false;
@@ -156,6 +160,9 @@ async function watchSafeProposal(
       message: SAFE_RESULT_UNCONFIRMED,
       safeResultUnconfirmed: true,
     });
+  /** Whether the hour after the proposal was made has passed. */
+  const pastHorizon = () =>
+    Date.now() - (tracked()?.createdAt ?? Date.now()) >= SAFE_RESULT_HORIZON_MS;
   /**
    * Settles the proposal from its execution's receipt: only the Safe's own
    * event for this proposal decides, never the receipt's status alone or
@@ -167,7 +174,9 @@ async function watchSafeProposal(
       : undefined;
     const safe = safeOf();
     if (!receipt || !safe) {
-      updateTransactionActivity(id, { executionHash, message: RECEIPT_UNCONFIRMED });
+      // A receipt still missing an hour after the proposal was made is not coming.
+      if (pastHorizon()) unconfirmed(executionHash);
+      else updateTransactionActivity(id, { executionHash, message: RECEIPT_UNCONFIRMED });
       return;
     }
     const result = safeExecutionResult(receipt, safe, hash);
@@ -177,10 +186,80 @@ async function watchSafeProposal(
     }
     executed(result.status === "success", executionHash);
   };
+  /**
+   * One look at the Safe service: "done" once the proposal is settled or ends unconfirmed, "live"
+   * while it can still execute or the service is down, and "stuck" while the app can't follow
+   * it: not listed, a record it can't authenticate, executed without its transaction, or a nonce
+   * the Safe has moved past.
+   */
+  const askService = async (safe: Address): Promise<"done" | "live" | "stuck"> => {
+    // The status of the service's answer tells "not indexed yet" (404) and a record it can't
+    // read (2xx) apart from an outage, without reading its error message.
+    let status = 0;
+    const observed: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      status = response.status;
+      return response;
+    };
+    try {
+      // The record must name this Safe and hash to this proposal.
+      const proposal = (await readSafeTransaction(chainId, safe, hash, {
+        fetch: observed,
+      })) as SafeQueuedTransaction & { transactionHash?: unknown };
+      if (tracked()?.obsoleteSafeNonce !== undefined) return "done";
+      const message = safeTransactionMessage(proposal);
+      if (!runsReviewed(message)) {
+        unconfirmed();
+        return "done";
+      }
+      if (proposal.isExecuted) {
+        if (typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)) {
+          await settle(proposal.transactionHash);
+          return "done";
+        }
+        updateTransactionActivity(id, {
+          status: "safe-proposed",
+          message:
+            "Safe reports this proposal as executed, but its transaction is not available yet. Do not submit it again while confirmation is unresolved.",
+        });
+        return "stuck";
+      }
+      // Only the Safe's current owners' well-formed confirmations count.
+      const live = await livePolicy(safe);
+      const approvals = live
+        ? ` | ${usableSafeConfirmations(proposal, live.owners).length}/${live.threshold} approvals`
+        : "";
+      updateTransactionActivity(id, {
+        status: "safe-proposed",
+        message: `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
+      });
+      // Another transaction took its nonce, so it can never execute. The nonce is read only after
+      // the hour, so a service that indexes an execution late is not taken for that.
+      const nonce =
+        pastHorizon() && client ? await readBoundedSafeNonce(client, safe).catch(() => null) : null;
+      return nonce !== null && nonce > message.nonce ? "stuck" : "live";
+    } catch {
+      if (status === 404 || (status >= 200 && status < 300)) return "stuck";
+      updateTransactionActivity(id, {
+        status: "safe-proposed",
+        message:
+          "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
+      });
+      return "live";
+    }
+  };
+  // Without a Safe service or a client for its chain, nothing can follow the proposal.
+  if (!service && !client) {
+    unconfirmed();
+    return;
+  }
   const request = (async () => {
+    // Whether the last look left the proposal where the app can't follow it to a result.
+    let stuck = true;
     // Without a Safe service only the chain can show an execution.
-    for (let attempt = 0; attempt < (service ? 720 : SAFE_EXECUTION_CHECKS); attempt += 1) {
-      if (tracked()?.obsoleteSafeNonce !== undefined || tracked()?.safeResultUnconfirmed) return;
+    const looks = service ? SAFE_RESULT_HORIZON_MS / 5_000 : SAFE_EXECUTION_CHECKS;
+    for (let attempt = 0; attempt < looks; attempt += 1) {
+      if (tracked()?.obsoleteSafeNonce !== undefined) return;
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
       // when the owner executes at once. A safeTxHash is never a transaction.
       // The SDK then reads the Safe's one execution event in that receipt,
@@ -195,58 +274,19 @@ async function watchSafeProposal(
         return;
       }
       const safe = safeOf();
-      if (service && safe) {
-        // The status of the service's answer tells "not indexed yet" (404)
-        // apart from an outage without reading its error message.
-        let status = 0;
-        const observed: typeof fetch = async (input, init) => {
-          const response = await fetch(input, init);
-          status = response.status;
-          return response;
-        };
-        try {
-          // The record must name this Safe and hash to this proposal.
-          const proposal = (await readSafeTransaction(chainId, safe, hash, {
-            fetch: observed,
-          })) as SafeQueuedTransaction & { transactionHash?: unknown };
-          if (tracked()?.obsoleteSafeNonce !== undefined) return;
-          if (!runsReviewed(safeTransactionMessage(proposal))) {
-            unconfirmed();
-            return;
-          }
-          if (proposal.isExecuted) {
-            if (typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)) {
-              await settle(proposal.transactionHash);
-              return;
-            }
-            updateTransactionActivity(id, {
-              status: "safe-proposed",
-              message:
-                "Safe reports this proposal as executed, but its transaction is not available yet. Do not submit it again while confirmation is unresolved.",
-            });
-          } else {
-            // Only the Safe's current owners' well-formed confirmations count.
-            const live = await livePolicy(safe);
-            const approvals = live
-              ? ` | ${usableSafeConfirmations(proposal, live.owners).length}/${live.threshold} approvals`
-              : "";
-            updateTransactionActivity(id, {
-              status: "safe-proposed",
-              message: `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
-            });
-          }
-        } catch {
-          if (status !== 404) {
-            updateTransactionActivity(id, {
-              status: "safe-proposed",
-              message:
-                "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
-            });
-          }
-        }
+      const look = service && safe ? await askService(safe) : "stuck";
+      if (look === "done") return;
+      stuck = look === "stuck";
+      // What the app can't follow an hour after the proposal was made, it never will.
+      if (stuck && pastHorizon()) {
+        unconfirmed();
+        return;
       }
       await new Promise((resolve) => window.setTimeout(resolve, 5_000));
     }
+    // The watch gives up. A proposal still awaiting approvals, or behind a service outage, is
+    // followed again on the next load; anything else ends unconfirmed.
+    if (stuck) unconfirmed();
   })();
   safeInflight.set(id, request);
   void request.finally(() => safeInflight.delete(id)).catch(() => undefined);
