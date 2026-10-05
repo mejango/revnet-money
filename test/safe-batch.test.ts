@@ -1,4 +1,6 @@
-import { encodeFunctionData, parseAbi, type Address, type Hex } from "viem";
+import { safeBatchProposalFor, safeTransactionHash } from "@bananapus/nana-sdk-core/safe-service";
+import { waitFor } from "@testing-library/react";
+import { encodeFunctionData, getAddress, parseAbi, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -37,7 +39,11 @@ vi.mock("wagmi", () => ({
 }));
 
 import { proposeSafeBatch, SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
-import { transactionActivitySnapshot } from "@/lib/transaction-activity";
+import {
+  dismissTransactionActivity,
+  transactionActivityForHash,
+  transactionActivitySnapshot,
+} from "@/lib/transaction-activity";
 import {
   registerTransactionReviewHandler,
   type TransactionReviewRequest,
@@ -47,6 +53,8 @@ const ACCOUNT = "0x000000000000000000000000000000000000dEaD" as Address;
 const TOKEN = "0x0000000000000000000000000000000000001000" as Address;
 const SPENDER = "0x0000000000000000000000000000000000002000" as Address;
 const SAFE_TX_HASH = `0x${"ab".repeat(32)}` as Hex;
+/** Safe 1.4.1's MultiSendCallOnly, which Safe{Wallet} batches a 1.4.1 Safe's calls through. */
+const MULTI_SEND_CALL_ONLY_141 = getAddress("0x9641d764fc13c8b624c04430c7356c1c7c8102e2");
 const ERC20 = parseAbi(["function approve(address spender, uint256 amount)"]);
 let nonce = 0n;
 // Distinct amounts per test so the duplicate guard sees a fresh batch each time.
@@ -124,6 +132,47 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
       proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
     ).rejects.toBeInstanceOf(SafeProposalPendingError);
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses the same batch while a proposal it can't confirm is listed, and takes it once dismissed", async () => {
+    const CALLS = calls();
+    const encoded = CALLS.map((call) => ({
+      to: call.address,
+      value: call.value,
+      data: encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args }),
+    }));
+    // The SDK decodes MultiSendCallOnly 1.3.0 only, so this record can't be bound to the calls.
+    const record = { ...safeBatchProposalFor(encoded, 3), to: MULTI_SEND_CALL_ONLY_141 };
+    const proposal = safeTransactionHash(8453, ACCOUNT, record);
+    mocks.sendCalls.mockResolvedValue({ id: proposal });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith(`/multisig-transactions/${proposal}/`)
+          ? new Response(JSON.stringify({ ...record, safe: ACCOUNT, isExecuted: false }))
+          : new Response("Not found", { status: 404 }),
+      ),
+    );
+
+    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
+    await waitFor(() =>
+      expect(transactionActivityForHash(proposal)).toMatchObject({
+        status: "safe-proposed",
+        message:
+          "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+        safeResultUnconfirmed: true,
+      }),
+    );
+
+    await expect(
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
+    ).rejects.toBeInstanceOf(SafeProposalPendingError);
+    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
+
+    dismissTransactionActivity(transactionActivityForHash(proposal)!.id);
+    mocks.sendCalls.mockResolvedValue({ id: SAFE_TX_HASH });
+    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
+    expect(mocks.sendCalls).toHaveBeenCalledTimes(2);
   });
 
   it("refuses a batch whose sequence reverts in simulation", async () => {

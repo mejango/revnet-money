@@ -47,6 +47,11 @@ export type TransactionActivity = {
   safeProposal?: ReviewedSafeProposal;
   /** Its authenticated call became permanently obsolete; keep nonce cancellation guidance. */
   obsoleteSafeNonce?: number;
+  /**
+   * The app can't confirm this Safe proposal's result: its watch has ended, and it blocks an
+   * identical call until its account dismisses it.
+   */
+  safeResultUnconfirmed?: boolean;
   executionHash?: Hex;
   bundleUuid?: string;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];
@@ -285,8 +290,10 @@ export function releaseTransactionActivityVerification(hash: Hex, message: strin
 
 export function dismissTransactionActivity(id: string): void {
   refreshTransactionActivities();
-  if (snapshot.find((row) => row.id === id)?.manualVerificationRequired) return;
-  emit(snapshot.filter((row) => row.id !== id));
+  const row = snapshot.find((activity) => activity.id === id);
+  // A held entry stays until it is verified, unless the app can never confirm it.
+  if (row?.manualVerificationRequired && !row.safeResultUnconfirmed) return;
+  emit(snapshot.filter((activity) => activity.id !== id));
 }
 
 export function transactionActivityForHash(hash?: Hex): TransactionActivity | undefined {

@@ -13,7 +13,11 @@ import type { AccountActivityEventItem } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { canCheckRelayrBundle } from "@/lib/relayr-activity";
 import { slugFor } from "@/lib/slug";
-import { useTransactionActivities, type TransactionActivity } from "@/lib/transaction-activity";
+import {
+  dismissTransactionActivity,
+  useTransactionActivities,
+  type TransactionActivity,
+} from "@/lib/transaction-activity";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { useMemo, useState } from "react";
 import type { Address } from "viem";
@@ -21,8 +25,9 @@ import type { Address } from "viem";
 const INITIAL_ITEMS = 25;
 const LOAD_MORE_COUNT = 25;
 
-function statusLabel(status: TransactionActivity["status"]): string {
-  return status === "safe-proposed" ? "Safe proposal pending" : status;
+function statusLabel(activity: TransactionActivity): string {
+  if (activity.safeResultUnconfirmed) return "Unconfirmed";
+  return activity.status === "safe-proposed" ? "Safe proposal pending" : activity.status;
 }
 
 // Relayr is expected to ship a query-by-account API soon. When it does,
@@ -42,9 +47,7 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
     <div className="border border-melon-200 bg-melon-50 p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase text-melon-700">
-            {statusLabel(activity.status)}
-          </p>
+          <p className="text-[11px] font-bold uppercase text-melon-700">{statusLabel(activity)}</p>
           <p className="mt-0.5 text-sm font-medium text-zinc-800">{activity.title}</p>
         </div>
         {resumable ? (
@@ -54,6 +57,15 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
             onClick={() => void waitForRelayrBundle(activity.bundleUuid!).catch(() => undefined)}
           >
             Check bundle
+          </button>
+        ) : null}
+        {isSelf && activity.safeResultUnconfirmed ? (
+          <button
+            type="button"
+            className="text-xs font-medium text-teal-700 underline"
+            onClick={() => dismissTransactionActivity(activity.id)}
+          >
+            Dismiss
           </button>
         ) : null}
       </div>

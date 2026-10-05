@@ -99,13 +99,19 @@ async function watchSafeProposal(
   const tracked = () => refreshTransactionActivities().find((activity) => activity.id === id);
   // A proposal journaled before its Safe was recorded was made by the Safe itself.
   const safeOf = () => tracked()?.safeProposal?.safe ?? tracked()?.account;
-  /** Whether a Safe transaction runs exactly what this proposal was reviewed to run. */
+  /**
+   * Whether a Safe transaction runs exactly what this proposal was reviewed to run. A proposal
+   * journaled before the app kept its reviewed calls has none, and keeps the earlier rule: its
+   * authenticated hash and the Safe's own event decide.
+   */
   const runsReviewed = (tx: Parameters<typeof safeTransactionRunsCalls>[0]) => {
     const proposal = tracked()?.safeProposal;
-    return !!proposal && safeTransactionRunsCalls(tx, proposal.calls, proposal.batch);
+    return !proposal || safeTransactionRunsCalls(tx, proposal.calls, proposal.batch);
   };
   /** Whether an execution the chain knows is this Safe's execTransaction of the reviewed calls. */
   const executesReviewed = (transaction: { to?: Address | null; input?: Hex }) => {
+    // The earlier rule, as in runsReviewed: the Safe's one execution in its receipt decides.
+    if (!tracked()?.safeProposal) return true;
     const safe = safeOf();
     if (!safe || !transaction.to || !isAddressEqual(transaction.to, safe)) return false;
     try {
@@ -143,6 +149,13 @@ async function watchSafeProposal(
           : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
     });
   };
+  /** The app can't confirm this proposal's result: the watch ends, and its account may dismiss it. */
+  const unconfirmed = (executionHash?: Hex) =>
+    updateTransactionActivity(id, {
+      ...(executionHash ? { executionHash } : {}),
+      message: SAFE_RESULT_UNCONFIRMED,
+      safeResultUnconfirmed: true,
+    });
   /**
    * Settles the proposal from its execution's receipt: only the Safe's own
    * event for this proposal decides, never the receipt's status alone or
@@ -159,7 +172,7 @@ async function watchSafeProposal(
     }
     const result = safeExecutionResult(receipt, safe, hash);
     if (result.status === "unproven") {
-      updateTransactionActivity(id, { executionHash, message: SAFE_RESULT_UNCONFIRMED });
+      unconfirmed(executionHash);
       return;
     }
     executed(result.status === "success", executionHash);
@@ -167,7 +180,7 @@ async function watchSafeProposal(
   const request = (async () => {
     // Without a Safe service only the chain can show an execution.
     for (let attempt = 0; attempt < (service ? 720 : SAFE_EXECUTION_CHECKS); attempt += 1) {
-      if (tracked()?.obsoleteSafeNonce !== undefined) return;
+      if (tracked()?.obsoleteSafeNonce !== undefined || tracked()?.safeResultUnconfirmed) return;
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
       // when the owner executes at once. A safeTxHash is never a transaction.
       // The SDK then reads the Safe's one execution event in that receipt,
@@ -178,7 +191,7 @@ async function watchSafeProposal(
           : undefined;
       if (execution) {
         if (executesReviewed(execution)) await settle(hash);
-        else updateTransactionActivity(id, { message: SAFE_RESULT_UNCONFIRMED });
+        else unconfirmed();
         return;
       }
       const safe = safeOf();
@@ -198,7 +211,7 @@ async function watchSafeProposal(
           })) as SafeQueuedTransaction & { transactionHash?: unknown };
           if (tracked()?.obsoleteSafeNonce !== undefined) return;
           if (!runsReviewed(safeTransactionMessage(proposal))) {
-            updateTransactionActivity(id, { message: SAFE_RESULT_UNCONFIRMED });
+            unconfirmed();
             return;
           }
           if (proposal.isExecuted) {
@@ -350,7 +363,13 @@ export async function proposeSafeBatch(
 
 export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
   transactionActivitySnapshot()
-    .filter((activity) => activity.status === "safe-proposed" && activity.hash && activity.chainId)
+    .filter(
+      (activity) =>
+        activity.status === "safe-proposed" &&
+        !activity.safeResultUnconfirmed &&
+        activity.hash &&
+        activity.chainId,
+    )
     .forEach(
       (activity) =>
         void watchSafeProposal(

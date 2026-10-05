@@ -92,12 +92,15 @@ const UNCONFIRMED =
   "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
 const SIGNATURE = `0x${"12".repeat(64)}1b` as Hex;
 
-/** A Safe proposal the tracker resumes after a reload, journaled with the call it was reviewed to run. */
+/**
+ * A Safe proposal the tracker resumes after a reload, journaled with the call it was reviewed to
+ * run, or, as before this app kept them, with none (`reviewed` null).
+ */
 function savedProposal(
   activity: typeof import("@/lib/transaction-activity"),
   hash: Hex,
   chainId: number,
-  reviewed: { to: Address; data: Hex } = { to: TARGET, data: "0x1234" },
+  reviewed: { to: Address; data: Hex } | null = { to: TARGET, data: "0x1234" },
 ) {
   activity.recordTransactionActivity({
     id: `tx:${chainId}:${hash}`,
@@ -109,7 +112,9 @@ function savedProposal(
     account: ACCOUNT,
     hash,
     safeProposalHash: hash,
-    safeProposal: { safe: ACCOUNT, calls: [{ ...reviewed, value: "0" }], batch: false },
+    ...(reviewed
+      ? { safeProposal: { safe: ACCOUNT, calls: [{ ...reviewed, value: "0" }], batch: false } }
+      : {}),
   });
 }
 
@@ -886,9 +891,30 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         status: "safe-proposed",
         message: UNCONFIRMED,
+        safeResultUnconfirmed: true,
       }),
     );
     expect(activity.transactionActivityForHash(HASH)?.executionHash).toBeUndefined();
+  });
+
+  it("settles a reply journaled before its reviewed calls were by its Safe's one execution, as before", async () => {
+    const { activity, hooks } = await freshHarness();
+    savedProposal(activity, HASH, 11155420, null);
+    mocks.getTransaction.mockResolvedValue(executionOf(TRANSFER_7));
+    mocks.waitForTransactionReceipt.mockResolvedValue({
+      status: "success",
+      transactionHash: HASH,
+      logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
+    });
+
+    hooks.resumeSafeProposalTracking(mocks.config as never);
+
+    await waitFor(() =>
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+        status: "success",
+        executionHash: HASH,
+      }),
+    );
   });
 
   it.each([
@@ -914,6 +940,7 @@ describe("reviewed write hook", () => {
         status: "safe-proposed",
         executionHash: HASH,
         message: UNCONFIRMED,
+        safeResultUnconfirmed: true,
       }),
     );
   });
@@ -951,23 +978,22 @@ describe("reviewed write hook", () => {
     const EXECUTION = `0x${"34".repeat(32)}` as Hex;
 
     function executedRecord(record: SafeQueuedTransaction) {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async (input: RequestInfo | URL) =>
-          String(input).endsWith(`/multisig-transactions/${PROPOSAL}/`)
-            ? new Response(
-                JSON.stringify({
-                  ...record,
-                  safe: ACCOUNT,
-                  isExecuted: true,
-                  // The service's own verdict, which never decides this proposal.
-                  isSuccessful: true,
-                  transactionHash: EXECUTION,
-                }),
-              )
-            : new Response("Not found", { status: 404 }),
-        ),
+      const service = vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith(`/multisig-transactions/${PROPOSAL}/`)
+          ? new Response(
+              JSON.stringify({
+                ...record,
+                safe: ACCOUNT,
+                isExecuted: true,
+                // The service's own verdict, which never decides this proposal.
+                isSuccessful: true,
+                transactionHash: EXECUTION,
+              }),
+            )
+          : new Response("Not found", { status: 404 }),
       );
+      vi.stubGlobal("fetch", service);
+      return service;
     }
 
     it.each([
@@ -1015,6 +1041,28 @@ describe("reviewed write hook", () => {
         expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
           status: "safe-proposed",
           executionHash: EXECUTION,
+          message: UNCONFIRMED,
+          safeResultUnconfirmed: true,
+        }),
+      );
+    });
+
+    it("settles a proposal journaled before its reviewed calls were from its Safe's event for this proposal", async () => {
+      const { activity, hooks } = await freshHarness();
+      savedProposal(activity, PROPOSAL, 11155111, null);
+      executedRecord(PROPOSED);
+      mocks.waitForTransactionReceipt.mockResolvedValue({
+        status: "success",
+        transactionHash: EXECUTION,
+        logs: [executionLog(ACCOUNT, PROPOSAL)],
+      });
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+
+      await waitFor(() =>
+        expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+          status: "success",
+          executionHash: EXECUTION,
         }),
       );
     });
@@ -1022,7 +1070,7 @@ describe("reviewed write hook", () => {
     it("leaves a proposal unconfirmed that is not the call it was reviewed to run", async () => {
       const { activity, hooks } = await freshHarness();
       savedProposal(activity, PROPOSAL, 11155111, { to: TARGET, data: "0xabcd" });
-      executedRecord(PROPOSED);
+      const service = executedRecord(PROPOSED);
       mocks.waitForTransactionReceipt.mockResolvedValue({
         status: "success",
         transactionHash: EXECUTION,
@@ -1035,9 +1083,16 @@ describe("reviewed write hook", () => {
         expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
           status: "safe-proposed",
           message: UNCONFIRMED,
+          safeResultUnconfirmed: true,
         }),
       );
       expect(mocks.waitForTransactionReceipt).not.toHaveBeenCalled();
+
+      // Its result can't be confirmed here, so a reload does not ask Safe again.
+      const asked = service.mock.calls.length;
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(service).toHaveBeenCalledTimes(asked);
     });
 
     it("never trusts a record whose fields are another proposal's", async () => {
