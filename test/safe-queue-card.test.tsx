@@ -249,6 +249,8 @@ describe("Safe queue card", () => {
         "its transaction reverted",
         () => ({ status: "reverted", transactionHash: EXECUTION, blockNumber: 1n, logs: [] }),
         "reverted",
+        // Another owner may have executed it first: only this execution is known to have failed.
+        "This execution reverted, so the Safe ran nothing in it.",
       ],
       [
         "the Safe's call failed",
@@ -259,18 +261,23 @@ describe("Safe queue card", () => {
           logs: [executionLog(SAFE.address, safeTxHash, "ExecutionFailure")],
         }),
         "ExecutionFailure",
+        "The Safe ran this transaction, but its call failed.",
       ],
-    ])("is settled failed, and can be sent again, when %s", async (_case, receipt, reason) => {
-      await execute(receipt);
+    ])(
+      "is settled failed, and can be sent again, when %s",
+      async (_case, receipt, reason, journaled) => {
+        await execute(receipt);
 
-      expect(await screen.findByText(new RegExp(reason))).toBeVisible();
-      await waitFor(() =>
-        expect(transactionActivityForHash(EXECUTION)).toMatchObject({
-          status: "failed",
-          manualVerificationRequired: false,
-        }),
-      );
-    });
+        expect(await screen.findByText(new RegExp(reason))).toBeVisible();
+        await waitFor(() =>
+          expect(transactionActivityForHash(EXECUTION)).toMatchObject({
+            status: "failed",
+            message: journaled,
+            manualVerificationRequired: false,
+          }),
+        );
+      },
+    );
 
     it("is confirmed by the Safe's ExecutionSuccess for its hash", async () => {
       const row = baseQueue(safeProposalFor({ to: TARGET, data: "0x1234" }, 5));

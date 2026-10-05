@@ -104,21 +104,21 @@ export async function confirmSafeExecution({
   confirm?: (receipt: TransactionReceipt) => Promise<void>;
 }): Promise<TransactionReceipt> {
   holdTransactionActivityForVerification(hash, "Confirming the Safe's execution event.");
-  let failed = false;
+  // What the receipt proves failed, when it does. A reverted execution says nothing of the Safe
+  // transaction itself: another owner may have executed it first.
+  let failure: string | undefined;
   try {
     const receipt = await waitForReceiptWithRetry(client, hash);
     const { status } = safeExecutionResult(receipt, safe, safeTxHash);
-    failed = status === "reverted" || status === "failed";
+    if (status === "reverted") failure = "This execution reverted, so the Safe ran nothing in it.";
+    if (status === "failed") failure = "The Safe ran this transaction, but its call failed.";
     requireRefundFreeSafeExecution(receipt, safe, safeTxHash);
     await confirm?.(receipt);
     releaseTransactionActivityVerification(hash, "The Safe's execution was confirmed onchain.");
     return receipt;
   } catch (cause) {
-    if (failed) {
-      settleTransactionActivityFailure(
-        hash,
-        "The Safe transaction failed onchain. Its intended state changes did not occur.",
-      );
+    if (failure) {
+      settleTransactionActivityFailure(hash, failure);
     } else {
       failTransactionActivityVerification(
         hash,
