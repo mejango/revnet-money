@@ -173,6 +173,29 @@ describe("project handle authority across chains", () => {
     expect(missing).toHaveBeenCalledTimes(2);
   });
 
+  it("gives up on a creation request that does not answer within 4 seconds", async () => {
+    vi.useFakeTimers();
+    // A request that answers only when it is aborted, as fetch does.
+    const hung = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))),
+        ),
+    );
+    vi.stubGlobal("fetch", hung);
+    let settled = false;
+    const check = readHandleAuthority(onBaseAndEthereum()).then((authority) => {
+      settled = true;
+      return authority;
+    });
+
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(check).resolves.toMatchObject({ status: "unproven-creation" });
+    expect(hung).toHaveBeenCalledOnce();
+  });
+
   it("asks the Safe service once for checks of one Safe that start together", async () => {
     const proven = creationService(SAFE, "base");
     vi.stubGlobal("fetch", proven);

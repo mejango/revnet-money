@@ -23,42 +23,9 @@ import {
   RevnetCoreContracts,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
-import type { SafeServiceOptions } from "@bananapus/nana-sdk-core/safe-service";
 import { cache } from "react";
 import { namehash, zeroAddress, type Address } from "viem";
 import { getIndexedProjectOperatorAddresses } from "./getProjectOperator";
-
-const SAFE_SERVICE_TIMEOUT_MS = 4_000;
-
-/**
- * Safe's transaction service as a route render reads it, the same rule as Juicebox Money's page
- * server: one attempt, its answer read in full within 4 seconds, and a 429 refused rather than
- * waited out. A service the server cannot reach leaves a Safe's creation unproven instead of
- * holding the page.
- */
-const serverSafeService: SafeServiceOptions = {
-  fetch: async (input, init) => {
-    const deadline = new AbortController();
-    const timer = setTimeout(() => deadline.abort(), SAFE_SERVICE_TIMEOUT_MS);
-    try {
-      const response = await fetch(input, {
-        ...init,
-        cache: "no-store",
-        signal: deadline.signal,
-      });
-      if (response.status === 429) {
-        await response.body?.cancel();
-        return new Response(null, { status: 503 });
-      }
-      return new Response(await response.text(), {
-        status: response.status,
-        headers: response.headers,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  },
-};
 
 export type ResolvedProjectRoute = ReturnType<typeof parseSlug> & {
   /** Present only when an @handle route live-verified this exact setter. */
@@ -139,17 +106,14 @@ export async function resolveProjectRouteUncached(
       // equality alone is not proof that a contract operator has the same
       // controller on both chains, and a Safe needs its creation record from
       // the project chain's Safe service: without it the route stays unproven.
-      const authority = await readHandleAuthority(
-        {
-          sourceChainId: record.chainId,
-          sourceClient: projectClient,
-          mainnetClient: client,
-          authority: candidate,
-          sourceBlockNumber: projectBlock,
-          mainnetBlockNumber: blockNumber,
-        },
-        serverSafeService,
-      );
+      const authority = await readHandleAuthority({
+        sourceChainId: record.chainId,
+        sourceClient: projectClient,
+        mainnetClient: client,
+        authority: candidate,
+        sourceBlockNumber: projectBlock,
+        mainnetBlockNumber: blockNumber,
+      });
       if (!authority.allowed) return false;
 
       const verified = await readExactProjectHandle(
