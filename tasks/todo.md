@@ -95,3 +95,15 @@ Gate on the final commit: the same checks pass; unit and coverage 1,833 passed, 
 passed, four skipped; the production build passes last. All client JavaScript measures 2,641.3 KiB, so its budget
 rises by 1 KiB to 2,642 KiB. Left closed: the SDK's `multiSendCallsOf` knows MultiSendCallOnly 1.3.0 only, so a
 1.4.1 Safe's batch stays unconfirmed.
+
+### Fix round 2
+
+- [x] A Safe proposal whose result can't be confirmed (a 1.4.1 batch, a relayed execution, another call) ends its
+      watch in a marked state that reloads leave alone; it still refuses the identical call until its account
+      dismisses it from the account's activity. Proposals journaled before the reviewed calls keep the earlier rule.
+- [x] A reverted execution's line says only that this execution ran nothing; an ExecutionFailure says the call failed.
+- [x] Checks of one Safe that start together share one creation record request.
+
+Gate on the final commit: the same checks pass; unit and coverage 1,839 passed, one skipped; browser checks 121
+passed, four skipped; the production build passes last. All client JavaScript measures 2,641.5 KiB, within 2,642 KiB.
+SDK 2.20.0 teaches `multiSendCallsOf` MultiSendCallOnly 1.4.1; a follow-up takes it.
