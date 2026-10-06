@@ -1,7 +1,12 @@
 "use client";
 
 import { formatShortDateTime } from "@/lib/date";
-import { releaseBatchRound } from "@/lib/multichain-batch";
+import {
+  batchCallScope,
+  releaseBatchRound,
+  type BatchRound,
+  type MultichainBatch,
+} from "@/lib/multichain-batch";
 import {
   requireRawPayerCall,
   requireRawSafeExecution,
@@ -867,25 +872,33 @@ export async function checkRelayrSession(id: string): Promise<void> {
 
 /**
  * Discard a session marked for it (ruling R114): every request it published
- * is dead. Only the session goes, never what its action saved. After a "ran"
- * Discard, a pending batch with its calls is abandoned, so they go out again
- * only after a fresh review (R114 (f)); after another, its round quotes again.
+ * is dead. Only the session goes, never what its action saved. A pending
+ * batch round holds the session by its bundle or by its calls' recovery
+ * scopes, which a session whose quote response was lost still carries (as
+ * jbm's project-batch.ts:114-137 links a round by its scope). After a "ran"
+ * Discard, such a batch is abandoned, so its calls go out again only after a
+ * fresh review (R114 (f)); after another, its round quotes again.
  */
 export function discardRelayrSession(id: string): void {
   requireTransactionActivityPersistence();
   const activity = refreshTransactionActivities().find((row) => row.id === id);
   if (!activity || !isRelayrDiscardReason(activity.relayrDiscardable))
     throw new Error("Only an action whose earlier signatures can no longer run can be discarded.");
-  if (activity.bundleUuid)
-    for (const batchId of releaseBatchRound(
-      activity.bundleUuid,
-      activity.relayrDiscardable === "ran",
-    ))
-      updateTransactionActivity(batchId, {
-        status: "failed",
-        manualVerificationRequired: false,
-        message: "This batch was discarded. Review it again.",
-      });
+  const keys = new Set(activity.relayrCallKeys ?? []);
+  const bundleUuid = activity.bundleUuid?.toLowerCase();
+  const holds = (batch: MultichainBatch, round: BatchRound) =>
+    (!!bundleUuid && round.bundleUuid?.toLowerCase() === bundleUuid) ||
+    round.indices.some(
+      (index) =>
+        !!batch.calls[index] &&
+        keys.has(scopeKey(batch.account, batchCallScope(batch, batch.calls[index], index))),
+    );
+  for (const batchId of releaseBatchRound(holds, activity.relayrDiscardable === "ran"))
+    updateTransactionActivity(batchId, {
+      status: "failed",
+      manualVerificationRequired: false,
+      message: "This batch was discarded. Review it again.",
+    });
   forgetQuote(activity.bundleUuid);
   dismissTransactionActivity(id);
 }

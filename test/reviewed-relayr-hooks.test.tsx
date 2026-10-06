@@ -2314,6 +2314,69 @@ describe("Relayr sessions decided from the chain", () => {
     });
   });
 
+  it("abandons a pending batch by its round's scope after a 'ran' Discard of a session Relayr never named (R114 (f))", async () => {
+    const { activity, hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const batches = await import("@/lib/multichain-batch");
+    const call = {
+      chainId: 1,
+      address: TARGET,
+      abi: [],
+      functionName: "setUriOf",
+      args: [],
+      value: 3n,
+      data: "0x1234" as Hex,
+      state: "ready" as const,
+    };
+    const batch = {
+      id: "multichain:batch",
+      scope: "payouts",
+      label: "Send payouts",
+      account: ACCOUNT,
+      key: "0x",
+      route: "relayr" as const,
+      calls: [call],
+      rounds: [{ indices: [0], state: "ready" as const }],
+      status: "pending" as const,
+      createdAt: NOW,
+    };
+    batches.saveMultichainBatch(batch);
+    activity.recordTransactionActivity({
+      id: batch.id,
+      kind: "direct",
+      title: "Send payouts",
+      status: "pending",
+      manualVerificationRequired: true,
+      account: ACCOUNT,
+      message: "The exact selected calls are saved. Resume this batch to continue safely.",
+    });
+    // The round's quote reached Relayr, but its response was lost.
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await expect(
+      quoter.result.current.getRelayrTxQuote([
+        { ...REQUEST, recoveryScope: batches.batchCallScope(batch, call, 0) },
+      ]),
+    ).rejects.toThrow(/POST response lost/);
+    const publication = activity
+      .transactionActivitySnapshot()
+      .find((row) => row.kind === "relayr-bundle")!;
+    expect(publication.bundleUuid).toBeUndefined();
+    // Another action used the forwarder nonce: the session may have run.
+    vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+    chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 5n });
+    await hooks.checkRelayrSession(publication.id);
+    expect(
+      activity.transactionActivitySnapshot().find((row) => row.id === publication.id),
+    ).toMatchObject({ relayrDiscardable: "ran" });
+    hooks.discardRelayrSession(publication.id);
+    // Nothing is left to resume, so its calls go out again only after a fresh review.
+    expect(batches.findPendingBatch(ACCOUNT, "payouts")).toBeUndefined();
+    expect(activity.transactionActivitySnapshot().find((row) => row.id === batch.id)).toMatchObject(
+      { status: "failed", manualVerificationRequired: false },
+    );
+  });
+
   describe("a paid bundle that Relayr leaves pending", () => {
     const scoped = { ...GUARDED, recoveryScope: "project-metadata:1:4" };
 
