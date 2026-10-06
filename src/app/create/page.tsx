@@ -47,10 +47,8 @@ export default function Page() {
   const [paymentChainId, setPaymentChainId] = useState<number>();
   const quotedFormData = useRef<RevnetFormData | null>(null);
 
-  /** `replaces` names the unpaid launch quote this one replaces. */
   async function deployProject(
     formData: RevnetFormData,
-    replaces?: string,
   ): Promise<RelayrPostBundleResponse | undefined> {
     if (!isConnected || !address) {
       throw new Error("Connect your wallet to launch the revnet.");
@@ -61,12 +59,8 @@ export default function Page() {
     if (formData.chainIds.length > 1 && !areRelayrChainsCompatible(formData.chainIds)) {
       throw new Error("Choose either live chains or test chains, not a mix.");
     }
-    // A multichain launch is relayed, and refreshes a live unpaid launch at its saved nonces.
-    await requireRelayrRecoveryScopeAvailable(
-      address,
-      "revnet-launch",
-      formData.chainIds.length > 1 ? { chains: formData.chainIds, replaces } : undefined,
-    );
+    // A launch waits while an earlier one's signature can still run, saying until when.
+    await requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
     setDirectDeployment(null);
 
     let deploymentFormData = formData;
@@ -232,7 +226,7 @@ export default function Page() {
       quotedFormData.current = deploymentFormData;
       setQuotedStageStart(quotedStageStartOf(firstRequest, deploymentFormData));
     }
-    return await getRelayrTxQuote(relayrTransactions, { replaces });
+    return await getRelayrTxQuote(relayrTransactions);
   }
 
   // REVDeployer locks cash-outs and loans for 7 days when the first stage's
@@ -240,19 +234,18 @@ export default function Page() {
   // starts. Paying a stale quote therefore rebuilds the whole request from the
   // same form data: `deployProject` captures one fresh timestamp shared by
   // every chain, keeping the encoded configuration byte-identical across
-  // chains so suckers still pair. The rebuilt launch replaces the stale quote:
-  // it is signed at the stale requests' nonces, so at most one of them runs on
-  // each chain, and the stale quote is never paid from here.
-  async function rebuildStaleQuote(
-    stale: RelayrPostBundleResponse,
-  ): Promise<RelayrPostBundleResponse> {
+  // chains so suckers still pair. A different launch is never signed while the
+  // stale one's requests can still run, which would let the two launch on
+  // different chains: the rebuild waits until every one of them is dead at a
+  // finalized block, saying until when, and the stale quote is never paid.
+  async function rebuildStaleQuote(): Promise<RelayrPostBundleResponse> {
     const formData = quotedFormData.current;
     if (!formData) {
       throw new Error(
         "The original launch request is unavailable. Clear the quote and get a new one.",
       );
     }
-    const quote = await deployProject(formData, stale.bundle_uuid);
+    const quote = await deployProject(formData);
     if (!quote) {
       throw new Error("Could not refresh the quote. Clear it and try again.");
     }

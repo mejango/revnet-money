@@ -355,9 +355,6 @@ async function releaseUnfundableQuote(
   return true;
 }
 
-/** What another session leaves an action about to sign. */
-type Reservation = "released" | "refresh" | "reserved";
-
 /** A paid bundle whose calls are still being proven: it reserves them until they are proven or fail. */
 function paidInFlight(activity: TransactionActivity): boolean {
   return (
@@ -369,63 +366,43 @@ function paidInFlight(activity: TransactionActivity): boolean {
 
 /**
  * Ruling R114 for another saved session that shares a call or a recovery
- * scope with an action about to sign. Once every request it published is
- * dead it reserves nothing more and is marked for Discard; one that may have
- * run refuses the action with its line until it is discarded (R114 (f)). A
- * live one reserves, unless the action is its refresh (R114 (a)): an unpaid
- * quote in the same recovery scope, none of whose requests moved, that saved
- * its nonces on chains the action signs, with no payment in progress here, and
- * that the action replaces or that can no longer be paid. The refresh signs at
- * its nonces, so the forwarder runs at most one request per nonce.
+ * scope with an action about to sign (R114 (g)): different calls never sign
+ * at its nonces while one of its requests can still run. A live session
+ * holds the action, saying until when, and a paid bundle still running keeps
+ * its own refusal. Once every request is dead, whatever Relayr reports, the
+ * session reserves nothing more and is marked for Discard, and one that may
+ * have run refuses the action with its line until it is discarded
+ * (R114 (f)). Resolves "reserved" while it can't be classified.
  */
 async function reservationOf(
   config: Config,
   activity: TransactionActivity,
-  refresh?: { scopes: string[]; chains: number[]; replaces?: string },
-): Promise<Reservation> {
+): Promise<"released" | "reserved"> {
   if (activity.relayrDiscardable === "ran") throw new RelayrDiscardError(activity.id, "ran");
-  if (paidInFlight(activity)) return "reserved";
   const verdict = await savedRequestsVerdict(config, activity);
   if (!verdict) return (await releaseUnfundableQuote(config, activity)) ? "released" : "reserved";
-  if (!verdict.live) {
-    const outcome = await relayrSessionOutcome(verdict, { nonces: activity.relayrNonces });
-    if (outcome.kind !== "discard") return "reserved";
-    const discard = discardableSession(activity, outcome.reason);
-    if (outcome.reason === "ran") throw discard;
-    return "released";
+  if (verdict.live) {
+    if (paidInFlight(activity)) return "reserved";
+    throw new Error(relayrHeldMessage(verdict.until));
   }
-  const transactions = activity.relayrExpectedTransactions ?? [];
-  return refresh &&
-    !verdict.mayHaveRun &&
-    activity.relayrPaymentStatus === "unfunded" &&
-    !sentPayments(activity).length &&
-    !!activity.relayrCallKeys?.some((key) => refresh.scopes.includes(key)) &&
-    activity.relayrNonces?.length === transactions.length &&
-    transactions.every((transaction) => refresh.chains.includes(transaction.chainId)) &&
-    !paymentInflight.has(activity.callKey ?? "") &&
-    ((!!refresh.replaces && activity.bundleUuid === refresh.replaces) ||
-      (!!activity.relayrQuote && !payableQuote(activity, refresh.chains)))
-    ? "refresh"
-    : "reserved";
+  const outcome = await relayrSessionOutcome(verdict, { nonces: activity.relayrNonces });
+  if (outcome.kind !== "discard") throw new Error(relayrHeldMessage(0));
+  const discard = discardableSession(activity, outcome.reason);
+  if (outcome.reason === "ran") throw discard;
+  return "released";
 }
 
 /**
- * The saved nonce each chain's request of `sessions` was signed with. Throws
- * when two of them name different nonces on one chain.
+ * The saved nonce each chain's request of `session` was signed with. Throws,
+ * holding, when one can't be read.
  */
-function savedNonces(sessions: TransactionActivity[]): Map<number, bigint> {
+function savedNonces(session: TransactionActivity): Map<number, bigint> {
   const nonces = new Map<number, bigint>();
-  for (const session of sessions)
-    session.relayrExpectedTransactions?.forEach(({ chainId }, index) => {
-      const saved = session.relayrNonces?.[index];
-      if (
-        !saved ||
-        !/^\d+$/.test(saved) ||
-        (nonces.get(chainId) !== undefined && nonces.get(chainId) !== BigInt(saved))
-      )
-        throw new Error(relayrHeldMessage(0));
-      nonces.set(chainId, BigInt(saved));
-    });
+  session.relayrExpectedTransactions?.forEach(({ chainId }, index) => {
+    const saved = session.relayrNonces?.[index];
+    if (!saved || !/^\d+$/.test(saved)) throw new Error(relayrHeldMessage(0));
+    nonces.set(chainId, BigInt(saved));
+  });
   return nonces;
 }
 
@@ -437,8 +414,9 @@ function forgetQuote(bundleUuid: string | undefined): void {
 }
 
 /**
- * A new publication replaced these sessions: it signs their calls at their
- * nonces, or their requests are all dead. They are never paid from here, and
+ * A new publication carries these sessions' calls: their published
+ * signatures under a new quote, or new signatures at their saved nonces once
+ * every request they published is dead. They are never paid from here, and
  * the new session reserves what they did.
  */
 function supersede(sessions: TransactionActivity[]): void {
@@ -455,16 +433,13 @@ function supersede(sessions: TransactionActivity[]): void {
 
 /**
  * A changed payload or direct route must not bypass a published operation
- * (ruling R117): a session in `scope` reserves it while one of its requests
- * can still run, and one that may have run until it is discarded. `relayr`
- * names a Relayr action about to sign on `chains`, which may refresh a live
- * session in the scope at its saved nonces; `replaces` names one it replaces
- * while that one can still be paid.
+ * (rulings R114 (g) and R117): a session in `scope` reserves it while one of
+ * its requests can still run, saying until when, and one that may have run
+ * until it is discarded.
  */
 export async function requireRelayrRecoveryScopeAvailable(
   account: Address,
   scope: string,
-  relayr?: { chains: number[]; replaces?: string },
 ): Promise<void> {
   requireTransactionActivityPersistence();
   const key = scopeKey(account, scope);
@@ -477,12 +452,7 @@ export async function requireRelayrRecoveryScopeAvailable(
   if (!reserving.length) return;
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
   for (const activity of reserving) {
-    const reservation = await reservationOf(
-      wagmiConfig,
-      activity,
-      relayr && { scopes: [key], chains: relayr.chains, replaces: relayr.replaces },
-    );
-    if (reservation === "reserved")
+    if ((await reservationOf(wagmiConfig, activity)) === "reserved")
       throw new Error(
         scope === "revnet-launch"
           ? "A previous Relayr launch still requires reconciliation. Check its existing bundle in account activity before requesting another launch; do not sign or pay again."
@@ -500,21 +470,13 @@ function forwarderNonceKey(key: string): boolean {
  * (rulings R114 and R117). One that shares only a forwarder nonce reserves it
  * while one of its requests can still run (relayrRequestsDead); one that
  * shares a call or a recovery scope is classified by reservationOf. `exempt`
- * names the sessions this action continues or refreshes, and `refresh` lets
- * it refresh a live session in its recovery scope. Resolves with the sessions
- * it refreshes.
+ * names the session this action continues.
  */
 async function requireUnfunded(
   config: Config,
   quote: Pick<RememberedQuote, "bundleUuid" | "callKey" | "callKeys">,
-  {
-    exempt = [],
-    refresh,
-  }: {
-    exempt?: string[];
-    refresh?: { scopes: string[]; chains: number[]; replaces?: string };
-  } = {},
-): Promise<TransactionActivity[]> {
+  exempt?: string,
+): Promise<void> {
   requireTransactionActivityPersistence();
   if (fundedBundles.has(quote.bundleUuid))
     throw new Error(
@@ -531,11 +493,10 @@ async function requireUnfunded(
     )
   )
     throw new Error(EXPIRED_QUOTE);
-  const refreshed: TransactionActivity[] = [];
   for (const existing of activities) {
     const shared = existing.relayrCallKeys?.filter((key) => quote.callKeys.includes(key)) ?? [];
     if (
-      exempt.includes(existing.id) ||
+      existing.id === exempt ||
       !(
         existing.bundleUuid === quote.bundleUuid ||
         ((existing.callKey === quote.callKey || shared.length) && existing.status !== "success")
@@ -552,19 +513,15 @@ async function requireUnfunded(
     if (nonceOnly) {
       if (existing.relayrDiscardable === "ran") continue;
       if (await relayrRequestsDead(clientFor(config), relayrSessionRequests(existing))) continue;
-    } else if (existing.bundleUuid !== quote.bundleUuid) {
-      const reservation = await reservationOf(config, existing, refresh);
-      if (reservation === "released") continue;
-      if (reservation === "refresh") {
-        refreshed.push(existing);
-        continue;
-      }
-    }
+    } else if (
+      existing.bundleUuid !== quote.bundleUuid &&
+      (await reservationOf(config, existing)) === "released"
+    )
+      continue;
     throw new Error(
       `This Relayr action already has ${existing.relayrPaymentStatus === "unfunded" ? "published authorizations" : "a submitted payment"}${existing.hash ? ` (${existing.hash})` : existing.relayrPaymentStatus === "unfunded" ? " awaiting reconciliation" : " with an uncertain wallet result"}. Do not authorize or pay again; check the existing bundle.`,
     );
   }
-  return refreshed;
 }
 
 /**
@@ -781,7 +738,7 @@ type Continuation =
  * again once they still run. A quote whose payment reverted is first read
  * for another payer (R104). Once every request is dead, relayrSessionOutcome
  * decides: sign the calls again at the saved nonces after the recheck passes,
- * Discard, or hold. Null for a paid bundle still being proven, which the
+ * Discard, or hold. Null while a paid bundle can still run, which the
  * reservation checks refuse.
  */
 async function continueSession(
@@ -791,8 +748,11 @@ async function continueSession(
   requests: ReviewedRelayrRequest[],
   chains: number[],
 ): Promise<Continuation | null> {
-  if (paidInFlight(saved)) return null;
   const verdict = await savedRequestsVerdict(config, saved);
+  // A paid bundle still running is the reservation checks' to refuse while one of
+  // its requests can still run; once every one is dead, Relayr's state no longer
+  // matters (R114 (c)).
+  if (paidInFlight(saved) && verdict?.live !== false) return null;
   let released = false;
   if (saved.relayrPaymentStatus === "reverted" && verdict?.live !== false) {
     let state: Awaited<ReturnType<typeof revertedRelayrQuote>>;
@@ -879,13 +839,17 @@ function savedSessionOf(account: Address, callKey: string): TransactionActivity 
  */
 export async function checkRelayrSession(id: string): Promise<void> {
   const activity = refreshTransactionActivities().find((row) => row.id === id);
-  if (!activity || paidInFlight(activity)) return;
+  if (!activity) return;
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
   const verdict = await savedRequestsVerdict(wagmiConfig, activity);
   if (!verdict) return;
   const outcome = await relayrSessionOutcome(verdict, { nonces: activity.relayrNonces });
   if (outcome.kind === "discard") discardableSession(activity, outcome.reason);
-  else if (outcome.kind === "hold" || outcome.kind === "refresh" || outcome.kind === "reorg-hold")
+  // A paid bundle still running keeps its own line while a request can run.
+  else if (
+    !paidInFlight(activity) &&
+    (outcome.kind === "hold" || outcome.kind === "refresh" || outcome.kind === "reorg-hold")
+  )
     updateTransactionActivity(id, {
       message: relayrHeldMessage(outcome.kind === "reorg-hold" ? 0 : outcome.until),
     });
@@ -1344,6 +1308,8 @@ export async function waitForRelayrBundle(
       }
       await new Promise((resolve) => window.setTimeout(resolve, 2_000));
     }
+    // A bundle Relayr leaves pending is classified like any unproven one (R114 (c)).
+    await holdUnprovenSession(activityId);
     throw new Error(
       `Relayr bundle ${bundleUuid} is still pending after the status timeout. Do not pay again; resume checking this bundle.`,
     );
@@ -1386,8 +1352,7 @@ export function useGetRelayrTxQuote() {
   }, []);
 
   const getRelayrTxQuote = useCallback(
-    /** `replaces` names an unpaid quote this action replaces in its recovery scope while it can still be paid. */
-    async (requests: ReviewedRelayrRequest[], { replaces }: { replaces?: string } = {}) => {
+    async (requests: ReviewedRelayrRequest[]) => {
       if (!address) throw new Error("Connect a wallet first.");
       return withAuthorizationLock(address, async () => {
         requireNoViewAs();
@@ -1446,42 +1411,23 @@ export function useGetRelayrTxQuote() {
           setError(null);
           return quote;
         }
-        const continued = continuation && saved ? [saved] : [];
+        const continued = continuation ? saved : undefined;
         const forwarded = requests.filter(
           (request) => request.relayrMode !== "raw" && request.relayrMode !== "safe-exec",
         );
         // Ruling R117: every other session that shares a call, a recovery scope or a
-        // forwarder nonce reserves it while one of its requests can still run. A live
-        // one in this action's recovery scope is refreshed at its saved nonces.
-        const refreshed = await requireUnfunded(
-          config,
-          { bundleUuid: "", callKey, callKeys },
-          {
-            exempt: continued.map((session) => session.id),
-            refresh:
-              continuation?.kind === "requote"
-                ? undefined
-                : {
-                    scopes: requests.flatMap((request) =>
-                      request.recoveryScope ? [scopeKey(address, request.recoveryScope)] : [],
-                    ),
-                    chains: forwarded.map((request) => request.chainId),
-                    replaces,
-                  },
-          },
-        );
-        const superseded = [...continued, ...refreshed];
+        // forwarder nonce reserves it while one of its requests can still run.
+        await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id);
         await requireForwarderNoncesFree(
           config,
           address,
           forwarded,
-          superseded.map((session) => session.id),
+          continued ? [continued.id] : [],
         );
-        // A new signature goes only to a saved nonce: this session's own once every
-        // request is dead and unused (R104), or a refreshed session's (R114 (a)).
-        const signAt = savedNonces(
-          continuation?.kind === "sign" ? [...continued, ...refreshed] : refreshed,
-        );
+        // A new signature for saved calls goes only to their saved nonces, once every
+        // request is dead and unused (R104).
+        const signAt =
+          continuation?.kind === "sign" && saved ? savedNonces(saved) : new Map<number, bigint>();
         setIsPending(true);
         setError(null);
         try {
@@ -1765,11 +1711,7 @@ export function useGetRelayrTxQuote() {
           );
           // A response can be lost after Relayr receives executable signatures. Persist
           // the intent first so a reload cannot authorize a fresh copy of the same calls.
-          await requireUnfunded(
-            config,
-            { bundleUuid: "", callKey, callKeys },
-            { exempt: superseded.map((session) => session.id) },
-          );
+          await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id);
           const publicationId = `relayr-publication:${callKey}`;
           recordTransactionActivity({
             id: publicationId,
@@ -1788,8 +1730,9 @@ export function useGetRelayrTxQuote() {
             manualVerificationRequired: undefined,
           });
           requireTransactionActivityPersistence();
-          // The new signatures replace these sessions at their nonces, or theirs are all dead.
-          supersede(superseded.filter((session) => session.id !== publicationId));
+          // The new publication carries the continued session's calls: its own
+          // signatures again, or new ones once every request it published is dead.
+          if (continued && continued.id !== publicationId) supersede([continued]);
           const response = await fetch(`${RELAYR_API}/v1/bundle/prepaid`, {
             method: "POST",
             signal: AbortSignal.timeout(45_000),

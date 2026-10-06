@@ -563,7 +563,7 @@ describe("reviewed Relayr authorization hook", () => {
       await result.current.getRelayrTxQuote([REQUEST, { ...REQUEST, chainId: 10 }]);
     });
     await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
-      /already has published authorizations/,
+      /earlier signature can still run until/,
     );
     expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -638,12 +638,12 @@ describe("reviewed Relayr authorization hook", () => {
     ).rejects.toThrow(/POST response lost/);
     await expect(
       hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, "revnet-launch"),
-    ).rejects.toThrow(/previous Relayr launch/);
+    ).rejects.toThrow(/earlier signature can still run until/);
     await expect(
       result.current.getRelayrTxQuote([
         { ...REQUEST, recoveryScope: "revnet-launch", data: { ...REQUEST.data, data: "0x5678" } },
       ]),
-    ).rejects.toThrow(/already has published authorizations/);
+    ).rejects.toThrow(/earlier signature can still run until/);
     expect(mocks.signTypedData).toHaveBeenCalledOnce();
   });
 
@@ -661,7 +661,7 @@ describe("reviewed Relayr authorization hook", () => {
         result.current.getRelayrTxQuote([
           { ...REQUEST, recoveryScope, data: { ...REQUEST.data, data: "0x5678" } },
         ]),
-      ).rejects.toThrow(/already has published authorizations/);
+      ).rejects.toThrow(/earlier signature can still run until/);
       expect(mocks.signTypedData).toHaveBeenCalledOnce();
       expect(fetch).toHaveBeenCalledOnce();
     },
@@ -1530,11 +1530,12 @@ describe("unpaid Relayr quotes", () => {
   // `payment()` is payable until NOW + 600, so a quote is dead from NOW + 585.
   const LAST_PAYABLE = new Date((NOW + 584) * 1_000);
   const EXPIRED = new Date((NOW + 585) * 1_000);
-  const nextQuote = () =>
+  const nextQuote = (deadline = NOW + 1_800) =>
     relayrApi({
       bundleUuid: OTHER_BUNDLE_UUID,
-      payments: [payment({}, { bundleUuid: OTHER_BUNDLE_UUID, deadline: NOW + 1_800 })],
+      payments: [payment({}, { bundleUuid: OTHER_BUNDLE_UUID, deadline })],
     });
+  const PAST_DEADLINE = NOW + 48 * 3600;
 
   async function unpaidQuote(request: ReviewedRelayrRequest = REQUEST) {
     const harness = await freshHarness();
@@ -1558,43 +1559,60 @@ describe("unpaid Relayr quotes", () => {
   ) => activity.transactionActivitySnapshot().find((item) => item.bundleUuid === bundleUuid);
 
   it.each(["revnet-launch", "project-metadata:1:4", "project-splits:1:4:123:1"])(
-    "keep reserving the %s scope while a request can run, and a changed call refreshes them at the saved nonce once they can't be paid",
+    "keep reserving the %s scope while a request can run, saying until when, and let a changed call sign at the live nonce once every request is dead",
     async (recoveryScope) => {
       const { activity, hooks, result } = await unpaidQuote({ ...REQUEST, recoveryScope });
       const changed = changedIn(recoveryScope);
       vi.setSystemTime(LAST_PAYABLE);
       await expect(
         hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, recoveryScope),
-      ).rejects.toThrow(/still requires reconciliation/);
+      ).rejects.toThrow(/earlier signature can still run until/);
       await expect(result.current.getRelayrTxQuote([changed])).rejects.toThrow(
-        /published authorizations/,
+        /earlier signature can still run until/,
       );
-      // The quote can no longer be paid, but its signature can still run: a direct
-      // update still waits, and a relayed one is signed at the same nonce.
+      // The quote can no longer be paid by the clock, and its signature provably
+      // can still run: nothing is signed for the changed call.
       vi.setSystemTime(EXPIRED);
+      chainAt({ timestamp: NOW + 700, finalizedNonce: 4n });
       await expect(
         hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, recoveryScope),
-      ).rejects.toThrow(/still requires reconciliation/);
-      vi.stubGlobal("fetch", nextQuote());
+      ).rejects.toThrow(/earlier signature can still run until/);
+      await expect(result.current.getRelayrTxQuote([changed])).rejects.toThrow(
+        /earlier signature can still run until/,
+      );
+      expect(mocks.signTypedData).toHaveBeenCalledOnce();
+      expect(row(activity, BUNDLE_UUID)).toMatchObject({ relayrPaymentStatus: "unfunded" });
+      // Every request is dead and unused at a finalized block: the changed call goes ahead.
+      vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+      chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 4n });
+      vi.stubGlobal("fetch", nextQuote(PAST_DEADLINE + 1_800));
       await act(async () => {
         await expect(result.current.getRelayrTxQuote([changed])).resolves.toMatchObject({
           bundle_uuid: OTHER_BUNDLE_UUID,
         });
       });
       expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
-      expect(mocks.signTypedData.mock.calls[1][0].message.nonce).toBe(4n);
-      expect(row(activity, BUNDLE_UUID)).toMatchObject({
-        status: "failed",
-        relayrPaymentStatus: "expired",
-      });
-      // Once every request is dead and unused at a finalized block, the scope is free.
-      chainAt({ timestamp: NOW + 48 * 3600, finalizedNonce: 4n });
-      await expect(
-        hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, recoveryScope),
-      ).resolves.toBeUndefined();
-      expect(row(activity, OTHER_BUNDLE_UUID)).toMatchObject({ relayrDiscardable: "expired" });
+      expect(row(activity, BUNDLE_UUID)).toMatchObject({ relayrDiscardable: "expired" });
     },
   );
+
+  it("never signs a changed call at the old nonce while the old request provably can still run", async () => {
+    const scoped = { ...REQUEST, recoveryScope: "payout:1:4:0xabc:0xdef" };
+    const { activity, result } = await unpaidQuote(scoped);
+    // The quote's payment deadline passed on the device clock; the finalized block
+    // is far before the signature's deadline.
+    vi.setSystemTime(new Date((NOW + 700) * 1_000));
+    chainAt({ timestamp: NOW + 700, finalizedNonce: 4n });
+    vi.stubGlobal("fetch", nextQuote(NOW + 2_400));
+    await expect(
+      result.current.getRelayrTxQuote([
+        { ...scoped, data: { ...scoped.data, value: 9n, data: "0x5678" as Hex } },
+      ]),
+    ).rejects.toThrow(/earlier signature can still run until/);
+    expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(row(activity, BUNDLE_UUID)).toMatchObject({ relayrPaymentStatus: "unfunded" });
+  });
 
   it("quote the same signed calls again once the saved quote can no longer be paid", async () => {
     const { activity, result } = await unpaidQuote();
@@ -1642,40 +1660,7 @@ describe("unpaid Relayr quotes", () => {
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
-  it("are replaced while still payable only by an action that names them, at their saved nonces", async () => {
-    const { activity, hooks, result } = await unpaidQuote({
-      ...REQUEST,
-      recoveryScope: "revnet-launch",
-    });
-    const changed = changedIn("revnet-launch");
-    await expect(result.current.getRelayrTxQuote([changed])).rejects.toThrow(
-      /published authorizations/,
-    );
-    vi.stubGlobal("fetch", nextQuote());
-    // A replacement never signs at a nonce the old request may have used.
-    mocks.readContract.mockImplementationOnce(async () => true);
-    mocks.readContract.mockImplementationOnce(async () => 5n);
-    await expect(
-      result.current.getRelayrTxQuote([changed], { replaces: BUNDLE_UUID }),
-    ).rejects.toThrow(/may have executed/);
-    expect(mocks.signTypedData).toHaveBeenCalledOnce();
-    await act(async () => {
-      await expect(
-        result.current.getRelayrTxQuote([changed], { replaces: BUNDLE_UUID }),
-      ).resolves.toMatchObject({ bundle_uuid: OTHER_BUNDLE_UUID });
-    });
-    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
-    expect(mocks.signTypedData.mock.calls[1][0].message.nonce).toBe(4n);
-    expect(row(activity, BUNDLE_UUID)).toMatchObject({
-      status: "failed",
-      relayrPaymentStatus: "expired",
-    });
-    const payer = renderHook(() => hooks.useSendRelayrTx());
-    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(/does not belong/);
-    expect(mocks.sendTransaction).not.toHaveBeenCalled();
-  });
-
-  it("are not replaced once a payment was sent", async () => {
+  it("keep reserving their scope once a payment was sent", async () => {
     const { hooks, result } = await unpaidQuote({ ...REQUEST, recoveryScope: "revnet-launch" });
     mocks.getTransactionReceipt.mockResolvedValue({
       ...onchain(PAYMENT_TARGET, payment().calldata),
@@ -1683,34 +1668,13 @@ describe("unpaid Relayr quotes", () => {
     });
     const payer = renderHook(() => hooks.useSendRelayrTx());
     await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(/uncertain/);
-    await expect(
-      result.current.getRelayrTxQuote([changedIn("revnet-launch")], { replaces: BUNDLE_UUID }),
-    ).rejects.toThrow(/submitted payment/);
+    await expect(result.current.getRelayrTxQuote([changedIn("revnet-launch")])).rejects.toThrow(
+      /earlier signature can still run until/,
+    );
     await expect(
       hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, "revnet-launch"),
-    ).rejects.toThrow(/still requires reconciliation/);
+    ).rejects.toThrow(/earlier signature can still run until/);
     expect(mocks.signTypedData).toHaveBeenCalledOnce();
-  });
-
-  it("are not replaced while their payment is in progress", async () => {
-    const { hooks, review, result } = await unpaidQuote({
-      ...REQUEST,
-      recoveryScope: "revnet-launch",
-    });
-    let decline!: () => void;
-    review.registerTransactionReviewHandler(
-      () => new Promise<boolean>((resolve) => (decline = () => resolve(false))),
-    );
-    const payer = renderHook(() => hooks.useSendRelayrTx());
-    const paying = payer.result.current.sendRelayrTx(payment());
-    await vi.waitFor(() => expect(decline).toBeTypeOf("function"));
-    await expect(
-      result.current.getRelayrTxQuote([changedIn("revnet-launch")], { replaces: BUNDLE_UUID }),
-    ).rejects.toThrow(/published authorizations/);
-    decline();
-    await expect(paying).rejects.toThrow();
-    expect(mocks.signTypedData).toHaveBeenCalledOnce();
-    expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 });
 
@@ -1730,6 +1694,26 @@ describe("Relayr sessions decided from the chain", () => {
       bundleUuid: OTHER_BUNDLE_UUID,
       payments: [payment({}, { bundleUuid: OTHER_BUNDLE_UUID, deadline: PAST_DEADLINE + 1_800 })],
     });
+
+  /** Relayr's read of the first bundle, and the next quote for anything else. */
+  function relayrReads(first: Record<string, unknown> = {}) {
+    const next = nextQuote();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith(`/v1/bundle/${BUNDLE_UUID}`)
+        ? new Response(
+            JSON.stringify({
+              bundle_uuid: BUNDLE_UUID,
+              payment_received: false,
+              transactions: [{ tx_uuid: TX_UUIDS[0], status: { state: "Pending" } }],
+              ...first,
+            }),
+            { status: 200 },
+          )
+        : next(input, init),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    return fetcher;
+  }
 
   /** The destination reads the recheck makes: its reviewed precondition. */
   function guardReads(answer: () => Promise<{ data: Hex }>) {
@@ -1879,6 +1863,12 @@ describe("Relayr sessions decided from the chain", () => {
       ]),
     ).rejects.toThrow(/may already have run/);
     expect(session()).toMatchObject({ relayrDiscardable: "ran" });
+    // Marked for Discard, it refuses every other call in its scope until it is discarded.
+    await expect(
+      result.current.getRelayrTxQuote([
+        { ...scoped, data: { ...scoped.data, data: "0x6789" as Hex } },
+      ]),
+    ).rejects.toThrow(/may already have run/);
     // Every request of the old session is dead, so it reserves no forwarder nonce (R117).
     vi.stubGlobal("fetch", nextQuote());
     await act(async () => {
@@ -1897,28 +1887,8 @@ describe("Relayr sessions decided from the chain", () => {
   });
 
   describe("a quote whose payment reverted (ruling R104)", () => {
-    /** Relayr's read of the reverted bundle, and the next quote for anything else. */
-    function relayrReads(reverted: Record<string, unknown> = {}) {
-      const next = nextQuote();
-      const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
-        String(input).endsWith(`/v1/bundle/${BUNDLE_UUID}`)
-          ? new Response(
-              JSON.stringify({
-                bundle_uuid: BUNDLE_UUID,
-                payment_received: false,
-                transactions: [{ tx_uuid: TX_UUIDS[0], status: { state: "Pending" } }],
-                ...reverted,
-              }),
-              { status: 200 },
-            )
-          : next(input, init),
-      );
-      vi.stubGlobal("fetch", fetcher);
-      return fetcher;
-    }
-
-    /** The session's payment reverted, and the device clock is past its quote's deadline. */
-    async function revertedPayment() {
+    /** The session's payment reverted, and the device clock is past its quote's deadline unless `open`. */
+    async function revertedPayment({ open = false } = {}) {
       const harness = await signedSession();
       mocks.getTransactionReceipt.mockResolvedValue({
         ...onchain(PAYMENT_TARGET, payment().calldata),
@@ -1931,9 +1901,23 @@ describe("Relayr sessions decided from the chain", () => {
       const payer = renderHook(() => harness.hooks.useSendRelayrTx());
       await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(/uncertain/);
       expect(harness.session()).toMatchObject({ relayrPaymentStatus: "reverted" });
-      vi.setSystemTime(new Date((NOW + 700) * 1_000));
+      if (!open) vi.setSystemTime(new Date((NOW + 700) * 1_000));
       return harness;
     }
+
+    it("is paid again from its saved quote while that quote is open, with no new signature or quote", async () => {
+      const { result } = await revertedPayment({ open: true });
+      const reads = relayrReads();
+      await act(async () => {
+        await expect(result.current.getRelayrTxQuote([GUARDED])).resolves.toMatchObject({
+          bundle_uuid: BUNDLE_UUID,
+        });
+      });
+      expect(mocks.signTypedData).toHaveBeenCalledOnce();
+      expect(reads.mock.calls.some(([url]) => String(url).endsWith("/v1/bundle/prepaid"))).toBe(
+        false,
+      );
+    });
 
     it("is released once its deadline is final and Relayr reads it unpaid, and the same signatures are quoted again", async () => {
       const { result, session } = await revertedPayment();
@@ -2008,6 +1992,29 @@ describe("Relayr sessions decided from the chain", () => {
       expect(session()).toMatchObject({ status: "success", manualVerificationRequired: false });
       expect(mocks.signTypedData).toHaveBeenCalledOnce();
       expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+    });
+
+    it("is never proven from Relayr's records while no other payment funded it", async () => {
+      const { hooks, session } = await revertedPayment();
+      const [signed] = session()!.relayrExpectedTransactions!;
+      relayrReads({
+        transactions: [
+          {
+            tx_uuid: signed.transactionUuid,
+            request: {
+              chain: signed.chainId,
+              target: signed.target,
+              data: signed.data,
+              value: signed.value,
+            },
+            status: { state: "Pending" },
+          },
+        ],
+      });
+      await expect(hooks.waitForRelayrBundle(BUNDLE_UUID)).rejects.toThrow(
+        /funding transaction reverted/,
+      );
+      expect(session()).toMatchObject({ relayrPaymentStatus: "reverted" });
     });
 
     it("holds while its deadline is not final, saying until when its signature can run", async () => {
@@ -2145,4 +2152,187 @@ describe("Relayr sessions decided from the chain", () => {
       }
     },
   );
+  it("holds after a reorg left the finalized nonce below a saved one, for its own calls and a changed one", async () => {
+    const scoped = { ...GUARDED, recoveryScope: "project-metadata:1:4" };
+    const { result, session } = await signedSession(scoped);
+    vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+    chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 3n });
+    await expect(result.current.getRelayrTxQuote([scoped])).rejects.toThrow(
+      "This action's earlier signature may still run. Try again in a few minutes.",
+    );
+    await expect(
+      result.current.getRelayrTxQuote([
+        { ...scoped, data: { ...scoped.data, data: "0x5678" as Hex } },
+      ]),
+    ).rejects.toThrow("This action's earlier signature may still run. Try again in a few minutes.");
+    expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    expect(session()).not.toHaveProperty("relayrDiscardable");
+  });
+
+  it("holds while one request can still run and another may already have run", async () => {
+    const harness = await freshHarness();
+    harness.review.registerTransactionReviewHandler(async () => true);
+    guardReads(async () => ({ data: GUARD_VALUE }));
+    vi.stubGlobal("fetch", relayrApi());
+    const quoter = renderHook(() => harness.hooks.useGetRelayrTxQuote());
+    const requests = [GUARDED, { ...GUARDED, chainId: 10 as const }];
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote(requests);
+    });
+    // On chain 1 the nonce moved; on chain 10 the request is unused and before its deadline.
+    chainAt({ timestamp: NOW + 700, finalizedNonce: 5n });
+    const moved = mocks.readContract.getMockImplementation()!;
+    const client = mocks.getPublicClient();
+    mocks.getPublicClient.mockImplementation(
+      (_config: unknown, { chainId }: { chainId: number }) =>
+        chainId === 10
+          ? {
+              ...client,
+              readContract: async (args: { functionName: string }) =>
+                args.functionName === "nonces" ? 4n : moved(args),
+            }
+          : client,
+    );
+    vi.stubGlobal("fetch", nextQuote());
+    await expect(quoter.result.current.getRelayrTxQuote(requests)).rejects.toThrow(
+      /earlier signature can still run until/,
+    );
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+    expect(
+      harness.activity.transactionActivitySnapshot().find((row) => row.bundleUuid === BUNDLE_UUID)
+        ?.relayrDiscardable,
+    ).toBeUndefined();
+  });
+
+  it("stops reserving the forwarder nonce of another action once every request is dead (R117)", async () => {
+    const { activity, result, session } = await signedSession({
+      ...GUARDED,
+      recoveryScope: "project-metadata:1:4",
+    });
+    const other = {
+      ...GUARDED,
+      recoveryScope: "project-splits:1:4:123:1",
+      data: { ...GUARDED.data, data: "0x9999" as Hex },
+    };
+    await expect(result.current.getRelayrTxQuote([other])).rejects.toThrow(
+      /published authorizations/,
+    );
+    vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+    chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 4n });
+    vi.stubGlobal("fetch", nextQuote());
+    await act(async () => {
+      await expect(result.current.getRelayrTxQuote([other])).resolves.toMatchObject({
+        bundle_uuid: OTHER_BUNDLE_UUID,
+      });
+    });
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+    expect(mocks.signTypedData.mock.calls[1][0].message.nonce).toBe(4n);
+    expect(session()).toMatchObject({ relayrPaymentStatus: "unfunded" });
+    expect(session()).not.toHaveProperty("relayrDiscardable");
+    expect(activity.transactionActivitySnapshot()).toHaveLength(2);
+  });
+
+  describe("a paid bundle that Relayr leaves pending", () => {
+    const scoped = { ...GUARDED, recoveryScope: "project-metadata:1:4" };
+
+    /** The session paid, its payment proven, and Relayr still running it. */
+    async function paidSession() {
+      const harness = await signedSession(scoped);
+      harness.activity.updateTransactionActivity(harness.session()!.id, {
+        status: "pending",
+        relayrPaymentStatus: "confirmed",
+        hash: HASH,
+        chainId: 1,
+        relayrPayment: { target: PAYMENT_TARGET, data: payment().calldata, value: "16" },
+        relayrPayments: [
+          { hash: HASH, chainId: 1, target: PAYMENT_TARGET, data: payment().calldata, value: "16" },
+        ],
+        message: "Relayr payment confirmed; destination transactions are still executing.",
+      });
+      return harness;
+    }
+
+    it("reserves its scope while a request can run, and is classified once every request is dead", async () => {
+      const { hooks, result, session } = await paidSession();
+      await expect(
+        hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, "project-metadata:1:4"),
+      ).rejects.toThrow(/still requires reconciliation/);
+      await hooks.checkRelayrSession(session()!.id);
+      expect(session()).not.toHaveProperty("relayrDiscardable");
+      vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+      chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 4n });
+      await hooks.checkRelayrSession(session()!.id);
+      expect(session()).toMatchObject({ relayrDiscardable: "expired" });
+      await expect(
+        hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, "project-metadata:1:4"),
+      ).resolves.toBeUndefined();
+      vi.stubGlobal("fetch", nextQuote());
+      await act(async () => {
+        await expect(result.current.getRelayrTxQuote([scoped])).resolves.toMatchObject({
+          bundle_uuid: OTHER_BUNDLE_UUID,
+        });
+      });
+      expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+      expect(mocks.signTypedData.mock.calls[1][0].message.nonce).toBe(4n);
+    });
+
+    it("is signed again at the saved nonces by its own action once every request is dead and unused", async () => {
+      const { result } = await paidSession();
+      await expect(result.current.getRelayrTxQuote([scoped])).rejects.toThrow(/submitted payment/);
+      vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+      chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 4n });
+      vi.stubGlobal("fetch", nextQuote());
+      await act(async () => {
+        await expect(result.current.getRelayrTxQuote([scoped])).resolves.toMatchObject({
+          bundle_uuid: OTHER_BUNDLE_UUID,
+        });
+      });
+      expect(mocks.signTypedData.mock.calls.map(([request]) => request.message.nonce)).toEqual([
+        4n,
+        4n,
+      ]);
+    });
+
+    it("is marked for Discard when its check gives up after every request is dead", async () => {
+      const { hooks, session } = await paidSession();
+      const [signed] = session()!.relayrExpectedTransactions!;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                bundle_uuid: BUNDLE_UUID,
+                payment_received: true,
+                transactions: [
+                  {
+                    tx_uuid: signed.transactionUuid,
+                    request: {
+                      chain: signed.chainId,
+                      target: signed.target,
+                      data: signed.data,
+                      value: signed.value,
+                    },
+                    status: { state: "Pending" },
+                  },
+                ],
+              }),
+              { status: 200 },
+            ),
+        ),
+      );
+      vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+      chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 4n });
+      vi.useFakeTimers({ toFake: ["setTimeout"] });
+      try {
+        const waiting = hooks.waitForRelayrBundle(BUNDLE_UUID);
+        const gaveUp = expect(waiting).rejects.toThrow(/still pending after the status timeout/);
+        await vi.advanceTimersByTimeAsync(2_000 * 180);
+        await gaveUp;
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(session()).toMatchObject({ relayrDiscardable: "expired" });
+    });
+  });
 });

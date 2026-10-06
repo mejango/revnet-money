@@ -134,11 +134,7 @@ describe("creation submit routing", () => {
 
     expect(mocks.toast).not.toHaveBeenCalled();
     expect(mocks.pinMetadata).toHaveBeenCalledTimes(1);
-    // The relayed launch may refresh a live unpaid launch at its saved nonces on these chains.
-    expect(mocks.recoveryGuard).toHaveBeenCalledExactlyOnceWith(TEST_ACCOUNT, "revnet-launch", {
-      chains: TESTNETS,
-      replaces: undefined,
-    });
+    expect(mocks.recoveryGuard).toHaveBeenCalledExactlyOnceWith(TEST_ACCOUNT, "revnet-launch");
     expect(mocks.quote).toHaveBeenCalledTimes(1);
     const [requests] = mocks.quote.mock.calls[0];
     expect(requests.map(({ chainId }) => chainId)).toEqual(TESTNETS);
