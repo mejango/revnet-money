@@ -128,16 +128,30 @@ describe("payment recovery", () => {
     expect(mocks.prepare).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the batch action above the payment list", async () => {
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1 ? [row("one").indexed, row("two").indexed] : [],
+    );
+    setup();
+    const batch = await screen.findByRole("button", { name: "Batch all pending" });
+    const firstRetry = screen.getAllByRole("button", { name: "Review routing" })[0];
+    expect(
+      batch.compareDocumentPosition(firstRetry) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("resumes the saved selection when the index is already empty without preparing another call", async () => {
     mocks.indexed.mockResolvedValue([]);
-    mocks.saved.mockReturnValue({ completed: 1, total: 2 });
+    mocks.saved.mockReturnValue({ scope: "pending-routing:1:6", completed: 1, total: 2 });
     setup();
     fireEvent.click(
       await screen.findByRole("button", { name: "Continue routing (1/2 confirmed)" }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
     await waitFor(() =>
-      expect(mocks.batch).toHaveBeenCalledWith(expect.objectContaining({ calls: [] })),
+      expect(mocks.batch).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "pending-routing:1:6", calls: [] }),
+      ),
     );
     expect(mocks.prepare).not.toHaveBeenCalled();
   });

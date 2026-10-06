@@ -12,6 +12,7 @@ import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
+  updateTransactionActivity,
 } from "@/lib/transaction-activity";
 import {
   SAFE_EXEC_ABI,
@@ -1027,6 +1028,150 @@ describe("reviewed selected-call orchestration", () => {
     });
     expect(mocks.pay).toHaveBeenCalledTimes(2);
     expect(mocks.quote).toHaveBeenCalledTimes(2);
+  });
+  describe("raw pending-payment Relayr batches", () => {
+    const calls = () =>
+      [1, 1, 10].map((chainId, index) => ({
+        ...retryCall(chainId),
+        args: [BigInt(index + 1)],
+        recoveryScope: `pending:${chainId}:${index}`,
+        relayrMode: "raw" as const,
+      }));
+    const hashes = [HASH, `0x${"cd".repeat(32)}`, `0x${"ef".repeat(32)}`] as Hash[];
+    function quotedIdentities() {
+      mocks.quote.mockImplementation(
+        async (requests: { chainId: number; data: { to: Address; data: Hash } }[]) => {
+          recordTransactionActivity({
+            id: "relayr:pending-bundle",
+            kind: "relayr-bundle",
+            title: "Route pending payments",
+            status: "pending",
+            message: "Awaiting funding",
+            bundleUuid: "pending-bundle",
+            account: ACCOUNT,
+            relayrExpectedTransactions: requests.map((request, index) => ({
+              chainId: request.chainId,
+              target: request.data.to,
+              data: request.data.data,
+              value: "0",
+              transactionUuid: `pending-${index}`,
+            })),
+          });
+          return { bundle_uuid: "pending-bundle", payment_info: [{ chain: 1 }] };
+        },
+      );
+      mocks.wait.mockResolvedValue({
+        // Return the same-chain transactions in reverse order to expose chain-only matching.
+        transactions: [2, 1, 0].map((index) => ({
+          tx_uuid: `pending-${index}`,
+          request: { chain: index === 2 ? 10 : 1 },
+          status: { data: { hash: hashes[index] } },
+        })),
+      });
+    }
+    it("funds all same-chain and cross-chain retries once and binds each hash by transaction identity", async () => {
+      quotedIdentities();
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(
+          result.current.runBatch({
+            scope: "pending-all",
+            label: "Route payments",
+            calls: calls(),
+          }),
+        ).resolves.toEqual({
+          status: "success",
+          hashes: hashes.map((hash, callIndex) => ({
+            hash,
+            callIndex,
+            chainId: callIndex === 2 ? 10 : 1,
+          })),
+        });
+      });
+      expect(mocks.quote).toHaveBeenCalledOnce();
+      expect(mocks.quote.mock.calls[0][0].map((row: { chainId: number }) => row.chainId)).toEqual([
+        1, 1, 10,
+      ]);
+      expect(mocks.pay).toHaveBeenCalledOnce();
+      expect(mocks.write).not.toHaveBeenCalled();
+      expect(readMultichainBatches()[0].rounds).toHaveLength(1);
+    });
+    it("resumes the original paid pending-payment entry without another quote or payment", async () => {
+      quotedIdentities();
+      mocks.wait.mockRejectedValueOnce(new Error("destination RPC unavailable"));
+      const first = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(
+          first.result.current.runBatch({
+            scope: "pending-all",
+            label: "Route payments",
+            calls: calls(),
+          }),
+        ).rejects.toThrow(/RPC unavailable/);
+      });
+      first.unmount();
+      const second = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(
+          second.result.current.runBatch({
+            scope: "pending-all",
+            label: "Route payments",
+            calls: [],
+          }),
+        ).resolves.toMatchObject({ status: "success" });
+      });
+      expect(mocks.quote).toHaveBeenCalledOnce();
+      expect(mocks.pay).toHaveBeenCalledOnce();
+      expect(readMultichainBatches()[0].calls.map((row) => row.hash)).toEqual(hashes);
+    });
+    it("consumes a reverted attempt alongside successful calls instead of leaving it payable", async () => {
+      quotedIdentities();
+      const settled = mocks.wait.getMockImplementation()!;
+      mocks.wait.mockImplementation(async (...args) => {
+        const response = await settled(...args);
+        const activity = refreshTransactionActivities().find(
+          (row) => row.bundleUuid === "pending-bundle",
+        )!;
+        updateTransactionActivity(activity.id, {
+          relayrExpectedTransactions: activity.relayrExpectedTransactions!.map((row, index) => ({
+            ...row,
+            receiptStatus: index === 1 ? "reverted" : "success",
+          })),
+        });
+        return response;
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(
+          result.current.runBatch({
+            scope: "pending-all",
+            label: "Route payments",
+            calls: calls(),
+          }),
+        ).resolves.toMatchObject({ status: "success" });
+      });
+      expect(readMultichainBatches()[0].calls.map((row) => row.state)).toEqual([
+        "success",
+        "reverted",
+        "success",
+      ]);
+      expect(findPendingBatch(ACCOUNT, "pending-all")).toBeUndefined();
+      expect(mocks.pay).toHaveBeenCalledOnce();
+    });
+    it("refuses funding repeated-chain calls without complete quote identities", async () => {
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(
+          result.current.runBatch({
+            scope: "pending-all",
+            label: "Route payments",
+            calls: calls(),
+          }),
+        ).rejects.toThrow(/identity binding/);
+      });
+      expect(mocks.pay).not.toHaveBeenCalled();
+      expect(mocks.choose).not.toHaveBeenCalled();
+    });
   });
   it("keeps an unknown direct wallet result locked across reload", async () => {
     mocks.write.mockRejectedValue(new Error("RPC connection lost after send"));

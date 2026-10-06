@@ -1,15 +1,22 @@
 import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
+import { pendingRouterCommitment } from "@/lib/pending-router-calls";
+import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import type { TransactionReviewRequest } from "@/lib/transaction-review";
 import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import { act, renderHook } from "@testing-library/react";
 import {
   encodeAbiParameters,
+  encodeEventTopics,
   encodeFunctionData,
+  encodeFunctionResult,
   HttpRequestError,
+  keccak256,
+  parseAbiParameters,
   toFunctionSelector,
   zeroAddress,
+  zeroHash,
   type Address,
   type Hex,
 } from "viem";
@@ -46,6 +53,7 @@ const mocks = vi.hoisted(() => ({
   sendTransaction: vi.fn(),
   resumeSafeProposalTracking: vi.fn(),
   clientCall: vi.fn(),
+  rawRequest: vi.fn(),
   readContract: vi.fn(),
   estimateGas: vi.fn(),
   getCode: vi.fn(),
@@ -117,6 +125,7 @@ beforeEach(() => {
   mocks.getAccount.mockImplementation(() => mocks.account);
   mocks.getPublicClient.mockReturnValue({
     call: mocks.clientCall,
+    request: mocks.rawRequest,
     readContract: mocks.readContract,
     estimateGas: mocks.estimateGas,
     getCode: mocks.getCode,
@@ -128,6 +137,7 @@ beforeEach(() => {
     mocks.account.chainId = chainId;
   });
   mocks.clientCall.mockResolvedValue({ data: "0x" });
+  mocks.rawRequest.mockResolvedValue("0x");
   mocks.readContract.mockImplementation(
     async ({ functionName, address }: { functionName: string; address: Address }) =>
       functionName === "isTrustedForwarder"
@@ -806,6 +816,211 @@ describe("raw payer publication and durable source guards", () => {
     await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
       /reviewed state changed/,
     );
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("raw pending-payment publication and funding", () => {
+  const gateway = "0x4a56aef5b6a5b9742abb02ca67c5a85ba183d901" as Address;
+  function pendingRequest(id: Hex): ReviewedRelayrRequest {
+    const call = {
+      amount: 100n,
+      preferAddToBalance: false,
+      shouldReturnHeldFees: false,
+      beneficiary: ACCOUNT,
+      projectId: 1n,
+      refundTo: ACCOUNT,
+      sourceProjectId: 6n,
+      token: zeroAddress,
+    };
+    return {
+      chainId: 1,
+      relayrMode: "raw",
+      recoveryScope: `pending:1:${id}`,
+      expectedRouterPending: {
+        gateway,
+        pendingCallId: id,
+        callHash: keccak256(
+          encodeAbiParameters(
+            parseAbiParameters(
+              "(uint256 amount,bool preferAddToBalance,bool shouldReturnHeldFees,address beneficiary,uint256 projectId,address refundTo,uint256 sourceProjectId,address token)",
+            ),
+            [call],
+          ),
+        ),
+      },
+      preconditions: [
+        {
+          address: gateway,
+          data: encodeFunctionData({
+            abi: routerGatewayAbi,
+            functionName: "pendingCallCommitmentOf",
+            args: [id],
+          }),
+          expected: pendingRouterCommitment(call, "", "0x"),
+        },
+        {
+          address: gateway,
+          data: encodeFunctionData({
+            abi: routerGatewayAbi,
+            functionName: "pendingCallFailureOf",
+            args: [id],
+          }),
+          expected: encodeFunctionResult({
+            abi: routerGatewayAbi,
+            functionName: "pendingCallFailureOf",
+            result: { errorHash: zeroHash, count: 0, lastFailureAt: 0, highestGasLimit: 0n },
+          }),
+        },
+      ],
+      data: {
+        from: ACCOUNT,
+        to: gateway,
+        value: 0n,
+        gas: 6_600_000n,
+        data: encodeFunctionData({
+          abi: routerGatewayAbi,
+          functionName: "processPendingCall",
+          args: [id, call, "", "0x"],
+        }),
+      },
+    };
+  }
+  function sources(requests: ReviewedRelayrRequest[]) {
+    mocks.clientCall.mockImplementation(async ({ data }: { data: Hex }) => ({
+      data:
+        requests
+          .flatMap((request) => request.preconditions ?? [])
+          .find((guard) => guard.data === data)?.expected ?? "0x",
+    }));
+  }
+  it("publishes repeated-chain pending calls as distinct raw transactions without forwarder signatures", async () => {
+    const requests = [pendingRequest(HASH), pendingRequest(BLOCK_HASH)];
+    sources(requests);
+    const { hooks, review, activity } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi());
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote(requests);
+    });
+    expect(mocks.signTypedData).not.toHaveBeenCalled();
+    const posted = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string);
+    expect(
+      posted.transactions.map((row: { chain: number; data: Hex }) => [row.chain, row.data]),
+    ).toEqual(requests.map((request) => [1, request.data.data]));
+    expect(
+      activity
+        .transactionActivitySnapshot()[0]
+        .relayrExpectedTransactions?.map((row) => [
+          row.transactionUuid,
+          row.expectedRouterPending?.pendingCallId,
+        ]),
+    ).toEqual([
+      [TX_UUIDS[0], HASH],
+      [TX_UUIDS[1], BLOCK_HASH],
+    ]);
+    expect(mocks.rawRequest).toHaveBeenCalledTimes(2);
+  });
+  it("refuses funding if a pending payment advances after quote publication", async () => {
+    const request = pendingRequest(HASH);
+    sources([request]);
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi());
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([request]);
+    });
+    mocks.clientCall.mockResolvedValue({ data: zeroHash });
+    const payer = renderHook(() => hooks.useSendRelayrTx());
+    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
+      /reviewed state changed/,
+    );
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+  it("reconciles every canonical receipt in a partially reverted paid batch without paying again", async () => {
+    const requests = [pendingRequest(HASH), pendingRequest(BLOCK_HASH)];
+    sources(requests);
+    const { hooks, review, activity } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    let completed = false;
+    vi.stubGlobal(
+      "fetch",
+      relayrApi({
+        bundle: { payment_received: true },
+        records: (records) =>
+          completed
+            ? records
+                .map((record, index) => ({
+                  ...record,
+                  status: {
+                    state: index ? "Failed" : "Success",
+                    data: { hash: index ? BLOCK_HASH : HASH },
+                  },
+                }))
+                .reverse()
+            : records,
+      }),
+    );
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote(requests);
+    });
+    // Relayr funded the original entry elsewhere: no wallet payment should be offered.
+    activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
+      relayrPaymentStatus: "reverted",
+    });
+    mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => ({
+      ...onchain(gateway, requests[hash === HASH ? 0 : 1].data.data, 0n),
+      hash,
+    }));
+    mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) => ({
+      ...onchain(gateway, requests[hash === HASH ? 0 : 1].data.data, 0n),
+      transactionHash: hash,
+      status: hash === HASH ? "success" : "reverted",
+      logs:
+        hash === HASH
+          ? [
+              {
+                address: gateway,
+                topics: encodeEventTopics({
+                  abi: routerGatewayAbi,
+                  eventName: "JBRouterTerminalGateway_RecordTerminalCallFailure",
+                  args: { id: HASH, errorHash: zeroHash },
+                }),
+                data: encodeAbiParameters(parseAbiParameters("uint32,uint256,address"), [
+                  1,
+                  200_000n,
+                  ACCOUNT,
+                ]),
+              },
+            ]
+          : [],
+    }));
+    completed = true;
+    await hooks.waitForRelayrBundle(BUNDLE_UUID);
+    const saved = activity.transactionActivitySnapshot()[0];
+    expect(saved.status).toBe("success");
+    expect(saved.relayrExpectedTransactions?.map((row) => row.receiptStatus)).toEqual([
+      "success",
+      "reverted",
+    ]);
+    expect(mocks.getTransactionReceipt).toHaveBeenCalledTimes(2);
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+  it("never publishes a pending retry when its raw RPC preflight fails", async () => {
+    const request = pendingRequest(HASH);
+    sources([request]);
+    mocks.rawRequest.mockRejectedValue(new Error("OffchainLookup: https://attacker.invalid"));
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi());
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await expect(quoter.result.current.getRelayrTxQuote([request])).rejects.toThrow(
+      /OffchainLookup/,
+    );
+    expect(fetch).not.toHaveBeenCalled();
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import {
   decodeEventLog,
+  decodeFunctionData,
   decodeFunctionResult,
   encodeAbiParameters,
   encodeFunctionData,
@@ -25,7 +26,7 @@ import {
 import { queryBendystrawFromBrowser } from "./bendystraw/client";
 import { RouterPendingCallsOperation } from "./bendystraw/operations";
 import type { IndexedRouterPendingCall } from "./bendystraw/types";
-import type { MultichainCall } from "./multichain-batch";
+import { isBatchCallHandled, readMultichainBatches, type MultichainCall } from "./multichain-batch";
 import type { CallPrecondition } from "./multichain-guards";
 import { rolloutChain, rolloutContractName } from "./protocol-rollout";
 import { routerGatewayAbi } from "./router-gateway-abi";
@@ -107,6 +108,125 @@ function requireHex(value: unknown, bytes?: number): asserts value is Hex {
   }
 }
 
+function requireKnownGateway(chainId: number, gateway: Address) {
+  if (!rolloutContractName(chainId, gateway)?.startsWith("JBRouterTerminalGateway")) {
+    throw new Error("This payment's gateway is not in the verified deployment records.");
+  }
+}
+
+/** Raw Relayr may execute only the exact authenticated, permissionless routing attempt. */
+export function requireRawPendingRouterCall(
+  chainId: number,
+  target: Address,
+  data: Hex,
+  value: bigint,
+  guard?: RouterPendingReceiptGuard,
+  preconditions?: readonly CallPrecondition[],
+): void {
+  if (!guard || value !== 0n || !isAddressEqual(target, guard.gateway)) {
+    throw new Error("Raw routing requires the reviewed gateway and zero native value.");
+  }
+  requireKnownGateway(chainId, target);
+  const decoded = decodeFunctionData({ abi: routerGatewayAbi, data });
+  if (
+    decoded.functionName !== "processPendingCall" &&
+    decoded.functionName !== "finalizePendingCall"
+  ) {
+    throw new Error("Raw routing supports only a reviewed pending-payment retry or final attempt.");
+  }
+  if (
+    encodeFunctionData({ abi: routerGatewayAbi, ...decoded }).toLowerCase() !== data.toLowerCase()
+  ) {
+    throw new Error("The raw routing call is not canonical.");
+  }
+  const [id, call, memo, metadata] = decoded.args;
+  if (
+    id.toLowerCase() !== guard.pendingCallId.toLowerCase() ||
+    hashCall(call).toLowerCase() !== guard.callHash.toLowerCase()
+  ) {
+    throw new Error("The raw routing call does not match the reviewed payment.");
+  }
+  const commitment = pendingRouterCommitment(call, memo, metadata);
+  const commitmentData = encodeFunctionData({
+    abi: routerGatewayAbi,
+    functionName: "pendingCallCommitmentOf",
+    args: [id],
+  });
+  const commitmentResult = encodeFunctionResult({
+    abi: routerGatewayAbi,
+    functionName: "pendingCallCommitmentOf",
+    result: commitment,
+  });
+  const failureData = encodeFunctionData({
+    abi: routerGatewayAbi,
+    functionName: "pendingCallFailureOf",
+    args: [id],
+  });
+  const atGateway = (condition: CallPrecondition) => isAddressEqual(condition.address, target);
+  const committed = preconditions?.some(
+    (condition) =>
+      atGateway(condition) &&
+      condition.data.toLowerCase() === commitmentData.toLowerCase() &&
+      condition.expected.toLowerCase() === commitmentResult.toLowerCase(),
+  );
+  const failure = preconditions?.find(
+    (condition) =>
+      atGateway(condition) && condition.data.toLowerCase() === failureData.toLowerCase(),
+  );
+  if (!committed || !failure)
+    throw new Error("Raw routing requires the original commitment and failure-state checks.");
+  const failureResult = decodeFunctionResult({
+    abi: routerGatewayAbi,
+    functionName: "pendingCallFailureOf",
+    data: failure.expected,
+  });
+  if (
+    encodeFunctionResult({
+      abi: routerGatewayAbi,
+      functionName: "pendingCallFailureOf",
+      result: failureResult,
+    }).toLowerCase() !== failure.expected.toLowerCase()
+  ) {
+    throw new Error("The reviewed routing failure state is not canonical.");
+  }
+}
+
+/** Find old source-scoped journals by their exact destination calls, without rewriting recovery. */
+export function findPendingRoutingBatch(account: Address, projects: readonly PendingProject[]) {
+  return readMultichainBatches().find((batch) => {
+    if (batch.status !== "pending" || !isAddressEqual(batch.account, account)) return false;
+    const unfinished = batch.calls.filter((saved) => !isBatchCallHandled(saved));
+    // Recovery may have stopped after the final call's receipt, before completing the journal.
+    return (unfinished.length ? unfinished : batch.calls).some((saved) => {
+      if (!saved.expectedRouterPending) return false;
+      try {
+        requireRawPendingRouterCall(
+          saved.chainId,
+          saved.address,
+          saved.data,
+          saved.value ?? 0n,
+          saved.expectedRouterPending,
+          saved.preconditions,
+        );
+        const decoded = decodeFunctionData({ abi: routerGatewayAbi, data: saved.data });
+        if (
+          decoded.functionName !== "processPendingCall" &&
+          decoded.functionName !== "finalizePendingCall"
+        )
+          return false;
+        return projects.some(
+          (project) =>
+            project.version === 6 &&
+            project.chainId === saved.chainId &&
+            BigInt(project.projectId) === decoded.args[1].projectId,
+        );
+      } catch {
+        return false;
+      }
+    });
+  });
+}
+
 /** Every page and identity is required before offering “all pending”. */
 export async function readIndexedPendingRouterCalls(project: PendingProject) {
   if (project.version !== 6) return [];
@@ -183,13 +303,7 @@ export async function readPendingRouterPayment(
   for (const address of [indexed.gateway, indexed.token, indexed.beneficiary, indexed.refundTo]) {
     if (!isAddress(address)) throw new Error("The indexed payment contains an invalid address.");
   }
-  if (
-    !rolloutContractName(indexed.chainId, indexed.gateway as Address)?.startsWith(
-      "JBRouterTerminalGateway",
-    )
-  ) {
-    throw new Error("This payment's gateway is not in the verified deployment records.");
-  }
+  requireKnownGateway(indexed.chainId, indexed.gateway as Address);
   requireHex(indexed.pendingCallId, 32);
   requireHex(indexed.callCommitment, 32);
   requireHex(indexed.metadata);
@@ -351,6 +465,7 @@ export async function preparePendingRouterPayment(
     contractName: "Router terminal gateway",
     preconditions: payment.preconditions,
     recoveryScope: `pending-routing:${payment.id}`,
+    relayrMode: "raw",
     expectedRouterPending: {
       gateway: indexed.gateway as Address,
       pendingCallId: indexed.pendingCallId as Hex,

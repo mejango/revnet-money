@@ -4,6 +4,7 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
 import { useMultichainBatch, type BatchResult } from "@/hooks/useMultichainBatch";
+import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import {
   preparePendingRouterPayment,
   readIndexedPendingRouterCalls,
@@ -33,8 +34,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     .map((project) => `${project.chainId}:${project.projectId}`)
     .sort()
     .join(",");
-  const scope = `pending-routing:${projectKey}`;
-  const saved = hydrated ? getPendingBatch(scope) : undefined;
+  const scope = `pending-routing:destination:${projectKey}`;
+  const saved = hydrated ? getPendingBatch(scope, identities) : undefined;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reviewed, setReviewed] = useState<Prepared[] | null>(null);
@@ -51,10 +52,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     enabled: hydrated && identities.length > 0,
     queryFn: async () => {
       const indexed = (await Promise.all(identities.map(readIndexedPendingRouterCalls))).flat();
-      const payments = await Promise.all(
-        indexed.map((row) =>
-          readPendingRouterPayment(getViemPublicClient(row.chainId as JBChainId), row),
-        ),
+      const payments = await mapConcurrentChecks(indexed, (row) =>
+        readPendingRouterPayment(getViemPublicClient(row.chainId as JBChainId), row),
       );
       return payments.filter((row): row is PendingRouterPayment => row !== null);
     },
@@ -74,13 +73,11 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     if (!address) return;
     setBusy(true);
     try {
-      const prepared = await Promise.all(
-        selected.map((payment) =>
-          preparePendingRouterPayment(
-            getViemPublicClient(payment.indexed.chainId as JBChainId),
-            payment.indexed,
-            address,
-          ),
+      const prepared = await mapConcurrentChecks(selected, (payment) =>
+        preparePendingRouterPayment(
+          getViemPublicClient(payment.indexed.chainId as JBChainId),
+          payment.indexed,
+          address,
         ),
       );
       if (!prepared.length) throw new Error("No pending payments are ready to route.");
@@ -108,7 +105,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       }
       const result = await runBatch({
         label: "Route pending payments",
-        scope,
+        scope: saved?.scope ?? scope,
         calls: saved ? [] : (reviewed ?? []).map((row) => row.call),
         onProgress: setProgress,
       });
@@ -158,6 +155,26 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           </button>
         </p>
       ) : null}
+      {payments.length > 1 || saved ? (
+        <div className="mt-3">
+          <ButtonWithWallet
+            targetChainId={chainId as JBChainId | undefined}
+            variant="outline"
+            loading={busy}
+            disabled={!saved && (!ready.length || query.isError)}
+            onClick={() => void review(ready)}
+          >
+            {saved
+              ? `Continue routing (${saved.completed}/${saved.total} confirmed)`
+              : "Batch all pending"}
+          </ButtonWithWallet>
+          {ready.length < payments.length && !saved ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              Includes {ready.length} ready payments. Payments in cooldown must wait.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-3 space-y-3">
         {payments.map((payment) => (
           <div key={payment.id} className="border-t border-teal-100 pt-3">
@@ -187,26 +204,6 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           </div>
         ))}
       </div>
-      {payments.length > 1 || saved ? (
-        <div className="mt-3">
-          <ButtonWithWallet
-            targetChainId={chainId as JBChainId | undefined}
-            variant="outline"
-            loading={busy}
-            disabled={!saved && (!ready.length || query.isError)}
-            onClick={() => void review(ready)}
-          >
-            {saved
-              ? `Continue routing (${saved.completed}/${saved.total} confirmed)`
-              : "Batch all pending"}
-          </ButtonWithWallet>
-          {ready.length < payments.length && !saved ? (
-            <p className="mt-1 text-xs text-zinc-500">
-              Includes {ready.length} ready payments. Payments in cooldown must wait.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
       <TxError error={open ? null : error} />
       <TxConfirmDialog
         open={open}
@@ -221,7 +218,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           title: `${payment.amountLabel} to project ${payment.indexed.projectId}`,
         }))}
         activeIndex={busy ? 0 : -1}
-        stepsIntro="Review every selected attempt. Confirmed attempts are saved when execution takes more than one round."
+        stepsIntro="Review every selected attempt. Eligible Relayr batches use one funding payment for all retries; each payment keeps its own result."
         onConfirm={() => void submit()}
         action={saved ? "Continue" : "Confirm routing"}
         busy={busy}
@@ -252,8 +249,9 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           <p className="text-sm text-zinc-600">
             Routing uses the original amount, destination and beneficiary. A retry can remain
             pending. A final attempt may return the payment to its source project's balance if the
-            route still fails with the same error. You pay gas only. Calls execute in resumable
-            rounds.
+            route still fails with the same error. You pay network fees only. Relayr submits
+            eligible wallet batches together; Safe proposals and unsupported networks use direct
+            submission. Progress is saved so you can resume.
           </p>
           {saved ? (
             <SummaryRow label="Saved selection">

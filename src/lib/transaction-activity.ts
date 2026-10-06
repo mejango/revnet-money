@@ -12,6 +12,7 @@ import type {
   ExpectedSafeExecution,
   RejectedReceiptEvent,
 } from "./multichain-guards";
+import type { RouterPendingReceiptGuard } from "./pending-router-calls";
 import type { ReviewedSafeProposal } from "./safe-transactions";
 
 export type TransactionActivityStatus =
@@ -24,6 +25,8 @@ export type RelayrExpectedTransaction = {
   data: Hex;
   value: string;
   transactionUuid: string;
+  /** Canonical receipt outcome; a reverted permissionless attempt is consumed. */
+  receiptStatus?: "success" | "reverted";
   gas?: string;
   metadataSource?: MetadataSourceGuard;
   preconditions?: CallPrecondition[];
@@ -31,6 +34,7 @@ export type RelayrExpectedTransaction = {
   rejectEvents?: RejectedReceiptEvent[];
   reservedReceipt?: ExpectedReservedReceipt;
   expectedPayout?: ExpectedPayoutReceipt;
+  expectedRouterPending?: RouterPendingReceiptGuard;
   expectedSafeExecution?: ExpectedSafeExecution;
 };
 

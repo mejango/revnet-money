@@ -42,9 +42,16 @@ export type FrozenBatchCall = Omit<MultichainCall, "validate"> & {
   safeNonce?: number;
   hash?: Hash;
 };
+/** A handled attempt must never be sent again, including canonical failed attempts. */
+export function isBatchCallHandled(call: Pick<FrozenBatchCall, "state">): boolean {
+  return call.state === "success" || call.state === "skipped" || call.state === "reverted";
+}
+
 export type BatchRound = {
   indices: number[];
   bundleUuid?: string;
+  /** Quote-bound IDs in the same order as indices (needed for repeated chains). */
+  transactionUuids?: string[];
   state: "ready" | "quoted" | "funding" | "pending" | "success";
 };
 export type MultichainBatch = {
@@ -183,6 +190,11 @@ export function batchCallKey(calls: readonly MultichainCall[]) {
 
 /** Preserve every selected allocation while using one independent call per chain in each explicit round. */
 export function makeBatchRounds(calls: readonly MultichainCall[]): BatchRound[] {
+  if (
+    calls.length &&
+    calls.every((call) => call.relayrMode === "raw" && call.expectedRouterPending)
+  )
+    return [{ indices: calls.map((_call, index) => index), state: "ready" }];
   const rounds: BatchRound[] = [];
   const occurrences = new Map<number, number>();
   calls.forEach((call, index) => {

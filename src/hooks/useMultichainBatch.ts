@@ -16,6 +16,7 @@ import {
   batchCallScope,
   createMultichainBatch,
   findPendingBatch,
+  isBatchCallHandled,
   removeUnsubmittedBatch,
   saveMultichainBatch,
   type FrozenBatchCall,
@@ -28,7 +29,11 @@ import {
   verifyCallPreconditions,
 } from "@/lib/multichain-guards";
 import type { JBChainId } from "@/lib/nana/types";
-import { simulatePendingRouterCall } from "@/lib/pending-router-calls";
+import {
+  findPendingRoutingBatch,
+  simulatePendingRouterCall,
+  type PendingProject,
+} from "@/lib/pending-router-calls";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
@@ -316,18 +321,18 @@ export function useMultichainBatch() {
     reviewedInParent: true,
   });
   const getPendingBatch = useCallback(
-    (scope: string) => {
+    (scope: string, routingDestinations?: readonly PendingProject[]) => {
       const account = getAccount(config).address;
       if (!account) return undefined;
-      const batch = findPendingBatch(account, scope);
+      const batch = routingDestinations
+        ? findPendingRoutingBatch(account, routingDestinations)
+        : findPendingBatch(account, scope);
       return batch
         ? {
+            scope: batch.scope,
             label: batch.label,
             total: batch.calls.length,
-            completed: batch.calls.filter(
-              (call) =>
-                call.state === "success" || call.state === "skipped" || call.state === "reverted",
-            ).length,
+            completed: batch.calls.filter((call) => isBatchCallHandled(call)).length,
           }
         : undefined;
     },
@@ -418,7 +423,12 @@ export function useMultichainBatch() {
             );
           if (!batch) {
             if (!input.calls.length) throw new Error("There is no saved batch to resume.");
-            const multichainEoa = input.calls.length > 1 && !isSafeConnection(config);
+            const multichainEoa =
+              (input.calls.length > 1 ||
+                input.calls.every(
+                  (call) => call.relayrMode === "raw" && call.expectedRouterPending,
+                )) &&
+              !isSafeConnection(config);
             const chainIds = input.calls.map((call) => call.chainId);
             const compatible = areRelayrChainsCompatible(chainIds);
             if (multichainEoa && chainIds.every(isRelayrSupportedChain) && !compatible)
@@ -432,7 +442,10 @@ export function useMultichainBatch() {
             const relayr =
               multichainEoa &&
               compatible &&
-              !input.calls.some((call) => call.expectedRouterPending);
+              (!input.calls.some((call) => call.expectedRouterPending) ||
+                input.calls.every(
+                  (call) => call.expectedRouterPending && call.relayrMode === "raw",
+                ));
             batch = createMultichainBatch(
               account,
               input.scope,
@@ -482,7 +495,7 @@ export function useMultichainBatch() {
             });
           }
           if (batch.route === "relayr") {
-            if (batch.calls.some((call) => call.expectedRouterPending))
+            if (batch.calls.some((call) => call.expectedRouterPending && call.relayrMode !== "raw"))
               throw new Error(
                 "The saved routing batch contains a Relayr authorization. Reconcile that original authorization before starting a direct retry.",
               );
@@ -540,6 +553,7 @@ export function useMultichainBatch() {
                     rejectEvents: call.rejectEvents,
                     reservedReceipt: call.reservedReceipt,
                     expectedPayout: call.expectedPayout,
+                    expectedRouterPending: call.expectedRouterPending,
                     data: {
                       from: account,
                       to: call.address,
@@ -558,6 +572,16 @@ export function useMultichainBatch() {
                 }
                 const quote = await getRelayrTxQuote(requests);
                 if (!quote) throw new Error("Relayr did not return a payable quote.");
+                const quotedCalls = refreshTransactionActivities().find(
+                  (row) => row.bundleUuid === quote.bundle_uuid,
+                )?.relayrExpectedTransactions;
+                if (
+                  (!quotedCalls || quotedCalls.length !== round.indices.length) &&
+                  new Set(round.indices.map((index) => batch!.calls[index].chainId)).size !==
+                    round.indices.length
+                )
+                  throw new Error("The quote has no complete destination identity binding.");
+                round.transactionUuids = quotedCalls?.map((call) => call.transactionUuid);
                 round.bundleUuid = quote.bundle_uuid;
                 round.state = "quoted";
                 saveMultichainBatch(batch);
@@ -588,24 +612,38 @@ export function useMultichainBatch() {
                 throw new Error(
                   "The saved publication response is unresolved. Reconcile the original intent before continuing.",
                 );
+              if (
+                !round.transactionUuids &&
+                new Set(round.indices.map((index) => batch!.calls[index].chainId)).size !==
+                  round.indices.length
+              )
+                throw new Error(
+                  "The saved bundle has no unique transaction identity for every routing attempt. Reconcile the original bundle before continuing.",
+                );
               const bundle = await waitForRelayrBundle(round.bundleUuid);
-              for (const index of round.indices) {
+              for (const [position, index] of round.indices.entries()) {
                 const call = batch.calls[index];
-                const transaction = bundle.transactions.find(
-                  (item) => item.request.chain === call.chainId,
+                const transaction = bundle.transactions.find((item) =>
+                  round.transactionUuids
+                    ? item.tx_uuid === round.transactionUuids[position]
+                    : item.request.chain === call.chainId,
                 );
                 const hash = transaction && relayrDestinationHash(transaction);
                 if (!hash) throw new Error("The destination result has no verified hash.");
                 call.hash = hash;
-                call.state = "success";
+                const identity = refreshTransactionActivities()
+                  .find((row) => row.bundleUuid === round.bundleUuid)
+                  ?.relayrExpectedTransactions?.find(
+                    (item) => item.transactionUuid === transaction.tx_uuid,
+                  );
+                call.state = identity?.receiptStatus === "reverted" ? "reverted" : "success";
               }
               round.state = "success";
               saveMultichainBatch(batch);
             }
           } else {
             for (const [index, call] of batch.calls.entries()) {
-              if (call.state === "success" || call.state === "skipped" || call.state === "reverted")
-                continue;
+              if (isBatchCallHandled(call)) continue;
               requireAccount();
               progress(`Call ${index + 1} of ${batch.calls.length} on chain ${call.chainId}.`);
               const client = getPublicClient(config, { chainId: call.chainId }) as

@@ -321,3 +321,14 @@ Rebase verification: integrated origin/main c668b8ed and SDK 2.23.0, keeping SDK
 Plan review: correct the existing query owner and boundary validation; no contract behavior change.
 
 Destination-routing review: 30 reader/component/operation tests passed; typecheck, changed-file ESLint, fixture syntax and diff checks pass. Query and validation use destination projectId; sourceProjectId remains unchanged in commitments and calldata. Query cache key distinguishes destination-scoped results. Browser fixture now uses source 6 / destination 1; browser scenario updated, not run.
+
+## 2026-10-06 — One Relayr bundle for pending payments
+- [x] Preserve permissionless gateway retries as independent raw entries; allow repeated destination chains only for authenticated pending-routing calls.
+- [x] Quote and fund all eligible retries in one bundle, binding records by quote transaction ID rather than chain.
+- [x] Keep per-payment custody/receipt checks, pre-funding revalidation, and saved-bundle recovery; preserve forwarder nonce rules and Safe fallback.
+- [x] Update both clients' batch review and test same-chain bundles, cooldown exclusion, exact mapping, failures and resume.
+Plan review: use the existing raw Relayr lifecycle. Each payment remains its own destination transaction; no atomic multicall wrapper. Existing local simulation bounds remain; Relayr chooses the actual execution gas.
+
+- [x] Discover legacy saved routing attempts by their authenticated destination, preserving original scope, transport, hashes and resume state. Recover all-handled journals interrupted before completion.
+
+Review: 2,152 local tests passed and one skipped (live schema and loopback RPC suites excluded for the sandbox); final focused verification passed 74 tests after the saved-recovery correction. Typecheck, changed-file ESLint, wallet boundary checks, format ratchet and diff checks pass. JBM reports 2,542 tests passing plus typecheck, lint and source/inventory checks. Same-chain raw entries share one funding payment and retain per-call receipt mapping, including canonical reverted attempts. Saved source-6 attempts now appear on destination 1 without rewriting recovery records. Changes are local, not pushed.

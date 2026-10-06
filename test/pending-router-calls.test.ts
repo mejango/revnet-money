@@ -2,10 +2,17 @@ import { RouterPendingCallsOperation } from "@/lib/bendystraw/operations";
 import { BENDYSTRAW_QUERY_REGISTRY } from "@/lib/bendystraw/registry.server";
 import type { IndexedRouterPendingCall } from "@/lib/bendystraw/types";
 import {
+  createMultichainBatch,
+  readMultichainBatches,
+  saveMultichainBatch,
+} from "@/lib/multichain-batch";
+import {
+  findPendingRoutingBatch,
   pendingRouterCommitment,
   preparePendingRouterPayment,
   readIndexedPendingRouterCalls,
   readPendingRouterPayment,
+  requireRawPendingRouterCall,
   simulatePendingRouterCall,
   verifyRouterPendingReceipt,
 } from "@/lib/pending-router-calls";
@@ -14,6 +21,7 @@ import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import {
   encodeAbiParameters,
   encodeEventTopics,
+  encodeFunctionData,
   keccak256,
   parseAbiParameters,
   stringToHex,
@@ -96,6 +104,7 @@ function client(
   } as unknown as Parameters<typeof readPendingRouterPayment>[0];
 }
 beforeEach(() => {
+  window.localStorage.clear();
   vi.restoreAllMocks();
   vi.clearAllMocks();
 });
@@ -199,6 +208,112 @@ describe("original pending router calls", () => {
     );
   });
 
+  it("moves discovery of saved source-6 attempts to destination 1 without changing their recovery journal", async () => {
+    const sourceCall = { ...call, sourceProjectId: 6n };
+    const sourceCommitment = pendingRouterCommitment(sourceCall, item.memo, item.metadata as Hex);
+    const prepared = await preparePendingRouterPayment(
+      client({ commitment: sourceCommitment }),
+      { ...item, sourceProjectId: 6, callCommitment: sourceCommitment },
+      account,
+    );
+    const legacy = createMultichainBatch(
+      account,
+      "pending-routing:1:6",
+      "Route pending payments",
+      [{ ...prepared.call, relayrMode: undefined }],
+      "direct",
+    );
+    legacy.calls[0].state = "submitted";
+    legacy.calls[0].hash = id;
+    saveMultichainBatch(legacy);
+    expect(
+      findPendingRoutingBatch(account, [{ chainId: 1, projectId: 6, version: 6 }]),
+    ).toBeUndefined();
+    expect(findPendingRoutingBatch(account, [{ chainId: 1, projectId: 1, version: 6 }])).toEqual(
+      legacy,
+    );
+    expect(
+      findPendingRoutingBatch(gateway, [{ chainId: 1, projectId: 1, version: 6 }]),
+    ).toBeUndefined();
+    expect(
+      findPendingRoutingBatch(account, [{ chainId: 8453, projectId: 1, version: 6 }]),
+    ).toBeUndefined();
+    expect(readMultichainBatches()).toEqual([legacy]);
+    // A crash between saving the last receipt and completing the batch must remain resumable.
+    legacy.calls[0].state = "success";
+    saveMultichainBatch(legacy);
+    expect(findPendingRoutingBatch(account, [{ chainId: 1, projectId: 1, version: 6 }])).toEqual(
+      legacy,
+    );
+    expect(
+      findPendingRoutingBatch(account, [{ chainId: 1, projectId: 6, version: 6 }]),
+    ).toBeUndefined();
+  });
+
+  it.each([0, 3])(
+    "authenticates the exact raw Relayr routing attempt after %s failures",
+    async (count) => {
+      const prepared = await preparePendingRouterPayment(client({ count }), item, account);
+      const { abi, functionName, args, preconditions } = prepared.call;
+      const data = encodeFunctionData({ abi, functionName, args });
+      expect(() =>
+        requireRawPendingRouterCall(1, gateway, data, 0n, guard, preconditions),
+      ).not.toThrow();
+      expect(() =>
+        requireRawPendingRouterCall(1, gateway, data, 1n, guard, preconditions),
+      ).toThrow();
+      expect(() =>
+        requireRawPendingRouterCall(1, account, data, 0n, guard, preconditions),
+      ).toThrow();
+      expect(() =>
+        requireRawPendingRouterCall(999, gateway, data, 0n, guard, preconditions),
+      ).toThrow();
+      expect(() =>
+        requireRawPendingRouterCall(1, gateway, `${data}00`, 0n, guard, preconditions),
+      ).toThrow("canonical");
+      expect(() =>
+        requireRawPendingRouterCall(
+          1,
+          gateway,
+          data,
+          0n,
+          { ...guard, pendingCallId: zeroHash },
+          preconditions,
+        ),
+      ).toThrow("reviewed payment");
+      expect(() =>
+        requireRawPendingRouterCall(
+          1,
+          gateway,
+          data,
+          0n,
+          { ...guard, callHash: zeroHash },
+          preconditions,
+        ),
+      ).toThrow("reviewed payment");
+      expect(() => requireRawPendingRouterCall(1, gateway, data, 0n, guard, [])).toThrow("checks");
+      expect(() =>
+        requireRawPendingRouterCall(1, gateway, data, 0n, guard, preconditions?.slice(0, 1)),
+      ).toThrow("checks");
+      const altered = encodeFunctionData({
+        abi: routerGatewayAbi,
+        functionName: prepared.payment.action,
+        args: [id, call, "changed memo", "0x1234"],
+      });
+      expect(() =>
+        requireRawPendingRouterCall(1, gateway, altered, 0n, guard, preconditions),
+      ).toThrow("checks");
+      const read = encodeFunctionData({
+        abi: routerGatewayAbi,
+        functionName: "pendingCallCommitmentOf",
+        args: [id],
+      });
+      expect(() => requireRawPendingRouterCall(1, gateway, read, 0n, guard, preconditions)).toThrow(
+        "supports only",
+      );
+    },
+  );
+
   it("uses chain time for cooldown and freezes both live commitment and failure reads", async () => {
     const rpc = client({ count: 1, timestamp: 86_499n });
     const pending = await readPendingRouterPayment(rpc, item);
@@ -208,6 +323,7 @@ describe("original pending router calls", () => {
     const prepared = await preparePendingRouterPayment(client(), item, account);
     expect(prepared.call).toMatchObject({
       value: 0n,
+      relayrMode: "raw",
       functionName: "processPendingCall",
       args: [id, call, "original memo", "0x1234"],
       expectedRouterPending: guard,

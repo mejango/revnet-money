@@ -24,6 +24,11 @@ import type {
   RelayrGetBundleResponse,
   RelayrPostBundleResponse,
 } from "@/lib/nana/types";
+import {
+  requireRawPendingRouterCall,
+  simulatePendingRouterCall,
+  type RouterPendingReceiptGuard,
+} from "@/lib/pending-router-calls";
 import { verifyMetadataSource, type MetadataSourceGuard } from "@/lib/project-metadata-write";
 import { relayrSavedQuote, relayrSessionRequests, sentPayments } from "@/lib/relayr-activity";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
@@ -110,6 +115,7 @@ export type ReviewedRelayrRequest = {
   rejectEvents?: RejectedReceiptEvent[];
   reservedReceipt?: ExpectedReservedReceipt;
   expectedPayout?: ExpectedPayoutReceipt;
+  expectedRouterPending?: RouterPendingReceiptGuard;
   data: {
     from: Address;
     to: Address;
@@ -897,6 +903,23 @@ async function revalidateSignedCalls(
     if (expected.metadataSource)
       await verifyMetadataSource(client, expected.metadataSource, account);
     await verifyCallPreconditions(client, expected.preconditions);
+    if (expected.expectedRouterPending) {
+      requireRawPendingRouterCall(
+        expected.chainId,
+        expected.target,
+        expected.data,
+        BigInt(expected.value),
+        expected.expectedRouterPending,
+        expected.preconditions,
+      );
+      await simulatePendingRouterCall(client, {
+        from: account,
+        to: expected.target,
+        data: expected.data,
+        gas: BigInt(expected.gas),
+      });
+      return;
+    }
     await client.call({
       account,
       to: expected.target,
@@ -914,7 +937,10 @@ function expectedBundleTransactions(bundleUuid: string): RelayrExpectedTransacti
   const expected = transactionActivitySnapshot().find(
     (activity) => activity.bundleUuid === bundleUuid,
   )?.relayrExpectedTransactions;
-  if (!expected?.length || new Set(expected.map((item) => item.chainId)).size !== expected.length)
+  if (
+    !expected?.length ||
+    new Set(expected.map((item) => item.transactionUuid)).size !== expected.length
+  )
     throw new RelayrVerificationError(
       "The signed destination calls for this bundle are unavailable. Its execution cannot be verified; do not pay again.",
     );
@@ -935,14 +961,13 @@ function verifyBundleIdentity(
     throw new RelayrVerificationError(
       "Relayr's response does not match the signed bundle and destination count. Do not pay again.",
     );
-  // Relayr lists tx_uuids out of request order, so a record is bound by its
-  // exact request; its ID only has to be one this quote issued, used once.
+  // The quote binder authenticated each UUID against its exact request.
+  // Retain that binding when repeated-chain results arrive in any order.
   const quotedIds = new Set(expected.map((item) => item.transactionUuid));
   const seenIds = new Set<string>();
-  const seen = new Set<number>();
   for (const transaction of bundle.transactions) {
     const request = transaction.request;
-    const identity = expected.find((item) => item.chainId === request?.chain);
+    const identity = expected.find((item) => item.transactionUuid === transaction.tx_uuid);
     let value: bigint | undefined;
     try {
       value = BigInt(request?.value);
@@ -951,7 +976,7 @@ function verifyBundleIdentity(
     }
     if (
       !identity ||
-      seen.has(request.chain) ||
+      request.chain !== identity.chainId ||
       !quotedIds.has(transaction.tx_uuid) ||
       seenIds.has(transaction.tx_uuid) ||
       request.target?.toLowerCase() !== identity.target.toLowerCase() ||
@@ -961,7 +986,6 @@ function verifyBundleIdentity(
       throw new RelayrVerificationError(
         "Relayr's destination call does not match the signed request. Do not pay again.",
       );
-    seen.add(request.chain);
     seenIds.add(transaction.tx_uuid);
   }
 }
@@ -977,7 +1001,7 @@ async function verifyDestinationReceipts(
       throw new RelayrVerificationError(
         "Relayr reported completion without a destination transaction hash. Do not pay again.",
       );
-    const identity = expected.find((item) => item.chainId === transaction.request.chain)!;
+    const identity = expected.find((item) => item.transactionUuid === transaction.tx_uuid)!;
     const client = getPublicClient(wagmiConfig, { chainId: identity.chainId as JBChainId });
     if (!client) throw new Error("The destination RPC is unavailable.");
     const [onchain, receipt] = await Promise.all([
@@ -1000,10 +1024,15 @@ async function verifyDestinationReceipts(
     const block = await client.getBlock({ blockNumber: receipt.blockNumber });
     if (block.hash !== receipt.blockHash)
       throw new Error("Destination receipt is not in the current canonical chain.");
+    if (receipt.status === "reverted" && identity.expectedRouterPending) {
+      identity.receiptStatus = "reverted";
+      continue;
+    }
     if (receipt.status !== "success")
       throw new RelayrVerificationError(
         "A destination transaction reverted onchain. Review the original bundle before attempting recovery.",
       );
+    identity.receiptStatus = "success";
     try {
       await verifyActionReceipt(
         client,
@@ -1013,6 +1042,7 @@ async function verifyDestinationReceipts(
         identity.rejectEvents,
         identity.reservedReceipt,
         identity.expectedPayout,
+        identity.expectedRouterPending,
       );
     } catch (cause) {
       throw new RelayrVerificationError(
@@ -1136,7 +1166,15 @@ export async function waitForRelayrBundle(
           throw new RelayrVerificationError("The Relayr funding transaction reverted onchain.");
         const states = last.transactions.map((transaction) => transaction.status?.state);
         const summary = bundleSummary(last);
-        if (states.some(stateIsFailed)) {
+        const routingComplete =
+          expected.every((item) => item.expectedRouterPending) &&
+          last.transactions.every(
+            (transaction) =>
+              relayrDestinationHash(transaction) &&
+              (stateIsSuccess(transaction.status?.state) ||
+                stateIsFailed(transaction.status?.state)),
+          );
+        if (states.some(stateIsFailed) && !routingComplete) {
           updateTransactionActivity(activityId, {
             status: "failed",
             manualVerificationRequired: true,
@@ -1147,13 +1185,16 @@ export async function waitForRelayrBundle(
           await holdUnprovenSession(activityId);
           throw new Error(`Relayr bundle ${bundleUuid} failed. ${summary}`);
         }
-        if (states.length > 0 && states.every(stateIsSuccess)) {
+        if (states.length > 0 && (states.every(stateIsSuccess) || routingComplete)) {
           await verifyDestinationReceipts(last, expected);
           updateTransactionActivity(activityId, {
             status: "success",
             manualVerificationRequired: false,
             relayrDiscardable: undefined,
-            message: `All ${states.length} destination transactions confirmed. ${summary}`,
+            relayrExpectedTransactions: expected,
+            message: expected.some((item) => item.receiptStatus === "reverted")
+              ? `All routing attempts reconciled. Some reverted; refresh pending payments before a new attempt. ${summary}`
+              : `All ${states.length} destination transactions confirmed. ${summary}`,
             chainStates: bundleChainStates(last),
           });
           notify(last);
@@ -1250,7 +1291,12 @@ export function useGetRelayrTxQuote() {
           if (request.data.from.toLowerCase() !== address.toLowerCase()) {
             throw new Error("Relayr request sender does not match the connected account.");
           }
-          if (requestChains.has(request.chainId)) {
+          if (
+            requestChains.has(request.chainId) &&
+            !requests
+              .filter((item) => item.chainId === request.chainId)
+              .every((item) => item.relayrMode === "raw" && item.expectedRouterPending)
+          ) {
             throw new Error(
               `Relayr cannot safely sign two requests for account ${address} on chain ${request.chainId} with the same onchain nonce.`,
             );
@@ -1390,14 +1436,15 @@ export function useGetRelayrTxQuote() {
               }
             }
             for (const request of safeExecutions ? [] : requests) {
-              await switchChainAsync({ chainId: request.chainId });
+              if (!request.expectedRouterPending)
+                await switchChainAsync({ chainId: request.chainId });
               const current = getAccount(config);
               if (!current.address || current.address.toLowerCase() !== address.toLowerCase()) {
                 throw new Error(
                   "Connected account changed. Review the Relayr authorization again.",
                 );
               }
-              if (current.chainId !== request.chainId) {
+              if (!request.expectedRouterPending && current.chainId !== request.chainId) {
                 throw new Error(
                   "Connected chain did not switch. Review the Relayr authorization again.",
                 );
@@ -1411,18 +1458,29 @@ export function useGetRelayrTxQuote() {
                 await verifyMetadataSource(client, request.metadataSource, address);
               await verifyCallPreconditions(client, request.preconditions);
               if (request.relayrMode === "raw") {
-                requireRawPayerCall(
-                  request.data.to,
-                  request.data.data,
-                  request.data.value,
-                  request.expectedDeployment,
-                );
+                if (request.expectedRouterPending)
+                  requireRawPendingRouterCall(
+                    request.chainId,
+                    request.data.to,
+                    request.data.data,
+                    request.data.value,
+                    request.expectedRouterPending,
+                    request.preconditions,
+                  );
+                else
+                  requireRawPayerCall(
+                    request.data.to,
+                    request.data.data,
+                    request.data.value,
+                    request.expectedDeployment,
+                  );
                 if (!request.reviewedInParent)
                   await requireTransactionReview({
                     kind: "transaction",
-                    title: `Review payer deployment on chain ${request.chainId}`,
-                    description:
-                      "Relayr deploys this payer from its own sending account. The exact owner, project, beneficiary and settings below are independent of that sender. A separate payment funds the selected deployments.",
+                    title: `Review ${request.expectedRouterPending ? "pending payment routing" : "payer deployment"} on chain ${request.chainId}`,
+                    description: request.expectedRouterPending
+                      ? "Relayr submits this permissionless routing attempt. A separate payment funds all selected attempts."
+                      : "Relayr deploys this payer from its own sending account. The exact owner, project, beneficiary and settings below are independent of that sender. A separate payment funds the selected deployments.",
                     confirmLabel: "Agree & request Relayr quote",
                     calls: [
                       {
@@ -1438,13 +1496,26 @@ export function useGetRelayrTxQuote() {
                 if (getAccount(config).address?.toLowerCase() !== address.toLowerCase())
                   throw new Error("Connected account changed. Review the deployment again.");
                 await verifyCallPreconditions(client, request.preconditions);
-                await client.call({
-                  account: address,
-                  to: request.data.to,
-                  data: request.data.data,
-                  value: request.data.value,
-                });
-                executionGas.push(gasWithHeadroom(request.data.gas + 100_000n).toString());
+                if (request.expectedRouterPending)
+                  await simulatePendingRouterCall(client, {
+                    from: address,
+                    to: request.data.to,
+                    data: request.data.data,
+                    gas: request.data.gas,
+                  });
+                else
+                  await client.call({
+                    account: address,
+                    to: request.data.to,
+                    data: request.data.data,
+                    value: request.data.value,
+                  });
+                executionGas.push(
+                  (request.expectedRouterPending
+                    ? request.data.gas
+                    : gasWithHeadroom(request.data.gas + 100_000n)
+                  ).toString(),
+                );
                 transactions.push({
                   chain: request.chainId,
                   target: request.data.to,
@@ -1581,6 +1652,7 @@ export function useGetRelayrTxQuote() {
               rejectEvents: requests[index].rejectEvents,
               reservedReceipt: requests[index].reservedReceipt,
               expectedPayout: requests[index].expectedPayout,
+              expectedRouterPending: requests[index].expectedRouterPending,
               chainId: transaction.chain,
               target: transaction.target,
               data: transaction.data,
