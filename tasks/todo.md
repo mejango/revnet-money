@@ -250,3 +250,12 @@ origin/main's sources on the same SDK; the aggregate budget rises by the minimum
 Gate on the final commit: lint, typecheck, knip, wallet-writes (140 sites) and the format ratchet pass; unit and
 coverage 2,106 passed, one skipped; build:browser, standalone and bundle checks pass (2,644.1 of 2,645 KiB);
 browser checks 126 passed, four skipped, inside the shared gate lock. 20 tests failed on the code before the round.
+
+### Relayr session rules fix round 2
+
+- [x] A replaced session keeps no Discard mark, and a replaced quote's card offers no Discard.
+- [x] A Discard matches a batch round by the session's bundle, and by recovery scope only when Relayr named no bundle.
+
+Gate on the final commit: lint, typecheck, knip, wallet-writes (140 sites) and the format ratchet pass; unit and
+coverage 2,109 passed, one skipped; build:browser, standalone and bundle checks pass (2,644.1 of 2,645 KiB); browser
+checks 126 passed, four skipped, inside the shared gate lock. 3 tests failed on the code before the round.
