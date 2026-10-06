@@ -429,6 +429,64 @@ function quoteForDestinationChains(
   return structuredClone({ ...quote, payment_info: payments });
 }
 
+type Config = ReturnType<typeof useConfig>;
+
+/**
+ * The destination trusts the forwarder, and its call runs from the forwarder
+ * with `account` appended as ERC-2771's sender against live state.
+ */
+async function simulateForwardedCall(
+  client: NonNullable<ReturnType<typeof getPublicClient>>,
+  forwarder: Address,
+  account: Address,
+  request: ReviewedRelayrRequest,
+): Promise<void> {
+  const trusted = await client.readContract({
+    address: request.data.to,
+    abi: TRUSTED_FORWARDER_ABI,
+    functionName: "isTrustedForwarder",
+    args: [forwarder],
+  });
+  if (trusted !== true)
+    throw new Error(
+      "The destination contract does not trust this forwarder. Use a direct transaction.",
+    );
+  await client.call({
+    account: forwarder,
+    stateOverride: [{ address: forwarder, balance: maxUint256 }],
+    to: request.data.to,
+    value: request.data.value,
+    data: `${request.data.data}${account.slice(2).toLowerCase()}` as Hex,
+  });
+}
+
+/**
+ * Re-run the exact signed outer calls against live state, so consumed nonces,
+ * expired signatures, changed permissions and destination reverts are refused.
+ */
+async function revalidateSignedCalls(
+  config: Config,
+  account: Address,
+  expectedTransactions: RelayrExpectedTransaction[],
+): Promise<void> {
+  for (const expected of expectedTransactions) {
+    const client = getPublicClient(config, { chainId: expected.chainId as JBChainId });
+    if (!client || !expected.gas)
+      throw new Error("The signed destination call cannot be revalidated. Do not pay this quote.");
+    if (expected.metadataSource)
+      await verifyMetadataSource(client, expected.metadataSource, account);
+    await verifyCallPreconditions(client, expected.preconditions);
+    await client.call({
+      account,
+      to: expected.target,
+      data: expected.data,
+      value: BigInt(expected.value),
+      gas: BigInt(expected.gas),
+      stateOverride: [{ address: account, balance: maxUint256 }],
+    });
+  }
+}
+
 class RelayrVerificationError extends Error {}
 
 function expectedBundleTransactions(bundleUuid: string): RelayrExpectedTransaction[] {
@@ -972,23 +1030,7 @@ export function useGetRelayrTxQuote() {
               });
               continue;
             }
-            const trusted = await client.readContract({
-              address: request.data.to,
-              abi: TRUSTED_FORWARDER_ABI,
-              functionName: "isTrustedForwarder",
-              args: [forwarder],
-            });
-            if (trusted !== true)
-              throw new Error(
-                "The destination contract does not trust this forwarder. Use a direct transaction.",
-              );
-            await client.call({
-              account: forwarder,
-              stateOverride: [{ address: forwarder, balance: maxUint256 }],
-              to: request.data.to,
-              value: request.data.value,
-              data: `${request.data.data}${address.slice(2).toLowerCase()}` as Hex,
-            });
+            await simulateForwardedCall(client, forwarder, address, request);
             const measuredGas = gasWithHeadroom(
               await client.estimateGas({
                 account: forwarder,
@@ -1259,27 +1301,8 @@ export function useSendRelayrTx() {
         const code = await publicClient.getCode({ address: payment.target });
         if (!code || keccak256(code) !== RELAYR_PAYMENT_CODE_HASH)
           throw new Error("Relayr payment contract code is not recognized.");
-        // Funding may be approved long after signing. Re-run the exact signed
-        // forwarder calls against live state so consumed nonces, expired signatures,
-        // changed permissions and destination reverts cannot receive a payment.
-        for (const expected of remembered.expectedTransactions) {
-          const client = getPublicClient(config, { chainId: expected.chainId as JBChainId });
-          if (!client || !expected.gas)
-            throw new Error(
-              "The signed destination call cannot be revalidated. Do not pay this quote.",
-            );
-          if (expected.metadataSource)
-            await verifyMetadataSource(client, expected.metadataSource, address);
-          await verifyCallPreconditions(client, expected.preconditions);
-          await client.call({
-            account: address,
-            to: expected.target,
-            data: expected.data,
-            value: BigInt(expected.value),
-            gas: BigInt(expected.gas),
-            stateOverride: [{ address, balance: maxUint256 }],
-          });
-        }
+        // Funding may be approved long after signing.
+        await revalidateSignedCalls(config, address, remembered.expectedTransactions);
         // The payment is sent with the reviewed gas, so it must succeed within it.
         const simulation = await publicClient.call({
           account: address,
