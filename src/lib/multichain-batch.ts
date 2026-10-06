@@ -66,6 +66,39 @@ export type MultichainBatch = {
   status: "pending" | "success";
   createdAt: number;
 };
+/** Only untouched pending-routing selections can be replaced by a fresh selection. */
+export function isReplaceableRoutingDraft(batch: MultichainBatch): boolean {
+  return (
+    batch.status === "pending" &&
+    batch.calls.length > 0 &&
+    batch.calls.every(
+      (call) =>
+        call.expectedRouterPending &&
+        call.state === "ready" &&
+        call.hash === undefined &&
+        call.safeNonce === undefined,
+    ) &&
+    batch.rounds.every(
+      (round) =>
+        round.state === "ready" &&
+        round.bundleUuid === undefined &&
+        round.transactionUuids === undefined,
+    )
+  );
+}
+
+/** Atomic replacement after review; a stale snapshot must never erase newer recovery evidence. */
+export function replaceRoutingDraft(expected: MultichainBatch, replacement: MultichainBatch) {
+  const batches = readMultichainBatches();
+  const current = batches.find((batch) => batch.id === expected.id);
+  if (!current || serialize(current) !== serialize(expected) || !isReplaceableRoutingDraft(current))
+    throw new Error("The saved batch changed. Refresh and resume its existing progress.");
+  writeMultichainBatches([
+    replacement,
+    ...batches.filter((batch) => batch.id !== expected.id && batch.id !== replacement.id),
+  ]);
+}
+
 const STORAGE_KEY = "revnet:multichain-batches:v1";
 
 function serialize(value: unknown) {
@@ -219,12 +252,14 @@ export function createMultichainBatch(
   label: string,
   calls: MultichainCall[],
   route: MultichainBatch["route"],
+  replacingDraftId?: string,
 ): MultichainBatch {
   if (!scope || !calls.length) throw new Error("Choose at least one destination.");
   const scopes = new Set(calls.map((call) => call.recoveryScope).filter(Boolean));
   const overlap = readMultichainBatches().find(
     (batch) =>
       batch.status === "pending" &&
+      batch.id !== replacingDraftId &&
       batch.account.toLowerCase() === account.toLowerCase() &&
       (batch.scope === scope ||
         batch.calls.some((call) => call.recoveryScope && scopes.has(call.recoveryScope))),

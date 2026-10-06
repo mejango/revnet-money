@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  hasRelayrRecoveryScopeSession,
   requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
   useSendRelayrTx,
@@ -17,7 +18,10 @@ import {
   createMultichainBatch,
   findPendingBatch,
   isBatchCallHandled,
+  isReplaceableRoutingDraft,
+  readMultichainBatches,
   removeUnsubmittedBatch,
+  replaceRoutingDraft,
   saveMultichainBatch,
   type FrozenBatchCall,
   type MultichainBatch,
@@ -79,6 +83,7 @@ type BatchInput = {
   label: string;
   scope: string;
   calls: MultichainCall[];
+  replaceDraftId?: string;
   onProgress?: (message: string) => void;
 };
 const running = new Set<string>();
@@ -329,6 +334,13 @@ export function useMultichainBatch() {
         : findPendingBatch(account, scope);
       return batch
         ? {
+            id: batch.id,
+            replaceableDraft:
+              isReplaceableRoutingDraft(batch) &&
+              batch.calls.every(
+                (call, index) =>
+                  !hasRelayrRecoveryScopeSession(account, batchCallScope(batch, call, index)),
+              ),
             scope: batch.scope,
             label: batch.label,
             total: batch.calls.length,
@@ -350,6 +362,8 @@ export function useMultichainBatch() {
       const execute = async (): Promise<BatchResult> => {
         setIsPending(true);
         let batch: MultichainBatch | undefined;
+        let replacingDraft: MultichainBatch | undefined;
+        let replacementCommitted = false;
         // True once this run showed the batch review of every exact call.
         let reviewedHere = false;
         const progress = (message: string) => {
@@ -417,6 +431,33 @@ export function useMultichainBatch() {
         };
         try {
           batch = findPendingBatch(account, input.scope);
+          if (input.replaceDraftId) {
+            const candidate = readMultichainBatches().find(
+              (item) => item.id === input.replaceDraftId,
+            );
+            if (candidate) {
+              if (
+                candidate.account.toLowerCase() !== account.toLowerCase() ||
+                !isReplaceableRoutingDraft(candidate) ||
+                !input.calls.length ||
+                !input.calls.every((call) => call.expectedRouterPending)
+              )
+                throw new Error("This saved batch must be resumed before changing the selection.");
+              for (const [index, call] of candidate.calls.entries()) {
+                const scope = batchCallScope(candidate, call, index);
+                if (hasRelayrRecoveryScopeSession(account, scope))
+                  throw new Error(
+                    "A saved Relayr session must be reconciled before replacing this batch.",
+                  );
+                await requireRelayrRecoveryScopeAvailable(account, scope);
+              }
+              requireAccount();
+              replacingDraft = candidate;
+              if (batch?.id === candidate.id) batch = undefined;
+            } else if (!batch || batch.key !== batchCallKey(input.calls)) {
+              throw new Error("The saved batch changed. Refresh before starting another batch.");
+            }
+          }
           if (batch && input.calls.length && batch.key !== batchCallKey(input.calls))
             throw new Error(
               "A different saved batch is unresolved. Resume its original calls before changing the selection or amounts.",
@@ -452,6 +493,7 @@ export function useMultichainBatch() {
               input.label,
               input.calls,
               relayr ? "relayr" : "direct",
+              replacingDraft?.id,
             );
             for (const call of input.calls) await call.validate?.();
             // A Safe proposes each call with gas 0, so its reviewed envelope is
@@ -483,7 +525,24 @@ export function useMultichainBatch() {
               if (!client) throw new Error("Destination RPC unavailable.");
               await verifyCallPreconditions(client, call.preconditions);
             }
-            saveMultichainBatch(batch);
+            if (replacingDraft) {
+              for (const [index, call] of replacingDraft.calls.entries()) {
+                const scope = batchCallScope(replacingDraft, call, index);
+                if (hasRelayrRecoveryScopeSession(account, scope))
+                  throw new Error(
+                    "A saved Relayr session must be reconciled before replacing this batch.",
+                  );
+                await requireRelayrRecoveryScopeAvailable(account, scope);
+              }
+              requireAccount();
+              replaceRoutingDraft(replacingDraft, batch);
+              replacementCommitted = true;
+              updateTransactionActivity(replacingDraft.id, {
+                status: "failed",
+                manualVerificationRequired: false,
+                message: "The unsubmitted selection was replaced after a fresh review.",
+              });
+            } else saveMultichainBatch(batch);
             recordTransactionActivity({
               id: batch.id,
               kind: "direct",
@@ -711,9 +770,10 @@ export function useMultichainBatch() {
           });
           return result("success");
         } catch (cause) {
-          if (batch) {
+          if (batch && (!input.replaceDraftId || replacementCommitted)) {
             let discarded = false;
             if (
+              !input.replaceDraftId &&
               batch.calls.every((call) => call.state === "ready") &&
               batch.rounds.every((round) => round.state === "ready")
             ) {

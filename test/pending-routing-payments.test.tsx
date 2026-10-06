@@ -180,7 +180,7 @@ describe("payment recovery", () => {
     expect(screen.getByText(/separate from the full pending list/)).toBeTruthy();
     expect(mocks.prepare).not.toHaveBeenCalled();
     finish();
-    await screen.findByText("7 payments awaiting routing · 7 ready");
+    await screen.findByText("7 payments awaiting routing. 7 ready");
     expect(screen.getAllByText("0.1 ETH")).toHaveLength(7);
     expect(
       screen
@@ -205,6 +205,66 @@ describe("payment recovery", () => {
     expect(screen.getByText("0.1 ETH")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Batch all pending" })).toBeDisabled();
     expect(mocks.prepare).not.toHaveBeenCalled();
+  });
+
+  it("replaces an untouched three-call draft with the full freshly reviewed selection", async () => {
+    mocks.saved.mockReturnValue({
+      id: "old-draft",
+      scope: "legacy",
+      completed: 0,
+      total: 3,
+      replaceableDraft: true,
+    });
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1 ? Array.from({ length: 8 }, (_, i) => row(`item-${i}`).indexed) : [],
+    );
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
+    expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
+    expect(screen.queryByText(/Finish it before starting another batch/)).toBeNull();
+    await screen.findByRole("button", { name: "Confirm routing" });
+    // A later journal update must not silently change the selection being confirmed.
+    mocks.saved.mockReturnValue({
+      id: "different",
+      scope: "other",
+      completed: 0,
+      total: 1,
+      replaceableDraft: false,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
+    await waitFor(() =>
+      expect(mocks.batch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scope: "pending-routing:destination:1:1,8453:1",
+          replaceDraftId: "old-draft",
+          calls: Array.from({ length: 8 }, (_, i) => ({ id: `item-${i}` })),
+        }),
+      ),
+    );
+    expect(mocks.prepare).toHaveBeenCalledTimes(8);
+  });
+
+  it("requires a fresh review after a failed draft replacement instead of reusing its old identity", async () => {
+    mocks.saved.mockReturnValue({
+      id: "old-draft",
+      scope: "legacy",
+      completed: 0,
+      total: 3,
+      replaceableDraft: true,
+    });
+    mocks.batch.mockImplementationOnce(async () => {
+      mocks.saved.mockReturnValue(undefined);
+      throw new Error("Quote unavailable");
+    });
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review again" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm routing" }));
+    await waitFor(() => expect(mocks.batch).toHaveBeenCalledTimes(2));
+    expect(mocks.batch.mock.calls[0][0].replaceDraftId).toBe("old-draft");
+    expect(mocks.batch.mock.calls[1][0].replaceDraftId).toBeUndefined();
+    expect(mocks.prepare).toHaveBeenCalledTimes(2);
   });
 
   it("blocks submit if the wallet changed after review", async () => {

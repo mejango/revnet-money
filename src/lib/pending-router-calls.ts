@@ -387,7 +387,7 @@ export async function readPendingRouterPayment(
     throw new Error("The chain's executable transaction gas limit is unavailable.");
   }
   const gasCap = block.gasLimit < 16_777_216n ? block.gasLimit : 16_777_216n;
-  let amountLabel = `${call.amount} base units · ${call.token}`;
+  let amountLabel = `${call.amount} base units of ${call.token}`;
   if (isAddressEqual(call.token, NATIVE_TOKEN)) amountLabel = `${formatUnits(call.amount, 18)} ETH`;
   else {
     try {

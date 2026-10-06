@@ -37,6 +37,12 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     .join(",");
   const scope = `pending-routing:destination:${projectKey}`;
   const saved = hydrated ? getPendingBatch(scope, identities) : undefined;
+  const resume = saved && !saved.replaceableDraft ? saved : undefined;
+  const [savedSelection, setSavedSelection] = useState<NonNullable<
+    ReturnType<typeof getPendingBatch>
+  > | null>(null);
+  const [replacementId, setReplacementId] = useState<string | undefined>();
+  const [needsReview, setNeedsReview] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reviewed, setReviewed] = useState<Prepared[] | null>(null);
@@ -96,7 +102,11 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
 
   async function review(selected: PendingRouterPayment[]) {
     setError(null);
-    if (saved) {
+    if (resume) {
+      setNeedsReview(false);
+      setSavedSelection(resume);
+      setReplacementId(undefined);
+      setReviewed(null);
       setOpen(true);
       return;
     }
@@ -111,6 +121,9 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         ),
       );
       if (!prepared.length) throw new Error("No pending payments are ready to route.");
+      setNeedsReview(false);
+      setSavedSelection(null);
+      setReplacementId(saved?.replaceableDraft ? saved.id : undefined);
       setReviewed(prepared);
       setReviewedAccount(address.toLowerCase());
       setProgress(null);
@@ -124,7 +137,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   }
 
   async function submit() {
-    if (!saved && !reviewed) return;
+    if (!savedSelection && !reviewed) return;
     setBusy(true);
     setError(null);
     try {
@@ -135,8 +148,9 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       }
       const result = await runBatch({
         label: "Route pending payments",
-        scope: saved?.scope ?? scope,
-        calls: saved ? [] : (reviewed ?? []).map((row) => row.call),
+        scope: savedSelection?.scope ?? scope,
+        replaceDraftId: savedSelection ? undefined : replacementId,
+        calls: savedSelection ? [] : (reviewed ?? []).map((row) => row.call),
         onProgress: setProgress,
       });
       setObsoleteProposals(result.obsoleteSafeProposals ?? []);
@@ -150,13 +164,14 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       await refresh();
     } catch (cause) {
       setError(formatWalletError(cause));
+      if (replacementId) setNeedsReview(true);
     } finally {
       setBusy(false);
     }
   }
 
   if (!hydrated || !identities.length) return null;
-  if (!rows.length && !saved && !open && !checking) {
+  if (!rows.length && !resume && !open && !checking) {
     return unavailable ? (
       <p role="status" className="mb-4 text-sm text-zinc-500">
         Pending routing payments are temporarily unavailable.{" "}
@@ -193,31 +208,31 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         </p>
       ) : !unavailable ? (
         <p role="status" className="mt-2 text-sm text-zinc-600">
-          {payments.length} payments awaiting routing · {ready.length} ready
+          {payments.length} payments awaiting routing. {ready.length} ready
         </p>
       ) : null}
-      {rows.length > 1 || saved ? (
+      {rows.length > 1 || resume ? (
         <div className="mt-3">
           <ButtonWithWallet
             targetChainId={chainId as JBChainId | undefined}
             variant="outline"
             loading={busy}
-            disabled={!saved && (!ready.length || checking || unavailable)}
+            disabled={!resume && (!ready.length || checking || unavailable)}
             onClick={() => void review(ready)}
           >
-            {saved
+            {resume
               ? "Resume saved batch"
               : checking
                 ? "Checking pending payments…"
                 : "Batch all pending"}
           </ButtonWithWallet>
-          {saved ? (
+          {resume ? (
             <p className="mt-1 text-xs text-zinc-500">
-              Saved batch: {saved.completed} of {saved.total} attempts handled. This selection is
+              Saved batch: {resume.completed} of {resume.total} attempts handled. This selection is
               separate from the full pending list. Finish it before starting another batch.
             </p>
           ) : null}
-          {ready.length < payments.length && !saved ? (
+          {ready.length < payments.length && !resume ? (
             <p className="mt-1 text-xs text-zinc-500">
               Includes {ready.length} ready payments. Payments in cooldown must wait.
             </p>
@@ -233,7 +248,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               className="border-t border-teal-100 pt-3"
             >
               <p className="break-all text-sm font-medium">
-                {payment?.amountLabel ?? `${indexed.amount} base units · ${indexed.token}`}
+                {payment?.amountLabel ?? `${indexed.amount} base units of ${indexed.token}`}
               </p>
               <p className="text-xs text-zinc-600">
                 To project {indexed.projectId} on{" "}
@@ -255,7 +270,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
                   targetChainId={indexed.chainId as JBChainId}
                   variant="outline"
                   loading={busy}
-                  disabled={!payment?.ready || Boolean(saved) || checking || unavailable}
+                  disabled={!payment?.ready || Boolean(resume) || checking || unavailable}
                   onClick={() => payment && void review([payment])}
                 >
                   {!result
@@ -284,12 +299,16 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         }))}
         activeIndex={busy ? 0 : -1}
         stepsIntro="Review every selected attempt. Eligible Relayr batches use one funding payment for all retries; each payment keeps its own result."
-        onConfirm={() => void submit()}
-        action={saved ? "Continue" : "Confirm routing"}
+        onConfirm={() => (needsReview ? void review(ready) : void submit())}
+        action={needsReview ? "Review again" : savedSelection ? "Continue" : "Confirm routing"}
         busy={busy}
         error={error}
         status={progress}
-        actionDisabled={!saved && !reviewed}
+        actionDisabled={
+          needsReview
+            ? !resume && (checking || unavailable || !ready.length)
+            : !savedSelection && !reviewed
+        }
         complete={routed}
       >
         <div className="max-h-80 space-y-4 overflow-y-auto">
@@ -318,9 +337,9 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
             eligible wallet batches together; Safe proposals and unsupported networks use direct
             submission. Progress is saved so you can resume.
           </p>
-          {saved ? (
+          {savedSelection ? (
             <SummaryRow label="Saved selection">
-              {saved.completed} of {saved.total} attempts handled
+              {savedSelection.completed} of {savedSelection.total} attempts handled
             </SummaryRow>
           ) : null}
           {(reviewed ?? []).map(({ payment }) => (

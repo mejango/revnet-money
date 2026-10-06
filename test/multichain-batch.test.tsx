@@ -3,8 +3,10 @@ import {
   batchCallKey,
   createMultichainBatch,
   findPendingBatch,
+  isReplaceableRoutingDraft,
   makeBatchRounds,
   readMultichainBatches,
+  replaceRoutingDraft,
   saveMultichainBatch,
   type MultichainCall,
 } from "@/lib/multichain-batch";
@@ -84,6 +86,7 @@ const mocks = vi.hoisted(() => ({
   pay: vi.fn(),
   wait: vi.fn(),
   scopeAvailable: vi.fn(),
+  scopeSession: vi.fn(),
   choose: vi.fn(),
   write: vi.fn(),
   verify: vi.fn(),
@@ -115,6 +118,7 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   useSendRelayrTx: () => ({ sendRelayrTx: mocks.pay }),
   waitForRelayrBundle: mocks.wait,
   requireRelayrRecoveryScopeAvailable: mocks.scopeAvailable,
+  hasRelayrRecoveryScopeSession: mocks.scopeSession,
 }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   isSafeConnection: () => mocks.safe,
@@ -153,6 +157,7 @@ beforeEach(() => {
   mocks.chainId = 1;
   mocks.review.mockResolvedValue(undefined);
   mocks.scopeAvailable.mockReturnValue(undefined);
+  mocks.scopeSession.mockReturnValue(false);
   mocks.estimate.mockResolvedValue(100000n);
   mocks.simulate.mockResolvedValue({ request: {} });
   mocks.rawCall.mockResolvedValue("0x");
@@ -223,6 +228,144 @@ describe("durable multichain batch journal", () => {
   it("does not treat corrupt recovery data as an empty journal", () => {
     localStorage.setItem("revnet:multichain-batches:v1", "bad JSON");
     expect(() => readMultichainBatches()).toThrow(/recovery data is unavailable/);
+  });
+});
+
+describe("routing draft replacement", () => {
+  it.each(["submitting", "submitted", "safe", "success", "skipped", "reverted"] as const)(
+    "keeps %s calls in recovery",
+    (state) => {
+      const draft = createMultichainBatch(ACCOUNT, "draft", "Routing", [retryCall(1)], "direct");
+      expect(isReplaceableRoutingDraft(draft)).toBe(true);
+      draft.calls[0].state = state;
+      expect(isReplaceableRoutingDraft(draft)).toBe(false);
+    },
+  );
+  it("retains publication, Safe nonce and quote evidence even with zero handled", () => {
+    const draft = createMultichainBatch(ACCOUNT, "draft", "Routing", [retryCall(1)], "direct");
+    for (const evidence of [{ hash: HASH }, { safeNonce: 0 }]) {
+      expect(
+        isReplaceableRoutingDraft({ ...draft, calls: [{ ...draft.calls[0], ...evidence }] }),
+      ).toBe(false);
+    }
+    for (const evidence of [
+      { bundleUuid: "quoted" },
+      { transactionUuids: ["tx"] },
+      { state: "funding" as const },
+    ]) {
+      expect(
+        isReplaceableRoutingDraft({ ...draft, rounds: [{ ...draft.rounds[0], ...evidence }] }),
+      ).toBe(false);
+    }
+  });
+  it("atomically replaces a legacy-scope draft and refuses a stale snapshot", () => {
+    const draft = createMultichainBatch(ACCOUNT, "source", "Routing", [retryCall(1)], "direct");
+    saveMultichainBatch(draft);
+    const fresh = createMultichainBatch(
+      ACCOUNT,
+      "destination",
+      "Routing",
+      [retryCall(1), retryCall(10)],
+      "relayr",
+      draft.id,
+    );
+    saveMultichainBatch({ ...draft, calls: [{ ...draft.calls[0], state: "submitting" }] });
+    expect(() => replaceRoutingDraft(draft, fresh)).toThrow("saved batch changed");
+    expect(readMultichainBatches()[0].calls[0].state).toBe("submitting");
+    saveMultichainBatch(draft);
+    replaceRoutingDraft(draft, fresh);
+    expect(readMultichainBatches()).toEqual([fresh]);
+  });
+  it("keeps an unsubmitted draft if fresh review is cancelled", async () => {
+    const draft = createMultichainBatch(ACCOUNT, "source", "Routing", [retryCall(1)], "direct");
+    saveMultichainBatch(draft);
+    mocks.review.mockRejectedValue(new Error("Cancelled"));
+    const { result } = renderHook(() => useMultichainBatch());
+    await expect(
+      result.current.runBatch({
+        scope: "destination",
+        label: "Routing",
+        calls: [retryCall(1), retryCall(10)],
+        replaceDraftId: draft.id,
+      }),
+    ).rejects.toThrow("Cancelled");
+    expect(readMultichainBatches()).toEqual([draft]);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("replaces the full selection and resumes that exact replacement after a preflight failure", async () => {
+    const draft = createMultichainBatch(ACCOUNT, "source", "Routing", [retryCall(1)], "direct");
+    saveMultichainBatch(draft);
+    mocks.rawCall.mockRejectedValue(new Error("RPC unavailable"));
+    const { result } = renderHook(() => useMultichainBatch());
+    const input = {
+      scope: "destination",
+      label: "Routing",
+      calls: [retryCall(1), retryCall(10)],
+      replaceDraftId: draft.id,
+    };
+    await expect(result.current.runBatch(input)).rejects.toThrow("RPC unavailable");
+    const saved = readMultichainBatches();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].scope).toBe("destination");
+    expect(saved[0].calls).toHaveLength(2);
+    expect(saved[0].id).not.toBe(draft.id);
+    await expect(result.current.runBatch(input)).rejects.toThrow("RPC unavailable");
+    expect(readMultichainBatches()).toEqual(saved);
+  });
+  it.each([{ hash: HASH }, { safeNonce: 0 }])(
+    "retains ambiguous ready-call evidence when replacement is rejected: %j",
+    async (evidence) => {
+      const draft = createMultichainBatch(ACCOUNT, "source", "Routing", [retryCall(1)], "direct");
+      Object.assign(draft.calls[0], evidence);
+      saveMultichainBatch(draft);
+      const { result } = renderHook(() => useMultichainBatch());
+      await expect(
+        result.current.runBatch({
+          scope: "source",
+          label: "Routing",
+          calls: [retryCall(1), retryCall(10)],
+          replaceDraftId: draft.id,
+        }),
+      ).rejects.toThrow("must be resumed");
+      expect(readMultichainBatches()).toEqual([draft]);
+      expect(mocks.review).not.toHaveBeenCalled();
+    },
+  );
+  it("retains a draft when another tab adds submission evidence during review", async () => {
+    const draft = createMultichainBatch(ACCOUNT, "source", "Routing", [retryCall(1)], "direct");
+    saveMultichainBatch(draft);
+    mocks.review.mockImplementation(async () => {
+      draft.calls[0].state = "submitting";
+      saveMultichainBatch(draft);
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await expect(
+      result.current.runBatch({
+        scope: "destination",
+        label: "Routing",
+        calls: [retryCall(1), retryCall(10)],
+        replaceDraftId: draft.id,
+      }),
+    ).rejects.toThrow("saved batch changed");
+    expect(readMultichainBatches()).toEqual([draft]);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("does not replace a draft with a lost publication response", async () => {
+    const draft = createMultichainBatch(ACCOUNT, "source", "Routing", [retryCall(1)], "direct");
+    saveMultichainBatch(draft);
+    mocks.scopeSession.mockReturnValue(true);
+    const { result } = renderHook(() => useMultichainBatch());
+    expect(result.current.getPendingBatch("source")?.replaceableDraft).toBe(false);
+    await expect(
+      result.current.runBatch({
+        scope: "source",
+        label: "Routing",
+        calls: [retryCall(1), retryCall(10)],
+        replaceDraftId: draft.id,
+      }),
+    ).rejects.toThrow("saved Relayr session");
+    expect(readMultichainBatches()).toEqual([draft]);
+    expect(mocks.review).not.toHaveBeenCalled();
   });
 });
 

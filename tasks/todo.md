@@ -338,3 +338,9 @@ Review: 2,152 local tests passed and one skipped (live schema and loopback RPC s
 - [x] Label the resume button plainly and separate saved progress from the pending total.
 - [x] Preserve submission gates and resolved-row filtering; cover delayed seven-payment inventory plus three saved calls and per-row RPC errors.
 Review: 27 relevant tests pass; typecheck, changed-file ESLint and diff check pass. Both query stages share an invalidation prefix and use new cache keys for their new shapes. Follow-up remains local, not pushed.
+
+## 2026-10-06 — Replace untouched routing drafts
+- [x] Distinguish untouched drafts from submitted, funded, published, ambiguous or handled attempts.
+- [x] Review the full current selection and replace the exact draft under the account lock after reservation checks and an atomic journal comparison.
+- [x] Freeze reviewed identities, preserve recovery on failure, and require a fresh review after replacement errors.
+Review: 63 engine tests and 14 routing component tests pass; reviewed Relayr suite passed during engine validation. Typecheck and changed-file lint pass. Regression coverage includes late submission evidence, lost publication responses, cancellation, changed journals, and failed replacement retries. Changes remain local, not pushed.

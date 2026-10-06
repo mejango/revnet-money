@@ -431,6 +431,14 @@ function supersede(sessions: TransactionActivity[]): void {
   }
 }
 
+/** Conservative synchronous gate: any retained session keeps draft replacement unavailable. */
+export function hasRelayrRecoveryScopeSession(account: Address, scope: string): boolean {
+  return refreshTransactionActivities().some(
+    (activity) =>
+      activity.relayrCallKeys?.includes(scopeKey(account, scope)) && !sessionReleased(activity),
+  );
+}
+
 /**
  * A changed payload or direct route must not bypass a published operation
  * (rulings R114 (g) and R117): a session in `scope` reserves it while one of
