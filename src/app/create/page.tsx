@@ -4,7 +4,6 @@ import { Nav } from "@/components/layout/Nav";
 import { pinDraftItems } from "@/components/shop/itemDraft";
 import { useToast } from "@/components/ui/use-toast";
 import {
-  releaseUnpaidRelayrQuote,
   requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
 } from "@/hooks/useReviewedRelayr";
@@ -60,7 +59,8 @@ export default function Page() {
     if (formData.chainIds.length > 1 && !areRelayrChainsCompatible(formData.chainIds)) {
       throw new Error("Choose either live chains or test chains, not a mix.");
     }
-    requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
+    // A launch waits while an earlier one's signature can still run, saying until when.
+    await requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
     setDirectDeployment(null);
 
     let deploymentFormData = formData;
@@ -234,18 +234,17 @@ export default function Page() {
   // starts. Paying a stale quote therefore rebuilds the whole request from the
   // same form data: `deployProject` captures one fresh timestamp shared by
   // every chain, keeping the encoded configuration byte-identical across
-  // chains so suckers still pair. The stale quote is released first, so it
-  // can never be paid and no longer holds the launch scope.
-  async function rebuildStaleQuote(
-    stale: RelayrPostBundleResponse,
-  ): Promise<RelayrPostBundleResponse> {
+  // chains so suckers still pair. A different launch is never signed while the
+  // stale one's requests can still run, which would let the two launch on
+  // different chains: the rebuild waits until every one of them is dead at a
+  // finalized block, saying until when, and the stale quote is never paid.
+  async function rebuildStaleQuote(): Promise<RelayrPostBundleResponse> {
     const formData = quotedFormData.current;
     if (!formData) {
       throw new Error(
         "The original launch request is unavailable. Clear the quote and get a new one.",
       );
     }
-    await releaseUnpaidRelayrQuote(stale.bundle_uuid);
     const quote = await deployProject(formData);
     if (!quote) {
       throw new Error("Could not refresh the quote. Clear it and try again.");

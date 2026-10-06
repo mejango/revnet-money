@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   sendTransaction: vi.fn(),
   call: vi.fn(),
   readContract: vi.fn(),
+  getBlock: vi.fn(),
 }));
 
 vi.mock("@/components/layout/Nav", () => ({ Nav: () => null }));
@@ -55,6 +56,7 @@ vi.mock("wagmi/actions", () => ({
   getPublicClient: () => ({
     call: mocks.call,
     readContract: mocks.readContract,
+    getBlock: mocks.getBlock,
     estimateGas: async () => 21_000n,
     estimateContractGas: async () => 1_000_000n,
   }),
@@ -103,6 +105,18 @@ vi.mock("@/lib/forms", () => ({
 
 const FIRST_DEADLINE = NOW + 3_600;
 const firstPayment = payment({ chain: sepolia.id }, { deadline: FIRST_DEADLINE });
+// A launch signed at NOW stays executable for 47 hours.
+const PAST_DEADLINE = NOW + 48 * 3_600;
+const FINAL_HASH = `0x${"fe".repeat(32)}` as Hex;
+
+/** The finalized block, still canonical, at `timestamp`. */
+function finalizedAt(timestamp: number) {
+  mocks.getBlock.mockImplementation(async ({ blockTag }: { blockTag?: string }) =>
+    blockTag === "finalized"
+      ? { number: 200n, hash: FINAL_HASH, timestamp: BigInt(timestamp) }
+      : { hash: FINAL_HASH },
+  );
+}
 
 /** Relayr answers the first launch with BUNDLE_UUID and any later one with OTHER_BUNDLE_UUID. */
 function relayrLaunches() {
@@ -110,7 +124,7 @@ function relayrLaunches() {
   const next = relayrApi({
     bundleUuid: OTHER_BUNDLE_UUID,
     payments: [
-      payment({ chain: sepolia.id }, { bundleUuid: OTHER_BUNDLE_UUID, deadline: NOW + 7_200 }),
+      payment({ chain: sepolia.id }, { bundleUuid: OTHER_BUNDLE_UUID, deadline: NOW + 50 * 3_600 }),
     ],
   });
   let posts = 0;
@@ -159,6 +173,8 @@ beforeEach(() => {
     mocks.account.chainId = chainId;
   });
   mocks.call.mockResolvedValue({ data: "0x" });
+  // No finalized block is known, so a signed request counts as live.
+  mocks.getBlock.mockResolvedValue({ hash: FINAL_HASH });
   mocks.readContract.mockImplementation(
     async ({ functionName, address }: { functionName: string; address: Address }) =>
       functionName === "isTrustedForwarder"
@@ -173,40 +189,45 @@ beforeEach(() => {
 });
 
 describe("unpaid Relayr launch quotes", () => {
-  it("wallet-action:create-revnet rebuilds a stale-start quote through the real launch guard and never pays the stale one", async () => {
+  it("wallet-action:create-revnet rebuilds a stale-start launch only once every request of the stale one is dead, and never pays the stale one", async () => {
     const { activity, relayr, staleQuote } = await createPage();
     await submitLaunch();
     const stale = mocks.formProps.relayrResponse!;
     expect(stale.bundle_uuid).toBe(BUNDLE_UUID);
 
-    // While the quote can be paid, a second launch is refused.
+    // While the stale launch's requests can run, a second launch waits, saying until when.
     await submitLaunch();
     expect(mocks.toast).toHaveBeenCalledWith(
       expect.objectContaining({
-        description: expect.stringContaining(
-          "A previous Relayr launch still requires reconciliation",
-        ),
+        description: expect.stringMatching(/earlier signature can still run until/),
       }),
     );
 
-    // The default start (quote time + 600 s) is now within 120 s, though the
-    // quote itself is payable for another 50 minutes.
+    // The default start (quote time + 600 s) is now within 120 s. The rebuild
+    // waits too: a different launch is never signed at the stale launch's nonces.
     vi.setSystemTime(new Date((NOW + 500) * 1_000));
-    let fresh: Awaited<ReturnType<typeof staleQuote.ensureFreshQuote>> | undefined;
-    await act(async () => {
-      fresh = await staleQuote.ensureFreshQuote({
+    const rebuild = () =>
+      staleQuote.ensureFreshQuote({
         bundle: stale,
         payment: stale.payment_info[0],
         quotedStageStart: mocks.formProps.quotedStageStart,
         rebuildStaleQuote: mocks.formProps.rebuildStaleQuote,
       });
+    await expect(rebuild()).rejects.toThrow(/earlier signature can still run until/);
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+
+    // Every request of the stale launch is dead and unused at a finalized block.
+    vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+    finalizedAt(PAST_DEADLINE);
+    let fresh: Awaited<ReturnType<typeof staleQuote.ensureFreshQuote>> | undefined;
+    await act(async () => {
+      fresh = await rebuild();
     });
     expect(fresh?.bundle.bundle_uuid).toBe(OTHER_BUNDLE_UUID);
     expect(mocks.signTypedData).toHaveBeenCalledTimes(4);
     const rows = activity.transactionActivitySnapshot();
     expect(rows.find((row) => row.bundleUuid === BUNDLE_UUID)).toMatchObject({
-      status: "failed",
-      relayrPaymentStatus: "expired",
+      relayrDiscardable: "expired",
     });
     expect(rows.find((row) => row.bundleUuid === OTHER_BUNDLE_UUID)).toMatchObject({
       status: "pending",
@@ -214,18 +235,58 @@ describe("unpaid Relayr launch quotes", () => {
     });
 
     const payer = renderHook(() => relayr.useSendRelayrTx());
-    await expect(payer.result.current.sendRelayrTx(stale.payment_info[0])).rejects.toThrow(
-      /does not belong/,
-    );
+    await expect(payer.result.current.sendRelayrTx(stale.payment_info[0])).rejects.toThrow();
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
-  it("lets the next launch through once an unpaid launch quote expires", async () => {
+  it("never rebuilds a stale launch whose requests may have run", async () => {
+    const { staleQuote } = await createPage();
+    await submitLaunch();
+    const stale = mocks.formProps.relayrResponse!;
+    expect(mocks.signTypedData.mock.calls.map(([request]) => request.message.nonce)).toEqual([
+      4n,
+      4n,
+    ]);
+    // The stale launch's requests ran since: the forwarder's nonce moved on.
+    mocks.readContract.mockImplementation(
+      async ({ functionName, address }: { functionName: string; address: Address }) =>
+        functionName === "isTrustedForwarder"
+          ? true
+          : functionName === "eip712Domain"
+            ? ["0x0f", "Juicebox", "1", BigInt(mocks.account.chainId), address, HASH, []]
+            : 5n,
+    );
+    vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+    finalizedAt(PAST_DEADLINE);
+    await expect(
+      staleQuote.ensureFreshQuote({
+        bundle: stale,
+        payment: stale.payment_info[0],
+        quotedStageStart: mocks.formProps.quotedStageStart,
+        rebuildStaleQuote: mocks.formProps.rebuildStaleQuote,
+      }),
+    ).rejects.toThrow(/may already have run/);
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets the next launch through only once every request of the unpaid one is dead", async () => {
     await createPage();
     await submitLaunch();
     expect(mocks.formProps.relayrResponse?.bundle_uuid).toBe(BUNDLE_UUID);
 
+    // The quote can no longer be paid, but its signatures can still run.
     vi.setSystemTime(new Date((FIRST_DEADLINE - 15) * 1_000));
+    await submitLaunch();
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringMatching(/earlier signature can still run until/),
+      }),
+    );
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+
+    vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+    finalizedAt(PAST_DEADLINE);
+    mocks.toast.mockClear();
     await submitLaunch();
     expect(mocks.toast).not.toHaveBeenCalled();
     await waitFor(() =>

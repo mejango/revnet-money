@@ -196,3 +196,66 @@ passed, four skipped; the production build passes last. All client JavaScript me
 Gate on the rebased branch: dependencies installed with npm 12.0.1 from main's lockfile; the same checks pass,
 including #66's Para source checks; unit and coverage 1,907 passed, one skipped; browser checks 121 passed, four
 skipped; `next build --webpack` passes last. All client JavaScript measures 2,643.4 KiB, within 2,644 KiB.
+
+## Relayr sessions decided from the chain, through the SDK rules (2026-10-06, W2-RVR)
+
+Reference: jbm 98c9409d src/lib/relayr.ts (executeRelayrCalls, savedRequestsVerdict, liveSessionVerdict,
+holdUnprovenSession, discardableSession, relayrHeldMessage, RelayrDiscardError, revertedRelayrQuote),
+src/lib/forwarder-authorization.ts, src/lib/launch-relayr.ts. Rulings R104, R114 (a-f), R117, R118.
+
+- [x] Take SDK 2.22.0 (lockfile: only the package's version, resolved and integrity).
+- [x] Tests first, red on the current code: a device-clock release never signs at the live nonce; a request that
+      ran gives the "ran" Discard and no signature; every request dead and unused runs the recheck and signs again
+      at the saved nonces; an unreachable recheck holds; a sped-up payment proves.
+- [x] The SDK's payment details and payment proof replace paymentDetails and verifyPaymentReceipt; a payment proves
+      on the hash it was mined under.
+- [x] Each session saves the nonce each request was signed with. Its action classifies it (relayrSignedRequests,
+      relayrRequestStates, relayrRequestsVerdict) before its recheck, and relayrSessionOutcome decides: reuse or
+      re-quote the saved signatures, hold, sign again at the saved nonces, or Discard. No device clock releases a
+      session; another session reserves a forwarder nonce, a call or a recovery scope while a request is live.
+- [x] A replacement in the same recovery scope (the stale-start launch rebuild) signs at the replaced session's
+      saved nonces, so only one of them can run.
+- [x] A quote whose payment reverted is released only as jbm does (R104): payments proven reverted, deadlines passed
+      at a canonical block, and Relayr read unpaid right before; Relayr reporting it funded holds it and proves what
+      ran. A declined retry of such a quote stays on the retry rule.
+- [x] A paid bundle that can't be proven holds while a request is live and is marked for Discard once all are dead.
+- [x] The account view checks an unpaid session's signatures and offers Discard for a session marked for it.
+- [x] Gate: lint, typecheck, wallet-writes:check, knip, test:ci, browser suite, build:browser.
+
+### Relayr session rules review
+
+Every session decision goes through the SDK: relayrSignedRequests, relayrRequestStates and relayrRequestsVerdict
+classify a session at a canonical finalized block before its action's recheck, relayrSessionOutcome decides, and
+relayrRequestsDead decides whether a session that shares only a forwarder nonce still reserves it. Nothing is
+released by the device clock, and a new signature for saved calls goes only to a saved nonce. 29 behavior tests failed
+on the code before these commits (the five the brief names among them) and pass after them; 5 more changed only in
+shape, since the scope check is async and the relayed launch passes its chains to it.
+
+Gate on the final commit: lint, typecheck, knip, wallet-writes (140 sites), format ratchet and source checks pass;
+unit and coverage 2,094 passed, one skipped; build:browser, standalone and bundle checks pass; browser checks 126
+passed, four skipped, inside the shared gate lock. All client JavaScript measures 2,644.2 KiB against 2,641.7 KiB for
+origin/main's sources on the same SDK; the aggregate budget rises by the minimum 1 KiB to 2,645 KiB.
+
+### Relayr session rules fix round 1 (ruling R114 (g))
+
+- [x] Different calls never sign at an old session's nonces while one of its requests can run: no refresh by
+      recovery scope, no `replaces`, no device clock. A live session holds another action, saying until when.
+- [x] The stale-start launch rebuild and a resubmitted launch wait until every request of the earlier launch is dead
+      at a finalized block, then build and sign the new one (jbm's abandonable rule).
+- [x] A raw or Safe quote is released only after Relayr reads it unpaid (jbm payer-relayr.ts:457-463).
+- [x] A "ran" Discard abandons a pending batch by its round's scope as well as its bundle.
+- [x] A paid bundle Relayr leaves pending is classified once every request is dead; completion clears a Discard mark,
+      and a completed card offers no Discard.
+
+Gate on the final commit: lint, typecheck, knip, wallet-writes (140 sites) and the format ratchet pass; unit and
+coverage 2,106 passed, one skipped; build:browser, standalone and bundle checks pass (2,644.1 of 2,645 KiB);
+browser checks 126 passed, four skipped, inside the shared gate lock. 20 tests failed on the code before the round.
+
+### Relayr session rules fix round 2
+
+- [x] A replaced session keeps no Discard mark, and a replaced quote's card offers no Discard.
+- [x] A Discard matches a batch round by the session's bundle, and by recovery scope only when Relayr named no bundle.
+
+Gate on the final commit: lint, typecheck, knip, wallet-writes (140 sites) and the format ratchet pass; unit and
+coverage 2,109 passed, one skipped; build:browser, standalone and bundle checks pass (2,644.1 of 2,645 KiB); browser
+checks 126 passed, four skipped, inside the shared gate lock. 3 tests failed on the code before the round.

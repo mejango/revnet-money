@@ -95,11 +95,10 @@ export function readMultichainBatches(): MultichainBatch[] {
     );
   }
 }
-export function saveMultichainBatch(batch: MultichainBatch) {
+/** Save the whole journal, and read it back to prove it was saved. */
+function writeMultichainBatches(batches: MultichainBatch[]) {
   if (typeof window === "undefined") throw new Error("Browser recovery storage is required.");
-  const previous = readMultichainBatches();
-  const next = [batch, ...previous.filter((item) => item.id !== batch.id)];
-  const encoded = serialize(next);
+  const encoded = serialize(batches);
   try {
     window.localStorage.setItem(STORAGE_KEY, encoded);
     if (window.localStorage.getItem(STORAGE_KEY) !== encoded)
@@ -110,6 +109,11 @@ export function saveMultichainBatch(batch: MultichainBatch) {
     );
   }
 }
+export function saveMultichainBatch(batch: MultichainBatch) {
+  if (typeof window === "undefined") throw new Error("Browser recovery storage is required.");
+  const previous = readMultichainBatches();
+  writeMultichainBatches([batch, ...previous.filter((item) => item.id !== batch.id)]);
+}
 /** Only callers that prove no signature/publication/submission occurred may remove a draft. */
 export function removeUnsubmittedBatch(id: string) {
   if (typeof window === "undefined") throw new Error("Browser recovery storage is required.");
@@ -117,6 +121,49 @@ export function removeUnsubmittedBatch(id: string) {
     STORAGE_KEY,
     serialize(readMultichainBatches().filter((batch) => batch.id !== id)),
   );
+}
+/** The recovery scope a batch call is quoted and checked under: its own, or its place in the batch. */
+export function batchCallScope(
+  batch: Pick<MultichainBatch, "scope">,
+  call: Pick<FrozenBatchCall, "recoveryScope" | "chainId">,
+  index: number,
+): string {
+  return call.recoveryScope ?? `${batch.scope}:${call.chainId}:${index}`;
+}
+/**
+ * A Relayr session that `holds` names was discarded. After one that may have
+ * run, every pending batch with such a round is abandoned, so its calls go out
+ * again only after a fresh review (ruling R114 (f)), and its id is returned.
+ * Otherwise a round that was paying or running quotes its calls again.
+ */
+export function releaseBatchRound(
+  holds: (batch: MultichainBatch, round: BatchRound) => boolean,
+  abandon: boolean,
+): string[] {
+  const batches = readMultichainBatches();
+  const held = batches.filter(
+    (batch) =>
+      batch.status === "pending" &&
+      batch.rounds.some((round) => round.state !== "success" && holds(batch, round)),
+  );
+  if (!held.length) return [];
+  writeMultichainBatches(
+    abandon
+      ? batches.filter((batch) => !held.includes(batch))
+      : batches.map((batch) =>
+          held.includes(batch)
+            ? {
+                ...batch,
+                rounds: batch.rounds.map((round) =>
+                  (round.state === "funding" || round.state === "pending") && holds(batch, round)
+                    ? { ...round, state: "quoted" as const }
+                    : round,
+                ),
+              }
+            : batch,
+        ),
+  );
+  return abandon ? held.map((batch) => batch.id) : [];
 }
 function batchCallData(call: MultichainCall) {
   return encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args });

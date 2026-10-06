@@ -66,7 +66,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Juicebox Money's confirm primitives in every confirm bring all client JavaScript to
 // 2640.6 KiB against origin/main's 2642.2 KiB at 00f0659e (largest route
 // /[slug]/operator 675.4 -> 678.4 KiB), within the budget.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2644);
+// Deciding Relayr sessions from the finalized chain through SDK 2.22.0's session rules (the
+// classification, the outcome and its recheck, the reverted-quote release, the account view's
+// check and Discard) measures 2644.2 KiB against 2641.7 KiB for origin/main's sources at dd5848ac
+// on the same SDK; the aggregate budget rises by the minimum 1 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2645);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

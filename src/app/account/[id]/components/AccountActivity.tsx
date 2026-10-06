@@ -6,12 +6,16 @@ import { ProfilesProvider } from "@/components/ProfilesContext";
 import { ProjectLink } from "@/components/ProjectLink";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useCompleteAccountActivity } from "@/hooks/useCompleteBendystrawLists";
-import { waitForRelayrBundle } from "@/hooks/useReviewedRelayr";
+import {
+  checkRelayrSession,
+  discardRelayrSession,
+  waitForRelayrBundle,
+} from "@/hooks/useReviewedRelayr";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { mergeAccountActivity } from "@/lib/bendystraw/accountActivity";
 import type { AccountActivityEventItem } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
-import { canCheckRelayrBundle } from "@/lib/relayr-activity";
+import { canCheckRelayrBundle, canCheckRelayrSignatures } from "@/lib/relayr-activity";
 import { slugFor } from "@/lib/slug";
 import {
   dismissTransactionActivity,
@@ -43,6 +47,15 @@ function useInFlightActivities(address: Address, enabled: boolean): TransactionA
 
 function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isSelf: boolean }) {
   const resumable = isSelf && canCheckRelayrBundle(activity);
+  // An unpaid session's signatures are checked onchain; one whose requests are all dead
+  // is marked for Discard, and its line is the card's message (ruling R114 (e)). A
+  // completed bundle, or a quote a new one replaced, is never discarded.
+  const checkable = isSelf && canCheckRelayrSignatures(activity);
+  const discardable =
+    isSelf &&
+    !!activity.relayrDiscardable &&
+    activity.status !== "success" &&
+    activity.relayrPaymentStatus !== "expired";
   return (
     <div className="border border-melon-200 bg-melon-50 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -57,6 +70,30 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
             onClick={() => void waitForRelayrBundle(activity.bundleUuid!).catch(() => undefined)}
           >
             Check bundle
+          </button>
+        ) : null}
+        {checkable ? (
+          <button
+            type="button"
+            className="text-xs font-medium text-teal-700 underline"
+            onClick={() => void checkRelayrSession(activity.id).catch(() => undefined)}
+          >
+            Check signatures
+          </button>
+        ) : null}
+        {discardable ? (
+          <button
+            type="button"
+            className="text-xs font-medium text-teal-700 underline"
+            onClick={() => {
+              try {
+                discardRelayrSession(activity.id);
+              } catch {
+                // A session that can't be discarded here keeps its card and line.
+              }
+            }}
+          >
+            Discard
           </button>
         ) : null}
         {isSelf && activity.safeResultUnconfirmed ? (
