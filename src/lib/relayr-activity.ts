@@ -34,6 +34,19 @@ export function relayrSessionRequests(activity: TransactionActivity) {
   );
 }
 
+type SentPayment = NonNullable<TransactionActivity["relayrPayments"]>[number];
+
+/**
+ * A session's payments as it saves them, oldest first. A row that lists none
+ * names its one payment by `hash`.
+ */
+export function sentPayments(activity: TransactionActivity | undefined): SentPayment[] {
+  if (activity?.relayrPayments?.length) return activity.relayrPayments;
+  return activity?.hash && activity.relayrPayment && activity.chainId
+    ? [{ hash: activity.hash, chainId: activity.chainId, ...activity.relayrPayment }]
+    : [];
+}
+
 /**
  * A session awaiting its payment whose signatures the account view can check
  * at a finalized block (ruling R114 (e)).

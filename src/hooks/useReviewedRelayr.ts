@@ -24,7 +24,7 @@ import type {
   RelayrPostBundleResponse,
 } from "@/lib/nana/types";
 import { verifyMetadataSource, type MetadataSourceGuard } from "@/lib/project-metadata-write";
-import { relayrSessionRequests } from "@/lib/relayr-activity";
+import { relayrSessionRequests, sentPayments } from "@/lib/relayr-activity";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { requireRefundFreeSafeExecution } from "@/lib/safe-transactions";
@@ -922,15 +922,7 @@ async function holdUnprovenSession(activityId: string): Promise<void> {
   if (outcome.kind === "discard") discardableSession(activity, outcome.reason);
 }
 
-type SentPayment = NonNullable<TransactionActivity["relayrPayments"]>[number];
-
-/** Every payment broadcast for a bundle. A row that lists none names its one payment by `hash`. */
-function sentPayments(activity: TransactionActivity | undefined): SentPayment[] {
-  if (activity?.relayrPayments?.length) return activity.relayrPayments;
-  return activity?.hash && activity.relayrPayment && activity.chainId
-    ? [{ hash: activity.hash, chainId: activity.chainId, ...activity.relayrPayment }]
-    : [];
-}
+type SentPayment = ReturnType<typeof sentPayments>[number];
 
 /**
  * A bundle that was paid before is paid again only on the SDK's rule: every
