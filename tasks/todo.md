@@ -357,3 +357,10 @@ Review: 200 engine/Relayr tests pass; 17 UI tests and 15 pending-call tests pass
 - [x] Pace browser RPC starts by 125ms across chains/retries without waiting for responses; all independent checks overlap and drain before error/payment.
 - [x] Test cancellation, delayed quote, account changes, retries, error ordering, queued abort and 429 cooldown.
 Review: 23 Safe dialog/card tests pass and 145 transport/check/Relayr tests pass. Broad sandbox-safe suite: 2,195 tests passed plus one skipped; sole failure was the stale copy-debt record from removing the pending-call middot, corrected and its six tests now pass. Live schema and loopback RPC files excluded. Typecheck, changed-file ESLint, format ratchet and wallet-boundary inventory pass; quote owner inventory updated from executeAll to prepareAll. JBM full suite: 2,576 tests pass. Not pushed.
+
+## 2026-10-06 — Resume saved Safe quotes instead of retrying creation
+- [x] Match complete chain/Safe/hash/nonce intent sets while keeping the original quote, UUIDs and signature calldata.
+- [x] Revalidate original calls and show their nested decoded review; preserve all historical alias keys.
+- [x] Protect legacy and current same-nonce reservations against changed signature/subset/alternative-hash attempts.
+- [x] Offer structured existing-bundle checks for incompatible/paid/ambiguous records instead of Retry checks.
+Review: 140 hook tests pass, plus 79 UI/activity/release/routing tests. Types and focused ESLint pass; wallet-boundary inventory remains unchanged. Existing quote recovery makes no new publication or payment. JBM has no equivalent persisted-unpaid-quote lookup deadlock. Local, not pushed.

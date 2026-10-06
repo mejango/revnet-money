@@ -1,5 +1,10 @@
 import { SafeQueueCard } from "@/app/[slug]/components/v6/operator/SafeQueueCard";
-import { recordTransactionActivity } from "@/lib/transaction-activity";
+import { RelayrRecoveryError } from "@/hooks/useReviewedRelayr";
+import {
+  recordTransactionActivity,
+  updateTransactionActivity,
+  type TransactionActivity,
+} from "@/lib/transaction-activity";
 import { safeProposalFor, type SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -33,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   quote: vi.fn(),
   pay: vi.fn(),
   bundle: vi.fn(),
+  check: vi.fn(),
 }));
 
 vi.mock("wagmi", () => ({
@@ -62,7 +68,10 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
   useSafeConnection: () => false,
   useWriteContract: () => ({ writeContractAsync: mocks.write }),
 }));
-vi.mock("@/hooks/useReviewedRelayr", () => ({
+vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
+  RelayrRecoveryError: (await importOriginal<typeof import("@/hooks/useReviewedRelayr")>())
+    .RelayrRecoveryError,
+  checkRelayrSession: mocks.check,
   useGetRelayrTxQuote: () => ({ getRelayrTxQuote: mocks.quote, reset: vi.fn() }),
   useSendRelayrTx: () => ({ sendRelayrTx: mocks.pay }),
   waitForRelayrBundle: mocks.bundle,
@@ -149,6 +158,7 @@ beforeEach(() => {
   });
   mocks.pay.mockReset().mockResolvedValue(EXECUTION);
   mocks.bundle.mockReset().mockResolvedValue(undefined);
+  mocks.check.mockReset().mockResolvedValue(undefined);
 });
 
 describe("the Safe queue's signature confirm", () => {
@@ -322,6 +332,43 @@ describe("the Safe queue's execute-all confirm", () => {
     );
     expect(mocks.pay).not.toHaveBeenCalled();
     expect(within(confirm).getByText(/account changed/i)).toBeVisible();
+  });
+
+  it("offers read-only recovery instead of repeating quote creation for a reserved bundle", async () => {
+    const activity: TransactionActivity = {
+      id: "existing",
+      kind: "relayr-bundle",
+      title: "Saved Safe executions",
+      status: "pending",
+      message: "An unpaid quote is still payable.",
+      account: SAFE_OWNER_A,
+      bundleUuid: "saved-bundle",
+      relayrPaymentStatus: "unfunded",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    recordTransactionActivity(activity);
+    mocks.quote.mockRejectedValue(new RelayrRecoveryError(activity));
+    const confirm = await openBatch();
+    const check = await within(confirm).findByRole("button", { name: "Check existing bundle" });
+    expect(within(confirm).queryByRole("button", { name: "Retry checks" })).toBeNull();
+    expect(within(confirm).getByText("saved-bundle")).toBeVisible();
+    fireEvent.click(check);
+    await waitFor(() => expect(mocks.check).toHaveBeenCalledWith("existing"));
+    await within(confirm).findByText("An unpaid quote is still payable.");
+    expect(mocks.quote).toHaveBeenCalledOnce();
+    expect(mocks.pay).not.toHaveBeenCalled();
+    mocks.check.mockImplementationOnce(async () => {
+      updateTransactionActivity("existing", { relayrPaymentStatus: "expired" });
+    });
+    mocks.quote.mockResolvedValue({
+      bundle_uuid: "fresh",
+      payment_info: [{ chain: 8453, amount: "1000", token: zeroAddress }],
+    });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Check existing bundle" }));
+    await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    expect(mocks.quote).toHaveBeenCalledTimes(2);
+    expect(mocks.pay).not.toHaveBeenCalled();
   });
 
   it("refuses every way out during payment, then ends on Done", async () => {

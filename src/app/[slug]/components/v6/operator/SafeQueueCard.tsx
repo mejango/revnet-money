@@ -3,6 +3,8 @@
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
+  checkRelayrSession,
+  RelayrRecoveryError,
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
@@ -36,6 +38,7 @@ import {
   queueUnavailableMessage,
   REFUND_REFUSAL,
 } from "@/lib/safe-transactions";
+import { refreshTransactionActivities } from "@/lib/transaction-activity";
 import {
   preselectedRelayrPayment,
   relayrPaymentOptions,
@@ -103,6 +106,7 @@ type BatchRow = { row: QueueRow; tx: SafeQueuedTransaction };
 type BatchRun = {
   account: Address;
   preparing: boolean;
+  recovery: RelayrRecoveryError | null;
   quote: RelayrPostBundleResponse | null;
   paymentChainId: number | null;
   rows: BatchRow[];
@@ -570,6 +574,7 @@ export function SafeQueueCard({
       rows,
       account,
       preparing: true,
+      recovery: null,
       quote: null,
       paymentChainId: null,
       status: {},
@@ -600,9 +605,61 @@ export function SafeQueueCard({
       update({
         message: null,
         error: cause instanceof Error ? cause.message : "Could not check the Safe transactions.",
+        recovery: cause instanceof RelayrRecoveryError ? cause : null,
       });
     } finally {
       update({ preparing: false });
+    }
+  };
+
+  const checkExistingBundle = async () => {
+    if (!batch?.recovery || batch.preparing || batch.running) return;
+    const { recovery, rows, account } = batch;
+    const generation = batchGeneration.current;
+    const current = () =>
+      generation === batchGeneration.current &&
+      account.toLowerCase() === connectedAccount.current?.toLowerCase();
+    setBatch((current) => (current ? { ...current, preparing: true, error: null } : current));
+    try {
+      await checkRelayrSession(recovery.activityId);
+      if (!current()) return;
+      const activity = refreshTransactionActivities().find((row) => row.id === recovery.activityId);
+      if (
+        activity?.relayrPaymentStatus === "expired" ||
+        activity?.relayrDiscardable === "expired" ||
+        activity?.relayrDiscardable === "changed"
+      ) {
+        await prepareAll(rows);
+        return;
+      }
+      setBatch((current) =>
+        current
+          ? {
+              ...current,
+              message:
+                activity?.message ??
+                "The existing bundle could not be located. Its recovery record is still required.",
+            }
+          : current,
+      );
+      if (activity?.status === "success" && !activity.manualVerificationRequired) {
+        closeBatch();
+        setNotice("The existing Relayr bundle is confirmed. The Safe queue has been refreshed.");
+        await queue.refetch();
+      }
+    } catch (cause) {
+      if (current())
+        setBatch((batch) =>
+          batch
+            ? {
+                ...batch,
+                error:
+                  cause instanceof Error ? cause.message : "Could not check the existing bundle.",
+              }
+            : batch,
+        );
+    } finally {
+      if (current()) setBatch((batch) => (batch ? { ...batch, preparing: false } : batch));
     }
   };
 
@@ -1038,21 +1095,47 @@ export function SafeQueueCard({
           action={
             batch.preparing
               ? "Checking…"
-              : batch.quote
-                ? `Pay once and execute ${batch.rows.length}`
-                : "Retry checks"
+              : batch.recovery
+                ? "Check existing bundle"
+                : batch.quote
+                  ? `Pay once and execute ${batch.rows.length}`
+                  : "Retry checks"
           }
           actionDisabled={
             batch.preparing ||
             batch.account.toLowerCase() !== address?.toLowerCase() ||
             Boolean(batch.quote && batch.paymentChainId === null)
           }
-          onConfirm={() => void (batch.quote ? executeAll() : prepareAll(batch.rows))}
+          onConfirm={() =>
+            void (batch.recovery
+              ? checkExistingBundle()
+              : batch.quote
+                ? executeAll()
+                : prepareAll(batch.rows))
+          }
           busy={batch.running}
           complete={batch.done}
           status={batch.message}
           error={batch.error}
         >
+          {batch.recovery ? (
+            <div className="space-y-2 border border-melon-300 p-3 text-sm">
+              <p>
+                A previous Relayr bundle contains one or more of these executions. Check that bundle
+                before preparing another payment.
+              </p>
+              {batch.recovery.bundleUuid ? (
+                <SummaryRow label="Existing bundle">
+                  <span className="break-all">{batch.recovery.bundleUuid}</span>
+                </SummaryRow>
+              ) : (
+                <p>
+                  The earlier quote response was not saved. Checking will preserve its recovery
+                  record.
+                </p>
+              )}
+            </div>
+          ) : null}
           {batch.quote && !batch.done ? (
             <label className="block text-sm">
               Pay network fee on

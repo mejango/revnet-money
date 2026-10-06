@@ -55,7 +55,10 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
     return { writeContractAsync: mocks.write };
   },
 }));
-vi.mock("@/hooks/useReviewedRelayr", () => ({
+vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
+  RelayrRecoveryError: (await importOriginal<typeof import("@/hooks/useReviewedRelayr")>())
+    .RelayrRecoveryError,
+  checkRelayrSession: vi.fn(),
   useGetRelayrTxQuote: () => ({ getRelayrTxQuote: mocks.quote, reset: vi.fn() }),
   useSendRelayrTx: () => ({ sendRelayrTx: vi.fn() }),
   waitForRelayrBundle: vi.fn(),

@@ -1629,6 +1629,303 @@ describe("Safe execution bundles", () => {
     expect(expected.preconditions).toHaveLength(2);
   });
 
+  it("resumes four saved Safe executions with their original bytes after another owner signs", async () => {
+    const { hooks, review, activity } = await freshHarness();
+    const reviews: TransactionReviewRequest[] = [];
+    review.registerTransactionReviewHandler(async (request) => {
+      reviews.push(request);
+      return true;
+    });
+    const api = relayrApi();
+    vi.stubGlobal("fetch", api);
+    const requests = [1, 10, 8453, 42161].map((chainId) => ({
+      ...safeExec(1),
+      chainId: chainId as 1,
+      recoveryScope: `safe:${chainId}:7`,
+    }));
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote(requests);
+    });
+    const original = activity.transactionActivitySnapshot()[0].relayrExpectedTransactions;
+    const changed = requests.map((request, index) =>
+      index
+        ? request
+        : {
+            ...request,
+            data: {
+              ...request.data,
+              gas: 300_000n,
+              data: encodeFunctionData({
+                abi: SAFE_EXEC_ABI,
+                functionName: "execTransaction",
+                args: [
+                  TARGET,
+                  0n,
+                  "0x1234",
+                  0,
+                  0n,
+                  0n,
+                  0n,
+                  zeroAddress,
+                  zeroAddress,
+                  `${SIGNATURE}${SIGNATURE.slice(2)}` as Hex,
+                ],
+              }),
+            },
+          },
+    );
+    await act(async () => {
+      await expect(quoter.result.current.getRelayrTxQuote(changed)).resolves.toMatchObject({
+        bundle_uuid: BUNDLE_UUID,
+      });
+    });
+    expect(api.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(mocks.signTypedData).not.toHaveBeenCalled();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    expect(activity.transactionActivitySnapshot()[0].relayrExpectedTransactions).toEqual(original);
+    expect(reviews.at(-1)).toMatchObject({
+      title: "Resume saved Safe execution quote",
+      calls: requests.map((request) => ({
+        chainId: request.chainId,
+        data: exec,
+        contractName: "Safe",
+        functionName: "execTransaction",
+        calls: [expect.objectContaining({ to: TARGET, data: "0x1234", value: 0n })],
+      })),
+    });
+    expect(mocks.clientCall.mock.calls.some(([call]) => call.data === changed[0].data.data)).toBe(
+      false,
+    );
+  });
+
+  it("returns actionable recovery for a different selection instead of paying extra saved calls", async () => {
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi());
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
+    });
+    await expect(quoter.result.current.getRelayrTxQuote([safeExec(1)])).rejects.toMatchObject({
+      name: "RelayrRecoveryError",
+      activityId: `relayr:${BUNDLE_UUID}`,
+      bundleUuid: BUNDLE_UUID,
+      paymentStatus: "unfunded",
+    });
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a Safe quote when its expected nonce or transaction hash changed", async () => {
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi());
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([safeExec(1)]);
+    });
+    for (const guard of [
+      { ...safeExec(1).expectedSafeExecution, nonce: 8 },
+      { ...safeExec(1).expectedSafeExecution, safeTxHash: HASH },
+    ]) {
+      await expect(
+        quoter.result.current.getRelayrTxQuote([{ ...safeExec(1), expectedSafeExecution: guard }]),
+      ).rejects.toBeInstanceOf(hooks.RelayrRecoveryError);
+    }
+  });
+
+  it("checks a saved raw Safe quote without silently dropping its live reservation", async () => {
+    const { hooks, review, activity } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi());
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([safeExec(1)]);
+    });
+    chainAt({ timestamp: NOW, finalizedNonce: 0n });
+    await hooks.checkRelayrSession(`relayr:${BUNDLE_UUID}`);
+    expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+      relayrPaymentStatus: "unfunded",
+      message: expect.stringMatching(/still unpaid and reserved/),
+    });
+    chainAt({ timestamp: NOW + 601, finalizedNonce: 0n });
+    await hooks.checkRelayrSession(`relayr:${BUNDLE_UUID}`);
+    expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+      relayrPaymentStatus: "expired",
+      message: expect.stringMatching(/Nothing was paid/),
+    });
+  });
+
+  it("keeps a paid saved Safe quote in recovery when all signature payloads change", async () => {
+    const { hooks, review, activity } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const api = relayrApi();
+    vi.stubGlobal("fetch", api);
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
+    });
+    activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
+      relayrPaymentStatus: "submitted",
+      hash: HASH,
+    });
+    const data = encodeFunctionData({
+      abi: SAFE_EXEC_ABI,
+      functionName: "execTransaction",
+      args: [
+        TARGET,
+        0n,
+        "0x1234",
+        0,
+        0n,
+        0n,
+        0n,
+        zeroAddress,
+        zeroAddress,
+        `${SIGNATURE}${SIGNATURE.slice(2)}` as Hex,
+      ],
+    });
+    await expect(
+      quoter.result.current.getRelayrTxQuote(
+        [safeExec(1), safeExec(10)].map((request) => ({
+          ...request,
+          data: { ...request.data, data },
+        })),
+      ),
+    ).rejects.toMatchObject({
+      name: "RelayrRecoveryError",
+      bundleUuid: BUNDLE_UUID,
+      paymentStatus: "submitted",
+    });
+    expect(api.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("does not release a canonically expired Safe quote funded on another device", async () => {
+    const { hooks, review, activity } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const bundle = { payment_received: false };
+    vi.stubGlobal("fetch", relayrApi({ bundle }));
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([safeExec(1)]);
+    });
+    bundle.payment_received = true;
+    chainAt({ timestamp: NOW + 601, finalizedNonce: 0n });
+    await hooks.checkRelayrSession(`relayr:${BUNDLE_UUID}`);
+    expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+      relayrPaymentStatus: "unfunded",
+      message: expect.stringMatching(/funding or execution activity/),
+    });
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it.each(["unfunded", "submitted"] as const)(
+    "holds a changed-signature subset of a legacy %s Safe bundle",
+    async (relayrPaymentStatus) => {
+      const { hooks, review, activity } = await freshHarness();
+      review.registerTransactionReviewHandler(async () => true);
+      const api = relayrApi();
+      vi.stubGlobal("fetch", api);
+      const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+      await act(async () => {
+        await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
+      });
+      const saved = activity.transactionActivitySnapshot()[0];
+      // Older bundles have only byte-key reservations, not semantic Safe aliases.
+      activity.updateTransactionActivity(saved.id, {
+        relayrPaymentStatus,
+        relayrCallKeys: saved.relayrCallKeys?.filter((key) => !key.includes("safe-execution:")),
+      });
+      const data = encodeFunctionData({
+        abi: SAFE_EXEC_ABI,
+        functionName: "execTransaction",
+        args: [
+          TARGET,
+          0n,
+          "0x1234",
+          0,
+          0n,
+          0n,
+          0n,
+          zeroAddress,
+          zeroAddress,
+          `${SIGNATURE}${SIGNATURE.slice(2)}` as Hex,
+        ],
+      });
+      await expect(
+        quoter.result.current.getRelayrTxQuote([
+          { ...safeExec(1), data: { ...safeExec(1).data, data } },
+        ]),
+      ).rejects.toMatchObject({ name: "RelayrRecoveryError", activityId: saved.id });
+      expect(api.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not resume a quote while another historical bundle reserves the same Safe intent", async () => {
+    const { hooks, review, activity } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const api = relayrApi();
+    vi.stubGlobal("fetch", api);
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
+    });
+    const saved = activity.transactionActivitySnapshot()[0];
+    activity.recordTransactionActivity({
+      ...saved,
+      id: `relayr:${OTHER_BUNDLE_UUID}`,
+      bundleUuid: OTHER_BUNDLE_UUID,
+      callKey: "different-signatures",
+      relayrCallKeys: [],
+      relayrExpectedTransactions: saved.relayrExpectedTransactions!.slice(0, 1),
+      relayrPaymentStatus: "submitted",
+    });
+    await expect(
+      quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]),
+    ).rejects.toBeInstanceOf(hooks.RelayrRecoveryError);
+    expect(api.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("reserves a Safe nonce across competing transaction hashes but permits the next nonce", async () => {
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const api = relayrApi();
+    vi.stubGlobal("fetch", api);
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([safeExec(1)]);
+    });
+    const data = encodeFunctionData({
+      abi: SAFE_EXEC_ABI,
+      functionName: "execTransaction",
+      args: [TARGET, 0n, "0x5678", 0, 0n, 0n, 0n, zeroAddress, zeroAddress, SIGNATURE],
+    });
+    const alternative = {
+      ...safeExec(1),
+      data: { ...safeExec(1).data, data },
+      expectedSafeExecution: { ...safeExec(1).expectedSafeExecution, safeTxHash: HASH },
+    };
+    await expect(quoter.result.current.getRelayrTxQuote([alternative])).rejects.toBeInstanceOf(
+      hooks.RelayrRecoveryError,
+    );
+    expect(api.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    liveNonce = 8n;
+    await act(async () => {
+      await expect(
+        quoter.result.current.getRelayrTxQuote([
+          {
+            ...alternative,
+            expectedSafeExecution: { ...safeExec(1).expectedSafeExecution, nonce: 8 },
+          },
+        ]),
+      ).resolves.toMatchObject({ bundle_uuid: BUNDLE_UUID });
+    });
+    expect(api.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+  });
+
   it("checks Safe chains concurrently before publishing and rechecks them before paying", async () => {
     const { hooks, review } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
