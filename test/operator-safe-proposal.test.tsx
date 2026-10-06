@@ -15,8 +15,6 @@ import {
   safeTransactionService,
 } from "./fixtures/safe-chain";
 
-// wallet-action:operator-writes
-
 const SAFE = provenSafe();
 const [SIGNER, CO_SIGNER] = SAFE.owners;
 const TARGET = "0x4444444444444444444444444444444444444444" as Address;
@@ -94,7 +92,7 @@ beforeEach(() => {
 });
 
 describe("an operator write signed for the operator Safe", () => {
-  it("queues the exact call with this app's origin at the next free nonce", async () => {
+  it("wallet-action:operator-writes queues the exact call with this app's origin at the next free nonce", async () => {
     const other = queuedRow(8453, SAFE.address, safeProposalFor({ to: TARGET, data: "0x12" }, 5));
     const service = queue([other]);
 

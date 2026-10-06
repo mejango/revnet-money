@@ -18,8 +18,6 @@ import type { Address, Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { provenSafe, queuedRow, safeChain, safeTransactionService } from "./fixtures/safe-chain";
 
-// wallet-action:safe-batch
-
 const SIGNER = "0x1111111111111111111111111111111111111111" as Address;
 const OTHER = "0x2222222222222222222222222222222222222222" as Address;
 const SAFE = "0x3333333333333333333333333333333333333333" as Address;
@@ -119,7 +117,7 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
     };
   });
 
-  it("proposes one MultiSend delegatecall with this app's origin", async () => {
+  it("wallet-action:safe-batch proposes one MultiSend delegatecall with this app's origin", async () => {
     const service = queue();
 
     const outcome = await submit();

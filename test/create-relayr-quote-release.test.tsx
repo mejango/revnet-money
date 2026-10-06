@@ -172,8 +172,8 @@ beforeEach(() => {
   relayrLaunches();
 });
 
-describe("wallet-action:create-revnet — unpaid Relayr launch quotes", () => {
-  it("rebuilds a stale-start quote through the real launch guard and never pays the stale one", async () => {
+describe("unpaid Relayr launch quotes", () => {
+  it("wallet-action:create-revnet rebuilds a stale-start quote through the real launch guard and never pays the stale one", async () => {
     const { activity, relayr, staleQuote } = await createPage();
     await submitLaunch();
     const stale = mocks.formProps.relayrResponse!;

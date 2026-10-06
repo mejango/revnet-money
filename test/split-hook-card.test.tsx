@@ -8,8 +8,6 @@ import type { Address, Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectEveryWayOutRefused } from "./support/confirm";
 
-// wallet-action:split-hook
-
 const ACCOUNT = "0x1111111111111111111111111111111111111111" as Address;
 const HOOK = "0x2222222222222222222222222222222222222222" as Address;
 const NATIVE = "0x000000000000000000000000000000000000EEEe" as Address;
@@ -95,7 +93,7 @@ beforeEach(() => {
 });
 
 describe("SplitHookCard", () => {
-  it("sends the simulated fee collection on the hook's chain", async () => {
+  it("wallet-action:split-hook sends the simulated fee collection on the hook's chain", async () => {
     const confirm = await openConfirm();
 
     fireEvent.click(within(confirm).getByRole("button", { name: "Collect fees" }));

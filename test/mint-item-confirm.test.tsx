@@ -7,8 +7,6 @@ import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectEveryWayOutRefused, findConfirm } from "./support/confirm";
 
-// wallet-action:shop-items
-
 const HOOK = "0x3333333333333333333333333333333333333333";
 const HASH = `0x${"cd".repeat(32)}` as Hex;
 
@@ -83,7 +81,7 @@ describe("mint without payment confirm", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out from Confirm through the send, then shows the mint", async () => {
+  it("wallet-action:shop-items refuses every way out from Confirm through the send, then shows the mint", async () => {
     let answer!: () => void;
     mocks.write.mockReturnValue(
       new Promise((resolve) => {

@@ -23,8 +23,6 @@ import {
 import { concatHex, encodeFunctionData, encodePacked, size, type Address } from "viem";
 import { beforeEach, describe, expect, it } from "vitest";
 
-// wallet-action:safe-batch
-
 const HOOK = "0xB222Da5A71e8FB89a5A38b7c920EaB5DfbC74B91" as Address;
 const TERMINAL = "0x4a56AEf5b6A5b9742AbB02cA67C5a85ba183D901" as Address;
 const REGISTRY = "0x72F55a54CD53410a5Ff175508a5A384227081788" as Address;
@@ -60,7 +58,7 @@ const terminalStep = () =>
   });
 
 describe("batch steps", () => {
-  it("builds the reference calldata for each step kind from its values", () => {
+  it("wallet-action:safe-batch builds the reference calldata for each step kind from its values", () => {
     expect(hookStep()).toMatchObject({
       to: REGISTRY,
       functionName: "setHookFor",

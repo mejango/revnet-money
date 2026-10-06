@@ -3,8 +3,6 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// wallet-action:operator-writes
-
 const CONFIG_HASH = `0x${"ab".repeat(32)}`;
 
 const mocks = vi.hoisted(() => ({ runWrites: vi.fn(), read: vi.fn() }));
@@ -105,7 +103,7 @@ describe("extend to another chain confirm", () => {
     expect(mocks.runWrites).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out from Confirm through the configuration check and the sends", async () => {
+  it("wallet-action:operator-writes refuses every way out from Confirm through the configuration check and the sends", async () => {
     let answer!: () => void;
     const held = new Promise<void>((resolve) => (answer = resolve));
     mocks.read.mockImplementation(async ({ functionName }: { functionName: string }) => {

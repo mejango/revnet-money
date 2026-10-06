@@ -307,7 +307,7 @@ describe("token panel Relayr funding", () => {
   });
 });
 
-describe("wallet-action:token-admin — token panel direct routing", () => {
+describe("token panel direct routing", () => {
   it.each([
     { label: "one deployment chain", chains: [1], safe: false, deployed: false },
     {
@@ -369,7 +369,7 @@ describe("wallet-action:token-admin — token panel direct routing", () => {
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
   });
 
-  it("waits for each receipt before the next write and switches back to the original chain", async () => {
+  it("wallet-action:token-admin waits for each receipt before the next write and switches back to the original chain", async () => {
     const first = deferred<{ status: string }>();
     const last = deferred<{ status: string }>();
     mocks.waitForReceiptWithRetry

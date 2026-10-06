@@ -56,8 +56,7 @@ const position = {
 } as UserLpPosition;
 
 describe("Revnet LP removal", () => {
-  // wallet-action:remove-liquidity
-  it("encodes a full burn and take-pair with exact 95% output floors", () => {
+  it("wallet-action:liquidity-management encodes a full burn and take-pair with exact 95% output floors", () => {
     const plan = prepareRemoveLiquidity(pool, position, recipient, false, 100);
     expect(plan.pairMinimum).toBe(950n);
     expect(plan.tokenMinimum).toBe(1_900n);
@@ -105,9 +104,7 @@ describe("Revnet LP removal", () => {
 });
 
 describe("Revnet LP entry", () => {
-  // wallet-action:add-liquidity
-  // wallet-action:liquidity-management
-  it("encodes a bounded mint with Permit2 token settlement and native refund", () => {
+  it("wallet-action:liquidity-management encodes a bounded mint with Permit2 token settlement and native refund", () => {
     const plan = prepareAddLiquidity(
       { ...pool, sqrtP: 2n ** 96n },
       {
@@ -154,8 +151,7 @@ const modifyParams = [
 ] as const;
 
 describe("Revnet LP edit", () => {
-  // wallet-action:edit-liquidity
-  it("tops up the same band with INCREASE_LIQUIDITY funded by the wallet", () => {
+  it("wallet-action:liquidity-management tops up the same band with INCREASE_LIQUIDITY funded by the wallet", () => {
     const plan = prepareEditLiquidity(
       livePool,
       livePosition,
@@ -446,8 +442,7 @@ const pairSide: UserLpPosition = {
 const corridor = { floor: 0.5, ceiling: 2 };
 
 describe("Revnet LP market", () => {
-  // wallet-action:liquidity-management
-  it("mints both sides of the corridor in one unlock with independent amounts", () => {
+  it("wallet-action:liquidity-management mints both sides of the corridor in one unlock with independent amounts", () => {
     const plan = prepareMarketLiquidity(
       marketPool,
       { tokenAmount: 10n ** 18n, pairAmount: 5n * 10n ** 17n },

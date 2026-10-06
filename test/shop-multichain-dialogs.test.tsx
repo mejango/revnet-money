@@ -148,8 +148,8 @@ beforeEach(() => {
   );
 });
 
-describe("wallet-action:shop-items — selected-chain shop dialogs", () => {
-  it("submits one add-items call per selected hook with exact per-chain pricing and frozen guards", async () => {
+describe("selected-chain shop dialogs", () => {
+  it("wallet-action:shop-items submits one add-items call per selected hook with exact per-chain pricing and frozen guards", async () => {
     mount("add");
     fireEvent.click(screen.getByRole("checkbox", { name: "Add on Base" }));
     fireEvent.change(screen.getByLabelText("Item 1 price on Ethereum"), { target: { value: "2" } });
@@ -214,7 +214,7 @@ describe("wallet-action:shop-items — selected-chain shop dialogs", () => {
     expect(mocks.pinDraftItems).toHaveBeenCalledOnce();
   });
 
-  it("requires an explicit peer tier and preserves collection/resolver settings in media writes", async () => {
+  it("wallet-action:shop-items requires an explicit peer tier and preserves collection/resolver settings in media writes", async () => {
     mount("media");
     fireEvent.change(screen.getByLabelText("Replacement media URI"), {
       target: { value: "ipfs://replacement" },

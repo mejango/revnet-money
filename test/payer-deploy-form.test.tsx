@@ -69,8 +69,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("wallet-action:project-payer — multichain deployment form", () => {
-  it("freezes all selected factory calls with unique project IDs, per-chain beneficiaries, settings and factory directory evidence", async () => {
+describe("multichain deployment form", () => {
+  it("wallet-action:project-payer freezes all selected factory calls with unique project IDs, per-chain beneficiaries, settings and factory directory evidence", async () => {
     setup();
     fireEvent.click(screen.getByRole("checkbox", { name: "Original payer" }));
     fireEvent.change(screen.getByLabelText("Default beneficiary"), {

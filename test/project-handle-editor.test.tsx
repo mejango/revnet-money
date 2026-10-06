@@ -4,8 +4,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { Address } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// wallet-action:project-handle
-
 const OPERATOR = "0x1111111111111111111111111111111111111111" as Address;
 
 const mocks = vi.hoisted(() => ({

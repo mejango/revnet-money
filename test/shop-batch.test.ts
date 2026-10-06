@@ -54,8 +54,8 @@ function client(values: Record<string, unknown> = {}) {
   return { readContract } as unknown as PublicClient;
 }
 
-describe("wallet-action:shop-items — selected-chain shop add requests", () => {
-  it("encodes each destination's own decimals, overridden price and inventory", () => {
+describe("selected-chain shop add requests", () => {
+  it("wallet-action:shop-items encodes each destination's own decimals, overridden price and inventory", () => {
     const item = { ...newDraftItem(), price: "2.5", supply: "10", perChainSupply: { 8453: "23" } };
     const primary = tierConfigsForDestination([item], {
       ...destination,

@@ -18,8 +18,6 @@ import type { ReactNode } from "react";
 import { zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// wallet-action:liquidity-management
-//
 // A liquidity plan names the account that reviewed it: a mint's position, a
 // removal's two sides and an edit's freed funds all go to it. When the wallet
 // switches accounts between review and confirm, the plan must not be sent
@@ -212,8 +210,8 @@ beforeEach(() => {
   mocks.write.mockReset().mockResolvedValue(HASH);
 });
 
-describe("wallet-action:liquidity-management — a plan sent only from the account that reviewed it", () => {
-  it("add liquidity refuses to mint the reviewed position from another account", async () => {
+describe("a plan sent only from the account that reviewed it", () => {
+  it("wallet-action:liquidity-management add liquidity refuses to mint the reviewed position from another account", async () => {
     const switchTo = renderFlow(() => <AddLiquidityForm state={state} tokenSymbol="MARKEE" />);
     fireEvent.change(screen.getByRole("spinbutton", { name: /MARKEE/ }), {
       target: { value: "20000000" },
@@ -240,7 +238,7 @@ describe("wallet-action:liquidity-management — a plan sent only from the accou
     );
   });
 
-  it("remove refuses to burn the reviewed position from another account", async () => {
+  it("wallet-action:liquidity-management remove refuses to burn the reviewed position from another account", async () => {
     const switchTo = renderFlow(() => (
       <LiquidityManager states={[state]} tokenSymbol="ART" heading={null} />
     ));
@@ -256,7 +254,7 @@ describe("wallet-action:liquidity-management — a plan sent only from the accou
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
-  it("edit position refuses to send the reviewed edit from another account", async () => {
+  it("wallet-action:liquidity-management edit position refuses to send the reviewed edit from another account", async () => {
     const switchTo = renderFlow(() => (
       <EditPositionPanel
         state={state}
@@ -277,7 +275,7 @@ describe("wallet-action:liquidity-management — a plan sent only from the accou
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
-  it("edit market refuses to send the reviewed edit from another account", async () => {
+  it("wallet-action:liquidity-management edit market refuses to send the reviewed edit from another account", async () => {
     const switchTo = renderFlow(() => (
       <MarketEditPanel
         state={state}

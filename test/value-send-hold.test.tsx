@@ -436,7 +436,7 @@ describe("value flows hold their dialog while a send is in flight", () => {
     tryEveryWayOut("Refinance loan");
   });
 
-  it("repay", async () => {
+  it("wallet-action:repay repay", async () => {
     await confirmRepay();
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Repay loan");
@@ -496,7 +496,7 @@ describe("cash out's sale approval", () => {
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("releases the confirm once the approval's receipt lands on the cash-out chain", async () => {
+  it("wallet-action:cash-out releases the confirm once the approval's receipt lands on the cash-out chain", async () => {
     mocks.receiptOn = 1;
     const confirm = await approveSale();
 

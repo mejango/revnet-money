@@ -3,8 +3,6 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// wallet-action:operator-writes
-
 const NEXT = "0x3333333333333333333333333333333333333333";
 
 const mocks = vi.hoisted(() => ({ runWrites: vi.fn() }));
@@ -97,7 +95,7 @@ describe("transfer revnet operator confirm", () => {
     expect(mocks.runWrites).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out while the transfer is sending, then closes when it lands", async () => {
+  it("wallet-action:operator-writes refuses every way out while the transfer is sending, then closes when it lands", async () => {
     let finish!: (result: unknown) => void;
     mocks.runWrites.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     const confirm = await openConfirm();

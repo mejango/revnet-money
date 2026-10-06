@@ -202,7 +202,7 @@ beforeEach(() => {
   });
 });
 
-describe("wallet-action:operator-writes — operator Relayr routing", () => {
+describe("operator Relayr routing", () => {
   const run = (runWrites: ReturnType<typeof useOperatorWrites>["runWrites"], chains: number[]) =>
     runWrites({
       writes: operatorWrites(chains),
@@ -217,22 +217,25 @@ describe("wallet-action:operator-writes — operator Relayr routing", () => {
     { label: "an unsupported chain", chains: [1, 137], safe: false },
     { label: "a Safe connection", chains: [1, 10], safe: true },
     { label: "a testnet Safe connection", chains: [11155111, 84532], safe: true },
-  ])("uses sequential reviewed writes for $label", async ({ chains, safe }) => {
-    mocks.safe = safe;
-    const { result } = renderHook(useOperatorWrites);
-    await expect(run(result.current.runWrites, chains)).resolves.toMatchObject({
-      chains: chains.length,
-      viaRelayr: false,
-    });
-    expect(mocks.runSequentialWrites).toHaveBeenCalledWith(
-      expect.objectContaining({
-        account: ACCOUNT,
-        writes: operatorWrites(chains),
-      }),
-    );
-    expect(mocks.getRelayrTxQuote).not.toHaveBeenCalled();
-    expect(mocks.chooseRelayrPayment).not.toHaveBeenCalled();
-  });
+  ])(
+    "wallet-action:operator-writes uses sequential reviewed writes for $label",
+    async ({ chains, safe }) => {
+      mocks.safe = safe;
+      const { result } = renderHook(useOperatorWrites);
+      await expect(run(result.current.runWrites, chains)).resolves.toMatchObject({
+        chains: chains.length,
+        viaRelayr: false,
+      });
+      expect(mocks.runSequentialWrites).toHaveBeenCalledWith(
+        expect.objectContaining({
+          account: ACCOUNT,
+          writes: operatorWrites(chains),
+        }),
+      );
+      expect(mocks.getRelayrTxQuote).not.toHaveBeenCalled();
+      expect(mocks.chooseRelayrPayment).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(RELAYR_NETWORKS)(
     "waits for explicit funding selection across supported $family and preserves the initial wallet preference",
@@ -333,7 +336,7 @@ describe("wallet-action:operator-writes — operator Relayr routing", () => {
   });
 });
 
-describe("wallet-action:split-groups — reserved token split routing", () => {
+describe("reserved token split routing", () => {
   it("does not bypass an unresolved split relay by selecting a single chain", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.requireRelayrRecoveryScopeAvailable.mockImplementation(() => {
@@ -367,7 +370,7 @@ describe("wallet-action:split-groups — reserved token split routing", () => {
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
-  it("writes a single chain directly and reports success only after its receipt", async () => {
+  it("wallet-action:split-groups writes a single chain directly and reports success only after its receipt", async () => {
     const onSuccess = vi.fn();
     const { result, rerender } = renderHook(() => useSetSplitGroups({ onSuccess }));
     await act(async () => {

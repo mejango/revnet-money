@@ -43,8 +43,8 @@ function client(values: Record<string, unknown> = {}) {
 beforeEach(() => mocks.pinJsonMetadata.mockResolvedValue(cid));
 afterEach(() => vi.unstubAllGlobals());
 
-describe("wallet-action:shop-items — shop media replacement", () => {
-  it("replaces owned media fields while preserving names, attributes and peer custom data", () => {
+describe("shop media replacement", () => {
+  it("wallet-action:shop-items replaces owned media fields while preserving names, attributes and peer custom data", () => {
     const source = {
       name: "Peer item",
       attributes: [{ trait_type: "Color", value: "Blue" }],

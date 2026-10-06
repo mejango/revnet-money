@@ -12,7 +12,7 @@ const SUCKER = "0x1111111111111111111111111111111111111111";
 const BENEFICIARY = "0x2222222222222222222222222222222222222222";
 const TOKEN = "0x3333333333333333333333333333333333333333";
 
-describe("wallet-action:bridge-prepare — protected bridge preparation", () => {
+describe("protected bridge preparation", () => {
   it("mirrors the contract's standard fee branches and rounding", () => {
     expect(
       cashOutProtocolFee({
@@ -51,7 +51,7 @@ describe("wallet-action:bridge-prepare — protected bridge preparation", () => 
     expect(() => protectedOutputFloor(1n, 100n)).toThrow(/rounds to zero/u);
   });
 
-  it("encodes the reviewed nonzero minimum in prepare", () => {
+  it("wallet-action:bridge-prepare encodes the reviewed nonzero minimum in prepare", () => {
     const request = buildProtectedBridgePrepareTx({
       chainId: 1,
       sucker: SUCKER,

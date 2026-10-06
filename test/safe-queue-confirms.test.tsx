@@ -15,8 +15,6 @@ import {
 } from "./fixtures/safe-chain";
 import { expectEveryWayOutRefused } from "./support/confirm";
 
-// wallet-action:safe-queue
-
 const SAFE = provenSafe();
 const [, COSIGNER] = SAFE.owners as [Address, Address];
 const TARGET = "0x4444444444444444444444444444444444444444" as Address;
@@ -170,7 +168,7 @@ describe("the Safe queue's signature confirm", () => {
     expect(mocks.sign).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out from Confirm through the reads before the wallet prompt, then closes once signed", async () => {
+  it("wallet-action:safe-queue refuses every way out from Confirm through the reads before the wallet prompt, then closes once signed", async () => {
     const { confirm, service } = await openSign();
     const release = holdLiveRead();
     fireEvent.click(within(confirm).getByRole("button", { name: "Sign" }));
@@ -222,7 +220,7 @@ describe("the Safe queue's execution confirm", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out from Confirm through the reads before the wallet prompt, then closes once executed", async () => {
+  it("wallet-action:safe-queue refuses every way out from Confirm through the reads before the wallet prompt, then closes once executed", async () => {
     const confirm = await openExecute();
     const release = holdLiveRead();
     fireEvent.click(within(confirm).getByRole("button", { name: "Execute" }));

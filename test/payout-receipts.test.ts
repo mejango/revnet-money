@@ -122,8 +122,8 @@ function verify(result: { logs: TransactionReceipt["logs"] }, review = expected)
   );
 }
 
-describe("wallet-action:payouts — recipient completion evidence", () => {
-  it("accepts exact reviewed hook, project and owner recipients with the full standard fee", async () => {
+describe("recipient completion evidence", () => {
+  it("wallet-action:payouts accepts exact reviewed hook, project and owner recipients with the full standard fee", async () => {
     await expect(verify(receipt())).resolves.toBeUndefined();
   });
 

@@ -6,8 +6,6 @@ import type { Address } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmIsOpen, expectEveryWayOutRefused } from "./support/confirm";
 
-// wallet-action:safe-batch
-
 const OPERATOR = `0x${"22".repeat(20)}` as Address;
 const HOOK = "0xB222Da5A71e8FB89a5A38b7c920EaB5DfbC74B91" as Address;
 const TERMINAL = "0x4a56AEf5b6A5b9742AbB02cA67C5a85ba183D901" as Address;
@@ -245,7 +243,7 @@ describe("SafeBatchTray", () => {
     expect(screen.getByRole("button", { name: "Send 1 transaction" })).toBeTruthy();
   });
 
-  it("submits the queued steps through the routed path and clears the chain on success", async () => {
+  it("wallet-action:safe-batch submits the queued steps through the routed path and clears the chain on success", async () => {
     mocks.submit.mockResolvedValue({ kind: "sent", transactions: 2 });
     writeBatch(8453, 6, [hookStep(), terminalStep()]);
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);

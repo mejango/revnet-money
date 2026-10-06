@@ -107,8 +107,8 @@ beforeEach(() => {
   mocks.borrowableReads.length = 0;
 });
 
-describe("wallet-action:loans — per-loan quotes use the loan's own (chainId, projectId)", () => {
-  it("keys every reallocation quote for a chain-B loan on chain B's projectId, not the route's", async () => {
+describe("per-loan quotes use the loan's own (chainId, projectId)", () => {
+  it("wallet-action:loans keys every reallocation quote for a chain-B loan on chain B's projectId, not the route's", async () => {
     const { result } = renderHook(() =>
       useBorrowDialog({ projectId: ROUTE_PROJECT_ID, selectedLoan: LOAN }),
     );

@@ -148,8 +148,8 @@ beforeEach(() => {
   );
 });
 
-describe("wallet-action:owner-distributions", () => {
-  it("carries every selected allocation when multiple calls have the same chain", async () => {
+describe("owner distribution batch", () => {
+  it("wallet-action:owner-distributions carries every selected allocation when multiple calls have the same chain", async () => {
     const first = snapshot(10, 91n, "allocation-1");
     const second = snapshot(10, 91n, "allocation-2");
     second.call.args = [92n];

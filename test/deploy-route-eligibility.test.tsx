@@ -68,7 +68,7 @@ beforeEach(() => {
   };
 });
 
-describe("wallet-action:create-revnet — creation route eligibility", () => {
+describe("creation route eligibility", () => {
   it("keeps the connected funding preference while reviewing supported mainnet EOA launch", () => {
     render(<DeploySection />);
     const button = screen.getByRole("button", { name: "Sign and get quote" });
@@ -143,7 +143,7 @@ describe("wallet-action:create-revnet — creation route eligibility", () => {
   });
 });
 
-describe("wallet-action:create-revnet — deployment confirm", () => {
+describe("deployment confirm", () => {
   it("goes back to the form with Cancel, and submits nothing", async () => {
     render(<DeploySection />);
     fireEvent.click(screen.getByRole("button", { name: "Sign and get quote" }));
@@ -155,7 +155,7 @@ describe("wallet-action:create-revnet — deployment confirm", () => {
     expect(mocks.submitForm).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out while the request is signed, then closes", async () => {
+  it("wallet-action:create-revnet refuses every way out while the request is signed, then closes", async () => {
     let finish!: () => void;
     mocks.submitForm.mockReturnValue(new Promise<void>((resolve) => (finish = resolve)));
     render(<DeploySection />);
