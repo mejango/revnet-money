@@ -259,3 +259,41 @@ browser checks 126 passed, four skipped, inside the shared gate lock. 20 tests f
 Gate on the final commit: lint, typecheck, knip, wallet-writes (140 sites) and the format ratchet pass; unit and
 coverage 2,109 passed, one skipped; build:browser, standalone and bundle checks pass (2,644.1 of 2,645 KiB); browser
 checks 126 passed, four skipped, inside the shared gate lock. 3 tests failed on the code before the round.
+
+## The SDK's reverted-quote rules (2026-10-06, W3-REL2-RVN)
+
+Reference: SDK 2.23.0 `review/relayr` ("Quotes whose payment reverted"), jbm 27c40e98 src/lib/relayr.ts
+(requireRelayrRetry, relayrRetryOption, proveSavedRelayrPayment, relayrPaymentAttemptOutcome, revertedRelayrQuote).
+Ruling R104; R89 (nothing loosens silently).
+
+- [x] Take SDK 2.23.0 (lockfile: only the package's version, resolved and integrity).
+- [x] `sentPayments` moves beside `relayrSessionRequests` in src/lib/relayr-activity.ts (no behavior change).
+- [x] revertedRelayrQuote, quoteUnfundable, quotedOptions, deadlinesPassed, requirePaymentRetry, the declined
+      payment's catch and provePayment's proof are the SDK's. A saved payment `{ hash, chainId, target, data, value }`
+      is read into the SDK's `RelayrSentPayment` once, in `relayrSavedQuote`; its deadline is the calldata's
+      deadline word.
+- [x] provePayment keeps revnet's outcomes over `proveSavedRelayrPayment` (which resolves false where it threw):
+      no recorded payment is a manual verification, an unprovable one throws so the poll keeps checking, a revert
+      marks the quote reverted.
+- [x] A quote paid sixteen times is never paid again (the SDK's journal limit; revnet had none).
+
+### Review
+
+Behavior changes, each pinned by a test that failed on the code before: a quote is payable by its latest payment's own
+deadline (jbm's rule) instead of the quoted option it matches, so a quote that no longer lists the paid option is
+released once its deadlines pass at a finalized block, and held with "cannot be paid again from its saved record"
+while payable; a bundle read that reports a payment without listing calls is not funded (the retry check still
+refuses it); a wallet rejection is read as the SDK reads one (viem's name counts, eight causes deep at most); a saved
+payment is read strictly (decimal amount, strict address); a missing RPC for a sent payment's chain refuses the retry
+with the SDK's line. The SDK changeset's other differences cannot arise: revnet's payments are saved from the SDK's
+own authenticated details, its bundle IDs come from a bound quote, and the deadline is derived from the calldata.
+
+SDK gaps, kept local until it exports them: `relayrBundleFunded` (the poll of a quote whose own payment reverted
+reads the bundle it just fetched) and the release of an unpaid raw or Safe quote at finalized blocks (the SDK's
+`revertedRelayrQuote` needs a sent payment).
+
+Gate on the final commit: lint, typecheck, knip, wallet-writes (140 sites), format ratchet, source and deployment
+checks pass; unit and coverage 2,128 passed, one skipped; build:browser, standalone and bundle checks pass; browser
+checks 126 passed, four skipped, inside the shared gate lock. All client JavaScript measures 2,645.0 KiB against
+2,644.2 KiB for origin/main's sources on SDK 2.22.0 (2 bytes over the old 2,645 KiB budget); the aggregate budget
+rises by the minimum 1 KiB to 2,646 KiB. 15 tests failed on the code before these commits.
