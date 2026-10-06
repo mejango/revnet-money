@@ -332,3 +332,9 @@ Plan review: use the existing raw Relayr lifecycle. Each payment remains its own
 - [x] Discover legacy saved routing attempts by their authenticated destination, preserving original scope, transport, hashes and resume state. Recover all-handled journals interrupted before completion.
 
 Review: 2,152 local tests passed and one skipped (live schema and loopback RPC suites excluded for the sandbox); final focused verification passed 74 tests after the saved-recovery correction. Typecheck, changed-file ESLint, wallet boundary checks, format ratchet and diff checks pass. JBM reports 2,542 tests passing plus typecheck, lint and source/inventory checks. Same-chain raw entries share one funding payment and retain per-call receipt mapping, including canonical reverted attempts. Saved source-6 attempts now appear on destination 1 without rewriting recovery records. Changes are local, not pushed.
+
+## 2026-10-06 — Distinguish pending inventory from saved routing selection
+- [x] Split discovery from paced verification so indexed rows show immediately with a checking state.
+- [x] Label the resume button plainly and separate saved progress from the pending total.
+- [x] Preserve submission gates and resolved-row filtering; cover delayed seven-payment inventory plus three saved calls and per-row RPC errors.
+Review: 27 relevant tests pass; typecheck, changed-file ESLint and diff check pass. Both query stages share an invalidation prefix and use new cache keys for their new shapes. Follow-up remains local, not pushed.

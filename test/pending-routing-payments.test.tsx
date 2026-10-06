@@ -93,7 +93,7 @@ describe("payment recovery", () => {
     mocks.indexed.mockResolvedValue([]);
     setup();
     await waitFor(() => expect(mocks.indexed).toHaveBeenCalledTimes(2));
-    expect(screen.queryByText("Payments awaiting routing")).toBeNull();
+    await waitFor(() => expect(screen.queryByText("Payments awaiting routing")).toBeNull());
   });
 
   it("offers a per-payment review with the original beneficiary and no settlement claim", async () => {
@@ -144,15 +144,66 @@ describe("payment recovery", () => {
     mocks.indexed.mockResolvedValue([]);
     mocks.saved.mockReturnValue({ scope: "pending-routing:1:6", completed: 1, total: 2 });
     setup();
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Continue routing (1/2 confirmed)" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Resume saved batch" }));
     fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
     await waitFor(() =>
       expect(mocks.batch).toHaveBeenCalledWith(
         expect.objectContaining({ scope: "pending-routing:1:6", calls: [] }),
       ),
     );
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  });
+
+  it("shows the full discovered inventory while checking a saved three-attempt selection", async () => {
+    let finish!: () => void;
+    const check = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    mocks.saved.mockReturnValue({ scope: "legacy", completed: 0, total: 3 });
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1
+        ? Array.from({ length: 7 }, (_, i) => ({
+            ...row(`item-${i}`).indexed,
+            amount: "100",
+            token: mocks.address,
+          }))
+        : [],
+    );
+    mocks.payment.mockImplementation(async (_client, indexed) => {
+      await check;
+      return row(indexed.pendingCallId);
+    });
+    setup();
+    expect(await screen.findByText("Found 7 payments. Checking current status…")).toBeTruthy();
+    expect(screen.getAllByText("Checking payment status…")).toHaveLength(7);
+    expect(screen.getByRole("button", { name: "Resume saved batch" })).toBeEnabled();
+    expect(screen.getByText(/separate from the full pending list/)).toBeTruthy();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    finish();
+    await screen.findByText("7 payments awaiting routing · 7 ready");
+    expect(screen.getAllByText("0.1 ETH")).toHaveLength(7);
+    expect(
+      screen
+        .getAllByRole("button", { name: "Review routing" })
+        .every((button) => button.hasAttribute("disabled")),
+    ).toBe(true);
+  });
+
+  it("keeps discovered payments visible when a chain check fails, excluding resolved rows", async () => {
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1
+        ? [row("ok").indexed, row("failed").indexed, row("resolved").indexed]
+        : [],
+    );
+    mocks.payment.mockImplementation(async (_client, indexed) => {
+      if (indexed.pendingCallId === "failed") throw new Error("RPC unavailable");
+      return indexed.pendingCallId === "resolved" ? null : row(indexed.pendingCallId);
+    });
+    setup();
+    await screen.findByText("Could not verify payment: RPC unavailable");
+    expect(screen.getAllByText("To project 1 on Ethereum")).toHaveLength(2);
+    expect(screen.getByText("0.1 ETH")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Batch all pending" })).toBeDisabled();
     expect(mocks.prepare).not.toHaveBeenCalled();
   });
 
