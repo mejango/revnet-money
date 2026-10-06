@@ -235,3 +235,18 @@ Gate on the final commit: lint, typecheck, knip, wallet-writes (140 sites), form
 unit and coverage 2,094 passed, one skipped; build:browser, standalone and bundle checks pass; browser checks 126
 passed, four skipped, inside the shared gate lock. All client JavaScript measures 2,644.2 KiB against 2,641.7 KiB for
 origin/main's sources on the same SDK; the aggregate budget rises by the minimum 1 KiB to 2,645 KiB.
+
+### Relayr session rules fix round 1 (ruling R114 (g))
+
+- [x] Different calls never sign at an old session's nonces while one of its requests can run: no refresh by
+      recovery scope, no `replaces`, no device clock. A live session holds another action, saying until when.
+- [x] The stale-start launch rebuild and a resubmitted launch wait until every request of the earlier launch is dead
+      at a finalized block, then build and sign the new one (jbm's abandonable rule).
+- [x] A raw or Safe quote is released only after Relayr reads it unpaid (jbm payer-relayr.ts:457-463).
+- [x] A "ran" Discard abandons a pending batch by its round's scope as well as its bundle.
+- [x] A paid bundle Relayr leaves pending is classified once every request is dead; completion clears a Discard mark,
+      and a completed card offers no Discard.
+
+Gate on the final commit: lint, typecheck, knip, wallet-writes (140 sites) and the format ratchet pass; unit and
+coverage 2,106 passed, one skipped; build:browser, standalone and bundle checks pass (2,644.1 of 2,645 KiB);
+browser checks 126 passed, four skipped, inside the shared gate lock. 20 tests failed on the code before the round.
