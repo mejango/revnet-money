@@ -187,3 +187,12 @@ from the 2,643 KiB budget, which rises by the minimum 1 KiB to 2,644 KiB.
 
 Gate on the final commit: the same checks pass; unit and coverage 1,891 passed, one skipped; browser checks 121
 passed, four skipped; the production build passes last. All client JavaScript measures 2,643.3 KiB, within 2,644 KiB.
+
+### Rebased onto main (2026-10-06)
+
+- [x] Rebased onto origin/main after #65 (Check deployment in Extras) and #66 (production audit advisories); the
+      task notes and the client budget comments keep both sides. The budget rises from main's 2,628 KiB to 2,644 KiB.
+
+Gate on the rebased branch: dependencies installed with npm 12.0.1 from main's lockfile; the same checks pass,
+including #66's Para source checks; unit and coverage 1,907 passed, one skipped; browser checks 121 passed, four
+skipped; `next build --webpack` passes last. All client JavaScript measures 2,643.4 KiB, within 2,644 KiB.
