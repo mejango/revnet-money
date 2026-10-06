@@ -617,12 +617,12 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       // prompt are part of the send, and its dialog must not close under them.
       setBorrowStatus("checking");
 
-      // Adding collateral burns project tokens, exactly as the standard borrow path does, so
-      // it needs the same BURN_TOKENS grant. Skipping this left the user at a simulation
-      // failure with no grant step offered.
-      if (collateralCountToAdd > 0n && !(await ensureBurnTokensPermission())) return;
-
       try {
+        // Adding collateral burns project tokens, exactly as the standard borrow path does, so
+        // it needs the same BURN_TOKENS grant; without it the refinance fails in simulation with
+        // no grant step offered. A permission read that fails ends here, in the error state.
+        if (collateralCountToAdd > 0n && !(await ensureBurnTokensPermission())) return;
+
         if (!publicClient) {
           throw new Error("This network is unavailable. Nothing was submitted.");
         }

@@ -151,3 +151,29 @@ describe("wallet-action:loans — a loan left open over its own Safe proposal th
     expect(result.current.loading).toBe(false);
   });
 });
+
+describe("wallet-action:loans — a refinance whose permission check can't be read", () => {
+  // One loan for every render, as the page passes it.
+  const LOAN = {
+    id: "3",
+    chainId: 1,
+    borrowAmount: (10n ** 18n).toString(),
+    collateral: (2n * 10n ** 18n).toString(),
+    projectId: 7,
+  };
+
+  it("ends in an error the dialog can be closed from, instead of holding the check", async () => {
+    mocks.hasPermissions.mockRejectedValue(new Error("The node can't be reached."));
+    // The loan names its own chain.
+    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n, selectedLoan: LOAN }));
+    // Adding collateral needs the permission check.
+    act(() => result.current.setCollateralAmount("1"));
+
+    await act(() => result.current.handleBorrow());
+
+    expect(mocks.hasPermissions).toHaveBeenCalledTimes(1);
+    expect(result.current.internalSelectedLoan).toBe(LOAN);
+    expect(result.current.borrowStatus).toBe("error");
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" }));
+  });
+});
