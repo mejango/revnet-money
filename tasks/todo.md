@@ -125,11 +125,13 @@ passed, four skipped; the production build passes. All client JavaScript measure
 
 ### Fix round 4
 
-- [x] No Safe proposal ends unconfirmed on one look. With a service, every class the watch can't follow (not listed,
-      a record it can't authenticate, executed without its transaction, a nonce the Safe moved past) ends it only
-      after ten minutes of looks in a row past the hour, and the service's report of its own execution settles it
-      meanwhile. Without a service, every chain check of the minute must find no transaction; a check the node can't
-      answer leaves it live.
+- [x] No Safe proposal ends unconfirmed on one look. With a service, it ends at the first look an hour after it was
+      made once 120 looks in a row (ten minutes) could not follow it. Not listed, a record it can't authenticate and
+      executed without its transaction count from the watch's first look, so such a proposal ends an hour after it
+      was made, or ten minutes into its watch if that is later; the nonce is read only after the hour, so a nonce the
+      Safe moved past ends it ten minutes after the hour at the earliest, and the service's report of its own
+      execution settles it meanwhile. Without a service, every chain check of the minute must find no transaction;
+      a check the node can't answer leaves it live.
 - [x] A missing execution receipt's hour counts from when the execution was first seen, not from the proposal.
 - [x] The Safe's nonce is read at most once a minute, through the reader the owners and threshold use.
 - [x] A refusal by an unconfirmed proposal, a dependent step's too, says to check it in Safe and dismiss it, and every
@@ -138,3 +140,21 @@ passed, four skipped; the production build passes. All client JavaScript measure
 
 Gate on the final commit: the same checks pass; unit and coverage 1,860 passed, one skipped; browser checks 121
 passed, four skipped; the production build passes last. All client JavaScript measures 2,642.2 KiB, within 2,643 KiB.
+
+### Fix round 5
+
+- [x] A look that learns nothing (the service down, the nonce unreadable, a chain check the node can't answer)
+      neither counts toward ending a proposal nor starts the count over; only a look that shows it live (listed
+      unexecuted with its nonce still to come) does. Without a service, the watch keeps checking the chain once a
+      minute after its first minute, up to the hour, and twelve checks that find nothing end the proposal.
+- [x] The chain is checked on every look of the watch's first minute and then once a minute, and once more before
+      the watch ends a proposal on its looks, so an execution sent at once that a node shows late settles.
+- [x] The loan dialogs (the permission step, the loan, refinancing and repayment) give a step refused by an
+      unconfirmed proposal the title "Safe proposal unconfirmed" and a status line that says to check it in Safe
+      and dismiss it, never a denial or a failure.
+- [x] The once-a-minute reader says why it keeps one read.
+
+Gate on the final commit: the same checks pass; unit and coverage 1,869 passed, one skipped; the production build
+passes last. All client JavaScript measures 2,642.6 KiB, within 2,643 KiB. Browser checks: 120 passed, four skipped,
+and one viewport of the handle route test failed with React's "Connection closed" (#412) under a load average of
+about 47; rerun alone, two other viewports failed the same way, and rerun alone with one worker, all five passed.
