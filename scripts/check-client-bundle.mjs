@@ -70,7 +70,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // classification, the outcome and its recheck, the reverted-quote release, the account view's
 // check and Discard) measures 2644.2 KiB against 2641.7 KiB for origin/main's sources at dd5848ac
 // on the same SDK; the aggregate budget rises by the minimum 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2645);
+// SDK 2.23.0's reverted-quote rules (the release, the retry option, the payment attempt's outcome, the
+// saved payment's proof and its strict reader) in place of revnet's copies measure 2645.0 KiB against
+// 2644.2 KiB for origin/main's sources at 28a1393e on SDK 2.22.0; the aggregate budget rises by the
+// minimum 1 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2646);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
