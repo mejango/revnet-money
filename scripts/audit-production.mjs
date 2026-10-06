@@ -272,9 +272,12 @@ if (result.status === 1 && findings.length === 0) {
   failAudit("npm audit exited unsuccessfully without reporting any findings.");
 }
 
+const rank = (severity) => severities.indexOf(severity);
 const memo = new Map();
 // The Para advisories a finding reaches, or null when any of its paths leads
-// to another advisory, or when npm rates it at a severity none of them has.
+// to another advisory, or when npm rates it above the most severe of them.
+// npm can rate a dependent below them: @getpara/react-core is low although
+// it reaches node-forge.
 const paraAdvisoriesOf = (name, active = new Set()) => {
   if (memo.has(name)) return memo.get(name);
   const vulnerability = vulnerabilities[name];
@@ -297,9 +300,8 @@ const paraAdvisoriesOf = (name, active = new Set()) => {
   }
   if (
     reached &&
-    ![...reached].some(
-      (advisory) => PARA_ADVISORIES.get(advisory).severity === vulnerability.severity,
-    )
+    rank(vulnerability.severity) >
+      Math.max(...[...reached].map((advisory) => rank(PARA_ADVISORIES.get(advisory).severity)))
   ) {
     reached = null;
   }

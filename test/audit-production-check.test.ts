@@ -325,6 +325,21 @@ describe("production audit runner fails closed", () => {
     expect(result.output).toContain(`- ${finding.name}: `);
   });
 
+  // npm rates some dependents below what they reach: @getpara/react-core is low although it reaches node-forge.
+  it("accepts a Para package rated below the only advisory it reaches", () => {
+    const result = fixture().run({
+      status: 1,
+      output: JSON.stringify(
+        report({
+          "node-forge": nodeForge(),
+          "@getpara/web-sdk": { name: "@getpara/web-sdk", severity: "low", via: ["node-forge"] },
+        }),
+      ),
+    });
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("GHSA-86w9-cpqp-85rv");
+  });
+
   it.each([0, 1])("rejects an npm error payload with process status %s", (status) => {
     const result = fixture().run({
       status,
