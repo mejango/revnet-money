@@ -175,3 +175,15 @@ about 47; rerun alone, two other viewports failed the same way, and rerun alone 
 Gate on the final commit: the same checks pass; unit and coverage 1,880 passed, one skipped; browser checks 121
 passed, four skipped; the production build passes last. All client JavaScript measures 2,643.0 KiB, under 0.05 KiB
 from the 2,643 KiB budget, which rises by the minimum 1 KiB to 2,644 KiB.
+
+### Fix round 7
+
+- [x] Only the chain's answer counts toward a missing execution receipt's hour: a read that finds no receipt, or a
+      receipt of another transaction, which never settles the proposal. A node that can't answer leaves it held,
+      and an end of an execution the service reported keeps "Safe reports this proposal as executed".
+- [x] The bridge, cash out, burn, liquidity removal and split recipient flows show the unconfirmed line over their
+      own such proposal; the identical call stays refused until it is dismissed.
+- [x] A test pins that the pay card holds the payment while its own proposal is pending.
+
+Gate on the final commit: the same checks pass; unit and coverage 1,891 passed, one skipped; browser checks 121
+passed, four skipped; the production build passes last. All client JavaScript measures 2,643.3 KiB, within 2,644 KiB.
