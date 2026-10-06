@@ -130,6 +130,20 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
     expect(mocks.discardRelayrSession).toHaveBeenCalledExactlyOnceWith("relayr:bundle");
   });
 
+  it("never offers Discard on a completed bundle", () => {
+    mocks.activities = [
+      activity({
+        status: "success",
+        manualVerificationRequired: false,
+        relayrDiscardable: "ran",
+        ...signedRequest(),
+      }),
+    ];
+    render(<AccountActivity address={ACCOUNT} />);
+    expect(screen.getByText("Update recipients")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Discard" })).not.toBeInTheDocument();
+  });
+
   it("checks no signatures it can't classify, such as a raw call's", () => {
     mocks.activities = [
       activity({

@@ -1295,6 +1295,7 @@ export async function waitForRelayrBundle(
           updateTransactionActivity(activityId, {
             status: "success",
             manualVerificationRequired: false,
+            relayrDiscardable: undefined,
             message: `All ${states.length} destination transactions confirmed. ${summary}`,
             chainStates: bundleChainStates(last),
           });

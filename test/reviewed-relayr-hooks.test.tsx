@@ -2480,4 +2480,60 @@ describe("Relayr sessions decided from the chain", () => {
       expect(session()).toMatchObject({ relayrDiscardable: "expired" });
     });
   });
+
+  it("clears the Discard mark of a paid bundle that a later check proves ran", async () => {
+    const { activity, hooks, session } = await signedSession();
+    const id = session()!.id;
+    const [signed] = session()!.relayrExpectedTransactions!;
+    activity.updateTransactionActivity(id, {
+      status: "failed",
+      relayrPaymentStatus: "confirmed",
+      hash: HASH,
+      chainId: 1,
+      relayrPayment: { target: PAYMENT_TARGET, data: payment().calldata, value: "16" },
+      manualVerificationRequired: true,
+      relayrDiscardable: "ran",
+    });
+    const DESTINATION = `0x${"de".repeat(32)}` as Hex;
+    const destination = {
+      ...onchain(signed.target, signed.data, 3n),
+      hash: DESTINATION,
+      transactionHash: DESTINATION,
+      logs: [],
+    };
+    mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) =>
+      hash === DESTINATION ? destination : onchain(PAYMENT_TARGET, payment().calldata),
+    );
+    mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) =>
+      hash === DESTINATION ? destination : onchain(PAYMENT_TARGET, payment().calldata),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              bundle_uuid: BUNDLE_UUID,
+              payment_received: true,
+              transactions: [
+                {
+                  tx_uuid: signed.transactionUuid,
+                  request: {
+                    chain: signed.chainId,
+                    target: signed.target,
+                    data: signed.data,
+                    value: signed.value,
+                  },
+                  status: { state: "Success", data: { hash: DESTINATION } },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    await expect(hooks.waitForRelayrBundle(BUNDLE_UUID)).resolves.toBeTruthy();
+    expect(session()).toMatchObject({ status: "success", manualVerificationRequired: false });
+    expect(session()?.relayrDiscardable).toBeUndefined();
+  });
 });
