@@ -24,7 +24,9 @@ import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
+  isSafeProposalUnconfirmedError,
   SAFE_PROPOSAL_UNCONFIRMED_LINE,
+  SAFE_PROPOSAL_UNCONFIRMED_TITLE,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -47,6 +49,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
+import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
 import {
   formatUnits,
   getJBContractAddress,
@@ -73,6 +76,9 @@ interface Props {
   disabled?: boolean;
 }
 
+const APPROVAL_PROPOSED = "The approval was proposed to Safe. Continue the sale once it executes.";
+const APPROVAL_UNCONFIRMED = "Couldn't confirm the approval yet.";
+
 export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, disabled, children } = props;
   const [redeemAmount, setRedeemAmount] = useState<string>();
@@ -96,6 +102,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const [submitting, setSubmitting] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A step refused by its own Safe proposal whose result can't be confirmed, which is not a failure.
+  const [refusedUnconfirmed, setRefusedUnconfirmed] = useState(false);
   const { toast } = useToast();
   const { data: suckers } = useSuckers();
   const { token } = useJBTokenContext();
@@ -153,16 +161,42 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     isLoading: isTxLoading,
     isSuccess,
     isSafeResultUnconfirmed: isTxUnconfirmed,
-  } = useWaitForTransactionReceipt({ hash });
+  } = useWaitForTransactionReceipt({ hash, chainId: selectedChainId });
   const {
     isLoading: approvalConfirming,
     isSuccess: approvalConfirmed,
-    isSafeResultUnconfirmed: approvalUnconfirmed,
-  } = useWaitForTransactionReceipt({ hash: approvalHash });
+    isError: approvalReverted,
+    error: approvalRevertError,
+    isSafeProposal: approvalProposed,
+    isSafeResultUnconfirmed: approvalSafeUnconfirmed,
+    isUnconfirmed: approvalUnconfirmed,
+  } = useWaitForTransactionReceipt({
+    hash: approvalHash,
+    chainId: selectedChainId,
+    timeout: RECEIPT_WAIT_TIMEOUT_MS,
+  });
+  const approvalFailure = approvalReverted
+    ? formatWalletError(approvalRevertError) || "The approval failed."
+    : null;
+  // An approval proposed to the Safe, one whose Safe result can't be confirmed,
+  // or one whose watch ended without a receipt may still land: the sale stays
+  // locked, settled rather than spinning, and says why.
+  const approvalOutstanding =
+    Boolean(approvalProposed) || Boolean(approvalSafeUnconfirmed) || approvalUnconfirmed;
+  const approvalStatus = approvalSafeUnconfirmed
+    ? SAFE_PROPOSAL_UNCONFIRMED_LINE
+    : approvalProposed
+      ? APPROVAL_PROPOSED
+      : approvalUnconfirmed
+        ? APPROVAL_UNCONFIRMED
+        : null;
   // const { data: redeemQuote } = useTokenCashOutQuoteEth(redeemAmountBN, {
   //   chainId: selectedSucker?.peerChainId as JBChainId,
   // });
-  const loading = isWriteLoading || isTxLoading || approvalSigning || approvalConfirming;
+  // An approval proposed to the Safe has no receipt to wait for here: the
+  // confirm ends on Done, and the sale continues once the Safe executes it.
+  const loading =
+    isWriteLoading || isTxLoading || approvalSigning || (approvalConfirming && !approvalProposed);
   const { balance } = balances?.find((b) => b.chainId === Number(activeCashOutChainId)) || {
     balance: { value: 0n },
   };
@@ -356,6 +390,14 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   useEffect(() => {
     if (hash) setReview(false);
   }, [hash]);
+
+  // A reverted approval ends the approving step: the confirm shows why and can
+  // be retried or closed.
+  useEffect(() => {
+    if (!approvalFailure) return;
+    setIsApproving(false);
+    setError(approvalFailure);
+  }, [approvalFailure]);
 
   useEffect(() => {
     if (!approvalConfirmed) return;
@@ -573,23 +615,27 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   ) : null}
 
                   {isTxLoading ? <div>Transaction submitted, awaiting confirmation...</div> : null}
-                  {isTxUnconfirmed || approvalUnconfirmed ? (
-                    <div>{SAFE_PROPOSAL_UNCONFIRMED_LINE}</div>
-                  ) : null}
+                  {isTxUnconfirmed ? <div>{SAFE_PROPOSAL_UNCONFIRMED_LINE}</div> : null}
                 </>
               )}
             </div>
           </DialogDescription>
           <DialogFooter>
+            {approvalStatus && !review ? (
+              <p className="self-center text-sm text-zinc-600">{approvalStatus}</p>
+            ) : null}
             {!isSuccess ? (
               <ButtonWithWallet
                 targetChainId={selectedSucker?.peerChainId}
                 loading={
-                  loading || isApproving || (valid && (isQuoteFetching || directSellLoading))
+                  loading ||
+                  (isApproving && !approvalOutstanding) ||
+                  (valid && (isQuoteFetching || directSellLoading))
                 }
-                disabled={valid && !cashOutRoute}
+                disabled={(valid && !cashOutRoute) || approvalOutstanding}
                 onClick={() => {
                   setError(null);
+                  setRefusedUnconfirmed(false);
                   setReview(true);
                 }}
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
@@ -602,11 +648,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         {review && selectedChainId && cashOutRoute ? (
           <TxConfirmDialog
             open
-            onOpenChange={(open) => {
-              if (!open) setReview(false);
-            }}
+            onClose={() => setReview(false)}
             title="Confirm cash out"
-            chainId={selectedChainId}
             steps={cashOutSteps}
             activeIndex={cashOutActiveIndex}
             action={
@@ -620,10 +663,13 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       ? "Sell on market"
                       : "Cash out"
             }
-            busy={loading || isApproving || submitting}
+            busy={loading || (isApproving && !approvalOutstanding) || submitting}
+            complete={approvalOutstanding}
+            status={refusedUnconfirmed ? SAFE_PROPOSAL_UNCONFIRMED_LINE : approvalStatus}
             error={error}
             onConfirm={async () => {
               setSubmitting(true);
+              setRefusedUnconfirmed(false);
               try {
                 if (
                   !cashOutTerminal ||
@@ -723,6 +769,12 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 await writeContractAsync({ ...prepared.transaction, account: address });
               } catch (err) {
                 setIsApproving(false);
+                if (isSafeProposalUnconfirmedError(err)) {
+                  setError(null);
+                  setRefusedUnconfirmed(true);
+                  toast({ title: SAFE_PROPOSAL_UNCONFIRMED_TITLE, description: err.message });
+                  return;
+                }
                 console.error("Cashout failed:", err);
                 setError(cashOutExecutionErrorMessage(err) ?? formatWalletError(err));
                 toast({

@@ -1,9 +1,10 @@
 import { SafeBatchTray } from "@/app/[slug]/components/v6/operator/SafeBatchTray";
 import { buildStep, readBatch, writeBatch } from "@/lib/safe-batch";
 import { NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Address } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { confirmIsOpen, expectEveryWayOutRefused } from "./support/confirm";
 
 // wallet-action:safe-batch
 
@@ -17,6 +18,9 @@ const ROWS = [
 
 const mocks = vi.hoisted(() => ({
   submit: vi.fn(),
+  route: { kind: "eoa" } as { kind: string },
+  /** Whether a wallet is connected. ButtonWithWallet's own test pins what it shows without one. */
+  connected: true,
   proposed: null as null | Record<string, unknown>,
   proposedQuery: undefined as undefined | { enabled?: boolean },
   preset: {
@@ -34,7 +38,7 @@ vi.mock("@tanstack/react-query", () => ({
     return {
       data:
         queryKey[0] === "safe-batch-route"
-          ? { kind: "eoa", authority: OPERATOR }
+          ? { ...mocks.route, authority: OPERATOR }
           : queryKey[0] === "safe-batch-preset"
             ? ROWS.map((row) => ({ row, result: mocks.preset }))
             : queryKey[0] === "revnet-safe-batch-proposed"
@@ -61,7 +65,8 @@ vi.mock("@/app/[slug]/components/v6/operator/useLiveRevnetOperators", () => ({
   }),
 }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeProposalPendingError: () => false,
+  isSafeProposalPendingError: (error: unknown) =>
+    error instanceof Error && error.name === "SafeProposalPendingError",
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/components/ButtonWithWallet", () => ({
@@ -69,14 +74,19 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     children,
     loading: _loading,
     targetChainId: _target,
-    connectWalletText: _connect,
+    connectWalletText,
     ...props
   }: {
     children: React.ReactNode;
     loading?: boolean;
     targetChainId?: number;
     connectWalletText?: string;
-  }) => <button {...props}>{children}</button>,
+  }) =>
+    mocks.connected ? (
+      <button {...props}>{children}</button>
+    ) : (
+      <button type="button">{connectWalletText ?? "Connect Wallet"}</button>
+    ),
 }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
 vi.mock("wagmi", () => ({
@@ -107,6 +117,8 @@ describe("SafeBatchTray", () => {
   beforeEach(() => {
     window.localStorage.clear();
     mocks.submit.mockReset();
+    mocks.route = { kind: "eoa" };
+    mocks.connected = true;
     mocks.proposed = null;
   });
 
@@ -276,5 +288,71 @@ describe("SafeBatchTray", () => {
     expect(readBatch(8453, 6)[1]!.values.twapWindow).toBe(900n);
     expect(mocks.submit).not.toHaveBeenCalled();
     expect(screen.getByRole("tab", { name: "Base (3)" })).toBeTruthy();
+  });
+
+  it("ends on Done when the batch went to the Safe app as a proposal", async () => {
+    mocks.route = { kind: "safe-app" };
+    mocks.submit.mockRejectedValue(
+      Object.assign(new Error("The batch was proposed to Safe, but it has not executed."), {
+        name: "SafeProposalPendingError",
+      }),
+    );
+    writeBatch(8453, 6, [hookStep(), terminalStep()]);
+    render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review and propose on Base" }));
+    const dialog = await screen.findByRole("dialog", { name: "Batch on Base" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Propose batch to Safe" }));
+    const done = await within(dialog).findByRole("button", { name: "Done" });
+    expect(dialog).toHaveTextContent("The batch was proposed to Safe");
+    expect(within(dialog).queryByRole("button", { name: "Propose batch to Safe" })).toBeNull();
+    fireEvent.click(done);
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes back to the tray with Cancel, and sends nothing", async () => {
+    writeBatch(8453, 6, [hookStep(), terminalStep()]);
+    render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review and propose on Base" }));
+    const dialog = await screen.findByRole("dialog", { name: "Batch on Base" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(readBatch(8453, 6)).toHaveLength(2);
+  });
+
+  it("refuses every way out while the batch is sent", async () => {
+    let finish!: (outcome: unknown) => void;
+    mocks.submit.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    writeBatch(8453, 6, [hookStep(), terminalStep()]);
+    render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review and propose on Base" }));
+    const dialog = await screen.findByRole("dialog", { name: "Batch on Base" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send 2 transactions" }));
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
+
+    const confirm = dialog.querySelector<HTMLElement>("[data-tx-confirm]")!;
+    expect(within(confirm).getByRole("button", { name: "Send 2 transactions" })).toBeDisabled();
+    expectEveryWayOutRefused(confirm);
+
+    finish({ kind: "sent", transactions: 2 });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for a wallet before the batch's confirm opens", () => {
+    mocks.connected = false;
+    writeBatch(8453, 6, [hookStep()]);
+    render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
+
+    expect(screen.queryByRole("button", { name: /Review and propose/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Connect Wallet" }));
+
+    expect(confirmIsOpen()).toBe(false);
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 });

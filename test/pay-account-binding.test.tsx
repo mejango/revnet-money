@@ -20,7 +20,7 @@ const B = "0x2222222222222222222222222222222222222222" as Address;
 const HASH = `0x${"ab".repeat(32)}` as Hex;
 
 const mocks = vi.hoisted(() => ({
-  address: "0x1111111111111111111111111111111111111111",
+  address: "0x1111111111111111111111111111111111111111" as string | undefined,
   write: vi.fn(),
   simulate: vi.fn(),
 }));
@@ -180,12 +180,15 @@ describe("wallet-action:pay — a payment bound to the account it was prepared f
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     const payment = mocks.write.mock.calls[0]![0] as {
+      chainId: number;
       account: Address;
       functionName: string;
       args: readonly unknown[];
     };
     expect(payment.functionName).toBe("pay");
     expect(payment.account).toBe(B);
+    // The payment names its chain; the reviewed write switches the wallet to it.
+    expect(payment).toMatchObject({ chainId: 1 });
     // pay(projectId, token, amount, beneficiary, minReturnedTokens, memo, metadata)
     expect(payment.args[3]).toBe(B);
     expect(mocks.simulate).toHaveBeenCalledWith(expect.objectContaining({ account: B }));
@@ -298,5 +301,33 @@ describe("wallet-action:pay — a payment bound to the account it was prepared f
       "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
     );
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
+  });
+
+  it("holds Pay when the wallet disconnects with the confirm open", async () => {
+    const client = queryClient();
+    const view = render(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("You get");
+
+    // The confirm cannot connect a wallet, so without one its action stays shut.
+    mocks.address = undefined;
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    const confirmPay = within(confirm).getByRole("button", { name: "Pay" });
+    expect(confirmPay).toBeDisabled();
+    fireEvent.click(confirmPay);
+    expect(mocks.simulate).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
   });
 });

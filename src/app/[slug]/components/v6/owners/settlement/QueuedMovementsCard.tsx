@@ -86,11 +86,8 @@ function ClaimButton({
       </ButtonWithWallet>
       <TxConfirmDialog
         open={review}
-        onOpenChange={(open) => {
-          if (!open) setReview(false);
-        }}
+        onClose={() => setReview(false)}
         title="Confirm claim"
-        chainId={row.peerChainId}
         steps={[{ title: "Claim", detail: "Proves the bridged leaf on the destination sucker." }]}
         activeIndex={busy ? 0 : -1}
         action="Claim"
@@ -170,7 +167,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
     return (
       <span
         className="text-xs text-zinc-400"
-        title="The bridge messaging fee could not be verified by simulation — executing now would revert. Try again shortly."
+        title="Couldn't find the bridge fee. Try again shortly."
       >
         Fee unavailable
       </span>
@@ -197,9 +194,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
             );
             if (value == null) {
               setFeeUnavailable(true);
-              throw new Error(
-                "Could not determine the bridge messaging fee — no budget simulated cleanly. Try again shortly.",
-              );
+              throw new Error("Couldn't find the bridge fee. Try again shortly.");
             }
             setReview({ value });
           } catch (cause) {
@@ -219,11 +214,8 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
       {review || busy ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setReview(null);
-          }}
+          onClose={() => setReview(null)}
           title="Confirm execution"
-          chainId={row.chainId}
           preparing={!review}
           status={review ? null : "Simulating the bridge messaging fee…"}
           steps={[
@@ -274,7 +266,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
               setReview(null);
               toast({
                 title: "Bridge message confirmed",
-                description: `The queued outbox is on its way to ${chainName(row.peerChainId)} — rows flip to claimable once it lands.`,
+                description: `The queued outbox is on its way to ${chainName(row.peerChainId)}. Rows turn claimable once it lands.`,
               });
               onDone();
             } catch (cause) {
@@ -410,9 +402,7 @@ export function QueuedMovementsCard({
         ) : isError && rows.length === 0 ? (
           <div className="text-sm text-zinc-500 py-4">Could not load bridge transactions.</div>
         ) : visible.length === 0 ? (
-          <div className="text-sm text-zinc-400 py-4">
-            No queued movements — anything in flight shows here until it clears.
-          </div>
+          <div className="text-sm text-zinc-400 py-4">No queued movements.</div>
         ) : (
           <table className="w-full min-w-[1040px]">
             <thead className="bg-melon-100">

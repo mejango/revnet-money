@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { clearExtensionSalt, saltForExtension } from "@/lib/suckerExtensionSalt";
@@ -61,6 +62,8 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState(false);
+  // A send that went to the Safe as a proposal: nothing more to send from here.
+  const [proposed, setProposed] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,6 +83,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
     }
     setError(null);
     setStatus(null);
+    setProposed(false);
     setReview(true);
   };
 
@@ -126,9 +130,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
       if (targetHash === ZERO_HASH) {
         throw new Error(
           `No revnet configuration found for project #${projectId} on ${chainName(target)}. ` +
-            "The revnet must be deployed there first — through REVDeployer, with the " +
-            "byte-identical original configuration (only its hash is stored on-chain, so " +
-            "this client cannot reconstruct it; use the original deploy config).",
+            "Deploy the revnet there first, with its original configuration.",
         );
       }
       if (homeHash !== targetHash) {
@@ -189,12 +191,14 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
       setOpen(false);
     } catch (e) {
       const message = formatWalletError(e) || "Could not extend the revnet.";
-      setError(message);
-      toast(
-        isSafeProposalPendingError(e)
-          ? { title: "Safe proposal submitted", description: message }
-          : { variant: "destructive", title: "Error", description: message },
-      );
+      if (isSafeProposalPendingError(e)) {
+        setStatus(message);
+        setProposed(true);
+        toast({ title: "Safe proposal submitted", description: message });
+      } else {
+        setError(message);
+        toast({ variant: "destructive", title: "Error", description: message });
+      }
     } finally {
       setBusy(false);
     }
@@ -240,12 +244,9 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
               </button>
             </div>
             <p className="text-xs text-zinc-500 mt-2">
-              Only the revnet's operator can extend it, its rules must allow deploying new suckers,
-              and the revnet must already be deployed on the target chain with the byte-identical
-              original configuration (its on-chain configuration hash is checked before anything
-              sends). One transaction runs on the target chain and one on each existing chain, all
-              from this wallet — the same operator address and salt on every chain are what make the
-              new suckers pair up.
+              Only the revnet's operator can extend it, and its rules must allow new suckers. The
+              revnet must already be deployed on the target chain with its original configuration.
+              One transaction runs there and one on each existing chain, all from this wallet.
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <Select value={targetChainId} onValueChange={(v) => setTargetChainId(v)}>
@@ -301,15 +302,15 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
               </ButtonWithWallet>
             </div>
             {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
-            {error && !review ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+            {error && !review ? <ErrorNote message={error} /> : null}
             {review ? (
               <TxConfirmDialog
                 open
-                onOpenChange={(next) => {
-                  if (!next) setReview(false);
+                onClose={() => {
+                  setReview(false);
+                  setProposed(false);
                 }}
                 title="Confirm suckers"
-                chainId={Number(targetChainId) as JBChainId}
                 steps={[
                   {
                     title: "Deploy suckers",
@@ -321,10 +322,11 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                 onConfirm={() => void submit()}
                 busy={busy}
                 status={status}
+                complete={proposed}
                 error={error}
               >
                 <SummaryRow label="Extends to">
-                  {chainName(Number(targetChainId))} · project #{targetProjectId.trim()}
+                  Project #{targetProjectId.trim()} on {chainName(Number(targetChainId))}
                 </SummaryRow>
                 <SummaryRow label="Pairs with">{existingChains}</SummaryRow>
                 <SummaryRow label="Transactions">{rows.length + 1}</SummaryRow>

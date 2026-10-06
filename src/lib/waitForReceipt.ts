@@ -24,6 +24,9 @@ export function isTransactionReceiptUnavailableError(
   return error instanceof TransactionReceiptUnavailableError;
 }
 
+/** How long a receipt is watched for before confirmation counts as unavailable. */
+export const RECEIPT_WAIT_TIMEOUT_MS = 120_000;
+
 /** Keep tracking a broadcast transaction when a load-balanced RPC drops the
  * subscription-style receipt watch. Successful writes must not leave the UI
  * stuck merely because the first backend queried was behind. */
@@ -33,7 +36,7 @@ export async function waitForReceiptWithRetry(
   options: { attempts?: number; intervalMs?: number } = {},
 ) {
   try {
-    return await client.waitForTransactionReceipt({ hash, timeout: 120_000 });
+    return await client.waitForTransactionReceipt({ hash, timeout: RECEIPT_WAIT_TIMEOUT_MS });
   } catch (cause) {
     const attempts = Math.max(1, options.attempts ?? 90);
     const intervalMs = Math.max(0, options.intervalMs ?? 2_000);

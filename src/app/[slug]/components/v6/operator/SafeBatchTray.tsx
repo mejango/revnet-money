@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
 import {
@@ -238,13 +239,15 @@ export function SafeBatchTray({
               </button>
             </p>
           ) : (
-            <Button
+            // The batch's confirm cannot connect a wallet, so this asks for one first.
+            <ButtonWithWallet
               className="mt-3"
               size="sm"
+              targetChainId={source.chainId}
               onClick={() => setDialog({ kind: "batch", chainId: source.chainId })}
             >
               Review and propose on {chainName(source.chainId)}
-            </Button>
+            </ButtonWithWallet>
           )}
         </>
       ) : (

@@ -2,6 +2,7 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxError } from "@/components/ui/TxError";
 import { useMultichainBatch, type BatchResult } from "@/hooks/useMultichainBatch";
 import {
   preparePendingRouterPayment,
@@ -37,6 +38,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reviewed, setReviewed] = useState<Prepared[] | null>(null);
+  // The routing round ended. The confirm keeps listing what it routed and ends on Done.
+  const [routed, setRouted] = useState(false);
   const [reviewedAccount, setReviewedAccount] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
@@ -84,6 +87,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       setReviewed(prepared);
       setReviewedAccount(address.toLowerCase());
       setProgress(null);
+      setRouted(false);
       setOpen(true);
     } catch (cause) {
       setError(formatWalletError(cause));
@@ -115,7 +119,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           ? `${result.revertedHashes.length} routing attempt(s) reverted. Review the refreshed pending payments before trying again.`
           : "Routing review complete. Payments still retained by the gateway remain listed after refresh.",
       );
-      setReviewed(null);
+      setRouted(true);
       await query.refetch();
     } catch (cause) {
       setError(formatWalletError(cause));
@@ -159,8 +163,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           <div key={payment.id} className="border-t border-teal-100 pt-3">
             <p className="break-all text-sm font-medium">{payment.amountLabel}</p>
             <p className="text-xs text-zinc-600">
+              To project {payment.indexed.projectId} on{" "}
               {JB_CHAINS[payment.indexed.chainId as JBChainId]?.name ?? payment.indexed.chainId}
-              {" · "}To project {payment.indexed.projectId}
             </p>
             {!payment.ready ? (
               <p className="mt-1 text-xs text-zinc-500">
@@ -203,18 +207,18 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           ) : null}
         </div>
       ) : null}
-      {error && !open ? (
-        <p role="alert" className="mt-2 text-sm text-red-600">
-          {error}
-        </p>
-      ) : null}
+      <TxError error={open ? null : error} />
       <TxConfirmDialog
         open={open}
-        onOpenChange={setOpen}
+        onClose={() => {
+          setOpen(false);
+          if (!routed) return;
+          setRouted(false);
+          setReviewed(null);
+        }}
         title="Route pending payments"
-        chainId={(reviewed?.[0]?.payment.indexed.chainId ?? chainId ?? 1) as JBChainId}
         steps={(reviewed ?? []).map(({ payment }) => ({
-          title: `${payment.amountLabel} · project ${payment.indexed.projectId}`,
+          title: `${payment.amountLabel} to project ${payment.indexed.projectId}`,
         }))}
         activeIndex={busy ? 0 : -1}
         stepsIntro="Review every selected attempt. Confirmed attempts are saved when execution takes more than one round."
@@ -223,7 +227,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         busy={busy}
         error={error}
         status={progress}
-        disabled={!saved && !reviewed}
+        actionDisabled={!saved && !reviewed}
+        complete={routed}
       >
         <div className="max-h-80 space-y-4 overflow-y-auto">
           {obsoleteProposals.map((proposal) => (

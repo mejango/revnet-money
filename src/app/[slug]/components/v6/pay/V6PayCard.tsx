@@ -550,10 +550,9 @@ export function V6PayCard() {
     setConfirmOpen(true);
   };
 
-  // Preparing runs as an effect so the confirm dialog can open BEFORE a wallet
-  // is connected (connect/switch-chain prompts live inside the dialog, old
-  // PayDialog style) and re-prepares after an in-dialog connect or chain
-  // switch. The card's quote is reused unless it is stale.
+  // Preparing runs as an effect once the confirm is open, so the confirm is on
+  // screen while the payment is prepared. The card's quote is reused unless it
+  // is stale.
   useEffect(() => {
     if (!confirmOpen || phase !== "preparing") return;
     if (!address || !publicClient || !selected) return;
@@ -579,9 +578,7 @@ export function V6PayCard() {
             : (await refetchPreview()).data;
         if (cancelled) return;
         if (!quote) {
-          throw new Error(
-            "Couldn't verify what this payment returns — not sending without a live quote.",
-          );
+          throw new Error("Couldn't verify what this payment returns. Nothing was sent.");
         }
         let terminal: Address = quote.terminal;
         let routeType: "multi" | "swap" = quote.routeType;
@@ -1093,9 +1090,9 @@ export function V6PayCard() {
     safeReceipt.statusMessage,
   ]);
 
-  // Chain switching lives in the confirm dialog (old PayDialog style). The
-  // token selection re-maps to the same token on the new chain via the
-  // key-remap effect; an open confirm re-prepares from a fresh quote.
+  // The card's chain picker. The token selection re-maps to the same token on
+  // the new chain via the key-remap effect; an open confirm re-prepares from a
+  // fresh quote.
   const switchChain = (value: string) => {
     if (busy) return;
     const next = chainOptions.find((s) => Number(s.peerChainId) === Number(value));
@@ -1481,7 +1478,7 @@ export function V6PayCard() {
               </div>
             ) : mode === "addbalance" ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
-                Adds to the project balance — you get no {projectTokenLabel}.
+                Adds to the project balance. You get no {projectTokenLabel}.
               </p>
             ) : null}
 
@@ -1540,7 +1537,7 @@ export function V6PayCard() {
       ) : null}
       {surfaceError ? (
         <p className="mt-2 text-sm text-red-600">
-          Couldn&apos;t verify this project&apos;s accepted tokens — payments are disabled.
+          Couldn&apos;t verify this project&apos;s accepted tokens. Payments are off.
         </p>
       ) : null}
       {surface?.pausePay && mode === "pay" ? (
@@ -1548,8 +1545,8 @@ export function V6PayCard() {
       ) : null}
       {addBalanceViaRouter ? (
         <p className="mt-2 text-sm text-zinc-600">
-          Add to balance only supports tokens the project accepts directly — switch to a direct
-          token, or use Pay to route this one.
+          Add to balance takes only tokens the project accepts directly. Pick one of those, or use
+          Pay.
         </p>
       ) : null}
 

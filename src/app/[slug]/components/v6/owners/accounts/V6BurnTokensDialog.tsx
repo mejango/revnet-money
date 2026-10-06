@@ -69,7 +69,7 @@ export function V6BurnTokensDialog({
 function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string }) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: row.chainId });
-  const { writeContractAsync, isPending } = useWriteContract({
+  const { writeContractAsync } = useWriteContract({
     transactionReview: {
       title: "Review permanent token burn",
       description:
@@ -111,6 +111,9 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
   const [memo, setMemo] = useState("");
   const [hash, setHash] = useState<`0x${string}`>();
   const [reviewing, setReviewing] = useState(false);
+  // Busy from Confirm: the balance and controller reads before the wallet
+  // prompt are part of the send, so the confirm cannot be closed under them.
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { isLoading, isSuccess, isSafeResultUnconfirmed } = useWaitForTransactionReceipt({
     hash,
@@ -137,6 +140,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
   async function burn() {
     if (!address || !publicClient || invalid) return;
     setError(null);
+    setSending(true);
     try {
       const freshBalance = await publicClient.readContract({
         address: jbContractAddress["6"][JBCoreContracts.JBTokens][row.chainId],
@@ -167,6 +171,8 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
       setReviewing(false);
     } catch (cause) {
       setError(formatWalletError(cause));
+    } finally {
+      setSending(false);
     }
   }
 
@@ -203,7 +209,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
         targetChainId={row.chainId}
         className="mt-2 w-full"
         variant="outline"
-        loading={isPending || isLoading}
+        loading={sending || isLoading}
         disabled={invalid || isSuccess}
         onClick={() => {
           setError(null);
@@ -217,16 +223,13 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
       ) : null}
       <TxConfirmDialog
         open={reviewing}
-        onOpenChange={(next) => {
-          if (!next) setReviewing(false);
-        }}
+        onClose={() => setReviewing(false)}
         title="Confirm burn"
-        chainId={row.chainId}
         steps={[{ title: `Burn ${amountLabel}`, detail: "Credits go first, then ERC-20 tokens." }]}
-        activeIndex={isPending ? 0 : -1}
+        activeIndex={sending ? 0 : -1}
         action="Burn permanently"
         onConfirm={() => void burn()}
-        busy={isPending}
+        busy={sending}
         error={error}
       >
         <SummaryRow label="Burns">{amountLabel}</SummaryRow>

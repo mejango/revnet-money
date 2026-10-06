@@ -77,6 +77,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const { writeContractAsync, data: hash, reset } = useWriteContract();
   const { isSuccess, isLoading, isSafeResultUnconfirmed } = useWaitForTransactionReceipt({
     hash,
+    chainId: sourceChainId,
     query: { enabled: !!hash },
   });
   const { data: balances, isLoading: isBalanceLoading } = useSuckersUserTokenBalance();
@@ -539,11 +540,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         {review && targetChainId && prepareQuote.data ? (
           <TxConfirmDialog
             open
-            onOpenChange={(open) => {
-              if (!open) setReview(false);
-            }}
+            onClose={() => setReview(false)}
             title="Confirm move"
-            chainId={sourceChainId}
             preparing={needsApproval === null}
             status={needsApproval === null ? "Checking permission to use your tokens…" : null}
             steps={[

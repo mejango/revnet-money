@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxError } from "@/components/ui/TxError";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { jb721TiersHookAbi, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
@@ -175,7 +176,8 @@ export function EditItemMediaModal({
                           })
                         }
                       />
-                      {chainDisplayName(destination.chainId)} · #{destination.projectId.toString()}
+                      Project #{destination.projectId.toString()} on{" "}
+                      {chainDisplayName(destination.chainId)}
                     </label>
                     {selected ? (
                       <select
@@ -192,7 +194,7 @@ export function EditItemMediaModal({
                         <option value="">Choose an item…</option>
                         {destination.shop.tiers.map((item) => (
                           <option key={item.id} value={item.id}>
-                            Item #{item.id} · category {item.category}
+                            Item #{item.id}, category {item.category}
                           </option>
                         ))}
                       </select>
@@ -257,11 +259,7 @@ export function EditItemMediaModal({
             ) : null}
           </>
         )}
-        {error && !reviewing ? (
-          <p role="alert" className="text-sm text-red-700">
-            {error}
-          </p>
-        ) : null}
+        <TxError error={reviewing ? null : error} />
         <Button variant="outline" disabled={busy} onClick={onClose}>
           Close
         </Button>
@@ -269,9 +267,8 @@ export function EditItemMediaModal({
       {reviewing && prepared ? (
         <TxConfirmDialog
           open
-          onOpenChange={setReviewing}
+          onClose={() => setReviewing(false)}
           title="Confirm media replacement"
-          chainId={chainId}
           activeIndex={busy ? 0 : -1}
           action="Replace media"
           onConfirm={() => void submit()}
@@ -288,7 +285,7 @@ export function EditItemMediaModal({
           {prepared.map(({ destination, tierId, uri: metadataUri }) => (
             <SummaryRow
               key={`${destination.chainId}:${destination.projectId}`}
-              label={`${chainDisplayName(destination.chainId)} · project #${destination.projectId} · item #${tierId}`}
+              label={`Item #${tierId} of project #${destination.projectId} on ${chainDisplayName(destination.chainId)}`}
             >
               <span className="break-all">{metadataUri}</span>
             </SummaryRow>

@@ -843,7 +843,7 @@ export function SafeQueueCard({
                           <button
                             type="button"
                             className="bg-melon-700 px-3 py-1 text-white disabled:opacity-50"
-                            disabled={busy !== null || !current}
+                            disabled={busy !== null || !current || !address}
                             title={
                               current ? undefined : `Nonce ${row.policy.nonce} must execute first.`
                             }
@@ -875,11 +875,8 @@ export function SafeQueueCard({
       {review ? (
         <TxConfirmDialog
           open
-          onOpenChange={(next) => {
-            if (!next) setReview(null);
-          }}
+          onClose={() => setReview(null)}
           title={review.kind === "sign" ? "Confirm signature" : "Confirm execution"}
-          chainId={review.row.chainId as JBChainId}
           steps={[
             review.kind === "sign"
               ? {
@@ -924,12 +921,10 @@ export function SafeQueueCard({
       {batch ? (
         <TxConfirmDialog
           open
-          onOpenChange={(next) => {
-            if (next || batch.running) return;
-            setBatch(null);
+          onClose={() => {
+            if (!batch.running) setBatch(null);
           }}
           title={`Execute ${batch.rows.length} Safe transactions`}
-          chainId={batch.rows[0].row.chainId as JBChainId}
           stepsIntro="One Relayr payment runs each chain's next fully signed transaction. Later nonces need a new review after these land."
           steps={batch.rows.map(({ row, tx }) => ({
             key: String(row.chainId),
@@ -937,9 +932,10 @@ export function SafeQueueCard({
             detail: batch.status[row.chainId] ?? "Waiting",
           }))}
           activeIndex={-1}
-          action={batch.done ? "Done" : `Pay once and execute ${batch.rows.length}`}
-          onConfirm={batch.done ? () => setBatch(null) : () => void executeAll()}
+          action={`Pay once and execute ${batch.rows.length}`}
+          onConfirm={() => void executeAll()}
           busy={batch.running}
+          complete={batch.done}
           status={batch.message}
           error={batch.error}
         />

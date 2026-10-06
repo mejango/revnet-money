@@ -5,12 +5,15 @@ import type {
 } from "@/lib/nana/types";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
 
 const mocks = vi.hoisted(() => ({
   sendRelayrTx: vi.fn(),
   startPolling: vi.fn(),
   paymentHash: undefined as string | undefined,
   safe: false,
+  /** Whether a wallet is connected. ButtonWithWallet's own test pins what it shows without one. */
+  connected: true,
   bundle: {
     response: undefined as RelayrGetBundleResponse | undefined,
     error: undefined as unknown,
@@ -33,14 +36,19 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     children,
     loading: _loading,
     targetChainId: _chain,
-    connectWalletText: _connect,
+    connectWalletText,
     ...props
   }: {
     children: React.ReactNode;
     loading?: boolean;
     targetChainId?: number;
     connectWalletText?: string;
-  }) => <button {...props}>{children}</button>,
+  }) =>
+    mocks.connected ? (
+      <button {...props}>{children}</button>
+    ) : (
+      <button type="button">{connectWalletText ?? "Connect Wallet"}</button>
+    ),
 }));
 vi.mock("@/lib/nana/project", () => ({ useChain: () => undefined, useJBChainId: () => undefined }));
 vi.mock("@/app/create/buttons/GoToProjectButton", () => ({
@@ -84,6 +92,7 @@ async function confirmPayment() {
 beforeEach(() => {
   mocks.paymentHash = undefined;
   mocks.safe = false;
+  mocks.connected = true;
   mocks.bundle = {
     response: undefined,
     error: undefined,
@@ -226,5 +235,46 @@ describe("wallet-action:create-revnet — PayAndDeploy settlement", () => {
     expect(pay).toBeDisabled();
     fireEvent.click(pay);
     expect(mocks.sendRelayrTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes back to the quote with Cancel, and pays nothing", async () => {
+    render(component());
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByRole("option", { name: "Ethereum (1 ETH)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pay and launch" }));
+    const confirm = await findConfirm();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Pay and launch" })).toBeEnabled();
+  });
+
+  it("refuses every way out while the payment is sent, then closes once it is", async () => {
+    let finish!: (hash: string) => void;
+    mocks.sendRelayrTx.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(component());
+    await confirmPayment();
+    const confirm = await findConfirm();
+
+    expect(within(confirm).getByRole("button", { name: "Pay and launch" })).toBeDisabled();
+    expectEveryWayOutRefused(confirm);
+
+    finish(HASH);
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(mocks.startPolling).toHaveBeenCalledWith(QUOTE.bundle_uuid);
+    expect(mocks.sendRelayrTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for a wallet before the payment's confirm opens", () => {
+    mocks.connected = false;
+    render(component());
+
+    expect(screen.queryByRole("button", { name: "Pay and launch" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Connect Wallet" }));
+
+    expect(confirmIsOpen()).toBe(false);
+    expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
   });
 });

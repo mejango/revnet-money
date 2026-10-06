@@ -35,6 +35,11 @@ const mocks = vi.hoisted(() => ({
   refreshPosition: vi.fn(),
   // The hash a flow's write sent last, as its write hook reports it.
   sent: undefined as `0x${string}` | undefined,
+  /**
+   * What the receipt watcher reports for a sent hash: still loading, a Safe
+   * proposal, a receipt that never lands, or a reverted one.
+   */
+  receipt: { pending: false, safe: false, neverLands: false, reverted: false },
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -72,14 +77,42 @@ vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
   proposeSafeBatch: vi.fn(),
   submittedViaSafe: () => false,
   useSafeConnection: () => false,
-  // The flow's own Safe proposal, once sent, ends where the app can't confirm its result.
-  useWaitForTransactionReceipt: ({ hash }: { hash?: Hex }) => ({
-    isSuccess: false,
-    isSafeResultUnconfirmed: Boolean(hash) && hash === mocks.sent,
-  }),
+  // The reviewed receipt hook: a sent hash exists only on Base, the position's
+  // chain, and a Safe proposal counts as loading until it executes. A receipt
+  // that never lands keeps an unbounded watch loading; a bounded one ends
+  // unconfirmed. The flow's own Safe proposal, once sent, ends where the app
+  // can't confirm its result.
+  useWaitForTransactionReceipt: ({
+    hash,
+    chainId,
+    timeout,
+  }: {
+    hash?: string;
+    chainId?: number;
+    timeout?: number;
+  }) => {
+    const sent = Boolean(hash) && chainId === 8453;
+    const watchEnded = sent && mocks.receipt.neverLands && typeof timeout === "number";
+    const safeResultUnconfirmed = Boolean(hash) && hash === mocks.sent;
+    return {
+      isSuccess: false,
+      isError: sent && mocks.receipt.reverted,
+      error:
+        sent && mocks.receipt.reverted ? new Error(`Transaction ${hash} reverted onchain.`) : null,
+      isLoading:
+        sent &&
+        !watchEnded &&
+        !safeResultUnconfirmed &&
+        (mocks.receipt.pending || mocks.receipt.safe || mocks.receipt.neverLands),
+      isSafeProposal: sent && mocks.receipt.safe,
+      isUnconfirmed: watchEnded,
+      isSafeResultUnconfirmed: safeResultUnconfirmed,
+    };
+  },
   useWriteContract: () => ({ writeContractAsync: mocks.write, isPending: false, data: mocks.sent }),
 }));
-vi.mock("@/lib/waitForReceipt", () => ({
+vi.mock("@/lib/waitForReceipt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/waitForReceipt")>()),
   waitForReceiptWithRetry: async () => ({ status: "success" }),
 }));
 vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => {
@@ -267,7 +300,25 @@ beforeEach(() => {
   mocks.sent = undefined;
   mocks.write.mockReset();
   mocks.refreshPosition.mockReset().mockResolvedValue(position);
+  mocks.receipt = { pending: false, safe: false, neverLands: false, reverted: false };
 });
+
+/** Opens the removal confirm for the one position and presses its action. */
+async function removePosition() {
+  const seen = renderHosted(
+    "Your liquidity",
+    <LiquidityManager states={[state]} tokenSymbol="ART" heading={null} />,
+  );
+  await waitFor(() => expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  const confirm = await confirmPanel();
+  await waitFor(() =>
+    expect(within(confirm).getByRole("button", { name: "Remove the position" })).toBeEnabled(),
+  );
+  fireEvent.click(within(confirm).getByRole("button", { name: "Remove the position" }));
+  await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+  return { seen, confirm };
+}
 
 describe("liquidity flows hold their dialog while a send is in flight", () => {
   it("add liquidity", async () => {
@@ -389,6 +440,98 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     reread(position);
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Your liquidity", seen);
+  });
+
+  it("remove, through the receipt after the wallet sends it", async () => {
+    mocks.write.mockResolvedValue(HASH);
+    mocks.receipt.pending = true;
+    const { seen, confirm } = await removePosition();
+
+    await within(confirm).findByText("Waiting for confirmation…");
+    // The sent removal cannot be sent again while it confirms.
+    expect(within(confirm).getByRole("button", { name: "Remove the position" })).toBeDisabled();
+    expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    tryEveryWayOut("Your liquidity", seen);
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("remove, proposed to Safe, ends on Done", async () => {
+    mocks.write.mockResolvedValue(HASH);
+    mocks.receipt.safe = true;
+    const { seen, confirm } = await removePosition();
+
+    const done = await within(confirm).findByRole("button", { name: "Done" });
+    expect(confirm).toHaveTextContent("The removal was proposed to Safe");
+    expect(within(confirm).queryByRole("button", { name: "Remove the position" })).toBeNull();
+    fireEvent.click(done);
+    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
+    expect(seen).toEqual([]);
+    // The proposal may still execute: the position cannot be sent again from here.
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    expect(
+      screen.getByText("Removal proposed to Safe. The table updates once it executes."),
+    ).toBeInTheDocument();
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("remove, proposed to Safe with a result the app can't confirm, ends on Done with its line", async () => {
+    mocks.write.mockImplementation(async () => {
+      // The write's own hash, a proposal the app can't follow to its result.
+      mocks.sent = HASH;
+      return HASH;
+    });
+    mocks.receipt.safe = true;
+    const { seen, confirm } = await removePosition();
+
+    const done = await within(confirm).findByRole("button", { name: "Done" });
+    expect(confirm).toHaveTextContent(
+      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+    );
+    expect(confirm).not.toHaveTextContent("awaits approvals");
+    expect(within(confirm).queryByRole("button", { name: "Remove the position" })).toBeNull();
+    fireEvent.click(done);
+    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
+    expect(seen).toEqual([]);
+    // The proposal may still execute: the position cannot be sent again from here.
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    expect(
+      screen.getByText(
+        "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Removal proposed to Safe/)).toBeNull();
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("remove, a receipt that never lands: the watch ends on Done with the action locked", async () => {
+    mocks.write.mockResolvedValue(HASH);
+    mocks.receipt.neverLands = true;
+    const { seen, confirm } = await removePosition();
+
+    const done = await within(confirm).findByRole("button", { name: "Done" });
+    expect(confirm).toHaveTextContent("Couldn't confirm the removal yet.");
+    expect(within(confirm).queryByRole("button", { name: "Remove the position" })).toBeNull();
+    fireEvent.click(done);
+    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
+    expect(seen).toEqual([]);
+    // The removal may still land: the position cannot be sent again from here.
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    expect(screen.getByText("Couldn't confirm the removal yet.")).toBeInTheDocument();
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("remove, reverted: releases the confirm with the receipt's error", async () => {
+    mocks.write.mockResolvedValue(HASH);
+    mocks.receipt.reverted = true;
+    const { confirm } = await removePosition();
+
+    await waitFor(() =>
+      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeEnabled(),
+    );
+    expect(confirm).toHaveTextContent(`Transaction ${HASH} reverted onchain.`);
+    expect(within(confirm).getByRole("button", { name: "Remove the position" })).toBeEnabled();
+    expect(within(confirm).queryByRole("button", { name: "Done" })).toBeNull();
+    expect(mocks.write).toHaveBeenCalledTimes(1);
   });
 });
 

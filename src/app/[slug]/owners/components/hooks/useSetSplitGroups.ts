@@ -11,6 +11,7 @@ import {
 } from "@/hooks/useReviewedRelayr";
 import {
   isSafeConnection,
+  isSafeProposalPendingError,
   submittedViaSafe,
   useSafeConnection,
   useWaitForTransactionReceipt,
@@ -27,6 +28,7 @@ import {
 } from "@/lib/sticky";
 import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { wagmiConfig } from "@/lib/wagmiConfig";
+import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
@@ -48,7 +50,9 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
   const [onSuccessCalled, setOnSuccessCalled] = useState(false);
-  const [singleTxHash, setSingleTxHash] = useState<Hash>();
+  // The single-chain change's transaction, watched on the chain it was sent to.
+  const [singleTx, setSingleTx] = useState<{ hash: Hash; chainId: number }>();
+  const singleTxHash = singleTx?.hash;
 
   const { writeContractAsync, isPending } = useWriteContract({
     mutation: {
@@ -60,9 +64,13 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   const {
     isLoading: isTxLoading,
     isSuccess,
+    isSafeProposal,
     isSafeResultUnconfirmed: isTxUnconfirmed,
+    isUnconfirmed: isTxReceiptUnconfirmed,
   } = useWaitForTransactionReceipt({
     hash: singleTxHash,
+    chainId: singleTx?.chainId,
+    timeout: RECEIPT_WAIT_TIMEOUT_MS,
   });
 
   useEffect(() => {
@@ -90,7 +98,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
               `project-splits:${chain.chainId}:${chain.projectId}:${chain.rulesetId}:${RESERVED_TOKEN_SPLIT_GROUP_ID}`,
             ),
           );
-        setSingleTxHash(undefined);
+        setSingleTx(undefined);
 
         // Single chain - use direct writeContract
         if (selectedChains.length === 1) {
@@ -108,7 +116,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
             address: contractAddress(JBCoreContracts.JBController, chain.chainId),
             args: prepareArgs(chain),
           });
-          setSingleTxHash(hash);
+          setSingleTx({ hash, chainId: chain.chainId });
 
           return { success: true };
         }
@@ -202,6 +210,11 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
         resetRelayr();
         return { success: true };
       } catch (e: any) {
+        // A chain's write went to the Safe as a proposal, and the later chains wait on it.
+        if (isSafeProposalPendingError(e)) {
+          toast({ title: "Safe proposal submitted", description: e.message });
+          return { success: false, proposal: e.message as string };
+        }
         toast({
           variant: "destructive",
           title: "Error",
@@ -235,6 +248,10 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
     isTxLoading,
     isTxUnconfirmed,
     isSuccess,
+    /** The single-chain write went to the Safe as a proposal and has not executed. */
+    isSafeProposal,
+    /** The single-chain write's watch ended with no receipt; it may still land. */
+    isTxReceiptUnconfirmed,
     relayrAvailable: !viaSafe,
   };
 }

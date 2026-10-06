@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
@@ -568,7 +569,7 @@ function describeSafeOutcome(
   if (result.chains) {
     parts.push(`executed directly on ${result.chains} chain${result.chains === 1 ? "" : "s"}`);
   }
-  return `${parts.join("; ")}. Nothing changes until the Safe's signers confirm and execute it — from the Safe queue card above or the Safe app.`;
+  return `${parts.join("; ")}. Nothing changes until the Safe's signers confirm and execute it, in the Safe queue card above or the Safe app.`;
 }
 
 function BuybackActionForm({
@@ -624,6 +625,8 @@ function BuybackActionForm({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<ChainWrite[] | null>(null);
+  // A send that went to the Safe as a proposal: nothing more to send from here.
+  const [proposed, setProposed] = useState(false);
 
   const chosen = useMemo(
     () => available.filter((state) => selected.has(state.chainId)),
@@ -783,6 +786,7 @@ function BuybackActionForm({
     if (busy || !address || !ack) return;
     setError(null);
     setStatus(null);
+    setProposed(false);
     try {
       setReview(buildWrites());
     } catch (e) {
@@ -825,7 +829,7 @@ function BuybackActionForm({
         setStatus("Relayr payment proposed to the Safe. The bundle runs once it executes.");
         toast({
           title: "Safe payment proposal submitted",
-          description: `${action.title} is not applied yet — complete the Relayr payment in Safe.`,
+          description: `${action.title} is not applied yet. Complete the Relayr payment in Safe.`,
         });
       } else if (result.safeQueued || result.safeConfirmed) {
         const message = describeSafeOutcome(action.title, result);
@@ -841,12 +845,14 @@ function BuybackActionForm({
       onDone();
     } catch (e) {
       const message = formatWalletError(e) || "Could not complete this action.";
-      setError(message);
-      toast(
-        isSafeProposalPendingError(e)
-          ? { title: "Safe proposal submitted", description: message }
-          : { variant: "destructive", title: "Error", description: message },
-      );
+      if (isSafeProposalPendingError(e)) {
+        setStatus(message);
+        setProposed(true);
+        toast({ title: "Safe proposal submitted", description: message });
+      } else {
+        setError(message);
+        toast({ variant: "destructive", title: "Error", description: message });
+      }
     } finally {
       setBusy(false);
     }
@@ -1003,15 +1009,15 @@ function BuybackActionForm({
         </ButtonWithWallet>
       </div>
       {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
-      {error && !review ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+      {error && !review ? <ErrorNote message={error} /> : null}
       {review ? (
         <TxConfirmDialog
           open
-          onOpenChange={(next) => {
-            if (!next) setReview(null);
+          onClose={() => {
+            setReview(null);
+            setProposed(false);
           }}
           title={action.title}
-          chainId={review[0].chainId}
           steps={[
             {
               title: action.title,
@@ -1028,6 +1034,7 @@ function BuybackActionForm({
           onConfirm={() => void submit()}
           busy={busy}
           status={status}
+          complete={proposed}
           error={error}
         >
           <SummaryRow label="On">

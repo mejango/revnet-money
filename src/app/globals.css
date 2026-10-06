@@ -161,6 +161,14 @@ dialog[data-covered]::backdrop {
 }
 
 /*
+ * A confirm hosted in a dialog replaces the panel's content with its own
+ * header, body and footer, which carry their own padding.
+ */
+dialog.ui-dialog > div:has(> [data-tx-confirm]) {
+  padding: 0;
+}
+
+/*
  * The Para sign-in overlay has to be usable above an open dialog, and the top
  * layer is the only place where that is true, so its host is a dialog too.
  * Para paints its own overlay inside the host, hence the transparent backdrop.

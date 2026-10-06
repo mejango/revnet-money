@@ -1,7 +1,11 @@
+import { AddItemsModal } from "@/app/[slug]/components/v6/shop/AddItemsModal";
+import { EditItemMediaModal } from "@/app/[slug]/components/v6/shop/EditItemMediaModal";
+import type { ShopInventory, ShopTier } from "@/app/[slug]/components/v6/shop/shopLib";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
 
 const mocks = vi.hoisted(() => ({
   runBatch: vi.fn(),
@@ -58,44 +62,16 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     </button>
   ),
 }));
-vi.mock("@/components/ui/dialog", () => ({
+// The shop modals render inline here. The confirm's own dialog shell keeps the
+// real native-dialog mechanics.
+vi.mock("@/components/ui/dialog", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/ui/dialog")>()),
   Dialog: ({ children }: { children: ReactNode }) => <>{children}</>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   DialogHeader: ({ children }: { children: ReactNode }) => <header>{children}</header>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
-vi.mock("@/components/ui/TxConfirmDialog", () => ({
-  SummaryRow: ({ label, children }: { label: ReactNode; children: ReactNode }) => (
-    <div>
-      {label}
-      {children}
-    </div>
-  ),
-  TxConfirmDialog: ({
-    children,
-    onConfirm,
-    busy,
-    error,
-  }: {
-    children: ReactNode;
-    onConfirm: () => void;
-    busy?: boolean;
-    error?: string;
-  }) => (
-    <div role="dialog">
-      {children}
-      <button disabled={busy} onClick={onConfirm}>
-        Confirm transaction
-      </button>
-      {error ? <p role="alert">{error}</p> : null}
-    </div>
-  ),
-}));
-
-import { AddItemsModal } from "@/app/[slug]/components/v6/shop/AddItemsModal";
-import { EditItemMediaModal } from "@/app/[slug]/components/v6/shop/EditItemMediaModal";
-import type { ShopInventory, ShopTier } from "@/app/[slug]/components/v6/shop/shopLib";
 
 const flags = {
   noNewTiersWithReserves: false,
@@ -120,6 +96,11 @@ const peerShop = {
 } as ShopInventory;
 const guard = { address: primaryShop.hook, data: "0x1234", expected: "0x5678" };
 const digest = `0x${"77".repeat(32)}`;
+
+/** The open confirm's action. */
+async function confirmAction(name: string) {
+  return within(await findConfirm()).getByRole("button", { name });
+}
 
 function mount(kind: "add" | "media") {
   return render(
@@ -174,7 +155,7 @@ describe("wallet-action:shop-items — selected-chain shop dialogs", () => {
     fireEvent.change(screen.getByLabelText("Item 1 price on Ethereum"), { target: { value: "2" } });
     fireEvent.change(screen.getByLabelText("Item 1 price on Base"), { target: { value: "3.25" } });
     fireEvent.click(screen.getByRole("button", { name: "Add items" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm transaction" }));
+    fireEvent.click(await confirmAction("Add items"));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
     const input = mocks.runBatch.mock.calls[0][0];
     expect(input.scope).toBe("shop-add:1:7");
@@ -212,10 +193,11 @@ describe("wallet-action:shop-items — selected-chain shop dialogs", () => {
     const view = mount("add");
     fireEvent.change(screen.getByLabelText("Item 1 price on Ethereum"), { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "Add items" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm transaction" }));
+    fireEvent.click(await confirmAction("Add items"));
     await screen.findByText("Network result unknown");
     expect(screen.getByRole("checkbox", { name: "Add on Base" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm transaction" }));
+    // The failed send leaves the frozen batch in the confirm to send again.
+    fireEvent.click(await confirmAction("Add items"));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(2));
     expect(mocks.pinDraftItems).toHaveBeenCalledOnce();
     expect(mocks.runBatch.mock.calls[1][0].calls).toEqual(mocks.runBatch.mock.calls[0][0].calls);
@@ -243,7 +225,7 @@ describe("wallet-action:shop-items — selected-chain shop dialogs", () => {
     expect(mocks.pinMediaEdits).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Item on Base"), { target: { value: "12" } });
     fireEvent.click(screen.getByRole("button", { name: "Review media update" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm transaction" }));
+    fireEvent.click(await confirmAction("Replace media"));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
     const calls = mocks.runBatch.mock.calls[0][0].calls;
     expect(calls).toHaveLength(2);
@@ -278,5 +260,54 @@ describe("wallet-action:shop-items — selected-chain shop dialogs", () => {
     );
     expect(mocks.readMediaEditSource).not.toHaveBeenCalled();
     expect(mocks.pinMediaEdits).not.toHaveBeenCalled();
+  });
+
+  it("goes back to the items with Cancel, and adds nothing", async () => {
+    mount("add");
+    fireEvent.change(screen.getByLabelText("Item 1 price on Ethereum"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add items" }));
+    const confirm = await findConfirm();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(mocks.pinDraftItems).not.toHaveBeenCalled();
+    expect(mocks.runBatch).not.toHaveBeenCalled();
+  });
+
+  it("refuses every way out while the items are added, then closes once they land", async () => {
+    let finish!: (outcome: unknown) => void;
+    mocks.runBatch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    mount("add");
+    fireEvent.change(screen.getByLabelText("Item 1 price on Ethereum"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add items" }));
+    const confirm = await findConfirm();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Add items" }));
+    await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
+
+    expect(within(confirm).getByRole("button", { name: "Add items" })).toBeDisabled();
+    expectEveryWayOutRefused(confirm);
+
+    finish({ status: "success", hashes: [] });
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(mocks.runBatch).toHaveBeenCalledOnce();
+  });
+
+  it("refuses every way out while media is replaced, then closes once it lands", async () => {
+    let finish!: (outcome: unknown) => void;
+    mocks.runBatch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    mount("media");
+    fireEvent.change(screen.getByLabelText("Replacement media URI"), {
+      target: { value: "ipfs://replacement" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review media update" }));
+    const confirm = await findConfirm();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Replace media" }));
+    await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
+
+    expectEveryWayOutRefused(confirm);
+
+    finish({ status: "success", hashes: [] });
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
   });
 });

@@ -5,6 +5,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxError } from "@/components/ui/TxError";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { formatWalletError } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
@@ -206,7 +207,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
                   }}
                 />
                 <ChainLogo chainId={row.chainId} width={16} height={16} />
-                {chainName(row.chainId)} · Project #{String(row.projectId)}
+                Project #{String(row.projectId)} on {chainName(row.chainId)}
               </label>
               {row.error ? (
                 <p className="mt-1 text-sm text-red-600">Could not verify payouts: {row.error}</p>
@@ -226,7 +227,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
                     >
                       {row.options.map((candidate) => (
                         <option key={candidate.key} value={candidate.key}>
-                          {candidate.symbol}, limit in {payoutCurrencyLabel(candidate)} ·{" "}
+                          {candidate.symbol}, limit in {payoutCurrencyLabel(candidate)}, terminal{" "}
                           {candidate.terminal}
                         </option>
                       ))}
@@ -234,7 +235,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
                   ) : null}
                   <p className="mt-1 text-xs text-zinc-500">
                     Available {formatUnits(option.availableAmount, option.decimals)}{" "}
-                    {payoutCurrencyLabel(option)} · Terminal balance{" "}
+                    {payoutCurrencyLabel(option)}, terminal balance{" "}
                     {formatUnits(option.balance, option.decimals)} {option.symbol}
                   </p>
                   {selected.has(row.chainId) ? (
@@ -291,20 +292,15 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
           {status}
         </p>
       ) : null}
-      {error && !review ? (
-        <p role="alert" className="mt-2 text-sm text-red-600">
-          {error}
-        </p>
-      ) : null}
+      <TxError error={review ? null : error} />
       {review ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open && !busy) setReview(null);
+          onClose={() => {
+            if (!busy) setReview(null);
           }}
           title="Review project payouts"
           action="Send payouts"
-          chainId={review.destinations[0]!.option.chainId}
           steps={review.destinations.map(({ option }) => ({
             key: option.key,
             title: `Send payouts on ${chainName(option.chainId)}`,
@@ -318,18 +314,21 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
           {review.destinations.map(({ option, call }) => (
             <SummaryRow
               key={option.key}
-              label={`${chainName(option.chainId)} · Project #${option.projectId}`}
+              label={`Project #${option.projectId} on ${chainName(option.chainId)}`}
             >
               <span>
                 {formatUnits(call.args[2], option.decimals)} {payoutCurrencyLabel(option)}
               </span>
               <span className="block text-xs text-zinc-500">
-                Minimum {formatUnits(call.args[4], option.decimals)} {option.symbol} before fees ·
+                Minimum {formatUnits(call.args[4], option.decimals)} {option.symbol} before fees
+              </span>
+              <span className="block text-xs text-zinc-500">
                 Ruleset {option.rulesetId}, cycle {option.cycleNumber}
               </span>
               <span className="block break-all text-xs text-zinc-500">
-                Terminal {option.terminal} · Token {option.token}
+                Terminal {option.terminal}
               </span>
+              <span className="block break-all text-xs text-zinc-500">Token {option.token}</span>
               {payoutRecipients(option, review.account).map((recipient, index) => (
                 <span key={index} className="block break-all text-xs">
                   {recipient}

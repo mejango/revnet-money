@@ -417,11 +417,8 @@ export function ReallocateDialog({
           {review && cashOutChainId ? (
             <TxConfirmDialog
               open
-              onOpenChange={(open) => {
-                if (!open) setReview(false);
-              }}
+              onClose={() => setReview(false)}
               title="Confirm refinancing"
-              chainId={Number(cashOutChainId) as JBChainId}
               steps={[
                 ...(grantsPermission
                   ? [

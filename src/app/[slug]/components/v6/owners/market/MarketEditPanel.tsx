@@ -476,7 +476,7 @@ export function MarketEditPanel({
             {formatPrice(corridor.ceiling)} {pool.pair.symbol}/{tokenSymbol}).
             {moved
               ? " The floor or ceiling moved since these positions were minted, so their edges are stale."
-              : " Not needed right now — the positions already match it."}
+              : " Not needed: the positions already match it."}
           </span>
         </label>
       ) : (
@@ -520,11 +520,8 @@ export function MarketEditPanel({
       {current || busy ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setReviewed(null);
-          }}
+          onClose={() => setReviewed(null)}
           title="Confirm market edit"
-          chainId={state.chainId}
           preparing={!current}
           steps={current?.steps ?? []}
           activeIndex={busy ? stepIndex : -1}
@@ -544,7 +541,7 @@ export function MarketEditPanel({
               <SummaryRow label="Corridor">
                 {corridor
                   ? `${formatPrice(corridor.floor)} – ${formatPrice(corridor.ceiling)} ${pool.pair.symbol}/${tokenSymbol}`
-                  : "—"}
+                  : "None"}
                 {current.plan.refit ? " (re-fit)" : " (kept)"}
               </SummaryRow>
               {current.plan.token ? (

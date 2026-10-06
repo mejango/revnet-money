@@ -3,28 +3,9 @@ import { ModalCloseButton, ModalDialog } from "@/components/ui/ModalShell";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { topLayerHost } from "@/lib/topLayer";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { isBlockedByModalDialog, openModalDialogs } from "./native-dialog-shim";
-
-vi.mock("@/components/ButtonWithWallet", () => ({
-  ButtonWithWallet: ({
-    children,
-    connectWalletText: _connectWalletText,
-    loading: _loading,
-    targetChainId: _targetChainId,
-    ...props
-  }: {
-    children: ReactNode;
-    connectWalletText?: string;
-    loading?: boolean;
-    targetChainId?: number;
-  }) => (
-    <button type="button" {...props}>
-      {children}
-    </button>
-  ),
-}));
 
 /*
  * `@/components/ui/ModalShell` is the modal API the shared transaction review
@@ -222,24 +203,23 @@ describe("a confirm hosted in a dialog", () => {
     busy,
     placement,
     onOpenChange,
-    onConfirmOpenChange,
+    onConfirmClose,
   }: {
     busy: boolean;
     /** Flows host the confirm in the dialog's content, or beside it in the dialog. */
     placement: "content" | "dialog";
     onOpenChange: (open: boolean) => void;
-    onConfirmOpenChange: (open: boolean) => void;
+    onConfirmClose: () => void;
   }) {
     const confirm = (
       <TxConfirmDialog
         open
-        onOpenChange={onConfirmOpenChange}
         title="Confirm"
-        chainId={8453}
         steps={[{ title: "Approve" }, { title: "Mint" }]}
         activeIndex={1}
         action="Adding liquidity…"
         onConfirm={() => undefined}
+        onClose={onConfirmClose}
         busy={busy}
       />
     );
@@ -258,13 +238,13 @@ describe("a confirm hosted in a dialog", () => {
     "keeps the host open while it is busy, and lets it close once it is not (in the %s)",
     async (placement) => {
       const onOpenChange = vi.fn();
-      const onConfirmOpenChange = vi.fn();
+      const onConfirmClose = vi.fn();
       const view = render(
         <Hosted
           busy
           placement={placement}
           onOpenChange={onOpenChange}
-          onConfirmOpenChange={onConfirmOpenChange}
+          onConfirmClose={onConfirmClose}
         />,
       );
       // The confirm replaced the host's content in place: one dialog, the host's.
@@ -278,17 +258,19 @@ describe("a confirm hosted in a dialog", () => {
       fireEvent.click(hostClose);
 
       expect(onOpenChange).not.toHaveBeenCalled();
-      expect(onConfirmOpenChange).not.toHaveBeenCalled();
+      expect(onConfirmClose).not.toHaveBeenCalled();
       expect(dialog.open).toBe(true);
       expect(hostClose).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+      // The confirm's own way back is closed too: its × and Cancel.
+      expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
 
       view.rerender(
         <Hosted
           busy={false}
           placement={placement}
           onOpenChange={onOpenChange}
-          onConfirmOpenChange={onConfirmOpenChange}
+          onConfirmClose={onConfirmClose}
         />,
       );
       expect(hostClose).toBeEnabled();
@@ -301,7 +283,7 @@ describe("a confirm hosted in a dialog", () => {
   it("lets the backdrop and the host's × close it once the confirm is idle", async () => {
     const onOpenChange = vi.fn();
     const view = render(
-      <Hosted busy placement="content" onOpenChange={onOpenChange} onConfirmOpenChange={vi.fn()} />,
+      <Hosted busy placement="content" onOpenChange={onOpenChange} onConfirmClose={vi.fn()} />,
     );
     const dialog = only();
     await screen.findByText("Adding liquidity…");
@@ -311,7 +293,7 @@ describe("a confirm hosted in a dialog", () => {
         busy={false}
         placement="content"
         onOpenChange={onOpenChange}
-        onConfirmOpenChange={vi.fn()}
+        onConfirmClose={vi.fn()}
       />,
     );
     fireEvent.pointerDown(dialog);

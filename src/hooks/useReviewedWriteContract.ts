@@ -680,14 +680,16 @@ export function useWriteContract(
   const writeContractAsync = useCallback(
     async (variables: Parameters<typeof mutation.writeContractAsync>[0]) => {
       requireNoViewAs();
+      // Every call names its chain. The wallet is switched to that chain after
+      // review; a call without one would go to whichever chain the wallet is on.
+      const chainId = Number(variables.chainId);
+      if (!chainId) throw new Error("This transaction names no chain. Nothing was sent.");
       const before = getAccount(config);
       if (!before.address) throw new Error("Connect a wallet first.");
       // `account` names the account the call was built for. Every check below
       // binds the send to the account connected now, so the two must agree.
       requirePlannedAccount(variables.account, before.address);
       const initialAddress = before.address;
-      const chainId = Number(variables.chainId ?? before.chainId);
-      if (!chainId) throw new Error("Select a network before continuing.");
       const functionName = String(variables.functionName);
       const data = encodeFunctionData({
         abi: variables.abi as Abi,
@@ -905,22 +907,37 @@ export function useWaitForTransactionReceipt(
   const trackedDirectFailure = tracked?.kind === "direct" && tracked.status === "failed";
   const query = useWagmiWaitForTransactionReceipt({
     ...parameters,
+    // A tracked send is watched on the chain it went to, whatever the caller's
+    // form shows by now; an untracked hash on the chain the caller names.
+    chainId: tracked?.chainId ?? parameters.chainId,
     query: {
       ...parameters.query,
       enabled: (parameters.query?.enabled ?? true) && !!hash && !isSafeSubmission,
+      // A bounded watch ends at its timeout. The app's retry would wait the
+      // whole bound again.
+      ...(parameters.timeout ? { retry: false } : {}),
     },
   });
   const receipt = query.data as TransactionReceipt | undefined;
   const reverted = receipt?.status === "reverted";
+  const isSuccess = isSafeSubmission
+    ? tracked?.status === "success"
+    : trackedDirectSuccess || (query.isSuccess && receipt?.status === "success");
+  const isError = isSafeSubmission
+    ? tracked?.status === "failed"
+    : trackedDirectFailure || reverted || (!tracked && query.isError);
   return {
     ...query,
     isLoading: isSafeSubmission ? isSafeProposal && !isSafeResultUnconfirmed : query.isLoading,
-    isSuccess: isSafeSubmission
-      ? tracked?.status === "success"
-      : trackedDirectSuccess || (query.isSuccess && receipt?.status === "success"),
-    isError: isSafeSubmission
-      ? tracked?.status === "failed"
-      : trackedDirectFailure || reverted || (!tracked && query.isError),
+    isSuccess,
+    isError,
+    /**
+     * A direct send whose watch ended, at its timeout or on a node failure, with
+     * no receipt and no tracked outcome. It may still land, so its action stays
+     * locked. (A Safe proposal whose result can't be confirmed is
+     * `isSafeResultUnconfirmed`.)
+     */
+    isUnconfirmed: Boolean(hash) && !isSafeSubmission && query.isError && !isSuccess && !isError,
     error:
       isSafeSubmission && tracked?.status === "failed"
         ? new Error(tracked.message)

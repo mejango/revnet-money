@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -38,6 +39,23 @@ function fixture({
   );
   for (const [file, source] of Object.entries(files)) write(file, source);
   return {
+    /** Adds a route that only the deterministic browser build compiles. */
+    addProofRoute: (route: string, chunks: Record<string, string>) => {
+      write(
+        "app-path-routes-manifest.json",
+        JSON.stringify({ "/page": "/", [`${route}/page`]: route }),
+      );
+      write(
+        `server/app${route}/page_client-reference-manifest.js`,
+        `globalThis.__RSC_MANIFEST["${route}/page"]=${JSON.stringify({
+          clientModules: { proof: { chunks: Object.keys(chunks) } },
+        })};`,
+      );
+      for (const [chunk, source] of Object.entries(chunks)) write(chunk, source);
+      const page = join(directory, "src", "app", ...route.split("/").filter(Boolean));
+      mkdirSync(page, { recursive: true });
+      writeFileSync(join(page, "page.browsertest.tsx"), "export default function Proof() {}\n");
+    },
     run: (budgets: Record<string, string> = {}) => {
       const result = spawnSync(process.execPath, [script], {
         cwd: directory,
@@ -165,5 +183,38 @@ describe("production client bundle manifest URLs", () => {
     const result = fixture({ chunks: [asset] }).run();
     expect(result.status).toBe(1);
     expect(result.output).toContain("client asset outside .next");
+  });
+});
+
+describe("routes only the deterministic browser build compiles", () => {
+  it("leaves their own chunks out of every budget", () => {
+    const checked = fixture();
+    // Random bytes do not compress: about 4 KiB of gzip on a proof route alone.
+    checked.addProofRoute("/proof", {
+      "static/chunks/app/proof/page.js": `globalThis.proof = "${randomBytes(3000).toString("hex")}";`,
+    });
+
+    const result = checked.run({
+      CLIENT_ROUTE_GZIP_BUDGET_KIB: "1",
+      CLIENT_ALL_JS_GZIP_BUDGET_KIB: "1",
+    });
+
+    expect(result.output).toContain("Largest app route: / (");
+    expect(result.output).not.toContain("/proof");
+    expect(result.status).toBe(0);
+  });
+
+  it("still counts a chunk outside a proof route's own files, which a shipped route may load lazily", () => {
+    const checked = fixture();
+    checked.addProofRoute("/proof", {
+      "static/chunks/app/proof/page.js": 'globalThis.proof = "page";',
+      // Listed only in the proof route's manifest, but a shipped route can import it on demand.
+      "static/chunks/shared.js": `globalThis.shared = "${randomBytes(3000).toString("hex")}";`,
+    });
+
+    const result = checked.run({ CLIENT_ALL_JS_GZIP_BUDGET_KIB: "1" });
+
+    expect(result.output).toContain("all client JavaScript is");
+    expect(result.status).toBe(1);
   });
 });
