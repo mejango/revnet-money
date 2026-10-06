@@ -110,7 +110,10 @@ const SAFE_STUCK_LOOKS = (10 * 60_000) / SAFE_LOOK_MS;
  */
 type SafeLook = "done" | "live" | "stuck" | "unknown";
 
-/** `read` of a Safe, answered from its last read for a minute after each one. */
+/**
+ * `read` of a Safe, answered from its last read for a minute after each one.
+ * It keeps one read for any Safe: each watch reads only its own proposal's Safe.
+ */
 function rereadEveryMinute<T>(read: (safe: Address) => Promise<T>): (safe: Address) => Promise<T> {
   let last: { at: number; value: Promise<T> } | undefined;
   return (safe) => {
