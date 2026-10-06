@@ -707,7 +707,7 @@ describe("value flows open over their own Safe proposal the app can't confirm", 
 });
 
 describe("cash out refused by a Safe proposal the app can't confirm", () => {
-  it("says to check that proposal in Safe, and not that the cash out failed", async () => {
+  it("wallet-action:cash-out says to check that proposal in Safe, and not that the cash out failed", async () => {
     const proposal = `0x${"ab".repeat(32)}` as Hex;
     mocks.prepareCashOut.mockResolvedValue({
       route: { expectedReturn: 10n ** 17n },
