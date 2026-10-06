@@ -1444,6 +1444,15 @@ describe("reviewed write hook", () => {
         () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false })),
         true,
       ],
+      [
+        "eleven minutes of service pages that aren't JSON",
+        () =>
+          new Response("<html><body>Safe Transaction Service</body></html>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+        false,
+      ],
     ])(
       "keeps a proposal awaiting approvals followed through %s, which shows nothing about it",
       async (_case, answer, nonceUnreadable) => {

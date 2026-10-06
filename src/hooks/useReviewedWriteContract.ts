@@ -104,6 +104,13 @@ const SAFE_RESULT_HORIZON_MS = 60 * 60_000;
  */
 const SAFE_STUCK_LOOKS = (10 * 60_000) / SAFE_LOOK_MS;
 
+/** Whether `response`'s body is JSON. */
+const isJson = (response: Response) =>
+  response.json().then(
+    () => true,
+    () => false,
+  );
+
 /**
  * What one look of a Safe proposal's watch showed: the proposal settled or ended ("done"), able to
  * execute ("live"), where the app can't follow it ("stuck"), or nothing ("unknown").
@@ -265,15 +272,18 @@ async function watchSafeProposal(
    * unexecuted with its nonce still to come; "stuck" when the app can't follow it: not listed, a
    * record it can't authenticate, a record of other calls (which makes it due to end), executed
    * without its transaction, or a nonce the Safe has moved past; and "unknown" when the service is
-   * down or the nonce can't be read.
+   * down or answers with a page that isn't JSON, or the nonce can't be read.
    */
   const askService = async (safe: Address): Promise<SafeLook> => {
     // The status of the service's answer tells "not indexed yet" (404) and a record it can't
-    // read (2xx) apart from an outage, without reading its error message.
+    // read (a 2xx JSON answer) apart from an outage, without reading its error message. A 2xx page
+    // that isn't JSON is not a record at all.
     let status = 0;
+    let json = false;
     const observed: typeof fetch = async (input, init) => {
       const response = await fetch(input, init);
       status = response.status;
+      json = response.ok && (await isJson(response.clone()));
       return response;
     };
     try {
@@ -316,7 +326,7 @@ async function watchSafeProposal(
       if (nonce === null) return "unknown";
       return nonce > message.nonce ? "stuck" : "live";
     } catch {
-      if (status === 404 || (status >= 200 && status < 300)) return "stuck";
+      if (status === 404 || (status >= 200 && status < 300 && json)) return "stuck";
       updateTransactionActivity(id, {
         status: "safe-proposed",
         message:
