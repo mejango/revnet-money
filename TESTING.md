@@ -28,10 +28,13 @@ rendering safety boundaries but should prefer pure functions and contract
 encoders wherever possible.
 
 `npm run audit:production` is intentionally separate from `npm run check`: it asks
-the configured registry for current advisories and fails on high or critical
-production-dependency findings. Run it before the offline gate whenever
-registry egress is available. A missing/unreachable registry is a hard audit
-failure, not a clean result.
+the configured registry for current advisories and fails on every
+production-dependency finding except two Para advisories with no patched
+release, elliptic GHSA-848j-6mx2-7j84 and node-forge GHSA-86w9-cpqp-85rv. Each
+passes only at its audited severity and only while the script's source checks
+of Para's usage still hold. Run it before the offline gate whenever registry
+egress is available. A missing/unreachable registry is a hard audit failure,
+not a clean result.
 
 Knip retains the four wallet SDK dependencies used by Wagmi's lazily imported
 Coinbase, Safe, and WalletConnect connectors. They are optional peer dependencies
