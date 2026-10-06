@@ -1433,6 +1433,50 @@ describe("reviewed write hook", () => {
       });
     });
 
+    it.each([
+      [
+        "eleven minutes of service outage",
+        () => new Response("Unavailable", { status: 503 }),
+        false,
+      ],
+      [
+        "eleven minutes in which its nonce can't be read",
+        () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false })),
+        true,
+      ],
+    ])(
+      "keeps a proposal awaiting approvals followed through %s, which shows nothing about it",
+      async (_case, answer, nonceUnreadable) => {
+        vi.useFakeTimers();
+        const { activity, hooks } = await freshHarness();
+        const chain = safeChain(ACCOUNT, { nonce: 7n });
+        mocks.safeReads = {
+          ...chain,
+          request: vi.fn(async (args: { method: string; params: readonly unknown[] }) => {
+            if (
+              nonceUnreadable &&
+              (args.params[0] as { data?: Hex } | undefined)?.data === NONCE_CALL
+            ) {
+              throw new Error("The node can't be reached.");
+            }
+            return chain.request(args);
+          }),
+        };
+        savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
+        serviceAnswering(answer);
+
+        hooks.resumeSafeProposalTracking(mocks.config as never);
+        await vi.advanceTimersByTimeAsync(11 * 60_000);
+
+        expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+          status: "safe-proposed",
+        });
+        expect(
+          activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed,
+        ).toBeUndefined();
+      },
+    );
+
     it("starts its run of looks over when a look shows it awaiting approvals", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
