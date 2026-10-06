@@ -132,7 +132,7 @@ export async function prepareReservedDistribution(
         }),
       ),
     })),
-    // What the receipt must prove: every reviewed split's exact share, in order. Kept
+    // The reviewed count and splits the receipt is checked against (verifyActionReceipt). Kept
     // JSON-safe, since the journal saves it with the submitted call.
     reservedReceipt: {
       controller,
