@@ -932,13 +932,13 @@
       "id": "cash-out",
       "risk": "money",
       "files": ["src/app/[slug]/components/Value/RedeemDialog.tsx"],
-      "tests": ["test/cash-out-quote.test.ts", "test/direct-sell-route.test.ts"]
+      "tests": ["test/direct-sell-route.test.ts", "test/value-send-hold.test.tsx"]
     },
     {
       "id": "repay",
       "risk": "money",
       "files": ["src/app/[slug]/components/Value/RepayDialog.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "tests": ["test/value-send-hold.test.tsx"]
     },
     {
       "id": "burn-tokens",
@@ -965,41 +965,37 @@
       "id": "split-hook",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts", "test/split-hook-card.test.tsx"]
+      "tests": ["test/split-hook-card.test.tsx"]
     },
     {
       "id": "token-admin",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/owners/V6TokenPanel.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts", "test/token-panel-routing.test.tsx"]
+      "tests": ["test/token-panel-routing.test.tsx"]
     },
     {
       "id": "split-groups",
       "risk": "project-control",
       "files": ["src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts"],
-      "tests": ["test/wallet-project-controls.test.ts", "test/relayr-write-routing.test.tsx"]
+      "tests": ["test/relayr-write-routing.test.tsx"]
     },
     {
       "id": "metadata",
       "risk": "project-control",
       "files": ["src/app/[slug]/about/components/EditMetadataDialog.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts", "test/edit-metadata-dialog.test.tsx"]
+      "tests": ["test/edit-metadata-dialog.test.tsx"]
     },
     {
       "id": "project-payer",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/extras/PayerDeployForm.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts", "test/payer-deploy-form.test.tsx"]
+      "tests": ["test/payer-deploy-form.test.tsx"]
     },
     {
       "id": "project-handle",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"],
-      "tests": [
-        "test/wallet-project-controls.test.ts",
-        "test/project-handles.test.ts",
-        "test/project-handle-confirm.test.tsx"
-      ]
+      "tests": ["test/project-handles.test.ts", "test/project-handle-confirm.test.tsx"]
     },
     {
       "id": "operator-writes",
@@ -1012,7 +1008,6 @@
         "src/app/[slug]/components/v6/operator/useOperatorWrites.ts"
       ],
       "tests": [
-        "test/wallet-project-controls.test.ts",
         "test/operator-safe-route.test.ts",
         "test/operator-safe-proposal.test.tsx",
         "test/relayr-write-routing.test.tsx",
@@ -1036,13 +1031,13 @@
       "id": "settlement-sync",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts", "test/settlement-confirms.test.tsx"]
+      "tests": ["test/settlement-confirms.test.tsx"]
     },
     {
       "id": "queued-movements",
       "risk": "money",
       "files": ["src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts", "test/settlement-confirms.test.tsx"]
+      "tests": ["test/settlement-confirms.test.tsx"]
     },
     {
       "id": "shop-items",
@@ -1053,7 +1048,6 @@
         "src/app/[slug]/components/v6/shop/EditItemMediaModal.tsx"
       ],
       "tests": [
-        "test/wallet-project-controls.test.ts",
         "test/mint-item-modal.test.ts",
         "test/shop-batch.test.ts",
         "test/shop-media-edit.test.ts",
