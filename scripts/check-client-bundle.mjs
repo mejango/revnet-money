@@ -48,9 +48,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // creation proof and its two pinned proxy creation codes, the strict Safe transaction
 // and service readers, and the distribution receipt verifiers, which decode every
 // log with the full controller, terminal and JBTokens ABIs. With the Safe badge's
-// lazy import narrowed to the one export it uses, all client JavaScript measures
-// 2640.1 KiB against origin/main's 2626.8 KiB. The aggregate budget rises by the
-// minimum 14 KiB; route and route-referenced budgets remain unchanged.
+// lazy import narrowed to the one export it uses, all client JavaScript measured
+// 2640.1 KiB against 2626.8 KiB on main at a7609431, and the aggregate budget rises to
+// 2641 KiB; route and route-referenced budgets remain unchanged.
 // Binding each Safe proposal's result to the calls it was reviewed to run, its live
 // approval count, the cached creation records and the unproven Ethereum handles line
 // measure 2641.3 KiB against 2640.0 KiB; the aggregate budget rises by the minimum 1 KiB.
