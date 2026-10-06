@@ -44,7 +44,24 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Moving the shared diagnostics trigger into Extras adds 191 bytes for the
 // section and button (2,689,893 -> 2,690,084 bytes gzip). The dialog stays in one chunk;
 // only the aggregate ceiling moves up by the minimum 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2628);
+// The SDK's Safe checks replace revnet's copies: authority identity with the Safe
+// creation proof and its two pinned proxy creation codes, the strict Safe transaction
+// and service readers, and the distribution receipt verifiers, which decode every
+// log with the full controller, terminal and JBTokens ABIs. With the Safe badge's
+// lazy import narrowed to the one export it uses, all client JavaScript measured
+// 2640.1 KiB against 2626.8 KiB on main at a7609431, and the aggregate budget rises to
+// 2641 KiB; route and route-referenced budgets remain unchanged.
+// Binding each Safe proposal's result to the calls it was reviewed to run, its live
+// approval count, the cached creation records and the unproven Ethereum handles line
+// measure 2641.3 KiB against 2640.0 KiB; the aggregate budget rises by the minimum 1 KiB.
+// Ending every Safe proposal the app can't follow (the watch's give-up rules and its read of a
+// replaced nonce), the account's Dismiss and one bounded creation read for the page as well
+// measure 2642.0 KiB against 2641.5 KiB, at the budget; it rises by the minimum 1 KiB.
+// Following a Safe proposal to the chain's answer before it ends (its run of looks, the looks
+// that learn nothing, a receipt's hour from its execution), the loan dialogs' unconfirmed line
+// and the flows that stop reading such a proposal as pending measure 2643.0 KiB against
+// 2641.9 KiB, at the budget; it rises by the minimum 1 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2644);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

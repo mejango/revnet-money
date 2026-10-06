@@ -3,12 +3,9 @@ import {
   buildStep,
   checkBatchOrder,
   composeBatch,
-  decodeMultiSend,
   describeQueuedBatch,
-  encodeMultiSend,
   mirrorBatch,
   moveStep,
-  MULTI_SEND_CALL_ONLY,
   readBatch,
   removeStep,
   stepFromWrite,
@@ -18,7 +15,12 @@ import {
   type BatchStep,
 } from "@/lib/safe-batch";
 import { jbBuybackHookRegistryAbi, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
-import { getAddress, toFunctionSelector, type Address } from "viem";
+import {
+  encodeMultiSend,
+  MULTI_SEND_ABI,
+  MULTI_SEND_CALL_ONLY,
+} from "@bananapus/nana-sdk-core/safe";
+import { concatHex, encodeFunctionData, encodePacked, size, type Address } from "viem";
 import { beforeEach, describe, expect, it } from "vitest";
 
 // wallet-action:safe-batch
@@ -203,40 +205,15 @@ describe("mirroring to another chain", () => {
   });
 });
 
-describe("MultiSend encoding", () => {
+describe("queued batch labels", () => {
   const calls = [hookStep(), poolStep(), terminalStep()].map((step) => ({
     to: step.to,
     data: step.data,
     value: 0n,
   }));
 
-  it("packs op ‖ to ‖ value ‖ length ‖ data for each call behind multiSend(bytes)", () => {
+  it("labels a queued MultiSendCallOnly delegatecall by its calls", () => {
     const encoded = encodeMultiSend(calls);
-    expect(encoded.slice(0, 10)).toBe("0x8d80ff0a");
-    expect(toFunctionSelector("function multiSend(bytes)")).toBe("0x8d80ff0a");
-    // The ABI head: offset (32) then length (32), then the packed bytes.
-    const body = encoded.slice(10);
-    expect(body.slice(0, 64)).toBe("0".repeat(62) + "20");
-    let packed = body.slice(128);
-    for (const call of calls) {
-      const length = (call.data.length - 2) / 2;
-      expect(packed.slice(0, 2)).toBe("00");
-      expect(packed.slice(2, 42)).toBe(call.to.slice(2).toLowerCase());
-      expect(packed.slice(42, 106)).toBe("0".repeat(64));
-      expect(BigInt(`0x${packed.slice(106, 170)}`)).toBe(BigInt(length));
-      expect(packed.slice(170, 170 + length * 2)).toBe(call.data.slice(2));
-      packed = packed.slice(170 + length * 2);
-    }
-    expect(packed.replace(/0/g, "")).toBe("");
-  });
-
-  it("round-trips through decodeMultiSend and labels a queued batch", () => {
-    const encoded = encodeMultiSend(calls);
-    expect(decodeMultiSend(encoded)).toEqual(
-      calls.map((call) => ({ operation: 0, to: getAddress(call.to), value: 0n, data: call.data })),
-    );
-    expect(decodeMultiSend("0x779b0290")).toBeNull();
-    expect(decodeMultiSend(`0x8d80ff0a${"00".repeat(64)}`)).toBeNull();
     expect(describeQueuedBatch({ to: MULTI_SEND_CALL_ONLY, data: encoded, operation: 1 })).toBe(
       "Batch (3 calls)",
     );
@@ -246,8 +223,24 @@ describe("MultiSend encoding", () => {
     expect(describeQueuedBatch({ to: REGISTRY, data: encoded, operation: 1 })).toBeNull();
   });
 
-  it("pins the canonical MultiSendCallOnly address", () => {
-    expect(MULTI_SEND_CALL_ONLY).toBe("0x40A2aCCbd92BCA938b02010E17A5b8929b49130D");
+  it("never labels a batch with a DELEGATECALL entry, which MultiSendCallOnly reverts on", () => {
+    const delegated = encodeFunctionData({
+      abi: MULTI_SEND_ABI,
+      functionName: "multiSend",
+      args: [
+        concatHex(
+          calls.map((call, index) =>
+            encodePacked(
+              ["uint8", "address", "uint256", "uint256", "bytes"],
+              [index === 1 ? 1 : 0, call.to, 0n, BigInt(size(call.data)), call.data],
+            ),
+          ),
+        ),
+      ],
+    });
+    expect(
+      describeQueuedBatch({ to: MULTI_SEND_CALL_ONLY, data: delegated, operation: 1 }),
+    ).toBeNull();
   });
 });
 

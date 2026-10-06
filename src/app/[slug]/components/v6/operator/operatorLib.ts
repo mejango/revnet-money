@@ -2,7 +2,6 @@ import { chainDisplayName, chainSortIndex } from "@/app/constants";
 import { requireOnchainExecution } from "@/hooks/useReviewedWriteContract";
 import { projectRefsWhere } from "@/lib/bendystraw/projectRefs";
 import type { PermissionHolder, PermissionHolderFilter } from "@/lib/bendystraw/types";
-import type { AuthorityIdentity } from "@/lib/cross-chain-authority";
 import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -16,6 +15,7 @@ import {
   RevnetCoreContracts,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
+import type { AuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
 import { Abi, Address, PublicClient } from "viem";
 import { getAccount, getPublicClient, switchChain } from "wagmi/actions";
 import { ProjectItem } from "../shared";

@@ -2,6 +2,7 @@
 
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import type { MetadataSourceGuard } from "@/lib/project-metadata-write";
+import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import { useSyncExternalStore } from "react";
 import type { Address, Hex } from "viem";
 import type {
@@ -9,9 +10,8 @@ import type {
   ExpectedPayerDeployment,
   ExpectedSafeExecution,
   RejectedReceiptEvent,
-  ReservedReceiptGuard,
 } from "./multichain-guards";
-import type { ExpectedPayoutReceipt } from "./payout-receipts";
+import type { ReviewedSafeProposal } from "./safe-transactions";
 
 export type TransactionActivityStatus =
   "submitted" | "pending" | "safe-proposed" | "success" | "failed";
@@ -28,7 +28,7 @@ export type RelayrExpectedTransaction = {
   preconditions?: CallPrecondition[];
   expectedDeployment?: ExpectedPayerDeployment;
   rejectEvents?: RejectedReceiptEvent[];
-  reservedReceipt?: ReservedReceiptGuard;
+  reservedReceipt?: ExpectedReservedReceipt;
   expectedPayout?: ExpectedPayoutReceipt;
   expectedSafeExecution?: ExpectedSafeExecution;
 };
@@ -43,9 +43,18 @@ export type TransactionActivity = {
   account?: Address;
   hash?: Hex;
   safeProposalHash?: Hex;
+  /** The Safe a proposal was made to and the calls it was reviewed to run, values as strings. */
+  safeProposal?: ReviewedSafeProposal;
   /** Its authenticated call became permanently obsolete; keep nonce cancellation guidance. */
   obsoleteSafeNonce?: number;
+  /**
+   * The app can't confirm this Safe proposal's result: its watch has ended, and it blocks an
+   * identical call until its account dismisses it.
+   */
+  safeResultUnconfirmed?: boolean;
   executionHash?: Hex;
+  /** When the chain first answered that it holds no receipt for a Safe proposal's `executionHash`. */
+  executionSeenAt?: number;
   bundleUuid?: string;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];
   relayrPayment?: { target: Address; data: Hex; value: string };
@@ -260,6 +269,17 @@ export function failTransactionActivityVerification(hash: Hex, message: string):
   });
 }
 
+/** Settle a mined write whose verification proved it failed: nothing changed, so it may be sent again. */
+export function settleTransactionActivityFailure(hash: Hex, message: string): void {
+  const current = transactionActivityForHash(hash);
+  if (!current) return;
+  updateTransactionActivity(current.id, {
+    status: "failed",
+    message,
+    manualVerificationRequired: false,
+  });
+}
+
 export function releaseTransactionActivityVerification(hash: Hex, message: string): void {
   const current = transactionActivityForHash(hash);
   if (!current) return;
@@ -272,8 +292,10 @@ export function releaseTransactionActivityVerification(hash: Hex, message: strin
 
 export function dismissTransactionActivity(id: string): void {
   refreshTransactionActivities();
-  if (snapshot.find((row) => row.id === id)?.manualVerificationRequired) return;
-  emit(snapshot.filter((row) => row.id !== id));
+  const row = snapshot.find((activity) => activity.id === id);
+  // A held entry stays until it is verified, unless the app can never confirm it.
+  if (row?.manualVerificationRequired && !row.safeResultUnconfirmed) return;
+  emit(snapshot.filter((activity) => activity.id !== id));
 }
 
 export function transactionActivityForHash(hash?: Hex): TransactionActivity | undefined {

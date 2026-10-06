@@ -9,7 +9,6 @@ import {
   type ExpectedPayerDeployment,
   type ExpectedSafeExecution,
   type RejectedReceiptEvent,
-  type ReservedReceiptGuard,
 } from "@/lib/multichain-guards";
 import type {
   ChainPayment,
@@ -17,11 +16,10 @@ import type {
   RelayrGetBundleResponse,
   RelayrPostBundleResponse,
 } from "@/lib/nana/types";
-import type { ExpectedPayoutReceipt } from "@/lib/payout-receipts";
 import { verifyMetadataSource, type MetadataSourceGuard } from "@/lib/project-metadata-write";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { isSafeConnection } from "@/lib/safe-connector";
-import { requireSafeExecutionSuccess } from "@/lib/safe-queue";
+import { requireRefundFreeSafeExecution } from "@/lib/safe-transactions";
 import {
   dismissTransactionActivity,
   recordTransactionActivity,
@@ -44,6 +42,7 @@ import {
   requireRelayrPaymentRetry,
   type RelayrEntry,
 } from "@bananapus/nana-sdk-core/review/relayr";
+import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
 import {
   encodeFunctionData,
@@ -102,7 +101,7 @@ export type ReviewedRelayrRequest = {
   preconditions?: CallPrecondition[];
   expectedDeployment?: ExpectedPayerDeployment;
   rejectEvents?: RejectedReceiptEvent[];
-  reservedReceipt?: ReservedReceiptGuard;
+  reservedReceipt?: ExpectedReservedReceipt;
   expectedPayout?: ExpectedPayoutReceipt;
   data: {
     from: Address;
@@ -545,7 +544,7 @@ async function verifyDestinationReceipts(
     }
     if (identity.expectedSafeExecution) {
       try {
-        requireSafeExecutionSuccess(
+        requireRefundFreeSafeExecution(
           receipt,
           identity.expectedSafeExecution.safe,
           identity.expectedSafeExecution.safeTxHash,

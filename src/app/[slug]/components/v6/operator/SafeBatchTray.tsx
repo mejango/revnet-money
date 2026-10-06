@@ -11,7 +11,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
-import { readBoundedSafeNonce } from "@/lib/cross-chain-authority";
 import {
   addStepsToBatch,
   clearBatch,
@@ -19,18 +18,22 @@ import {
   contractAddressOn,
   describeStep,
   mirrorBatch,
-  queuedBatchCalls,
   useSafeBatches,
   type BatchStep,
 } from "@/lib/safe-batch";
 import { stepResolverFor } from "@/lib/safe-batch-presets";
 import {
+  multiSendCallsOf,
+  readAuthorityIdentity,
+  readBoundedSafeNonce,
+} from "@bananapus/nana-sdk-core/safe";
+import {
+  hasSafeService,
   listPendingSafeTransactions,
-  safeQueueLink,
-  safeTransactionLink,
+  safeTransactionUrl,
   usableSafeConfirmations,
   type SafeQueuedTransaction,
-} from "@/lib/safe-queue";
+} from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Address } from "viem";
@@ -48,29 +51,35 @@ function callsKey(calls: readonly { to: Address; data: string; value: bigint }[]
     .join("|");
 }
 
+/** A queued proposal and the operator Safe's current owners and threshold, which count its signatures. */
+type ProposedBatch = { tx: SafeQueuedTransaction; owners: Address[]; threshold: number };
+
 /** The pending Safe proposal whose MultiSend holds exactly these queued steps, if one is queued. */
 function useProposedBatch(
   chainId: number,
   authority: Address | undefined,
   steps: readonly BatchStep[],
-): SafeQueuedTransaction | null {
+): ProposedBatch | null {
   const key = steps.length ? callsKey(composeBatch(steps).calls) : null;
   const query = useQuery({
     queryKey: ["revnet-safe-batch-proposed", chainId, authority, key],
-    enabled: !!authority && !!key && !!safeQueueLink(chainId, authority),
+    // A chain without a Safe service has no queue to read; its batch is approved onchain.
+    enabled: !!authority && !!key && hasSafeService(chainId),
     staleTime: 15_000,
     refetchInterval: 15_000,
-    queryFn: async () => {
+    queryFn: async (): Promise<ProposedBatch | null> => {
       const client = publicClientFor(chainId as ChainProjectRow["chainId"]);
-      const nonce = await readBoundedSafeNonce(client, authority!);
-      if (nonce === null) return null;
+      const [identity, nonce] = await Promise.all([
+        readAuthorityIdentity(client, authority!),
+        readBoundedSafeNonce(client, authority!),
+      ]);
+      if (identity?.kind !== "safe" || nonce === null) return null;
       const pending = await listPendingSafeTransactions(chainId, authority!, Number(nonce));
-      return (
-        pending.find((tx) => {
-          const calls = queuedBatchCalls(tx);
-          return !!calls && callsKey(calls) === key;
-        }) ?? null
-      );
+      const tx = pending.find((candidate) => {
+        const calls = multiSendCallsOf(candidate);
+        return !!calls && callsKey(calls) === key;
+      });
+      return tx ? { tx, owners: identity.owners, threshold: identity.threshold } : null;
     },
   });
   return query.data ?? null;
@@ -117,8 +126,8 @@ export function SafeBatchTray({
   const sourceOperator = source ? operatorByChain.get(source.chainId) : undefined;
   const proposed = useProposedBatch(source?.chainId ?? 0, sourceOperator, steps);
   const proposedLink =
-    proposed && source && sourceOperator && proposed.safeTxHash
-      ? safeTransactionLink(source.chainId, sourceOperator, proposed.safeTxHash)
+    proposed && source && sourceOperator && proposed.tx.safeTxHash
+      ? safeTransactionUrl(source.chainId, sourceOperator, proposed.tx.safeTxHash)
       : null;
   if (!queued.length && !presetsAvailable) return null;
 
@@ -211,11 +220,10 @@ export function SafeBatchTray({
           </div>
           {proposed ? (
             <p className="mt-3 text-sm text-teal-700" role="status">
-              Already proposed on {chainName(source.chainId)} as Safe transaction #{proposed.nonce}
-              {proposed.confirmationsRequired
-                ? ` (${usableSafeConfirmations(proposed).length}/${proposed.confirmationsRequired} signatures)`
-                : ""}
-              . Sign or execute it under Pending multisig transactions.{" "}
+              Already proposed on {chainName(source.chainId)} as Safe transaction #
+              {proposed.tx.nonce} ({usableSafeConfirmations(proposed.tx, proposed.owners).length}/
+              {proposed.threshold} signatures). Sign or execute it under Pending multisig
+              transactions.{" "}
               {proposedLink ? (
                 <a href={proposedLink} target="_blank" rel="noreferrer" className="underline">
                   Open in Safe ↗

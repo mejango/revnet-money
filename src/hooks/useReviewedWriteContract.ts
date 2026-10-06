@@ -1,6 +1,7 @@
 "use client";
 
 import { isSafeConnection } from "@/lib/safe-connector";
+import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -16,17 +17,33 @@ import {
   type TransactionReviewOptions,
 } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import {
+  isTransactionReceiptUnavailableError,
+  waitForReceiptWithRetry,
+} from "@/lib/waitForReceipt";
 import { gasWithHeadroom, simulateCallSequence } from "@bananapus/nana-sdk-core/review";
-import { safeServiceBase } from "@bananapus/nana-sdk-core/safe-service";
+import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
+import {
+  hasSafeService,
+  readSafeTransaction,
+  SAFE_EXEC_ABI,
+  SAFE_NONCE_GUIDANCE,
+  safeExecutionResult,
+  safeTransactionMessage,
+  usableSafeConfirmations,
+  type SafeQueuedTransaction,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
 import { useCallback, useMemo } from "react";
 import {
+  decodeFunctionData,
   encodeFunctionData,
   isAddressEqual,
+  isHash,
   keccak256,
   stringToHex,
+  TransactionNotFoundError,
   type Abi,
   type Address,
   type Hex,
@@ -42,8 +59,6 @@ import { getAccount, getPublicClient, simulateContract, switchChain } from "wagm
 
 export { isSafeConnection, isSafeConnector, useSafeConnection } from "@/lib/safe-connector";
 
-export const SAFE_NONCE_GUIDANCE =
-  "On Safe’s confirmation screen, Nonce defaults to the next available value. Open its dropdown to see queued nonces and replace one if desired.";
 /** Why a send was refused: its plan names one account (a beneficiary, a recipient, a position's owner) and another is connected. */
 export const ACCOUNT_CHANGED = "The connected account changed. Review again.";
 
@@ -65,13 +80,61 @@ function requirePlannedAccount(planned: unknown, connected: Address): void {
 }
 
 const safeInflight = new Map<string, Promise<void>>();
-// Safe emits ExecutionFailure instead of reverting only when safeTxGas or gasPrice is set.
-const SAFE_EXECUTION_FAILURE = keccak256(stringToHex("ExecutionFailure(bytes32,uint256)"));
-// Chain checks per watch: an execution Safe{Wallet} sent at once reaches the
-// chain within a minute of its reply, and a resumed watch finds it at once.
+/** A watch looks for its proposal's result this often. */
+const SAFE_LOOK_MS = 5_000;
+/**
+ * Looks in the minute after a reply, each of which checks the chain: an execution Safe{Wallet}
+ * sent at once reaches it within that minute. Without a Safe service, this many chain checks that
+ * find nothing end a proposal unconfirmed.
+ */
 const SAFE_EXECUTION_CHECKS = 12;
 const RECEIPT_UNCONFIRMED =
   "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
+const SAFE_RESULT_UNCONFIRMED =
+  "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
+const SAFE_REPORTED_EXECUTED_UNCONFIRMED =
+  "Safe reports this proposal as executed, but its result can't be confirmed here. Check it in Safe before retrying.";
+/** A watch reads its Safe's state at most this often. */
+const SAFE_REREAD_MS = 60_000;
+/**
+ * A proposal the app still can't follow this long after it was made ends unconfirmed: the hour a
+ * watch lasts.
+ */
+const SAFE_RESULT_HORIZON_MS = 60 * 60_000;
+/**
+ * Looks at the Safe service, ten minutes of them, that must find the proposal where the app can't
+ * follow it, with none between them showing it live, before it ends unconfirmed. A single look
+ * proves nothing on its own: the Safe's nonce moves when an execution is mined, and the service may
+ * list that execution later.
+ */
+const SAFE_STUCK_LOOKS = (10 * 60_000) / SAFE_LOOK_MS;
+
+/** Whether `response`'s body is JSON. */
+const isJson = (response: Response) =>
+  response.json().then(
+    () => true,
+    () => false,
+  );
+
+/**
+ * What one look of a Safe proposal's watch showed: the proposal settled or ended ("done"), able to
+ * execute ("live"), where the app can't follow it ("stuck"), or nothing ("unknown").
+ */
+type SafeLook = "done" | "live" | "stuck" | "unknown";
+
+/**
+ * `read` of a Safe, answered from its last read for a minute after each one.
+ * It keeps one read for any Safe: each watch reads only its own proposal's Safe.
+ */
+function rereadEveryMinute<T>(read: (safe: Address) => Promise<T>): (safe: Address) => Promise<T> {
+  let last: { at: number; value: Promise<T> } | undefined;
+  return (safe) => {
+    if (!last || Date.now() - last.at >= SAFE_REREAD_MS) {
+      last = { at: Date.now(), value: read(safe) };
+    }
+    return last.value;
+  };
+}
 
 async function watchSafeProposal(
   id: string,
@@ -79,11 +142,50 @@ async function watchSafeProposal(
   chainId: number,
   client: PublicClient | undefined,
 ): Promise<void> {
-  const service = safeServiceBase(chainId);
-  if (!service && !client) return;
+  const service = hasSafeService(chainId);
   const existing = safeInflight.get(id);
   if (existing) return existing;
   const tracked = () => refreshTransactionActivities().find((activity) => activity.id === id);
+  // A proposal journaled without its Safe was made by the Safe it names as its account.
+  const safeOf = () => tracked()?.safeProposal?.safe ?? tracked()?.account;
+  /**
+   * Whether a Safe transaction runs exactly what this proposal was reviewed to run. A proposal
+   * journaled without reviewed calls is held to its authenticated hash and the Safe's own event
+   * for it alone.
+   */
+  const runsReviewed = (tx: Parameters<typeof safeTransactionRunsCalls>[0]) => {
+    const proposal = tracked()?.safeProposal;
+    return !proposal || safeTransactionRunsCalls(tx, proposal.calls, proposal.batch);
+  };
+  /** Whether an execution the chain knows is this Safe's execTransaction of the reviewed calls. */
+  const executesReviewed = (transaction: { to?: Address | null; input?: Hex }) => {
+    // Without reviewed calls, the Safe's one execution in the receipt decides (see runsReviewed).
+    if (!tracked()?.safeProposal) return true;
+    const safe = safeOf();
+    if (!safe || !transaction.to || !isAddressEqual(transaction.to, safe)) return false;
+    try {
+      const { functionName, args } = decodeFunctionData({
+        abi: SAFE_EXEC_ABI,
+        data: transaction.input ?? "0x",
+      });
+      if (functionName !== "execTransaction") return false;
+      const [to, value, data, operation] = args;
+      return runsReviewed({ to, value, data, operation });
+    } catch {
+      return false;
+    }
+  };
+  /** The Safe's live owners and threshold, for the approvals line. */
+  const livePolicy = rereadEveryMinute(async (safe) => {
+    const identity = client ? await readAuthorityIdentity(client, safe).catch(() => null) : null;
+    return identity?.kind === "safe"
+      ? { owners: identity.owners, threshold: identity.threshold }
+      : null;
+  });
+  /** The Safe's live nonce, or null when it can't be read. */
+  const liveNonce = rereadEveryMinute(async (safe) =>
+    client ? await readBoundedSafeNonce(client, safe).catch(() => null) : null,
+  );
   const executed = (isSuccessful: boolean, transactionHash: Hex | undefined) => {
     const needsReceiptVerification = tracked()?.manualVerificationRequired === true;
     updateTransactionActivity(id, {
@@ -96,77 +198,237 @@ async function watchSafeProposal(
           : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
     });
   };
+  /** The service's latest record reports the proposal executed without its transaction. */
+  let reportedExecuted = false;
+  /**
+   * The app can't confirm this proposal's result: the watch ends, and its account may dismiss it.
+   * Each caller has just read the chain (the execution's receipt, or the transaction with this
+   * hash) or has no client to read it with. `reported`: the Safe service reported the proposal
+   * executed, which the line keeps for its account.
+   */
+  const unconfirmed = (executionHash?: Hex, reported = reportedExecuted) =>
+    updateTransactionActivity(id, {
+      ...(executionHash ? { executionHash } : {}),
+      message: reported ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
+      safeResultUnconfirmed: true,
+    });
+  /** Whether the hour after the proposal was made has passed. */
+  const pastHorizon = () =>
+    Date.now() - (tracked()?.createdAt ?? Date.now()) >= SAFE_RESULT_HORIZON_MS;
+  /**
+   * Settles the proposal from its execution's receipt: only the Safe's own
+   * event for this proposal decides, never the receipt's status alone or
+   * another proposal's event in the same receipt. `reported`: the Safe service
+   * reported this execution.
+   */
+  const settle = async (executionHash: Hex, reported: boolean) => {
+    let receipt: TransactionReceipt | undefined;
+    // Whether the chain answered that it holds no receipt for the execution (a read that found
+    // none, or a receipt of another transaction), or there is no client to ask. A node that
+    // couldn't answer says nothing.
+    let noReceipt = !client;
+    if (client) {
+      try {
+        receipt = await waitForReceiptWithRetry(client, executionHash);
+      } catch (error) {
+        noReceipt = isTransactionReceiptUnavailableError(error) && error.noReceipt;
+      }
+      if (receipt && receipt.transactionHash?.toLowerCase() !== executionHash.toLowerCase()) {
+        receipt = undefined;
+        noReceipt = true;
+      }
+    }
+    const safe = safeOf();
+    if (!receipt && !noReceipt) {
+      // The proposal stays held for the next look.
+      updateTransactionActivity(id, { executionHash, message: RECEIPT_UNCONFIRMED });
+      return;
+    }
+    if (!receipt || !safe) {
+      // A receipt the chain still doesn't hold an hour after it first said so is not coming.
+      const seen = tracked();
+      const seenAt =
+        seen?.executionHash?.toLowerCase() === executionHash.toLowerCase()
+          ? (seen.executionSeenAt ?? Date.now())
+          : Date.now();
+      if (Date.now() - seenAt >= SAFE_RESULT_HORIZON_MS) {
+        unconfirmed(executionHash, reported);
+        return;
+      }
+      updateTransactionActivity(id, {
+        executionHash,
+        executionSeenAt: seenAt,
+        message: RECEIPT_UNCONFIRMED,
+      });
+      return;
+    }
+    const result = safeExecutionResult(receipt, safe, hash);
+    if (result.status === "unproven") {
+      unconfirmed(executionHash, reported);
+      return;
+    }
+    executed(result.status === "success", executionHash);
+  };
+  /**
+   * The chain's transaction with the proposal's hash: null when the chain has none, and undefined
+   * when the node can't be reached, which says nothing about it.
+   */
+  const findExecution = (chain: PublicClient) =>
+    chain
+      .getTransaction({ hash })
+      .catch((error: unknown) => (error instanceof TransactionNotFoundError ? null : undefined));
+  type ChainAnswer = Awaited<ReturnType<typeof findExecution>>;
+  /**
+   * Ends the proposal on the chain's word, which may show an execution Safe{Wallet} sent at once
+   * since the watch last checked: `answer` is this look's own check of the chain, or one more check
+   * when the look made none. An execution of the reviewed calls settles the proposal instead. False
+   * when the node can't answer, and the proposal stays for the watch's next chain check.
+   */
+  const endUnconfirmed = async (answer: ChainAnswer | "unchecked"): Promise<boolean> => {
+    const execution =
+      answer === "unchecked" ? (client ? await findExecution(client) : null) : answer;
+    if (execution === undefined) return false;
+    if (execution && executesReviewed(execution)) await settle(hash, false);
+    else unconfirmed();
+    return true;
+  };
+  /** The service's record of this proposal runs other calls, so the app can never follow it. */
+  let unfollowable = false;
+  /**
+   * One look at the Safe service: "done" once the proposal is settled; "live" when it is listed
+   * unexecuted with its nonce still to come; "stuck" when the app can't follow it: not listed, a
+   * record it can't authenticate, a record of other calls (which makes it due to end), executed
+   * without its transaction, or a nonce the Safe has moved past; and "unknown" when the service is
+   * down or answers with a page that isn't JSON, or the nonce can't be read.
+   */
+  const askService = async (safe: Address): Promise<SafeLook> => {
+    // The status of the service's answer tells "not indexed yet" (404) and a record it can't
+    // read (a 2xx JSON answer) apart from an outage, without reading its error message. A 2xx page
+    // that isn't JSON is not a record at all.
+    let status = 0;
+    let json = false;
+    const observed: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      status = response.status;
+      json = response.ok && (await isJson(response.clone()));
+      return response;
+    };
+    try {
+      // The record must name this Safe and hash to this proposal.
+      const proposal = (await readSafeTransaction(chainId, safe, hash, {
+        fetch: observed,
+      })) as SafeQueuedTransaction & { transactionHash?: unknown };
+      if (tracked()?.obsoleteSafeNonce !== undefined) return "done";
+      const executionHash =
+        typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)
+          ? proposal.transactionHash
+          : undefined;
+      reportedExecuted = proposal.isExecuted === true && !executionHash;
+      const message = safeTransactionMessage(proposal);
+      if (!runsReviewed(message)) {
+        unfollowable = true;
+        return "stuck";
+      }
+      if (proposal.isExecuted) {
+        if (executionHash) {
+          await settle(executionHash, true);
+          return "done";
+        }
+        updateTransactionActivity(id, {
+          status: "safe-proposed",
+          message:
+            "Safe reports this proposal as executed, but its transaction is not available yet. Do not submit it again while confirmation is unresolved.",
+        });
+        return "stuck";
+      }
+      // Only the Safe's current owners' well-formed confirmations count.
+      const live = await livePolicy(safe);
+      const approvals = live
+        ? ` | ${usableSafeConfirmations(proposal, live.owners).length}/${live.threshold} approvals`
+        : "";
+      updateTransactionActivity(id, {
+        status: "safe-proposed",
+        message: `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
+      });
+      // A nonce the Safe has moved past was taken by another transaction, or by this proposal's
+      // own execution that the service has yet to list, which the watch's run of looks waits out.
+      // It is read only after the hour, when the watch may end the proposal.
+      if (!pastHorizon()) return "live";
+      const nonce = await liveNonce(safe);
+      if (nonce === null) return "unknown";
+      return nonce > message.nonce ? "stuck" : "live";
+    } catch {
+      if (status === 404 || (status >= 200 && status < 300 && json)) {
+        reportedExecuted = false;
+        return "stuck";
+      }
+      updateTransactionActivity(id, {
+        status: "safe-proposed",
+        message:
+          "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
+      });
+      return "unknown";
+    }
+  };
+  // Without a Safe service or a client for its chain, nothing can follow the proposal.
+  if (!service && !client) {
+    unconfirmed();
+    return;
+  }
   const request = (async () => {
-    // Without a Safe service only the chain can show an execution.
-    for (let attempt = 0; attempt < (service ? 720 : SAFE_EXECUTION_CHECKS); attempt += 1) {
+    // Looks that found the proposal where the app can't follow it since a look last showed it
+    // live. A look that learns nothing leaves the count as it is.
+    let stuckLooks = 0;
+    // Whether the proposal is due to end but the node couldn't answer, so the watch waits for its
+    // next chain check.
+    let awaitingChain = false;
+    // Without a Safe service only the chain can show an execution, and twelve of its checks must
+    // find none.
+    const stuckFor = service ? SAFE_STUCK_LOOKS : SAFE_EXECUTION_CHECKS;
+    for (let attempt = 0; attempt < SAFE_RESULT_HORIZON_MS / SAFE_LOOK_MS; attempt += 1) {
       if (tracked()?.obsoleteSafeNonce !== undefined) return;
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
       // when the owner executes at once. A safeTxHash is never a transaction.
-      if (
-        client &&
-        attempt < SAFE_EXECUTION_CHECKS &&
-        (await client.getTransaction({ hash }).then(
-          () => true,
-          () => false,
-        ))
-      ) {
-        const receipt = await waitForReceiptWithRetry(client, hash).catch(() => undefined);
-        if (!receipt) {
-          updateTransactionActivity(id, { executionHash: hash, message: RECEIPT_UNCONFIRMED });
-          return;
-        }
-        const account = tracked()?.account;
-        const failed = receipt.logs.some(
-          (log) =>
-            !!account &&
-            isAddressEqual(log.address, account) &&
-            log.topics[0]?.toLowerCase() === SAFE_EXECUTION_FAILURE,
-        );
-        executed(receipt.status === "success" && !failed, hash);
+      // The SDK then reads the Safe's one execution event in that receipt,
+      // whatever its hash, so the execution must run the reviewed calls. The
+      // chain is checked on every look of the minute after the reply, when such
+      // an execution lands, then once a minute for a node that shows it late.
+      const execution: ChainAnswer | "unchecked" =
+        client && (attempt < SAFE_EXECUTION_CHECKS || attempt % SAFE_EXECUTION_CHECKS === 0)
+          ? await findExecution(client)
+          : "unchecked";
+      if (execution && execution !== "unchecked") {
+        if (executesReviewed(execution)) await settle(hash, false);
+        else unconfirmed();
         return;
       }
-      if (service) {
-        try {
-          const response = await fetch(`${service}/api/v1/multisig-transactions/${hash}/`);
-          if (response.ok) {
-            const transaction = (await response.json()) as {
-              isExecuted?: boolean;
-              isSuccessful?: boolean | null;
-              transactionHash?: Hex | null;
-              confirmations?: unknown[];
-              confirmationsRequired?: number;
-            };
-            if (tracked()?.obsoleteSafeNonce !== undefined) return;
-            if (transaction.isExecuted) {
-              if (transaction.isSuccessful == null) {
-                updateTransactionActivity(id, {
-                  status: "safe-proposed",
-                  executionHash: transaction.transactionHash ?? undefined,
-                  message:
-                    "Safe reports this proposal as executed, but its success result is not available yet. Do not submit it again while confirmation is unresolved.",
-                });
-                await new Promise((resolve) => window.setTimeout(resolve, 5_000));
-                continue;
-              }
-              executed(transaction.isSuccessful, transaction.transactionHash ?? undefined);
-              return;
-            }
-            const approvals = transaction.confirmations?.length ?? 0;
-            const required = transaction.confirmationsRequired;
-            updateTransactionActivity(id, {
-              status: "safe-proposed",
-              message: `Safe proposal is not executed${required ? ` | ${approvals}/${required} approvals` : ""}. It remains asynchronous; do not submit it again.`,
-            });
-          }
-        } catch {
-          updateTransactionActivity(id, {
-            status: "safe-proposed",
-            message:
-              "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
-          });
-        }
+      const safe = safeOf();
+      let look: SafeLook;
+      if (service) look = safe ? await askService(safe) : "stuck";
+      // Without a Safe service only a check the chain answered shows anything.
+      else look = execution === null ? "stuck" : "unknown";
+      if (look === "done") return;
+      if (look === "stuck") stuckLooks += 1;
+      else if (look === "live") {
+        stuckLooks = 0;
+        awaitingChain = false;
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 5_000));
+      // Without a service, twelve checks that find nothing end it. With one, what the app still
+      // can't follow an hour after the proposal was made, it never will. It ends on this look's
+      // check of the chain, or one more, and while the node can't answer, only the next chain
+      // check asks again.
+      const due = unfollowable || (stuckLooks >= stuckFor && (!service || pastHorizon()));
+      if (due && (execution !== "unchecked" || !awaitingChain)) {
+        if (await endUnconfirmed(execution)) return;
+        awaitingChain = true;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, SAFE_LOOK_MS));
+    }
+    // The watch gives up. A proposal still awaiting approvals, one the watch learned nothing
+    // about, one not stuck for long enough, or one the node couldn't answer for is followed again
+    // on the next load; anything else ends unconfirmed.
+    if (!awaitingChain && (unfollowable || stuckLooks >= stuckFor)) {
+      await endUnconfirmed("unchecked");
     }
   })();
   safeInflight.set(id, request);
@@ -214,7 +476,9 @@ export async function proposeSafeBatch(
           activity.status === "pending" ||
           activity.status === "safe-proposed"),
     );
-    if (duplicate?.hash) throw new SafeProposalPendingError(duplicate.hash, title);
+    if (duplicate?.hash) {
+      throw new SafeProposalPendingError(duplicate.hash, title, duplicate.safeResultUnconfirmed);
+    }
 
     // The calls depend on each other (an allowance, then the spend), so the
     // SDK simulates them as one sequence where the RPC offers eth_simulateV1,
@@ -260,7 +524,20 @@ export async function proposeSafeBatch(
     }
     const { id } = await sendCalls(config, { chainId, calls: encoded });
     const hash = id as Hex;
-    followSubmission(config, hash, chainId, title, account, callKey, true, false);
+    followSubmission(
+      config,
+      hash,
+      chainId,
+      title,
+      account,
+      callKey,
+      {
+        safe: account,
+        calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
+        batch: true,
+      },
+      false,
+    );
     return hash;
   };
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
@@ -271,7 +548,13 @@ export async function proposeSafeBatch(
 
 export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
   transactionActivitySnapshot()
-    .filter((activity) => activity.status === "safe-proposed" && activity.hash && activity.chainId)
+    .filter(
+      (activity) =>
+        activity.status === "safe-proposed" &&
+        !activity.safeResultUnconfirmed &&
+        activity.hash &&
+        activity.chainId,
+    )
     .forEach(
       (activity) =>
         void watchSafeProposal(
@@ -283,6 +566,10 @@ export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>)
     );
 }
 
+/**
+ * Journal a submitted write and follow it to its result. `safe` is what a Safe proposal was
+ * reviewed to run, or false for a transaction the wallet sent.
+ */
 export function followSubmission(
   config: ReturnType<typeof useConfig>,
   hash: Hex,
@@ -290,7 +577,7 @@ export function followSubmission(
   title: string,
   account: Address,
   callKey: string,
-  safe: boolean,
+  safe: ReviewedSafeProposal | false,
   manualReceiptVerification: boolean,
 ): void {
   const id = `tx:${chainId}:${hash.toLowerCase()}`;
@@ -306,6 +593,7 @@ export function followSubmission(
     account,
     hash,
     safeProposalHash: safe ? hash : undefined,
+    safeProposal: safe || undefined,
     callKey,
     manualVerificationRequired: manualReceiptVerification || undefined,
   });
@@ -401,13 +689,12 @@ export function useWriteContract(
       const chainId = Number(variables.chainId ?? before.chainId);
       if (!chainId) throw new Error("Select a network before continuing.");
       const functionName = String(variables.functionName);
-      const callKey = `${initialAddress.toLowerCase()}:${chainId}:${variables.address.toLowerCase()}:${variables.value ?? 0n}:${encodeFunctionData(
-        {
-          abi: variables.abi as Abi,
-          functionName,
-          args: variables.args,
-        },
-      )}`;
+      const data = encodeFunctionData({
+        abi: variables.abi as Abi,
+        functionName,
+        args: variables.args,
+      });
+      const callKey = `${initialAddress.toLowerCase()}:${chainId}:${variables.address.toLowerCase()}:${variables.value ?? 0n}:${data}`;
       const submitReviewedCall = async () => {
         const duplicate = refreshTransactionActivities().find(
           (activity) =>
@@ -419,7 +706,11 @@ export function useWriteContract(
         );
         if (duplicate?.hash) {
           if (duplicate.status === "safe-proposed") {
-            throw new SafeProposalPendingError(duplicate.hash, functionName);
+            throw new SafeProposalPendingError(
+              duplicate.hash,
+              functionName,
+              duplicate.safeResultUnconfirmed,
+            );
           }
           throw new Error(
             `An identical ${functionName} transaction is already pending as ${duplicate.hash}. Check it before submitting again.`,
@@ -534,7 +825,11 @@ export function useWriteContract(
           functionName,
           reviewedAccount,
           callKey,
-          safe,
+          safe && {
+            safe: reviewedAccount,
+            calls: [{ to: variables.address, value: String(variables.value ?? 0n), data }],
+            batch: false,
+          },
           ownsReceiptLifecycle,
         );
         return hash;
@@ -604,6 +899,8 @@ export function useWaitForTransactionReceipt(
   );
   const isSafeSubmission = tracked?.kind === "safe";
   const isSafeProposal = tracked?.status === "safe-proposed";
+  // A proposal whose result can't be confirmed awaits nothing the app follows: not loading.
+  const isSafeResultUnconfirmed = isSafeSubmission && tracked?.safeResultUnconfirmed === true;
   const trackedDirectSuccess = tracked?.kind === "direct" && tracked.status === "success";
   const trackedDirectFailure = tracked?.kind === "direct" && tracked.status === "failed";
   const query = useWagmiWaitForTransactionReceipt({
@@ -617,7 +914,7 @@ export function useWaitForTransactionReceipt(
   const reverted = receipt?.status === "reverted";
   return {
     ...query,
-    isLoading: isSafeSubmission ? isSafeProposal : query.isLoading,
+    isLoading: isSafeSubmission ? isSafeProposal && !isSafeResultUnconfirmed : query.isLoading,
     isSuccess: isSafeSubmission
       ? tracked?.status === "success"
       : trackedDirectSuccess || (query.isSuccess && receipt?.status === "success"),
@@ -635,6 +932,7 @@ export function useWaitForTransactionReceipt(
               ? query.error
               : undefined,
     isSafeProposal,
+    isSafeResultUnconfirmed,
     statusMessage: tracked?.message,
   };
 }
@@ -643,25 +941,53 @@ export function submittedViaSafe(hash?: Hex): boolean {
   return transactionActivityForHash(hash)?.status === "safe-proposed";
 }
 
+/** What an account does about its Safe proposal whose result can't be confirmed. */
+const CHECK_IN_SAFE = "Check it in Safe, then dismiss it in your account activity.";
+
+/** The title a flow gives a step refused by a Safe proposal whose result can't be confirmed. */
+export const SAFE_PROPOSAL_UNCONFIRMED_TITLE = "Safe proposal unconfirmed";
+
+/** The status line a flow shows for that step. */
+export const SAFE_PROPOSAL_UNCONFIRMED_LINE = `This step's Safe proposal can't be confirmed here. ${CHECK_IN_SAFE}`;
+
+/** Refuses a call while its Safe proposal is journaled and not yet settled. */
 export class SafeProposalPendingError extends Error {
   readonly name = "SafeProposalPendingError";
 
+  /** `unconfirmed`: the app can't confirm the proposal's result, so its account dismisses it. */
   constructor(
     readonly hash: Hex,
     action: string,
+    readonly unconfirmed = false,
   ) {
     super(
-      `${action} was proposed to Safe as ${hash}, but it has not executed. Complete its approvals and execution in Safe, then resume; do not submit it again.`,
+      unconfirmed
+        ? `${action} was proposed to Safe as ${hash}, and its result can't be confirmed here. ${CHECK_IN_SAFE}`
+        : `${action} was proposed to Safe as ${hash}, but it has not executed. Complete its approvals and execution in Safe, then resume; do not submit it again.`,
     );
   }
 }
 
+/**
+ * Whether `error` refused a call because its Safe proposal still awaits the Safe. A proposal whose
+ * result can't be confirmed awaits nothing the app can follow: callers show that refusal as they
+ * show any error, with its line to check it in Safe and dismiss it.
+ */
 export function isSafeProposalPendingError(error: unknown): error is SafeProposalPendingError {
-  return error instanceof SafeProposalPendingError;
+  return error instanceof SafeProposalPendingError && !error.unconfirmed;
+}
+
+/** Whether `error` refused a call because its Safe proposal's result can't be confirmed. */
+export function isSafeProposalUnconfirmedError(error: unknown): error is SafeProposalPendingError {
+  return error instanceof SafeProposalPendingError && error.unconfirmed;
 }
 
 /** Stop dependent steps after a Safe connector returns an asynchronous proposal hash. */
 export function requireOnchainExecution(hash: Hex, action: string): void {
   if (!submittedViaSafe(hash)) return;
-  throw new SafeProposalPendingError(hash, action);
+  throw new SafeProposalPendingError(
+    hash,
+    action,
+    transactionActivityForHash(hash)?.safeResultUnconfirmed,
+  );
 }

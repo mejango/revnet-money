@@ -14,12 +14,7 @@ import {
   useSafeConnection,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import {
-  readAuthorityIdentity,
-  readBoundedSafeNonce,
-  readCrossChainHandleAuthority,
-  type SafeAuthorityIdentity,
-} from "@/lib/cross-chain-authority";
+import { readHandleAuthority, unprovenSafeMessage } from "@/lib/handle-authority";
 import { PROJECT_HANDLE_CHAIN_ID } from "@/lib/projectHandles";
 import { protocolQueueLabel } from "@/lib/protocol-queue-label";
 import {
@@ -32,30 +27,35 @@ import {
   type QueuedProjectHandleBinding,
 } from "@/lib/queuedProjectHandle";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
-import { describeQueuedBatch, queuedBatchCalls } from "@/lib/safe-batch";
+import { describeQueuedBatch } from "@/lib/safe-batch";
 import {
-  SAFE_EXEC_ABI,
+  confirmSafeExecution,
+  queueUnavailableMessage,
+  REFUND_REFUSAL,
+} from "@/lib/safe-transactions";
+import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
+import type { JBChainId } from "@bananapus/nana-sdk-core";
+import {
+  multiSendCallsOf,
+  readAuthorityIdentity,
+  readBoundedSafeNonce,
+  type SafeAuthorityIdentity,
+} from "@bananapus/nana-sdk-core/safe";
+import {
+  hasSafeService,
   listPendingSafeTransactions,
-  requireSafeExecutionSuccess,
+  SAFE_EXEC_ABI,
   safeExecutionArgs,
-  safeQueueLink,
+  safeQueueUrl,
   safeTransactionHash,
+  safeTransactionHasRefund,
   submitSafeConfirmation,
   usableSafeConfirmations,
-  type SafePolicy,
   type SafeQueuedTransaction,
-} from "@/lib/safe-queue";
-import {
-  failTransactionActivityVerification,
-  holdTransactionActivityForVerification,
-  releaseTransactionActivityVerification,
-} from "@/lib/transaction-activity";
-import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import type { JBChainId } from "@bananapus/nana-sdk-core";
+} from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { encodeFunctionData, isAddressEqual, type Address, type Hex } from "viem";
+import { encodeFunctionData, isAddressEqual, type Address } from "viem";
 import { useAccount, useConfig } from "wagmi";
 import {
   chainName,
@@ -72,11 +72,21 @@ type DisplayQueuedTransaction = {
   handleError?: string;
 };
 
+type SafePolicy = { owners: Address[]; threshold: number; nonce: number };
+
 type QueueRow = ProjectSafeQueueTarget & {
   policy: SafePolicy;
   transactions: DisplayQueuedTransaction[];
+  /** The chain has no Safe transaction service, so the queue was not read. */
+  queueUnavailable?: boolean;
   queueError?: string;
 };
+
+/** A queue the card names but can't read, with the one line that says why. */
+type QueueNotice = ProjectSafeQueueTarget & { notice: string };
+
+/** The operator Safe's creation does not prove it is the same Safe on the handle chain. */
+class UnprovenSafeError extends Error {}
 
 type LiveSafePolicy = SafePolicy & { identity: SafeAuthorityIdentity };
 
@@ -117,6 +127,7 @@ async function readLiveSafePolicy(
 ): Promise<LiveSafePolicy> {
   const mainnetClient = publicClientFor(PROJECT_HANDLE_CHAIN_ID);
   let hasLiveAuthority = false;
+  let unprovenCreation = false;
   for (const authorityRow of row.authorityRows) {
     const sourceClient = publicClientFor(authorityRow.chainId);
     if (!(await isLiveRevnetOperator(sourceClient, authorityRow, row.safe))) continue;
@@ -124,7 +135,7 @@ async function readLiveSafePolicy(
       hasLiveAuthority = true;
       break;
     }
-    const authority = await readCrossChainHandleAuthority({
+    const authority = await readHandleAuthority({
       sourceChainId: authorityRow.chainId,
       sourceClient,
       mainnetClient,
@@ -134,16 +145,20 @@ async function readLiveSafePolicy(
       hasLiveAuthority = true;
       break;
     }
+    unprovenCreation ||= authority.status === "unproven-creation";
   }
   if (!hasLiveAuthority) {
-    throw new Error("This Safe is no longer the live revnet operator.");
+    throw unprovenCreation
+      ? new UnprovenSafeError(unprovenSafeMessage(PROJECT_HANDLE_CHAIN_ID))
+      : new Error("This Safe is no longer the live revnet operator.");
   }
   const client = publicClientFor(row.chainId);
   const identity = await readAuthorityIdentity(client, row.safe);
   if (identity?.kind !== "safe") {
     throw new Error("The operator no longer has a supported canonical Safe identity.");
   }
-  const nonce = await readBoundedSafeNonce(client, row.safe);
+  // An RPC failure reads as an unverified nonce, never as a raw node error.
+  const nonce = await readBoundedSafeNonce(client, row.safe).catch(() => null);
   if (nonce === null || nonce > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error("The Safe nonce could not be verified.");
   }
@@ -256,7 +271,9 @@ export function SafeQueueCard({
   );
   const { writeContractAsync } = useWriteContract({
     reviewedInParent: true,
-    manualReceiptVerification: () => Boolean(reviewedExecution.current?.handleBinding),
+    // A successful outer call is not a successful Safe execution: the card
+    // journals it only after the Safe's own event for the reviewed hash.
+    manualReceiptVerification: () => true,
     reverify: async (variables) => {
       const reviewed = reviewedExecution.current;
       if (!reviewed) {
@@ -303,9 +320,9 @@ export function SafeQueueCard({
     queryKey: ["revnet-safe-queues", operatorKey],
     enabled: !operators.isLoading && queueTargets.length > 0,
     staleTime: 15_000,
-    queryFn: async (): Promise<QueueRow[]> => {
+    queryFn: async (): Promise<(QueueRow | QueueNotice)[]> => {
       const results = await Promise.all(
-        queueTargets.map(async (target): Promise<QueueRow | null> => {
+        queueTargets.map(async (target): Promise<QueueRow | QueueNotice | null> => {
           try {
             const livePolicy = await readLiveSafePolicy(target);
             const policy = {
@@ -313,6 +330,9 @@ export function SafeQueueCard({
               threshold: livePolicy.threshold,
               nonce: livePolicy.nonce,
             };
+            if (!hasSafeService(target.chainId)) {
+              return { ...target, policy, transactions: [], queueUnavailable: true };
+            }
             let transactions: DisplayQueuedTransaction[] = [];
             let queueError: string | undefined;
             try {
@@ -382,25 +402,26 @@ export function SafeQueueCard({
               transactions,
               queueError,
             };
-          } catch {
-            return null;
+          } catch (cause) {
+            // The Safe still operates the project; only its Ethereum handle queue goes unread.
+            return cause instanceof UnprovenSafeError ? { ...target, notice: cause.message } : null;
           }
         }),
       );
-      return results.filter((row): row is QueueRow => row !== null);
+      return results.filter((row) => row !== null);
     },
   });
 
   // Relayr can run each chain's next fully signed transaction from one
   // payment. Handle writes and same-nonce alternatives execute on their own.
   const batchRows: BatchRow[] = (queue.data ?? []).flatMap((row) => {
-    if (row.handleOnly) return [];
+    if (row.handleOnly || "notice" in row) return [];
     const atNonce = row.transactions.filter(
-      ({ transaction }) => Number(transaction.nonce) === row.policy.nonce,
+      ({ transaction }) => transaction.nonce === row.policy.nonce,
     );
     if (atNonce.length !== 1) return [];
     const [{ transaction: tx, handleBinding, handleError }] = atNonce;
-    if (handleBinding || handleError) return [];
+    if (handleBinding || handleError || safeTransactionHasRefund(tx)) return [];
     if (usableSafeConfirmations(tx, row.policy.owners).length < row.policy.threshold) return [];
     return [{ row, tx }];
   });
@@ -431,9 +452,10 @@ export function SafeQueueCard({
       for (const { row, tx } of rows) {
         setRowStatus(row.chainId, "Checking…");
         try {
+          if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL);
           await verifyLiveQueuedTransaction(row, tx);
           const policy = await readLiveSafePolicy(row);
-          if (policy.nonce !== Number(tx.nonce))
+          if (policy.nonce !== tx.nonce)
             throw new Error(
               `Safe transaction #${tx.nonce} is no longer next on ${chainName(row.chainId)}.`,
             );
@@ -459,7 +481,7 @@ export function SafeQueueCard({
             expectedSafeExecution: {
               safe: row.safe,
               safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
-              nonce: Number(tx.nonce),
+              nonce: tx.nonce,
             },
             data: { from: address, to: row.safe, value: 0n, gas, data },
             review: {
@@ -521,6 +543,7 @@ export function SafeQueueCard({
     setError(null);
     setNotice(null);
     try {
+      if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL);
       await verifyLiveQueuedTransaction(row, tx);
       const policy = await readLiveSafePolicy(row);
       if (!policy.owners.some((owner) => owner.toLowerCase() === address.toLowerCase())) {
@@ -546,7 +569,7 @@ export function SafeQueueCard({
         },
       });
       await verifyLiveQueuedTransaction(row, tx);
-      await submitSafeConfirmation(row.chainId, tx, signature);
+      await submitSafeConfirmation(row.chainId, row.safe, tx, signature);
       setNotice(`Signed Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`);
       setReview(null);
       await queue.refetch();
@@ -559,14 +582,14 @@ export function SafeQueueCard({
 
   const execute = async (row: QueueRow, tx: SafeQueuedTransaction) => {
     const key = `execute:${row.chainId}:${tx.nonce}`;
-    let handleExecutionHash: Hex | undefined;
     setBusy(key);
     setError(null);
     setNotice(null);
     try {
+      if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL);
       const handleBinding = await verifyLiveQueuedTransaction(row, tx);
       const policy = await readLiveSafePolicy(row);
-      if (policy.nonce !== Number(tx.nonce)) {
+      if (policy.nonce !== tx.nonce) {
         throw new Error(`Safe nonce ${policy.nonce} must execute first.`);
       }
       if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold) {
@@ -628,43 +651,30 @@ export function SafeQueueCard({
           functionName: "execTransaction",
           args,
         });
-        if (handleBinding) {
-          requireOnchainExecution(hash, "Execute queued project-handle transaction");
-          handleExecutionHash = hash;
-          holdTransactionActivityForVerification(
-            hash,
-            "Confirming the exact Safe event and project-handle result.",
-          );
-          const receipt = await waitForReceiptWithRetry(publicClientFor(row.chainId), hash);
-          requireSafeExecutionSuccess(receipt, row.safe, expectedSafeTxHash);
-          await verifyQueuedProjectHandlePostcondition({
-            binding: handleBinding,
-            safe: row.safe,
-            transaction: tx,
-            clientFor: publicClientFor,
-            executionBlockNumber: receipt.blockNumber,
-          });
-          releaseTransactionActivityVerification(
-            hash,
-            "Safe execution and the exact project-handle result were confirmed onchain.",
-          );
-          handleExecutionHash = undefined;
-        }
+        requireOnchainExecution(hash, `Execute Safe transaction #${tx.nonce}`);
+        await confirmSafeExecution({
+          client: publicClientFor(row.chainId),
+          hash,
+          safe: row.safe,
+          safeTxHash: expectedSafeTxHash,
+          confirm: handleBinding
+            ? (receipt) =>
+                verifyQueuedProjectHandlePostcondition({
+                  binding: handleBinding,
+                  safe: row.safe,
+                  transaction: tx,
+                  clientFor: publicClientFor,
+                  executionBlockNumber: receipt.blockNumber,
+                })
+            : undefined,
+        });
       } finally {
         reviewedExecution.current = null;
       }
-      setNotice(
-        `${handleBinding ? "Executed" : "Submitted"} Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`,
-      );
+      setNotice(`Executed Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`);
       setReview(null);
       await queue.refetch();
     } catch (cause) {
-      if (handleExecutionHash) {
-        failTransactionActivityVerification(
-          handleExecutionHash,
-          "The Safe transaction was submitted, but its exact event or handle result failed verification. Inspect it and do not submit it again yet.",
-        );
-      }
       setError(cause instanceof Error ? cause.message : "Could not execute the Safe transaction.");
     } finally {
       setBusy(null);
@@ -708,24 +718,28 @@ export function SafeQueueCard({
           <div key={`${row.chainId}:${row.safe}`} className="border border-melon-200 bg-white p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-bold">
-                {row.handleOnly ? "Ethereum handles" : chainName(row.chainId)} | nonce{" "}
-                {row.policy.nonce}
+                {row.handleOnly ? "Ethereum handles" : chainName(row.chainId)}
+                {"notice" in row ? null : ` | nonce ${row.policy.nonce}`}
               </span>
-              {safeQueueLink(row.chainId, row.safe) ? (
+              {!("notice" in row) && safeQueueUrl(row.chainId, row.safe) ? (
                 <a
                   className="text-xs underline"
                   target="_blank"
                   rel="noreferrer"
-                  href={safeQueueLink(row.chainId, row.safe)!}
+                  href={safeQueueUrl(row.chainId, row.safe)!}
                 >
                   Open in Safe ↗
                 </a>
               ) : null}
             </div>
-            {row.queueError ? (
+            {"notice" in row ? (
+              <p className="mt-2 text-sm text-zinc-500">{row.notice}</p>
+            ) : row.queueUnavailable ? (
+              <p className="mt-2 text-sm text-zinc-500">{queueUnavailableMessage(row.chainId)}</p>
+            ) : row.queueError ? (
               <p className="mt-2 text-sm text-red-700" role="alert">
                 {row.queueError}
-                {safeQueueLink(row.chainId, row.safe)
+                {safeQueueUrl(row.chainId, row.safe)
                   ? " Use Open in Safe above to inspect the queue."
                   : " Inspect this Safe in a client that supports this chain."}
               </p>
@@ -742,16 +756,17 @@ export function SafeQueueCard({
                       address && confirmation.owner.toLowerCase() === address.toLowerCase(),
                   );
                   const ready = confirmations.length >= row.policy.threshold;
-                  const current = Number(tx.nonce) === row.policy.nonce;
+                  const current = tx.nonce === row.policy.nonce;
+                  const refund = safeTransactionHasRefund(tx);
                   return (
                     <li key={`${tx.nonce}:${tx.safeTxHash ?? tx.data}`} className="py-3 text-xs">
                       <details>
                         <summary className="cursor-pointer font-bold">
                           #{tx.nonce} | {queueLabel(row.chainId, tx)} | {confirmations.length}/
                           {row.policy.threshold} signatures
-                          {queuedBatchCalls(tx)?.length ? (
+                          {multiSendCallsOf(tx)?.length ? (
                             <ol className="mt-1 list-decimal pl-5 font-normal text-zinc-700">
-                              {queuedBatchCalls(tx)!.map((call, index) => (
+                              {multiSendCallsOf(tx)!.map((call, index) => (
                                 <li key={index}>
                                   {protocolQueueLabel(row.chainId, { ...call, operation: 0 }) ??
                                     `${call.data.slice(0, 10)} → ${call.to}`}
@@ -802,9 +817,13 @@ export function SafeQueueCard({
                         <p className="mt-2 text-red-700" role="alert">
                           Handle transaction blocked: {handleError}
                         </p>
+                      ) : refund ? (
+                        <p className="mt-2 text-red-700" role="alert">
+                          {REFUND_REFUSAL}
+                        </p>
                       ) : null}
                       <div className="mt-2 flex gap-2">
-                        {!viaSafeApp && !handleError && !signed && !ready ? (
+                        {!viaSafeApp && !handleError && !refund && !signed && !ready ? (
                           <button
                             type="button"
                             className="border border-melon-500 px-3 py-1 disabled:opacity-50"
@@ -820,7 +839,7 @@ export function SafeQueueCard({
                         {signed && !ready ? (
                           <span className="py-1 text-zinc-600">You signed</span>
                         ) : null}
-                        {!viaSafeApp && !handleError && ready ? (
+                        {!viaSafeApp && !handleError && !refund && ready ? (
                           <button
                             type="button"
                             className="bg-melon-700 px-3 py-1 text-white disabled:opacity-50"

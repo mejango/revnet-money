@@ -9,11 +9,16 @@ import {
   type MultichainCall,
 } from "@/lib/multichain-batch";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
-import { SAFE_EXEC_ABI, safeProposalFor, safeTransactionHash } from "@/lib/safe-queue";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
 } from "@/lib/transaction-activity";
+import {
+  SAFE_EXEC_ABI,
+  SAFE_NONCE_GUIDANCE,
+  safeProposalFor,
+  safeTransactionHash,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { act, renderHook } from "@testing-library/react";
 import {
   encodeAbiParameters,
@@ -111,7 +116,6 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   requireRelayrRecoveryScopeAvailable: mocks.scopeAvailable,
 }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  SAFE_NONCE_GUIDANCE: "Safe nonce guidance.",
   isSafeConnection: () => mocks.safe,
   submittedViaSafe: () => mocks.safe,
   useWriteContract: (options: {
@@ -383,7 +387,7 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
     },
   );
 
-  it.each(["valid", "safe", "hash", "call", "unavailable"])(
+  it.each(["valid", "safe", "hash", "call", "unavailable", "text nonce"])(
     "archives an obsolete Safe proposal only after exact authentication: %s",
     async (mode) => {
       const batch = createMultichainBatch(
@@ -418,7 +422,8 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
             JSON.stringify({
               ...proposal,
               safe: mode === "safe" ? TARGET : ACCOUNT,
-              nonce: mode === "hash" ? 8 : 7,
+              // A text nonce hashes the same, but the service never writes one.
+              nonce: mode === "hash" ? 8 : mode === "text nonce" ? "7" : 7,
             }),
             { status: mode === "unavailable" ? 503 : 200 },
           ),
@@ -1078,7 +1083,7 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
     expect(mocks.review).toHaveBeenCalledOnce();
     const request = mocks.review.mock.calls[0][0];
     expect(request.confirmLabel).toBe("Agree & prepare batch");
-    expect(request.description).not.toContain("Safe nonce guidance.");
+    expect(request.description).not.toContain(SAFE_NONCE_GUIDANCE);
     expect(request.calls).toEqual([
       expect.objectContaining({ chainId: 1, to: TARGET, gas: 6_600_000n }),
       expect.objectContaining({ chainId: 10, to: TARGET, gas: 6_600_000n }),
@@ -1108,7 +1113,7 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
     expect(mocks.review).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         confirmLabel: "Agree & propose to Safe",
-        description: expect.stringMatching(/\n\nSafe nonce guidance\.$/),
+        description: expect.stringMatching(new RegExp(`\n\n${SAFE_NONCE_GUIDANCE}$`)),
         calls: [expect.objectContaining({ chainId: 1, to: TARGET, safeTxGas: 0n })],
       }),
     );

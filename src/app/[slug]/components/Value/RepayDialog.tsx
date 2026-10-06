@@ -9,7 +9,10 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import {
   isSafeProposalPendingError,
+  isSafeProposalUnconfirmedError,
   requireOnchainExecution,
+  SAFE_PROPOSAL_UNCONFIRMED_LINE,
+  SAFE_PROPOSAL_UNCONFIRMED_TITLE,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -38,6 +41,7 @@ const REPAY_STATUS_TEXT: Record<string, string> = {
   pending: "Repayment pending...",
   success: "Repayment confirmed.",
   error: "Repayment failed.",
+  "safe-unconfirmed": SAFE_PROPOSAL_UNCONFIRMED_LINE,
 };
 
 export function RepayDialog({
@@ -147,7 +151,11 @@ export function RepayDialog({
   const { writeContractAsync: repayLoanAsync, isPending: isRepaying } = useWriteContract();
 
   // Transaction status tracking
-  const { isLoading: isRepayTxLoading, isSuccess: isRepaySuccess } = useWaitForTransactionReceipt({
+  const {
+    isLoading: isRepayTxLoading,
+    isSuccess: isRepaySuccess,
+    isSafeResultUnconfirmed: isRepayUnconfirmed,
+  } = useWaitForTransactionReceipt({
     hash: repayTxHash,
   });
 
@@ -399,8 +407,11 @@ export function RepayDialog({
         title: "Success",
         description: "Repayment confirmed.",
       });
+    } else if (isRepayUnconfirmed) {
+      // Its Safe proposal's result can't be confirmed, which is not a failure.
+      setRepayStatus("safe-unconfirmed");
     }
-  }, [isRepayTxLoading, isRepaySuccess, toast]);
+  }, [isRepayTxLoading, isRepaySuccess, isRepayUnconfirmed, toast]);
 
   // Initialize form when dialog opens
   useEffect(() => {
@@ -422,6 +433,17 @@ export function RepayDialog({
   }, [repayStatus]);
 
   // ===== EVENT HANDLERS =====
+  /**
+   * Shows a step refused by its Safe proposal whose result can't be confirmed, which is not a
+   * failure: true when `error` is that refusal.
+   */
+  const showUnconfirmedProposal = (error: unknown) => {
+    if (!isSafeProposalUnconfirmedError(error)) return false;
+    setRepayStatus("safe-unconfirmed");
+    toast({ title: SAFE_PROPOSAL_UNCONFIRMED_TITLE, description: error.message });
+    return true;
+  };
+
   const handleApproveAllowance = async () => {
     if (
       !loanData ||
@@ -469,6 +491,7 @@ export function RepayDialog({
         toast({ title: "Safe approval proposal submitted", description: error.message });
         return;
       }
+      if (showUnconfirmedProposal(error)) return;
       setRepayStatus("error");
       toast({
         variant: "destructive",
@@ -577,6 +600,7 @@ export function RepayDialog({
         toast({ title: "Safe approval proposal submitted", description: error.message });
         return;
       }
+      if (showUnconfirmedProposal(error)) return;
       setRepayStatus("error");
       toast({
         variant: "destructive",
@@ -897,7 +921,7 @@ export function RepayDialog({
               else void handleRepay();
             }}
             busy={signing}
-            status={signing ? statusText : null}
+            status={signing || repayStatus === "safe-unconfirmed" ? statusText : null}
             error={repayStatus === "error" ? statusText : null}
           >
             {review === "repay" ? (

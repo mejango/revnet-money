@@ -114,7 +114,8 @@ describe("ERC-20 approvals of tokens whose approve returns nothing", () => {
     );
   });
 
+  // It parses every file in src: seconds alone, and past the default timeout beside a full parallel suite.
   it("is the ABI every approve in the app is sent and reviewed with", () => {
     expect(sourceFiles(SRC).flatMap(erc20AbiApprovals)).toEqual([]);
-  });
+  }, 60_000);
 });

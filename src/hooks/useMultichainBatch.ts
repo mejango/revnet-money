@@ -8,7 +8,6 @@ import {
 } from "@/hooks/useReviewedRelayr";
 import {
   isSafeConnection,
-  SAFE_NONCE_GUIDANCE,
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -30,6 +29,7 @@ import {
 import type { JBChainId } from "@/lib/nana/types";
 import { simulatePendingRouterCall } from "@/lib/pending-router-calls";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
   recordTransactionActivity,
   refreshTransactionActivities,
@@ -39,12 +39,17 @@ import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction
 import { requireNoViewAs } from "@/lib/view-as";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
+import {
+  readSafeTransaction,
+  SAFE_EXEC_ABI,
+  SAFE_NONCE_GUIDANCE,
+  safeExecutionResult,
+  safeTransactionMessage,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { useCallback, useRef, useState } from "react";
 import {
   decodeFunctionData,
   isAddressEqual,
-  parseAbi,
-  toEventSelector,
   type Address,
   type Hash,
   type PublicClient,
@@ -71,11 +76,11 @@ type BatchInput = {
   onProgress?: (message: string) => void;
 };
 const running = new Set<string>();
-const SAFE_ABI = parseAbi([
-  "function execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures) returns(bool)",
-]);
-// Safe 1.4 indexes the event's txHash; Safe 1.3 puts it in the first data word.
-const SAFE_EXECUTION_SUCCESS = toEventSelector("ExecutionSuccess(bytes32,uint256)");
+
+/** The one call a saved batch call proposes to its Safe. */
+function savedCall(call: FrozenBatchCall) {
+  return { to: call.address, value: call.value ?? 0n, data: call.data };
+}
 
 function explicitRejection(cause: unknown): boolean {
   const seen = new Set<unknown>();
@@ -116,13 +121,13 @@ async function verifyDirectResult(
         (await readRouterPendingAdvance(client, call.expectedRouterPending, call.preconditions)) ===
           "resolved-externally"
       ) {
-        const { readSafeTransaction } = await import("@/lib/safe-queue");
-        const proposal = await readSafeTransaction(call.chainId, batch.account, call.hash!);
+        // The service's record of the proposal, authenticated against its hash.
+        const record = await readSafeTransaction(call.chainId, batch.account, call.hash!);
+        const proposal = safeTransactionMessage(record);
         if (
-          !isAddressEqual(proposal.to, call.address) ||
-          BigInt(proposal.value) !== (call.value ?? 0n) ||
-          (proposal.data ?? "0x").toLowerCase() !== call.data.toLowerCase() ||
-          proposal.operation !== 0
+          // The service writes a nonce as a JSON number; any other form is refused.
+          typeof record.nonce !== "number" ||
+          !safeTransactionRunsCalls(proposal, [savedCall(call)], false)
         )
           throw new Error(
             "The authenticated Safe proposal does not match this exact routing call.",
@@ -137,13 +142,14 @@ async function verifyDirectResult(
           throw new Error(
             "The payment is pending again. Keep the original Safe proposal for reconciliation.",
           );
+        const safeNonce = Number(proposal.nonce);
         updateTransactionActivity(activity.id, {
           status: "failed",
           manualVerificationRequired: false,
-          obsoleteSafeNonce: proposal.nonce,
-          message: `Payment resolved elsewhere. Safe proposal ${call.hash} is obsolete, not verified executed. Cancel or replace nonce ${proposal.nonce} in Safe if it blocks the queue.`,
+          obsoleteSafeNonce: safeNonce,
+          message: `Payment resolved elsewhere. Safe proposal ${call.hash} is obsolete, not verified executed. Cancel or replace nonce ${safeNonce} in Safe if it blocks the queue.`,
         });
-        return { hash, state: "skipped", skipReason: "obsolete-safe", safeNonce: proposal.nonce };
+        return { hash, state: "skipped", skipReason: "obsolete-safe", safeNonce };
       }
       throw new Error(
         "The saved Safe proposal still needs approvals and execution. Resume after it executes; do not propose it again.",
@@ -167,29 +173,28 @@ async function verifyDirectResult(
       "The saved transaction has no canonical successful receipt. Keep it for reconciliation; do not replay it.",
     );
   if (safe) {
-    const decoded = decodeFunctionData({ abi: SAFE_ABI, data: transaction.input });
+    const decoded = decodeFunctionData({ abi: SAFE_EXEC_ABI, data: transaction.input });
     if (
       !transaction.to ||
       !isAddressEqual(transaction.to, batch.account) ||
       decoded.functionName !== "execTransaction" ||
-      !isAddressEqual(decoded.args[0], call.address) ||
-      decoded.args[1] !== (call.value ?? 0n) ||
-      decoded.args[2].toLowerCase() !== call.data.toLowerCase() ||
-      decoded.args[3] !== 0
+      !safeTransactionRunsCalls(
+        {
+          to: decoded.args[0],
+          value: decoded.args[1],
+          data: decoded.args[2],
+          operation: decoded.args[3],
+        },
+        [savedCall(call)],
+        false,
+      )
     )
       throw new Error("The Safe execution does not match the saved destination call.");
     // Over WalletConnect, Safe{Wallet} replies with the execution itself when
-    // the owner executes at once. The execTransaction checked above is then
-    // the proposal, and its Safe's ExecutionSuccess is the result.
-    const atOnce = hash.toLowerCase() === call.hash!.toLowerCase();
-    const success = receipt.logs.some(
-      (log) =>
-        isAddressEqual(log.address, batch.account) &&
-        log.topics[0]?.toLowerCase() === SAFE_EXECUTION_SUCCESS &&
-        (atOnce ||
-          (log.topics[1] ?? log.data.slice(0, 66)).toLowerCase() === call.hash!.toLowerCase()),
-    );
-    if (!success) throw new Error("The exact Safe proposal has not executed successfully.");
+    // the owner executes at once: the SDK then reads the Safe's one execution
+    // event in that receipt, whose execTransaction was checked above.
+    if (safeExecutionResult(receipt, batch.account, call.hash!).status !== "success")
+      throw new Error("The exact Safe proposal has not executed successfully.");
   } else if (
     !transaction.to ||
     !isAddressEqual(transaction.to, call.address) ||

@@ -1,5 +1,4 @@
 import type { RawRuleset } from "@/lib/nana/rulesets";
-import type { ExpectedPayoutReceipt } from "@/lib/payout-receipts";
 import { isStickyHook, stickyRecipientLabel } from "@/lib/sticky";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
@@ -15,6 +14,7 @@ import {
   jbSplitsAbi,
   jbTerminalStoreAbi,
 } from "@bananapus/nana-sdk-core";
+import type { ExpectedPayoutReceipt } from "@bananapus/nana-sdk-core/v6";
 import {
   type Abi,
   type Address,
@@ -298,7 +298,6 @@ export function buildPayoutCall(
   if (minTokensPaidOut > payoutTokenAmount(option, amount))
     throw new Error("The minimum exceeds the expected payout in terminal tokens.");
   const expectedPayout: ExpectedPayoutReceipt = {
-    kind: "payout",
     terminal: option.terminal,
     projectId: String(option.projectId),
     rulesetId: String(option.rulesetId),

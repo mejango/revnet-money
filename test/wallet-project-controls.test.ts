@@ -103,7 +103,7 @@ const actionExpectations: Array<{
           'functionName: "setEnsNamePartsFor"',
           'functionName: "createProxyWithNonce"',
           "isLiveRevnetOperator",
-          "simulateSafeProxyDeployment",
+          "prepareSafeSameAddressDeployment",
           "requireOnchainExecution",
         ],
       },
@@ -297,34 +297,31 @@ describe("project handle ENS authorization", () => {
     );
     expect(source).toContain("confirmedResolver.toLowerCase() !== fresh.resolver.toLowerCase()");
     expect(source).toContain("const confirmedRecord = await readExactEnsText");
-    expect(source).toContain("const confirmedAuthority = await readCrossChainHandleAuthority");
+    expect(source).toContain("const confirmedAuthority = await readHandleAuthority");
     expect(source).toContain("const confirmed = await readHandleSetup");
-    expect(source.match(/readCrossChainHandleAuthority/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
+    expect(source.match(/readHandleAuthority\(/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
   });
 
-  it("mines and semantically confirms handle-scoped Safe executions only", () => {
+  it("mines every Safe execution and confirms it, and a handle's result, from the receipt", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx"),
       "utf8",
     );
     expect(source).toContain("const handleBinding = await verifyLiveQueuedTransaction(row, tx)");
-    expect(source).toContain("manualReceiptVerification:");
-    expect(source).toContain("if (handleBinding) {");
-    expect(source).toContain("waitForReceiptWithRetry(publicClientFor(row.chainId), hash)");
-    expect(source).toContain("requireSafeExecutionSuccess(receipt, row.safe, expectedSafeTxHash)");
+    expect(source).toContain("manualReceiptVerification: () => true");
+    expect(source).toContain("await confirmSafeExecution({");
+    expect(source).toContain("safeTxHash: expectedSafeTxHash");
     expect(source).toContain("verifyQueuedProjectHandlePostcondition");
     expect(source).toContain("executionBlockNumber: receipt.blockNumber");
-    expect(source).toContain("releaseTransactionActivityVerification");
-    expect(source).toContain("failTransactionActivityVerification");
-    expect(source).toContain("handleExecutionHash = undefined");
+    expect(source).toContain("if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL)");
     // Connected as a Safe (the Safe app, or Safe{Wallet} over WalletConnect),
     // the Safe cannot sign or execute its own queue; every action button
     // defers to Safe{Wallet}, and renders again once the peer is known.
     expect(source).toContain("const viaSafeApp = useSafeConnection(config)");
     expect(source).toContain("canBatch && !viaSafeApp");
-    expect(source).toContain("!viaSafeApp && !handleError && !signed && !ready");
-    expect(source).toContain("!viaSafeApp && !handleError && ready");
-    expect(source).toContain('handleBinding ? "Executed" : "Submitted"');
+    expect(source).toContain("!viaSafeApp && !handleError && !refund && !signed && !ready");
+    expect(source).toContain("!viaSafeApp && !handleError && !refund && ready");
+    expect(source).toContain("Executed Safe transaction #${tx.nonce}");
   });
 
   it("binds project-handle publish inputs and the exact ENS record after review", () => {

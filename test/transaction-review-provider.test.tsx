@@ -1,13 +1,6 @@
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { ChainPayment } from "@/lib/nana/types";
-import { encodeMultiSend, MULTI_SEND_ABI, MULTI_SEND_CALL_ONLY } from "@/lib/safe-batch";
-import {
-  SAFE_APPROVE_HASH_ABI,
-  SAFE_EXEC_ABI,
-  safeBatchProposalFor,
-  safeExecutionArgs,
-} from "@/lib/safe-queue";
 import {
   chooseRelayrPayment,
   fundingChainLabel,
@@ -15,6 +8,16 @@ import {
   requireTransactionReview,
   TransactionReviewCancelledError,
 } from "@/lib/transaction-review";
+import {
+  encodeMultiSend,
+  MULTI_SEND_ABI,
+  MULTI_SEND_CALL_ONLY,
+} from "@bananapus/nana-sdk-core/safe";
+import {
+  SAFE_EXEC_ABI,
+  safeBatchProposalFor,
+  safeExecutionArgs,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { encodeFunctionData, parseAbi, type Abi } from "viem";
@@ -593,7 +596,7 @@ describe("TransactionReviewProvider", () => {
       }).catch(() => undefined);
 
     it.each([
-      ["approveHash", { abi: SAFE_APPROVE_HASH_ABI, args: [`0x${"ab".repeat(32)}`] }],
+      ["approveHash", { abi: SAFE_EXEC_ABI, args: [`0x${"ab".repeat(32)}`] }],
       [
         "execTransaction",
         {
@@ -618,7 +621,7 @@ describe("TransactionReviewProvider", () => {
       render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
       reviewBatch(
         {
-          abi: SAFE_APPROVE_HASH_ABI,
+          abi: SAFE_EXEC_ABI,
           functionName: "approveHash",
           args: [`0x${"ab".repeat(32)}`],
         },

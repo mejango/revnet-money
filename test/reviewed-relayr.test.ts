@@ -1,5 +1,5 @@
 import type { RelayrGetBundleResponse } from "@/lib/nana/types";
-import { SAFE_EXEC_ABI } from "@/lib/safe-queue";
+import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {

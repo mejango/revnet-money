@@ -11,18 +11,20 @@ import {
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import { readAuthorityIdentity, readBoundedSafeNonce } from "@/lib/cross-chain-authority";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
+import { chooseRelayrPayment } from "@/lib/transaction-review";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   listPendingSafeTransactions,
   nextProposalNonce,
   proposeSafeTransaction,
-  queuedTransactionMatchesCall,
   safeProposalFor,
+  safeTransactionMatchesCall,
   submitSafeConfirmation,
-} from "@/lib/safe-queue";
-import { chooseRelayrPayment } from "@/lib/transaction-review";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+  usableSafeConfirmations,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { Address, encodeFunctionData, isAddressEqual } from "viem";
 import { useConfig } from "wagmi";
@@ -162,7 +164,7 @@ export function useOperatorWrites() {
       });
 
       onProgress(`Reading the Safe queue on ${name}…`);
-      const nonce = await readBoundedSafeNonce(client, route.safe);
+      const nonce = await readBoundedSafeNonce(client, route.safe).catch(() => null);
       if (nonce === null || nonce > BigInt(Number.MAX_SAFE_INTEGER)) {
         throw new Error(`The operator Safe's nonce on ${name} could not be read.`);
       }
@@ -182,9 +184,9 @@ export function useOperatorWrites() {
         }
       };
 
-      const existing = pending.find((tx) => queuedTransactionMatchesCall(tx, call));
+      const existing = pending.find((tx) => safeTransactionMatchesCall(tx, call));
       if (existing) {
-        const confirmed = (existing.confirmations ?? []).some((confirmation) =>
+        const confirmed = usableSafeConfirmations(existing, route.owners).some((confirmation) =>
           isAddressEqual(confirmation.owner, account),
         );
         if (!confirmed) {
@@ -195,7 +197,7 @@ export function useOperatorWrites() {
             tx: existing,
             reverify,
           });
-          await submitSafeConfirmation(write.chainId, existing, signature);
+          await submitSafeConfirmation(write.chainId, route.safe, existing, signature);
         }
         result.safeConfirmed += 1;
         continue;
@@ -210,7 +212,11 @@ export function useOperatorWrites() {
         reverify,
       });
       onProgress(`Queuing the proposal with the Safe service on ${name}…`);
-      await proposeSafeTransaction(write.chainId, route.safe, tx, account, signature);
+      await proposeSafeTransaction(write.chainId, route.safe, tx, {
+        sender: account,
+        signature,
+        origin: SAFE_PROPOSAL_ORIGIN,
+      });
       result.safeQueued += 1;
     }
     if (viaSafe.length) {

@@ -3,7 +3,9 @@ import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalPendingError,
+  isSafeProposalUnconfirmedError,
   requireOnchainExecution,
+  SAFE_PROPOSAL_UNCONFIRMED_TITLE,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -47,7 +49,8 @@ type BorrowState =
   | "error-permission-denied"
   | "error-loan-canceled"
   | "error"
-  | "reallocation-pending";
+  | "reallocation-pending"
+  | "safe-unconfirmed";
 
 /**
  * A loan row as the loan tables select it (a superset of Bendystraw's LoanRow;
@@ -285,14 +288,21 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   const { writeContractAsync: permissionWriteAsync } = useWriteContract();
 
   // Transaction status hooks
-  const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({
+  const {
+    isLoading: isTxLoading,
+    isSuccess,
+    isSafeResultUnconfirmed: isTxUnconfirmed,
+  } = useWaitForTransactionReceipt({
     hash: txHash,
   });
 
-  const { isLoading: isReallocationTxLoading, isSuccess: isReallocationSuccess } =
-    useWaitForTransactionReceipt({
-      hash: reallocationTxHash,
-    });
+  const {
+    isLoading: isReallocationTxLoading,
+    isSuccess: isReallocationSuccess,
+    isSafeResultUnconfirmed: isReallocationUnconfirmed,
+  } = useWaitForTransactionReceipt({
+    hash: reallocationTxHash,
+  });
 
   // Additional derived values in native tokens
   const netAvailableToBorrow =
@@ -445,6 +455,20 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   }, []);
 
   /**
+   * Shows a step refused by its Safe proposal whose result can't be confirmed, which is neither a
+   * failure nor a denial: true when `err` is that refusal.
+   */
+  const showUnconfirmedProposal = useCallback(
+    (err: unknown) => {
+      if (!isSafeProposalUnconfirmedError(err)) return false;
+      setBorrowStatus("safe-unconfirmed");
+      toast({ title: SAFE_PROPOSAL_UNCONFIRMED_TITLE, description: err.message });
+      return true;
+    },
+    [toast],
+  );
+
+  /**
    * Ensure REVLoans holds BURN_TOKENS for this account+project, granting it if not.
    *
    * Shared by BOTH submit paths. The reallocation branch used to skip it entirely, so a
@@ -514,11 +538,15 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           });
           return false;
         }
+        if (showUnconfirmedProposal(err)) return false;
         setBorrowStatus("error-permission-denied");
         toast({
           variant: "destructive",
           title: "Permission Denied",
-          description: "Permission was not granted. Approve it to continue.",
+          description: formatWalletError(
+            err,
+            "Permission was not granted. Approve it to continue.",
+          ),
         });
         return false;
       }
@@ -534,6 +562,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     publicClient,
     resolvedPermissionsAddress,
     revLoansContractAddress,
+    showUnconfirmedProposal,
     toast,
   ]);
 
@@ -588,12 +617,12 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       // prompt are part of the send, and its dialog must not close under them.
       setBorrowStatus("checking");
 
-      // Adding collateral burns project tokens, exactly as the standard borrow path does, so
-      // it needs the same BURN_TOKENS grant. Skipping this left the user at a simulation
-      // failure with no grant step offered.
-      if (collateralCountToAdd > 0n && !(await ensureBurnTokensPermission())) return;
-
       try {
+        // Adding collateral burns project tokens, exactly as the standard borrow path does, so
+        // it needs the same BURN_TOKENS grant; without it the refinance fails in simulation with
+        // no grant step offered. A permission read that fails ends here, in the error state.
+        if (collateralCountToAdd > 0n && !(await ensureBurnTokensPermission())) return;
+
         if (!publicClient) {
           throw new Error("This network is unavailable. Nothing was submitted.");
         }
@@ -626,6 +655,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           account: address,
         });
       } catch (err) {
+        if (showUnconfirmedProposal(err)) return;
         setBorrowStatus("error");
         toast({
           variant: "destructive",
@@ -684,6 +714,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             account: address,
           });
         } catch (err) {
+          if (showUnconfirmedProposal(err)) return;
           setBorrowStatus("error");
           toast({
             variant: "destructive",
@@ -720,6 +751,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     tokenConfigForChain,
     collateralCountToTransfer,
     ensureBurnTokensPermission,
+    showUnconfirmedProposal,
   ]);
 
   // ===== EFFECTS =====
@@ -764,6 +796,9 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         title: "Success",
         description: isReallocationSuccess ? "Loan adjusted." : "Loan opened.",
       });
+    } else if (isTxUnconfirmed || isReallocationUnconfirmed) {
+      // Its Safe proposal's result can't be confirmed, which is not a failure.
+      setBorrowStatus("safe-unconfirmed");
     } else {
       setBorrowStatus("error");
     }
@@ -774,6 +809,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     isReallocationTxLoading,
     isSuccess,
     isReallocationSuccess,
+    isTxUnconfirmed,
+    isReallocationUnconfirmed,
     toast,
   ]);
 

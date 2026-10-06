@@ -2,11 +2,17 @@ import {
   useSafeBatchSubmit,
   type SafeBatchRoute,
 } from "@/app/[slug]/components/v6/operator/useSafeBatchSubmit";
-import { buildStep } from "@/lib/safe-batch";
+import { buildStep, composeBatch } from "@/lib/safe-batch";
 import type { TransactionReviewRequest } from "@/lib/transaction-review";
+import {
+  SAFE_NONCE_GUIDANCE,
+  safeBatchProposalFor,
+  safeTransactionHash,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { act, renderHook } from "@testing-library/react";
 import type { Address } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { executionLog, safeChain } from "./fixtures/safe-chain";
 
 // A signer of the operator Safe on a chain with no Safe transaction service
 // approves (or executes) the batch's SafeTx hash onchain.
@@ -19,10 +25,13 @@ const HOOK = "0xB222Da5A71e8FB89a5A38b7c920EaB5DfbC74B91" as Address;
 const mocks = vi.hoisted(() => ({
   safe: false,
   account: "0x1111111111111111111111111111111111111111" as string,
-  approved: [] as string[],
+  approved: [] as `0x${string}`[],
   review: vi.fn(),
   write: vi.fn(),
   onchain: vi.fn(),
+  receipt: vi.fn(),
+  manualReceiptVerification: undefined as
+    undefined | ((variables: { functionName: string }) => boolean),
 }));
 
 vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
@@ -33,39 +42,44 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  SAFE_NONCE_GUIDANCE: "Safe nonce guidance.",
   followSubmission: vi.fn(),
   isSafeConnection: () => mocks.safe,
   proposeSafeBatch: vi.fn(),
   requireOnchainExecution: mocks.onchain,
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
+  useWriteContract: (options?: {
+    manualReceiptVerification?: typeof mocks.manualReceiptVerification;
+  }) => {
+    if (options?.manualReceiptVerification) {
+      mocks.manualReceiptVerification = options.manualReceiptVerification;
+    }
+    return { writeContractAsync: mocks.write };
+  },
 }));
 vi.mock("@/hooks/useReviewedSafeSignature", () => ({
   useReviewedSafeSignature: () => ({ signSafeTransactionAsync: vi.fn() }),
 }));
-vi.mock("@/lib/cross-chain-authority", () => ({
+vi.mock("@bananapus/nana-sdk-core/safe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe")>()),
   readAuthorityIdentity: async () => ({ kind: "safe", owners: [SIGNER, OTHER], threshold: 2 }),
   readBoundedSafeNonce: async () => 3n,
 }));
-vi.mock("@/lib/safe-queue", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/safe-queue")>()),
+vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe-service")>()),
   hasSafeService: () => false,
 }));
 vi.mock("@/lib/transaction-review", () => ({ requireTransactionReview: mocks.review }));
-vi.mock("@/lib/waitForReceipt", () => ({
-  waitForReceiptWithRetry: async () => ({ status: "success", logs: [] }),
-}));
+vi.mock("@/lib/waitForReceipt", () => ({ waitForReceiptWithRetry: mocks.receipt }));
 vi.mock("@/app/[slug]/components/v6/operator/operatorLib", () => ({
   chainName: () => "Base",
   operatorWriteRoute: vi.fn(),
   runSequentialWrites: vi.fn(),
   publicClientFor: () => ({
+    // Owners' approvals of the batch hash, read as bounded eth_calls on the Safe.
+    ...safeChain(SAFE, { approvedBy: mocks.approved }).client,
     getCode: async () => "0x6080",
     simulateCalls: async ({ calls }: { calls: unknown[] }) => ({
       results: calls.map(() => ({ status: "success" })),
     }),
-    readContract: async ({ args: [owner] }: { args: [string] }) =>
-      mocks.approved.includes(owner) ? 1n : 0n,
   }),
 }));
 
@@ -96,6 +110,8 @@ beforeEach(() => {
   mocks.safe = false;
   mocks.account = SIGNER;
   mocks.approved = [];
+  mocks.manualReceiptVerification = undefined;
+  mocks.receipt.mockResolvedValue({ status: "success", logs: [] });
   mocks.review.mockResolvedValue(undefined);
   mocks.write.mockResolvedValue(`0x${"ab".repeat(32)}`);
   // As in the app, a Safe connection's write is a proposal that has not executed yet.
@@ -120,7 +136,7 @@ describe("onchain Safe batch approval", () => {
       expect(mocks.review).toHaveBeenCalledOnce();
       const request = mocks.review.mock.calls[0][0] as TransactionReviewRequest;
       expect(request.confirmLabel).toBe(label);
-      expect(request.description?.endsWith("\n\nSafe nonce guidance.")).toBe(safe);
+      expect(request.description?.endsWith(`\n\n${SAFE_NONCE_GUIDANCE}`)).toBe(safe);
       expect(request.calls).toHaveLength(1);
       expect(request.calls[0]).toMatchObject({ to: SAFE, functionName: "approveHash" });
       // A Safe connection proposes the write with gas 0; an EOA's gas is measured after review.
@@ -144,6 +160,47 @@ describe("onchain Safe batch approval", () => {
     expect(request.confirmLabel).toBe("Agree & propose to Safe");
     expect(request.calls[0]).toMatchObject({ functionName: "execTransaction", safeTxGas: 0n });
     expect(mocks.write).toHaveBeenCalledOnce();
+  });
+
+  describe("when this owner's approval meets the threshold", () => {
+    const safeTxHash = safeTransactionHash(
+      8453,
+      SAFE,
+      safeBatchProposalFor(composeBatch(steps).calls, 3),
+    );
+    const approvedHead = (owner: Address) =>
+      `${owner.slice(2).toLowerCase().padStart(64, "0")}${"0".repeat(64)}01`;
+
+    beforeEach(() => {
+      mocks.approved = [OTHER];
+    });
+
+    it("executes with pre-validated signatures in ascending owner order", async () => {
+      mocks.receipt.mockResolvedValue({
+        status: "success",
+        logs: [executionLog(SAFE, safeTxHash)],
+      });
+
+      await expect(submit()).resolves.toMatchObject({ kind: "executed", calls: 1 });
+      expect(mocks.write).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ address: SAFE, functionName: "execTransaction" }),
+      );
+      expect(mocks.write.mock.calls[0][0].args[9]).toBe(
+        `0x${approvedHead(SIGNER)}${approvedHead(OTHER)}`,
+      );
+      // The owner's execution is journaled only after its Safe event is read.
+      expect(mocks.manualReceiptVerification?.({ functionName: "execTransaction" })).toBe(true);
+      expect(mocks.manualReceiptVerification?.({ functionName: "approveHash" })).toBe(false);
+    });
+
+    it("is not reported executed when the receipt has no ExecutionSuccess for the batch", async () => {
+      mocks.receipt.mockResolvedValue({
+        status: "success",
+        logs: [executionLog(SAFE, `0x${"12".repeat(32)}`)],
+      });
+
+      await expect(submit()).rejects.toThrow(/no ExecutionSuccess or ExecutionFailure/);
+    });
   });
 
   it("sends nothing when the connection changes after review", async () => {

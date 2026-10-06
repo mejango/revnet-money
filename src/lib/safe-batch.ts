@@ -11,17 +11,13 @@ import {
   revOwnerAbi,
   USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
+import { multiSendCallsOf } from "@bananapus/nana-sdk-core/safe";
 import { useMemo, useSyncExternalStore } from "react";
 import {
-  concatHex,
-  decodeFunctionData,
   encodeFunctionData,
-  encodePacked,
   getAddress,
   isAddress,
   isAddressEqual,
-  parseAbi,
-  size,
   zeroAddress,
   type Abi,
   type Address,
@@ -412,79 +408,11 @@ export async function mirrorBatch(
   return { steps: mirrored, skipped };
 }
 
-// ── MultiSend ────────────────────────────────────────────────────────────────
-
-/** Safe's canonical MultiSendCallOnly 1.3.0, the same address on every supported chain. */
-export const MULTI_SEND_CALL_ONLY = "0x40A2aCCbd92BCA938b02010E17A5b8929b49130D" as Address;
-
-export const MULTI_SEND_ABI = parseAbi(["function multiSend(bytes transactions) payable"]);
-
-/** `MultiSendCallOnly.multiSend(bytes)`: each call packed as op ‖ to ‖ value ‖ data.length ‖ data. */
-export function encodeMultiSend(calls: readonly { to: Address; data: Hex; value?: bigint }[]): Hex {
-  const packed = concatHex(
-    calls.map((call) =>
-      encodePacked(
-        ["uint8", "address", "uint256", "uint256", "bytes"],
-        [0, call.to, call.value ?? 0n, BigInt(size(call.data)), call.data],
-      ),
-    ),
-  );
-  return encodeFunctionData({ abi: MULTI_SEND_ABI, functionName: "multiSend", args: [packed] });
-}
-
-/** The calls inside `multiSend` calldata, or null when the bytes are not that shape. */
-export function decodeMultiSend(
-  data: Hex | null | undefined,
-): { operation: number; to: Address; value: bigint; data: Hex }[] | null {
-  if (!data) return null;
-  let packed: Hex;
-  try {
-    const decoded = decodeFunctionData({ abi: MULTI_SEND_ABI, data });
-    if (decoded.functionName !== "multiSend") return null;
-    packed = decoded.args[0];
-  } catch {
-    return null;
-  }
-  const bytes = packed.slice(2);
-  const calls: { operation: number; to: Address; value: bigint; data: Hex }[] = [];
-  let offset = 0;
-  while (offset < bytes.length) {
-    if (bytes.length - offset < 170) return null;
-    const operation = Number.parseInt(bytes.slice(offset, offset + 2), 16);
-    const to = `0x${bytes.slice(offset + 2, offset + 42)}`;
-    const value = BigInt(`0x${bytes.slice(offset + 42, offset + 106)}`);
-    const length = Number(BigInt(`0x${bytes.slice(offset + 106, offset + 170)}`));
-    const end = offset + 170 + length * 2;
-    if (!isAddress(to) || end > bytes.length) return null;
-    calls.push({
-      operation,
-      to: getAddress(to),
-      value,
-      data: `0x${bytes.slice(offset + 170, end)}`,
-    });
-    offset = end;
-  }
-  return calls.length ? calls : null;
-}
-
-/** The inner calls of a queued MultiSendCallOnly delegatecall, else null. */
-export function queuedBatchCalls(tx: {
-  to: Address;
-  data: Hex | null;
-  operation: number;
-}): { to: Address; data: Hex; value: bigint }[] | null {
-  if (Number(tx.operation) !== 1 || !isAddressEqual(tx.to, MULTI_SEND_CALL_ONLY)) return null;
-  return decodeMultiSend(tx.data);
-}
+// ── Queued batches ───────────────────────────────────────────────────────────
 
 /** "Batch (N calls)" for a queued MultiSendCallOnly delegatecall, else null. */
-export function describeQueuedBatch(tx: {
-  to: Address;
-  data: Hex | null;
-  operation: number;
-}): string | null {
-  if (Number(tx.operation) !== 1 || !isAddressEqual(tx.to, MULTI_SEND_CALL_ONLY)) return null;
-  const calls = decodeMultiSend(tx.data);
+export function describeQueuedBatch(tx: Parameters<typeof multiSendCallsOf>[0]): string | null {
+  const calls = multiSendCallsOf(tx);
   return calls ? `Batch (${calls.length} call${calls.length === 1 ? "" : "s"})` : null;
 }
 

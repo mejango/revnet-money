@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
+import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
@@ -44,6 +45,7 @@ const BORROW_STATUS_TEXT: Record<string, string> = {
   "reallocation-pending": "Adjusting loan...",
   success: "Loan opened.",
   "error-permission-denied": "Permission was not granted. Approve it to continue.",
+  "safe-unconfirmed": SAFE_PROPOSAL_UNCONFIRMED_LINE,
   "error-loan-canceled": "Loan canceled.",
   error: "The loan could not be opened.",
 };
@@ -423,7 +425,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
             action={adjusting ? "Adjust loan" : "Open loan"}
             onConfirm={() => void handleBorrow()}
             busy={busy}
-            status={busy ? statusText : null}
+            status={busy || borrowStatus === "safe-unconfirmed" ? statusText : null}
             error={borrowStatus.startsWith("error") ? statusText : null}
           >
             <SummaryRow label="Tokens used for loan">

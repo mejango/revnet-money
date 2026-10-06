@@ -12,7 +12,11 @@ import {
 } from "@/components/ui/dialog";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
-import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import {
+  SAFE_PROPOSAL_UNCONFIRMED_LINE,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { buildBurnTokensRequest } from "@/lib/burnTokens";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -108,7 +112,10 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
   const [hash, setHash] = useState<`0x${string}`>();
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { isLoading, isSuccess } = useWaitForTransactionReceipt({ hash, chainId: row.chainId });
+  const { isLoading, isSuccess, isSafeResultUnconfirmed } = useWaitForTransactionReceipt({
+    hash,
+    chainId: row.chainId,
+  });
   const { toast } = useToast();
   const chainName = JB_CHAINS[row.chainId]?.name ?? String(row.chainId);
   let count = 0n;
@@ -205,6 +212,9 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
       >
         {isSuccess ? "Burned" : "Burn permanently"}
       </ButtonWithWallet>
+      {isSafeResultUnconfirmed ? (
+        <p className="mt-2 text-xs text-zinc-600">{SAFE_PROPOSAL_UNCONFIRMED_LINE}</p>
+      ) : null}
       <TxConfirmDialog
         open={reviewing}
         onOpenChange={(next) => {

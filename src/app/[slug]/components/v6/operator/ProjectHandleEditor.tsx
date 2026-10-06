@@ -21,10 +21,7 @@ import {
   requireOnchainExecution,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
-import {
-  readCrossChainHandleAuthority,
-  type CrossChainHandleAuthorityStatus,
-} from "@/lib/cross-chain-authority";
+import { readHandleAuthority, unprovenSafeMessage } from "@/lib/handle-authority";
 import {
   ENS_NAME_WRAPPER_ADDRESS,
   ENS_REGISTRY_ADDRESS,
@@ -51,13 +48,6 @@ import {
   findRevnetOperatorFromPermissionHistory,
   revnetOperatorCandidates,
 } from "@/lib/revnetOperator";
-import {
-  fetchSafeCreation,
-  safeProxyFactoryAbi,
-  simulateSafeProxyDeployment,
-  validateSafeCreationForCurrentPolicy,
-  verifySafeDeploymentAfterReceipt,
-} from "@/lib/safeDeployment";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
@@ -66,6 +56,11 @@ import {
   getJBContractAddress,
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
+import {
+  prepareSafeSameAddressDeployment,
+  validateSafeCreationForCurrentPolicy,
+  type CrossChainHandleAuthorityStatus,
+} from "@bananapus/nana-sdk-core/safe";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -113,6 +108,8 @@ function authorityStatusMessage(status: CrossChainHandleAuthorityStatus): string
       return "The operator Safe uses a guard or module policy which cannot publish a verified project handle.";
     case "contract-owner":
       return "Every operator Safe owner must be the same EOA (plain or exactly EIP-7702 delegated) on both chains.";
+    case "unproven-creation":
+      return unprovenSafeMessage(PROJECT_HANDLE_CHAIN_ID);
     default:
       return "The operator's Ethereum control could not be verified.";
   }
@@ -285,7 +282,7 @@ export function ProjectHandleEditor({
     enabled: Boolean(operator),
     staleTime: 10_000,
     queryFn: () =>
-      readCrossChainHandleAuthority({
+      readHandleAuthority({
         sourceChainId: project.chainId,
         sourceClient: publicClientFor(project.chainId),
         mainnetClient: publicClientFor(PROJECT_HANDLE_CHAIN_ID as JBChainId),
@@ -296,18 +293,13 @@ export function ProjectHandleEditor({
   const sourceSafe =
     authorityQuery.data?.source?.kind === "safe" ? authorityQuery.data.source : undefined;
   const mainnetSafeMissing = authorityQuery.data?.status === "missing-mainnet-safe";
-  const safeCreationQuery = useQuery({
-    queryKey: ["v6-project-handle-safe-creation", project.chainId, operator],
-    enabled: Boolean(operator && mainnetSafeMissing),
-    staleTime: 60_000,
-    queryFn: () => fetchSafeCreation(operator!, [project.chainId]),
-  });
+  const safeCreation = authorityQuery.data?.creation ?? null;
   const safeCreationValidation = useMemo(
     () =>
-      sourceSafe && safeCreationQuery.data
-        ? validateSafeCreationForCurrentPolicy(safeCreationQuery.data, sourceSafe)
+      sourceSafe && safeCreation
+        ? validateSafeCreationForCurrentPolicy(safeCreation, sourceSafe)
         : null,
-    [safeCreationQuery.data, sourceSafe],
+    [safeCreation, sourceSafe],
   );
   const connectedIsSafeOwner = Boolean(
     address && sourceSafe?.owners.some((owner) => isAddressEqual(owner, address)),
@@ -459,7 +451,7 @@ export function ProjectHandleEditor({
         account,
       );
       if (!isCurrent) throw new Error("The connected account is no longer this revnet's operator.");
-      const authority = await readCrossChainHandleAuthority({
+      const authority = await readHandleAuthority({
         sourceChainId: project.chainId,
         sourceClient: publicClientFor(project.chainId),
         mainnetClient: publicClientFor(PROJECT_HANDLE_CHAIN_ID as JBChainId),
@@ -499,7 +491,7 @@ export function ProjectHandleEditor({
       if (!operator || !(await isLiveRevnetOperator(sourceClient, project, operator))) {
         throw new Error("The operator changed before the Safe deployment was submitted.");
       }
-      const authority = await readCrossChainHandleAuthority({
+      const authority = await readHandleAuthority({
         sourceChainId: project.chainId,
         sourceClient,
         mainnetClient,
@@ -511,29 +503,26 @@ export function ProjectHandleEditor({
       if (!authority.source.owners.some((owner) => isAddressEqual(owner, account))) {
         throw new Error("Connect a current EOA owner of the operator Safe to deploy it.");
       }
-      const creation = await fetchSafeCreation(operator, [project.chainId]);
-      if (!creation) throw new Error("The Safe creation transaction could not be recovered.");
-      const validation = validateSafeCreationForCurrentPolicy(creation, authority.source);
-      if (!validation.valid) {
-        throw new Error("The Safe's creation policy no longer matches its live operator policy.");
+      if (!authority.creation) {
+        throw new Error("The Safe creation transaction could not be recovered.");
       }
-      const simulation = await simulateSafeProxyDeployment({
-        client: mainnetClient,
-        creation,
-        expectedSafe: operator,
-        account,
-        currentSafe: authority.source,
+      const deployment = await prepareSafeSameAddressDeployment({
+        sourceClient,
+        destinationClient: mainnetClient,
+        creation: authority.creation,
+        safe: operator,
+        from: account,
       });
-      if (!simulation.valid) {
-        throw new Error(`The same-address Safe deployment is unavailable (${simulation.reason}).`);
+      if (!deployment.valid) {
+        throw new Error(`The same-address Safe deployment is unavailable (${deployment.reason}).`);
       }
       if (
-        !isAddressEqual(variables.address, simulation.call.target) ||
-        variables.functionName !== simulation.call.functionName ||
+        !isAddressEqual(variables.address, deployment.call.target) ||
+        variables.functionName !== deployment.call.functionName ||
         !variables.args ||
-        variables.args[0] !== simulation.call.args[0] ||
-        variables.args[1] !== simulation.call.args[1] ||
-        variables.args[2] !== simulation.call.args[2]
+        variables.args[0] !== deployment.call.args[0] ||
+        variables.args[1] !== deployment.call.args[1] ||
+        variables.args[2] !== deployment.call.args[2]
       ) {
         throw new Error("The reviewed Safe deployment inputs changed before submission.");
       }
@@ -545,7 +534,7 @@ export function ProjectHandleEditor({
       !address ||
       !operator ||
       !sourceSafe ||
-      !safeCreationQuery.data ||
+      !safeCreation ||
       !safeCreationValidation?.valid ||
       busyAction
     ) {
@@ -563,7 +552,7 @@ export function ProjectHandleEditor({
       if (!(await isLiveRevnetOperator(sourceClient, project, operator))) {
         throw new Error("The revnet operator changed before Safe deployment.");
       }
-      const liveAuthority = await readCrossChainHandleAuthority({
+      const liveAuthority = await readHandleAuthority({
         sourceChainId: project.chainId,
         sourceClient,
         mainnetClient,
@@ -575,38 +564,35 @@ export function ProjectHandleEditor({
       ) {
         throw new Error("The operator Safe no longer needs this Ethereum deployment.");
       }
-      const creation = await fetchSafeCreation(operator, [project.chainId]);
-      if (!creation) throw new Error("The Safe creation transaction could not be recovered.");
-      const validation = validateSafeCreationForCurrentPolicy(creation, liveAuthority.source);
-      if (!validation.valid) {
-        throw new Error("The Safe's original creation policy no longer matches its live policy.");
+      if (!liveAuthority.creation) {
+        throw new Error("The Safe creation transaction could not be recovered.");
       }
-      const simulation = await simulateSafeProxyDeployment({
-        client: mainnetClient,
-        creation,
-        expectedSafe: operator,
-        account: address,
-        currentSafe: liveAuthority.source,
+      const deployment = await prepareSafeSameAddressDeployment({
+        sourceClient,
+        destinationClient: mainnetClient,
+        creation: liveAuthority.creation,
+        safe: operator,
+        from: address,
       });
-      if (!simulation.valid) {
-        throw new Error(`The same-address Safe deployment is unavailable (${simulation.reason}).`);
+      if (!deployment.valid) {
+        throw new Error(`The same-address Safe deployment is unavailable (${deployment.reason}).`);
       }
 
       setStatus("Confirm the Ethereum Safe deployment in its owner's wallet…");
       // wallet-action:project-handle
       const hash = await deployOperatorSafe({
         chainId: PROJECT_HANDLE_CHAIN_ID,
-        address: simulation.call.target,
-        abi: safeProxyFactoryAbi,
+        address: deployment.call.target,
+        abi: deployment.call.abi,
         functionName: "createProxyWithNonce",
-        args: simulation.call.args,
+        args: deployment.call.args,
       });
       requireOnchainExecution(hash, "Deploy operator Safe on Ethereum");
       setStatus("Waiting for the Ethereum Safe deployment to confirm…");
       const receipt = await waitForReceiptWithRetry(mainnetClient, hash);
       if (receipt.status !== "success")
         throw new Error("The Safe deployment transaction reverted.");
-      const confirmed = await verifySafeDeploymentAfterReceipt({
+      const confirmed = await readHandleAuthority({
         sourceChainId: project.chainId,
         sourceClient,
         mainnetClient,
@@ -731,7 +717,7 @@ export function ProjectHandleEditor({
       }
       const liveCandidate = address;
 
-      const liveAuthority = await readCrossChainHandleAuthority({
+      const liveAuthority = await readHandleAuthority({
         sourceChainId: project.chainId,
         sourceClient: liveProjectClient,
         mainnetClient: publicClientFor(PROJECT_HANDLE_CHAIN_ID as JBChainId),
@@ -773,7 +759,7 @@ export function ProjectHandleEditor({
       if (!operatorStillCurrent) {
         throw new Error("The project handle confirmed after the revnet operator changed.");
       }
-      const confirmedAuthority = await readCrossChainHandleAuthority({
+      const confirmedAuthority = await readHandleAuthority({
         sourceChainId: project.chainId,
         sourceClient: liveProjectClient,
         mainnetClient: client,
@@ -874,8 +860,9 @@ export function ProjectHandleEditor({
               <SkeletonLines lines={1} className="mt-3" />
             ) : operator && authorityQuery.data && !authorityAllowed ? (
               <p className="mt-3 text-xs text-amber-700">
-                {authorityStatusMessage(authorityQuery.data.status)} Publishing is blocked until the
-                current operator can originate the Ethereum claim.
+                {authorityQuery.data.status === "unproven-creation"
+                  ? authorityStatusMessage(authorityQuery.data.status)
+                  : `${authorityStatusMessage(authorityQuery.data.status)} Publishing is blocked until the current operator can originate the Ethereum claim.`}
               </p>
             ) : operator && authorityQuery.isError ? (
               <p className="mt-3 text-xs text-amber-700">
@@ -892,9 +879,7 @@ export function ProjectHandleEditor({
                   initializer, current owners, threshold, singleton, fallback handler, guard,
                   modules, and EOA-owner policy all remain safe and consistent.
                 </p>
-                {safeCreationQuery.isLoading ? (
-                  <SkeletonLines lines={1} className="mt-2" />
-                ) : !safeCreationQuery.data ? (
+                {!safeCreation ? (
                   <p className="mt-2 text-amber-700">
                     The Safe creation record could not be recovered from its source-chain service.
                   </p>

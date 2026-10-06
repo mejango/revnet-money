@@ -1,4 +1,12 @@
-import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
+import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
+import {
+  JB_PROJECT_PAYER_DEPLOYER,
+  jbProjectPayerDeployerAbi,
+  verifyPayoutReceipt,
+  verifyReservedDistributionReceipt,
+  type ExpectedPayoutReceipt,
+  type ExpectedReservedReceipt,
+} from "@bananapus/nana-sdk-core/v6";
 import {
   decodeEventLog,
   decodeFunctionData,
@@ -13,25 +21,12 @@ import {
   type PublicClient,
   type TransactionReceipt,
 } from "viem";
-import { verifyPayoutReceipt, type ExpectedPayoutReceipt } from "./payout-receipts";
 import { verifyRouterPendingReceipt, type RouterPendingReceiptGuard } from "./pending-router-calls";
 import { routerGatewayAbi } from "./router-gateway-abi";
-import { SAFE_EXEC_ABI } from "./safe-queue";
 
 /** Exact read-only source snapshots. Hex keeps the durable journal independent of ABI/BigInt JSON. */
 export type CallPrecondition = { address: Address; data: Hex; expected: Hex };
 export type RejectedReceiptEvent = { topic: Hex; address?: Address };
-export type ReservedReceiptGuard = {
-  controller: Address;
-  tokenRegistry: Address;
-  projectId: string;
-  amount: string;
-  intentionalBurn: string;
-};
-const RESERVED_RECEIPT_ABI = parseAbi([
-  "event SendReservedTokensToSplits(uint256 indexed rulesetId,uint256 indexed rulesetCycleNumber,uint256 indexed projectId,address owner,uint256 tokenCount,uint256 leftoverAmount,address caller)",
-  "event Burn(address indexed holder,uint256 indexed projectId,uint256 count,uint256 creditBalance,uint256 tokenBalance,address caller)",
-]);
 export type ExpectedPayerDeployment = {
   kind: "project-payer";
   projectId: string;
@@ -203,7 +198,7 @@ export async function verifyActionReceipt(
   target: Address,
   expected?: ExpectedPayerDeployment,
   rejectEvents: readonly RejectedReceiptEvent[] = [],
-  reservedReceipt?: ReservedReceiptGuard,
+  reservedReceipt?: ExpectedReservedReceipt,
   expectedPayout?: ExpectedPayoutReceipt,
   expectedRouterPending?: RouterPendingReceiptGuard,
 ) {
@@ -220,50 +215,8 @@ export async function verifyActionReceipt(
     throw new Error(
       "The destination confirmed with an incomplete recipient result. Keep the original transaction for reconciliation; do not submit it again.",
     );
-  if (reservedReceipt) {
-    let burns = 0n;
-    const totals: bigint[] = [];
-    for (const log of receipt.logs) {
-      if (isAddressEqual(log.address, reservedReceipt.controller)) {
-        try {
-          const event = decodeEventLog({
-            abi: RESERVED_RECEIPT_ABI,
-            eventName: "SendReservedTokensToSplits",
-            topics: log.topics,
-            data: log.data,
-          }).args;
-          if (event.projectId === BigInt(reservedReceipt.projectId)) totals.push(event.tokenCount);
-        } catch {
-          /* Other events are unrelated. */
-        }
-      }
-      if (isAddressEqual(log.address, reservedReceipt.tokenRegistry)) {
-        try {
-          const event = decodeEventLog({
-            abi: RESERVED_RECEIPT_ABI,
-            eventName: "Burn",
-            topics: log.topics,
-            data: log.data,
-          }).args;
-          if (
-            event.projectId === BigInt(reservedReceipt.projectId) &&
-            isAddressEqual(event.holder, reservedReceipt.controller)
-          )
-            burns += event.count;
-        } catch {
-          /* Other events are unrelated. */
-        }
-      }
-    }
-    if (
-      totals.length !== 1 ||
-      totals[0] !== BigInt(reservedReceipt.amount) ||
-      burns !== BigInt(reservedReceipt.intentionalBurn)
-    )
-      throw new Error(
-        "Reserved distribution did not deliver its reviewed amount: tokens may have been burned by an incomplete hook. Reconcile the original transaction; do not distribute again.",
-      );
-  }
+  // Every reviewed split's exact share, in order, from the receipt's own events.
+  if (reservedReceipt) verifyReservedDistributionReceipt(receipt, reservedReceipt);
   if (expectedPayout) verifyPayoutReceipt(receipt, expectedPayout);
   const routerResult = expectedRouterPending
     ? verifyRouterPendingReceipt(receipt, expectedRouterPending)

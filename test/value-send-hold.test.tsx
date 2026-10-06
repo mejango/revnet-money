@@ -3,10 +3,13 @@ import { BridgeDialog } from "@/app/[slug]/components/Value/BridgeDialog";
 import { ReallocateDialog } from "@/app/[slug]/components/Value/ReallocateDialog";
 import { RedeemDialog } from "@/app/[slug]/components/Value/RedeemDialog";
 import { RepayDialog } from "@/app/[slug]/components/Value/RepayDialog";
+import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { recordTransactionActivity } from "@/lib/transaction-activity";
 import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState, type ReactNode } from "react";
+import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Cash out, bridge, borrow, refinance and repay each host their confirm in
@@ -21,6 +24,10 @@ const mocks = vi.hoisted(() => ({
   prepareCashOut: vi.fn(),
   freshBorrowable: vi.fn(),
   ensureAllowance: vi.fn(),
+  hasPermissions: vi.fn(),
+  toast: vi.fn(),
+  // The hash a flow's write sent last, as its write hook reports it.
+  sent: undefined as `0x${string}` | undefined,
 }));
 
 const tokenBalance = (chainId: number, projectId: number) => ({
@@ -35,6 +42,14 @@ vi.mock("wagmi", async (importOriginal) => ({
   usePublicClient: () => ({ readContract: async () => 0n }),
   useWalletClient: () => ({ data: {} }),
   useSimulateContract: () => ({ isLoading: false, error: null }),
+  // The chain's own receipt read, which a Safe proposal never makes.
+  useWaitForTransactionReceipt: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+    isSuccess: false,
+  }),
   useReadContract: ({ functionName }: { functionName?: string }) => {
     const loan = { amount: 10n ** 18n, collateral: 2n * 10n ** 18n };
     const answers: Record<string, unknown> = {
@@ -72,17 +87,17 @@ vi.mock("@/app/[slug]/components/Value/SimulatedLoanCard", () => ({
   SimulatedLoanCard: () => null,
 }));
 vi.mock("@/components/ui/use-toast", () => ({
-  toast: vi.fn(),
-  useToast: () => ({ toast: vi.fn() }),
+  toast: mocks.toast,
+  useToast: () => ({ toast: mocks.toast }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeProposalPendingError: () => false,
+vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
+  // The write hook's own refusals, their tests and their lines, as the flows read them.
+  ...(await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>()),
   requireOnchainExecution: () => undefined,
-  useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false }),
   useWriteContract: () => ({
     writeContractAsync: mocks.write,
     isPending: false,
-    data: undefined,
+    data: mocks.sent,
     reset: vi.fn(),
   }),
 }));
@@ -154,7 +169,7 @@ vi.mock("@/lib/loanTransactions", async (importOriginal) => ({
 vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
   getTokenAddress: async () => "0x2222222222222222222222222222222222222222",
-  hasPermissions: async () => true,
+  hasPermissions: mocks.hasPermissions,
   prepareHookAwareCashOut: mocks.prepareCashOut,
 }));
 
@@ -187,10 +202,13 @@ function tryEveryWayOut(name: string) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
+  mocks.sent = undefined;
   mocks.write.mockReset().mockImplementation(never);
   mocks.prepareCashOut.mockReset().mockImplementation(never);
   mocks.freshBorrowable.mockReset().mockImplementation(never);
   mocks.ensureAllowance.mockReset().mockResolvedValue(null);
+  mocks.hasPermissions.mockReset().mockResolvedValue(true);
 });
 
 /** Each flow, opened as the app opens it, run up to its confirm's action. */
@@ -346,6 +364,121 @@ describe("value sends name the account they pay", () => {
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({
       account: "0x1111111111111111111111111111111111111111",
     });
+  });
+});
+
+// A step whose identical Safe proposal ended where the app can't confirm its result is refused.
+// Each flow says to check that proposal in Safe, and neither that the step failed nor that
+// permission was denied.
+describe("loan flows refused by a Safe proposal the app can't confirm", () => {
+  const PROPOSAL = `0x${"ab".repeat(32)}` as Hex;
+
+  it.each([
+    ["borrow's permission step", confirmBorrow, false],
+    ["borrow", confirmBorrow, true],
+    ["refinance", confirmRefinance, true],
+    ["repay", confirmRepay, true],
+  ])("%s", async (_flow, confirmFlow, permitted) => {
+    mocks.hasPermissions.mockResolvedValue(permitted);
+    mocks.freshBorrowable.mockResolvedValue(10n ** 18n);
+    mocks.write.mockRejectedValue(new SafeProposalPendingError(PROPOSAL, "The step", true));
+
+    await confirmFlow();
+
+    const confirm = await confirmPanel();
+    await within(confirm).findByText(
+      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+    );
+    expect(confirm.textContent).not.toMatch(/denied|failed|not granted|could not/i);
+    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
+      title: "Safe proposal unconfirmed",
+      description: `The step was proposed to Safe as ${PROPOSAL}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
+    });
+  });
+});
+
+describe("value flows open over their own Safe proposal the app can't confirm", () => {
+  async function openBridge() {
+    renderWithQueries(
+      <BridgeDialog
+        projects={[
+          { projectId: 7, chainId: 1, token: NATIVE_TOKEN },
+          { projectId: 8, chainId: 10, token: NATIVE_TOKEN },
+        ]}
+      >
+        <button type="button">Open move</button>
+      </BridgeDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open move" }));
+  }
+
+  async function openCashOut() {
+    renderWithQueries(
+      <RedeemDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open cash out</button>
+      </RedeemDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+  }
+
+  it.each([
+    ["bridge", openBridge],
+    ["cash out", openCashOut],
+  ])("%s says to check the proposal in Safe", async (_flow, open) => {
+    const proposal = `0x${"ce".repeat(32)}` as Hex;
+    recordTransactionActivity({
+      id: `tx:1:${proposal}`,
+      kind: "safe",
+      title: "The step",
+      status: "safe-proposed",
+      message:
+        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+      chainId: 1,
+      hash: proposal,
+      safeProposalHash: proposal,
+      safeResultUnconfirmed: true,
+    });
+    mocks.sent = proposal;
+
+    await open();
+
+    expect(
+      (
+        await screen.findAllByText(
+          "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe("a repayment left open over its own Safe proposal the app can't confirm", () => {
+  it("stops reading as pending and says to check the proposal in Safe", async () => {
+    const proposal = `0x${"cd".repeat(32)}` as Hex;
+    recordTransactionActivity({
+      id: `tx:1:${proposal}`,
+      kind: "safe",
+      title: "repayLoan",
+      status: "safe-proposed",
+      message:
+        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+      chainId: 1,
+      hash: proposal,
+      safeProposalHash: proposal,
+      safeResultUnconfirmed: true,
+    });
+    mocks.write.mockResolvedValue(proposal);
+
+    await confirmRepay();
+
+    expect(
+      (
+        await screen.findAllByText(
+          "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Repayment pending...")).toBeNull();
   });
 });
 

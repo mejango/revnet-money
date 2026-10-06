@@ -18,6 +18,7 @@ const ROWS = [
 const mocks = vi.hoisted(() => ({
   submit: vi.fn(),
   proposed: null as null | Record<string, unknown>,
+  proposedQuery: undefined as undefined | { enabled?: boolean },
   preset: {
     status: "ready" as const,
     steps: [] as unknown[],
@@ -28,18 +29,21 @@ const mocks = vi.hoisted(() => ({
 // The route and preset reads need RPC; the shell test has none, so useQuery
 // answers each key with its fixture and the submit hook is a spy.
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
-    data:
-      queryKey[0] === "safe-batch-route"
-        ? { kind: "eoa", authority: OPERATOR }
-        : queryKey[0] === "safe-batch-preset"
-          ? ROWS.map((row) => ({ row, result: mocks.preset }))
-          : queryKey[0] === "revnet-safe-batch-proposed"
-            ? mocks.proposed
-            : undefined,
-    isLoading: false,
-    isError: false,
-  }),
+  useQuery: ({ queryKey, enabled }: { queryKey: unknown[]; enabled?: boolean }) => {
+    if (queryKey[0] === "revnet-safe-batch-proposed") mocks.proposedQuery = { enabled };
+    return {
+      data:
+        queryKey[0] === "safe-batch-route"
+          ? { kind: "eoa", authority: OPERATOR }
+          : queryKey[0] === "safe-batch-preset"
+            ? ROWS.map((row) => ({ row, result: mocks.preset }))
+            : queryKey[0] === "revnet-safe-batch-proposed"
+              ? mocks.proposed
+              : undefined,
+      isLoading: false,
+      isError: false,
+    };
+  },
 }));
 vi.mock("@/app/[slug]/components/v6/operator/useSafeBatchSubmit", () => ({
   useSafeBatchSubmit: () => ({
@@ -49,7 +53,10 @@ vi.mock("@/app/[slug]/components/v6/operator/useSafeBatchSubmit", () => ({
 }));
 vi.mock("@/app/[slug]/components/v6/operator/useLiveRevnetOperators", () => ({
   useLiveRevnetOperators: () => ({
-    operatorByChain: new Map([[8453, OPERATOR]]),
+    operatorByChain: new Map([
+      [8453, OPERATOR],
+      [11155420, OPERATOR],
+    ]),
     isLoading: false,
   }),
 }));
@@ -106,12 +113,20 @@ describe("SafeBatchTray", () => {
   it("shows a queued proposal in place of the review button and can drop the steps", () => {
     writeBatch(8453, 6, [hookStep(), terminalStep()]);
     mocks.proposed = {
-      nonce: 10,
-      safeTxHash: `0x${"cd".repeat(32)}`,
-      confirmationsRequired: 2,
-      confirmations: [{ owner: OPERATOR, signature: `0x${"ab".repeat(65)}` }],
+      tx: {
+        nonce: 10,
+        safeTxHash: `0x${"cd".repeat(32)}`,
+        confirmations: [
+          { owner: OPERATOR, signature: `0x${"ab".repeat(65)}` },
+          // Not an owner of the Safe now, so it signs for nothing.
+          { owner: HOOK, signature: `0x${"ab".repeat(65)}` },
+        ],
+      },
+      owners: [OPERATOR, TERMINAL],
+      threshold: 2,
     };
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
+    expect(mocks.proposedQuery).toEqual({ enabled: true });
     expect(screen.getByRole("status").textContent).toContain(
       "Already proposed on Base as Safe transaction #10 (1/2 signatures)",
     );
@@ -121,6 +136,15 @@ describe("SafeBatchTray", () => {
     expect(screen.queryByRole("button", { name: /Review and propose/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Remove from the batch" }));
     expect(readBatch(8453, 6)).toEqual([]);
+  });
+
+  it("reads no Safe queue on a chain where Safe hosts no transaction service", () => {
+    const opSepolia = { chainId: 11155420 as const, projectId: 6 };
+    writeBatch(11155420, 6, [
+      buildStep({ kind: "setHookFor", chainId: 11155420, projectId: 6, values: { hook: HOOK } }),
+    ]);
+    render(<SafeBatchTray rows={[opSepolia]} fallbackProject={opSepolia} />);
+    expect(mocks.proposedQuery).toEqual({ enabled: false });
   });
 
   it("shows one tab per chain with queued steps, read from storage", () => {

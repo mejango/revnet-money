@@ -1,6 +1,6 @@
 import "server-only";
 
-import { readCrossChainHandleAuthority } from "@/lib/cross-chain-authority";
+import { readHandleAuthority } from "@/lib/handle-authority";
 import {
   ENS_REGISTRY_ADDRESS,
   ensRegistryAbi,
@@ -104,8 +104,9 @@ export async function resolveProjectRouteUncached(
     const candidateVerifies = async (candidate: Address) => {
       // The reverse claim is written on Ethereum even for L2 revnets. Address
       // equality alone is not proof that a contract operator has the same
-      // controller on both chains.
-      const authority = await readCrossChainHandleAuthority({
+      // controller on both chains, and a Safe needs its creation record from
+      // the project chain's Safe service: without it the route stays unproven.
+      const authority = await readHandleAuthority({
         sourceChainId: record.chainId,
         sourceClient: projectClient,
         mainnetClient: client,

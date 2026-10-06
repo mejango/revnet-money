@@ -5,16 +5,18 @@ import {
   verifyCallPreconditions,
   type ExpectedPayerDeployment,
 } from "@/lib/multichain-guards";
-import { SAFE_EXEC_ABI } from "@/lib/safe-queue";
+import { jbControllerAbi, jbTokensAbi } from "@bananapus/nana-sdk-core";
+import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import {
   encodeAbiParameters,
   encodeEventTopics,
   encodeFunctionData,
-  parseAbi,
   parseAbiParameters,
   toFunctionSelector,
   zeroAddress,
+  type Abi,
+  type AbiEvent,
   type Address,
   type Hex,
   type PublicClient,
@@ -53,72 +55,104 @@ function receipt(owner = OWNER) {
   } as unknown as TransactionReceipt;
 }
 describe("multichain source and exact recipient-result guards", () => {
-  it("detects reserved-hook underpull while allowing exactly reviewed intentional burns", async () => {
-    const abi = parseAbi([
-      "event SendReservedTokensToSplits(uint256 indexed rulesetId,uint256 indexed rulesetCycleNumber,uint256 indexed projectId,address owner,uint256 tokenCount,uint256 leftoverAmount,address caller)",
-      "event Burn(address indexed holder,uint256 indexed projectId,uint256 count,uint256 creditBalance,uint256 tokenBalance,address caller)",
-    ]);
-    const summary = {
-      address: OWNER,
-      topics: encodeEventTopics({
-        abi,
-        eventName: "SendReservedTokensToSplits",
-        args: { rulesetId: 1n, rulesetCycleNumber: 1n, projectId: 4n },
-      }),
-      data: encodeAbiParameters(parseAbiParameters("address,uint256,uint256,address"), [
-        OWNER,
-        100n,
-        0n,
-        OWNER,
-      ]),
+  describe("a reserved token distribution", () => {
+    const CONTROLLER = "0x3333333333333333333333333333333333333333" as Address;
+    const TOKENS = "0x4444444444444444444444444444444444444444" as Address;
+    const HOLDER = "0x5555555555555555555555555555555555555555" as Address;
+    const DEAD = "0x000000000000000000000000000000000000dEaD" as Address;
+    const burnSplit = {
+      percent: 100_000_000,
+      projectId: 0n,
+      beneficiary: DEAD,
+      preferAddToBalance: false,
+      lockedUntil: 0,
+      hook: zeroAddress,
     };
-    const burn = (amount: bigint) => ({
-      address: PAYER,
-      topics: encodeEventTopics({ abi, eventName: "Burn", args: { holder: OWNER, projectId: 4n } }),
-      data: encodeAbiParameters(parseAbiParameters("uint256,uint256,uint256,address"), [
-        amount,
-        0n,
-        0n,
-        OWNER,
-      ]),
-    });
-    const guard = {
-      controller: OWNER,
-      tokenRegistry: PAYER,
+    const holderSplit = { ...burnSplit, percent: 500_000_000, beneficiary: HOLDER };
+    // As the distribution batch journals it: JSON-safe, with the reviewed splits in order.
+    const reviewed = {
+      controller: CONTROLLER,
+      tokens: TOKENS,
       projectId: "4",
-      amount: "100",
-      intentionalBurn: "10",
+      rulesetId: "1",
+      cycleNumber: "1",
+      owner: OWNER,
+      caller: OWNER,
+      tokenCount: "100",
+      splits: [burnSplit, holderSplit].map((split) => ({ ...split, projectId: "0" })),
     };
-    await expect(
+    function event(abi: Abi, address: Address, name: string, args: Record<string, unknown>) {
+      const item = abi.find((entry) => entry.type === "event" && entry.name === name) as AbiEvent;
+      const unindexed = item.inputs.filter((input) => !input.indexed);
+      return {
+        address,
+        topics: encodeEventTopics({ abi: [item], eventName: name, args }),
+        data: encodeAbiParameters(
+          unindexed,
+          unindexed.map((input) => args[input.name!]),
+        ),
+      };
+    }
+    const sent = (split: typeof burnSplit, tokenCount: bigint) =>
+      event(jbControllerAbi, CONTROLLER, "SendReservedTokensToSplit", {
+        projectId: 4n,
+        rulesetId: 1n,
+        groupId: 1n,
+        split,
+        tokenCount,
+        caller: OWNER,
+      });
+    const total = event(jbControllerAbi, CONTROLLER, "SendReservedTokensToSplits", {
+      rulesetId: 1n,
+      rulesetCycleNumber: 1n,
+      projectId: 4n,
+      owner: OWNER,
+      tokenCount: 100n,
+      leftoverAmount: 40n,
+      caller: OWNER,
+    });
+    const burned = (count: bigint) =>
+      event(jbTokensAbi, TOKENS, "Burn", {
+        holder: CONTROLLER,
+        projectId: 4n,
+        count,
+        creditBalance: 0n,
+        tokenBalance: 0n,
+        caller: OWNER,
+      });
+    const verify = (logs: unknown[]) =>
       verifyActionReceipt(
         {} as PublicClient,
-        { logs: [summary, burn(10n)] } as unknown as TransactionReceipt,
-        OWNER,
+        { logs } as unknown as TransactionReceipt,
+        CONTROLLER,
         undefined,
         [],
-        guard,
-      ),
-    ).resolves.toBeUndefined();
-    await expect(
-      verifyActionReceipt(
-        {} as PublicClient,
-        { logs: [summary, burn(11n)] } as unknown as TransactionReceipt,
-        OWNER,
-        undefined,
-        [],
-        guard,
-      ),
-    ).rejects.toThrow(/incomplete hook/);
-    await expect(
-      verifyActionReceipt(
-        {} as PublicClient,
-        { logs: [burn(10n)] } as unknown as TransactionReceipt,
-        OWNER,
-        undefined,
-        [],
-        guard,
-      ),
-    ).rejects.toThrow(/reviewed amount/);
+        reviewed,
+      );
+
+    it("accepts every reviewed split's share, burning only what was sent to 0x…dEaD", async () => {
+      await expect(
+        verify([sent(burnSplit, 10n), sent(holderSplit, 50n), total, burned(10n)]),
+      ).resolves.toBeUndefined();
+    });
+
+    it("refuses a receipt missing a split's event", async () => {
+      await expect(verify([sent(burnSplit, 10n), total, burned(10n)])).rejects.toThrow(
+        "the receipt sends to 1 splits, not the reviewed 2",
+      );
+    });
+
+    it("refuses tokens burned beyond the reviewed burns, as a hook that took nothing", async () => {
+      await expect(
+        verify([sent(burnSplit, 10n), sent(holderSplit, 50n), total, burned(11n)]),
+      ).rejects.toThrow("a hook did not take its share");
+    });
+
+    it("refuses a receipt without the distribution's total", async () => {
+      await expect(
+        verify([sent(burnSplit, 10n), sent(holderSplit, 50n), burned(10n)]),
+      ).rejects.toThrow("0 SendReservedTokensToSplits events");
+    });
   });
   it("rejects destination state drift before any wallet action", async () => {
     const call = vi.fn().mockResolvedValue({ data: "0x02" });

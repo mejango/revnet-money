@@ -912,7 +912,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
         [
           "Safe",
-          "The Safe App connector plus the transaction service: proposals are polled, never reported as done; a same-address Safe can be deployed on a new chain from src/lib/safeDeployment.ts",
+          "The Safe App connector plus the transaction service: proposals are polled, never reported as done; a Safe is trusted on another chain, or deployed at its address there, only when its creation record proves it is the same Safe",
         ],
         [
           "Relayr",
@@ -931,7 +931,10 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     links: [
       { href: `${REFERENCE_ROOT}/src/hooks/useReviewedWriteContract.ts`, label: "Reviewed write" },
       { href: `${REFERENCE_ROOT}/src/hooks/useReviewedRelayr.ts`, label: "Relayr bundle" },
-      { href: `${REFERENCE_ROOT}/src/lib/safe-queue.ts`, label: "Safe queue" },
+      {
+        href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/v6/operator/SafeQueueCard.tsx`,
+        label: "Safe queue",
+      },
       { href: `${REFERENCE_ROOT}/src/lib/wagmiConfig.ts`, label: "Wallet config" },
       {
         href: `${SKILLS}/jb-relayr/SKILL.md`,

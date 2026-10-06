@@ -1,13 +1,13 @@
 "use client";
 
-import {
-  SAFE_TX_TYPES,
-  safeMessage,
-  safeTransactionHash,
-  type SafeQueuedTransaction,
-} from "@/lib/safe-queue";
 import { requireTransactionReview, type TransactionReviewCall } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
+import {
+  canonicalSafeTxHash,
+  SAFE_TX_TYPES,
+  safeTransactionMessage,
+  type SafeQueuedTransaction,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { useCallback } from "react";
 import { type Address, type Hex } from "viem";
 import { useConfig, useSwitchChain } from "wagmi";
@@ -26,23 +26,6 @@ export type ReviewedSafeSignatureRequest = {
   >;
 };
 
-function exactSafeDigest(
-  chainId: number,
-  safe: Address,
-  tx: SafeQueuedTransaction,
-  expected?: Hex,
-): Hex {
-  const digest = safeTransactionHash(chainId, safe, tx);
-  const serviceHash = tx.safeTxHash ?? tx.contractTransactionHash;
-  if (serviceHash && serviceHash.toLowerCase() !== digest.toLowerCase()) {
-    throw new Error("Safe service transaction data does not match its signed hash.");
-  }
-  if (expected && expected.toLowerCase() !== digest.toLowerCase()) {
-    throw new Error("The Safe transaction changed while the wallet signature was pending.");
-  }
-  return digest;
-}
-
 export function useReviewedSafeSignature() {
   const config = useConfig();
   const { switchChainAsync } = useSwitchChain();
@@ -53,7 +36,9 @@ export function useReviewedSafeSignature() {
       const before = getAccount(config);
       if (!before.address) throw new Error("Connect a wallet first.");
 
-      const digest = exactSafeDigest(chainId, safe, tx);
+      // The hash of the exact fields, refusing a record for another Safe or advertising another hash.
+      const digest = canonicalSafeTxHash(chainId, safe, tx);
+      const message = safeTransactionMessage(tx);
 
       await requireTransactionReview({
         kind: "authorization",
@@ -66,17 +51,17 @@ export function useReviewedSafeSignature() {
           safe,
           nonce: tx.nonce,
           digest,
-          message: safeMessage(tx),
+          message,
         },
         calls: [
           {
             chainId,
             from: before.address,
-            to: tx.to,
-            value: BigInt(tx.value ?? 0),
+            to: message.to,
+            value: message.value,
             // The signature commits to this call's Safe gas.
-            safeTxGas: BigInt(tx.safeTxGas ?? 0),
-            data: tx.data ?? "0x",
+            safeTxGas: message.safeTxGas,
+            data: message.data,
             label: `Safe transaction #${tx.nonce}`,
             ...review,
           },
@@ -113,7 +98,7 @@ export function useReviewedSafeSignature() {
         domain: { chainId, verifyingContract: safe },
         types: SAFE_TX_TYPES,
         primaryType: "SafeTx",
-        message: safeMessage(tx),
+        message,
       });
       const signedAccount = getAccount(config);
       if (
@@ -127,7 +112,7 @@ export function useReviewedSafeSignature() {
       // Safe after it closes, before the caller can POST this signature to the
       // transaction service, and prove the signed payload stayed exact.
       await reverify?.(signedAccount.address);
-      exactSafeDigest(chainId, safe, tx, digest);
+      canonicalSafeTxHash(chainId, safe, tx, digest);
       const postverified = getAccount(config);
       if (
         !postverified.address ||

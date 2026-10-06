@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   activities: [] as TransactionActivity[],
   indexed: [] as { id: string; txHash: string; chainId: number }[],
   waitForRelayrBundle: vi.fn(async () => undefined),
+  dismiss: vi.fn(),
 }));
 
 vi.mock("@/hooks/useReviewedRelayr", () => ({ waitForRelayrBundle: mocks.waitForRelayrBundle }));
@@ -18,7 +19,10 @@ vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
   useCompleteAccountActivity: () => ({ data: {}, isLoading: false, isError: false }),
 }));
 vi.mock("@/lib/bendystraw/accountActivity", () => ({ mergeAccountActivity: () => mocks.indexed }));
-vi.mock("@/lib/transaction-activity", () => ({ useTransactionActivities: () => mocks.activities }));
+vi.mock("@/lib/transaction-activity", () => ({
+  useTransactionActivities: () => mocks.activities,
+  dismissTransactionActivity: mocks.dismiss,
+}));
 vi.mock("@/app/[slug]/components/ActivityFeed/mapActivityEvents", () => ({
   mapActivityEvents: () => [],
 }));
@@ -81,4 +85,57 @@ describe("account Relayr recovery controls", () => {
     render(<AccountActivity address={ACCOUNT} />);
     expect(screen.getByRole("button", { name: "Check bundle" })).toBeInTheDocument();
   });
+});
+
+describe("a Safe proposal whose result can't be confirmed here", () => {
+  it("offers its account a Dismiss, and no other proposal one", () => {
+    const proposal = {
+      kind: "safe" as const,
+      status: "safe-proposed" as const,
+      bundleUuid: undefined,
+      relayrPaymentStatus: undefined,
+    };
+    mocks.activities = [
+      activity({
+        ...proposal,
+        id: "safe:unconfirmed",
+        title: "Make the market",
+        message:
+          "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+        safeResultUnconfirmed: true,
+      }),
+      activity({ ...proposal, id: "safe:pending", title: "Set the split" }),
+    ];
+    render(<AccountActivity address={ACCOUNT} />);
+
+    const dismiss = screen.getAllByRole("button", { name: "Dismiss" });
+    expect(dismiss).toHaveLength(1);
+    fireEvent.click(dismiss[0]!);
+    expect(mocks.dismiss).toHaveBeenCalledExactlyOnceWith("safe:unconfirmed");
+  });
+
+  it.each(["hash", "executionHash"] as const)(
+    "stays, with its Dismiss, once its %s is indexed",
+    (field) => {
+      mocks.activities = [
+        activity({
+          id: "safe:unconfirmed",
+          kind: "safe",
+          status: "safe-proposed",
+          bundleUuid: undefined,
+          relayrPaymentStatus: undefined,
+          title: "Make the market",
+          hash: `0x${"bb".repeat(32)}`,
+          [field]: HASH,
+          safeResultUnconfirmed: true,
+        }),
+      ];
+      mocks.indexed = [{ id: "indexed-execution", txHash: HASH, chainId: 8453 }];
+      render(<AccountActivity address={ACCOUNT} />);
+
+      expect(screen.getByText("Make the market")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(mocks.dismiss).toHaveBeenCalledExactlyOnceWith("safe:unconfirmed");
+    },
+  );
 });

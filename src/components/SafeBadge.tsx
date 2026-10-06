@@ -36,7 +36,8 @@ export function SafeBadge({ address, chainId }: { address: string; chainId: numb
     queryFn: async () => {
       try {
         const [{ readAuthorityIdentity }, { getViemPublicClient }] = await Promise.all([
-          import("@/lib/cross-chain-authority"),
+          // Named, so the bundle keeps only this export of the SDK's Safe module.
+          import(/* webpackExports: ["readAuthorityIdentity"] */ "@bananapus/nana-sdk-core/safe"),
           import("@/lib/wagmiTransports"),
         ]);
         const identity = await readAuthorityIdentity(

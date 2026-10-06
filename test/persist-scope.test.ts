@@ -261,11 +261,15 @@ function persistedQueries(file: string, text: string): Persisted[] {
   return found;
 }
 
-/** What is wrong with the persisted queries of a file, as `file:line: key ...`, and which exceptions it used. */
+/**
+ * What is wrong with the persisted queries of a file, as `file:line: key ...`, which exceptions it used, and whether
+ * it tags a query at all.
+ */
 function check(file: string, text: string, allowed: Allowed[] = ALLOWED) {
   const offenders: string[] = [];
   const used = new Set<Allowed>();
-  for (const persisted of persistedQueries(file, text)) {
+  const found = persistedQueries(file, text);
+  for (const persisted of found) {
     if (persisted.readable && persisted.hint === null) continue;
     const excuse = allowed.find((entry) => entry.file === file && entry.key === persisted.key);
     if (excuse) {
@@ -277,7 +281,7 @@ function check(file: string, text: string, allowed: Allowed[] = ALLOWED) {
       `${file}:${persisted.line}: ${key} ${persisted.readable ? `names ${persisted.hint}` : "cannot be read"}`,
     );
   }
-  return { offenders, used };
+  return { offenders, used, tagged: found.length > 0 };
 }
 
 describe("persisted query scope", () => {
@@ -299,9 +303,8 @@ describe("persisted query scope", () => {
   });
 
   it("finds the tagged queries at all, so the scan cannot silently pass", () => {
-    const tagged = files.filter(
-      (file) => persistedQueries(file, readFileSync(file, "utf8")).length > 0,
-    );
+    // The scan above parsed each file once; this reads its result rather than parsing them again.
+    const tagged = files.filter((_, index) => results[index]!.tagged);
     // The floor is the number of files that tag a persisted query. Raise it when a task tags another file, and lower it
     // only when a file stops persisting one on purpose.
     expect(tagged).toContain(join("src", "hooks", "useRulesets.ts"));

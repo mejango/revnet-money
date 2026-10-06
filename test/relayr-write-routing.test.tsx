@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   chainId: 8453,
   safe: false,
   receiptSuccess: false,
+  receiptUnconfirmed: false,
   lastSubmittedHash: undefined as Hash | undefined,
   writeContractAsync: vi.fn(),
   switchChainAsync: vi.fn(),
@@ -85,6 +86,7 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
   }),
   useWaitForTransactionReceipt: ({ hash }: { hash?: Hash }) => ({
     isSuccess: Boolean(hash) && mocks.receiptSuccess,
+    isSafeResultUnconfirmed: Boolean(hash) && mocks.receiptUnconfirmed,
     isLoading: false,
   }),
   isSafeConnection: () => mocks.safe,
@@ -100,17 +102,14 @@ vi.mock("@/app/[slug]/components/v6/operator/operatorLib", () => ({
   publicClientFor: () => ({ estimateContractGas: mocks.estimateContractGas }),
   operatorWriteRoute: mocks.operatorWriteRoute,
 }));
-vi.mock("@/lib/cross-chain-authority", () => ({
+vi.mock("@bananapus/nana-sdk-core/safe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe")>()),
   readAuthorityIdentity: mocks.readAuthorityIdentity,
-  readBoundedSafeNonce: vi.fn(),
+  readBoundedSafeNonce: vi.fn(async () => null),
 }));
-vi.mock("@/lib/safe-queue", () => ({
+vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe-service")>()),
   listPendingSafeTransactions: mocks.listPendingSafeTransactions,
-  nextProposalNonce: vi.fn(),
-  proposeSafeTransaction: vi.fn(),
-  queuedTransactionMatchesCall: vi.fn(),
-  safeProposalFor: vi.fn(),
-  submitSafeConfirmation: vi.fn(),
 }));
 vi.mock("@/hooks/useReviewedSafeSignature", () => ({
   useReviewedSafeSignature: () => ({ signSafeTransactionAsync: vi.fn() }),
@@ -162,6 +161,7 @@ beforeEach(() => {
   mocks.chainId = 8453;
   mocks.safe = false;
   mocks.receiptSuccess = false;
+  mocks.receiptUnconfirmed = false;
   mocks.lastSubmittedHash = undefined;
   mocks.contractAddress.mockReturnValue(TARGET);
   mocks.estimateContractGas.mockResolvedValue(100_000n);
@@ -328,6 +328,20 @@ describe("wallet-action:split-groups — reserved token split routing", () => {
     );
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
     expect(mocks.switchChainAsync).not.toHaveBeenCalled();
+  });
+
+  it("reports a single chain's Safe proposal whose result can't be confirmed", async () => {
+    const onSuccess = vi.fn();
+    const { result, rerender } = renderHook(() => useSetSplitGroups({ onSuccess }));
+    await act(async () => {
+      await result.current.submitSplits(splitChains([10]));
+    });
+    mocks.receiptUnconfirmed = true;
+    rerender();
+
+    expect(result.current.isTxUnconfirmed).toBe(true);
+    expect(result.current.isTxLoading).toBe(false);
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 
   it("writes a single chain directly and reports success only after its receipt", async () => {

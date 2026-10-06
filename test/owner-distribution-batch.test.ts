@@ -1,6 +1,5 @@
 import {
   autoIssuanceKey,
-  intentionalReservedBurn,
   prepareAutoIssuance,
   prepareCreditClaim,
   prepareReservedDistribution,
@@ -104,22 +103,6 @@ beforeEach(() => {
 });
 
 describe("wallet-action:owner-distributions", () => {
-  it("counts only direct burn-sentinel splits, rounding each recipient separately", () => {
-    const burn = {
-      ...split,
-      projectId: 0n,
-      beneficiary: "0x000000000000000000000000000000000000dEaD" as Address,
-      percent: 333_333_333,
-    };
-    expect(intentionalReservedBurn(5n, [burn, burn])).toBe(2n);
-    expect(
-      intentionalReservedBurn(5n, [
-        { ...burn, hook: token },
-        { ...burn, projectId: 12n },
-        { ...burn, beneficiary: account },
-      ]),
-    ).toBe(0n);
-  });
   it("targets the destination's active controller and current ruleset, preserving every split field", async () => {
     const result = await prepareReservedDistribution(client, identity, account);
     expect(result.call).toMatchObject({
@@ -130,13 +113,21 @@ describe("wallet-action:owner-distributions", () => {
     });
     expect(result.amount).toBe(700n);
     expect(result.call.rejectEvents).toHaveLength(2);
+    // The receipt must prove each of these splits' shares, sent by this account in this cycle.
     expect(result.call.reservedReceipt).toEqual({
       controller,
-      tokenRegistry: registry,
+      tokens: registry,
       projectId: "91",
-      amount: "700",
-      intentionalBurn: "0",
+      rulesetId: "200",
+      cycleNumber: "1",
+      owner: revnetOwner,
+      caller: account,
+      tokenCount: "700",
+      splits: [{ ...split, projectId: "12" }],
     });
+    expect(JSON.parse(JSON.stringify(result.call.reservedReceipt))).toEqual(
+      result.call.reservedReceipt,
+    );
     expect(readContract).toHaveBeenCalledWith(
       expect.objectContaining({
         functionName: "splitsOf",

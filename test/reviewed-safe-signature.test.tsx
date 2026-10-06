@@ -60,9 +60,11 @@ describe("reviewed Safe signature boundary", () => {
   // wallet-action:safe-signature-boundary
   it("reviews the exact Safe call before signing its EIP-712 payload", async () => {
     const events: string[] = [];
+    let reviewed: unknown;
     const review = await import("@/lib/transaction-review");
     const dispose = review.registerTransactionReviewHandler(async (request) => {
       events.push("review");
+      reviewed = (request.authorization as { message?: unknown } | undefined)?.message;
       expect(request).toMatchObject({
         kind: "authorization",
         calls: [
@@ -99,6 +101,8 @@ describe("reviewed Safe signature boundary", () => {
         account: { address: ACCOUNT },
         domain: { chainId: 8453, verifyingContract: SAFE },
         primaryType: "SafeTx",
+        // The wallet signs exactly the message the review showed.
+        message: reviewed,
       }),
     );
     dispose();
@@ -184,7 +188,7 @@ describe("reviewed Safe signature boundary", () => {
 
     await expect(
       result.current.signSafeTransactionAsync({ chainId: 1, safe: SAFE, tx: mutableTx }),
-    ).rejects.toThrow("changed while the wallet signature was pending");
+    ).rejects.toThrow("The Safe transaction changed");
     dispose();
   });
 });
