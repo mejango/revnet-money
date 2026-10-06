@@ -114,6 +114,7 @@ const allowedRawBoundary = {
   write: "src/hooks/useReviewedWriteContract.ts",
   sendOrSign: [
     "src/hooks/useReviewedRelayr.ts",
+    "src/lib/safe-relayr.ts",
     "src/hooks/useReviewedSafeSignature.ts",
     "src/hooks/useReviewedPermit2Signature.ts",
   ],

@@ -10,7 +10,6 @@ import {
 } from "@/lib/multichain-batch";
 import {
   requireRawPayerCall,
-  requireRawSafeExecution,
   verifyActionReceipt,
   verifyCallPreconditions,
   type CallPrecondition,
@@ -30,11 +29,21 @@ import {
   type RouterPendingReceiptGuard,
 } from "@/lib/pending-router-calls";
 import { verifyMetadataSource, type MetadataSourceGuard } from "@/lib/project-metadata-write";
-import { relayrSavedQuote, relayrSessionRequests, sentPayments } from "@/lib/relayr-activity";
+import {
+  relayrSavedQuote,
+  relayrSessionRequests,
+  relayrRecoveryScopeKey as scopeKey,
+  sentPayments,
+} from "@/lib/relayr-activity";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { isSafeConnection } from "@/lib/safe-connector";
-import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
-import { requireRefundFreeSafeExecution } from "@/lib/safe-transactions";
+import {
+  safeRelayrActivity,
+  safeRelayrController,
+  safeRelayrExecution,
+  safeRelayrQuote,
+  safeRelayrSession,
+} from "@/lib/safe-relayr";
 import {
   dismissTransactionActivity,
   recordTransactionActivity,
@@ -82,11 +91,15 @@ import {
   type RelayrRequestsVerdict,
   type RelayrTransactionRecord,
 } from "@bananapus/nana-sdk-core/review/relayr";
-import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
+import {
+  SafeRelayrRecoveryError,
+  safeRelayrReservationKey,
+  type SafeRelayrResult,
+  type SafeRelayrStatus,
+} from "@bananapus/nana-sdk-core/review/safe-relayr";
 import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
 import {
-  decodeFunctionData,
   encodeFunctionData,
   isHash,
   keccak256,
@@ -105,7 +118,7 @@ export type ReviewedRelayrRequest = {
   /** Groups a non-idempotent workflow whose retries may change calldata. */
   recoveryScope?: string;
   metadataSource?: MetadataSourceGuard;
-  /** "safe-exec" runs a fully signed Safe execTransaction; see requireRawSafeExecution. */
+  /** "safe-exec" runs a fully signed Safe execTransaction; validated by the shared Safe lifecycle. */
   relayrMode?: "raw" | "forwarded" | "safe-exec";
   /**
    * A parent review already showed this exact raw call, so its duplicate review
@@ -208,10 +221,6 @@ function requestKey(account: Address, requests: ReviewedRelayrRequest[]): string
     )
     .sort();
   return `${account.toLowerCase()}:relayr:${keccak256(stringToHex(calls.join("|")))}`;
-}
-
-function scopeKey(account: Address, scope: string): string {
-  return `${account.toLowerCase()}:relayr-scope:${scope}`;
 }
 
 /** A published bundle holds this action; recovery must inspect that exact bundle. */
@@ -804,10 +813,6 @@ async function continueSession(
  * nonces is one while it has forward requests: they may still run, or may
  * have run, so its calls are never signed again at the live nonce.
  */
-function safeIntentKey(chainId: number, expected: ExpectedSafeExecution): string {
-  return `${chainId}:${expected.safe.toLowerCase()}:${expected.safeTxHash.toLowerCase()}:${expected.nonce}`;
-}
-
 function safeNonceCallKey(
   account: Address,
   chainId: number,
@@ -815,48 +820,22 @@ function safeNonceCallKey(
 ): string {
   return scopeKey(
     account,
-    `safe-execution:${chainId}:${expected.safe.toLowerCase()}:${expected.nonce}`,
+    `safe-execution:${safeRelayrReservationKey({ entry: { chain: chainId, target: expected.safe, data: "0x", value: "0" }, ...expected })}`,
   );
 }
 
-/** Match the complete Safe intent set, never a subset or a new nonce. The saved bytes stay frozen. */
-function sameSafeIntents(
-  activity: TransactionActivity,
-  requests: ReviewedRelayrRequest[],
-): boolean {
-  const saved = activity.relayrExpectedTransactions;
-  if (!saved?.length || saved.length !== requests.length) return false;
-  const keys = requests.map((request) =>
-    request.relayrMode === "safe-exec" &&
-    request.expectedSafeExecution &&
-    request.data.to.toLowerCase() === request.expectedSafeExecution.safe.toLowerCase() &&
-    request.data.value === 0n
-      ? safeIntentKey(request.chainId, request.expectedSafeExecution)
-      : undefined,
-  );
-  if (keys.some((key) => !key) || new Set(keys).size !== keys.length) return false;
-  const savedKeys = saved.map((transaction) =>
-    transaction.expectedSafeExecution &&
-    transaction.value === "0" &&
-    transaction.target.toLowerCase() === transaction.expectedSafeExecution.safe.toLowerCase()
-      ? safeIntentKey(transaction.chainId, transaction.expectedSafeExecution)
-      : undefined,
-  );
-  return (
-    new Set(savedKeys).size === keys.length && savedKeys.every((key) => !!key && keys.includes(key))
-  );
+function safeRecoveryError(cause: unknown): unknown {
+  if (!(cause instanceof SafeRelayrRecoveryError)) return cause;
+  const activity = safeRelayrActivity(cause.session);
+  return activity ? new RelayrRecoveryError(activity) : cause;
 }
 
-function savedSessionOf(
-  account: Address,
-  callKey: string,
-  requests: ReviewedRelayrRequest[],
-): TransactionActivity | undefined {
+function savedSessionOf(account: Address, callKey: string): TransactionActivity | undefined {
   const saved = refreshTransactionActivities()
     .filter(
       (activity) =>
         activity.kind === "relayr-bundle" &&
-        (activity.callKey === callKey || sameSafeIntents(activity, requests)) &&
+        activity.callKey === callKey &&
         activity.account?.toLowerCase() === account.toLowerCase() &&
         !!activity.relayrExpectedTransactions?.length &&
         (activity.status !== "success" || activity.manualVerificationRequired),
@@ -876,10 +855,27 @@ function savedSessionOf(
  * still signs them again at their saved nonces); while one can still run it
  * says until when.
  */
-export async function checkRelayrSession(id: string): Promise<void> {
+export async function checkRelayrSession(id: string): Promise<SafeRelayrResult | undefined> {
   const activity = refreshTransactionActivities().find((row) => row.id === id);
   if (!activity) return;
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
+  const safeSession = safeRelayrSession(activity);
+  if (safeSession) {
+    try {
+      const result = await safeRelayrController(wagmiConfig).check({
+        account: safeSession.account,
+        sessionId: safeSession.id,
+      });
+      if (result.state === "pending")
+        updateTransactionActivity(activity.id, {
+          message:
+            "The existing Safe bundle is still awaiting confirmation. Check it again before authorizing or paying again.",
+        });
+      return result;
+    } catch (cause) {
+      throw safeRecoveryError(cause);
+    }
+  }
   const verdict = await savedRequestsVerdict(wagmiConfig, activity);
   if (!verdict) {
     if (await releaseUnfundableQuote(wagmiConfig, activity)) return;
@@ -1189,19 +1185,6 @@ async function verifyDestinationReceipts(
           : "The destination action result could not be verified.",
       );
     }
-    if (identity.expectedSafeExecution) {
-      try {
-        requireRefundFreeSafeExecution(
-          receipt,
-          identity.expectedSafeExecution.safe,
-          identity.expectedSafeExecution.safeTxHash,
-        );
-      } catch (cause) {
-        throw new RelayrVerificationError(
-          cause instanceof Error ? cause.message : "The Safe execution could not be verified.",
-        );
-      }
-    }
   }
 }
 
@@ -1288,6 +1271,30 @@ export async function waitForRelayrBundle(
   if (existing) return existing;
   const activityId = `relayr:${bundleUuid}`;
   const request = (async () => {
+    const activity = refreshTransactionActivities().find((row) => row.bundleUuid === bundleUuid);
+    const safeSession = activity && safeRelayrSession(activity);
+    if (safeSession) {
+      const { wagmiConfig } = await import("@/lib/wagmiConfig");
+      const result = await safeRelayrController(wagmiConfig).watch({
+        account: safeSession.account,
+        sessionId: safeSession.id,
+        onUpdate: (update) =>
+          notify({
+            bundle_uuid: bundleUuid,
+            transactions: update.session.records ?? [],
+          } as RelayrGetBundleResponse),
+      });
+      if (result.state === "complete")
+        return {
+          bundle_uuid: bundleUuid,
+          transactions: result.session.records ?? [],
+        } as RelayrGetBundleResponse;
+      throw new Error(
+        result.state === "released"
+          ? "The saved Safe quote expired. Review the execution again."
+          : `Relayr bundle ${bundleUuid} is still pending. Resume checking the existing bundle before paying again.`,
+      );
+    }
     let last: RelayrGetBundleResponse | null = null;
     for (let attempt = 0; attempt < 180; attempt += 1) {
       try {
@@ -1412,8 +1419,54 @@ export function useGetRelayrTxQuote() {
   }, []);
 
   const getRelayrTxQuote = useCallback(
-    async (requests: ReviewedRelayrRequest[]) => {
+    async (
+      requests: ReviewedRelayrRequest[],
+      options?: { signal?: AbortSignal; onStatus?: SafeRelayrStatus },
+    ) => {
       if (!address) throw new Error("Connect a wallet first.");
+      const safeCount = requests.filter((request) => request.relayrMode === "safe-exec").length;
+      if (safeCount && safeCount !== requests.length)
+        throw new Error("Safe executions are quoted as a Relayr bundle of their own.");
+      if (safeCount) {
+        requireNoViewAs();
+        if (isSafeConnection(config))
+          throw new Error(
+            "A Safe cannot authorize these executions as an EOA. Use its proposal flow instead.",
+          );
+        if (requests.some((request) => request.data.from.toLowerCase() !== address.toLowerCase()))
+          throw new Error("Relayr request sender does not match the connected account.");
+        setIsPending(true);
+        setError(null);
+        try {
+          const prepared = await safeRelayrController(config).prepare({
+            account: address,
+            executions: requests.map(safeRelayrExecution),
+            signal: options?.signal,
+            onStatus: options?.onStatus,
+          });
+          const quote = safeRelayrQuote(prepared.session);
+          const activity = safeRelayrActivity(prepared.session);
+          if (!activity?.relayrExpectedTransactions)
+            throw new Error("The reviewed Safe quote could not be retained.");
+          rememberQuote(
+            quote,
+            address,
+            requestKey(address, requests),
+            activity.relayrCallKeys ?? [],
+            activity.relayrExpectedTransactions,
+          );
+          setData(quote);
+          return quote;
+        } catch (cause) {
+          const failure = safeRecoveryError(cause);
+          const next =
+            failure instanceof Error ? failure : new Error("Could not request a Safe quote.");
+          setError(next);
+          throw next;
+        } finally {
+          setIsPending(false);
+        }
+      }
       return withAuthorizationLock(address, async () => {
         requireNoViewAs();
         requests = requests.map((request) => ({ ...request, data: { ...request.data } }));
@@ -1464,7 +1517,7 @@ export function useGetRelayrTxQuote() {
               ]),
         ]);
         // Ruling R114: this action's own saved session, classified before its recheck.
-        const saved = savedSessionOf(address, callKey, requests);
+        const saved = savedSessionOf(address, callKey);
         const continuation = saved
           ? await continueSession(config, address, saved, requests, [...requestChains])
           : null;
@@ -1477,66 +1530,6 @@ export function useGetRelayrTxQuote() {
             { bundleUuid: quote.bundle_uuid, callKey, callKeys: continuedKeys },
             saved.id,
           );
-          if (requests.some((request) => request.relayrMode === "safe-exec")) {
-            if (!sameSafeIntents(saved, requests)) throw new RelayrRecoveryError(saved);
-            const expected = saved.relayrExpectedTransactions!;
-            // Authenticate the saved calldata against the current Safe hash/nonce, then
-            // simulate the original signatures. New confirmations never replace quoted bytes.
-            await mapConcurrentChecks(expected, async (transaction) => {
-              const client = getPublicClient(config, { chainId: transaction.chainId as JBChainId });
-              if (!client) throw new Error("The destination RPC is unavailable.");
-              await verifyCallPreconditions(
-                client,
-                requireRawSafeExecution(
-                  transaction.target,
-                  transaction.data,
-                  BigInt(transaction.value),
-                  transaction.expectedSafeExecution,
-                ),
-              );
-            });
-            await revalidateSignedCalls(config, address, expected);
-            const bundle = await fetchBundle(saved.bundleUuid!);
-            verifyBundleIdentity(saved.bundleUuid!, bundle, expected);
-            if (relayrBundleFunded(bundle)) throw new RelayrRecoveryError(saved);
-            if (saved.callKey !== callKey) {
-              await requireTransactionReview({
-                kind: "transaction",
-                title: "Resume saved Safe execution quote",
-                description:
-                  "These are the original signed calls in the existing unpaid Relayr quote. Additional Safe confirmations do not change the saved execution. No new bundle will be created.",
-                confirmLabel: "Use saved quote",
-                calls: expected.map((transaction) => {
-                  const decoded = decodeFunctionData({
-                    abi: SAFE_EXEC_ABI,
-                    data: transaction.data,
-                  });
-                  if (decoded.functionName !== "execTransaction")
-                    throw new RelayrRecoveryError(saved);
-                  const { args } = decoded;
-                  return {
-                    chainId: transaction.chainId,
-                    from: address,
-                    to: transaction.target,
-                    value: BigInt(transaction.value),
-                    data: transaction.data,
-                    abi: SAFE_EXEC_ABI,
-                    functionName: "execTransaction",
-                    args,
-                    contractName: "Safe",
-                    calls: [
-                      queuedSafeReviewCall(transaction.chainId, {
-                        to: args[0],
-                        value: args[1],
-                        data: args[2],
-                        operation: args[3],
-                      }),
-                    ],
-                  };
-                }),
-              });
-            }
-          }
           updateTransactionActivity(saved.id, {
             relayrCallKeys: continuedKeys,
           });
@@ -1581,69 +1574,7 @@ export function useGetRelayrTxQuote() {
             const executionGas: string[] = [];
             const transactions: RelayrEntry[] = [];
             const signedNonces: string[] = [];
-            const safeExecutions = requests.filter(
-              (request) => request.relayrMode === "safe-exec",
-            ).length;
-            if (safeExecutions && safeExecutions !== requests.length)
-              throw new Error("Safe executions are quoted as a Relayr bundle of their own.");
-            if (safeExecutions) {
-              // One review for the whole bundle: every chain's exact execTransaction.
-              await requireTransactionReview({
-                kind: "transaction",
-                title: `Review ${requests.length} Safe executions`,
-                description:
-                  "Relayr submits each fully signed Safe transaction below from its own account; the Safe signatures authorize it. A separate payment funds the bundle.",
-                confirmLabel: "Agree & request Relayr quote",
-                calls: requests.map((request) => ({
-                  chainId: request.chainId,
-                  from: address,
-                  to: request.data.to,
-                  value: request.data.value,
-                  data: request.data.data,
-                  ...request.review,
-                })),
-              });
-              if (getAccount(config).address?.toLowerCase() !== address.toLowerCase())
-                throw new Error("Connected account changed. Review the Safe executions again.");
-            }
-            if (safeExecutions) {
-              const checked = await mapConcurrentChecks(requests, async (request) => {
-                // Reads only, so no chain switch: pin the Safe's live nonce and
-                // exact transaction hash, then simulate the execution.
-                const client = getPublicClient(config, { chainId: request.chainId });
-                if (!client) throw new Error(`Relayr is unavailable on chain ${request.chainId}.`);
-                request.preconditions = [
-                  ...(request.preconditions ?? []),
-                  ...requireRawSafeExecution(
-                    request.data.to,
-                    request.data.data,
-                    request.data.value,
-                    request.expectedSafeExecution,
-                  ),
-                ];
-                await verifyCallPreconditions(client, request.preconditions);
-                await client.call({
-                  account: address,
-                  to: request.data.to,
-                  data: request.data.data,
-                  value: request.data.value,
-                });
-                return {
-                  gas: gasWithHeadroom(request.data.gas + 100_000n).toString(),
-                  transaction: {
-                    chain: request.chainId,
-                    target: request.data.to,
-                    data: request.data.data,
-                    value: request.data.value.toString(),
-                  },
-                };
-              });
-              for (const result of checked) {
-                executionGas.push(result.gas);
-                transactions.push(result.transaction);
-              }
-            }
-            for (const request of safeExecutions ? [] : requests) {
+            for (const request of requests) {
               if (!request.expectedRouterPending)
                 await switchChainAsync({ chainId: request.chainId });
               const current = getAccount(config);
@@ -1965,7 +1896,10 @@ export function useSendRelayrTx() {
   const transaction = useSendTransaction();
 
   const sendRelayrTx = useCallback(
-    async (offeredPayment: ChainPayment): Promise<Hex> => {
+    async (
+      offeredPayment: ChainPayment,
+      options?: { onStatus?: SafeRelayrStatus },
+    ): Promise<Hex> => {
       requireNoViewAs();
       if (!address) throw new Error("Connect a wallet first.");
       if (isSafeConnection(config))
@@ -1979,6 +1913,29 @@ export function useSendRelayrTx() {
           "This payment does not belong to a reviewed Relayr quote for the connected account. Review the action again.",
         );
       const activityId = `relayr:${remembered.bundleUuid}`;
+      const activity = refreshTransactionActivities().find((row) => row.id === activityId);
+      const safeSession = activity && safeRelayrSession(activity);
+      if (safeSession) {
+        try {
+          const result = await safeRelayrController(config, {
+            switchChain: (chainId) => switchChainAsync({ chainId }),
+            sendTransaction: (request) => transaction.sendTransactionAsync(request),
+          }).fund({
+            account: address,
+            sessionId: safeSession.id,
+            paymentChainId: payment.chain,
+            onStatus: options?.onStatus,
+          });
+          const hash = result.session.payments.at(-1)?.hash;
+          if (!hash)
+            throw new Error(
+              "The Safe bundle payment result is uncertain. Check the existing bundle.",
+            );
+          return hash;
+        } catch (cause) {
+          throw safeRecoveryError(cause);
+        }
+      }
       const submit = async () => {
         const journal = () => refreshTransactionActivities().find((row) => row.id === activityId);
         // The SDK keeps no more payments for a quote than this, so none is sent beyond them.

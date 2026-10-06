@@ -1,5 +1,7 @@
 "use client";
 
+import { sameSafeRelayrIntents } from "@bananapus/nana-sdk-core/review/safe-relayr";
+
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
@@ -408,12 +410,14 @@ export function SafeQueueCard({
   const { sendRelayrTx } = useSendRelayrTx();
   const [batch, setBatch] = useState<BatchRun | null>(null);
   const batchGeneration = useRef(0);
+  const batchAbort = useRef<AbortController | null>(null);
   const payingBatch = useRef(false);
   const connectedAccount = useRef(address);
   connectedAccount.current = address;
   useEffect(
     () => () => {
       batchGeneration.current += 1;
+      batchAbort.current?.abort();
     },
     [],
   );
@@ -423,6 +427,7 @@ export function SafeQueueCard({
     if (!batchAccount || batchRunning || batchAccount.toLowerCase() === address?.toLowerCase())
       return;
     batchGeneration.current += 1;
+    batchAbort.current?.abort();
     setBatch((current) =>
       current
         ? {
@@ -555,6 +560,7 @@ export function SafeQueueCard({
   const closeBatch = () => {
     if (payingBatch.current) return;
     batchGeneration.current += 1;
+    batchAbort.current?.abort();
     resetRelayr();
     setBatch(null);
   };
@@ -563,6 +569,9 @@ export function SafeQueueCard({
     if (!address || payingBatch.current) return;
     const account = address;
     const generation = ++batchGeneration.current;
+    batchAbort.current?.abort();
+    const abort = new AbortController();
+    batchAbort.current = abort;
     const current = () =>
       generation === batchGeneration.current &&
       connectedAccount.current?.toLowerCase() === account.toLowerCase();
@@ -592,7 +601,29 @@ export function SafeQueueCard({
       });
       if (!current()) return;
       update({ message: "Review the executions to request a Relayr quote…" });
-      const quote = await getRelayrTxQuote(requests);
+      const quote = await getRelayrTxQuote(requests, {
+        signal: abort.signal,
+        onStatus: (_index, state, execution) => {
+          if (!current()) return;
+          const chainId = execution.entry.chain;
+          setBatch((batch) =>
+            batch
+              ? {
+                  ...batch,
+                  status: {
+                    ...batch.status,
+                    [chainId]:
+                      state === "ready"
+                        ? "Ready"
+                        : state === "failed"
+                          ? "Check failed"
+                          : "Checking…",
+                  },
+                }
+              : batch,
+          );
+        },
+      });
       if (!current()) return;
       if (!quote?.payment_info.length) throw new Error("Relayr did not return a payment option.");
       update({
@@ -621,10 +652,20 @@ export function SafeQueueCard({
       account.toLowerCase() === connectedAccount.current?.toLowerCase();
     setBatch((current) => (current ? { ...current, preparing: true, error: null } : current));
     try {
-      await checkRelayrSession(recovery.activityId);
+      const checked = await checkRelayrSession(recovery.activityId);
       if (!current()) return;
       const activity = refreshTransactionActivities().find((row) => row.id === recovery.activityId);
       if (
+        (checked?.state === "ready" &&
+          sameSafeRelayrIntents(
+            checked.session.executions,
+            rows.map(({ row, tx }) => ({
+              entry: { chain: row.chainId, target: row.safe, data: "0x", value: "0" },
+              safe: row.safe,
+              safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
+              nonce: tx.nonce,
+            })),
+          )) ||
         activity?.relayrPaymentStatus === "expired" ||
         activity?.relayrDiscardable === "expired" ||
         activity?.relayrDiscardable === "changed"
@@ -685,7 +726,13 @@ export function SafeQueueCard({
     update({ running: true, error: null, message: "Confirm the Relayr payment in your wallet…" });
     try {
       // sendRelayrTx checks the live account, quote, and Safe execution again before payment.
-      await sendRelayrTx(payment);
+      await sendRelayrTx(payment, {
+        onStatus: (_index, state, execution) =>
+          setRowStatus(
+            execution.entry.chain,
+            state === "ready" ? "Ready" : state === "failed" ? "Check failed" : "Re-checking…",
+          ),
+      });
       rows.forEach(({ row }) => setRowStatus(row.chainId, "Executing…"));
       update({ message: "Relayr is executing on every chain…" });
       await waitForRelayrBundle(quote.bundle_uuid, (bundle) => {

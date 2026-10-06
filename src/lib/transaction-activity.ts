@@ -61,6 +61,10 @@ export type TransactionActivity = {
   /** When the chain first answered that it holds no receipt for a Safe proposal's `executionHash`. */
   executionSeenAt?: number;
   bundleUuid?: string;
+  /** Stable SDK session identity while a publication receives its bundle UUID. */
+  relayrSafeSessionId?: string;
+  /** A Safe funding wallet invocation has not produced a known hash yet. */
+  relayrSafeFundingUnknown?: boolean;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];
   relayrPayment?: { target: Address; data: Hex; value: string };
   /** Every funding payment the wallet broadcast for this bundle, oldest first. */

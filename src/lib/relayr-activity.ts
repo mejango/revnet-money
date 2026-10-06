@@ -4,6 +4,11 @@ import {
   type RelayrSentPayment,
 } from "@bananapus/nana-sdk-core/review/relayr";
 
+/** Legacy journal namespace shared by workflow and Safe lifecycle adapters. */
+export function relayrRecoveryScopeKey(account: string, scope: string): string {
+  return `${account.toLowerCase()}:relayr-scope:${scope}`;
+}
+
 export function canCheckRelayrBundle(activity: TransactionActivity): boolean {
   return (
     activity.kind === "relayr-bundle" &&

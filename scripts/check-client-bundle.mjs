@@ -74,7 +74,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // saved payment's proof and its strict reader) in place of revnet's copies measure 2645.0 KiB against
 // 2644.2 KiB for origin/main's sources at 28a1393e on SDK 2.22.0; the aggregate budget rises by the
 // minimum 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2646);
+// One SDK Safe Relayr lifecycle replaces local preparation/funding/recovery decisions.
+// With identical installed dependencies, HEAD 0f41a7d measures 2646.2 KiB and this
+// migration 2650.9 KiB; the largest operator route decreases 691.0 -> 689.9 KiB.
+// Raise only the aggregate ceiling to its measured integer KiB; route limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2651);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

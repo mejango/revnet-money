@@ -1,6 +1,6 @@
 import type { RelayrGetBundleResponse } from "@/lib/nana/types";
-import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
-import { encodeAbiParameters, encodeEventTopics } from "viem";
+import { SAFE_EXEC_ABI, canonicalSafeTxHash } from "@bananapus/nana-sdk-core/safe-service";
+import { encodeAbiParameters, encodeEventTopics, encodeFunctionData, zeroAddress } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACCOUNT,
@@ -9,6 +9,7 @@ import {
   HASH,
   PAYMENT_TARGET,
   TARGET,
+  TX_UUIDS,
   onchain,
   payment,
 } from "./relayr-fixtures";
@@ -124,37 +125,76 @@ afterEach(() => {
 });
 
 describe("Relayr destination transaction tracking", () => {
-  it("requires the Safe's exact ExecutionSuccess before completing a Safe execution", async () => {
-    const safeTxHash = `0x${"ab".repeat(32)}` as const;
+  it("requires the Safe's exact ExecutionSuccess before completing a legacy Safe execution", async () => {
+    const tx = {
+      to: TARGET,
+      value: 0n,
+      data: "0x1234" as const,
+      operation: 0,
+      safeTxGas: 0n,
+      baseGas: 0n,
+      gasPrice: 0n,
+      gasToken: zeroAddress,
+      refundReceiver: zeroAddress,
+      nonce: 5,
+    };
+    const safeTxHash = canonicalSafeTxHash(1, TARGET, tx);
+    const exec = encodeFunctionData({
+      abi: SAFE_EXEC_ABI,
+      functionName: "execTransaction",
+      args: [
+        tx.to,
+        tx.value,
+        tx.data,
+        tx.operation,
+        tx.safeTxGas,
+        tx.baseGas,
+        tx.gasPrice,
+        tx.gasToken,
+        tx.refundReceiver,
+        "0x",
+      ],
+    });
     const [executionSuccess] = encodeEventTopics({
       abi: SAFE_EXEC_ABI,
       eventName: "ExecutionSuccess",
     });
-    const withLogs = (logs: unknown[]) => {
-      let receiptReads = 0;
-      mocks.getTransactionReceipt.mockImplementation(async () =>
-        ++receiptReads % 2
-          ? onchain(PAYMENT_TARGET, payment().calldata)
-          : { ...onchain(TARGET, "0x1234", 0n), logs },
-      );
-    };
     const executed = {
       address: TARGET,
       topics: [executionSuccess, safeTxHash],
       data: encodeAbiParameters([{ type: "uint256" }], [0n]),
     };
-
-    withLogs([]);
-    const failing = await freshModules({ safe: TARGET, safeTxHash, nonce: 5 });
-    respond();
-    await expect(failing.relayr.waitForRelayrBundle(BUNDLE_UUID)).rejects.toThrow(
-      /ExecutionSuccess/,
-    );
-
-    withLogs([executed]);
-    const passing = await freshModules({ safe: TARGET, safeTxHash, nonce: 5 });
-    respond();
-    await expect(passing.relayr.waitForRelayrBundle(BUNDLE_UUID)).resolves.toBeTruthy();
+    const rejectionTopic = `0x${"55".repeat(32)}` as const;
+    const rejectedLog = { address: TARGET, topics: [rejectionTopic], data: "0x" };
+    for (const { logs, reject } of [
+      { logs: [], reject: false },
+      { logs: [executed], reject: false },
+      { logs: [executed, rejectedLog], reject: true },
+    ]) {
+      window.localStorage.clear();
+      mocks.getTransaction.mockResolvedValue(onchain(TARGET, exec, 0n));
+      mocks.getTransactionReceipt.mockResolvedValue({ ...onchain(TARGET, exec, 0n), logs });
+      const modules = await freshModules({ safe: TARGET, safeTxHash, nonce: 5 });
+      const saved = modules.activity.transactionActivitySnapshot()[0];
+      modules.activity.updateTransactionActivity(saved.id, {
+        relayrExpectedTransactions: saved.relayrExpectedTransactions!.map((expected) => ({
+          ...expected,
+          data: exec,
+          transactionUuid: TX_UUIDS[0],
+          ...(reject ? { rejectEvents: [{ topic: rejectionTopic, address: TARGET }] } : {}),
+        })),
+      });
+      const response = bundle();
+      response.transactions[0].tx_uuid = TX_UUIDS[0];
+      response.transactions[0].request.data = exec;
+      respond(response);
+      const result = modules.relayr.waitForRelayrBundle(BUNDLE_UUID);
+      if (reject) {
+        await expect(result).rejects.toThrow(/incomplete recipient/);
+        expect(modules.activity.transactionActivitySnapshot()[0].status).not.toBe("success");
+      } else if (logs.length) await expect(result).resolves.toBeTruthy();
+      else await expect(result).rejects.toThrow(/ExecutionSuccess/);
+    }
   });
 
   it("checks canonical funding and destination calls before exposing completion", async () => {

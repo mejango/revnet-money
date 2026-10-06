@@ -118,7 +118,15 @@
           "useSendRelayrTx",
           "useSendTransaction",
           1
-        ]
+        ],
+        [
+          "raw-wallet-call",
+          "src/hooks/useReviewedRelayr.ts",
+          "sendTransaction",
+          "sendTransactionAsync",
+          1
+        ],
+        ["raw-wallet-call", "src/lib/safe-relayr.ts", "sendPayment", "sendTransaction", 1]
       ]
     },
     {
@@ -879,8 +887,12 @@
     {
       "id": "relayr-boundary",
       "risk": "boundary",
-      "files": ["src/hooks/useReviewedRelayr.ts"],
-      "tests": ["test/reviewed-relayr.test.ts", "test/reviewed-relayr-hooks.test.tsx"]
+      "files": ["src/hooks/useReviewedRelayr.ts", "src/lib/safe-relayr.ts"],
+      "tests": [
+        "test/reviewed-relayr.test.ts",
+        "test/reviewed-relayr-hooks.test.tsx",
+        "test/safe-relayr-adapter.test.ts"
+      ]
     },
     {
       "id": "safe-signature-boundary",

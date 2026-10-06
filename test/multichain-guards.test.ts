@@ -1,12 +1,12 @@
 import {
   requireRawPayerCall,
-  requireRawSafeExecution,
   verifyActionReceipt,
   verifyCallPreconditions,
   type ExpectedPayerDeployment,
 } from "@/lib/multichain-guards";
 import { jbControllerAbi, jbTokensAbi } from "@bananapus/nana-sdk-core";
-import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
+import { safeRelayrPreconditions } from "@bananapus/nana-sdk-core/review/safe-relayr";
+import { SAFE_EXEC_ABI, canonicalSafeTxHash } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import {
   encodeAbiParameters,
@@ -229,16 +229,32 @@ describe("multichain source and exact recipient-result guards", () => {
 
 describe("raw Safe executions", () => {
   const SAFE = "0x0000000000000000000000000000000000005afe" as Address;
-  const SAFE_TX_HASH = `0x${"ab".repeat(32)}` as Hex;
+  const SAFE_TX_HASH = canonicalSafeTxHash(1, SAFE, {
+    to: SAFE,
+    value: 0n,
+    data: "0x1234",
+    operation: 0,
+    safeTxGas: 0n,
+    baseGas: 0n,
+    gasPrice: 0n,
+    gasToken: zeroAddress,
+    refundReceiver: zeroAddress,
+    nonce: 7,
+  });
   const exec = encodeFunctionData({
     abi: SAFE_EXEC_ABI,
     functionName: "execTransaction",
     args: [SAFE, 0n, "0x1234", 0, 0n, 0n, 0n, zeroAddress, zeroAddress, "0x"],
   });
-  const expected = { safe: SAFE, safeTxHash: SAFE_TX_HASH, nonce: 7 };
+  const expected = {
+    safe: SAFE,
+    safeTxHash: SAFE_TX_HASH,
+    nonce: 7,
+    entry: { chain: 1, target: SAFE, data: exec, value: "0" },
+  };
 
   it("pins execTransaction on that Safe to its live nonce and exact transaction hash", () => {
-    const [nonce, hash] = requireRawSafeExecution(SAFE, exec, 0n, expected);
+    const [nonce, hash] = safeRelayrPreconditions(expected);
     expect(nonce).toEqual({
       address: SAFE,
       data: toFunctionSelector("function nonce()"),
@@ -256,11 +272,14 @@ describe("raw Safe executions", () => {
   });
 
   it("rejects another target, value, a missing review, or a call that is not execTransaction", () => {
-    expect(() => requireRawSafeExecution(PAYER, exec, 0n, expected)).toThrow(/reviewed Safe/);
-    expect(() => requireRawSafeExecution(SAFE, exec, 1n, expected)).toThrow(/reviewed Safe/);
-    expect(() => requireRawSafeExecution(SAFE, exec, 0n)).toThrow(/reviewed Safe/);
-    expect(() => requireRawSafeExecution(SAFE, "0x1234", 0n, expected)).toThrow(
-      /not execTransaction/,
-    );
+    expect(() =>
+      safeRelayrPreconditions({ ...expected, entry: { ...expected.entry, target: PAYER } }),
+    ).toThrow(/Safe execution/);
+    expect(() =>
+      safeRelayrPreconditions({ ...expected, entry: { ...expected.entry, value: "1" } }),
+    ).toThrow(/Safe execution/);
+    expect(() =>
+      safeRelayrPreconditions({ ...expected, entry: { ...expected.entry, data: "0x1234" } }),
+    ).toThrow(/signature|decode|data|execution/i);
   });
 });
