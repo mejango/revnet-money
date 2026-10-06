@@ -57,7 +57,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Ending every Safe proposal the app can't follow (the watch's give-up rules and its read of a
 // replaced nonce), the account's Dismiss and one bounded creation read for the page as well
 // measure 2642.0 KiB against 2641.5 KiB, at the budget; it rises by the minimum 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2643);
+// Following a Safe proposal to the chain's answer before it ends (its run of looks, the looks
+// that learn nothing, a receipt's hour from its execution), the loan dialogs' unconfirmed line
+// and the flows that stop reading such a proposal as pending measure 2643.0 KiB against
+// 2641.9 KiB, at the budget; it rises by the minimum 1 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2644);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
