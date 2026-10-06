@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 import ts from "typescript";
+import { provingTitleWords } from "./lib/test-titles.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const manifestPath = resolve(root, "test/fixtures/wallet-write-sites.json");
@@ -362,13 +363,21 @@ for (const surface of manifest.surfaces) {
 }
 
 // Every wallet site must also belong to exactly one action. Money-moving and
-// project-control actions must name an executable, action-specific test which
-// carries a stable marker. This prevents a broad boundary test from making a
-// newly added economic operation appear covered.
+// project-control actions list the tests that prove them, and each listed test
+// file carries the action's marker where TESTING.md says one counts.
 if (!Array.isArray(manifest.actions) || !manifest.actions.length) {
   throw new Error(`Wallet-write manifest ${manifestPath} has no action coverage map`);
 }
 const actionIds = new Set();
+const titleWordsOfTest = new Map();
+/** The words of the titles in a test file that can prove an action; a file is read once. */
+function titleWords(testPath) {
+  if (!titleWordsOfTest.has(testPath)) {
+    const text = readFileSync(resolve(root, testPath), "utf8");
+    titleWordsOfTest.set(testPath, provingTitleWords(text, testPath));
+  }
+  return titleWordsOfTest.get(testPath);
+}
 for (const action of manifest.actions) {
   if (typeof action.id !== "string" || actionIds.has(action.id)) {
     throw new Error(`Wallet-write action IDs must be unique non-empty strings`);
@@ -388,12 +397,9 @@ for (const action of manifest.actions) {
     if (!existsSync(absoluteTestPath)) {
       throw new Error(`Wallet-write action ${action.id} references missing test ${testPath}`);
     }
-    if (
-      action.risk !== "boundary" &&
-      !readFileSync(absoluteTestPath, "utf8").includes(`wallet-action:${action.id}`)
-    ) {
+    if (action.risk !== "boundary" && !titleWords(testPath).has(`wallet-action:${action.id}`)) {
       throw new Error(
-        `Wallet-write action ${action.id} needs an executable test marker wallet-action:${action.id} in ${testPath}`,
+        `Wallet-write action ${action.id} needs the marker wallet-action:${action.id} in the title of a test in ${testPath} that runs and proves it (see TESTING.md)`,
       );
     }
   }
