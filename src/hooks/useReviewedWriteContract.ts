@@ -89,6 +89,8 @@ const RECEIPT_UNCONFIRMED =
   "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
 const SAFE_RESULT_UNCONFIRMED =
   "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
+const SAFE_REPORTED_EXECUTED_UNCONFIRMED =
+  "Safe reports this proposal as executed, but its result can't be confirmed here. Check it in Safe before retrying.";
 /** A watch reads its Safe's state at most this often. */
 const SAFE_REREAD_MS = 60_000;
 /**
@@ -193,6 +195,8 @@ async function watchSafeProposal(
           : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
     });
   };
+  /** The service's latest record reports the proposal executed without its transaction. */
+  let reportedExecuted = false;
   /**
    * The app can't confirm this proposal's result: the watch ends, and its account may dismiss it.
    * Each caller has just read the chain (the execution's receipt, or the transaction with this
@@ -201,7 +205,7 @@ async function watchSafeProposal(
   const unconfirmed = (executionHash?: Hex) =>
     updateTransactionActivity(id, {
       ...(executionHash ? { executionHash } : {}),
-      message: SAFE_RESULT_UNCONFIRMED,
+      message: reportedExecuted ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
       safeResultUnconfirmed: true,
     });
   /** Whether the hour after the proposal was made has passed. */
@@ -292,14 +296,19 @@ async function watchSafeProposal(
         fetch: observed,
       })) as SafeQueuedTransaction & { transactionHash?: unknown };
       if (tracked()?.obsoleteSafeNonce !== undefined) return "done";
+      const executionHash =
+        typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)
+          ? proposal.transactionHash
+          : undefined;
+      reportedExecuted = proposal.isExecuted === true && !executionHash;
       const message = safeTransactionMessage(proposal);
       if (!runsReviewed(message)) {
         unfollowable = true;
         return "stuck";
       }
       if (proposal.isExecuted) {
-        if (typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)) {
-          await settle(proposal.transactionHash);
+        if (executionHash) {
+          await settle(executionHash);
           return "done";
         }
         updateTransactionActivity(id, {
@@ -326,7 +335,10 @@ async function watchSafeProposal(
       if (nonce === null) return "unknown";
       return nonce > message.nonce ? "stuck" : "live";
     } catch {
-      if (status === 404 || (status >= 200 && status < 300 && json)) return "stuck";
+      if (status === 404 || (status >= 200 && status < 300 && json)) {
+        reportedExecuted = false;
+        return "stuck";
+      }
       updateTransactionActivity(id, {
         status: "safe-proposed",
         message:

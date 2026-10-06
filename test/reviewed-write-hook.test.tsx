@@ -1310,18 +1310,21 @@ describe("reviewed write hook", () => {
     });
 
     it.each([
-      ["Safe never lists", () => new Response("Not found", { status: 404 })],
+      ["Safe never lists", () => new Response("Not found", { status: 404 }), UNCONFIRMED],
       [
         "Safe lists with another proposal's fields",
         () => new Response(JSON.stringify({ ...PROPOSED, nonce: 8, safe: ACCOUNT })),
+        UNCONFIRMED,
       ],
       [
         "Safe reports executed without its transaction",
         () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: true })),
+        // What its account needs to know before it dismisses the proposal.
+        "Safe reports this proposal as executed, but its result can't be confirmed here. Check it in Safe before retrying.",
       ],
     ])(
       "ends unconfirmed, an hour after it was made, after ten minutes of looks in a row when %s",
-      async (_case, answer) => {
+      async (_case, answer, message) => {
         vi.useFakeTimers();
         const { activity, hooks } = await freshHarness();
         savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
@@ -1336,7 +1339,7 @@ describe("reviewed write hook", () => {
 
         expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
           status: "safe-proposed",
-          message: UNCONFIRMED,
+          message,
           safeResultUnconfirmed: true,
         });
       },
