@@ -94,7 +94,7 @@ beforeEach(() => {
 });
 
 describe("a closed permission review", () => {
-  it("returns the borrow flow to its start without reporting a denied permission", async () => {
+  it("wallet-action:loans returns the borrow flow to its start without reporting a denied permission", async () => {
     mocks.write.mockRejectedValue(new TransactionReviewCancelledError());
     const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }));
 
@@ -110,7 +110,7 @@ describe("a closed permission review", () => {
 });
 
 describe("a permission step refused by a Safe proposal the app can't confirm", () => {
-  it("says to check the proposal in Safe, and neither that permission was denied nor that it failed", async () => {
+  it("wallet-action:loans says to check the proposal in Safe, and neither that permission was denied nor that it failed", async () => {
     const proposal = `0x${"ab".repeat(32)}` as Hex;
     mocks.write.mockRejectedValue(
       new SafeProposalPendingError(proposal, "setPermissionsFor", true),
