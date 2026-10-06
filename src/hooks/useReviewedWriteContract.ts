@@ -17,7 +17,10 @@ import {
   type TransactionReviewOptions,
 } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import {
+  isTransactionReceiptUnavailableError,
+  waitForReceiptWithRetry,
+} from "@/lib/waitForReceipt";
 import { gasWithHeadroom, simulateCallSequence } from "@bananapus/nana-sdk-core/review";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
@@ -200,12 +203,13 @@ async function watchSafeProposal(
   /**
    * The app can't confirm this proposal's result: the watch ends, and its account may dismiss it.
    * Each caller has just read the chain (the execution's receipt, or the transaction with this
-   * hash) or has no client to read it with.
+   * hash) or has no client to read it with. `reported`: the Safe service reported the proposal
+   * executed, which the line keeps for its account.
    */
-  const unconfirmed = (executionHash?: Hex) =>
+  const unconfirmed = (executionHash?: Hex, reported = reportedExecuted) =>
     updateTransactionActivity(id, {
       ...(executionHash ? { executionHash } : {}),
-      message: reportedExecuted ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
+      message: reported ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
       safeResultUnconfirmed: true,
     });
   /** Whether the hour after the proposal was made has passed. */
@@ -214,22 +218,41 @@ async function watchSafeProposal(
   /**
    * Settles the proposal from its execution's receipt: only the Safe's own
    * event for this proposal decides, never the receipt's status alone or
-   * another proposal's event in the same receipt.
+   * another proposal's event in the same receipt. `reported`: the Safe service
+   * reported this execution.
    */
-  const settle = async (executionHash: Hex) => {
-    const receipt = client
-      ? await waitForReceiptWithRetry(client, executionHash).catch(() => undefined)
-      : undefined;
+  const settle = async (executionHash: Hex, reported: boolean) => {
+    let receipt: TransactionReceipt | undefined;
+    // Whether the chain answered that it holds no receipt for the execution (a read that found
+    // none, or a receipt of another transaction), or there is no client to ask. A node that
+    // couldn't answer says nothing.
+    let noReceipt = !client;
+    if (client) {
+      try {
+        receipt = await waitForReceiptWithRetry(client, executionHash);
+      } catch (error) {
+        noReceipt = isTransactionReceiptUnavailableError(error) && error.noReceipt;
+      }
+      if (receipt && receipt.transactionHash?.toLowerCase() !== executionHash.toLowerCase()) {
+        receipt = undefined;
+        noReceipt = true;
+      }
+    }
     const safe = safeOf();
+    if (!receipt && !noReceipt) {
+      // The proposal stays held for the next look.
+      updateTransactionActivity(id, { executionHash, message: RECEIPT_UNCONFIRMED });
+      return;
+    }
     if (!receipt || !safe) {
-      // A receipt still missing an hour after this execution was first seen is not coming.
+      // A receipt the chain still doesn't hold an hour after it first said so is not coming.
       const seen = tracked();
       const seenAt =
         seen?.executionHash?.toLowerCase() === executionHash.toLowerCase()
           ? (seen.executionSeenAt ?? Date.now())
           : Date.now();
       if (Date.now() - seenAt >= SAFE_RESULT_HORIZON_MS) {
-        unconfirmed(executionHash);
+        unconfirmed(executionHash, reported);
         return;
       }
       updateTransactionActivity(id, {
@@ -241,7 +264,7 @@ async function watchSafeProposal(
     }
     const result = safeExecutionResult(receipt, safe, hash);
     if (result.status === "unproven") {
-      unconfirmed(executionHash);
+      unconfirmed(executionHash, reported);
       return;
     }
     executed(result.status === "success", executionHash);
@@ -265,7 +288,7 @@ async function watchSafeProposal(
     const execution =
       answer === "unchecked" ? (client ? await findExecution(client) : null) : answer;
     if (execution === undefined) return false;
-    if (execution && executesReviewed(execution)) await settle(hash);
+    if (execution && executesReviewed(execution)) await settle(hash, false);
     else unconfirmed();
     return true;
   };
@@ -308,7 +331,7 @@ async function watchSafeProposal(
       }
       if (proposal.isExecuted) {
         if (executionHash) {
-          await settle(executionHash);
+          await settle(executionHash, true);
           return "done";
         }
         updateTransactionActivity(id, {
@@ -375,7 +398,7 @@ async function watchSafeProposal(
           ? await findExecution(client)
           : "unchecked";
       if (execution && execution !== "unchecked") {
-        if (executesReviewed(execution)) await settle(hash);
+        if (executesReviewed(execution)) await settle(hash, false);
         else unconfirmed();
         return;
       }

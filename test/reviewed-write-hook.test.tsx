@@ -10,6 +10,8 @@ import {
   HttpRequestError,
   parseAbi,
   TransactionNotFoundError,
+  TransactionReceiptNotFoundError,
+  WaitForTransactionReceiptTimeoutError,
   zeroAddress,
   type Address,
   type Hex,
@@ -1118,7 +1120,9 @@ describe("reviewed write hook", () => {
         expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
           status: "safe-proposed",
           executionHash: EXECUTION,
-          message: UNCONFIRMED,
+          // The service's report stays in the line its account reads before it dismisses it.
+          message:
+            "Safe reports this proposal as executed, but its result can't be confirmed here. Check it in Safe before retrying.",
           safeResultUnconfirmed: true,
         }),
       );
@@ -1733,35 +1737,89 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });
 
-    it("ends unconfirmed when the chain still returns no receipt an hour after its execution was first seen", async () => {
+    /** The service's record of the proposal, executed in EXECUTION. */
+    const reportedExecuted = () =>
+      new Response(
+        JSON.stringify({
+          ...PROPOSED,
+          safe: ACCOUNT,
+          isExecuted: true,
+          transactionHash: EXECUTION,
+        }),
+      );
+    const REPORTED_EXECUTED_UNCONFIRMED =
+      "Safe reports this proposal as executed, but its result can't be confirmed here. Check it in Safe before retrying.";
+    const nodeDown = () =>
+      new HttpRequestError({ url: "https://rpc.example", details: "fetch failed" });
+
+    it.each([
+      [
+        "answers that it holds no receipt",
+        () => {
+          mocks.waitForTransactionReceipt.mockRejectedValue(
+            new WaitForTransactionReceiptTimeoutError({ hash: EXECUTION }),
+          );
+          mocks.getTransactionReceipt.mockRejectedValue(
+            new TransactionReceiptNotFoundError({ hash: EXECUTION }),
+          );
+        },
+      ],
+      [
+        "answers with a receipt of another transaction",
+        () => {
+          mocks.waitForTransactionReceipt.mockResolvedValue({
+            status: "success",
+            transactionHash: OTHER_PROPOSAL,
+            logs: [executionLog(ACCOUNT, PROPOSAL)],
+          });
+        },
+      ],
+    ])(
+      "ends unconfirmed when the chain still %s an hour after it first did",
+      async (_case, chainAnswers) => {
+        vi.useFakeTimers();
+        const { activity, hooks } = await freshHarness();
+        // Made two hours ago, and reported executed only now.
+        savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - 2 * HOUR);
+        serviceAnswering(reportedExecuted);
+        chainAnswers();
+
+        hooks.resumeSafeProposalTracking(mocks.config as never);
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+        // Its execution is minutes old, so its receipt may still come.
+        expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+          status: "safe-proposed",
+          executionHash: EXECUTION,
+          message: RECEIPT_UNCONFIRMED,
+        });
+        expect(
+          activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed,
+        ).toBeUndefined();
+
+        // A load an hour later still gets the same answer.
+        await vi.advanceTimersByTimeAsync(HOUR);
+        hooks.resumeSafeProposalTracking(mocks.config as never);
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+        expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+          status: "safe-proposed",
+          executionHash: EXECUTION,
+          message: REPORTED_EXECUTED_UNCONFIRMED,
+          safeResultUnconfirmed: true,
+        });
+      },
+    );
+
+    it("stays held while the node can't answer for its execution's receipt, on loads an hour apart", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
-      // Made two hours ago, and reported executed only now.
       savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - 2 * HOUR);
-      serviceAnswering(
-        () =>
-          new Response(
-            JSON.stringify({
-              ...PROPOSED,
-              safe: ACCOUNT,
-              isExecuted: true,
-              transactionHash: EXECUTION,
-            }),
-          ),
-      );
-      mocks.waitForTransactionReceipt.mockRejectedValue(new Error("timed out"));
+      serviceAnswering(reportedExecuted);
+      mocks.waitForTransactionReceipt.mockRejectedValue(nodeDown());
+      mocks.getTransactionReceipt.mockRejectedValue(nodeDown());
 
       hooks.resumeSafeProposalTracking(mocks.config as never);
       await vi.advanceTimersByTimeAsync(5 * 60_000);
-      // Its execution is minutes old, so its receipt may still come.
-      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
-        status: "safe-proposed",
-        executionHash: EXECUTION,
-        message: RECEIPT_UNCONFIRMED,
-      });
-      expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
-
-      // A load an hour later still gets no receipt for it.
       await vi.advanceTimersByTimeAsync(HOUR);
       hooks.resumeSafeProposalTracking(mocks.config as never);
       await vi.advanceTimersByTimeAsync(5 * 60_000);
@@ -1769,8 +1827,37 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
         status: "safe-proposed",
         executionHash: EXECUTION,
-        message: UNCONFIRMED,
-        safeResultUnconfirmed: true,
+        message: RECEIPT_UNCONFIRMED,
+      });
+      expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
+    });
+
+    it("settles when its execution's receipt arrives after the node's outage", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - 2 * HOUR);
+      serviceAnswering(reportedExecuted);
+      mocks.waitForTransactionReceipt.mockRejectedValue(nodeDown());
+      mocks.getTransactionReceipt.mockRejectedValue(nodeDown());
+
+      // Two loads an hour apart while the node is down.
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await vi.advanceTimersByTimeAsync(HOUR);
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      // The node answers again.
+      mocks.waitForTransactionReceipt.mockResolvedValue({
+        status: "success",
+        transactionHash: EXECUTION,
+        logs: [executionLog(ACCOUNT, PROPOSAL)],
+      });
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "success",
+        executionHash: EXECUTION,
       });
     });
   });

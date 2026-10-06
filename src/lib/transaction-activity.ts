@@ -53,7 +53,7 @@ export type TransactionActivity = {
    */
   safeResultUnconfirmed?: boolean;
   executionHash?: Hex;
-  /** When a Safe proposal's `executionHash` was first recorded without its receipt. */
+  /** When the chain first answered that it holds no receipt for a Safe proposal's `executionHash`. */
   executionSeenAt?: number;
   bundleUuid?: string;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];
