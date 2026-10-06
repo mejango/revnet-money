@@ -27,6 +27,7 @@ import { useAllowance } from "@/hooks/useAllowance";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalPendingError,
+  SAFE_PROPOSAL_UNCONFIRMED_LINE,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -74,7 +75,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const router = useRouter();
   const publicClient = usePublicClient({ chainId: sourceChainId });
   const { writeContractAsync, data: hash, reset } = useWriteContract();
-  const { isSuccess, isLoading } = useWaitForTransactionReceipt({
+  const { isSuccess, isLoading, isSafeResultUnconfirmed } = useWaitForTransactionReceipt({
     hash,
     query: { enabled: !!hash },
   });
@@ -518,6 +519,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
               {isLoading && "Waiting for confirmation..."}
               {isSuccess &&
                 "First step confirmed. Close this window and use the transaction table to finish the move."}
+              {isSafeResultUnconfirmed && SAFE_PROPOSAL_UNCONFIRMED_LINE}
             </div>
             <ButtonWithWallet
               targetChainId={sourceChainId}

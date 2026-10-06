@@ -23,7 +23,11 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
-import { useWaitForTransactionReceipt, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import {
+  SAFE_PROPOSAL_UNCONFIRMED_LINE,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import {
   cashOutExecutionErrorMessage,
@@ -145,9 +149,16 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     data: approvalHash,
   } = useWriteContract();
 
-  const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { isLoading: approvalConfirming, isSuccess: approvalConfirmed } =
-    useWaitForTransactionReceipt({ hash: approvalHash });
+  const {
+    isLoading: isTxLoading,
+    isSuccess,
+    isSafeResultUnconfirmed: isTxUnconfirmed,
+  } = useWaitForTransactionReceipt({ hash });
+  const {
+    isLoading: approvalConfirming,
+    isSuccess: approvalConfirmed,
+    isSafeResultUnconfirmed: approvalUnconfirmed,
+  } = useWaitForTransactionReceipt({ hash: approvalHash });
   // const { data: redeemQuote } = useTokenCashOutQuoteEth(redeemAmountBN, {
   //   chainId: selectedSucker?.peerChainId as JBChainId,
   // });
@@ -562,6 +573,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   ) : null}
 
                   {isTxLoading ? <div>Transaction submitted, awaiting confirmation...</div> : null}
+                  {isTxUnconfirmed || approvalUnconfirmed ? (
+                    <div>{SAFE_PROPOSAL_UNCONFIRMED_LINE}</div>
+                  ) : null}
                 </>
               )}
             </div>

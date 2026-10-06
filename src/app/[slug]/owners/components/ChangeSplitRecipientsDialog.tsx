@@ -18,6 +18,7 @@ import {
 import { Trash2 as TrashIcon } from "@/components/ui/icons";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
+import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
@@ -107,8 +108,8 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const { hasPermission } = useUserPermissions();
   const { chainSplits, refetch } = useChainSplits(stageIdx);
 
-  const { submitSplits, isSubmitting, isPending, isTxLoading, relayrAvailable } = useSetSplitGroups(
-    {
+  const { submitSplits, isSubmitting, isPending, isTxLoading, isTxUnconfirmed, relayrAvailable } =
+    useSetSplitGroups({
       onSuccess: (txHash) => {
         console.debug(`Transaction confirmed: ${txHash}`);
         toast({ title: "Splits updated successfully" });
@@ -116,8 +117,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
         setOpen(false);
         setTimeout(refetch, 4000); // Give it some time to index data
       },
-    },
-  );
+    });
 
   useEffect(() => {
     if (open) refetch();
@@ -559,6 +559,9 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                   <p role="alert" className="mt-4 text-sm text-red-600">
                     {stickyProblem}
                   </p>
+                ) : null}
+                {isTxUnconfirmed ? (
+                  <p className="mt-4 text-sm text-zinc-600">{SAFE_PROPOSAL_UNCONFIRMED_LINE}</p>
                 ) : null}
                 <DialogFooter className="mt-6">
                   <Button

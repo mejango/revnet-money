@@ -33,6 +33,8 @@ const HASH = `0x${"cd".repeat(32)}` as Hex;
 const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   refreshPosition: vi.fn(),
+  // The hash a flow's write sent last, as its write hook reports it.
+  sent: undefined as `0x${string}` | undefined,
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -62,13 +64,20 @@ vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/hooks/useAllowance", () => ({
   useAllowance: () => ({ ensureAllowance: vi.fn(), isApproving: false }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
+vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
+  SAFE_PROPOSAL_UNCONFIRMED_LINE: (
+    await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>()
+  ).SAFE_PROPOSAL_UNCONFIRMED_LINE,
   isSafeConnection: () => false,
   proposeSafeBatch: vi.fn(),
   submittedViaSafe: () => false,
   useSafeConnection: () => false,
-  useWaitForTransactionReceipt: () => ({ isSuccess: false }),
-  useWriteContract: () => ({ writeContractAsync: mocks.write, isPending: false }),
+  // The flow's own Safe proposal, once sent, ends where the app can't confirm its result.
+  useWaitForTransactionReceipt: ({ hash }: { hash?: Hex }) => ({
+    isSuccess: false,
+    isSafeResultUnconfirmed: Boolean(hash) && hash === mocks.sent,
+  }),
+  useWriteContract: () => ({ writeContractAsync: mocks.write, isPending: false, data: mocks.sent }),
 }));
 vi.mock("@/lib/waitForReceipt", () => ({
   waitForReceiptWithRetry: async () => ({ status: "success" }),
@@ -255,6 +264,7 @@ function pendingWrite() {
 }
 
 beforeEach(() => {
+  mocks.sent = undefined;
   mocks.write.mockReset();
   mocks.refreshPosition.mockReset().mockResolvedValue(position);
 });
@@ -379,5 +389,19 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     reread(position);
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Your liquidity", seen);
+  });
+});
+
+describe("liquidity removal left open over its own Safe proposal the app can't confirm", () => {
+  it("says to check the proposal in Safe", async () => {
+    mocks.sent = HASH;
+    renderHosted(
+      "Your liquidity",
+      <LiquidityManager states={[state]} tokenSymbol="ART" heading={null} />,
+    );
+
+    await screen.findByText(
+      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+    );
   });
 });

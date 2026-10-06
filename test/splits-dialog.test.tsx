@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   chainSplits: [] as unknown[],
   submitSplits: vi.fn(),
   relayrAvailable: true,
+  txUnconfirmed: false,
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -44,6 +45,7 @@ vi.mock("@/app/[slug]/owners/components/hooks/useSetSplitGroups", () => ({
     isSubmitting: false,
     isPending: false,
     isTxLoading: false,
+    isTxUnconfirmed: state.txUnconfirmed,
     isSuccess: false,
     relayrAvailable: state.relayrAvailable,
   }),
@@ -80,6 +82,21 @@ beforeEach(() => {
   state.chainSplits = [chain()];
   state.submitSplits = vi.fn();
   state.relayrAvailable = true;
+  state.txUnconfirmed = false;
+});
+
+describe("ChangeSplitRecipientsDialog over its own Safe proposal the app can't confirm", () => {
+  it("says to check the proposal in Safe", async () => {
+    state.txUnconfirmed = true;
+
+    const dialog = await openDialog(0);
+
+    expect(
+      within(dialog).getByText(
+        "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("ChangeSplitRecipientsDialog stage labelling", () => {

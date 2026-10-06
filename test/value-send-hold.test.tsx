@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   ensureAllowance: vi.fn(),
   hasPermissions: vi.fn(),
   toast: vi.fn(),
+  // The hash a flow's write sent last, as its write hook reports it.
+  sent: undefined as `0x${string}` | undefined,
 }));
 
 const tokenBalance = (chainId: number, projectId: number) => ({
@@ -95,7 +97,7 @@ vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
   useWriteContract: () => ({
     writeContractAsync: mocks.write,
     isPending: false,
-    data: undefined,
+    data: mocks.sent,
     reset: vi.fn(),
   }),
 }));
@@ -201,6 +203,7 @@ function tryEveryWayOut(name: string) {
 
 beforeEach(() => {
   window.localStorage.clear();
+  mocks.sent = undefined;
   mocks.write.mockReset().mockImplementation(never);
   mocks.prepareCashOut.mockReset().mockImplementation(never);
   mocks.freshBorrowable.mockReset().mockImplementation(never);
@@ -391,6 +394,61 @@ describe("loan flows refused by a Safe proposal the app can't confirm", () => {
       title: "Safe proposal unconfirmed",
       description: `The step was proposed to Safe as ${PROPOSAL}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
     });
+  });
+});
+
+describe("value flows open over their own Safe proposal the app can't confirm", () => {
+  async function openBridge() {
+    renderWithQueries(
+      <BridgeDialog
+        projects={[
+          { projectId: 7, chainId: 1, token: NATIVE_TOKEN },
+          { projectId: 8, chainId: 10, token: NATIVE_TOKEN },
+        ]}
+      >
+        <button type="button">Open move</button>
+      </BridgeDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open move" }));
+  }
+
+  async function openCashOut() {
+    renderWithQueries(
+      <RedeemDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open cash out</button>
+      </RedeemDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+  }
+
+  it.each([
+    ["bridge", openBridge],
+    ["cash out", openCashOut],
+  ])("%s says to check the proposal in Safe", async (_flow, open) => {
+    const proposal = `0x${"ce".repeat(32)}` as Hex;
+    recordTransactionActivity({
+      id: `tx:1:${proposal}`,
+      kind: "safe",
+      title: "The step",
+      status: "safe-proposed",
+      message:
+        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+      chainId: 1,
+      hash: proposal,
+      safeProposalHash: proposal,
+      safeResultUnconfirmed: true,
+    });
+    mocks.sent = proposal;
+
+    await open();
+
+    expect(
+      (
+        await screen.findAllByText(
+          "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+        )
+      ).length,
+    ).toBeGreaterThan(0);
   });
 });
 

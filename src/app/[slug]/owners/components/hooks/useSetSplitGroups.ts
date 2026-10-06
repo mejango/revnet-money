@@ -57,7 +57,11 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
       },
     },
   });
-  const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({
+  const {
+    isLoading: isTxLoading,
+    isSuccess,
+    isSafeResultUnconfirmed: isTxUnconfirmed,
+  } = useWaitForTransactionReceipt({
     hash: singleTxHash,
   });
 
@@ -229,6 +233,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
     isSubmitting,
     isPending,
     isTxLoading,
+    isTxUnconfirmed,
     isSuccess,
     relayrAvailable: !viaSafe,
   };

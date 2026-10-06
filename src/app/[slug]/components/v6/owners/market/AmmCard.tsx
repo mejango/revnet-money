@@ -21,6 +21,7 @@ import {
   ACCOUNT_CHANGED,
   isSafeConnection,
   proposeSafeBatch,
+  SAFE_PROPOSAL_UNCONFIRMED_LINE,
   submittedViaSafe,
   useSafeConnection,
   useWaitForTransactionReceipt,
@@ -1852,6 +1853,9 @@ function ChainPositionRows({
               ) : null}
               {receipt.isSuccess ? (
                 <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
+              ) : null}
+              {receipt.isSafeResultUnconfirmed ? (
+                <p className="mt-2 text-xs text-zinc-600">{SAFE_PROPOSAL_UNCONFIRMED_LINE}</p>
               ) : null}
               {edited ? <p className="mt-2 text-xs text-green-700">{edited}</p> : null}
               {error && !reviewed && !claimReview ? (

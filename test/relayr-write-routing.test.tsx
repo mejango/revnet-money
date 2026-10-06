@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   chainId: 8453,
   safe: false,
   receiptSuccess: false,
+  receiptUnconfirmed: false,
   lastSubmittedHash: undefined as Hash | undefined,
   writeContractAsync: vi.fn(),
   switchChainAsync: vi.fn(),
@@ -85,6 +86,7 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
   }),
   useWaitForTransactionReceipt: ({ hash }: { hash?: Hash }) => ({
     isSuccess: Boolean(hash) && mocks.receiptSuccess,
+    isSafeResultUnconfirmed: Boolean(hash) && mocks.receiptUnconfirmed,
     isLoading: false,
   }),
   isSafeConnection: () => mocks.safe,
@@ -159,6 +161,7 @@ beforeEach(() => {
   mocks.chainId = 8453;
   mocks.safe = false;
   mocks.receiptSuccess = false;
+  mocks.receiptUnconfirmed = false;
   mocks.lastSubmittedHash = undefined;
   mocks.contractAddress.mockReturnValue(TARGET);
   mocks.estimateContractGas.mockResolvedValue(100_000n);
@@ -325,6 +328,20 @@ describe("wallet-action:split-groups — reserved token split routing", () => {
     );
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
     expect(mocks.switchChainAsync).not.toHaveBeenCalled();
+  });
+
+  it("reports a single chain's Safe proposal whose result can't be confirmed", async () => {
+    const onSuccess = vi.fn();
+    const { result, rerender } = renderHook(() => useSetSplitGroups({ onSuccess }));
+    await act(async () => {
+      await result.current.submitSplits(splitChains([10]));
+    });
+    mocks.receiptUnconfirmed = true;
+    rerender();
+
+    expect(result.current.isTxUnconfirmed).toBe(true);
+    expect(result.current.isTxLoading).toBe(false);
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 
   it("writes a single chain directly and reports success only after its receipt", async () => {
