@@ -1,6 +1,13 @@
 import { safeBatchProposalFor, safeTransactionHash } from "@bananapus/nana-sdk-core/safe-service";
 import { waitFor } from "@testing-library/react";
-import { encodeFunctionData, getAddress, parseAbi, type Address, type Hex } from "viem";
+import {
+  encodeFunctionData,
+  getAddress,
+  parseAbi,
+  TransactionNotFoundError,
+  type Address,
+  type Hex,
+} from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -24,8 +31,8 @@ vi.mock("wagmi/actions", () => ({
     simulateCalls: mocks.simulateCalls,
     request: mocks.request,
     // A safeTxHash is never a transaction, so tracking polls the Safe service.
-    getTransaction: async () => {
-      throw new Error("Transaction not found");
+    getTransaction: async ({ hash }: { hash: Hex }) => {
+      throw new TransactionNotFoundError({ hash });
     },
   }),
   simulateContract: mocks.simulateContract,

@@ -243,20 +243,29 @@ async function watchSafeProposal(
     chain
       .getTransaction({ hash })
       .catch((error: unknown) => (error instanceof TransactionNotFoundError ? null : undefined));
+  type ChainAnswer = Awaited<ReturnType<typeof findExecution>>;
   /**
-   * Ends the proposal unconfirmed after one last look at the chain, which may show an execution
-   * Safe{Wallet} sent at once since the watch last checked.
+   * Ends the proposal on the chain's word, which may show an execution Safe{Wallet} sent at once
+   * since the watch last checked: `answer` is this look's own check of the chain, or one more check
+   * when the look made none. An execution of the reviewed calls settles the proposal instead. False
+   * when the node can't answer, and the proposal stays for the watch's next chain check.
    */
-  const endUnconfirmed = async () => {
-    const execution = client ? await findExecution(client) : null;
+  const endUnconfirmed = async (answer: ChainAnswer | "unchecked"): Promise<boolean> => {
+    const execution =
+      answer === "unchecked" ? (client ? await findExecution(client) : null) : answer;
+    if (execution === undefined) return false;
     if (execution && executesReviewed(execution)) await settle(hash);
     else unconfirmed();
+    return true;
   };
+  /** The service's record of this proposal runs other calls, so the app can never follow it. */
+  let unfollowable = false;
   /**
-   * One look at the Safe service: "done" once the proposal is settled or ends unconfirmed; "live"
-   * when it is listed unexecuted with its nonce still to come; "stuck" when the app can't follow
-   * it: not listed, a record it can't authenticate, executed without its transaction, or a nonce
-   * the Safe has moved past; and "unknown" when the service is down or the nonce can't be read.
+   * One look at the Safe service: "done" once the proposal is settled; "live" when it is listed
+   * unexecuted with its nonce still to come; "stuck" when the app can't follow it: not listed, a
+   * record it can't authenticate, a record of other calls (which makes it due to end), executed
+   * without its transaction, or a nonce the Safe has moved past; and "unknown" when the service is
+   * down or the nonce can't be read.
    */
   const askService = async (safe: Address): Promise<SafeLook> => {
     // The status of the service's answer tells "not indexed yet" (404) and a record it can't
@@ -275,8 +284,8 @@ async function watchSafeProposal(
       if (tracked()?.obsoleteSafeNonce !== undefined) return "done";
       const message = safeTransactionMessage(proposal);
       if (!runsReviewed(message)) {
-        await endUnconfirmed();
-        return "done";
+        unfollowable = true;
+        return "stuck";
       }
       if (proposal.isExecuted) {
         if (typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)) {
@@ -325,6 +334,9 @@ async function watchSafeProposal(
     // Looks that found the proposal where the app can't follow it since a look last showed it
     // live. A look that learns nothing leaves the count as it is.
     let stuckLooks = 0;
+    // Whether the proposal is due to end but the node couldn't answer, so the watch waits for its
+    // next chain check.
+    let awaitingChain = false;
     // Without a Safe service only the chain can show an execution, and twelve of its checks must
     // find none.
     const stuckFor = service ? SAFE_STUCK_LOOKS : SAFE_EXECUTION_CHECKS;
@@ -336,11 +348,11 @@ async function watchSafeProposal(
       // whatever its hash, so the execution must run the reviewed calls. The
       // chain is checked on every look of the minute after the reply, when such
       // an execution lands, then once a minute for a node that shows it late.
-      const execution =
+      const execution: ChainAnswer | "unchecked" =
         client && (attempt < SAFE_EXECUTION_CHECKS || attempt % SAFE_EXECUTION_CHECKS === 0)
           ? await findExecution(client)
-          : undefined;
-      if (execution) {
+          : "unchecked";
+      if (execution && execution !== "unchecked") {
         if (executesReviewed(execution)) await settle(hash);
         else unconfirmed();
         return;
@@ -352,19 +364,27 @@ async function watchSafeProposal(
       else look = execution === null ? "stuck" : "unknown";
       if (look === "done") return;
       if (look === "stuck") stuckLooks += 1;
-      else if (look === "live") stuckLooks = 0;
+      else if (look === "live") {
+        stuckLooks = 0;
+        awaitingChain = false;
+      }
       // Without a service, twelve checks that find nothing end it. With one, what the app still
-      // can't follow an hour after the proposal was made, it never will.
-      if (stuckLooks >= stuckFor && (!service || pastHorizon())) {
-        await endUnconfirmed();
-        return;
+      // can't follow an hour after the proposal was made, it never will. It ends on this look's
+      // check of the chain, or one more, and while the node can't answer, only the next chain
+      // check asks again.
+      const due = unfollowable || (stuckLooks >= stuckFor && (!service || pastHorizon()));
+      if (due && (execution !== "unchecked" || !awaitingChain)) {
+        if (await endUnconfirmed(execution)) return;
+        awaitingChain = true;
       }
       await new Promise((resolve) => window.setTimeout(resolve, SAFE_LOOK_MS));
     }
     // The watch gives up. A proposal still awaiting approvals, one the watch learned nothing
-    // about, or one not stuck for long enough is followed again on the next load; anything else
-    // ends unconfirmed.
-    if (stuckLooks >= stuckFor) await endUnconfirmed();
+    // about, one not stuck for long enough, or one the node couldn't answer for is followed again
+    // on the next load; anything else ends unconfirmed.
+    if (!awaitingChain && (unfollowable || stuckLooks >= stuckFor)) {
+      await endUnconfirmed("unchecked");
+    }
   })();
   safeInflight.set(id, request);
   void request.finally(() => safeInflight.delete(id)).catch(() => undefined);
