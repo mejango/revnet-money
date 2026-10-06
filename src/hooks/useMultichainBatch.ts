@@ -13,6 +13,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import {
   batchCallKey,
+  batchCallScope,
   createMultichainBatch,
   findPendingBatch,
   removeUnsubmittedBatch,
@@ -393,10 +394,7 @@ export function useMultichainBatch() {
           if (call.state !== "ready" || call.hash || !call.expectedRouterPending) return false;
           // Lost publication responses also reserve this scope. Never skip a
           // signed/published call just because its journal still says ready.
-          await requireRelayrRecoveryScopeAvailable(
-            account,
-            call.recoveryScope ?? `${batch!.scope}:${call.chainId}:${index}`,
-          );
+          await requireRelayrRecoveryScopeAvailable(account, batchCallScope(batch!, call, index));
           const client = getPublicClient(config, { chainId: call.chainId });
           if (!client) throw new Error("Destination RPC unavailable.");
           const advance = await readRouterPendingAdvance(
@@ -536,7 +534,7 @@ export function useMultichainBatch() {
                     relayrMode: call.relayrMode,
                     // The batch review in this run showed this exact call.
                     reviewedInParent: reviewedHere,
-                    recoveryScope: call.recoveryScope ?? `${batch.scope}:${call.chainId}:${index}`,
+                    recoveryScope: batchCallScope(batch, call, index),
                     preconditions: call.preconditions,
                     expectedDeployment: call.expectedDeployment,
                     rejectEvents: call.rejectEvents,
@@ -624,7 +622,7 @@ export function useMultichainBatch() {
                 );
               await requireRelayrRecoveryScopeAvailable(
                 account,
-                call.recoveryScope ?? `${batch.scope}:${call.chainId}:${index}`,
+                batchCallScope(batch, call, index),
               );
               if (await reconcileReadyCall(call, index)) continue;
               await verifyCallPreconditions(client, call.preconditions);
@@ -685,7 +683,7 @@ export function useMultichainBatch() {
                 for (const [index, call] of batch.calls.entries())
                   await requireRelayrRecoveryScopeAvailable(
                     account,
-                    call.recoveryScope ?? `${batch.scope}:${call.chainId}:${index}`,
+                    batchCallScope(batch, call, index),
                   );
                 removeUnsubmittedBatch(batch.id);
                 discarded = true;

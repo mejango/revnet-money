@@ -122,6 +122,14 @@ export function removeUnsubmittedBatch(id: string) {
     serialize(readMultichainBatches().filter((batch) => batch.id !== id)),
   );
 }
+/** The recovery scope a batch call is quoted and checked under: its own, or its place in the batch. */
+export function batchCallScope(
+  batch: Pick<MultichainBatch, "scope">,
+  call: Pick<FrozenBatchCall, "recoveryScope" | "chainId">,
+  index: number,
+): string {
+  return call.recoveryScope ?? `${batch.scope}:${call.chainId}:${index}`;
+}
 /**
  * A Relayr session of a pending batch round was discarded. After one that may
  * have run, every such batch is abandoned, so its calls go out again only
