@@ -1,5 +1,6 @@
 "use client";
 
+import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { formatShortDateTime } from "@/lib/date";
 import {
   batchCallScope,
@@ -38,7 +39,7 @@ import {
   type RelayrExpectedTransaction,
   type TransactionActivity,
 } from "@/lib/transaction-activity";
-import { requireTransactionReview } from "@/lib/transaction-review";
+import { requireTransactionReview, type TransactionReviewCall } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
@@ -122,6 +123,7 @@ export type ReviewedRelayrRequest = {
     args?: readonly unknown[];
     label?: string;
     contractName?: string;
+    calls?: readonly TransactionReviewCall[];
   };
 };
 
@@ -888,7 +890,7 @@ async function revalidateSignedCalls(
   account: Address,
   expectedTransactions: RelayrExpectedTransaction[],
 ): Promise<void> {
-  for (const expected of expectedTransactions) {
+  await mapConcurrentChecks(expectedTransactions, async (expected) => {
     const client = getPublicClient(config, { chainId: expected.chainId as JBChainId });
     if (!client || !expected.gas)
       throw new Error("The signed destination call cannot be revalidated. Do not pay this quote.");
@@ -903,7 +905,7 @@ async function revalidateSignedCalls(
       gas: BigInt(expected.gas),
       stateOverride: [{ address: account, balance: maxUint256 }],
     });
-  }
+  });
 }
 
 class RelayrVerificationError extends Error {}
@@ -1350,8 +1352,8 @@ export function useGetRelayrTxQuote() {
               if (getAccount(config).address?.toLowerCase() !== address.toLowerCase())
                 throw new Error("Connected account changed. Review the Safe executions again.");
             }
-            for (const request of requests) {
-              if (request.relayrMode === "safe-exec") {
+            if (safeExecutions) {
+              const checked = await mapConcurrentChecks(requests, async (request) => {
                 // Reads only, so no chain switch: pin the Safe's live nonce and
                 // exact transaction hash, then simulate the execution.
                 const client = getPublicClient(config, { chainId: request.chainId });
@@ -1372,15 +1374,22 @@ export function useGetRelayrTxQuote() {
                   data: request.data.data,
                   value: request.data.value,
                 });
-                executionGas.push(gasWithHeadroom(request.data.gas + 100_000n).toString());
-                transactions.push({
-                  chain: request.chainId,
-                  target: request.data.to,
-                  data: request.data.data,
-                  value: request.data.value.toString(),
-                });
-                continue;
+                return {
+                  gas: gasWithHeadroom(request.data.gas + 100_000n).toString(),
+                  transaction: {
+                    chain: request.chainId,
+                    target: request.data.to,
+                    data: request.data.data,
+                    value: request.data.value.toString(),
+                  },
+                };
+              });
+              for (const result of checked) {
+                executionGas.push(result.gas);
+                transactions.push(result.transaction);
               }
+            }
+            for (const request of safeExecutions ? [] : requests) {
               await switchChainAsync({ chainId: request.chainId });
               const current = getAccount(config);
               if (!current.address || current.address.toLowerCase() !== address.toLowerCase()) {

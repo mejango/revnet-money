@@ -1377,6 +1377,39 @@ describe("Safe execution bundles", () => {
     expect(expected.preconditions).toHaveLength(2);
   });
 
+  it("checks Safe chains concurrently before publishing and rechecks them before paying", async () => {
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi());
+    const defaultCall = mocks.clientCall.getMockImplementation()!;
+    let releases: Array<() => void> = [];
+    mocks.clientCall.mockImplementation(async (args) => {
+      if (args.data === exec) await new Promise<void>((resolve) => releases.push(resolve));
+      return defaultCall(args);
+    });
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      const pending = quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
+      await vi.waitFor(() => expect(releases).toHaveLength(2));
+      expect(fetch).not.toHaveBeenCalled();
+      releases[1]();
+      releases[0]();
+      await pending;
+    });
+    const posted = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string);
+    expect(posted.transactions.map((row: { chain: number }) => row.chain)).toEqual([1, 10]);
+    releases = [];
+    const payer = renderHook(() => hooks.useSendRelayrTx());
+    await act(async () => {
+      const pending = payer.result.current.sendRelayrTx(payment());
+      await vi.waitFor(() => expect(releases).toHaveLength(2));
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+      releases.forEach((release) => release());
+      await pending;
+    });
+    expect(mocks.sendTransaction).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses the payment when a Safe nonce moved after the quote", async () => {
     const { hooks, review } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);

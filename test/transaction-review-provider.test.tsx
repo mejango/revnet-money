@@ -1,6 +1,8 @@
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { ChainPayment } from "@/lib/nana/types";
+import { protocolQueueLabel } from "@/lib/protocol-queue-label";
+import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
 import {
   chooseRelayrPayment,
   fundingChainLabel,
@@ -22,6 +24,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { useState } from "react";
 import { encodeFunctionData, parseAbi, type Abi } from "viem";
 import { describe, expect, it, vi } from "vitest";
+import { queuedRolloutSteps } from "./fixtures/queued-rollout";
 import { isBlockedByModalDialog, openModalDialogs } from "./native-dialog-shim";
 
 const relayrPayments: ChainPayment[] = [
@@ -555,6 +558,54 @@ describe("TransactionReviewProvider", () => {
       ).toHaveLength(1);
     },
   );
+  it("shows queued rollout actions before the Safe execution arguments when confirming", async () => {
+    const chainId = 8453;
+    const safe = `0x${"33".repeat(20)}` as const;
+    const steps = queuedRolloutSteps(chainId);
+    const batch = safeBatchProposalFor(steps, 3);
+    const args = safeExecutionArgs({ ...batch, confirmations: [{ owner: safe }] }, [safe]);
+    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+    const review = requireTransactionReview({
+      title: "Review queued Safe execution",
+      calls: [
+        {
+          chainId,
+          to: safe,
+          data: encodeFunctionData({ abi: SAFE_EXEC_ABI, functionName: "execTransaction", args }),
+          abi: SAFE_EXEC_ABI,
+          functionName: "execTransaction",
+          args,
+          calls: [queuedSafeReviewCall(chainId, batch)],
+        },
+      ],
+    });
+
+    const dialog = await screen.findByRole("dialog", { name: "Review queued Safe execution" });
+    const confirm = within(dialog).getByRole("button", { name: "Agree & continue" });
+    expect(confirm).toBeDisabled();
+    const labels = steps.map((step) =>
+      within(dialog).getByText(protocolQueueLabel(chainId, { ...step, operation: 0 })!),
+    );
+    expect(
+      labels[0].compareDocumentPosition(labels[1]) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      labels[1].compareDocumentPosition(labels[2]) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const execution = within(dialog).getByText("execTransaction(", { exact: false });
+    expect(
+      labels[2].compareDocumentPosition(execution) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(dialog).toHaveTextContent("setHookFor(");
+    expect(dialog).toHaveTextContent("setPoolFor(");
+    expect(dialog).toHaveTextContent("setTerminalFor(");
+    expect(dialog).toHaveTextContent("3000");
+    expect(dialog).toHaveTextContent("1800");
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(confirm);
+    await expect(review).resolves.toBeUndefined();
+  });
+
   describe("a batch carried by a Safe call", () => {
     const SAFE = `0x${"33".repeat(20)}` as const;
     const STEP_ABI = parseAbi(["function setValue(uint256 value)"]);

@@ -297,3 +297,19 @@ checks pass; unit and coverage 2,128 passed, one skipped; build:browser, standal
 checks 126 passed, four skipped, inside the shared gate lock. All client JavaScript measures 2,645.0 KiB against
 2,644.2 KiB for origin/main's sources on SDK 2.22.0 (2 bytes over the old 2,645 KiB budget); the aggregate budget
 rises by the minimum 1 KiB to 2,646 KiB. 15 tests failed on the code before these commits.
+
+## 2026-10-06 — Pretty queued Safe confirmations
+- [x] Extract the existing canonical protocol decoder without changing queue labels.
+- [x] Reuse decoded queued calldata for nested review cards in single execution, Relayr execution, and queued signing.
+- [x] Verify known actions, unknown/malformed fallback, and confirmation rendering; run focused tests and typecheck.
+
+Review: 135 focused tests pass, including four-chain queued calldata and rendered consent/order regressions. Typecheck, changed-source lint, and wallet boundary checks pass. Cleared a stale generated Next route type after route-type regeneration. Independent review found no substantive issue. Changes are local; not deployed.
+
+## 2026-10-06 — Paced Safe checks, final verification
+- [x] Overlap independent checks with a two-worker limit in queue preparation, Safe Relayr quoting, and payment rechecks.
+- [x] Preserve request order, sequential wallet signatures, and failure gating; drain pending checks before retry.
+- [x] Test concurrency limit, overlap, stable ordering, and payment blocking.
+
+Final review: 1,567 tests passed in the full run; three live-schema tests initially failed due sandbox DNS, then all three passed in narrowly approved network reruns after inspecting their read-only payloads. One pre-existing test remains skipped. Typecheck, changed-file ESLint and wallet boundary checks pass. Both clients now have readable queued confirmations and paced overlapping checks. No deployment performed.
+
+Rebase verification: integrated origin/main c668b8ed and SDK 2.23.0, keeping SDK-owned canonical MultiSend decoding and the newer Relayr recovery checks. Readable actions now live in the shared TransactionReviewDialog. 2,138 local tests passed; three loopback RPC tests blocked by sandbox permissions passed on a permitted rerun. Typecheck, changed-file ESLint, and wallet boundary checks pass. Confirmed queued signing retains its readable metadata after conflict resolution.

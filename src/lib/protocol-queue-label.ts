@@ -9,10 +9,10 @@ import {
 import { decodeFunctionData, encodeFunctionData, type Abi, type Address, type Hex } from "viem";
 
 /** Name only canonical protocol destinations, preserving previous generations in the queue. */
-export function protocolQueueLabel(
+export function decodeProtocolQueueCall(
   chainId: number,
   tx: { to: Address; data: Hex | null; operation: number },
-): string | null {
+) {
   if (Number(tx.operation) !== 0 || !tx.data) return null;
   const contract = rolloutContractName(chainId, tx.to);
   if (!contract) return null;
@@ -36,8 +36,21 @@ export function protocolQueueLabel(
       typeof target === "string"
         ? ` → ${rolloutContractName(chainId, target as Address) ?? target}`
         : "";
-    return `${contract}.${decoded.functionName}${selection}`;
+    return {
+      abi,
+      functionName: decoded.functionName,
+      args: decoded.args,
+      contractName: contract,
+      label: `${contract}.${decoded.functionName}${selection}`,
+    };
   } catch {
     return null;
   }
+}
+
+export function protocolQueueLabel(
+  chainId: number,
+  tx: { to: Address; data: Hex | null; operation: number },
+): string | null {
+  return decodeProtocolQueueCall(chainId, tx)?.label ?? null;
 }

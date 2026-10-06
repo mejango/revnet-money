@@ -14,6 +14,7 @@ import {
   useSafeConnection,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { readHandleAuthority, unprovenSafeMessage } from "@/lib/handle-authority";
 import { PROJECT_HANDLE_CHAIN_ID } from "@/lib/projectHandles";
 import { protocolQueueLabel } from "@/lib/protocol-queue-label";
@@ -28,6 +29,7 @@ import {
 } from "@/lib/queuedProjectHandle";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { describeQueuedBatch } from "@/lib/safe-batch";
+import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
 import {
   confirmSafeExecution,
   queueUnavailableMessage,
@@ -448,56 +450,60 @@ export function SafeQueueCard({
       // Check 1 of 2: live operator, policy, nonce and signatures per chain,
       // then the quote pins each Safe's nonce and exact transaction hash and
       // simulates it. Check 2 runs in sendRelayrTx right before paying.
-      const requests: ReviewedRelayrRequest[] = [];
-      for (const { row, tx } of rows) {
-        setRowStatus(row.chainId, "Checking…");
-        try {
-          if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL);
-          await verifyLiveQueuedTransaction(row, tx);
-          const policy = await readLiveSafePolicy(row);
-          if (policy.nonce !== tx.nonce)
-            throw new Error(
-              `Safe transaction #${tx.nonce} is no longer next on ${chainName(row.chainId)}.`,
-            );
-          if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold)
-            throw new Error(
-              `Safe transaction #${tx.nonce} on ${chainName(row.chainId)} no longer has enough current-owner confirmations.`,
-            );
-          const args = safeExecutionArgs(tx, policy.owners);
-          const data = encodeFunctionData({
-            abi: SAFE_EXEC_ABI,
-            functionName: "execTransaction",
-            args,
-          });
-          const gas = await publicClientFor(row.chainId).estimateGas({
-            account: address,
-            to: row.safe,
-            data,
-          });
-          requests.push({
-            chainId: row.chainId as JBChainId,
-            version: 6,
-            relayrMode: "safe-exec",
-            expectedSafeExecution: {
-              safe: row.safe,
-              safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
-              nonce: tx.nonce,
-            },
-            data: { from: address, to: row.safe, value: 0n, gas, data },
-            review: {
+      const requests = await mapConcurrentChecks(
+        rows,
+        async ({ row, tx }): Promise<ReviewedRelayrRequest> => {
+          setRowStatus(row.chainId, "Checking…");
+          try {
+            if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL);
+            await verifyLiveQueuedTransaction(row, tx);
+            const policy = await readLiveSafePolicy(row);
+            if (policy.nonce !== tx.nonce)
+              throw new Error(
+                `Safe transaction #${tx.nonce} is no longer next on ${chainName(row.chainId)}.`,
+              );
+            if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold)
+              throw new Error(
+                `Safe transaction #${tx.nonce} on ${chainName(row.chainId)} no longer has enough current-owner confirmations.`,
+              );
+            const args = safeExecutionArgs(tx, policy.owners);
+            const data = encodeFunctionData({
               abi: SAFE_EXEC_ABI,
               functionName: "execTransaction",
               args,
-              label: `Execute Safe transaction #${tx.nonce} on ${chainName(row.chainId)}`,
-              contractName: "Safe",
-            },
-          });
-        } catch (cause) {
-          setRowStatus(row.chainId, "Check failed");
-          throw cause;
-        }
-        setRowStatus(row.chainId, "Ready");
-      }
+            });
+            const gas = await publicClientFor(row.chainId).estimateGas({
+              account: address,
+              to: row.safe,
+              data,
+            });
+            const request: ReviewedRelayrRequest = {
+              chainId: row.chainId as JBChainId,
+              version: 6,
+              relayrMode: "safe-exec",
+              expectedSafeExecution: {
+                safe: row.safe,
+                safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
+                nonce: tx.nonce,
+              },
+              data: { from: address, to: row.safe, value: 0n, gas, data },
+              review: {
+                abi: SAFE_EXEC_ABI,
+                functionName: "execTransaction",
+                args,
+                label: `Execute Safe transaction #${tx.nonce} on ${chainName(row.chainId)}`,
+                contractName: "Safe",
+                calls: [queuedSafeReviewCall(row.chainId, tx)],
+              },
+            };
+            setRowStatus(row.chainId, "Ready");
+            return request;
+          } catch (cause) {
+            setRowStatus(row.chainId, "Check failed");
+            throw cause;
+          }
+        },
+      );
       setBatchMessage("Review the executions, then choose where to pay Relayr…");
       const quote = await getRelayrTxQuote(requests);
       if (!quote) throw new Error("Relayr did not return a quote.");
@@ -553,6 +559,7 @@ export function SafeQueueCard({
         chainId: row.chainId,
         safe: row.safe,
         tx,
+        review: queuedSafeReviewCall(row.chainId, tx),
         reverify: async (liveAccount) => {
           await verifyLiveQueuedTransaction(row, tx);
           const confirmed = await readLiveSafePolicy(row);
@@ -629,6 +636,7 @@ export function SafeQueueCard({
             args,
             label: `Execute Safe transaction #${tx.nonce}`,
             contractName: "Safe",
+            calls: [queuedSafeReviewCall(row.chainId, tx)],
           },
         ],
       });
