@@ -158,3 +158,20 @@ Gate on the final commit: the same checks pass; unit and coverage 1,869 passed, 
 passes last. All client JavaScript measures 2,642.6 KiB, within 2,643 KiB. Browser checks: 120 passed, four skipped,
 and one viewport of the handle route test failed with React's "Connection closed" (#412) under a load average of
 about 47; rerun alone, two other viewports failed the same way, and rerun alone with one worker, all five passed.
+
+### Fix round 6
+
+- [x] A Safe proposal ends unconfirmed only on the chain's answer: this look's own chain check, or one more, must
+      say no execution of the reviewed calls is there. While the node can't answer, the end waits for the next
+      once-a-minute chain check, and a watch that gives up while waiting leaves it for the next load. Without a
+      service, the twelfth check's own answer ends it, with no other call.
+- [x] A service outage and an unreadable nonce are tested not to count toward an end, and a 2xx service page that
+      isn't JSON learns nothing too.
+- [x] A proposal the service reports executed without its transaction ends with that report in its line.
+- [x] The receipt hook reports a proposal whose result can't be confirmed as neither loading nor settled; the loan,
+      repayment and pay flows left open over their own such proposal show its line instead of pending.
+- [x] A refinance whose permission read fails ends in the error state instead of holding its dialog.
+
+Gate on the final commit: the same checks pass; unit and coverage 1,880 passed, one skipped; browser checks 121
+passed, four skipped; the production build passes last. All client JavaScript measures 2,643.0 KiB, under 0.05 KiB
+from the 2,643 KiB budget, which rises by the minimum 1 KiB to 2,644 KiB.
