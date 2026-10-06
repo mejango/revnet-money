@@ -128,7 +128,13 @@ function holdSimulation() {
   return () => act(async () => answer());
 }
 
-const flows = [
+beforeEach(() => {
+  mocks.simulate.mockReset().mockResolvedValue({});
+  mocks.write.mockReset().mockResolvedValue(HASH);
+  mocks.rows = [];
+});
+
+describe.each([
   {
     name: "sync",
     title: "Confirm sync",
@@ -158,15 +164,7 @@ const flows = [
       fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
     },
   },
-];
-
-beforeEach(() => {
-  mocks.simulate.mockReset().mockResolvedValue({});
-  mocks.write.mockReset().mockResolvedValue(HASH);
-  mocks.rows = [];
-});
-
-describe.each(flows)("the $name confirm", ({ title, action, open }) => {
+])("the $name confirm", ({ title, action, open }) => {
   async function confirmOpen() {
     await open();
     const confirm = await screen.findByRole("dialog", { name: title });
