@@ -1234,6 +1234,35 @@ describe("reviewed Relayr payment hook", () => {
     expect(mocks.sendTransaction).toHaveBeenCalledTimes(2);
   });
 
+  describe("reads a declined payment as the SDK does", () => {
+    /** An error whose cause chain holds the wallet's rejection `links` causes down. */
+    function rejectedBelow(links: number): unknown {
+      let error: unknown = { code: 4001 };
+      for (let link = 0; link < links; link += 1) error = { cause: error };
+      return error;
+    }
+
+    it.each<[string, () => unknown, "unfunded" | "submitted"]>([
+      [
+        "viem's UserRejectedRequestError by name",
+        () =>
+          Object.assign(new Error("User rejected the request."), {
+            name: "UserRejectedRequestError",
+          }),
+        "unfunded",
+      ],
+      ["a rejection seven causes down", () => rejectedBelow(7), "unfunded"],
+      ["a rejection eight causes down", () => rejectedBelow(8), "submitted"],
+    ])("as no payment sent for %s", async (_, error, status) => {
+      const { activity, result } = await quotedPayment();
+      mocks.sendTransaction.mockRejectedValueOnce(error());
+      await expect(result.current.sendRelayrTx(payment())).rejects.toBeTruthy();
+      expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+        relayrPaymentStatus: status,
+      });
+    });
+  });
+
   it("proves a sped-up payment on the hash it was mined under", async () => {
     const SPED_UP = `0x${"5e".repeat(32)}` as Hex;
     const { activity, result } = await quotedPayment();
@@ -1524,6 +1553,39 @@ describe("paying a reverted Relayr payment again", () => {
     );
     expect(mocks.sendTransaction).toHaveBeenCalledTimes(3);
   });
+
+  it("does not pay again over a saved payment the SDK refuses to read", async () => {
+    const { activity, result } = await revertedPayment();
+    relayrReports();
+    const [first] = activity.transactionActivitySnapshot()[0].relayrPayments!;
+    // The SDK reads a saved amount in decimal only.
+    activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
+      relayrPayments: [{ ...first, value: "0x10" }],
+    });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
+      "Only an authenticated Relayr payment with its transaction hash can be verified.",
+    );
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("does not pay again while the chain of a payment it sent has no RPC", async () => {
+    const { activity, result } = await revertedPayment();
+    relayrReports();
+    const [first] = activity.transactionActivitySnapshot()[0].relayrPayments!;
+    activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
+      relayrPayments: [
+        { ...first, hash: SECOND_HASH, chainId: 10, data: payment({ chain: 10 }).calldata },
+      ],
+    });
+    const client = mocks.getPublicClient();
+    mocks.getPublicClient.mockImplementation(
+      (_config: unknown, { chainId }: { chainId: number }) => (chainId === 10 ? undefined : client),
+    );
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
+      "No RPC is available for chain 10. Do not pay again yet; check it later.",
+    );
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
 });
 
 describe("unpaid Relayr quotes", () => {
@@ -1722,12 +1784,15 @@ describe("Relayr sessions decided from the chain", () => {
     );
   }
 
-  /** An unpaid quote for `request`, signed at the forwarder nonce 4. */
-  async function signedSession(request: ReviewedRelayrRequest = GUARDED) {
+  /** An unpaid quote for `request`, signed at the forwarder nonce 4, with the options Relayr offers. */
+  async function signedSession(
+    request: ReviewedRelayrRequest = GUARDED,
+    payments?: ChainPayment[],
+  ) {
     const harness = await freshHarness();
     harness.review.registerTransactionReviewHandler(async () => true);
     guardReads(async () => ({ data: GUARD_VALUE }));
-    vi.stubGlobal("fetch", relayrApi());
+    vi.stubGlobal("fetch", relayrApi({ payments }));
     const authorizer = renderHook(() => harness.hooks.useGetRelayrTxQuote());
     await act(async () => {
       await authorizer.result.current.getRelayrTxQuote([request]);
@@ -1888,8 +1953,11 @@ describe("Relayr sessions decided from the chain", () => {
 
   describe("a quote whose payment reverted (ruling R104)", () => {
     /** The session's payment reverted, and the device clock is past its quote's deadline unless `open`. */
-    async function revertedPayment({ open = false } = {}) {
-      const harness = await signedSession();
+    async function revertedPayment({
+      open = false,
+      payments,
+    }: { open?: boolean; payments?: ChainPayment[] } = {}) {
+      const harness = await signedSession(GUARDED, payments);
       mocks.getTransactionReceipt.mockResolvedValue({
         ...onchain(PAYMENT_TARGET, payment().calldata),
         status: "reverted",
@@ -2025,6 +2093,70 @@ describe("Relayr sessions decided from the chain", () => {
         /earlier signature can still run until/,
       );
       expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    });
+
+    it("waits for the deadline of every option of its quote, not only the one it paid", async () => {
+      const later = payment({ chain: 10 }, { deadline: NOW + 1_800 });
+      const { result } = await revertedPayment({ payments: [payment(), later] });
+      // The paid option's deadline is final on both chains; the other option's is not.
+      chainAt({ timestamp: NOW + 700, finalizedNonce: 4n });
+      relayrReads();
+      await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
+        /earlier signature can still run until/,
+      );
+      chainAt({ timestamp: NOW + 1_900, finalizedNonce: 4n });
+      await act(async () => {
+        await expect(result.current.getRelayrTxQuote([GUARDED])).resolves.toMatchObject({
+          bundle_uuid: OTHER_BUNDLE_UUID,
+        });
+      });
+      expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    });
+
+    it("is released by the deadline its payment's calldata pays until, though its saved quote no longer lists the option it paid", async () => {
+      const { activity, result, session } = await revertedPayment();
+      activity.updateTransactionActivity(session()!.id, {
+        relayrQuote: { bundle_uuid: BUNDLE_UUID, payment_info: [] },
+      });
+      chainAt({ timestamp: NOW + 700, finalizedNonce: 4n });
+      relayrReads();
+      await act(async () => {
+        await expect(result.current.getRelayrTxQuote([GUARDED])).resolves.toMatchObject({
+          bundle_uuid: OTHER_BUNDLE_UUID,
+        });
+      });
+      expect(mocks.signTypedData).toHaveBeenCalledOnce();
+      expect(session()).toMatchObject({ relayrPaymentStatus: "expired" });
+    });
+
+    it("is never paid again with another option while its saved quote no longer lists the one it paid", async () => {
+      const { activity, result, session } = await revertedPayment({ open: true });
+      activity.updateTransactionActivity(session()!.id, {
+        relayrQuote: { bundle_uuid: BUNDLE_UUID, payment_info: [payment({ chain: 10 })] },
+      });
+      relayrReads();
+      await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
+        "This Relayr quote cannot be paid again from its saved record. Keep it pending; do not pay again.",
+      );
+      expect(mocks.signTypedData).toHaveBeenCalledOnce();
+      expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+    });
+
+    it("never pays again when Relayr reports a payment without listing its calls", async () => {
+      const { hooks, result } = await revertedPayment({ open: true });
+      // Without a list of calls the read names no funding, so the quote is payable; the
+      // payment's own retry check reads Relayr again and refuses it.
+      relayrReads({ payment_received: true, transactions: null });
+      await act(async () => {
+        await expect(result.current.getRelayrTxQuote([GUARDED])).resolves.toMatchObject({
+          bundle_uuid: BUNDLE_UUID,
+        });
+      });
+      const payer = renderHook(() => hooks.useSendRelayrTx());
+      await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
+        "Relayr already reports a payment for this bundle. Do not pay again.",
+      );
+      expect(mocks.sendTransaction).toHaveBeenCalledOnce();
     });
   });
 

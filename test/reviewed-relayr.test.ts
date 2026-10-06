@@ -338,4 +338,38 @@ describe("Relayr destination transaction tracking", () => {
     expect(activity.transactionActivitySnapshot()).toHaveLength(1);
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("holds a funded bundle that names no payment for manual verification", async () => {
+    const { relayr, activity } = await freshModules();
+    activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, { relayrPayment: undefined });
+    respond();
+    await expect(relayr.waitForRelayrBundle(BUNDLE_UUID)).rejects.toThrow(
+      /original funding transaction cannot be verified/,
+    );
+    expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+      status: "failed",
+      manualVerificationRequired: true,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps polling, never failing the bundle, while the funding chain has no RPC", async () => {
+    vi.useFakeTimers();
+    const { relayr, activity } = await freshModules();
+    mocks.getPublicClient.mockReturnValueOnce(undefined);
+    respond();
+    const result = relayr.waitForRelayrBundle(BUNDLE_UUID);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+      status: "pending",
+      relayrPaymentStatus: "submitted",
+      message: expect.stringContaining("temporarily unavailable"),
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(result).resolves.toBeTruthy();
+    expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+      status: "success",
+      relayrPaymentStatus: "confirmed",
+    });
+  });
 });
