@@ -4,6 +4,7 @@ import { ReallocateDialog } from "@/app/[slug]/components/Value/ReallocateDialog
 import { RedeemDialog } from "@/app/[slug]/components/Value/RedeemDialog";
 import { RepayDialog } from "@/app/[slug]/components/Value/RepayDialog";
 import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { recordTransactionActivity } from "@/lib/transaction-activity";
 import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -39,6 +40,14 @@ vi.mock("wagmi", async (importOriginal) => ({
   usePublicClient: () => ({ readContract: async () => 0n }),
   useWalletClient: () => ({ data: {} }),
   useSimulateContract: () => ({ isLoading: false, error: null }),
+  // The chain's own receipt read, which a Safe proposal never makes.
+  useWaitForTransactionReceipt: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+    isSuccess: false,
+  }),
   useReadContract: ({ functionName }: { functionName?: string }) => {
     const loan = { amount: 10n ** 18n, collateral: 2n * 10n ** 18n };
     const answers: Record<string, unknown> = {
@@ -83,7 +92,6 @@ vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
   // The write hook's own refusals, their tests and their lines, as the flows read them.
   ...(await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>()),
   requireOnchainExecution: () => undefined,
-  useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false }),
   useWriteContract: () => ({
     writeContractAsync: mocks.write,
     isPending: false,
@@ -192,6 +200,7 @@ function tryEveryWayOut(name: string) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   mocks.write.mockReset().mockImplementation(never);
   mocks.prepareCashOut.mockReset().mockImplementation(never);
   mocks.freshBorrowable.mockReset().mockImplementation(never);
@@ -382,6 +391,36 @@ describe("loan flows refused by a Safe proposal the app can't confirm", () => {
       title: "Safe proposal unconfirmed",
       description: `The step was proposed to Safe as ${PROPOSAL}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
     });
+  });
+});
+
+describe("a repayment left open over its own Safe proposal the app can't confirm", () => {
+  it("stops reading as pending and says to check the proposal in Safe", async () => {
+    const proposal = `0x${"cd".repeat(32)}` as Hex;
+    recordTransactionActivity({
+      id: `tx:1:${proposal}`,
+      kind: "safe",
+      title: "repayLoan",
+      status: "safe-proposed",
+      message:
+        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+      chainId: 1,
+      hash: proposal,
+      safeProposalHash: proposal,
+      safeResultUnconfirmed: true,
+    });
+    mocks.write.mockResolvedValue(proposal);
+
+    await confirmRepay();
+
+    expect(
+      (
+        await screen.findAllByText(
+          "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Repayment pending...")).toBeNull();
   });
 });
 

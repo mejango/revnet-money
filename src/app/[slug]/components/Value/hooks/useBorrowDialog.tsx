@@ -288,14 +288,21 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   const { writeContractAsync: permissionWriteAsync } = useWriteContract();
 
   // Transaction status hooks
-  const { isLoading: isTxLoading, isSuccess } = useWaitForTransactionReceipt({
+  const {
+    isLoading: isTxLoading,
+    isSuccess,
+    isSafeResultUnconfirmed: isTxUnconfirmed,
+  } = useWaitForTransactionReceipt({
     hash: txHash,
   });
 
-  const { isLoading: isReallocationTxLoading, isSuccess: isReallocationSuccess } =
-    useWaitForTransactionReceipt({
-      hash: reallocationTxHash,
-    });
+  const {
+    isLoading: isReallocationTxLoading,
+    isSuccess: isReallocationSuccess,
+    isSafeResultUnconfirmed: isReallocationUnconfirmed,
+  } = useWaitForTransactionReceipt({
+    hash: reallocationTxHash,
+  });
 
   // Additional derived values in native tokens
   const netAvailableToBorrow =
@@ -789,6 +796,9 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         title: "Success",
         description: isReallocationSuccess ? "Loan adjusted." : "Loan opened.",
       });
+    } else if (isTxUnconfirmed || isReallocationUnconfirmed) {
+      // Its Safe proposal's result can't be confirmed, which is not a failure.
+      setBorrowStatus("safe-unconfirmed");
     } else {
       setBorrowStatus("error");
     }
@@ -799,6 +809,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     isReallocationTxLoading,
     isSuccess,
     isReallocationSuccess,
+    isTxUnconfirmed,
+    isReallocationUnconfirmed,
     toast,
   ]);
 

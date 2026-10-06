@@ -151,7 +151,11 @@ export function RepayDialog({
   const { writeContractAsync: repayLoanAsync, isPending: isRepaying } = useWriteContract();
 
   // Transaction status tracking
-  const { isLoading: isRepayTxLoading, isSuccess: isRepaySuccess } = useWaitForTransactionReceipt({
+  const {
+    isLoading: isRepayTxLoading,
+    isSuccess: isRepaySuccess,
+    isSafeResultUnconfirmed: isRepayUnconfirmed,
+  } = useWaitForTransactionReceipt({
     hash: repayTxHash,
   });
 
@@ -403,8 +407,11 @@ export function RepayDialog({
         title: "Success",
         description: "Repayment confirmed.",
       });
+    } else if (isRepayUnconfirmed) {
+      // Its Safe proposal's result can't be confirmed, which is not a failure.
+      setRepayStatus("safe-unconfirmed");
     }
-  }, [isRepayTxLoading, isRepaySuccess, toast]);
+  }, [isRepayTxLoading, isRepaySuccess, isRepayUnconfirmed, toast]);
 
   // Initialize form when dialog opens
   useEffect(() => {

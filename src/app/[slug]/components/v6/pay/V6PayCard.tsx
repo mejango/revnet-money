@@ -1076,6 +1076,10 @@ export function V6PayCard() {
           ? safeReceipt.error.message
           : "The Safe proposal executed but failed onchain.",
       );
+    } else if (safeReceipt.isSafeResultUnconfirmed) {
+      // Its result can't be confirmed: the payment is no longer awaiting the Safe here.
+      setPhase("ready");
+      setTxError(safeReceipt.statusMessage ?? null);
     }
   }, [
     cart,
@@ -1084,7 +1088,9 @@ export function V6PayCard() {
     prepared?.mode,
     safeReceipt.error,
     safeReceipt.isError,
+    safeReceipt.isSafeResultUnconfirmed,
     safeReceipt.isSuccess,
+    safeReceipt.statusMessage,
   ]);
 
   // Chain switching lives in the confirm dialog (old PayDialog style). The

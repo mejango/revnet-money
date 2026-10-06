@@ -876,6 +876,8 @@ export function useWaitForTransactionReceipt(
   );
   const isSafeSubmission = tracked?.kind === "safe";
   const isSafeProposal = tracked?.status === "safe-proposed";
+  // A proposal whose result can't be confirmed awaits nothing the app follows: not loading.
+  const isSafeResultUnconfirmed = isSafeSubmission && tracked?.safeResultUnconfirmed === true;
   const trackedDirectSuccess = tracked?.kind === "direct" && tracked.status === "success";
   const trackedDirectFailure = tracked?.kind === "direct" && tracked.status === "failed";
   const query = useWagmiWaitForTransactionReceipt({
@@ -889,7 +891,7 @@ export function useWaitForTransactionReceipt(
   const reverted = receipt?.status === "reverted";
   return {
     ...query,
-    isLoading: isSafeSubmission ? isSafeProposal : query.isLoading,
+    isLoading: isSafeSubmission ? isSafeProposal && !isSafeResultUnconfirmed : query.isLoading,
     isSuccess: isSafeSubmission
       ? tracked?.status === "success"
       : trackedDirectSuccess || (query.isSuccess && receipt?.status === "success"),
@@ -907,6 +909,7 @@ export function useWaitForTransactionReceipt(
               ? query.error
               : undefined,
     isSafeProposal,
+    isSafeResultUnconfirmed,
     statusMessage: tracked?.message,
   };
 }

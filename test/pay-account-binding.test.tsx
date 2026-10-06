@@ -1,5 +1,6 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
 import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { recordTransactionActivity } from "@/lib/transaction-activity";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -28,6 +29,14 @@ vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
   useAccount: () => ({ address: mocks.address, isConnected: true }),
   usePublicClient: () => ({ simulateContract: mocks.simulate }),
+  // The chain's own receipt read, which a Safe proposal never makes.
+  useWaitForTransactionReceipt: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+    isSuccess: false,
+  }),
 }));
 vi.mock("@/components/ButtonWithWallet", () => ({
   ButtonWithWallet: ({
@@ -57,12 +66,13 @@ vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>();
   return {
     ACCOUNT_CHANGED: "The connected account changed. Review again.",
-    // The write hook's own refusal and its test, as the card reads them.
+    // The write hook's own refusal, its tests and its Safe proposal tracking, as the card reads
+    // them.
     isSafeProposalPendingError: actual.isSafeProposalPendingError,
     SafeProposalPendingError: actual.SafeProposalPendingError,
     requireOnchainExecution: () => undefined,
-    submittedViaSafe: () => false,
-    useWaitForTransactionReceipt: () => ({ isSuccess: false, isError: false }),
+    submittedViaSafe: actual.submittedViaSafe,
+    useWaitForTransactionReceipt: actual.useWaitForTransactionReceipt,
     useWriteContract: () => ({ writeContractAsync: mocks.write }),
   };
 });
@@ -131,6 +141,7 @@ vi.mock("@/app/[slug]/components/v6/pay/V6PayShopStrip", () => ({ V6PayShopStrip
 const queryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 beforeEach(() => {
+  window.localStorage.clear();
   mocks.address = A;
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
@@ -202,6 +213,41 @@ describe("wallet-action:pay — a payment bound to the account it was prepared f
     );
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
     // Once its account dismisses the proposal, the payment can be sent again.
+    expect(within(confirm).getByRole("button", { name: "Pay" })).toBeEnabled();
+  });
+
+  it("returns from the payment's own Safe proposal to the payment, with its line, once that proposal's result can't be confirmed", async () => {
+    const proposal = `0x${"cd".repeat(32)}` as Hex;
+    const line =
+      "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
+    recordTransactionActivity({
+      id: `tx:1:${proposal}`,
+      kind: "safe",
+      title: "pay",
+      status: "safe-proposed",
+      message: line,
+      chainId: 1,
+      hash: proposal,
+      safeProposalHash: proposal,
+      safeResultUnconfirmed: true,
+    });
+    mocks.write.mockResolvedValue(proposal);
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("You get");
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+
+    await within(confirm).findByText(line);
+    expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeEnabled();
   });
 });

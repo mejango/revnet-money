@@ -1,6 +1,7 @@
 import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { recordTransactionActivity } from "@/lib/transaction-activity";
 import { TransactionReviewCancelledError } from "@/lib/transaction-review";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   toast: vi.fn(),
   hasPermissions: vi.fn(),
+  // The hash the loan writes last sent.
+  sent: undefined as `0x${string}` | undefined,
 }));
 
 vi.mock("wagmi", () => ({
@@ -17,6 +20,14 @@ vi.mock("wagmi", () => ({
   useReadContract: ({ functionName }: { functionName?: string }) => ({
     data: functionName === "PERMISSIONS" ? "0x0000000000000000000000000000000000000004" : undefined,
   }),
+  // The chain's own receipt read, which a Safe proposal never makes.
+  useWaitForTransactionReceipt: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+    isSuccess: false,
+  }),
 }));
 
 vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
@@ -25,11 +36,10 @@ vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
     // The write hook's own refusals, their tests and their lines, as the dialog reads them.
     ...actual,
     requireOnchainExecution: () => undefined,
-    useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false }),
     useWriteContract: () => ({
       writeContractAsync: mocks.write,
       isPending: false,
-      data: undefined,
+      data: mocks.sent,
     }),
   };
 });
@@ -78,6 +88,8 @@ vi.mock("@/lib/tokenUtils", () => ({
 import { useBorrowDialog } from "@/app/[slug]/components/Value/hooks/useBorrowDialog";
 
 beforeEach(() => {
+  window.localStorage.clear();
+  mocks.sent = undefined;
   mocks.hasPermissions.mockResolvedValue(false);
 });
 
@@ -113,5 +125,29 @@ describe("wallet-action:loans — a permission step refused by a Safe proposal t
       title: "Safe proposal unconfirmed",
       description: `setPermissionsFor was proposed to Safe as ${proposal}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
     });
+  });
+});
+
+describe("wallet-action:loans — a loan left open over its own Safe proposal the app can't confirm", () => {
+  it("stops reading as loading and says to check the proposal in Safe", async () => {
+    const proposal = `0x${"cd".repeat(32)}` as Hex;
+    recordTransactionActivity({
+      id: `tx:1:${proposal}`,
+      kind: "safe",
+      title: "borrowFrom",
+      status: "safe-proposed",
+      message:
+        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+      chainId: 1,
+      hash: proposal,
+      safeProposalHash: proposal,
+      safeResultUnconfirmed: true,
+    });
+    mocks.sent = proposal;
+
+    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }));
+
+    await waitFor(() => expect(result.current.borrowStatus).toBe("safe-unconfirmed"));
+    expect(result.current.loading).toBe(false);
   });
 });

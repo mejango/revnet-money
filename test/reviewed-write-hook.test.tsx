@@ -728,6 +728,25 @@ describe("reviewed write hook", () => {
     },
   );
 
+  it("reports a Safe proposal whose result can't be confirmed as neither loading nor settled", async () => {
+    const { activity, hooks } = await freshHarness();
+    savedProposal(activity, PROPOSAL, 11155111);
+    activity.updateTransactionActivity(`tx:11155111:${PROPOSAL}`, {
+      message: UNCONFIRMED,
+      safeResultUnconfirmed: true,
+    });
+
+    const { result } = renderHook(() => hooks.useWaitForTransactionReceipt({ hash: PROPOSAL }));
+
+    expect(result.current).toMatchObject({
+      isLoading: false,
+      isSuccess: false,
+      isError: false,
+      isSafeResultUnconfirmed: true,
+      statusMessage: UNCONFIRMED,
+    });
+  });
+
   it("persists Safe proposal locks through terminal-history churn and blocks duplicate execution", async () => {
     mocks.account = {
       address: ACCOUNT,
