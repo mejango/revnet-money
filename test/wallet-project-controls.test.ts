@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 type SourceExpectation = { file: string; contains: string[] };
 
 const actionExpectations: Array<{
-  marker: string;
+  action: string;
   sources: SourceExpectation[];
 }> = [
   {
-    marker: "wallet-action:repay",
+    action: "repay",
     sources: [
       {
         file: "src/app/[slug]/components/Value/RepayDialog.tsx",
@@ -22,7 +22,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:claim-credits",
+    action: "claim-credits",
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx",
@@ -31,7 +31,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:split-hook",
+    action: "split-hook",
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
@@ -40,7 +40,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:auto-issuance",
+    action: "auto-issuance",
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/V6AutoIssuanceSubtab.tsx",
@@ -49,7 +49,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:token-admin",
+    action: "token-admin",
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
@@ -58,7 +58,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:reserved-distribution",
+    action: "reserved-distribution",
     sources: [
       {
         file: "src/app/[slug]/owners/components/DistributeReservedTokensButton.tsx",
@@ -67,7 +67,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:split-groups",
+    action: "split-groups",
     sources: [
       {
         file: "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
@@ -76,7 +76,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:metadata",
+    action: "metadata",
     sources: [
       {
         file: "src/app/[slug]/about/components/EditMetadataDialog.tsx",
@@ -85,7 +85,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:project-payer",
+    action: "project-payer",
     sources: [
       {
         file: "src/app/[slug]/components/v6/extras/PayerDeployForm.tsx",
@@ -94,7 +94,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:project-handle",
+    action: "project-handle",
     sources: [
       {
         file: "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
@@ -110,7 +110,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:operator-writes",
+    action: "operator-writes",
     sources: [
       {
         file: "src/app/[slug]/components/v6/operator/BuybackRouterCard.tsx",
@@ -145,7 +145,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:settlement-sync",
+    action: "settlement-sync",
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
@@ -154,7 +154,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:queued-movements",
+    action: "queued-movements",
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
@@ -163,7 +163,7 @@ const actionExpectations: Array<{
     ],
   },
   {
-    marker: "wallet-action:shop-items",
+    action: "shop-items",
     sources: [
       {
         file: "src/app/[slug]/components/v6/shop/AddItemsModal.tsx",
@@ -173,8 +173,8 @@ const actionExpectations: Array<{
   },
 ];
 
-for (const { marker, sources } of actionExpectations) {
-  describe(marker, () => {
+for (const { action, sources } of actionExpectations) {
+  describe(action, () => {
     for (const { file, contains } of sources) {
       it(`${file} retains its reviewed contract operation and simulation boundary`, () => {
         const source = readFileSync(resolve(process.cwd(), file), "utf8");

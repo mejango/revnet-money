@@ -8,9 +8,6 @@ import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectEveryWayOutRefused } from "./support/confirm";
 
-// wallet-action:settlement-sync
-// wallet-action:queued-movements
-
 const SUCKER = "0x3333333333333333333333333333333333333333";
 const PEER_SUCKER = "0x4444444444444444444444444444444444444444";
 const TOKEN = "0x000000000000000000000000000000000000EEEe";
@@ -128,7 +125,13 @@ function holdSimulation() {
   return () => act(async () => answer());
 }
 
-const flows = [
+beforeEach(() => {
+  mocks.simulate.mockReset().mockResolvedValue({});
+  mocks.write.mockReset().mockResolvedValue(HASH);
+  mocks.rows = [];
+});
+
+describe.each([
   {
     name: "sync",
     title: "Confirm sync",
@@ -158,15 +161,7 @@ const flows = [
       fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
     },
   },
-];
-
-beforeEach(() => {
-  mocks.simulate.mockReset().mockResolvedValue({});
-  mocks.write.mockReset().mockResolvedValue(HASH);
-  mocks.rows = [];
-});
-
-describe.each(flows)("the $name confirm", ({ title, action, open }) => {
+])("the $name confirm", ({ title, action, open }) => {
   async function confirmOpen() {
     await open();
     const confirm = await screen.findByRole("dialog", { name: title });
@@ -186,7 +181,7 @@ describe.each(flows)("the $name confirm", ({ title, action, open }) => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out from Confirm through the simulation before the wallet prompt", async () => {
+  it("wallet-action:settlement-sync wallet-action:queued-movements refuses every way out from Confirm through the simulation before the wallet prompt", async () => {
     const release = holdSimulation();
     const confirm = await confirmOpen();
     fireEvent.click(within(confirm).getByRole("button", { name: action }));

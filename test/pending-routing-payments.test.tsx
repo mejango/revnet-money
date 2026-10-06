@@ -88,7 +88,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("wallet-action:pending-routing — payment recovery", () => {
+describe("payment recovery", () => {
   it("renders nothing when all indexed source projects have no pending calls", async () => {
     mocks.indexed.mockResolvedValue([]);
     setup();
@@ -107,7 +107,7 @@ describe("wallet-action:pending-routing — payment recovery", () => {
     expect(mocks.batch).toHaveBeenCalledWith(expect.objectContaining({ calls: [{ id: "one" }] }));
   });
 
-  it("batches every ready payment across chains and explicitly leaves cooldown calls pending", async () => {
+  it("wallet-action:pending-routing batches every ready payment across chains and explicitly leaves cooldown calls pending", async () => {
     mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
       project.chainId === 1 ? [row("one").indexed, row("waiting").indexed] : [row("base").indexed],
     );

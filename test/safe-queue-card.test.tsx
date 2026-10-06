@@ -15,8 +15,6 @@ import {
   safeTransactionService,
 } from "./fixtures/safe-chain";
 
-// wallet-action:safe-queue
-
 const SAFE = provenSafe();
 const OWNERS = SAFE.owners;
 const TARGET = "0x4444444444444444444444444444444444444444" as Address;
@@ -279,7 +277,7 @@ describe("Safe queue card", () => {
       },
     );
 
-    it("is confirmed by the Safe's ExecutionSuccess for its hash", async () => {
+    it("wallet-action:safe-queue is confirmed by the Safe's ExecutionSuccess for its hash", async () => {
       const row = baseQueue(safeProposalFor({ to: TARGET, data: "0x1234" }, 5));
       mocks.receipt.mockResolvedValue({
         status: "success",

@@ -367,7 +367,7 @@ describe("EditMetadataDialog Relayr payment choice", () => {
   });
 });
 
-describe("wallet-action:metadata — EditMetadataDialog direct routing", () => {
+describe("EditMetadataDialog direct routing", () => {
   it.each([
     { route: "testnet Safe", chainIds: [11155111, 84532], safe: true },
     { route: "mixed mainnet and testnet EOA", chainIds: [1, 84532], safe: false },
@@ -482,7 +482,7 @@ describe("metadata edits across distinct destinations", () => {
     payment_info: [{ chain: 1, amount: "0x10", target: `0x${"44".repeat(20)}`, calldata: "0x" }],
   };
 
-  it("pins each preserved document and signs its active controller and destination project ID", async () => {
+  it("wallet-action:metadata pins each preserved document and signs its active controller and destination project ID", async () => {
     mocks.connectedChainId = 1;
     mocks.peerMetadata[1] = CURRENT_METADATA;
     mocks.peerMetadata[8453] = {

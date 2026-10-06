@@ -93,8 +93,8 @@ beforeEach(() => {
   mocks.hasPermissions.mockResolvedValue(false);
 });
 
-describe("wallet-action:loans — a closed permission review", () => {
-  it("returns the borrow flow to its start without reporting a denied permission", async () => {
+describe("a closed permission review", () => {
+  it("wallet-action:loans returns the borrow flow to its start without reporting a denied permission", async () => {
     mocks.write.mockRejectedValue(new TransactionReviewCancelledError());
     const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }));
 
@@ -109,8 +109,8 @@ describe("wallet-action:loans — a closed permission review", () => {
   });
 });
 
-describe("wallet-action:loans — a permission step refused by a Safe proposal the app can't confirm", () => {
-  it("says to check the proposal in Safe, and neither that permission was denied nor that it failed", async () => {
+describe("a permission step refused by a Safe proposal the app can't confirm", () => {
+  it("wallet-action:loans says to check the proposal in Safe, and neither that permission was denied nor that it failed", async () => {
     const proposal = `0x${"ab".repeat(32)}` as Hex;
     mocks.write.mockRejectedValue(
       new SafeProposalPendingError(proposal, "setPermissionsFor", true),
@@ -128,7 +128,7 @@ describe("wallet-action:loans — a permission step refused by a Safe proposal t
   });
 });
 
-describe("wallet-action:loans — a loan left open over its own Safe proposal the app can't confirm", () => {
+describe("a loan left open over its own Safe proposal the app can't confirm", () => {
   it("stops reading as loading and says to check the proposal in Safe", async () => {
     const proposal = `0x${"cd".repeat(32)}` as Hex;
     recordTransactionActivity({
@@ -152,7 +152,7 @@ describe("wallet-action:loans — a loan left open over its own Safe proposal th
   });
 });
 
-describe("wallet-action:loans — a refinance whose permission check can't be read", () => {
+describe("a refinance whose permission check can't be read", () => {
   // One loan for every render, as the page passes it.
   const LOAN = {
     id: "3",

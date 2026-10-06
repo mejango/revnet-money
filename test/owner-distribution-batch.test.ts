@@ -102,8 +102,8 @@ beforeEach(() => {
   };
 });
 
-describe("wallet-action:owner-distributions", () => {
-  it("targets the destination's active controller and current ruleset, preserving every split field", async () => {
+describe("reserved token distribution", () => {
+  it("wallet-action:owner-distributions targets the destination's active controller and current ruleset, preserving every split field", async () => {
     const result = await prepareReservedDistribution(client, identity, account);
     expect(result.call).toMatchObject({
       chainId: 10,

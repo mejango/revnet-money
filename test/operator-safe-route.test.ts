@@ -3,8 +3,6 @@ import type { AuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
 import type { Address } from "viem";
 import { describe, expect, it } from "vitest";
 
-// wallet-action:operator-writes
-
 const SIGNER = "0x1111111111111111111111111111111111111111" as Address;
 const OTHER = "0x2222222222222222222222222222222222222222" as Address;
 const SAFE = "0x3333333333333333333333333333333333333333" as Address;
@@ -39,7 +37,7 @@ describe("operator write routing", () => {
     ).toEqual({ kind: "direct" });
   });
 
-  it("proposes to the operator Safe when the connected account co-signs it", () => {
+  it("wallet-action:operator-writes proposes to the operator Safe when the connected account co-signs it", () => {
     expect(
       operatorWriteRoute({
         account: SIGNER,

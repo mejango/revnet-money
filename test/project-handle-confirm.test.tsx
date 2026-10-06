@@ -5,8 +5,6 @@ import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectEveryWayOutRefused } from "./support/confirm";
 
-// wallet-action:project-handle
-
 const RESOLVER = "0x4444444444444444444444444444444444444444";
 const HASH = `0x${"cd".repeat(32)}` as Hex;
 
@@ -186,7 +184,7 @@ describe("project handle confirm", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out from Confirm through the resolver check before the prompt", async () => {
+  it("wallet-action:project-handle refuses every way out from Confirm through the resolver check before the prompt", async () => {
     let answer!: () => void;
     mocks.blockNumber.mockReturnValue(
       new Promise((resolve) => {
@@ -250,7 +248,7 @@ describe("operator Safe deployment confirm", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out from Confirm through the live checks, then closes once deployed", async () => {
+  it("wallet-action:project-handle refuses every way out from Confirm through the live checks, then closes once deployed", async () => {
     mocks.requireOnchain.mockImplementation(() => undefined);
     let answer!: () => void;
     mocks.liveOperator.mockReturnValue(new Promise((resolve) => (answer = () => resolve(true))));

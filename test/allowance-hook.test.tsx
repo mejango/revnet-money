@@ -45,7 +45,7 @@ beforeEach(() => {
   mocks.waitForTransactionReceipt.mockResolvedValue({ status: "success" });
 });
 
-describe("wallet-action:allowance — allowance hook", () => {
+describe("allowance hook", () => {
   it("does nothing when the exact spender allowance is already sufficient", async () => {
     mocks.readContract.mockResolvedValue(50n);
     const hooks = await freshHook();
@@ -67,7 +67,7 @@ describe("wallet-action:allowance — allowance hook", () => {
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
   });
 
-  it("approves through the reviewed hook, enforces direct execution, and verifies the receipt", async () => {
+  it("wallet-action:allowance approves through the reviewed hook, enforces direct execution, and verifies the receipt", async () => {
     const order: string[] = [];
     const receipt = { status: "success", blockNumber: 12_345n } as const;
     mocks.writeContractAsync.mockImplementation(async () => {

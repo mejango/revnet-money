@@ -133,8 +133,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("wallet-action:payouts — reachable selected-chain payouts", () => {
-  it("freezes distinct project IDs, assets, decimal amounts, minimums and recipients into one batch", async () => {
+describe("reachable selected-chain payouts", () => {
+  it("wallet-action:payouts freezes distinct project IDs, assets, decimal amounts, minimums and recipients into one batch", async () => {
     setup();
     await selectAll();
     fireEvent.change(screen.getByLabelText("Payout amount on Base"), { target: { value: "1.25" } });

@@ -98,7 +98,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("wallet-action:pending-routing — original pending router calls", () => {
+describe("original pending router calls", () => {
   it("paginates each recorded gateway independently when generations reuse a pending ID", async () => {
     const original = rollout.rolloutChain(1)!;
     const previous = "0x0000000000000000000000000000000000000099";
@@ -182,7 +182,7 @@ describe("wallet-action:pending-routing — original pending router calls", () =
     expect(prepared.call.preconditions).toHaveLength(2);
   });
 
-  it("uses finalization after three failures and carries the higher qualified gas rung", async () => {
+  it("wallet-action:pending-routing uses finalization after three failures and carries the higher qualified gas rung", async () => {
     const rpc = client({ count: 3, gasExhausted: true });
     const result = await preparePendingRouterPayment(rpc, item, account);
     expect(result.call.functionName).toBe("finalizePendingCall");

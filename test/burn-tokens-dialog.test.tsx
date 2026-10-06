@@ -5,9 +5,6 @@ import type { ReactNode } from "react";
 import type { Address, Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// wallet-action:burn
-// wallet-action:burn-tokens
-
 const CONTROLLER = "0x2222222222222222222222222222222222222222" as Address;
 const HASH = `0x${"cd".repeat(32)}` as Hex;
 /** A burn proposed to a Safe whose result the app can't confirm. */
@@ -114,7 +111,7 @@ describe("burn tokens confirm", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out from Confirm through the reads before the wallet prompt", async () => {
+  it("wallet-action:burn-tokens refuses every way out from Confirm through the reads before the wallet prompt", async () => {
     const answerRead = heldRead();
     // Every send happens with the confirm on screen, never after a close.
     mocks.write.mockImplementation(async () => {
@@ -147,8 +144,8 @@ describe("burn tokens confirm", () => {
   });
 });
 
-describe("wallet-action:burn — a burn left open over its own Safe proposal the app can't confirm", () => {
-  it("says to check the proposal in Safe", async () => {
+describe("a burn left open over its own Safe proposal the app can't confirm", () => {
+  it("wallet-action:burn-tokens says to check the proposal in Safe", async () => {
     mocks.write.mockResolvedValue(PROPOSAL);
     render(
       <V6BurnTokensDialog

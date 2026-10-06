@@ -225,7 +225,7 @@ describe("durable multichain batch journal", () => {
   });
 });
 
-describe("wallet-action:multichain-batch — reviewed selected-call orchestration", () => {
+describe("reviewed selected-call orchestration", () => {
   it("verifies a retained-again attempt and frees its journal without claiming settlement", async () => {
     const gas = 6_600_000n;
     const retry = { ...retryCall(1), gas };
@@ -977,7 +977,7 @@ describe("wallet-action:multichain-batch — reviewed selected-call orchestratio
     expect(mocks.pay).toHaveBeenCalledOnce();
     expect(mocks.choose).toHaveBeenCalledOnce();
   });
-  it("executes all selected allocations, with one chosen funding payment for each explicit round", async () => {
+  it("wallet-action:multichain-batch executes all selected allocations, with one chosen funding payment for each explicit round", async () => {
     const { result } = renderHook(() => useMultichainBatch());
     await act(async () => {
       const completed = await result.current.runBatch({

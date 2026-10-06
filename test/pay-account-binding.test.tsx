@@ -7,8 +7,6 @@ import type { ReactNode } from "react";
 import type { Address, Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// wallet-action:pay
-//
 // A payment's tokens go to the account it was prepared for. When the wallet
 // switches accounts with the confirm open, pressing Pay must not send the
 // prepared payment from the new account: the new account would pay and the
@@ -147,8 +145,8 @@ beforeEach(() => {
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
 });
 
-describe("wallet-action:pay — a payment bound to the account it was prepared for", () => {
-  it("rebuilds the payment for a newly connected account instead of paying the old one's tokens from it", async () => {
+describe("a payment bound to the account it was prepared for", () => {
+  it("wallet-action:pay rebuilds the payment for a newly connected account instead of paying the old one's tokens from it", async () => {
     const client = queryClient();
     const view = render(
       <QueryClientProvider client={client}>

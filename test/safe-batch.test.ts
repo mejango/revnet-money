@@ -110,7 +110,7 @@ function listBatchThrough(batch: ReturnType<typeof calls>, multiSend: Address): 
   return proposal;
 }
 
-describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () => {
+describe("one Safe proposal for a whole flow", () => {
   let seen: TransactionReviewRequest | null;
   let approve: boolean;
   beforeEach(() => {
@@ -129,7 +129,7 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     });
   });
 
-  it("reviews every call in order, sends them as one batch, and tracks the proposal", async () => {
+  it("wallet-action:safe-batch reviews every call in order, sends them as one batch, and tracks the proposal", async () => {
     const CALLS = calls();
     const hash = await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
 

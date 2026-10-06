@@ -57,8 +57,7 @@ beforeEach(() => {
 });
 
 describe("reviewed Safe signature boundary", () => {
-  // wallet-action:safe-signature-boundary
-  it("reviews the exact Safe call before signing its EIP-712 payload", async () => {
+  it("wallet-action:safe-signature-boundary reviews the exact Safe call before signing its EIP-712 payload", async () => {
     const events: string[] = [];
     let reviewed: unknown;
     const review = await import("@/lib/transaction-review");

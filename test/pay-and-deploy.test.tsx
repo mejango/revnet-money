@@ -106,7 +106,7 @@ beforeEach(() => {
   });
 });
 
-describe("wallet-action:create-revnet — PayAndDeploy settlement", () => {
+describe("PayAndDeploy settlement", () => {
   const BASE_PAYMENT: ChainPayment = { ...PAYMENT, chain: 8453, amount: "0x38d7ea4c68000" };
 
   it.each([
@@ -251,7 +251,7 @@ describe("wallet-action:create-revnet — PayAndDeploy settlement", () => {
     expect(screen.getByRole("button", { name: "Pay and launch" })).toBeEnabled();
   });
 
-  it("refuses every way out while the payment is sent, then closes once it is", async () => {
+  it("wallet-action:create-revnet refuses every way out while the payment is sent, then closes once it is", async () => {
     let finish!: (hash: string) => void;
     mocks.sendRelayrTx.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     render(component());

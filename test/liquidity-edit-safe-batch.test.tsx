@@ -20,8 +20,6 @@ import { type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
 
-// wallet-action:liquidity-management
-//
 // Under a Safe app, an LP edit with pending approvals goes out as ONE batch
 // (approve → Permit2 → modifyLiquidities), in that order, through the reviewed
 // proposeSafeBatch boundary — never as separate proposals.
@@ -226,7 +224,7 @@ describe("LP edits under a Safe app go out as one batch", () => {
     mocks.reverifyMarketEdit.mockReset().mockResolvedValue(undefined);
   });
 
-  it("EditPositionPanel proposes approve → Permit2 → modifyLiquidities once, after re-verifying", async () => {
+  it("wallet-action:liquidity-management EditPositionPanel proposes approve → Permit2 → modifyLiquidities once, after re-verifying", async () => {
     const onDone = vi.fn();
     render(
       <EditPositionPanel
@@ -255,7 +253,7 @@ describe("LP edits under a Safe app go out as one batch", () => {
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(null));
   });
 
-  it("MarketEditPanel proposes the same ordered batch once", async () => {
+  it("wallet-action:liquidity-management MarketEditPanel proposes the same ordered batch once", async () => {
     const onDone = vi.fn();
     render(
       <MarketEditPanel

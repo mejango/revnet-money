@@ -58,8 +58,8 @@ beforeEach(() => {
   previewPayMock.mockReset();
 });
 
-describe("wallet-action:pay — v6 payment route selection", () => {
-  it("selects the live route which returns the beneficiary the most tokens", async () => {
+describe("v6 payment route selection", () => {
+  it("wallet-action:pay selects the live route which returns the beneficiary the most tokens", async () => {
     previewPayMock.mockImplementation(async (_client: PublicClient, args: { terminal: Address }) =>
       args.terminal.toLowerCase() === ROUTER.toLowerCase() ? preview(100n) : preview(120n),
     );

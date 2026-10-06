@@ -9,7 +9,7 @@ import {
 import type { CashOutRoute } from "@bananapus/nana-sdk-core/v6";
 import { describe, expect, it } from "vitest";
 
-describe("wallet-action:cash-out — contract-derived cash-out quote", () => {
+describe("contract-derived cash-out quote", () => {
   it("defaults one available chain and drops a stale remembered selection", () => {
     expect(resolveCashOutChainId([8453], undefined)).toBe("8453");
     expect(resolveCashOutChainId([8453], "1")).toBe("8453");

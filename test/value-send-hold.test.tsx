@@ -436,7 +436,7 @@ describe("value flows hold their dialog while a send is in flight", () => {
     tryEveryWayOut("Refinance loan");
   });
 
-  it("repay", async () => {
+  it("wallet-action:repay repay", async () => {
     await confirmRepay();
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Repay loan");
@@ -496,7 +496,7 @@ describe("cash out's sale approval", () => {
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("releases the confirm once the approval's receipt lands on the cash-out chain", async () => {
+  it("wallet-action:cash-out releases the confirm once the approval's receipt lands on the cash-out chain", async () => {
     mocks.receiptOn = 1;
     const confirm = await approveSale();
 
@@ -707,7 +707,7 @@ describe("value flows open over their own Safe proposal the app can't confirm", 
 });
 
 describe("cash out refused by a Safe proposal the app can't confirm", () => {
-  it("says to check that proposal in Safe, and not that the cash out failed", async () => {
+  it("wallet-action:cash-out says to check that proposal in Safe, and not that the cash out failed", async () => {
     const proposal = `0x${"ab".repeat(32)}` as Hex;
     mocks.prepareCashOut.mockResolvedValue({
       route: { expectedReturn: 10n ** 17n },

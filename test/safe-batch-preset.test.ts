@@ -11,7 +11,6 @@ import { NATIVE_TOKEN, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
 import { getAddress, zeroAddress, type Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
 
-// wallet-action:safe-batch
 // The previous hook remains here deliberately: these tests exercise migration from a retired generation.
 
 // Model a staged rollout explicitly so future mainnet data regeneration needs no test rewrite.
