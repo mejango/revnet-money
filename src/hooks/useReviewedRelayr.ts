@@ -202,6 +202,14 @@ const FUNDED_ELSEWHERE =
   "Another payment funded this Relayr quote. Check again once its calls have run; do not pay again.";
 const REPLACED_UNPAID = "This unpaid Relayr quote was replaced by a new one. Nothing was paid.";
 const REPLACED = "A new quote replaced this one. Pay only the new quote.";
+/** A quote whose latest payment reverted: only the SDK's retry rule lets it be paid again. */
+const PAYMENT_REVERTED = {
+  status: "failed",
+  relayrPaymentStatus: "reverted",
+  manualVerificationRequired: true,
+  message:
+    "The original Relayr funding transaction reverted onchain. Its destination authorizations remain reserved; retry only the exact saved quote.",
+} as const;
 
 /**
  * The line a session shows while one of its old requests can still run: until
@@ -794,7 +802,11 @@ async function continueSession(
       // Its release is unproven while an old request can still run: it holds, saying until when.
       throw verdict?.live ? new Error(relayrHeldMessage(verdict.until), { cause: error }) : error;
     }
-    if (state === "funded") throw new Error(FUNDED_ELSEWHERE);
+    if (state === "funded") {
+      // What Relayr ran is proven from the chain; the quote is never paid again.
+      void waitForRelayrBundle(saved.bundleUuid!).catch(() => undefined);
+      throw new Error(FUNDED_ELSEWHERE);
+    }
     if (state === "payable") {
       const quote = payableQuote(saved, chains);
       if (!quote) throw new Error(EXPIRED_QUOTE);
@@ -1206,13 +1218,7 @@ async function provePayment(bundleUuid: string): Promise<void> {
   } catch (error) {
     if (error instanceof RelayrPaymentRevertedError) {
       fundedBundles.delete(bundleUuid);
-      updateTransactionActivity(activity.id, {
-        status: "failed",
-        relayrPaymentStatus: "reverted",
-        manualVerificationRequired: true,
-        message:
-          "The original Relayr funding transaction reverted onchain. Its destination authorizations remain reserved; retry only the exact saved quote.",
-      });
+      updateTransactionActivity(activity.id, PAYMENT_REVERTED);
       throw new RelayrVerificationError("The Relayr funding transaction reverted onchain.");
     }
     if (error instanceof RelayrProofError) throw new RelayrVerificationError(error.message);
@@ -1273,10 +1279,17 @@ export async function waitForRelayrBundle(
     let last: RelayrGetBundleResponse | null = null;
     for (let attempt = 0; attempt < 180; attempt += 1) {
       try {
-        await provePayment(bundleUuid);
+        // A quote whose own payment reverted runs only if another payment funded it,
+        // which Relayr's record shows; its destinations are then proven from the chain.
+        const reverted =
+          transactionActivitySnapshot().find((item) => item.id === activityId)
+            ?.relayrPaymentStatus === "reverted";
+        if (!reverted) await provePayment(bundleUuid);
         const expected = expectedBundleTransactions(bundleUuid);
         last = await fetchBundle(bundleUuid);
         verifyBundleIdentity(bundleUuid, last, expected);
+        if (reverted && !relayrBundleFunded(last))
+          throw new RelayrVerificationError("The Relayr funding transaction reverted onchain.");
         const states = last.transactions.map((transaction) => transaction.status?.state);
         const summary = bundleSummary(last);
         if (states.some(stateIsFailed)) {
@@ -1303,7 +1316,7 @@ export async function waitForRelayrBundle(
         }
         updateTransactionActivity(activityId, {
           status: "pending",
-          message: `Relayr payment confirmed; destination transactions are still executing. ${summary}`,
+          message: `${reverted ? FUNDED_ELSEWHERE : "Relayr payment confirmed; destination transactions are still executing."} ${summary}`,
           chainStates: bundleChainStates(last),
         });
         notify(last);
@@ -1963,13 +1976,20 @@ export function useSendRelayrTx() {
             if (details.code === 4001) rejected = true;
             cause = details.cause;
           }
+          // A quote paid before stays on the SDK's retry rule when the wallet declines
+          // to pay it again: another payment may still fund it.
           if (rejected)
-            updateTransactionActivity(activityId, {
-              status: "pending",
-              relayrPaymentStatus: "unfunded",
-              message:
-                "The wallet declined payment. The existing signed quote can still be funded once before it expires.",
-            });
+            updateTransactionActivity(
+              activityId,
+              sent.length
+                ? PAYMENT_REVERTED
+                : {
+                    status: "pending",
+                    relayrPaymentStatus: "unfunded",
+                    message:
+                      "The wallet declined payment. The existing signed quote can still be funded once before it expires.",
+                  },
+            );
           else
             updateTransactionActivity(activityId, {
               status: "pending",

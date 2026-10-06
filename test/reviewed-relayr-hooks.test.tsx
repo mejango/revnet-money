@@ -1509,8 +1509,9 @@ describe("paying a reverted Relayr payment again", () => {
     );
     mocks.sendTransaction.mockRejectedValueOnce({ code: 4001 });
     await expect(result.current.sendRelayrTx(payment())).rejects.toEqual({ code: 4001 });
+    // A quote paid before stays on the retry rule when the wallet declines to pay it again.
     expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
-      relayrPaymentStatus: "unfunded",
+      relayrPaymentStatus: "reverted",
       relayrPayments: [
         expect.objectContaining({ hash: HASH }),
         expect.objectContaining({ hash: SECOND_HASH }),
@@ -1958,6 +1959,53 @@ describe("Relayr sessions decided from the chain", () => {
       await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
         "Another payment funded this Relayr quote. Check again once its calls have run; do not pay again.",
       );
+      expect(mocks.signTypedData).toHaveBeenCalledOnce();
+      expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+    });
+
+    it("proves the calls another payment funded, and is never paid or quoted again", async () => {
+      const { hooks, result, session } = await revertedPayment();
+      const [signed] = session()!.relayrExpectedTransactions!;
+      const DESTINATION = `0x${"de".repeat(32)}` as Hex;
+      // The destination's run moved the latest nonce; no finalized block shows it yet.
+      chainAt({ timestamp: NOW + 700, finalizedNonce: 4n, liveNonce: 5n });
+      relayrReads({
+        payment_received: true,
+        transactions: [
+          {
+            tx_uuid: signed.transactionUuid,
+            request: {
+              chain: signed.chainId,
+              target: signed.target,
+              data: signed.data,
+              value: signed.value,
+            },
+            status: { state: "Success", data: { hash: DESTINATION } },
+          },
+        ],
+      });
+      // The destination ran on its chain; the session's own payment reverted.
+      const destination = {
+        ...onchain(signed.target, signed.data, 3n),
+        hash: DESTINATION,
+        transactionHash: DESTINATION,
+        logs: [],
+      };
+      mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) =>
+        hash === DESTINATION ? destination : onchain(PAYMENT_TARGET, payment().calldata),
+      );
+      mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) =>
+        hash === DESTINATION
+          ? destination
+          : { ...onchain(PAYMENT_TARGET, payment().calldata), status: "reverted" },
+      );
+      await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
+        "Another payment funded this Relayr quote. Check again once its calls have run; do not pay again.",
+      );
+      await expect(hooks.waitForRelayrBundle(BUNDLE_UUID)).resolves.toMatchObject({
+        payment_received: true,
+      });
+      expect(session()).toMatchObject({ status: "success", manualVerificationRequired: false });
       expect(mocks.signTypedData).toHaveBeenCalledOnce();
       expect(mocks.sendTransaction).toHaveBeenCalledOnce();
     });
