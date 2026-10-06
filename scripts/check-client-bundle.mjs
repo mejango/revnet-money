@@ -78,7 +78,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // With identical installed dependencies, HEAD 0f41a7d measures 2646.2 KiB and this
 // migration 2650.9 KiB; the largest operator route decreases 691.0 -> 689.9 KiB.
 // Raise only the aggregate ceiling to its measured integer KiB; route limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2651);
+// The build prompt adds progressive skill discovery, shared-token operating
+// economics and transaction recovery guidance. On the same locked dependencies,
+// HEAD 006935e2 measures 2650.9 KiB and the updated prompt 2651.5 KiB. Raise only
+// the aggregate ceiling by the minimum 1 KiB; route limits stay unchanged.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2652);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
