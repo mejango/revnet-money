@@ -6,6 +6,7 @@ import { TxError } from "@/components/ui/TxError";
 import { useMultichainBatch, type BatchResult } from "@/hooks/useMultichainBatch";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import {
+  describeSavedRoutingCall,
   preparePendingRouterPayment,
   readIndexedPendingRouterCalls,
   readPendingRouterPayment,
@@ -17,7 +18,7 @@ import { getViemPublicClient } from "@/lib/wagmiTransports";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { safeQueueUrl } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAccount } from "wagmi";
 
 const subscribe = () => () => {};
@@ -29,7 +30,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   const hydrated = useSyncExternalStore(subscribe, clientSnapshot, serverSnapshot);
   const { address, chainId } = useAccount();
   const queryClient = useQueryClient();
-  const { runBatch, getPendingBatch } = useMultichainBatch();
+  const { runBatch, getPendingBatch, recheckPendingRoutingBatch } = useMultichainBatch();
   const identities = projects.filter((project) => project.version === 6);
   const projectKey = identities
     .map((project) => `${project.chainId}:${project.projectId}`)
@@ -43,6 +44,9 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   > | null>(null);
   const [replacementId, setReplacementId] = useState<string | undefined>();
   const [needsReview, setNeedsReview] = useState(false);
+  const [checkingSaved, setCheckingSaved] = useState(false);
+  const [savedCheck, setSavedCheck] = useState<{ id: string; reason: string } | null>(null);
+  const lastChecked = useRef<string | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reviewed, setReviewed] = useState<Prepared[] | null>(null);
@@ -100,6 +104,60 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     await queryClient.invalidateQueries({ queryKey });
   }
 
+  async function checkSaved() {
+    if (!saved || checkingSaved) return;
+    setCheckingSaved(true);
+    try {
+      const checked = await recheckPendingRoutingBatch(scope, identities);
+      setSavedCheck({
+        id: saved.id,
+        reason: checked?.recoveryReason ?? "The saved batch no longer needs recovery.",
+      });
+      if (open && savedSelection?.id === saved.id) {
+        if (checked?.id === savedSelection.id) setSavedSelection(checked);
+        else {
+          setNeedsReview(true);
+          setError("The saved batch changed. Review the current payments again.");
+        }
+      }
+    } catch (cause) {
+      setSavedCheck({ id: saved.id, reason: formatWalletError(cause) });
+    } finally {
+      setCheckingSaved(false);
+    }
+  }
+  // A read-only check resolves stale quote reservations before presenting a recovery-only action.
+  useEffect(() => {
+    if (!resume || !recheckPendingRoutingBatch) return;
+    const key = `${address}:${resume.id}`;
+    if (lastChecked.current === key) return;
+    lastChecked.current = key;
+    void checkSaved();
+  });
+  const savedReason = savedCheck?.id === saved?.id ? savedCheck?.reason : saved?.recoveryReason;
+  const savedDetails = (savedSelection?.calls ?? []).map((call) => {
+    try {
+      const detail = describeSavedRoutingCall(call);
+      return {
+        ...detail,
+        amountLabel:
+          payments.find((payment) => payment.id === detail.id)?.amountLabel ?? detail.amountLabel,
+      };
+    } catch {
+      return {
+        id: `${call.chainId}:${call.data}`,
+        chainId: call.chainId,
+        projectId: "unknown",
+        sourceProjectId: "unknown",
+        amountLabel: "Saved payment details could not be verified",
+        beneficiary: call.address,
+        pendingCallId: "unknown",
+        hash: call.hash,
+        state: call.state,
+      };
+    }
+  });
+
   async function review(selected: PendingRouterPayment[]) {
     setError(null);
     if (resume) {
@@ -149,6 +207,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       const result = await runBatch({
         label: "Route pending payments",
         scope: savedSelection?.scope ?? scope,
+        expectedBatchId: savedSelection?.id,
         replaceDraftId: savedSelection ? undefined : replacementId,
         calls: savedSelection ? [] : (reviewed ?? []).map((row) => row.call),
         onProgress: setProgress,
@@ -228,9 +287,18 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           </ButtonWithWallet>
           {resume ? (
             <p className="mt-1 text-xs text-zinc-500">
-              Saved batch: {resume.completed} of {resume.total} attempts handled. This selection is
-              separate from the full pending list. Finish it before starting another batch.
+              Saved batch: {resume.completed} of {resume.total} attempts handled. {savedReason}
             </p>
+          ) : null}
+          {resume ? (
+            <button
+              type="button"
+              className="mt-2 text-sm underline"
+              disabled={checkingSaved || busy}
+              onClick={() => void checkSaved()}
+            >
+              {checkingSaved ? "Checking saved status…" : "Re-check saved status"}
+            </button>
           ) : null}
           {ready.length < payments.length && !resume ? (
             <p className="mt-1 text-xs text-zinc-500">
@@ -294,9 +362,15 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           setReviewed(null);
         }}
         title="Route pending payments"
-        steps={(reviewed ?? []).map(({ payment }) => ({
-          title: `${payment.amountLabel} to project ${payment.indexed.projectId}`,
-        }))}
+        steps={
+          savedSelection
+            ? savedDetails.map((payment) => ({
+                title: `${payment.amountLabel} to project ${payment.projectId}`,
+              }))
+            : (reviewed ?? []).map(({ payment }) => ({
+                title: `${payment.amountLabel} to project ${payment.indexed.projectId}`,
+              }))
+        }
         activeIndex={busy ? 0 : -1}
         stepsIntro="Review every selected attempt. Eligible Relayr batches use one funding payment for all retries; each payment keeps its own result."
         onConfirm={() => (needsReview ? void review(ready) : void submit())}
@@ -342,6 +416,33 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               {savedSelection.completed} of {savedSelection.total} attempts handled
             </SummaryRow>
           ) : null}
+          {savedSelection ? (
+            <p className="text-sm text-zinc-600">{savedSelection.recoveryReason}</p>
+          ) : null}
+          {savedDetails.map((payment) => (
+            <div key={payment.id} className="space-y-2 border-t border-teal-100 pt-3 text-sm">
+              <SummaryRow label="Amount">
+                <span className="break-all">{payment.amountLabel}</span>
+              </SummaryRow>
+              <SummaryRow label="On">
+                {JB_CHAINS[payment.chainId as JBChainId]?.name ?? payment.chainId}
+              </SummaryRow>
+              <SummaryRow label="To">Project {payment.projectId}</SummaryRow>
+              <SummaryRow label="Source">Project {payment.sourceProjectId}</SummaryRow>
+              <SummaryRow label="Saved state">{payment.state}</SummaryRow>
+              <SummaryRow label="Payment ID">
+                <span className="break-all">{payment.pendingCallId}</span>
+              </SummaryRow>
+              <SummaryRow label="Beneficiary">
+                <span className="break-all">{payment.beneficiary}</span>
+              </SummaryRow>
+              {payment.hash ? (
+                <SummaryRow label="Transaction">
+                  <span className="break-all">{payment.hash}</span>
+                </SummaryRow>
+              ) : null}
+            </div>
+          ))}
           {(reviewed ?? []).map(({ payment }) => (
             <div key={payment.id} className="space-y-2 border-t border-teal-100 pt-3 text-sm">
               <SummaryRow label="Amount">

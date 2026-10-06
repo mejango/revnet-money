@@ -7,6 +7,7 @@ import {
   saveMultichainBatch,
 } from "@/lib/multichain-batch";
 import {
+  describeSavedRoutingCall,
   findPendingRoutingBatch,
   pendingRouterCommitment,
   preparePendingRouterPayment,
@@ -225,6 +226,16 @@ describe("original pending router calls", () => {
     );
     legacy.calls[0].state = "submitted";
     legacy.calls[0].hash = id;
+    expect(describeSavedRoutingCall(legacy.calls[0])).toMatchObject({
+      chainId: 1,
+      projectId: "1",
+      sourceProjectId: "6",
+      pendingCallId: item.pendingCallId,
+      beneficiary: item.beneficiary,
+      state: "submitted",
+      hash: id,
+    });
+    expect(() => describeSavedRoutingCall({ ...legacy.calls[0], data: "0x" })).toThrow();
     saveMultichainBatch(legacy);
     expect(
       findPendingRoutingBatch(account, [{ chainId: 1, projectId: 6, version: 6 }]),

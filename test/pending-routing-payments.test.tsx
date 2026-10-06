@@ -10,17 +10,24 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
   batch: vi.fn(),
   saved: vi.fn(),
+  recheck: vi.fn(),
+  describe: vi.fn(),
   address: "0x0000000000000000000000000000000000000001",
 }));
 vi.mock("wagmi", () => ({ useAccount: () => ({ address: mocks.address, chainId: 1 }) }));
 vi.mock("@/lib/wagmiTransports", () => ({ getViemPublicClient: () => ({}) }));
 vi.mock("@/hooks/useMultichainBatch", () => ({
-  useMultichainBatch: () => ({ runBatch: mocks.batch, getPendingBatch: mocks.saved }),
+  useMultichainBatch: () => ({
+    runBatch: mocks.batch,
+    getPendingBatch: mocks.saved,
+    recheckPendingRoutingBatch: mocks.recheck,
+  }),
 }));
 vi.mock("@/lib/pending-router-calls", () => ({
   readIndexedPendingRouterCalls: mocks.indexed,
   readPendingRouterPayment: mocks.payment,
   preparePendingRouterPayment: mocks.prepare,
+  describeSavedRoutingCall: mocks.describe,
 }));
 vi.mock("@/components/ButtonWithWallet", () => ({
   ButtonWithWallet: ({
@@ -73,6 +80,7 @@ function setup() {
 }
 beforeEach(() => {
   mocks.saved.mockReturnValue(undefined);
+  mocks.recheck.mockImplementation(async () => mocks.saved());
   mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
     project.chainId === 1 ? [row("one").indexed] : [],
   );
@@ -142,13 +150,22 @@ describe("payment recovery", () => {
 
   it("resumes the saved selection when the index is already empty without preparing another call", async () => {
     mocks.indexed.mockResolvedValue([]);
-    mocks.saved.mockReturnValue({ scope: "pending-routing:1:6", completed: 1, total: 2 });
+    mocks.saved.mockReturnValue({
+      id: "original-batch",
+      scope: "pending-routing:1:6",
+      completed: 1,
+      total: 2,
+    });
     setup();
     fireEvent.click(await screen.findByRole("button", { name: "Resume saved batch" }));
     fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
     await waitFor(() =>
       expect(mocks.batch).toHaveBeenCalledWith(
-        expect.objectContaining({ scope: "pending-routing:1:6", calls: [] }),
+        expect.objectContaining({
+          scope: "pending-routing:1:6",
+          expectedBatchId: "original-batch",
+          calls: [],
+        }),
       ),
     );
     expect(mocks.prepare).not.toHaveBeenCalled();
@@ -177,7 +194,7 @@ describe("payment recovery", () => {
     expect(await screen.findByText("Found 7 payments. Checking current status…")).toBeTruthy();
     expect(screen.getAllByText("Checking payment status…")).toHaveLength(7);
     expect(screen.getByRole("button", { name: "Resume saved batch" })).toBeEnabled();
-    expect(screen.getByText(/separate from the full pending list/)).toBeTruthy();
+    expect(screen.getByText(/Saved batch: 0 of 3 attempts handled/)).toBeTruthy();
     expect(mocks.prepare).not.toHaveBeenCalled();
     finish();
     await screen.findByText("7 payments awaiting routing. 7 ready");
@@ -221,7 +238,7 @@ describe("payment recovery", () => {
     setup();
     fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
     expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
-    expect(screen.queryByText(/Finish it before starting another batch/)).toBeNull();
+    expect(screen.queryByText(/Saved batch:/)).toBeNull();
     await screen.findByRole("button", { name: "Confirm routing" });
     // A later journal update must not silently change the selection being confirmed.
     mocks.saved.mockReturnValue({
@@ -265,6 +282,82 @@ describe("payment recovery", () => {
     expect(mocks.batch.mock.calls[0][0].replaceDraftId).toBe("old-draft");
     expect(mocks.batch.mock.calls[1][0].replaceDraftId).toBeUndefined();
     expect(mocks.prepare).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the saved payment details and exact recovery reason before continuing", async () => {
+    mocks.saved.mockReturnValue({
+      id: "held",
+      scope: "legacy",
+      completed: 0,
+      total: 1,
+      replaceableDraft: false,
+      recoveryReason: "The previous wallet submission has an unknown result.",
+      calls: [{ chainId: 8453, state: "submitting" }],
+    });
+    mocks.describe.mockReturnValue({
+      id: "saved",
+      chainId: 8453,
+      projectId: "1",
+      sourceProjectId: "6",
+      amountLabel: "1.3 USDC",
+      beneficiary: mocks.address,
+      pendingCallId: "0x1234",
+      state: "submitting",
+    });
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Resume saved batch" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText("The previous wallet submission has an unknown result."),
+    ).toBeTruthy();
+    expect(within(dialog).getByText("1.3 USDC")).toBeTruthy();
+    expect(within(dialog).getByText("Project 6")).toBeTruthy();
+    expect(within(dialog).getByText("submitting")).toBeTruthy();
+    expect(mocks.batch).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  });
+
+  it("rechecks a saved reservation without submitting and unlocks a proven released draft", async () => {
+    const held = { id: "held", scope: "legacy", completed: 0, total: 3, replaceableDraft: false };
+    mocks.saved.mockReturnValue(held);
+    mocks.recheck.mockImplementation(async () => {
+      const checked = {
+        ...held,
+        replaceableDraft: true,
+        recoveryReason: "The unpaid quote expired.",
+      };
+      mocks.saved.mockReturnValue(checked);
+      return checked;
+    });
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1 ? [row("a").indexed, row("b").indexed] : [],
+    );
+    setup();
+    expect(await screen.findByRole("button", { name: "Batch all pending" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
+    expect(mocks.recheck).toHaveBeenCalledTimes(1);
+    expect(mocks.batch).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  });
+
+  it("does not switch an open saved review to a different journal after a status check", async () => {
+    const first = {
+      id: "first",
+      scope: "first-scope",
+      completed: 0,
+      total: 1,
+      replaceableDraft: false,
+    };
+    mocks.saved.mockReturnValue(first);
+    setup();
+    await waitFor(() => expect(mocks.recheck).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByRole("button", { name: "Resume saved batch" }));
+    await screen.findByRole("dialog");
+    mocks.recheck.mockResolvedValue({ ...first, id: "other", scope: "other-scope" });
+    fireEvent.click(screen.getByRole("button", { name: "Re-check saved status" }));
+    await screen.findByRole("button", { name: "Review again" });
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(mocks.batch).not.toHaveBeenCalled();
   });
 
   it("blocks submit if the wallet changed after review", async () => {

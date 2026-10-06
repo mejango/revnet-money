@@ -66,8 +66,8 @@ export type MultichainBatch = {
   status: "pending" | "success";
   createdAt: number;
 };
-/** Only untouched pending-routing selections can be replaced by a fresh selection. */
-export function isReplaceableRoutingDraft(batch: MultichainBatch): boolean {
+/** Submission evidence always retains routing recovery, even before any receipt is handled. */
+export function hasUntouchedRoutingCalls(batch: MultichainBatch): boolean {
   return (
     batch.status === "pending" &&
     batch.calls.length > 0 &&
@@ -77,13 +77,72 @@ export function isReplaceableRoutingDraft(batch: MultichainBatch): boolean {
         call.state === "ready" &&
         call.hash === undefined &&
         call.safeNonce === undefined,
-    ) &&
+    )
+  );
+}
+
+/** Only untouched pending-routing selections can be replaced by a fresh selection. */
+export function isReplaceableRoutingDraft(batch: MultichainBatch): boolean {
+  return (
+    hasUntouchedRoutingCalls(batch) &&
     batch.rounds.every(
       (round) =>
         round.state === "ready" &&
         round.bundleUuid === undefined &&
         round.transactionUuids === undefined,
     )
+  );
+}
+
+export function routingBatchRecoveryReason(batch: MultichainBatch): string {
+  if (batch.calls.some((call) => call.state === "submitting"))
+    return "A wallet submission has an unknown result. Check it before starting another batch.";
+  if (batch.calls.some((call) => call.state === "safe" || call.safeNonce !== undefined))
+    return "This selection has a saved Safe proposal. Resume it to check execution.";
+  if (batch.calls.some((call) => call.hash || call.state === "submitted"))
+    return "This selection has submitted transactions. Resume it to verify their results.";
+  if (batch.calls.some(isBatchCallHandled))
+    return "Some saved attempts have already been handled. Resume the remaining attempts.";
+  if (batch.rounds.some((round) => round.state === "funding" || round.state === "pending"))
+    return "A Relayr payment may be in progress. Resume to check its existing payment and results.";
+  if (batch.rounds.some((round) => round.bundleUuid || round.state === "quoted"))
+    return "A Relayr quote is saved. Re-check whether it is still payable before changing this selection.";
+  return "An earlier Relayr authorization may still reserve this selection. Re-check its status before changing it.";
+}
+
+/** Reset only unsubmitted rounds whose named quotes were proved unpaid and released by Relayr recovery. */
+export function resetUnpaidRoutingDraft(
+  expected: MultichainBatch,
+  releasedBundleUuids: readonly string[],
+): void {
+  if (!hasUntouchedRoutingCalls(expected)) return;
+  const released = new Set(releasedBundleUuids.map((uuid) => uuid.toLowerCase()));
+  if (
+    !expected.rounds.every(
+      (round) =>
+        (round.state === "ready" && !round.bundleUuid && !round.transactionUuids) ||
+        (round.state === "quoted" &&
+          !!round.bundleUuid &&
+          released.has(round.bundleUuid.toLowerCase())),
+    )
+  )
+    return;
+  const batches = readMultichainBatches();
+  const current = batches.find((batch) => batch.id === expected.id);
+  if (!current || serialize(current) !== serialize(expected))
+    throw new Error("The saved batch changed. Re-check its latest progress.");
+  writeMultichainBatches(
+    batches.map((batch) =>
+      batch.id === expected.id
+        ? {
+            ...batch,
+            rounds: batch.rounds.map((round) => ({
+              indices: round.indices,
+              state: "ready" as const,
+            })),
+          }
+        : batch,
+    ),
   );
 }
 

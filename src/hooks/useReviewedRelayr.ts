@@ -439,6 +439,26 @@ export function hasRelayrRecoveryScopeSession(account: Address, scope: string): 
   );
 }
 
+/** Requires retained canonical expiry evidence and no trace of a funding attempt. */
+export function isReleasedUnpaidRelayrBundle(account: Address, bundleUuid: string): boolean {
+  const sessions = refreshTransactionActivities().filter(
+    (activity) =>
+      activity.account?.toLowerCase() === account.toLowerCase() &&
+      activity.bundleUuid?.toLowerCase() === bundleUuid.toLowerCase(),
+  );
+  return (
+    sessions.length > 0 &&
+    sessions.every(
+      (activity) =>
+        sessionReleased(activity) &&
+        !activity.hash &&
+        !sentPayments(activity).length &&
+        activity.relayrPaymentStatus !== "submitted" &&
+        activity.relayrPaymentStatus !== "confirmed",
+    )
+  );
+}
+
 /**
  * A changed payload or direct route must not bypass a published operation
  * (rulings R114 (g) and R117): a session in `scope` reserves it while one of

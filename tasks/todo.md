@@ -344,3 +344,9 @@ Review: 27 relevant tests pass; typecheck, changed-file ESLint and diff check pa
 - [x] Review the full current selection and replace the exact draft under the account lock after reservation checks and an atomic journal comparison.
 - [x] Freeze reviewed identities, preserve recovery on failure, and require a fresh review after replacement errors.
 Review: 63 engine tests and 14 routing component tests pass; reviewed Relayr suite passed during engine validation. Typecheck and changed-file lint pass. Regression coverage includes late submission evidence, lost publication responses, cancellation, changed journals, and failed replacement retries. Changes remain local, not pushed.
+
+## 2026-10-06 — Read-only routing recovery checks
+- [x] Return saved calls and a specific state-based reason in recovery metadata; decode exact authenticated calls for the confirmation.
+- [x] Recheck once per saved selection and on request without signing/paying; reuse reservation proofs and reset only unpaid expired quoted rounds under account lock and journal comparison.
+- [x] Preserve unknown submissions/funding/missing evidence and freeze open review identity across checks.
+Review: 200 engine/Relayr tests pass; 17 UI tests and 15 pending-call tests pass, with typecheck, changed-file lint and diff checks. A screenshot cannot identify the local journal state; the UI now reports its real reason instead of generic zero-handled copy. Changes are local, not pushed.

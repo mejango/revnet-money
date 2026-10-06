@@ -26,7 +26,12 @@ import {
 import { queryBendystrawFromBrowser } from "./bendystraw/client";
 import { RouterPendingCallsOperation } from "./bendystraw/operations";
 import type { IndexedRouterPendingCall } from "./bendystraw/types";
-import { isBatchCallHandled, readMultichainBatches, type MultichainCall } from "./multichain-batch";
+import {
+  isBatchCallHandled,
+  readMultichainBatches,
+  type FrozenBatchCall,
+  type MultichainCall,
+} from "./multichain-batch";
 import type { CallPrecondition } from "./multichain-guards";
 import { rolloutChain, rolloutContractName } from "./protocol-rollout";
 import { routerGatewayAbi } from "./router-gateway-abi";
@@ -189,6 +194,38 @@ export function requireRawPendingRouterCall(
   ) {
     throw new Error("The reviewed routing failure state is not canonical.");
   }
+}
+
+/** Decode the exact saved routing request for recovery review, even if indexing has moved on. */
+export function describeSavedRoutingCall(saved: FrozenBatchCall) {
+  requireRawPendingRouterCall(
+    saved.chainId,
+    saved.address,
+    saved.data,
+    saved.value ?? 0n,
+    saved.expectedRouterPending,
+    saved.preconditions,
+  );
+  const decoded = decodeFunctionData({ abi: routerGatewayAbi, data: saved.data });
+  if (
+    decoded.functionName !== "processPendingCall" &&
+    decoded.functionName !== "finalizePendingCall"
+  )
+    throw new Error("The saved call is not a pending routing attempt.");
+  const [pendingCallId, call] = decoded.args;
+  return {
+    id: `${saved.chainId}:${saved.address.toLowerCase()}:${pendingCallId.toLowerCase()}`,
+    chainId: saved.chainId,
+    projectId: call.projectId.toString(),
+    sourceProjectId: call.sourceProjectId.toString(),
+    amountLabel: isAddressEqual(call.token, NATIVE_TOKEN)
+      ? `${formatUnits(call.amount, 18)} ETH`
+      : `${call.amount} base units of ${call.token}`,
+    beneficiary: call.beneficiary,
+    pendingCallId,
+    hash: saved.hash,
+    state: saved.state,
+  };
 }
 
 /** Find old source-scoped journals by their exact destination calls, without rewriting recovery. */

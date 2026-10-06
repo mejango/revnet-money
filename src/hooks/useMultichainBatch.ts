@@ -2,6 +2,7 @@
 
 import {
   hasRelayrRecoveryScopeSession,
+  isReleasedUnpaidRelayrBundle,
   requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
   useSendRelayrTx,
@@ -17,11 +18,14 @@ import {
   batchCallScope,
   createMultichainBatch,
   findPendingBatch,
+  hasUntouchedRoutingCalls,
   isBatchCallHandled,
   isReplaceableRoutingDraft,
   readMultichainBatches,
   removeUnsubmittedBatch,
   replaceRoutingDraft,
+  resetUnpaidRoutingDraft,
+  routingBatchRecoveryReason,
   saveMultichainBatch,
   type FrozenBatchCall,
   type MultichainBatch,
@@ -84,6 +88,7 @@ type BatchInput = {
   scope: string;
   calls: MultichainCall[];
   replaceDraftId?: string;
+  expectedBatchId?: string;
   onProgress?: (message: string) => void;
 };
 const running = new Set<string>();
@@ -335,6 +340,8 @@ export function useMultichainBatch() {
       return batch
         ? {
             id: batch.id,
+            calls: batch.calls,
+            recoveryReason: routingBatchRecoveryReason(batch),
             replaceableDraft:
               isReplaceableRoutingDraft(batch) &&
               batch.calls.every(
@@ -349,6 +356,61 @@ export function useMultichainBatch() {
         : undefined;
     },
     [config],
+  );
+
+  const recheckPendingRoutingBatch = useCallback(
+    async (scope: string, destinations?: readonly PendingProject[]) => {
+      const account = getAccount(config).address;
+      if (!account) throw new Error("Connect a wallet first.");
+      const lock = `revnet:multichain:${account.toLowerCase()}`;
+      if (running.has(lock))
+        throw new Error("Another multichain batch is already being processed.");
+      const check = async () => {
+        setIsPending(true);
+        let issue: string | undefined;
+        try {
+          const batch = destinations
+            ? findPendingRoutingBatch(account, destinations)
+            : findPendingBatch(account, scope);
+          if (batch) {
+            for (const [index, call] of batch.calls.entries())
+              await requireRelayrRecoveryScopeAvailable(
+                account,
+                batchCallScope(batch, call, index),
+              );
+            if (getAccount(config).address?.toLowerCase() !== account.toLowerCase())
+              throw new Error("The connected account changed. Re-check with the original account.");
+            if (hasUntouchedRoutingCalls(batch)) {
+              const released = batch.rounds.flatMap((round) =>
+                round.bundleUuid && isReleasedUnpaidRelayrBundle(account, round.bundleUuid)
+                  ? [round.bundleUuid]
+                  : [],
+              );
+              resetUnpaidRoutingDraft(batch, released);
+            }
+          }
+        } catch (cause) {
+          issue = cause instanceof Error ? cause.message : "The saved batch could not be checked.";
+        } finally {
+          setIsPending(false);
+        }
+        const latest = getPendingBatch(scope, destinations);
+        return latest && { ...latest, recoveryReason: issue ?? latest.recoveryReason };
+      };
+      running.add(lock);
+      try {
+        return await (typeof navigator !== "undefined" && navigator.locks
+          ? navigator.locks.request(lock, { ifAvailable: true }, (acquired) => {
+              if (!acquired)
+                throw new Error("Another browser tab is already processing a multichain batch.");
+              return check();
+            })
+          : check());
+      } finally {
+        running.delete(lock);
+      }
+    },
+    [config, getPendingBatch],
   );
 
   const runBatch = useCallback(
@@ -430,7 +492,12 @@ export function useMultichainBatch() {
           return false;
         };
         try {
-          batch = findPendingBatch(account, input.scope);
+          const pending = findPendingBatch(account, input.scope);
+          if (input.expectedBatchId && pending?.id !== input.expectedBatchId)
+            throw new Error(
+              "The reviewed saved batch changed. Review its latest selection before resuming.",
+            );
+          batch = pending;
           if (input.replaceDraftId) {
             const candidate = readMultichainBatches().find(
               (item) => item.id === input.replaceDraftId,
@@ -817,5 +884,5 @@ export function useMultichainBatch() {
     },
     [config, getRelayrTxQuote, sendRelayrTx, writeContractAsync, writeReviewedAsync],
   );
-  return { runBatch, getPendingBatch, isPending };
+  return { runBatch, getPendingBatch, recheckPendingRoutingBatch, isPending };
 }

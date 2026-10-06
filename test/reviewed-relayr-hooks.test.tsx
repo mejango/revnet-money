@@ -113,6 +113,43 @@ async function freshHarness() {
   return { review, activity, hooks };
 }
 
+describe("saved unpaid quote release evidence", () => {
+  it("requires a retained released session and rejects any payment evidence", async () => {
+    const { activity, hooks } = await freshHarness();
+    expect(hooks.isReleasedUnpaidRelayrBundle(ACCOUNT, BUNDLE_UUID)).toBe(false);
+    activity.recordTransactionActivity({
+      id: "released-quote",
+      kind: "relayr-bundle",
+      title: "Routing",
+      status: "failed",
+      account: ACCOUNT,
+      bundleUuid: BUNDLE_UUID,
+      message: "Expired unpaid quote",
+      relayrPaymentStatus: "expired",
+    });
+    expect(hooks.isReleasedUnpaidRelayrBundle(ACCOUNT, BUNDLE_UUID)).toBe(true);
+    activity.updateTransactionActivity("released-quote", { hash: HASH });
+    expect(hooks.isReleasedUnpaidRelayrBundle(ACCOUNT, BUNDLE_UUID)).toBe(false);
+  });
+  it.each(["unfunded", "submitted", "confirmed"] as const)(
+    "keeps %s quotes reserved without canonical release evidence",
+    async (relayrPaymentStatus) => {
+      const { activity, hooks } = await freshHarness();
+      activity.recordTransactionActivity({
+        id: "live-quote",
+        kind: "relayr-bundle",
+        title: "Routing",
+        status: "pending",
+        account: ACCOUNT,
+        bundleUuid: BUNDLE_UUID,
+        message: "Saved quote",
+        relayrPaymentStatus,
+      });
+      expect(hooks.isReleasedUnpaidRelayrBundle(ACCOUNT, BUNDLE_UUID)).toBe(false);
+    },
+  );
+});
+
 beforeEach(() => {
   window.localStorage.clear();
   vi.setSystemTime(new Date(NOW * 1_000));
