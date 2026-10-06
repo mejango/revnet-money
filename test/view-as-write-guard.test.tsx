@@ -71,7 +71,7 @@ const CALL = {
   functionName: "transfer",
   args: [TARGET, 7n] as const,
 };
-const EXPECTED_ERROR = "You're viewing the site as another account — exit View as to transact.";
+const EXPECTED_ERROR = "You're viewing the site as another account. Exit View as to transact.";
 
 async function freshHarness() {
   vi.resetModules();

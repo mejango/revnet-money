@@ -215,7 +215,11 @@ export async function verifyActionReceipt(
     throw new Error(
       "The destination confirmed with an incomplete recipient result. Keep the original transaction for reconciliation; do not submit it again.",
     );
-  // Every reviewed split's exact share, in order, from the receipt's own events.
+  // Reserves accrue until the distribution runs, and a Safe can execute it days after the review,
+  // so the receipt may distribute more than was reviewed. Any count at or above the reviewed one
+  // confirms, with every reviewed split's share, in order, checked against the count distributed
+  // from the receipt's own events. A smaller count (another distribution ran first), another
+  // ruleset or cycle, or a failed recipient is refused.
   if (reservedReceipt) verifyReservedDistributionReceipt(receipt, reservedReceipt);
   if (expectedPayout) verifyPayoutReceipt(receipt, expectedPayout);
   const routerResult = expectedRouterPending

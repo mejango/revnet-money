@@ -186,4 +186,4 @@ digest so the artifact is byte-for-byte identical.
 
 ## Shared SDK deployment checks
 
-The app pins `@bananapus/nana-sdk-core` to published version `2.19.0`. The lockfile records the npm registry archive and integrity used by `npm ci` and container builds. This release includes the shared deployment configuration and diagnostics helpers from [Juice SDK PR #168](https://github.com/Bananapus/juice-sdk-v4/pull/168). The SDK source remains the owner of these checks.
+The app pins `@bananapus/nana-sdk-core` to published version `2.21.0`. The lockfile records the npm registry archive and integrity used by `npm ci` and container builds. This release includes the shared deployment configuration and diagnostics helpers from [Juice SDK PR #168](https://github.com/Bananapus/juice-sdk-v4/pull/168). The SDK source remains the owner of these checks.

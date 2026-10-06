@@ -62,6 +62,8 @@ const SPENDER = "0x0000000000000000000000000000000000002000" as Address;
 const SAFE_TX_HASH = `0x${"ab".repeat(32)}` as Hex;
 /** Safe 1.4.1's MultiSendCallOnly, which Safe{Wallet} batches a 1.4.1 Safe's calls through. */
 const MULTI_SEND_CALL_ONLY_141 = getAddress("0x9641d764fc13c8b624c04430c7356c1c7c8102e2");
+/** A MultiSend the SDK does not list, so a proposal that runs through it can't be bound to the calls. */
+const UNLISTED_MULTI_SEND = getAddress("0x0000000000000000000000000000000000005afe");
 const ERC20 = parseAbi(["function approve(address spender, uint256 amount)"]);
 let nonce = 0n;
 // Distinct amounts per test so the duplicate guard sees a fresh batch each time.
@@ -83,6 +85,30 @@ const calls = () => {
     },
   ];
 };
+
+/**
+ * The Safe service lists a proposal of `batch` that runs through `multiSend`, and the Safe app
+ * answers a proposal with its hash, which this returns.
+ */
+function listBatchThrough(batch: ReturnType<typeof calls>, multiSend: Address): Hex {
+  const encoded = batch.map((call) => ({
+    to: call.address,
+    value: call.value,
+    data: encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args }),
+  }));
+  const record = { ...safeBatchProposalFor(encoded, 3), to: multiSend };
+  const proposal = safeTransactionHash(8453, ACCOUNT, record);
+  mocks.sendCalls.mockResolvedValue({ id: proposal });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith(`/multisig-transactions/${proposal}/`)
+        ? new Response(JSON.stringify({ ...record, safe: ACCOUNT, isExecuted: false }))
+        : new Response("Not found", { status: 404 }),
+    ),
+  );
+  return proposal;
+}
 
 describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () => {
   let seen: TransactionReviewRequest | null;
@@ -143,23 +169,7 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
 
   it("refuses the same batch while a proposal it can't confirm is listed, and takes it once dismissed", async () => {
     const CALLS = calls();
-    const encoded = CALLS.map((call) => ({
-      to: call.address,
-      value: call.value,
-      data: encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args }),
-    }));
-    // The SDK decodes MultiSendCallOnly 1.3.0 only, so this record can't be bound to the calls.
-    const record = { ...safeBatchProposalFor(encoded, 3), to: MULTI_SEND_CALL_ONLY_141 };
-    const proposal = safeTransactionHash(8453, ACCOUNT, record);
-    mocks.sendCalls.mockResolvedValue({ id: proposal });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) =>
-        String(input).endsWith(`/multisig-transactions/${proposal}/`)
-          ? new Response(JSON.stringify({ ...record, safe: ACCOUNT, isExecuted: false }))
-          : new Response("Not found", { status: 404 }),
-      ),
-    );
+    const proposal = listBatchThrough(CALLS, UNLISTED_MULTI_SEND);
 
     await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
     await waitFor(() =>
@@ -187,6 +197,20 @@ describe("wallet-action:safe-batch — one Safe proposal for a whole flow", () =
     mocks.sendCalls.mockResolvedValue({ id: SAFE_TX_HASH });
     await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
     expect(mocks.sendCalls).toHaveBeenCalledTimes(2);
+  });
+
+  it("follows a proposal that runs the batch through Safe 1.4.1's MultiSendCallOnly", async () => {
+    const CALLS = calls();
+    const proposal = listBatchThrough(CALLS, MULTI_SEND_CALL_ONLY_141);
+
+    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
+    await waitFor(() =>
+      expect(transactionActivityForHash(proposal)).toMatchObject({
+        status: "safe-proposed",
+        message: "Safe proposal is not executed. It remains asynchronous; do not submit it again.",
+      }),
+    );
+    expect(transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();
   });
 
   it("refuses a batch whose sequence reverts in simulation", async () => {
