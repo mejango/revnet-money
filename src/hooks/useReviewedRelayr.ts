@@ -36,17 +36,25 @@ import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananap
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import {
   bindRelayrQuote,
+  FORWARD_REQUEST_TYPES,
   RELAYR_API,
+  RELAYR_PAYMENT_CODE_HASH,
+  RELAYR_PAYMENT_GAS,
   relayrBundleRequest,
   relayrDestinationHash,
+  relayrPaymentDetails,
+  RelayrPaymentRevertedError,
+  RelayrProofError,
   requireRelayrPaymentRetry,
+  TRUSTED_FORWARDER_ABI,
+  verifyRelayrPayment,
   type RelayrEntry,
 } from "@bananapus/nana-sdk-core/review/relayr";
 import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
 import {
   encodeFunctionData,
-  isAddress,
+  isHash,
   keccak256,
   maxUint256,
   stringToHex,
@@ -56,33 +64,6 @@ import {
 } from "viem";
 import { useAccount, useConfig, useSendTransaction, useSignTypedData, useSwitchChain } from "wagmi";
 import { getAccount, getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
-
-const RELAYR_PAYMENT_ADDRESS = "0x1c05f7841379d4393574c0ffa17908ec40ffd97d";
-const RELAYR_PAYMENT_CODE_HASH =
-  "0x6006b5acadb4cd60aa5c00cb844c34563e182dff83d4f4ff4fde226f7df16fa6";
-const RELAYR_PAYMENT_GAS = 150_000n;
-const RELAYR_NATIVE_TOKEN = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TRUSTED_FORWARDER_ABI = [
-  {
-    type: "function",
-    name: "isTrustedForwarder",
-    stateMutability: "view",
-    inputs: [{ name: "forwarder", type: "address" }],
-    outputs: [{ name: "", type: "bool" }],
-  },
-] as const;
-const FORWARD_REQUEST_TYPES = {
-  ForwardRequest: [
-    { name: "from", type: "address" },
-    { name: "to", type: "address" },
-    { name: "value", type: "uint256" },
-    { name: "gas", type: "uint256" },
-    { name: "nonce", type: "uint256" },
-    { name: "deadline", type: "uint48" },
-    { name: "data", type: "bytes" },
-  ],
-} as const;
 
 export type ReviewedRelayrRequest = {
   chainId: JBChainId;
@@ -219,7 +200,10 @@ function unpaidQuoteReleased(activity: TransactionActivity): boolean {
   if (!quote || !Array.isArray(quote.payment_info) || !chains?.length) return false;
   return !quote.payment_info.some((payment) => {
     try {
-      paymentDetails(payment, quote.bundle_uuid, chains);
+      relayrPaymentDetails(payment, {
+        bundleUuid: quote.bundle_uuid,
+        destinationChainIds: chains,
+      });
       return true;
     } catch {
       return false;
@@ -374,44 +358,6 @@ async function requirePaymentRetry(
   }
 }
 
-function paymentDetails(payment: ChainPayment, bundleUuid: string, destinationChains: number[]) {
-  if (!isRelayrSupportedChain(payment.chain))
-    throw new Error("Relayr returned an unsupported payment chain.");
-  if (!areRelayrChainsCompatible([...destinationChains, payment.chain]))
-    throw new Error(
-      "Relayr funding must use the same mainnet or testnet family as its destinations.",
-    );
-  if (!isAddress(payment.target) || payment.target.toLowerCase() !== RELAYR_PAYMENT_ADDRESS)
-    throw new Error("Relayr returned an unrecognized payment contract.");
-  if (payment.token?.toLowerCase() !== RELAYR_NATIVE_TOKEN)
-    throw new Error("Relayr returned an unsupported payment token.");
-  let value: bigint;
-  try {
-    value = BigInt(payment.amount);
-  } catch {
-    throw new Error("Relayr returned an invalid payment amount.");
-  }
-  if (value < 0n) throw new Error("Relayr returned an invalid payment amount.");
-  const data = payment.calldata.toLowerCase();
-  if (
-    !UUID_PATTERN.test(bundleUuid) ||
-    !/^0x[0-9a-f]{136}$/.test(data) ||
-    data.slice(0, 10) !== "0x103903a7"
-  )
-    throw new Error("Relayr returned invalid payment calldata.");
-  if (data.slice(10, 74) !== `${bundleUuid.replaceAll("-", "").toLowerCase()}${"0".repeat(32)}`)
-    throw new Error("Relayr payment calldata does not match this bundle.");
-  const deadline = /^\d+$/.test(payment.payment_deadline)
-    ? Number(payment.payment_deadline)
-    : Math.floor(Date.parse(payment.payment_deadline) / 1_000);
-  if (!Number.isSafeInteger(deadline) || deadline <= Math.floor(Date.now() / 1_000) + 15)
-    throw new Error(EXPIRED_QUOTE);
-  const encodedDeadline = BigInt(`0x${data.slice(74)}`);
-  if (encodedDeadline > 0xffffffffffn || encodedDeadline !== BigInt(deadline))
-    throw new Error("Relayr payment calldata does not match the quote deadline.");
-  return { value, deadline };
-}
-
 function quoteForDestinationChains(
   quote: RelayrPostBundleResponse,
   destinationChains: number[],
@@ -423,7 +369,12 @@ function quoteForDestinationChains(
     throw new Error(
       "Relayr returned no funding option for the selected mainnet or testnet family.",
     );
-  payments.forEach((payment) => paymentDetails(payment, quote.bundle_uuid, destinationChains));
+  payments.forEach((payment) =>
+    relayrPaymentDetails(payment, {
+      bundleUuid: quote.bundle_uuid,
+      destinationChainIds: destinationChains,
+    }),
+  );
   // Recovery quotes must not share nested payment objects with caller-owned
   // responses. A later UI update cannot rewrite the already published fee.
   return structuredClone({ ...quote, payment_info: payments });
@@ -616,7 +567,13 @@ async function verifyDestinationReceipts(
   }
 }
 
-async function verifyPaymentReceipt(bundleUuid: string): Promise<void> {
+/**
+ * Prove a bundle's latest payment from the chain with the SDK, under the hash
+ * it was mined: the exact reviewed payment from the session's account,
+ * canonically included and successful. A canonical revert leaves the quote to
+ * the SDK's retry rule; another transaction at that hash is never paid again.
+ */
+async function provePayment(bundleUuid: string): Promise<void> {
   const activity = transactionActivitySnapshot().find((item) => item.bundleUuid === bundleUuid);
   if (!activity?.hash || !activity.relayrPayment || !activity.account || !activity.chainId)
     throw new RelayrVerificationError(
@@ -625,38 +582,32 @@ async function verifyPaymentReceipt(bundleUuid: string): Promise<void> {
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
   const client = getPublicClient(wagmiConfig, { chainId: activity.chainId as JBChainId });
   if (!client) throw new Error("The funding RPC is unavailable.");
-  const [transaction, receipt] = await Promise.all([
-    client.getTransaction({ hash: activity.hash }),
-    client.getTransactionReceipt({ hash: activity.hash }),
-  ]);
-  const expected = activity.relayrPayment;
-  if (
-    transaction.hash.toLowerCase() !== activity.hash.toLowerCase() ||
-    receipt.transactionHash.toLowerCase() !== activity.hash.toLowerCase() ||
-    transaction.from.toLowerCase() !== activity.account.toLowerCase() ||
-    transaction.to?.toLowerCase() !== expected.target.toLowerCase() ||
-    receipt.to?.toLowerCase() !== expected.target.toLowerCase() ||
-    transaction.input.toLowerCase() !== expected.data.toLowerCase() ||
-    transaction.value !== BigInt(expected.value) ||
-    transaction.blockHash !== receipt.blockHash ||
-    transaction.blockNumber !== receipt.blockNumber
-  )
-    throw new RelayrVerificationError(
-      "The funding receipt does not match the reviewed payment. Do not pay again.",
-    );
-  const block = await client.getBlock({ blockNumber: receipt.blockNumber });
-  if (block.hash !== receipt.blockHash)
-    throw new Error("Funding receipt is not in the current canonical chain.");
-  if (receipt.status !== "success") {
-    fundedBundles.delete(bundleUuid);
-    updateTransactionActivity(activity.id, {
-      status: "failed",
-      relayrPaymentStatus: "reverted",
-      manualVerificationRequired: true,
-      message:
-        "The original Relayr funding transaction reverted onchain. Its destination authorizations remain reserved; retry only the exact saved quote.",
+  try {
+    await verifyRelayrPayment(client, {
+      hash: activity.hash,
+      from: activity.account,
+      payment: {
+        chainId: activity.chainId,
+        target: activity.relayrPayment.target,
+        calldata: activity.relayrPayment.data,
+        amount: activity.relayrPayment.value,
+        bundleUuid,
+      },
     });
-    throw new RelayrVerificationError("The Relayr funding transaction reverted onchain.");
+  } catch (error) {
+    if (error instanceof RelayrPaymentRevertedError) {
+      fundedBundles.delete(bundleUuid);
+      updateTransactionActivity(activity.id, {
+        status: "failed",
+        relayrPaymentStatus: "reverted",
+        manualVerificationRequired: true,
+        message:
+          "The original Relayr funding transaction reverted onchain. Its destination authorizations remain reserved; retry only the exact saved quote.",
+      });
+      throw new RelayrVerificationError("The Relayr funding transaction reverted onchain.");
+    }
+    if (error instanceof RelayrProofError) throw new RelayrVerificationError(error.message);
+    throw error;
   }
   updateTransactionActivity(activity.id, { relayrPaymentStatus: "confirmed" });
 }
@@ -713,7 +664,7 @@ export async function waitForRelayrBundle(
     let last: RelayrGetBundleResponse | null = null;
     for (let attempt = 0; attempt < 180; attempt += 1) {
       try {
-        await verifyPaymentReceipt(bundleUuid);
+        await provePayment(bundleUuid);
         const expected = expectedBundleTransactions(bundleUuid);
         last = await fetchBundle(bundleUuid);
         verifyBundleIdentity(bundleUuid, last, expected);
@@ -1263,7 +1214,10 @@ export function useSendRelayrTx() {
       const activityId = `relayr:${remembered.bundleUuid}`;
       const submit = async () => {
         requireUnfunded(remembered);
-        const { value } = paymentDetails(payment, remembered.bundleUuid, remembered.chainIds);
+        const { amount: value } = relayrPaymentDetails(payment, {
+          bundleUuid: remembered.bundleUuid,
+          destinationChainIds: remembered.chainIds,
+        });
         await switchChainAsync({ chainId: payment.chain });
         const requireAccount = () => {
           requireNoViewAs();
@@ -1318,7 +1272,10 @@ export function useSendRelayrTx() {
         );
         if (sent.length) await requirePaymentRetry(config, address, remembered.bundleUuid, sent);
         requireAccount();
-        paymentDetails(payment, remembered.bundleUuid, remembered.chainIds);
+        relayrPaymentDetails(payment, {
+          bundleUuid: remembered.bundleUuid,
+          destinationChainIds: remembered.chainIds,
+        });
         requireUnfunded(remembered);
         recordTransactionActivity({
           id: activityId,
@@ -1379,23 +1336,36 @@ export function useSendRelayrTx() {
           throw error;
         }
         fundedBundles.add(remembered.bundleUuid);
-        updateTransactionActivity(activityId, {
-          hash,
+        /** The payment under `sentHash`, after every one sent before it. */
+        const sentAs = (sentHash: Hex) => ({
+          hash: sentHash,
           relayrPayments: [
             ...sent,
             {
-              hash,
+              hash: sentHash,
               chainId: payment.chain,
               target: payment.target,
               data: payment.calldata,
               value: value.toString(),
             },
           ],
+        });
+        updateTransactionActivity(activityId, {
+          ...sentAs(hash),
           message: "Relayr payment submitted. Do not pay again while its receipt is pending.",
         });
+        let mined = hash;
         try {
-          await waitForTransactionReceipt(config, { chainId: payment.chain, hash });
-          await verifyPaymentReceipt(remembered.bundleUuid);
+          const receipt = await waitForTransactionReceipt(config, { chainId: payment.chain, hash });
+          // A wallet that sped the payment up mined it under another hash; that
+          // transaction is the payment to prove and to remember.
+          if (typeof receipt?.transactionHash !== "string" || !isHash(receipt.transactionHash))
+            throw new Error("The payment receipt names no transaction hash.");
+          if (receipt.transactionHash.toLowerCase() !== hash.toLowerCase()) {
+            mined = receipt.transactionHash;
+            updateTransactionActivity(activityId, sentAs(mined));
+          }
+          await provePayment(remembered.bundleUuid);
         } catch (error) {
           if (!(error instanceof RelayrVerificationError))
             updateTransactionActivity(activityId, {
@@ -1404,7 +1374,7 @@ export function useSendRelayrTx() {
                 "Relayr payment was submitted, but confirmation is uncertain. Do not pay again; check this hash and bundle.",
             });
           throw new Error(
-            `Relayr payment ${hash} was submitted, but confirmation is uncertain. Do not pay again.`,
+            `Relayr payment ${mined} was submitted, but confirmation is uncertain. Do not pay again.`,
             { cause: error },
           );
         }
@@ -1413,7 +1383,7 @@ export function useSendRelayrTx() {
           message: "Relayr payment confirmed. Destination transactions are now pending.",
         });
         void waitForRelayrBundle(remembered.bundleUuid).catch(() => undefined);
-        return hash;
+        return mined;
       };
       if (paymentInflight.has(remembered.callKey))
         throw new Error("This Relayr payment is already in progress. Do not pay again.");

@@ -142,7 +142,12 @@ beforeEach(() => {
   mocks.estimateGas.mockResolvedValue(21_000n);
   mocks.signTypedData.mockResolvedValue(SIGNATURE);
   mocks.sendTransaction.mockResolvedValue(HASH);
-  mocks.waitForTransactionReceipt.mockResolvedValue({ status: "success" });
+  mocks.waitForTransactionReceipt.mockImplementation(
+    async (_config: unknown, { hash }: { hash: Hex }) => ({
+      status: "success",
+      transactionHash: hash,
+    }),
+  );
 });
 
 describe("reviewed Relayr authorization hook", () => {
@@ -861,6 +866,10 @@ describe("reviewed Relayr payment hook", () => {
     );
     expect(harness.quote?.payment_info.map((option) => option.chain)).toEqual([11155111, 84532]);
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    // The payment is mined on the chain it was sent on.
+    const funding = onchain(PAYMENT_TARGET, selectedPayment.calldata, 16n, 84532);
+    mocks.getTransaction.mockResolvedValue(funding);
+    mocks.getTransactionReceipt.mockResolvedValue(funding);
     await expect(harness.result.current.sendRelayrTx(payment())).rejects.toThrow(/does not belong/);
     await act(async () => {
       await expect(harness.result.current.sendRelayrTx(selectedPayment)).resolves.toBe(HASH);
@@ -1167,6 +1176,42 @@ describe("reviewed Relayr payment hook", () => {
     await expect(result.current.sendRelayrTx(payment())).rejects.toThrow("connection lost");
     await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(/uncertain wallet result/);
     expect(mocks.sendTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("proves a sped-up payment on the hash it was mined under", async () => {
+    const SPED_UP = `0x${"5e".repeat(32)}` as Hex;
+    const { activity, result } = await quotedPayment();
+    // The wallet replaced the payment it returned; only the replacement was mined.
+    mocks.waitForTransactionReceipt.mockResolvedValue({
+      ...onchain(PAYMENT_TARGET, payment().calldata),
+      hash: SPED_UP,
+      transactionHash: SPED_UP,
+    });
+    const minedOnly =
+      (read: (hash: Hex) => unknown) =>
+      async ({ hash }: { hash: Hex }) => {
+        if (hash !== SPED_UP) throw new Error(`Transaction ${hash} could not be found.`);
+        return read(hash);
+      };
+    mocks.getTransaction.mockImplementation(
+      minedOnly((hash) => ({ ...onchain(PAYMENT_TARGET, payment().calldata), hash })),
+    );
+    mocks.getTransactionReceipt.mockImplementation(
+      minedOnly((hash) => ({
+        ...onchain(PAYMENT_TARGET, payment().calldata),
+        hash,
+        transactionHash: hash,
+      })),
+    );
+    await act(async () => {
+      await expect(result.current.sendRelayrTx(payment())).resolves.toBe(SPED_UP);
+    });
+    expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+      hash: SPED_UP,
+      relayrPaymentStatus: "confirmed",
+      relayrPayments: [expect.objectContaining({ hash: SPED_UP })],
+    });
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
   });
 
   it("does not accept a funding receipt for another payment", async () => {
