@@ -337,7 +337,10 @@ async function deadlinesPassed(
 /**
  * A raw or Safe bundle has no forwarder nonce. An unpaid one can run only if
  * its quote is paid, so it stops reserving once the deadline of every option
- * of its quote passed at a canonical finalized block, never by the clock.
+ * of its quote passed at a canonical finalized block, never by the clock, and
+ * Relayr, read right before, reports it unpaid with every call pending
+ * (ruling R104, as jbm's payer-relayr.ts:457-463): another device may have
+ * paid it.
  */
 async function releaseUnfundableQuote(
   config: Config,
@@ -345,6 +348,13 @@ async function releaseUnfundableQuote(
 ): Promise<boolean> {
   if (activity.relayrPaymentStatus !== "unfunded" || sentPayments(activity).length) return false;
   if (!(await deadlinesPassed(config, quotedOptions(activity)))) return false;
+  if (
+    !(await requireRelayrBundleUnpaid(activity.bundleUuid ?? "").then(
+      () => true,
+      () => false,
+    ))
+  )
+    return false;
   updateTransactionActivity(activity.id, {
     status: "failed",
     relayrPaymentStatus: "expired",

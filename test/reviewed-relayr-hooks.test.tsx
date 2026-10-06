@@ -2232,6 +2232,88 @@ describe("Relayr sessions decided from the chain", () => {
     expect(activity.transactionActivitySnapshot()).toHaveLength(2);
   });
 
+  describe("a raw bundle, which has no forwarder nonce", () => {
+    const raw = {
+      ...REQUEST,
+      relayrMode: "raw" as const,
+      recoveryScope: "project-payer:1:4",
+      expectedDeployment: {
+        kind: "project-payer" as const,
+        projectId: "4",
+        beneficiary: ACCOUNT,
+        owner: ACCOUNT,
+        addToBalance: false,
+        memo: "",
+        metadata: "0x" as Hex,
+        directory: TARGET,
+      },
+      data: {
+        ...REQUEST.data,
+        to: JB_PROJECT_PAYER_DEPLOYER,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: jbProjectPayerDeployerAbi,
+          functionName: "deployProjectPayer",
+          args: [4n, ACCOUNT, "", "0x", false, ACCOUNT],
+        }),
+      },
+    };
+
+    /** An unpaid raw quote whose payment deadline (NOW + 600) is final onchain. */
+    async function rawQuote() {
+      const harness = await freshHarness();
+      harness.review.registerTransactionReviewHandler(async () => true);
+      vi.stubGlobal("fetch", relayrApi());
+      const quoter = renderHook(() => harness.hooks.useGetRelayrTxQuote());
+      await act(async () => {
+        await quoter.result.current.getRelayrTxQuote([raw]);
+      });
+      vi.setSystemTime(new Date((NOW + 700) * 1_000));
+      chainAt({ timestamp: NOW + 700, finalizedNonce: 4n });
+      const row = () =>
+        harness.activity
+          .transactionActivitySnapshot()
+          .find((item) => item.bundleUuid === BUNDLE_UUID);
+      return { ...harness, result: quoter.result, row };
+    }
+
+    it("is never quoted again while Relayr reports it paid from another device", async () => {
+      const { hooks, result, row } = await rawQuote();
+      const reads = relayrReads({
+        payment_received: true,
+        transactions: [{ tx_uuid: TX_UUIDS[0], status: { state: "Success" } }],
+      });
+      await expect(
+        hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, "project-payer:1:4"),
+      ).rejects.toThrow(/still requires reconciliation/);
+      await expect(result.current.getRelayrTxQuote([raw])).rejects.toThrow(
+        /published authorizations/,
+      );
+      expect(reads.mock.calls.some(([url]) => String(url).endsWith("/v1/bundle/prepaid"))).toBe(
+        false,
+      );
+      expect(
+        reads.mock.calls.some(([url]) => String(url).endsWith(`/v1/bundle/${BUNDLE_UUID}`)),
+      ).toBe(true);
+      expect(row()).toMatchObject({ relayrPaymentStatus: "unfunded" });
+    });
+
+    it("is released once its deadline is final and Relayr reads it unpaid, and the same call is quoted anew", async () => {
+      const { result, row } = await rawQuote();
+      const reads = relayrReads();
+      await act(async () => {
+        await expect(result.current.getRelayrTxQuote([raw])).resolves.toMatchObject({
+          bundle_uuid: OTHER_BUNDLE_UUID,
+        });
+      });
+      expect(
+        reads.mock.calls.filter(([url]) => String(url).endsWith("/v1/bundle/prepaid")),
+      ).toHaveLength(1);
+      expect(row()).toMatchObject({ relayrPaymentStatus: "expired" });
+      expect(mocks.signTypedData).not.toHaveBeenCalled();
+    });
+  });
+
   describe("a paid bundle that Relayr leaves pending", () => {
     const scoped = { ...GUARDED, recoveryScope: "project-metadata:1:4" };
 
