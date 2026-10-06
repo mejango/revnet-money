@@ -680,7 +680,7 @@
         [
           "reviewed-relayr-quote",
           "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-          "executeAll",
+          "prepareAll",
           "getRelayrTxQuote",
           1
         ],

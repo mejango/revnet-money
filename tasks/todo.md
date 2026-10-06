@@ -350,3 +350,10 @@ Review: 63 engine tests and 14 routing component tests pass; reviewed Relayr sui
 - [x] Recheck once per saved selection and on request without signing/paying; reuse reservation proofs and reset only unpaid expired quoted rounds under account lock and journal comparison.
 - [x] Preserve unknown submissions/funding/missing evidence and freeze open review identity across checks.
 Review: 200 engine/Relayr tests pass; 17 UI tests and 15 pending-call tests pass, with typecheck, changed-file lint and diff checks. A screenshot cannot identify the local journal state; the UI now reports its real reason instead of generic zero-handled copy. Changes are local, not pushed.
+
+## 2026-10-06 — Prepare Safe execution on open and pace RPC egress
+- [x] Extract preparation without behavior change (19 baseline tests), then start it when Execute all opens.
+- [x] Keep explicit quote review and separate payment confirmation; show payment chain options and decoded actions.
+- [x] Pace browser RPC starts by 125ms across chains/retries without waiting for responses; all independent checks overlap and drain before error/payment.
+- [x] Test cancellation, delayed quote, account changes, retries, error ordering, queued abort and 429 cooldown.
+Review: 23 Safe dialog/card tests pass and 145 transport/check/Relayr tests pass. Broad sandbox-safe suite: 2,195 tests passed plus one skipped; sole failure was the stale copy-debt record from removing the pending-call middot, corrected and its six tests now pass. Live schema and loopback RPC files excluded. Typecheck, changed-file ESLint, format ratchet and wallet-boundary inventory pass; quote owner inventory updated from executeAll to prepareAll. JBM full suite: 2,576 tests pass. Not pushed.

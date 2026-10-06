@@ -358,10 +358,10 @@ describe("Safe queue card", () => {
           : base.fetch(input, init),
       );
       const queryClient = renderCard(8453, 10);
-      fireEvent.click(await screen.findByRole("button", { name: "Execute 2 ready" }));
-      const dialog = await screen.findByRole("dialog");
+      const executeAll = await screen.findByRole("button", { name: "Execute 2 ready" });
       pays(listedTransaction(queryClient, 8453));
-      fireEvent.click(within(dialog).getByRole("button", { name: "Pay once and execute 2" }));
+      fireEvent.click(executeAll);
+      const dialog = await screen.findByRole("dialog");
 
       expect(
         await within(dialog).findByText(

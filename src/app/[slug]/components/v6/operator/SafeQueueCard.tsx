@@ -16,6 +16,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { readHandleAuthority, unprovenSafeMessage } from "@/lib/handle-authority";
+import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PROJECT_HANDLE_CHAIN_ID } from "@/lib/projectHandles";
 import { protocolQueueLabel } from "@/lib/protocol-queue-label";
 import {
@@ -35,7 +36,11 @@ import {
   queueUnavailableMessage,
   REFUND_REFUSAL,
 } from "@/lib/safe-transactions";
-import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
+import {
+  preselectedRelayrPayment,
+  relayrPaymentOptions,
+  requireTransactionReview,
+} from "@/lib/transaction-review";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import {
   multiSendCallsOf,
@@ -56,7 +61,7 @@ import {
   type SafeQueuedTransaction,
 } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { encodeFunctionData, isAddressEqual, type Address } from "viem";
 import { useAccount, useConfig } from "wagmi";
 import {
@@ -96,6 +101,10 @@ type LiveSafePolicy = SafePolicy & { identity: SafeAuthorityIdentity };
 type BatchRow = { row: QueueRow; tx: SafeQueuedTransaction };
 
 type BatchRun = {
+  account: Address;
+  preparing: boolean;
+  quote: RelayrPostBundleResponse | null;
+  paymentChainId: number | null;
   rows: BatchRow[];
   status: Record<number, string>;
   running: boolean;
@@ -104,9 +113,85 @@ type BatchRun = {
   error: string | null;
 };
 
+async function prepareBatchRequests(
+  rows: BatchRow[],
+  address: Address,
+  setRowStatus: (chainId: number, status: string) => void,
+): Promise<ReviewedRelayrRequest[]> {
+  // Check 1 of 2: live operator, policy, nonce and signatures per chain,
+  // then the quote pins each Safe's nonce and exact transaction hash and
+  // simulates it. Check 2 runs in sendRelayrTx right before paying.
+  return mapConcurrentChecks(rows, async ({ row, tx }): Promise<ReviewedRelayrRequest> => {
+    setRowStatus(row.chainId, "Checking…");
+    try {
+      if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL);
+      await verifyLiveQueuedTransaction(row, tx);
+      const policy = await readLiveSafePolicy(row);
+      if (policy.nonce !== tx.nonce)
+        throw new Error(
+          `Safe transaction #${tx.nonce} is no longer next on ${chainName(row.chainId)}.`,
+        );
+      if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold)
+        throw new Error(
+          `Safe transaction #${tx.nonce} on ${chainName(row.chainId)} no longer has enough current-owner confirmations.`,
+        );
+      const args = safeExecutionArgs(tx, policy.owners);
+      const data = encodeFunctionData({
+        abi: SAFE_EXEC_ABI,
+        functionName: "execTransaction",
+        args,
+      });
+      const gas = await publicClientFor(row.chainId).estimateGas({
+        account: address,
+        to: row.safe,
+        data,
+      });
+      const request: ReviewedRelayrRequest = {
+        chainId: row.chainId as JBChainId,
+        version: 6,
+        relayrMode: "safe-exec",
+        expectedSafeExecution: {
+          safe: row.safe,
+          safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
+          nonce: tx.nonce,
+        },
+        data: { from: address, to: row.safe, value: 0n, gas, data },
+        review: {
+          abi: SAFE_EXEC_ABI,
+          functionName: "execTransaction",
+          args,
+          label: `Execute Safe transaction #${tx.nonce} on ${chainName(row.chainId)}`,
+          contractName: "Safe",
+          calls: [queuedSafeReviewCall(row.chainId, tx)],
+        },
+      };
+      setRowStatus(row.chainId, "Ready");
+      return request;
+    } catch (cause) {
+      setRowStatus(row.chainId, "Check failed");
+      throw cause;
+    }
+  });
+}
+
 function queueLabel(chainId: number, tx: SafeQueuedTransaction): string {
   return (
     describeQueuedBatch(tx) ?? protocolQueueLabel(chainId, tx) ?? tx.data?.slice(0, 10) ?? "0x"
+  );
+}
+
+function QueuedCallSummary({ chainId, tx }: { chainId: number; tx: SafeQueuedTransaction }) {
+  const calls = multiSendCallsOf(tx);
+  if (!calls?.length) return null;
+  return (
+    <ol className="mt-1 list-decimal pl-5 text-xs font-normal text-zinc-700">
+      {calls.map((call, index) => (
+        <li key={index}>
+          {protocolQueueLabel(chainId, { ...call, operation: 0 }) ??
+            `${call.data.slice(0, 10)} → ${call.to}`}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -318,6 +403,35 @@ export function SafeQueueCard({
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
   const [batch, setBatch] = useState<BatchRun | null>(null);
+  const batchGeneration = useRef(0);
+  const payingBatch = useRef(false);
+  const connectedAccount = useRef(address);
+  connectedAccount.current = address;
+  useEffect(
+    () => () => {
+      batchGeneration.current += 1;
+    },
+    [],
+  );
+  const batchAccount = batch?.account;
+  const batchRunning = batch?.running;
+  useEffect(() => {
+    if (!batchAccount || batchRunning || batchAccount.toLowerCase() === address?.toLowerCase())
+      return;
+    batchGeneration.current += 1;
+    setBatch((current) =>
+      current
+        ? {
+            ...current,
+            preparing: false,
+            quote: null,
+            paymentChainId: null,
+            error:
+              "The connected account changed. Close this review and check the transactions again.",
+          }
+        : current,
+    );
+  }, [address, batchAccount, batchRunning]);
   const queue = useQuery({
     queryKey: ["revnet-safe-queues", operatorKey],
     enabled: !operators.isLoading && queueTargets.length > 0,
@@ -434,109 +548,105 @@ export function SafeQueueCard({
     batchChains.every(isRelayrSupportedChain) &&
     areRelayrChainsCompatible(batchChains);
 
-  const setRowStatus = (chainId: number, status: string) =>
-    setBatch((current) =>
-      current ? { ...current, status: { ...current.status, [chainId]: status } } : current,
-    );
-  const setBatchMessage = (message: string | null) =>
-    setBatch((current) => (current ? { ...current, message } : current));
+  const closeBatch = () => {
+    if (payingBatch.current) return;
+    batchGeneration.current += 1;
+    resetRelayr();
+    setBatch(null);
+  };
+
+  const prepareAll = async (rows: BatchRow[]) => {
+    if (!address || payingBatch.current) return;
+    const account = address;
+    const generation = ++batchGeneration.current;
+    const current = () =>
+      generation === batchGeneration.current &&
+      connectedAccount.current?.toLowerCase() === account.toLowerCase();
+    const update = (patch: Partial<BatchRun>) => {
+      if (current()) setBatch((batch) => (batch ? { ...batch, ...patch } : batch));
+    };
+    resetRelayr();
+    setBatch({
+      rows,
+      account,
+      preparing: true,
+      quote: null,
+      paymentChainId: null,
+      status: {},
+      running: false,
+      done: false,
+      message: "Checking the Safe transactions…",
+      error: null,
+    });
+    try {
+      const requests = await prepareBatchRequests(rows, account, (chainId, status) => {
+        if (!current()) throw new Error("This review was closed or the connected account changed.");
+        setBatch((batch) =>
+          batch ? { ...batch, status: { ...batch.status, [chainId]: status } } : batch,
+        );
+      });
+      if (!current()) return;
+      update({ message: "Review the executions to request a Relayr quote…" });
+      const quote = await getRelayrTxQuote(requests);
+      if (!current()) return;
+      if (!quote?.payment_info.length) throw new Error("Relayr did not return a payment option.");
+      update({
+        quote,
+        paymentChainId:
+          preselectedRelayrPayment(quote.payment_info, connectedChainId)?.chain ?? null,
+        message: "Choose where to pay the quoted network fee, then confirm execution.",
+      });
+    } catch (cause) {
+      update({
+        message: null,
+        error: cause instanceof Error ? cause.message : "Could not check the Safe transactions.",
+      });
+    } finally {
+      update({ preparing: false });
+    }
+  };
 
   const executeAll = async () => {
-    if (!address || !batch) return;
-    const { rows } = batch;
+    if (!batch?.quote || batch.preparing || payingBatch.current || !address) return;
+    if (batch.account.toLowerCase() !== address.toLowerCase()) return;
+    const { rows, quote } = batch;
+    const payment = quote.payment_info.find((option) => option.chain === batch.paymentChainId);
+    if (!payment) return;
+    const generation = batchGeneration.current;
+    const update = (patch: Partial<BatchRun>) => {
+      if (generation === batchGeneration.current)
+        setBatch((batch) => (batch ? { ...batch, ...patch } : batch));
+    };
+    const setRowStatus = (chainId: number, status: string) => {
+      if (generation === batchGeneration.current)
+        setBatch((batch) =>
+          batch ? { ...batch, status: { ...batch.status, [chainId]: status } } : batch,
+        );
+    };
+    payingBatch.current = true;
     setBusy("execute-all");
-    setBatch((current) => (current ? { ...current, running: true, error: null } : current));
+    update({ running: true, error: null, message: "Confirm the Relayr payment in your wallet…" });
     try {
-      // Check 1 of 2: live operator, policy, nonce and signatures per chain,
-      // then the quote pins each Safe's nonce and exact transaction hash and
-      // simulates it. Check 2 runs in sendRelayrTx right before paying.
-      const requests = await mapConcurrentChecks(
-        rows,
-        async ({ row, tx }): Promise<ReviewedRelayrRequest> => {
-          setRowStatus(row.chainId, "Checking…");
-          try {
-            if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL);
-            await verifyLiveQueuedTransaction(row, tx);
-            const policy = await readLiveSafePolicy(row);
-            if (policy.nonce !== tx.nonce)
-              throw new Error(
-                `Safe transaction #${tx.nonce} is no longer next on ${chainName(row.chainId)}.`,
-              );
-            if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold)
-              throw new Error(
-                `Safe transaction #${tx.nonce} on ${chainName(row.chainId)} no longer has enough current-owner confirmations.`,
-              );
-            const args = safeExecutionArgs(tx, policy.owners);
-            const data = encodeFunctionData({
-              abi: SAFE_EXEC_ABI,
-              functionName: "execTransaction",
-              args,
-            });
-            const gas = await publicClientFor(row.chainId).estimateGas({
-              account: address,
-              to: row.safe,
-              data,
-            });
-            const request: ReviewedRelayrRequest = {
-              chainId: row.chainId as JBChainId,
-              version: 6,
-              relayrMode: "safe-exec",
-              expectedSafeExecution: {
-                safe: row.safe,
-                safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
-                nonce: tx.nonce,
-              },
-              data: { from: address, to: row.safe, value: 0n, gas, data },
-              review: {
-                abi: SAFE_EXEC_ABI,
-                functionName: "execTransaction",
-                args,
-                label: `Execute Safe transaction #${tx.nonce} on ${chainName(row.chainId)}`,
-                contractName: "Safe",
-                calls: [queuedSafeReviewCall(row.chainId, tx)],
-              },
-            };
-            setRowStatus(row.chainId, "Ready");
-            return request;
-          } catch (cause) {
-            setRowStatus(row.chainId, "Check failed");
-            throw cause;
-          }
-        },
-      );
-      setBatchMessage("Review the executions, then choose where to pay Relayr…");
-      const quote = await getRelayrTxQuote(requests);
-      if (!quote) throw new Error("Relayr did not return a quote.");
-      const payment = await chooseRelayrPayment(quote.payment_info, connectedChainId);
-      setBatchMessage("Confirm the Relayr payment in your wallet…");
+      // sendRelayrTx checks the live account, quote, and Safe execution again before payment.
       await sendRelayrTx(payment);
       rows.forEach(({ row }) => setRowStatus(row.chainId, "Executing…"));
-      setBatchMessage("Relayr is executing on every chain…");
+      update({ message: "Relayr is executing on every chain…" });
       await waitForRelayrBundle(quote.bundle_uuid, (bundle) => {
         for (const transaction of bundle.transactions)
           setRowStatus(transaction.request.chain, relayrRowStatus(transaction.status?.state));
       });
       rows.forEach(({ row }) => setRowStatus(row.chainId, "Executed"));
       resetRelayr();
-      setBatch((current) =>
-        current
-          ? { ...current, done: true, message: `Executed ${rows.length} Safe transactions.` }
-          : current,
-      );
+      update({ done: true, message: `Executed ${rows.length} Safe transactions.` });
       await queue.refetch();
     } catch (cause) {
-      setBatch((current) =>
-        current
-          ? {
-              ...current,
-              error:
-                cause instanceof Error ? cause.message : "Could not execute the Safe transactions.",
-            }
-          : current,
-      );
+      update({
+        error: cause instanceof Error ? cause.message : "Could not execute the Safe transactions.",
+      });
     } finally {
+      payingBatch.current = false;
       setBusy(null);
-      setBatch((current) => (current ? { ...current, running: false } : current));
+      update({ running: false });
     }
   };
 
@@ -706,16 +816,7 @@ export function SafeQueueCard({
             type="button"
             className="bg-melon-700 px-3 py-1 text-sm text-white disabled:opacity-50"
             disabled={busy !== null || !address}
-            onClick={() =>
-              setBatch({
-                rows: batchRows,
-                status: {},
-                running: false,
-                done: false,
-                message: null,
-                error: null,
-              })
-            }
+            onClick={() => void prepareAll(structuredClone(batchRows))}
           >
             Execute {batchRows.length} ready
           </button>
@@ -772,16 +873,7 @@ export function SafeQueueCard({
                         <summary className="cursor-pointer font-bold">
                           #{tx.nonce} | {queueLabel(row.chainId, tx)} | {confirmations.length}/
                           {row.policy.threshold} signatures
-                          {multiSendCallsOf(tx)?.length ? (
-                            <ol className="mt-1 list-decimal pl-5 font-normal text-zinc-700">
-                              {multiSendCallsOf(tx)!.map((call, index) => (
-                                <li key={index}>
-                                  {protocolQueueLabel(row.chainId, { ...call, operation: 0 }) ??
-                                    `${call.data.slice(0, 10)} → ${call.to}`}
-                                </li>
-                              ))}
-                            </ol>
-                          ) : null}
+                          <QueuedCallSummary chainId={row.chainId} tx={tx} />
                         </summary>
                         {handleBinding ? (
                           <p className="mt-2 font-medium text-melon-800">
@@ -929,24 +1021,68 @@ export function SafeQueueCard({
       {batch ? (
         <TxConfirmDialog
           open
-          onClose={() => {
-            if (!batch.running) setBatch(null);
-          }}
+          onClose={closeBatch}
           title={`Execute ${batch.rows.length} Safe transactions`}
           stepsIntro="One Relayr payment runs each chain's next fully signed transaction. Later nonces need a new review after these land."
           steps={batch.rows.map(({ row, tx }) => ({
             key: String(row.chainId),
-            title: `${chainName(row.chainId)} #${tx.nonce} | ${queueLabel(row.chainId, tx)}`,
+            title: (
+              <>
+                {chainName(row.chainId)} #{tx.nonce} | {queueLabel(row.chainId, tx)}
+                <QueuedCallSummary chainId={row.chainId} tx={tx} />
+              </>
+            ),
             detail: batch.status[row.chainId] ?? "Waiting",
           }))}
           activeIndex={-1}
-          action={`Pay once and execute ${batch.rows.length}`}
-          onConfirm={() => void executeAll()}
+          action={
+            batch.preparing
+              ? "Checking…"
+              : batch.quote
+                ? `Pay once and execute ${batch.rows.length}`
+                : "Retry checks"
+          }
+          actionDisabled={
+            batch.preparing ||
+            batch.account.toLowerCase() !== address?.toLowerCase() ||
+            Boolean(batch.quote && batch.paymentChainId === null)
+          }
+          onConfirm={() => void (batch.quote ? executeAll() : prepareAll(batch.rows))}
           busy={batch.running}
           complete={batch.done}
           status={batch.message}
           error={batch.error}
-        />
+        >
+          {batch.quote && !batch.done ? (
+            <label className="block text-sm">
+              Pay network fee on
+              <select
+                className="mt-2 block w-full border border-melon-300 bg-white p-2"
+                value={batch.paymentChainId ?? ""}
+                disabled={batch.running}
+                onChange={(event) =>
+                  setBatch((current) =>
+                    current
+                      ? {
+                          ...current,
+                          paymentChainId: event.target.value ? Number(event.target.value) : null,
+                        }
+                      : current,
+                  )
+                }
+              >
+                <option value="" disabled>
+                  Select a payment chain
+                </option>
+                {relayrPaymentOptions(batch.quote.payment_info).map((option) => (
+                  <option key={option.chainId} value={option.chainId}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </TxConfirmDialog>
       ) : null}
     </OperatorSection>
   );

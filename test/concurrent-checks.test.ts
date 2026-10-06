@@ -11,12 +11,12 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-describe("bounded concurrent checks", () => {
-  it("overlaps two checks, caps concurrency, and preserves input order", async () => {
+describe("concurrent checks", () => {
+  it("starts every independent check without waiting for responses and preserves input order", async () => {
     const gates = Array.from({ length: 3 }, deferred);
     const check = vi.fn((index: number) => gates[index].promise);
     const result = mapConcurrentChecks([0, 1, 2], check);
-    expect(check.mock.calls.map(([index]) => index)).toEqual([0, 1]);
+    expect(check.mock.calls.map(([index]) => index)).toEqual([0, 1, 2]);
     gates[1].resolve(11);
     await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(3));
     gates[2].resolve(12);

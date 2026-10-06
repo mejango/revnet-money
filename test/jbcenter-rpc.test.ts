@@ -1,15 +1,57 @@
 import { jbCenterAppOrigin, jbCenterBaseUrl } from "@/lib/jbcenter-config";
 import { jbCenterRpcTransport } from "@/lib/jbcenter-rpc";
 import { createPublicClient } from "viem";
-import { mainnet } from "viem/chains";
+import { arbitrum, base, mainnet, optimism } from "viem/chains";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("Juicebox Center RPC transport", () => {
+  it("paces browser egress across chain clients without waiting for responses", async () => {
+    vi.resetModules();
+    const { jbCenterRpcTransport: pacedTransport } = await import("@/lib/jbcenter-rpc");
+    vi.useFakeTimers();
+    const finish: (() => void)[] = [];
+    const fetchMock = vi.fn(
+      (url: string) =>
+        new Promise<Response>((resolve) => {
+          const chainId = Number(url.split("/").at(-1));
+          finish.push(() =>
+            resolve(
+              new Response(
+                JSON.stringify({
+                  jsonrpc: "2.0",
+                  id: 1,
+                  result: `0x${chainId.toString(16)}`,
+                }),
+                { headers: { "content-type": "application/json" } },
+              ),
+            ),
+          );
+        }),
+    );
+    vi.stubGlobal("window", { fetch: fetchMock });
+    const chains = [mainnet, optimism, base, arbitrum];
+    const requests = chains.map((chain) =>
+      createPublicClient({
+        chain,
+        transport: pacedTransport(chain.id),
+      }).getChainId(),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(374);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    finish.forEach((resolve) => resolve());
+    await expect(Promise.all(requests)).resolves.toEqual(chains.map(({ id }) => id));
+  });
+
   it("does not treat other localhost ports as trusted dev clients", () => {
     expect(jbCenterBaseUrl("http://localhost:3000")).toBe("https://juicebox.center");
     expect(jbCenterAppOrigin("http://localhost:3000")).toBe("https://revnet.money");

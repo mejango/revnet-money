@@ -101,13 +101,14 @@ function serveQueues(base: SafeQueuedTransaction, optimism?: SafeQueuedTransacti
 
 function renderCard(...chainIds: (8453 | 10)[]) {
   const rows = chainIds.map((chainId) => ({ chainId, projectId: 4 }));
-  render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = () => (
+    <QueryClientProvider client={client}>
       <SafeQueueCard rows={rows} fallbackProject={rows[0]!} />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const view = render(tree());
+  return { ...view, refresh: () => view.rerender(tree()) };
 }
 
 /** Holds the next live operator check, the first read each send makes after Confirm. */
@@ -244,42 +245,102 @@ describe("the Safe queue's execution confirm", () => {
 });
 
 describe("the Safe queue's execute-all confirm", () => {
-  async function openBatch() {
+  async function openBatch(beforeOpen?: () => void) {
     serveQueues(queued(8453, SAFE.owners), queued(10, SAFE.owners));
     renderCard(8453, 10);
-    fireEvent.click(await screen.findByRole("button", { name: "Execute 2 ready" }));
+    const executeAll = await screen.findByRole("button", { name: "Execute 2 ready" });
+    beforeOpen?.();
+    fireEvent.click(executeAll);
     return screen.findByRole("dialog", { name: "Execute 2 Safe transactions" });
   }
 
-  it("goes back with Cancel, and pays nothing", async () => {
-    const confirm = await openBatch();
-
+  it("starts checks on open but cancels without quoting or paying while checks are pending", async () => {
+    let release!: ReturnType<typeof holdLiveRead>;
+    const confirm = await openBatch(() => {
+      release = holdLiveRead();
+    });
+    await waitFor(() => expect(mocks.live).toHaveBeenCalled());
+    expect(within(confirm).getByRole("button", { name: "Checking…" })).toBeDisabled();
+    expect(within(confirm).getAllByText("Checking…").length).toBeGreaterThan(1);
     fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await release();
     expect(mocks.quote).not.toHaveBeenCalled();
     expect(mocks.pay).not.toHaveBeenCalled();
   });
 
-  it("refuses every way out from Confirm through the checks and the payment, then ends on Done", async () => {
+  it("gets a quote on opening, then waits for an explicit payment confirmation", async () => {
     const confirm = await openBatch();
-    const release = holdLiveRead();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay once and execute 2" }));
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled(),
-    );
-
-    expectEveryWayOutRefused(confirm);
+    const pay = await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    expect(pay).toBeEnabled();
+    expect(mocks.quote).toHaveBeenCalledOnce();
+    expect(within(confirm).getByRole("combobox", { name: "Pay network fee on" })).toBeVisible();
     expect(mocks.pay).not.toHaveBeenCalled();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
 
-    await release();
+  it("ignores a quote that returns after the user closes preparation", async () => {
+    let finish!: (quote: unknown) => void;
+    mocks.quote.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const confirm = await openBatch();
+    await waitFor(() => expect(mocks.quote).toHaveBeenCalledOnce());
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    await act(async () =>
+      finish({
+        bundle_uuid: "late",
+        payment_info: [{ chain: 8453, amount: "1000", token: zeroAddress }],
+      }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it("allows retrying failed checks without a wallet request", async () => {
+    mocks.quote.mockRejectedValueOnce(new Error("Quote temporarily unavailable"));
+    const confirm = await openBatch();
+    fireEvent.click(await within(confirm).findByRole("button", { name: "Retry checks" }));
+    await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    expect(mocks.quote).toHaveBeenCalledTimes(2);
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it("invalidates a prepared quote when the connected account changes", async () => {
+    serveQueues(queued(8453, SAFE.owners), queued(10, SAFE.owners));
+    const view = renderCard(8453, 10);
+    fireEvent.click(await screen.findByRole("button", { name: "Execute 2 ready" }));
+    const confirm = await screen.findByRole("dialog", { name: "Execute 2 Safe transactions" });
+    await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    mocks.address = COSIGNER;
+    view.refresh();
+    await waitFor(() =>
+      expect(within(confirm).queryByRole("button", { name: "Pay once and execute 2" })).toBeNull(),
+    );
+    expect(mocks.pay).not.toHaveBeenCalled();
+    expect(within(confirm).getByText(/account changed/i)).toBeVisible();
+  });
+
+  it("refuses every way out during payment, then ends on Done", async () => {
+    const confirm = await openBatch();
+    const pay = await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    let release!: () => void;
+    mocks.pay.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve(EXECUTION);
+      }),
+    );
+    fireEvent.click(pay);
+    await waitFor(() => expect(mocks.pay).toHaveBeenCalledOnce());
+    expectEveryWayOutRefused(confirm);
+    await act(async () => release());
     const done = await within(confirm).findByRole("button", { name: "Done" });
     expect(confirm).toHaveTextContent("Executed 2 Safe transactions.");
-    // Nothing is left to send from here: Done stands alone.
     expect(within(confirm).queryByRole("button", { name: "Cancel" })).toBeNull();
     expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
-    expect(mocks.pay).toHaveBeenCalledOnce();
-
     fireEvent.click(done);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
