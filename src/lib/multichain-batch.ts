@@ -95,11 +95,10 @@ export function readMultichainBatches(): MultichainBatch[] {
     );
   }
 }
-export function saveMultichainBatch(batch: MultichainBatch) {
+/** Save the whole journal, and read it back to prove it was saved. */
+function writeMultichainBatches(batches: MultichainBatch[]) {
   if (typeof window === "undefined") throw new Error("Browser recovery storage is required.");
-  const previous = readMultichainBatches();
-  const next = [batch, ...previous.filter((item) => item.id !== batch.id)];
-  const encoded = serialize(next);
+  const encoded = serialize(batches);
   try {
     window.localStorage.setItem(STORAGE_KEY, encoded);
     if (window.localStorage.getItem(STORAGE_KEY) !== encoded)
@@ -109,6 +108,11 @@ export function saveMultichainBatch(batch: MultichainBatch) {
       "The batch could not be saved for recovery. Nothing further will be submitted.",
     );
   }
+}
+export function saveMultichainBatch(batch: MultichainBatch) {
+  if (typeof window === "undefined") throw new Error("Browser recovery storage is required.");
+  const previous = readMultichainBatches();
+  writeMultichainBatches([batch, ...previous.filter((item) => item.id !== batch.id)]);
 }
 /** Only callers that prove no signature/publication/submission occurred may remove a draft. */
 export function removeUnsubmittedBatch(id: string) {
