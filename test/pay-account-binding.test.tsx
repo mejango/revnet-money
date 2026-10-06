@@ -1,6 +1,6 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
 import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
-import { recordTransactionActivity } from "@/lib/transaction-activity";
+import { recordTransactionActivity, updateTransactionActivity } from "@/lib/transaction-activity";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -249,5 +249,54 @@ describe("wallet-action:pay — a payment bound to the account it was prepared f
     await within(confirm).findByText(line);
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeEnabled();
+  });
+
+  it("holds the payment on its own pending Safe proposal, and returns only once that proposal is flagged", async () => {
+    const proposal = `0x${"ef".repeat(32)}` as Hex;
+    recordTransactionActivity({
+      id: `tx:1:${proposal}`,
+      kind: "safe",
+      title: "pay",
+      status: "safe-proposed",
+      message:
+        "Safe proposal is not executed | 1/2 approvals. It remains asynchronous; do not submit it again.",
+      chainId: 1,
+      hash: proposal,
+      safeProposalHash: proposal,
+    });
+    mocks.write.mockResolvedValue(proposal);
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("You get");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+
+    await within(confirm).findByText(/The payment is proposed in Safe/);
+    // A later update that is not a flag (a new approvals line) leaves the payment held.
+    updateTransactionActivity(`tx:1:${proposal}`, {
+      message:
+        "Safe proposal is not executed | 2/3 approvals. It remains asynchronous; do not submit it again.",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(within(confirm).getByText(/The payment is proposed in Safe/)).toBeTruthy();
+    expect(within(confirm).queryByRole("button", { name: "Pay" })).toBeNull();
+
+    // The watch ends it unconfirmed while the dialog is open.
+    updateTransactionActivity(`tx:1:${proposal}`, {
+      message:
+        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+      safeResultUnconfirmed: true,
+    });
+    await within(confirm).findByText(
+      "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+    );
+    expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
   });
 });
