@@ -46,6 +46,7 @@ import {
   bindRelayrQuote,
   FORWARD_REQUEST_TYPES,
   isRelayrDiscardReason,
+  MAX_RELAYR_SENT_PAYMENTS,
   proveSavedRelayrPayment,
   RELAYR_API,
   RELAYR_FORWARDER_DEADLINE_SECONDS,
@@ -1691,6 +1692,11 @@ export function useSendRelayrTx() {
       const activityId = `relayr:${remembered.bundleUuid}`;
       const submit = async () => {
         const journal = () => refreshTransactionActivities().find((row) => row.id === activityId);
+        // The SDK keeps no more payments for a quote than this, so none is sent beyond them.
+        if (sentPayments(journal()).length >= MAX_RELAYR_SENT_PAYMENTS)
+          throw new Error(
+            "This Relayr quote was paid too many times to pay again. Keep it pending; do not pay again.",
+          );
         await requireUnfunded(config, remembered);
         const { amount: value } = relayrPaymentDetails(payment, {
           bundleUuid: remembered.bundleUuid,

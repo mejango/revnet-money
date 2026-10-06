@@ -1554,6 +1554,34 @@ describe("paying a reverted Relayr payment again", () => {
     expect(mocks.sendTransaction).toHaveBeenCalledTimes(3);
   });
 
+  it("never pays a quote again after sixteen payments, before it opens a review", async () => {
+    const { activity, review, result } = await revertedPayment();
+    const reviewed = vi.fn(async () => true);
+    review.registerTransactionReviewHandler(reviewed);
+    const hashes = Array.from(
+      { length: 16 },
+      (_, index) => `0x${(index + 1).toString(16).padStart(64, "0")}` as Hex,
+    );
+    activity.updateTransactionActivity(`relayr:${BUNDLE_UUID}`, {
+      relayrPayments: hashes.map((hash) => ({
+        hash,
+        chainId: 1,
+        target: PAYMENT_TARGET,
+        data: payment().calldata,
+        value: "16",
+      })),
+    });
+    relayrReports();
+    fundingChain(
+      Object.fromEntries(hashes.map((hash) => [hash, "reverted"])) as Record<Hex, "reverted">,
+    );
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
+      "This Relayr quote was paid too many times to pay again. Keep it pending; do not pay again.",
+    );
+    expect(reviewed).not.toHaveBeenCalled();
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
+
   it("does not pay again over a saved payment the SDK refuses to read", async () => {
     const { activity, result } = await revertedPayment();
     relayrReports();
