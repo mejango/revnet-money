@@ -79,8 +79,10 @@ per-position and require every page.
   preview, authorization, and execution.
 - Decode Safe queue actions with the contract generation at the destination.
   Distinguish gateway retained custody from the core terminal's held fees.
-- Pass the production dependency audit without widening its scoped exception,
-  then run the production build and browser checks after framework updates.
+- Pass the production dependency audit without widening its scoped Para
+  exceptions (elliptic and node-forge, each held to a source check of Para's
+  usage), then run the production build and browser checks after framework
+  updates.
 
 Fee-token return reviews simulate the exact fee-bearing call with `eth_simulateV1` at a pinned block. Only Pay events from recorded terminals and known fee payers, buyback Mint/Swap events from recorded hook generations, and beneficiary receipts from recorded controllers determine the estimate. A hook Mint without Swap signals issuance fallback; ordinary issuance and partial swaps are distinguished. Estimates refresh on new blocks and on confirmation; a new fallback or unavailable result requires another explicit choice. Waiting never submits automatically. Unsupported simulation RPCs, prerequisites not yet mined, unrecognized deployments, or a multi-call review without a single executable context remain unavailable, not “Buyback ready.” These estimates are advisory: the existing transaction preflight and explicit minima remain in force, and market conditions or Safe execution delays can change the result after review. No countdown or guaranteed improvement is promised. A fallback estimate does not quantify the executable pool alternative or claim that every swap failure is caused by a stale oracle floor.
 
