@@ -1199,8 +1199,10 @@ describe("reviewed write hook", () => {
     hooks.resumeSafeProposalTracking(mocks.config as never);
     await vi.advanceTimersByTimeAsync(20 * 5_000);
 
-    // An execution sent at once reaches the chain within a minute of the reply.
-    expect(mocks.getTransaction).toHaveBeenCalledTimes(12);
+    // An execution sent at once reaches the chain within a minute of the reply, so the chain is
+    // checked on every look of that minute and then once a minute; without a service, once more
+    // as the watch ends the proposal.
+    expect(mocks.getTransaction).toHaveBeenCalledTimes(13);
     if (chainId === 11155420) expect(service).not.toHaveBeenCalled();
     else expect(service.mock.calls.length).toBeGreaterThan(12);
     expect(activity.transactionActivityForHash(proposal)).toMatchObject(
@@ -1418,6 +1420,60 @@ describe("reviewed write hook", () => {
         ).toBeUndefined();
       },
     );
+
+    it("settles an execution sent at once that the chain shows only after its first minute", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      savedProposal(activity, HASH, 11155111, undefined, Date.now() - HOUR);
+      // The reply was the execution's own hash, which the service never lists.
+      serviceAnswering(() => new Response("Not found", { status: 404 }));
+      let checks = 0;
+      mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => {
+        checks += 1;
+        if (checks <= 12) throw new TransactionNotFoundError({ hash });
+        return executionOf({ to: TARGET, data: "0x1234" });
+      });
+      mocks.waitForTransactionReceipt.mockResolvedValue({
+        status: "success",
+        transactionHash: HASH,
+        logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
+      });
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+        status: "success",
+        executionHash: HASH,
+      });
+    });
+
+    it("looks at the chain once more before it ends a proposal unconfirmed", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      savedProposal(activity, HASH, 11155111, undefined, Date.now() - HOUR);
+      serviceAnswering(() => new Response("Not found", { status: 404 }));
+      // The node shows the execution only as the watch's run of looks completes.
+      const visibleFrom = Date.now() + 590_000;
+      mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => {
+        if (Date.now() < visibleFrom) throw new TransactionNotFoundError({ hash });
+        return executionOf({ to: TARGET, data: "0x1234" });
+      });
+      mocks.waitForTransactionReceipt.mockResolvedValue({
+        status: "success",
+        transactionHash: HASH,
+        logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
+      });
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(11 * 60_000);
+
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+        status: "success",
+        executionHash: HASH,
+      });
+      expect(activity.transactionActivityForHash(HASH)?.safeResultUnconfirmed).toBeUndefined();
+    });
 
     it("is followed again on the next load when only the last looks before its watch gives up can't be read", async () => {
       vi.useFakeTimers();

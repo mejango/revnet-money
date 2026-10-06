@@ -173,7 +173,11 @@ async function watchSafeProposal(
           : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
     });
   };
-  /** The app can't confirm this proposal's result: the watch ends, and its account may dismiss it. */
+  /**
+   * The app can't confirm this proposal's result: the watch ends, and its account may dismiss it.
+   * Each caller has just read the chain (the execution's receipt, or the transaction with this
+   * hash) or has no client to read it with.
+   */
   const unconfirmed = (executionHash?: Hex) =>
     updateTransactionActivity(id, {
       ...(executionHash ? { executionHash } : {}),
@@ -219,6 +223,23 @@ async function watchSafeProposal(
     executed(result.status === "success", executionHash);
   };
   /**
+   * The chain's transaction with the proposal's hash: null when the chain has none, and undefined
+   * when the node can't be reached, which says nothing about it.
+   */
+  const findExecution = (chain: PublicClient) =>
+    chain
+      .getTransaction({ hash })
+      .catch((error: unknown) => (error instanceof TransactionNotFoundError ? null : undefined));
+  /**
+   * Ends the proposal unconfirmed after one last look at the chain, which may show an execution
+   * Safe{Wallet} sent at once since the watch last checked.
+   */
+  const endUnconfirmed = async () => {
+    const execution = client ? await findExecution(client) : null;
+    if (execution && executesReviewed(execution)) await settle(hash);
+    else unconfirmed();
+  };
+  /**
    * One look at the Safe service: "done" once the proposal is settled or ends unconfirmed, "live"
    * while it can still execute or the service is down, and "stuck" while the app can't follow
    * it: not listed, a record it can't authenticate, executed without its transaction, or a nonce
@@ -241,7 +262,7 @@ async function watchSafeProposal(
       if (tracked()?.obsoleteSafeNonce !== undefined) return "done";
       const message = safeTransactionMessage(proposal);
       if (!runsReviewed(message)) {
-        unconfirmed();
+        await endUnconfirmed();
         return "done";
       }
       if (proposal.isExecuted) {
@@ -280,14 +301,6 @@ async function watchSafeProposal(
       return "live";
     }
   };
-  /**
-   * The chain's transaction with the proposal's hash: null when the chain has none, and undefined
-   * when the node can't be reached, which says nothing about it.
-   */
-  const findExecution = (chain: PublicClient) =>
-    chain
-      .getTransaction({ hash })
-      .catch((error: unknown) => (error instanceof TransactionNotFoundError ? null : undefined));
   // Without a Safe service or a client for its chain, nothing can follow the proposal.
   if (!service && !client) {
     unconfirmed();
@@ -305,9 +318,13 @@ async function watchSafeProposal(
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
       // when the owner executes at once. A safeTxHash is never a transaction.
       // The SDK then reads the Safe's one execution event in that receipt,
-      // whatever its hash, so the execution must run the reviewed calls.
+      // whatever its hash, so the execution must run the reviewed calls. The
+      // chain is checked on every look of the minute after the reply, when such
+      // an execution lands, then once a minute for a node that shows it late.
       const execution =
-        client && attempt < SAFE_EXECUTION_CHECKS ? await findExecution(client) : null;
+        client && (attempt < SAFE_EXECUTION_CHECKS || attempt % SAFE_EXECUTION_CHECKS === 0)
+          ? await findExecution(client)
+          : null;
       if (execution) {
         if (executesReviewed(execution)) await settle(hash);
         else unconfirmed();
@@ -323,14 +340,14 @@ async function watchSafeProposal(
       stuckLooks = look === "stuck" ? stuckLooks + 1 : 0;
       // What the app still can't follow an hour after the proposal was made, it never will.
       if (stuckLooks >= stuckFor && pastHorizon()) {
-        unconfirmed();
+        await endUnconfirmed();
         return;
       }
       await new Promise((resolve) => window.setTimeout(resolve, SAFE_LOOK_MS));
     }
     // The watch gives up. A proposal still awaiting approvals, behind a service outage, or not
     // stuck for long enough is followed again on the next load; anything else ends unconfirmed.
-    if (stuckLooks >= stuckFor) unconfirmed();
+    if (stuckLooks >= stuckFor) await endUnconfirmed();
   })();
   safeInflight.set(id, request);
   void request.finally(() => safeInflight.delete(id)).catch(() => undefined);
