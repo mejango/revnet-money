@@ -78,7 +78,9 @@ export function RepayDialog({
   const tokenSymbol = formatTokenSymbol(token);
   const projectTokenDecimals = token?.data?.decimals ?? 18;
   const currentChainId = useJBChainId();
-  const publicClient = usePublicClient();
+  // Reads and receipt waits use the loan's chain, whichever chain the wallet is on; only the
+  // write itself switches the wallet.
+  const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient();
 
   // Check allowance for non-ETH base tokens before simulation
@@ -157,6 +159,7 @@ export function RepayDialog({
     isSafeResultUnconfirmed: isRepayUnconfirmed,
   } = useWaitForTransactionReceipt({
     hash: repayTxHash,
+    chainId,
   });
 
   // ===== HELPER FUNCTIONS =====
@@ -891,11 +894,8 @@ export function RepayDialog({
         {review && finalRepayAmount !== undefined ? (
           <TxConfirmDialog
             open
-            onOpenChange={(next) => {
-              if (!next) setReview(null);
-            }}
+            onClose={() => setReview(null)}
             title={review === "approve" ? "Confirm approval" : "Confirm repayment"}
-            chainId={chainId}
             steps={
               review === "approve"
                 ? [

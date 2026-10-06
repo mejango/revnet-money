@@ -1,93 +1,76 @@
 "use client";
 
-import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { X } from "@/components/ui/icons";
-import { useEnclosingModalCard, useHoldEnclosingModal } from "@/components/ui/ModalShell";
+  ModalCloseButton,
+  ModalDialog,
+  useEnclosingModalCard,
+  useHoldEnclosingModal,
+} from "@/components/ui/ModalShell";
 import { TxSteps } from "@/components/ui/TxSteps";
-import type { JBChainId } from "@bananapus/nana-sdk-core";
-import { useEffect, type ComponentProps } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+export type TxConfirmRow = {
+  label: ReactNode;
+  value: ReactNode;
+  /** Render the value in a monospace face (addresses, hashes). */
+  mono?: boolean;
+  /** Emphasize the value (the amount that leaves the wallet). */
+  strong?: boolean;
+};
+
 /**
- * The Pay confirm's shell, for every write: a title, label/value rows, the
- * wallet-prompt queue, then one right-aligned action. Closing is the way back
- * to the form; a flow mid-signature cannot be closed.
+ * The one review surface for every wallet write: a frozen plan (label/value
+ * rows), the wallet-prompt queue, then a single action. Closing is refused
+ * while `busy`; once `complete` the footer collapses to Done.
  */
 export function TxConfirmDialog({
   open,
-  onOpenChange,
+  onClose,
+  eyebrow = "Review",
   title,
-  chainId,
+  rows,
+  children,
   steps,
   activeIndex,
   stepsIntro,
   action,
+  actionDisabled = false,
+  cancelLabel = "Cancel",
   onConfirm,
   busy = false,
-  disabled = false,
+  complete = false,
   preparing = false,
   status,
   error,
-  children,
 }: {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  chainId: JBChainId;
-  steps: ComponentProps<typeof TxSteps>["steps"];
-  /** Index of the step the wallet is on; -1 before the first prompt. */
+  onClose: () => void;
+  eyebrow?: string;
+  title: ReactNode;
+  rows?: readonly TxConfirmRow[];
+  /** Extra body content under the rows (warnings, notes, custom grids). */
+  children?: ReactNode;
+  steps: readonly { key?: string; title: ReactNode; detail?: string }[];
   activeIndex: number;
-  /** Replaces the "Your wallet will ask for N actions" line. */
   stepsIntro?: string;
   action: string;
+  actionDisabled?: boolean;
+  cancelLabel?: string;
   onConfirm: () => void;
   busy?: boolean;
-  /** The review is ready, but another input is required before confirming. */
-  disabled?: boolean;
+  complete?: boolean;
   /** Rows and steps are still being read; `status` says what is happening. */
   preparing?: boolean;
-  status?: string | null;
-  error?: string | null;
-  children?: React.ReactNode;
+  status?: ReactNode;
+  error?: ReactNode;
 }) {
-  const body = (
-    <div className="text-left">
-      {preparing ? (
-        <p className="py-4 text-sm text-zinc-500">{status ?? "Preparing…"}</p>
-      ) : (
-        <div className="flex flex-col gap-3 py-2">
-          {children}
-          <TxSteps steps={steps} activeIndex={activeIndex} intro={stepsIntro} />
-          {status ? <p className="text-sm text-zinc-500">{status}</p> : null}
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        </div>
-      )}
-      <div className="flex justify-end">
-        <ButtonWithWallet
-          targetChainId={chainId}
-          loading={busy}
-          disabled={busy || preparing || disabled}
-          onClick={onConfirm}
-          connectWalletText="Connect Wallet"
-          className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-        >
-          {action}
-        </ButtonWithWallet>
-      </div>
-    </div>
-  );
-
-  // While the confirm is mounted in a host dialog, the host shows nothing else.
+  const titleId = useId();
+  // Inside a ModalShell already, the confirm replaces that card's content in
+  // place: one scrim, one card, and closing brings the form back.
   const host = useEnclosingModalCard();
-  // Hosted, the confirm has no dialog of its own: while busy it keeps the host
-  // open, or Escape there would drop a send in flight.
+  // Hosted, the confirm has no dialog of its own: while busy it keeps the
+  // enclosing shell open, or Escape there would drop a send in flight.
   useHoldEnclosingModal(open && busy);
   useEffect(() => {
     if (!host || !open) return;
@@ -98,46 +81,114 @@ export function TxConfirmDialog({
     hidden.forEach((child) => (child.hidden = true));
     return () => hidden.forEach((child) => (child.hidden = false));
   }, [host, open]);
-
-  // Inside a dialog already, the confirm replaces that dialog's body in place:
-  // one scrim, one panel, and closing brings the form back.
-  if (host) {
-    if (!open) return null;
-    return createPortal(
-      <div data-tx-confirm className="text-left">
-        <div className="flex items-start justify-between gap-4">
-          <h2 className="text-lg font-semibold leading-none tracking-tight">{title}</h2>
+  if (!open) return null;
+  const section = (
+    <section
+      data-tx-confirm
+      className={
+        host
+          ? "w-full bg-melon-25"
+          : "w-full max-w-lg overflow-hidden border border-melon-700 bg-melon-25 shadow-2xl"
+      }
+    >
+      <header className="flex items-start justify-between gap-4 border-b border-melon-300 bg-melon-25 px-5 py-4">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-amber-700">{eyebrow}</p>
+          <h2 id={titleId} className="mt-1 text-xl font-medium text-zinc-900">
+            {title}
+          </h2>
+        </div>
+        <ModalCloseButton
+          onClick={onClose}
+          disabled={busy}
+          aria-label="Close"
+          className="-mr-2 -mt-2 transition-transform hover:scale-110 hover:bg-transparent disabled:opacity-40"
+        />
+      </header>
+      <div className="space-y-4 px-5 py-5">
+        {preparing ? (
+          <p className="py-2 text-sm text-amber-900" role="status">
+            {status ?? "Preparing…"}
+          </p>
+        ) : (
+          <>
+            {rows && rows.length > 0 ? (
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                {rows.map((row, index) => (
+                  <TxConfirmRowItem key={index} row={row} />
+                ))}
+              </div>
+            ) : null}
+            {children}
+            <TxSteps
+              steps={steps}
+              activeIndex={complete ? steps.length : activeIndex}
+              intro={stepsIntro}
+              className="border border-melon-200 bg-melon-50 p-3"
+            />
+            {status ? <p className="text-sm text-amber-900">{status}</p> : null}
+          </>
+        )}
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      </div>
+      <footer className="flex justify-end gap-2 border-t border-melon-300 bg-melon-25 px-5 py-4">
+        {complete ? (
           <button
             type="button"
-            className="opacity-70 hover:opacity-100 disabled:pointer-events-none"
-            disabled={busy}
-            onClick={() => onOpenChange(false)}
+            className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={onClose}
           >
-            <X aria-hidden="true" className="h-4 w-4" />
-            <span className="sr-only">Back</span>
+            Done
           </button>
-        </div>
-        {body}
-      </div>,
-      host,
-    );
-  }
-
+        ) : (
+          <>
+            <button
+              type="button"
+              className="min-h-[44px] border border-melon-600 px-5 text-sm disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={busy}
+              onClick={onClose}
+            >
+              {cancelLabel}
+            </button>
+            <button
+              type="button"
+              className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={busy || preparing || actionDisabled}
+              aria-busy={preparing || undefined}
+              onClick={onConfirm}
+            >
+              {action}
+            </button>
+          </>
+        )}
+      </footer>
+    </section>
+  );
+  if (host) return createPortal(section, host);
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (busy) return;
-        onOpenChange(next);
-      }}
+    <ModalDialog
+      onClose={onClose}
+      dismissible={!busy}
+      labelledBy={titleId}
+      className="items-start justify-center px-3 py-6 sm:items-center"
     >
-      <DialogContent className="max-w-lg">
-        <DialogHeader className="text-left">
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription asChild>{body}</DialogDescription>
-        </DialogHeader>
-      </DialogContent>
-    </Dialog>
+      {section}
+    </ModalDialog>
+  );
+}
+
+function TxConfirmRowItem({ row }: { row: TxConfirmRow }) {
+  return (
+    <>
+      <span className="text-zinc-500">{row.label}</span>
+      <span
+        className={`min-w-0 text-right text-zinc-900 ${
+          row.mono ? "break-all font-mono text-xs" : "break-words"
+        } ${row.strong ? "font-medium" : ""}`}
+      >
+        {row.value}
+      </span>
+    </>
   );
 }
 

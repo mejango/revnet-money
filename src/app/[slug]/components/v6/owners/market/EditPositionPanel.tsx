@@ -569,11 +569,8 @@ export function EditPositionPanel({
       {current || busy ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setReviewed(null);
-          }}
+          onClose={() => setReviewed(null)}
           title="Confirm position edit"
-          chainId={state.chainId}
           preparing={!current}
           steps={current?.steps ?? []}
           activeIndex={busy ? stepIndex : -1}

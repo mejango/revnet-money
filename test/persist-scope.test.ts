@@ -1,9 +1,10 @@
 import * as queryPersist from "@/lib/query-persist";
 import { QueryClient } from "@tanstack/react-query";
-import { readdirSync, readFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
+import { isScript, parseSource, sourceFiles } from "./support/source-scan";
 
 /**
  * Persisted queries outlive the session in localStorage. Anything keyed to a wallet must never go there: a later
@@ -76,25 +77,6 @@ type Persisted = {
   /** The first account word in the key, when it has one. */
   hint: string | null;
 };
-
-/** Every file that can hold code: TypeScript and JavaScript, in each module flavour, with or without JSX. */
-const isSource = (name: string) => /\.[cm]?[jt]sx?$/.test(name);
-
-const SCRIPT_KINDS: Record<string, ts.ScriptKind> = {
-  ".tsx": ts.ScriptKind.TSX,
-  ".jsx": ts.ScriptKind.JSX,
-  ".js": ts.ScriptKind.JS,
-  ".mjs": ts.ScriptKind.JS,
-  ".cjs": ts.ScriptKind.JS,
-};
-
-function sourceFiles(dir = "src"): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(full);
-    return isSource(entry.name) ? [full] : [];
-  });
-}
 
 const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 
@@ -239,13 +221,7 @@ function persistedOf(tag: ts.Node, source: ts.SourceFile): Persisted {
 
 /** Every persist tag of a file, with the key it is on. */
 function persistedQueries(file: string, text: string): Persisted[] {
-  const source = ts.createSourceFile(
-    file,
-    text,
-    ts.ScriptTarget.Latest,
-    true,
-    SCRIPT_KINDS[extname(file)] ?? ts.ScriptKind.TS,
-  );
+  const source = parseSource(file, text);
   const names = tagNames(source);
   const found: Persisted[] = [];
   const visit = (node: ts.Node) => {
@@ -285,7 +261,8 @@ function check(file: string, text: string, allowed: Allowed[] = ALLOWED) {
 }
 
 describe("persisted query scope", () => {
-  const files = sourceFiles().filter((file) => file !== TAG_DEFINITIONS);
+  // Every file that can hold code, by its path from the repository root.
+  const files = sourceFiles("src", isScript).filter((file) => file !== TAG_DEFINITIONS);
   const results = files.map((file) => check(file, readFileSync(file, "utf8")));
 
   it("never persists a query keyed to an account, or one whose key cannot be read", () => {
@@ -591,12 +568,12 @@ export const useThing = () => useQuery({ queryKey: ['x', address], queryFn, meta
   it.each(["a.ts", "a.tsx", "a.js", "a.jsx", "a.mjs", "a.cjs", "a.mts", "a.cts"])(
     "reads %s as source",
     (name) => {
-      expect(isSource(name)).toBe(true);
+      expect(isScript(name)).toBe(true);
     },
   );
 
   it.each(["a.md", "a.json", "a.css", "a.ts.map", "ts", "a.d"])("does not read %s", (name) => {
-    expect(isSource(name)).toBe(false);
+    expect(isScript(name)).toBe(false);
   });
 
   it.each(["x.js", "x.mjs", "x.cjs"])("finds a tag in %s, which has no types", (file) => {

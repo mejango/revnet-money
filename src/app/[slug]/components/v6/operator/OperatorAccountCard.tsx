@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
@@ -232,6 +233,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState(false);
+  // A send that went to the Safe as a proposal: nothing more to send from here.
+  const [proposed, setProposed] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -248,6 +251,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
     }
     setError(null);
     setStatus(null);
+    setProposed(false);
     setReview(true);
   };
 
@@ -319,12 +323,14 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
       onDone();
     } catch (e) {
       const message = formatWalletError(e) || "Could not transfer the revnet operator.";
-      setError(message);
-      toast(
-        isSafeProposalPendingError(e)
-          ? { title: "Safe proposal submitted", description: message }
-          : { variant: "destructive", title: "Error", description: message },
-      );
+      if (isSafeProposalPendingError(e)) {
+        setStatus(message);
+        setProposed(true);
+        toast({ title: "Safe proposal submitted", description: message });
+      } else {
+        setError(message);
+        toast({ variant: "destructive", title: "Error", description: message });
+      }
     } finally {
       setBusy(false);
     }
@@ -362,9 +368,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
       </div>
       {!isCurrentOperator ? (
         <p className="text-xs text-amber-700 mt-2">
-          Only the current revnet operator ({group.operator}) can transfer this role — connect that
-          account, or one of its signers if it is a Safe, and the change is proposed to the Safe.
-          The transaction is simulated first and will not send otherwise.
+          Only the current revnet operator ({group.operator}) can transfer this role. Connect that
+          account, or one of its signers if it is a Safe.
         </p>
       ) : null}
       <div className="mt-2">
@@ -416,15 +421,15 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         </ButtonWithWallet>
       </div>
       {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
-      {error && !review ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
+      {error && !review ? <ErrorNote message={error} /> : null}
       {review ? (
         <TxConfirmDialog
           open
-          onOpenChange={(next) => {
-            if (!next) setReview(false);
+          onClose={() => {
+            setReview(false);
+            setProposed(false);
           }}
           title="Confirm transfer"
-          chainId={group.rows[0].chainId}
           steps={[
             {
               title: "Transfer revnet operator",
@@ -439,6 +444,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
           onConfirm={() => void submit()}
           busy={busy}
           status={status}
+          complete={proposed}
           error={error}
         >
           <SummaryRow label="Operator becomes">

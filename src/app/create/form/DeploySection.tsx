@@ -164,11 +164,8 @@ export function DeploySection({
         {review && values.chainIds[0] ? (
           <TxConfirmDialog
             open
-            onOpenChange={(open) => {
-              if (!open) setReview(false);
-            }}
+            onClose={() => setReview(false)}
             title={singleChain ? "Confirm deployment" : "Confirm deploy request"}
-            chainId={values.chainIds[0]}
             steps={
               singleChain
                 ? [

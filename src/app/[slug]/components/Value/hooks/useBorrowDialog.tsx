@@ -294,6 +294,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     isSafeResultUnconfirmed: isTxUnconfirmed,
   } = useWaitForTransactionReceipt({
     hash: txHash,
+    chainId: selectedBorrowChainId,
   });
 
   const {
@@ -302,6 +303,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     isSafeResultUnconfirmed: isReallocationUnconfirmed,
   } = useWaitForTransactionReceipt({
     hash: reallocationTxHash,
+    chainId: selectedBorrowChainId,
   });
 
   // Additional derived values in native tokens
@@ -505,7 +507,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       setBorrowStatus("granting-permission");
       try {
         const txHash = await permissionWriteAsync({
-          chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
+          chainId: Number(cashOutChainId) as JBChainId,
           account: address,
           address: resolvedPermissionsAddress,
           abi: jbPermissionsAbi,

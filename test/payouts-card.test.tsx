@@ -1,10 +1,11 @@
 import { PayoutsCard } from "@/app/[slug]/components/v6/owners/settlement/PayoutsCard";
 import type { PayoutOption } from "@/app/[slug]/components/v6/owners/settlement/payouts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ComponentProps, ReactNode } from "react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { zeroAddress } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
 
 const mocks = vi.hoisted(() => ({
   account: "0x0000000000000000000000000000000000000001",
@@ -20,9 +21,9 @@ vi.mock("@/hooks/useMultichainBatch", () => ({
 vi.mock("@/lib/wagmiTransports", () => ({
   getViemPublicClient: (chainId: number) => ({ chainId }),
 }));
-vi.mock("@/lib/utils", () => ({
+vi.mock("@/lib/utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/utils")>()),
   formatWalletError: (error: Error) => error.message,
-  cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/components/ButtonWithWallet", () => ({
@@ -31,29 +32,6 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     children,
     ...props
   }: ComponentProps<"button"> & { loading?: boolean }) => <button {...props}>{children}</button>,
-}));
-vi.mock("@/components/ui/TxConfirmDialog", () => ({
-  TxConfirmDialog: ({
-    children,
-    onConfirm,
-    error,
-  }: {
-    children: ReactNode;
-    onConfirm: () => void;
-    error: string | null;
-  }) => (
-    <div role="dialog">
-      {children}
-      <button onClick={onConfirm}>Confirm payouts</button>
-      {error && <p role="alert">{error}</p>}
-    </div>
-  ),
-  SummaryRow: ({ label, children }: { label: string; children: ReactNode }) => (
-    <div>
-      {label}
-      {children}
-    </div>
-  ),
 }));
 vi.mock("@/app/[slug]/components/v6/owners/settlement/lib", () => ({
   chainName: (chainId: number) => (chainId === 8453 ? "Base" : "Arbitrum"),
@@ -172,7 +150,7 @@ describe("wallet-action:payouts — reachable selected-chain payouts", () => {
     expect(screen.getByText(`100% to project owner ${base.owner}`)).toBeTruthy();
     expect(screen.getByText(`100% to caller ${mocks.account}`)).toBeTruthy();
     mocks.readPayoutOptions.mockRejectedValue(new Error("Do not rebuild after review"));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm payouts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send payouts" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
     expect(mocks.runBatch.mock.calls[0][0].calls).toMatchObject([
       {
@@ -189,15 +167,48 @@ describe("wallet-action:payouts — reachable selected-chain payouts", () => {
     ]);
     expect(mocks.readPayoutOptions).toHaveBeenCalledTimes(2);
     await screen.findByText("Payout transactions confirmed on all selected chains.");
+    // Sent: the confirm closes on its own and the card says what landed.
+    expect(confirmIsOpen()).toBe(false);
+  });
+
+  it("goes back to the selection with Cancel, and sends nothing", async () => {
+    setup();
+    await selectAll();
+    fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
+    const confirm = await findConfirm();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(mocks.runBatch).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Review selected payouts" })).toBeEnabled();
+  });
+
+  it("refuses every way out while the payouts send", async () => {
+    let finish!: (outcome: unknown) => void;
+    mocks.runBatch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    setup();
+    await selectAll();
+    fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
+    const confirm = await findConfirm();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Send payouts" }));
+    await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
+
+    expect(within(confirm).getByRole("button", { name: "Send payouts" })).toBeDisabled();
+    expectEveryWayOutRefused(confirm);
+
+    finish({ status: "success", hashes: [] });
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(mocks.runBatch).toHaveBeenCalledTimes(1);
   });
 
   it("keeps deselected chains out of both preparation and submission", async () => {
     setup();
     await screen.findByText(/Available 20 USDC/);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Base · Project #42" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Project #42 on Base" }));
     fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
     await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: "Confirm payouts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send payouts" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
     expect(mocks.runBatch.mock.calls[0][0].calls).toHaveLength(1);
     expect(mocks.readPayoutOptions).toHaveBeenCalledTimes(1);
@@ -224,7 +235,7 @@ describe("wallet-action:payouts — reachable selected-chain payouts", () => {
         <PayoutsCard chains={chains} />
       </QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Confirm payouts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send payouts" }));
     await screen.findByText("Your connected account changed. Review the payouts again.");
     expect(mocks.runBatch).not.toHaveBeenCalled();
   });
@@ -255,7 +266,7 @@ describe("wallet-action:payouts — reachable selected-chain payouts", () => {
     await selectAll();
     fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
     await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: "Confirm payouts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send payouts" }));
     await screen.findByText(
       "Payouts are pending. Resume the saved batch to check destination progress.",
     );

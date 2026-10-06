@@ -1,7 +1,7 @@
 import { chainDisplayName } from "@/app/constants";
+import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import EtherscanLink from "@/components/EtherscanLink";
 import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
-import { Button } from "@/components/ui/button";
 import {
   CheckCircle,
   CircleDashedIcon,
@@ -91,8 +91,8 @@ export function PayAndDeploy({
         disabled={payIsProcessing || paymentLocked}
       />
       <div className="flex justify-end md:col-span-3 mt-4">
-        <Button
-          type="submit"
+        {/* The payment's confirm cannot connect a wallet, so this asks for one first. */}
+        <ButtonWithWallet
           size="lg"
           disabled={payIsProcessing || paymentLocked || !selectedPayment}
           className="disabled:text-black disabled:bg-transparent disabled:border disabled:border-black disabled:bg-gray-100 bg-teal-500 text-melon-950 hover:bg-teal-600"
@@ -112,16 +112,13 @@ export function PayAndDeploy({
               )}
             />
           )}
-        </Button>
+        </ButtonWithWallet>
       </div>
       {review && selectedPayment ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setReview(false);
-          }}
+          onClose={() => setReview(false)}
           title="Confirm payment"
-          chainId={selectedPayment.chain}
           steps={[
             {
               title: `Pay ${formatHexEther(selectedPayment.amount)} ETH to relay`,
@@ -132,7 +129,7 @@ export function PayAndDeploy({
           activeIndex={payIsProcessing ? 0 : -1}
           action="Pay and launch"
           busy={payIsProcessing}
-          disabled={paymentLocked}
+          actionDisabled={paymentLocked}
           error={error}
           onConfirm={async () => {
             if (payIsProcessing || paymentLocked) return;

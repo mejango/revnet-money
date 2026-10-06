@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { ErrorNote } from "@/components/ui/TxError";
 import { useAllowance } from "@/hooks/useAllowance";
 import {
   ACCOUNT_CHANGED,
@@ -29,7 +30,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { cachedQuery } from "@/lib/query-persist";
 import { explorerBaseUrl } from "@/lib/utils";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { RECEIPT_WAIT_TIMEOUT_MS, waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
   uniswapV4AmountsForLiquidity,
   uniswapV4DefaultPriceRange,
@@ -531,8 +532,8 @@ function LiquidityVisualization({
               <>
                 <span className="font-medium text-zinc-900">
                   ~{formatPrice(shownBand.mid)} {pool.pair.symbol}/{tokenSymbol}
-                </span>{" "}
-                | {shownBand.mid < pool.price! ? "buy-side" : "sell-side"} —{" "}
+                </span>
+                , {shownBand.mid < pool.price! ? "buy-side" : "sell-side"}:{" "}
                 {fmtUnits(shownBand.token, 18)} {tokenSymbol} +{" "}
                 {fmtUnits(shownBand.pair, pool.pair.decimals)} {pool.pair.symbol}
               </>
@@ -1109,11 +1110,8 @@ export function AddLiquidityForm({
       {review || (busy && !review) ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setReviewed(null);
-          }}
+          onClose={() => setReviewed(null)}
           title={mode === "market" ? "Confirm market" : "Confirm liquidity"}
-          chainId={state.chainId}
           preparing={!review}
           steps={reviewSteps}
           activeIndex={busy ? stepIndex : -1}
@@ -1331,7 +1329,25 @@ function ChainPositionRows({
       confirmLabel: "Agree & remove liquidity",
     },
   });
-  const receipt = useWaitForTransactionReceipt({ hash });
+  const receipt = useWaitForTransactionReceipt({ hash, chainId });
+  // The removal this review sent. Its confirm stays held until the receipt
+  // settles, so its action cannot send the removal again. A Safe proposal has
+  // no receipt here, and a watch that times out has no outcome yet: both end on
+  // Done.
+  const [removalHash, setRemovalHash] = useState<Hex>();
+  const removal = useWaitForTransactionReceipt({
+    hash: removalHash,
+    chainId,
+    timeout: RECEIPT_WAIT_TIMEOUT_MS,
+  });
+  const removalSettling = removal.isLoading && !removal.isSafeProposal;
+  const removalProposed = Boolean(removal.isSafeProposal);
+  const removalSafeUnconfirmed = Boolean(removal.isSafeResultUnconfirmed);
+  const removalUnconfirmed = Boolean(removal.isUnconfirmed);
+  // A removal that may still land keeps every position action locked, after
+  // its confirm closes too, so the same position cannot be sent twice.
+  const removalOutstanding =
+    removalSettling || removalProposed || removalSafeUnconfirmed || removalUnconfirmed;
   const positions = useQuery({
     queryKey: ["revnetWalletLpPositions", state.chainId, pool?.poolId, address?.toLowerCase()],
     enabled: Boolean(pool && positionManager && address),
@@ -1384,6 +1400,7 @@ function ChainPositionRows({
 
   const beginReview = async (position: UserLpPosition) => {
     setError(null);
+    setRemovalHash(undefined);
     setRefreshing(position.tokenId);
     try {
       const fresh = await refreshUserLpPosition(pool, position.tokenId, address);
@@ -1445,7 +1462,7 @@ function ChainPositionRows({
       if (fresh.liquidity < reviewed.position.liquidity) {
         throw new Error("This position changed. Review its current return before removing it.");
       }
-      await writeContractAsync({
+      const sent = await writeContractAsync({
         chainId,
         address: positionManager,
         abi: POSITION_MANAGER_ABI,
@@ -1456,6 +1473,7 @@ function ChainPositionRows({
         args: [reviewed.plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
         account: reviewed.account,
       });
+      setRemovalHash(sent);
     } catch (cause) {
       setError(txMessage(cause, "Could not remove liquidity."));
     } finally {
@@ -1503,7 +1521,8 @@ function ChainPositionRows({
     refreshing !== null ||
     reviewed !== null ||
     editing !== null ||
-    editingMarket !== null;
+    editingMarket !== null ||
+    removalOutstanding;
 
   const renderSingle = (position: UserLpPosition) => {
     const owed = fees.data?.[position.tokenId.toString()];
@@ -1514,7 +1533,8 @@ function ChainPositionRows({
       refreshing !== null ||
       reviewed !== null ||
       editing !== null ||
-      editingMarket !== null;
+      editingMarket !== null ||
+      removalOutstanding;
     return (
       <TableRow key={position.tokenId.toString()} className="align-top">
         {chainCell}
@@ -1629,7 +1649,7 @@ function ChainPositionRows({
         <TableCell className="whitespace-nowrap font-mono text-xs">
           Market
           <span className="block text-zinc-500">
-            #{group.tokenSide.tokenId.toString()} · #{group.pairSide.tokenId.toString()}
+            #{group.tokenSide.tokenId.toString()} and #{group.pairSide.tokenId.toString()}
           </span>
         </TableCell>
         <TableCell className="whitespace-nowrap text-right tabular-nums">
@@ -1719,11 +1739,8 @@ function ChainPositionRows({
       {claimReview ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setClaimReview(null);
-          }}
+          onClose={() => setClaimReview(null)}
           title="Confirm fee claim"
-          chainId={state.chainId}
           steps={[
             {
               title: "Claim fees",
@@ -1737,7 +1754,7 @@ function ChainPositionRows({
           error={error}
         >
           <SummaryRow label={claimReview.length === 1 ? "Position" : "Positions"}>
-            {claimReview.map((position) => `#${position.tokenId.toString()}`).join(" · ")}
+            {claimReview.map((position) => `#${position.tokenId.toString()}`).join(", ")}
           </SummaryRow>
           <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
           <SummaryRow label="To your wallet">
@@ -1767,24 +1784,39 @@ function ChainPositionRows({
       {reviewed || refreshing !== null ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setReviewed(null);
+          onClose={() => {
+            setReviewed(null);
+            if (!removalOutstanding) setRemovalHash(undefined);
           }}
           title="Confirm removal"
-          chainId={state.chainId}
           preparing={!reviewed}
-          status={reviewed ? null : "Reading the live position…"}
+          status={
+            !reviewed
+              ? "Reading the live position…"
+              : removalSafeUnconfirmed
+                ? SAFE_PROPOSAL_UNCONFIRMED_LINE
+                : removalProposed
+                  ? "The removal was proposed to Safe and awaits approvals and execution."
+                  : removalUnconfirmed
+                    ? "Couldn't confirm the removal yet."
+                    : removalSettling
+                      ? "Waiting for confirmation…"
+                      : null
+          }
           steps={[
             {
               title: "Remove the position",
               detail: "Burns it and returns both sides to your wallet.",
             },
           ]}
-          activeIndex={isPending ? 0 : -1}
+          activeIndex={isPending || removing || removalSettling ? 0 : -1}
           action="Remove the position"
           onConfirm={() => void remove()}
-          busy={isPending || removing}
-          error={error}
+          busy={isPending || removing || removalSettling}
+          complete={removalProposed || removalSafeUnconfirmed || removalUnconfirmed}
+          error={
+            error ?? (removal.isError ? txMessage(removal.error, "The removal failed.") : null)
+          }
         >
           {reviewed ? (
             <>
@@ -1857,12 +1889,16 @@ function ChainPositionRows({
               {receipt.isSafeResultUnconfirmed ? (
                 <p className="mt-2 text-xs text-zinc-600">{SAFE_PROPOSAL_UNCONFIRMED_LINE}</p>
               ) : null}
-              {edited ? <p className="mt-2 text-xs text-green-700">{edited}</p> : null}
-              {error && !reviewed && !claimReview ? (
-                <p className="mt-2 wrap-anywhere text-xs text-red-600" role="alert">
-                  {error}
+              {!reviewed && removalUnconfirmed ? (
+                <p className="mt-2 text-xs text-zinc-600">Couldn&apos;t confirm the removal yet.</p>
+              ) : null}
+              {!reviewed && removalProposed && !removalSafeUnconfirmed ? (
+                <p className="mt-2 text-xs text-zinc-600">
+                  Removal proposed to Safe. The table updates once it executes.
                 </p>
               ) : null}
+              {edited ? <p className="mt-2 text-xs text-green-700">{edited}</p> : null}
+              {error && !reviewed && !claimReview ? <ErrorNote message={error} /> : null}
             </>,
             panelHost,
           )
@@ -1898,7 +1934,7 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
     if (!anyHook) {
       return (
         <div className="py-3 text-sm text-zinc-400">
-          No buyback hook configured — there is no project-owned AMM pool to show.
+          No buyback hook is configured, so there is no project pool.
         </div>
       );
     }

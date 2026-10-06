@@ -3,9 +3,10 @@ import { V6ClaimCreditsDialog } from "@/app/[slug]/components/v6/owners/accounts
 import type { ProjectItem } from "@/app/[slug]/components/v6/shared";
 import { DistributeReservedTokensButton } from "@/app/[slug]/owners/components/DistributeReservedTokensButton";
 import { OwnerDistributionBatchButton } from "@/app/[slug]/owners/components/OwnerDistributionBatchButton";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
 
 const state = vi.hoisted(() => ({
   account: "0x0000000000000000000000000000000000000001",
@@ -35,8 +36,8 @@ vi.mock("@/lib/nana/project", () => ({
   useJBContractContext: () => ({ contractAddress: () => holder }),
   useJBTokenContext: () => ({ token: { data: { symbol: "REV" } } }),
 }));
-vi.mock("@/lib/utils", () => ({
-  cn: (...classes: string[]) => classes.filter(Boolean).join(" "),
+vi.mock("@/lib/utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/utils")>()),
   formatTokenSymbol: () => "REV",
   formatWalletError: (cause: Error) => cause.message,
 }));
@@ -64,41 +65,12 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     </button>
   ),
 }));
-vi.mock("@/components/ui/TxConfirmDialog", () => ({
-  TxConfirmDialog: ({
-    open,
-    title,
-    children,
-    action,
-    onConfirm,
-    error,
-    onOpenChange,
-  }: {
-    open: boolean;
-    title: string;
-    children: ReactNode;
-    action: string;
-    onConfirm: () => void;
-    error?: string;
-    onOpenChange: (open: boolean) => void;
-  }) =>
-    open ? (
-      <section aria-label={title}>
-        {children}
-        {error ? <p role="alert">{error}</p> : null}
-        <button onClick={onConfirm}>{action}</button>
-        <button onClick={() => onOpenChange(false)}>Close review</button>
-      </section>
-    ) : null,
-  SummaryRow: ({ label, children }: { label: string; children: ReactNode }) => (
-    <div>
-      {label}: {children}
-    </div>
-  ),
-}));
-vi.mock("@/components/ui/dialog", () => {
+// The claim dialog renders its content inline here. The confirm's own dialog
+// shell keeps the real native-dialog mechanics.
+vi.mock("@/components/ui/dialog", async (importOriginal) => {
   const Part = ({ children }: { children: ReactNode }) => <div>{children}</div>;
   return {
+    ...(await importOriginal<typeof import("@/components/ui/dialog")>()),
     Dialog: Part,
     DialogTrigger: Part,
     DialogContent: Part,
@@ -294,6 +266,46 @@ describe("wallet-action:owner-distributions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Distribute" }));
     await screen.findByRole("button", { name: "Confirm selected" });
     expect(prepare).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("owner distribution confirm", () => {
+  function renderButton() {
+    render(
+      <OwnerDistributionBatchButton
+        label="Distribute"
+        scope="test"
+        tokenSymbol="REV"
+        prepare={async () => [snapshot()]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Distribute" }));
+    return findConfirm();
+  }
+
+  it("goes back with Cancel, and sends nothing", async () => {
+    const confirm = await renderButton();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(state.runBatch).not.toHaveBeenCalled();
+  });
+
+  it("refuses every way out while the batch runs, then closes once it is confirmed", async () => {
+    let finish!: (result: unknown) => void;
+    state.runBatch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const confirm = await renderButton();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Confirm selected" }));
+    await waitFor(() => expect(state.runBatch).toHaveBeenCalledTimes(1));
+
+    // The frozen calls are pending from the first press, so the action reads Continue.
+    expect(within(confirm).getByRole("button", { name: "Continue" })).toBeDisabled();
+    expectEveryWayOutRefused(confirm);
+
+    finish({ status: "success", hashes: [] });
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(state.runBatch).toHaveBeenCalledTimes(1);
   });
 });
 

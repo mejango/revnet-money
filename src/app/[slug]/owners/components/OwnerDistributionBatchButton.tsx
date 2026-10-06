@@ -2,6 +2,7 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxError } from "@/components/ui/TxError";
 import { toast } from "@/components/ui/use-toast";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { formatWalletError } from "@/lib/utils";
@@ -118,19 +119,14 @@ export function OwnerDistributionBatchButton({
             ? `Continue ${label.toLowerCase()}`
             : label}
       </ButtonWithWallet>
-      {error && !open ? (
-        <p role="alert" className="text-sm text-red-600 mt-2">
-          {error}
-        </p>
-      ) : null}
+      <TxError error={open ? null : error} />
       {snapshots || saved ? (
         <TxConfirmDialog
           open={open}
-          onOpenChange={setOpen}
+          onClose={() => setOpen(false)}
           title={`Confirm ${label.toLowerCase()}`}
-          chainId={(chainId ?? snapshots?.[0].chainId ?? 1) as JBChainId}
           steps={(snapshots ?? []).map((row) => ({
-            title: `${JB_CHAINS[row.chainId]?.name ?? row.chainId} · project ${row.projectId}`,
+            title: `Project ${row.projectId} on ${JB_CHAINS[row.chainId]?.name ?? row.chainId}`,
             detail: `${formatUnits(row.amount, 18)} ${tokenSymbol}`,
           }))}
           stepsIntro="Review every selected transaction. Confirmed steps are retained if execution takes more than one round."
@@ -155,7 +151,7 @@ export function OwnerDistributionBatchButton({
             {(snapshots ?? []).map((row) => (
               <div key={row.id} className="space-y-2 border-b border-zinc-200 pb-3">
                 <SummaryRow label="On">
-                  {JB_CHAINS[row.chainId]?.name ?? row.chainId} · project {String(row.projectId)}
+                  {JB_CHAINS[row.chainId]?.name ?? row.chainId}, project {String(row.projectId)}
                 </SummaryRow>
                 <SummaryRow label="Amount">
                   {formatUnits(row.amount, 18)} {tokenSymbol}

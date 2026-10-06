@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { ErrorNote } from "@/components/ui/TxError";
 import { TxStep, stepStatus } from "@/components/ui/TxSteps";
 import { useToast } from "@/components/ui/use-toast";
 import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
@@ -210,6 +211,8 @@ export function ProjectHandleEditor({
   const [inputWasEdited, setInputWasEdited] = useState(false);
   const [busyAction, setBusyAction] = useState<"ens" | "deploy-safe" | "publish" | null>(null);
   const [review, setReview] = useState<"step" | "deploy-safe" | null>(null);
+  // A send that went to the Safe as a proposal: nothing more to send from here.
+  const [proposed, setProposed] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const siteOrigin = SITE_ORIGIN;
@@ -611,12 +614,14 @@ export function ProjectHandleEditor({
       await authorityQuery.refetch();
     } catch (cause) {
       const message = formatWalletError(cause, "Could not deploy the operator Safe on Ethereum.");
-      setError(message);
-      toast(
-        isSafeProposalPendingError(cause)
-          ? { title: "Safe proposal submitted", description: message }
-          : { variant: "destructive", title: "Error", description: message },
-      );
+      if (isSafeProposalPendingError(cause)) {
+        setStatus(message);
+        setProposed(true);
+        toast({ title: "Safe proposal submitted", description: message });
+      } else {
+        setError(message);
+        toast({ variant: "destructive", title: "Error", description: message });
+      }
     } finally {
       setBusyAction(null);
     }
@@ -693,12 +698,14 @@ export function ProjectHandleEditor({
       );
     } catch (cause) {
       const message = formatWalletError(cause, "Could not set the ENS project record.");
-      setError(message);
-      toast(
-        isSafeProposalPendingError(cause)
-          ? { title: "Safe proposal submitted", description: message }
-          : { variant: "destructive", title: "Error", description: message },
-      );
+      if (isSafeProposalPendingError(cause)) {
+        setStatus(message);
+        setProposed(true);
+        toast({ title: "Safe proposal submitted", description: message });
+      } else {
+        setError(message);
+        toast({ variant: "destructive", title: "Error", description: message });
+      }
     } finally {
       setBusyAction(null);
     }
@@ -783,12 +790,14 @@ export function ProjectHandleEditor({
       await Promise.all([setupQuery.refetch(), currentHandleQuery.refetch()]);
     } catch (cause) {
       const message = formatWalletError(cause, "Could not publish the project handle.");
-      setError(message);
-      toast(
-        isSafeProposalPendingError(cause)
-          ? { title: "Safe proposal submitted", description: message }
-          : { variant: "destructive", title: "Error", description: message },
-      );
+      if (isSafeProposalPendingError(cause)) {
+        setStatus(message);
+        setProposed(true);
+        toast({ title: "Safe proposal submitted", description: message });
+      } else {
+        setError(message);
+        toast({ variant: "destructive", title: "Error", description: message });
+      }
     } finally {
       setBusyAction(null);
     }
@@ -909,6 +918,7 @@ export function ProjectHandleEditor({
                       onClick={() => {
                         setError(null);
                         setStatus(null);
+                        setProposed(false);
                         setReview("deploy-safe");
                       }}
                     >
@@ -1052,6 +1062,7 @@ export function ProjectHandleEditor({
                         onClick={() => {
                           setError(null);
                           setStatus(null);
+                          setProposed(false);
                           setReview("step");
                         }}
                       >
@@ -1066,15 +1077,16 @@ export function ProjectHandleEditor({
             ) : null}
 
             {status && !review ? <p className="mt-3 text-xs text-green-700">{status}</p> : null}
-            {error && !review ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
+            {error && !review ? <ErrorNote message={error} /> : null}
           </div>
         </DialogContent>
       </Dialog>
       {review === "deploy-safe" || (review === "step" && handleProgress.nextAction) ? (
         <TxConfirmDialog
           open
-          onOpenChange={(next) => {
-            if (!next) setReview(null);
+          onClose={() => {
+            setReview(null);
+            setProposed(false);
           }}
           title={
             review === "deploy-safe"
@@ -1083,7 +1095,6 @@ export function ProjectHandleEditor({
                 ? "Confirm handle"
                 : "Confirm ENS record"
           }
-          chainId={PROJECT_HANDLE_CHAIN_ID as JBChainId}
           steps={[
             review === "deploy-safe"
               ? {
@@ -1115,6 +1126,7 @@ export function ProjectHandleEditor({
           }
           busy={Boolean(busyAction)}
           status={status}
+          complete={proposed}
           error={error}
         >
           {review === "deploy-safe" ? (

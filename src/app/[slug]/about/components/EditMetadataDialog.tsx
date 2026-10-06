@@ -26,6 +26,7 @@ import {
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import {
+  isSafeProposalPendingError,
   submittedViaSafe,
   useSafeConnection,
   useWriteContract,
@@ -175,6 +176,9 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
   // The confirm's line while the metadata pins and, on several chains, the relay quote loads.
   const [preparing, setPreparing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // What went to the Safe as a proposal, the update or its relay payment:
+  // nothing more to send from here.
+  const [proposed, setProposed] = useState<string | null>(null);
   const [submissionStatus, setSubmissionStatus] = useState<string | null>(null);
   const [directChainIndex, setDirectChainIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -241,6 +245,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
 
   const closeReview = useCallback(() => {
     setReviewed(null);
+    setProposed(null);
     setPreparing(null);
     setError(null);
     setSubmissionStatus(null);
@@ -433,6 +438,11 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       return true;
     } catch (e: unknown) {
       const message = formatWalletError(e) || "Failed to update metadata";
+      if (isSafeProposalPendingError(e)) {
+        setProposed(message);
+        toast({ title: "Safe proposal submitted", description: message });
+        return false;
+      }
       setError(message);
       toast({ variant: "destructive", title: "Error", description: message });
       console.error(e);
@@ -450,6 +460,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     try {
       const hash = await sendRelayrTx(selectedPayment);
       if (submittedViaSafe(hash)) {
+        setProposed("Payment proposed to Safe. Approve and execute it there.");
         toast({
           title: "Safe payment proposal submitted",
           description:
@@ -669,15 +680,8 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
         {reviewed || preparing ? (
           <TxConfirmDialog
             open
-            onOpenChange={(next) => {
-              if (!next) closeReview();
-            }}
+            onClose={() => closeReview()}
             title="Confirm metadata"
-            chainId={
-              (selectedPayment?.chain ??
-                projects[directChainIndex]?.chainId ??
-                projects[0].chainId) as JBChainId
-            }
             preparing={!reviewed || (relayed && !relayrQuote)}
             steps={
               relayed
@@ -697,8 +701,9 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             action={relayed ? "Pay and submit" : "Save changes"}
             onConfirm={() => void (relayrQuote ? handlePayAndSubmit() : handleSubmit())}
             busy={Boolean(preparing) || busy || isPending}
-            disabled={relayed && !selectedPayment}
-            status={preparing ?? submissionStatus}
+            actionDisabled={relayed && !selectedPayment}
+            complete={proposed !== null}
+            status={proposed ?? preparing ?? submissionStatus}
             error={error}
           >
             <SummaryRow label="Name">{reviewed?.name}</SummaryRow>
@@ -706,7 +711,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             {reviewed?.destinations.map(({ source, metadataUri }) => (
               <SummaryRow
                 key={`${source.chainId}:${source.projectId}`}
-                label={`${JB_CHAINS[source.chainId as JBChainId]?.name ?? source.chainId} · project ${source.projectId}`}
+                label={`Project ${source.projectId} on ${JB_CHAINS[source.chainId as JBChainId]?.name ?? source.chainId}`}
               >
                 <span className="break-all font-mono text-xs">{metadataUri}</span>
               </SummaryRow>

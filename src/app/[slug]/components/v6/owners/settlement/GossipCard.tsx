@@ -86,9 +86,7 @@ function SyncButton({
             setError(null);
             const value = await findSyncValue(peerChainId, syncSucker, address);
             if (value == null) {
-              throw new Error(
-                "Could not determine the bridge messaging fee — the sync simulation did not succeed at any budget. Try again shortly.",
-              );
+              throw new Error("Couldn't find the bridge fee. Try again shortly.");
             }
             setReview({ value });
             setState("idle");
@@ -108,11 +106,8 @@ function SyncButton({
       {review || state === "finding" ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setReview(null);
-          }}
+          onClose={() => setReview(null)}
           title="Confirm sync"
-          chainId={peerChainId}
           preparing={!review}
           status={review ? null : "Simulating the bridge messaging fee…"}
           steps={[
@@ -159,7 +154,7 @@ function SyncButton({
               setReview(null);
               toast({
                 title: "Sync confirmed",
-                description: `${chainName(peerChainId)} is pushing its accounting snapshot over the bridge — it lands in a few minutes.`,
+                description: `${chainName(peerChainId)} is pushing its accounting snapshot over the bridge. It lands in a few minutes.`,
               });
               onSynced();
             } catch (cause) {

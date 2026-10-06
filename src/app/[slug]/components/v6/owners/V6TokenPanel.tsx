@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import {
   useGetRelayrTxQuote,
@@ -25,6 +26,7 @@ import {
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import {
+  isSafeProposalPendingError,
   requireOnchainExecution,
   submittedViaSafe,
   useSafeConnection,
@@ -290,6 +292,8 @@ function TokenEditDialog({
   const [quote, setQuote] = useState<RelayrPostBundleResponse | null>(null);
   const [selectedPayment, setSelectedPayment] = useState<ChainPayment | null>(null);
   const [confirming, setConfirming] = useState<"submit" | "pay" | null>(null);
+  // A write that went to the Safe as a proposal: nothing more to send from here.
+  const [proposed, setProposed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { address, chainId: connectedChainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
@@ -471,6 +475,10 @@ function TokenEditDialog({
       setSelectedPayment(preselectedRelayrPayment(relayrQuote.payment_info, connectedChainId));
       return true;
     } catch (cause) {
+      if (isSafeProposalPendingError(cause)) {
+        setProposed(formatWalletError(cause));
+        return false;
+      }
       setError(formatWalletError(cause));
       return false;
     } finally {
@@ -570,26 +578,24 @@ function TokenEditDialog({
       {confirming ? (
         <TxConfirmDialog
           open
-          onOpenChange={(next) => {
-            if (!next) setConfirming(null);
+          onClose={() => {
+            setConfirming(null);
+            setProposed(null);
           }}
           title={deployed ? "Confirm token update" : "Confirm token deployment"}
-          chainId={
-            confirming === "pay" && selectedPayment
-              ? (selectedPayment.chain as JBChainId)
-              : states[0].chainId
-          }
           preparing={relayed && confirming === "submit"}
           steps={confirmSteps}
           activeIndex={confirming === "pay" ? 1 : relayed && busy ? 0 : directWriteIndex}
           action={actionLabel}
           onConfirm={() => void confirm()}
           busy={busy}
-          disabled={confirming === "pay" && !selectedPayment}
+          actionDisabled={confirming === "pay" && !selectedPayment}
+          complete={proposed !== null}
           status={
-            relayed && confirming === "submit"
+            proposed ??
+            (relayed && confirming === "submit"
               ? "Getting a relay quote… Your wallet will ask for a signature."
-              : null
+              : null)
           }
           error={error}
         >
@@ -677,7 +683,7 @@ function TokenEditDialog({
           </label>
         </div>
 
-        {error && !confirming ? <p className="text-xs text-red-600">{error}</p> : null}
+        {error && !confirming ? <ErrorNote message={error} /> : null}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>

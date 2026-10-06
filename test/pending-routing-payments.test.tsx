@@ -1,6 +1,6 @@
 import { PendingRoutingPayments } from "@/app/[slug]/components/ActivityFeed/PendingRoutingPayments";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,37 +39,10 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     </button>
   ),
 }));
-vi.mock("@/components/ui/TxConfirmDialog", () => ({
-  SummaryRow: ({ label, children }: { label: string; children: ReactNode }) => (
-    <p>
-      {label}: {children}
-    </p>
-  ),
-  TxConfirmDialog: ({
-    open,
-    onConfirm,
-    action,
-    children,
-    error,
-    status,
-  }: {
-    open: boolean;
-    onConfirm: () => void;
-    action: string;
-    children: ReactNode;
-    error: string;
-    status: string;
-  }) =>
-    open ? (
-      <div role="dialog">
-        {children}
-        <p>{status}</p>
-        {error && <p role="alert">{error}</p>}
-        <button onClick={onConfirm}>{action}</button>
-      </div>
-    ) : null,
+vi.mock("@/lib/utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/utils")>()),
+  formatWalletError: (cause: Error) => cause.message,
 }));
-vi.mock("@/lib/utils", () => ({ formatWalletError: (cause: Error) => cause.message }));
 
 const projects = [
   { chainId: 1, projectId: 7, version: 6 },
@@ -128,7 +101,7 @@ describe("wallet-action:pending-routing — payment recovery", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByText(/A retry can remain pending/)).toBeTruthy();
-    expect(screen.getByText(/Beneficiary:/)).toBeTruthy();
+    expect(screen.getByText("Beneficiary")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
     await screen.findByText(/Routing review complete/);
     expect(mocks.batch).toHaveBeenCalledWith(expect.objectContaining({ calls: [{ id: "one" }] }));
@@ -198,5 +171,64 @@ describe("wallet-action:pending-routing — payment recovery", () => {
     expect(link.getAttribute("href")).toContain(`safe=eth:${mocks.address}`);
     expect(screen.getByText(/Cancel or replace nonce 7/)).toBeTruthy();
     expect(screen.queryByText(/Routing review complete/)).toBeNull();
+  });
+
+  it("goes back with Cancel before anything is sent", async () => {
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.batch).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Review routing" })).toBeEnabled();
+  });
+
+  it("refuses every way out while the routing round runs", async () => {
+    let finish!: (result: unknown) => void;
+    mocks.batch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+    const dialog = (await screen.findByRole("dialog", {
+      name: "Route pending payments",
+    })) as HTMLDialogElement;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+    await waitFor(() => expect(mocks.batch).toHaveBeenCalledTimes(1));
+
+    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+    const close = within(dialog).getByRole("button", { name: "Close" });
+    expect(cancel).toBeDisabled();
+    expect(close).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Confirm routing" })).toBeDisabled();
+    fireEvent.click(cancel);
+    fireEvent.click(close);
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.pointerDown(dialog);
+    expect(screen.getByRole("dialog", { name: "Route pending payments" })).toBe(dialog);
+
+    finish({ status: "success", hashes: [] });
+    await within(dialog).findByRole("button", { name: "Done" });
+    expect(mocks.batch).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends the round on Done, still listing what it routed", async () => {
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+
+    const done = await within(dialog).findByRole("button", { name: "Done" });
+    expect(dialog).toHaveTextContent(/Routing review complete/);
+    expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Cancel" })).toBeNull();
+    const routed = within(dialog).getAllByRole("listitem");
+    expect(routed).toHaveLength(1);
+    expect(routed[0]).toHaveAttribute("data-state", "complete");
+    expect(routed[0]).toHaveTextContent("0.1 ETH to project 1");
+
+    fireEvent.click(done);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.batch).toHaveBeenCalledTimes(1);
   });
 });

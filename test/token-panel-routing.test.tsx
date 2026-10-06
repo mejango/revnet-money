@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Address, Hash } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { expectEveryWayOutRefused } from "./support/confirm";
 
 type TokenState = {
   chainId: number;
@@ -84,9 +85,13 @@ vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: mocks.to
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   useSafeConnection: () => mocks.safe,
   submittedViaSafe: () => mocks.safeProposal,
+  isSafeProposalPendingError: (error: unknown) =>
+    error instanceof Error && error.name === "SafeProposalPendingError",
   requireOnchainExecution: () => {
     if (mocks.safeProposal)
-      throw new Error("Safe proposal is awaiting Safe approvals and execution.");
+      throw Object.assign(new Error("Safe proposal is awaiting Safe approvals and execution."), {
+        name: "SafeProposalPendingError",
+      });
   },
   useWriteContract: () => ({ writeContractAsync: mocks.writeContractAsync }),
 }));
@@ -122,6 +127,13 @@ function deferred<T>() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+/** The confirm, which replaces the token editor's content in its dialog. */
+function confirmPanel() {
+  const panel = document.querySelector<HTMLElement>("[data-tx-confirm]");
+  expect(panel).not.toBeNull();
+  return panel!;
 }
 
 async function openConfirmation(
@@ -223,7 +235,9 @@ describe("token panel Relayr funding", () => {
     const confirm = screen.getByRole("button", { name: "Pay and submit" });
     expect(picker).toHaveTextContent("Select chain");
     expect(confirm).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Back" })).not.toBeDisabled();
+    // Its way back stays open while the funding choice is missing.
+    expect(within(confirmPanel()).getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(within(confirmPanel()).getByRole("button", { name: "Close" })).toBeEnabled();
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
     expect(mocks.getRelayrTxQuote.mock.calls[0][0]).toEqual([
@@ -240,10 +254,11 @@ describe("token panel Relayr funding", () => {
     fireEvent.click(picker);
     fireEvent.click(screen.getByRole("option", { name: "Base (1 ETH)" }));
     expect(confirm).not.toBeDisabled();
-    expect(confirm).toHaveAttribute("data-target-chain", "8453");
     expect(screen.getByText("Pay 1.00000000 ETH to relay")).toBeInTheDocument();
     fireEvent.click(confirm);
+    // The payment names Base; the Relayr payment switches the wallet to its chain.
     await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(PAYMENTS[1]));
+    expect(mocks.sendRelayrTx.mock.calls[0][0].chain).toBe(8453);
     expect(mocks.waitForRelayrBundle).toHaveBeenCalledExactlyOnceWith(QUOTE.bundle_uuid);
     expect(mocks.refetch).not.toHaveBeenCalled();
     expect(mocks.toast).not.toHaveBeenCalled();
@@ -264,9 +279,10 @@ describe("token panel Relayr funding", () => {
     const picker = await screen.findByRole("combobox");
     await waitFor(() => expect(picker).toHaveTextContent("Base (1 ETH)"));
     const confirm = screen.getByRole("button", { name: "Pay and submit" });
-    expect(confirm).toHaveAttribute("data-target-chain", "8453");
     fireEvent.click(confirm);
+    // The payment names Base, the chain connected before signing moved the wallet.
     await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(PAYMENTS[1]));
+    expect(mocks.sendRelayrTx.mock.calls[0][0].chain).toBe(8453);
   });
 
   it("preselects a lone quote when the connected chain is not quoted", async () => {
@@ -284,7 +300,7 @@ describe("token panel Relayr funding", () => {
   it("allows returning to the editor without funding the quote", async () => {
     await openConfirmation([1, 8453]);
     await screen.findByRole("combobox");
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(within(confirmPanel()).getByRole("button", { name: "Cancel" }));
     expect(await screen.findByLabelText("Token name")).toBeInTheDocument();
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
@@ -372,6 +388,9 @@ describe("wallet-action:token-admin — token panel direct routing", () => {
     );
     expect(mocks.refetch).not.toHaveBeenCalled();
     expect(mocks.toast).not.toHaveBeenCalled();
+    // Held between the writes: no way out while one is in flight.
+    expect(within(confirmPanel()).getByRole("button", { name: "Save token" })).toBeDisabled();
+    expectEveryWayOutRefused(confirmPanel());
 
     await act(async () => first.resolve({ status: "success" }));
     await waitFor(() => expect(mocks.waitForReceiptWithRetry).toHaveBeenCalledTimes(3));
@@ -389,6 +408,8 @@ describe("wallet-action:token-admin — token panel direct routing", () => {
     await act(async () => last.resolve({ status: "success" }));
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalledOnce());
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Token updated" }));
+    // Done: the confirm and the token editor close once every chain confirms.
+    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
   });
 
   it("stops on a reverted later receipt without reporting the batch as complete", async () => {
@@ -422,5 +443,12 @@ describe("wallet-action:token-admin — token panel direct routing", () => {
     expect(mocks.toast).not.toHaveBeenCalledWith(
       expect.objectContaining({ title: "Token updated" }),
     );
+    // Nothing is left to send from here: Done, not Save token again.
+    const done = await within(confirmPanel()).findByRole("button", { name: "Done" });
+    expect(confirmPanel()).toHaveTextContent("Safe proposal is awaiting Safe approvals");
+    expect(within(confirmPanel()).queryByRole("button", { name: "Save token" })).toBeNull();
+    fireEvent.click(done);
+    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
+    expect(mocks.writeContractAsync).toHaveBeenCalledOnce();
   });
 });

@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxError } from "@/components/ui/TxError";
 import {
   requireOnchainExecution,
   submittedViaSafe,
@@ -260,11 +261,7 @@ export function MintItemModal({
                 </p>
               </div>
             </div>
-            {error && !reviewing ? (
-              <p role="alert" className="text-sm text-red-700">
-                {error}
-              </p>
-            ) : null}
+            <TxError error={reviewing ? null : error} />
             <DialogFooter>
               <Button variant="secondary" onClick={onClose} disabled={busy}>
                 Cancel
@@ -286,11 +283,8 @@ export function MintItemModal({
       {reviewing ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setReviewing(false);
-          }}
+          onClose={() => setReviewing(false)}
           title="Confirm mint"
-          chainId={chainId}
           preparing={phase === "checking"}
           steps={[
             {

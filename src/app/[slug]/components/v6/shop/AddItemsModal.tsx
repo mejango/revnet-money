@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxError } from "@/components/ui/TxError";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { jb721TiersHookAbi, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
@@ -384,8 +385,8 @@ export function AddItemsModal({
                           }
                         />
                         <ChainLogo chainId={destination.chainId} width={22} height={22} />
-                        {chainDisplayName(destination.chainId)} · #
-                        {destination.projectId.toString()}
+                        Project #{destination.projectId.toString()} on{" "}
+                        {chainDisplayName(destination.chainId)}
                       </label>
                     );
                   })}
@@ -432,11 +433,7 @@ export function AddItemsModal({
               })}
             </div>
 
-            {error && !reviewing ? (
-              <p role="alert" className="bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700">
-                {error}
-              </p>
-            ) : null}
+            <TxError error={reviewing ? null : error} />
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={onClose} disabled={busy}>
@@ -459,11 +456,8 @@ export function AddItemsModal({
       {reviewing ? (
         <TxConfirmDialog
           open
-          onOpenChange={(open) => {
-            if (!open) setReviewing(false);
-          }}
+          onClose={() => setReviewing(false)}
           title="Confirm items"
-          chainId={chainId}
           preparing={phase === "checking"}
           steps={[
             {
@@ -488,13 +482,13 @@ export function AddItemsModal({
           {destinations.map((destination) => (
             <SummaryRow
               key={`${destination.chainId}:${destination.projectId}`}
-              label={`${chainDisplayName(destination.chainId)} · #${destination.projectId}`}
+              label={`Project #${destination.projectId} on ${chainDisplayName(destination.chainId)}`}
             >
               {items.map((item, index) => (
                 <span className="block" key={index}>
                   {item.name || `Item ${index + 1}`}:{" "}
                   {prices[`${destination.chainId}:${destination.projectId}`]?.[index] ?? item.price}{" "}
-                  {destination.shop.pricing.symbol} ·{" "}
+                  {destination.shop.pricing.symbol},{" "}
                   {item.perChainSupply[destination.chainId] || item.supply || "Unlimited"} stock
                 </span>
               ))}

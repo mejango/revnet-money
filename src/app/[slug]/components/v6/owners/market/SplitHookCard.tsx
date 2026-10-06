@@ -72,11 +72,8 @@ function HookActionButton({
       </ButtonWithWallet>
       <TxConfirmDialog
         open={review}
-        onOpenChange={(open) => {
-          if (!open) setReview(false);
-        }}
+        onClose={() => setReview(false)}
         title={confirmTitle}
-        chainId={state.chainId}
         steps={[{ title: label, detail: title }]}
         activeIndex={busy ? 0 : -1}
         action={label}
@@ -107,7 +104,8 @@ function HookActionButton({
               args: callArgs as never,
             });
             if (!sim) throw new Error("Could not simulate the transaction.");
-            const hash = await writeContractAsync(sim.request);
+            // Viem's simulated request carries no chain, and the write is sent on the one it names.
+            const hash = await writeContractAsync({ ...sim.request, chainId: state.chainId });
             if (submittedViaSafe(hash)) {
               toast({
                 title: "Safe proposal submitted",

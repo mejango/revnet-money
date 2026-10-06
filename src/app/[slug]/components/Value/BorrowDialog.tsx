@@ -401,11 +401,8 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         {review && cashOutChainId && selectedChainTokenConfig ? (
           <TxConfirmDialog
             open
-            onOpenChange={(open) => {
-              if (!open) setReview(false);
-            }}
+            onClose={() => setReview(false)}
             title={adjusting ? "Confirm loan adjustment" : "Confirm loan"}
-            chainId={Number(cashOutChainId) as JBChainId}
             steps={[
               ...(grantsPermission
                 ? [

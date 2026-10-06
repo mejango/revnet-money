@@ -1,6 +1,5 @@
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
-import { readdirSync, readFileSync } from "node:fs";
-import { extname, join, relative, resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import ts from "typescript";
 import {
   createPublicClient,
@@ -12,6 +11,7 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 import { describe, expect, it } from "vitest";
+import { lineOf, parseSource, sourceFiles } from "./support/source-scan";
 
 // USDT on Ethereum returns nothing from approve(). viem's erc20Abi declares a
 // bool output, so simulating such an approval failed to decode ("returned no
@@ -21,14 +21,6 @@ const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as Address;
 const OWNER = "0x000000000000000000000000000000000000dEaD" as Address;
 const SPENDER = "0x000000000000000000000000000000000000bEEF" as Address;
 const SRC = resolve(process.cwd(), "src");
-
-function sourceFiles(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) return sourceFiles(path);
-    return [".ts", ".tsx"].includes(extname(entry.name)) ? [path] : [];
-  });
-}
 
 /** `x as const`, `x satisfies T` and `(x)` are `x`. */
 function bare(node: ts.Expression): ts.Expression {
@@ -41,13 +33,7 @@ function bare(node: ts.Expression): ts.Expression {
 
 /** Every `{ abi: erc20Abi, functionName: "approve" }` in a file, as `path:line`. */
 function erc20AbiApprovals(path: string): string[] {
-  const source = ts.createSourceFile(
-    path,
-    readFileSync(path, "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-    path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-  );
+  const source = parseSource(path);
   const found: string[] = [];
   const visit = (node: ts.Node) => {
     if (ts.isObjectLiteralExpression(node)) {
@@ -68,8 +54,7 @@ function erc20AbiApprovals(path: string): string[] {
         ts.isStringLiteralLike(bare(functionName)) &&
         (bare(functionName) as ts.StringLiteralLike).text === "approve"
       ) {
-        const { line } = source.getLineAndCharacterOfPosition(node.getStart());
-        found.push(`${relative(SRC, path)}:${line + 1}`);
+        found.push(`${relative(SRC, path)}:${lineOf(node, source)}`);
       }
     }
     ts.forEachChild(node, visit);

@@ -987,6 +987,23 @@ describe("reviewed Relayr payment hook", () => {
     });
   });
 
+  it("switches a wallet parked on another chain to the funding chain before it pays", async () => {
+    const { result } = await quotedPayment();
+    // The wallet moved after the quote was signed. The payment names chain 1.
+    mocks.account.chainId = 8453;
+    mocks.switchChain.mockClear();
+    await act(async () => {
+      await expect(result.current.sendRelayrTx(payment())).resolves.toBe(HASH);
+    });
+    expect(mocks.switchChain).toHaveBeenCalledExactlyOnceWith({ chainId: 1 });
+    expect(mocks.switchChain.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.sendTransaction.mock.invocationCallOrder[0],
+    );
+    expect(mocks.sendTransaction).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ chainId: 1, to: PAYMENT_TARGET }),
+    );
+  });
+
   it("simulates the payment at its reviewed gas and sends exactly that gas", async () => {
     const { result } = await quotedPayment();
     mocks.estimateGas.mockClear();

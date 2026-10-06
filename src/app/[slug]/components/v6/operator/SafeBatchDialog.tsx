@@ -98,6 +98,8 @@ export function SafeBatchDialog({
   const { routeFor, submit } = useSafeBatchSubmit();
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
+  // The batch went to the Safe as a proposal: nothing more to send from here.
+  const [proposed, setProposed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -158,12 +160,14 @@ export function SafeBatchDialog({
     } catch (cause) {
       if (sent.current > 0) update(submitted.slice(sent.current));
       const message = formatWalletError(cause) || "Could not submit the batch.";
-      setError(message);
-      toast(
-        isSafeProposalPendingError(cause)
-          ? { title: "Safe proposal submitted", description: message }
-          : { variant: "destructive", title: "Error", description: message },
-      );
+      if (isSafeProposalPendingError(cause)) {
+        setStatus(message);
+        setProposed(true);
+        toast({ title: "Safe proposal submitted", description: message });
+      } else {
+        setError(message);
+        toast({ variant: "destructive", title: "Error", description: message });
+      }
     } finally {
       setBusy(false);
       setActiveIndex(-1);
@@ -205,9 +209,8 @@ export function SafeBatchDialog({
   return (
     <TxConfirmDialog
       open={open}
-      onOpenChange={onOpenChange}
+      onClose={() => onOpenChange(false)}
       title={`Batch on ${name}`}
-      chainId={row.chainId}
       steps={prompts}
       activeIndex={busy ? activeIndex : -1}
       stepsIntro={
@@ -220,7 +223,8 @@ export function SafeBatchDialog({
       action={actionLabel(route, steps.length, row.chainId)}
       onConfirm={() => void confirm()}
       busy={busy}
-      disabled={!route || route.kind === "refused" || !steps.length || problems.length > 0}
+      actionDisabled={!route || route.kind === "refused" || !steps.length || problems.length > 0}
+      complete={proposed}
       status={status}
       error={error ?? (route?.kind === "refused" ? route.message : null)}
     >

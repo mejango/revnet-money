@@ -15,9 +15,10 @@ import { MarketEditPanel } from "@/app/[slug]/components/v6/owners/market/Market
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import { type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
 
 // wallet-action:liquidity-management
 //
@@ -277,6 +278,61 @@ describe("LP edits under a Safe app go out as one batch", () => {
     expectOneOrderedBatch("Edit the market");
     expect(mocks.reverifyMarketEdit).toHaveBeenCalledWith(pool, marketPlan, ACCOUNT);
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(null));
+  });
+
+  it("goes back to the edit with Cancel, and proposes nothing", async () => {
+    render(
+      <EditPositionPanel
+        state={state}
+        pool={pool}
+        position={position}
+        tokenSymbol="ART"
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Increase the position" }));
+    const confirm = await findConfirm();
+    await waitFor(() =>
+      expect(within(confirm).getByRole("button", { name: "Increase the position" })).toBeEnabled(),
+    );
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(mocks.reverifyEditLiquidity).not.toHaveBeenCalled();
+    expect(mocks.proposeSafeBatch).not.toHaveBeenCalled();
+  });
+
+  it("refuses every way out while the batch is proposed, then hands back once it is", async () => {
+    let finish!: (hash: Hex) => void;
+    mocks.proposeSafeBatch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const onDone = vi.fn();
+    render(
+      <EditPositionPanel
+        state={state}
+        pool={pool}
+        position={position}
+        tokenSymbol="ART"
+        onClose={vi.fn()}
+        onDone={onDone}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Increase the position" }));
+    const confirm = await findConfirm();
+    await waitFor(() =>
+      expect(within(confirm).getByRole("button", { name: "Increase the position" })).toBeEnabled(),
+    );
+    fireEvent.click(within(confirm).getByRole("button", { name: "Increase the position" }));
+    await waitFor(() => expect(mocks.proposeSafeBatch).toHaveBeenCalledOnce());
+
+    expect(within(confirm).getByRole("button", { name: "Increase the position" })).toBeDisabled();
+    expectEveryWayOutRefused(confirm);
+
+    finish(`0x${"cd".repeat(32)}`);
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(null));
+    await waitFor(() => expect(confirmIsOpen()).toBe(false));
+    expect(mocks.proposeSafeBatch).toHaveBeenCalledOnce();
   });
 
   it("builds the batch list the three LP flows share, with only the final write dependent", () => {

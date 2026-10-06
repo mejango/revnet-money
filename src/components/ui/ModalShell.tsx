@@ -20,7 +20,8 @@ import { useDialogPortalNode, useNativeModalDialog } from "./dialog";
  * that draws its own chrome. Content must live in a single wrapper child: a
  * press that lands on the dialog element itself is a backdrop press. React
  * owns the open state, so Escape never closes the dialog by itself; unmounting
- * it does.
+ * it does. Its surface scrolls, as Juicebox Money's `.modal-dialog` does, so
+ * content taller than the window keeps its header and footer in reach.
  */
 export function ModalDialog({
   onClose,
@@ -64,7 +65,7 @@ export function ModalDialog({
       aria-labelledby={labelledBy}
       aria-describedby={describedBy}
       tabIndex={-1}
-      className={cn("ui-dialog focus:outline-none", className)}
+      className={cn("ui-dialog overflow-y-auto focus:outline-none", className)}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) dismiss();
       }}

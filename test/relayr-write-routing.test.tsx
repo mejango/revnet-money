@@ -12,6 +12,13 @@ const mocks = vi.hoisted(() => ({
   safe: false,
   receiptSuccess: false,
   receiptUnconfirmed: false,
+  /**
+   * The chain whose node has the submitted hash's receipt, when a test names
+   * one; no other chain's node has it.
+   */
+  receiptChainId: null as number | null,
+  /** The submitted hash's receipt never lands: only a bounded watch ends. */
+  receiptNeverLands: false,
   lastSubmittedHash: undefined as Hash | undefined,
   writeContractAsync: vi.fn(),
   switchChainAsync: vi.fn(),
@@ -84,12 +91,26 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
     data: mocks.lastSubmittedHash,
     isPending: false,
   }),
-  useWaitForTransactionReceipt: ({ hash }: { hash?: Hash }) => ({
-    isSuccess: Boolean(hash) && mocks.receiptSuccess,
+  useWaitForTransactionReceipt: ({
+    hash,
+    chainId,
+    timeout,
+  }: {
+    hash?: Hash;
+    chainId?: number;
+    timeout?: number;
+  }) => ({
+    isSuccess:
+      Boolean(hash) &&
+      mocks.receiptSuccess &&
+      (mocks.receiptChainId === null || chainId === mocks.receiptChainId),
     isSafeResultUnconfirmed: Boolean(hash) && mocks.receiptUnconfirmed,
     isLoading: false,
+    isUnconfirmed: Boolean(hash) && mocks.receiptNeverLands && typeof timeout === "number",
   }),
   isSafeConnection: () => mocks.safe,
+  isSafeProposalPendingError: (error: unknown) =>
+    error instanceof Error && error.name === "SafeProposalPendingError",
   useSafeConnection: () => mocks.safe,
   submittedViaSafe: () => false,
 }));
@@ -162,6 +183,8 @@ beforeEach(() => {
   mocks.safe = false;
   mocks.receiptSuccess = false;
   mocks.receiptUnconfirmed = false;
+  mocks.receiptChainId = null;
+  mocks.receiptNeverLands = false;
   mocks.lastSubmittedHash = undefined;
   mocks.contractAddress.mockReturnValue(TARGET);
   mocks.estimateContractGas.mockResolvedValue(100_000n);
@@ -360,11 +383,27 @@ describe("wallet-action:split-groups — reserved token split routing", () => {
       }),
     );
     expect(onSuccess).not.toHaveBeenCalled();
+    // The receipt lands on Optimism, the chain the change was sent to.
     mocks.receiptSuccess = true;
+    mocks.receiptChainId = 10;
     rerender();
     expect(onSuccess).toHaveBeenCalledExactlyOnceWith(LAST_HASH);
     expect(mocks.runSequentialWrites).not.toHaveBeenCalled();
     expect(mocks.getRelayrTxQuote).not.toHaveBeenCalled();
+  });
+
+  it("reports a single-chain write whose bounded watch ended without a receipt", async () => {
+    const onSuccess = vi.fn();
+    const { result, rerender } = renderHook(() => useSetSplitGroups({ onSuccess }));
+    await act(async () => {
+      await result.current.submitSplits(splitChains([10]));
+    });
+    expect(result.current.isTxReceiptUnconfirmed).toBe(false);
+
+    mocks.receiptNeverLands = true;
+    rerender();
+    expect(result.current.isTxReceiptUnconfirmed).toBe(true);
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -427,6 +466,30 @@ describe("wallet-action:split-groups — reserved token split routing", () => {
       expect(mocks.runSequentialWrites).not.toHaveBeenCalled();
     },
   );
+
+  it("reports the Safe proposal a sequential batch stopped at, not an error", async () => {
+    mocks.safe = true;
+    const message = "setSplitGroupsOf on Ethereum was proposed to Safe, but it has not executed.";
+    mocks.runSequentialWrites.mockRejectedValue(
+      Object.assign(new Error(message), { name: "SafeProposalPendingError" }),
+    );
+    const onSuccess = vi.fn();
+    const { result } = renderHook(() => useSetSplitGroups({ onSuccess }));
+    await act(async () => {
+      await expect(result.current.submitSplits(splitChains([1, 10]))).resolves.toEqual({
+        success: false,
+        proposal: message,
+      });
+    });
+    expect(mocks.toast).toHaveBeenCalledWith({
+      title: "Safe proposal submitted",
+      description: message,
+    });
+    expect(mocks.toast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ variant: "destructive" }),
+    );
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
 
   it("does not send or report success after cancelling funding selection", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);

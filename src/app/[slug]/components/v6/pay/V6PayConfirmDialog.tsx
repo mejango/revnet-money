@@ -1,6 +1,5 @@
 "use client";
 
-import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -168,7 +167,7 @@ export function V6PayConfirmDialog({
                   <p className="text-sm text-zinc-700">
                     {mode === "pay"
                       ? "Your payment went through."
-                      : "The balance grew — no tokens were minted."}
+                      : "The balance grew. No tokens were minted."}
                   </p>
                   {txHash && etherscanLink(txHash, { type: "tx", chainId }) ? (
                     <a
@@ -267,15 +266,16 @@ export function V6PayConfirmDialog({
                   ) : null}
 
                   <div className="flex justify-end">
-                    <ButtonWithWallet
-                      targetChainId={chainId}
+                    {/* The pay card asks for a wallet before this opens, and the payment's own
+                        writes switch the wallet to its chain after review. */}
+                    <Button
                       loading={busy || (phase === "preparing" && !!address)}
+                      disabled={!address}
                       onClick={onConfirm}
-                      connectWalletText="Connect Wallet"
                       className="bg-teal-500 text-melon-950 hover:bg-teal-600"
                     >
                       {mode === "pay" ? "Pay" : "Add to balance"}
-                    </ButtonWithWallet>
+                    </Button>
                   </div>
                 </>
               )}

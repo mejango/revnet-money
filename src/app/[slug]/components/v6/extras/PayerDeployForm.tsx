@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxError } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { etherscanLink, formatWalletError } from "@/lib/utils";
@@ -215,7 +216,7 @@ export function PayerDeployForm({
     if ((!review && !resume) || busy || !address) return;
     if (!resume && review && address.toLowerCase() !== review.account.toLowerCase()) {
       setReview(null);
-      setError("Your connected account changed — review the deploy again.");
+      setError("Your connected account changed. Review the deploy again.");
       return;
     }
     setBusy(true);
@@ -313,8 +314,7 @@ export function PayerDeployForm({
   if (!deployableRows.length) {
     return (
       <div className="text-sm text-zinc-500">
-        Payer addresses aren&apos;t available on this project&apos;s chains — the deployer contract
-        isn&apos;t there.
+        Payer addresses aren&apos;t available on this project&apos;s chains.
       </div>
     );
   }
@@ -547,8 +547,8 @@ export function PayerDeployForm({
                     `${JB_CHAINS[row.chainId as JBChainId]?.name ?? row.chainId} ${row.address.slice(0, 6)}…${row.address.slice(-4)}`,
                 )
                 .join(", ")}
-              . Anyone can pay it directly — deploying again creates another address that behaves
-              the same.
+              . Anyone can pay it directly. Deploying again makes another address that works the
+              same.
             </div>
           ) : null}
 
@@ -567,11 +567,8 @@ export function PayerDeployForm({
           {review ? (
             <TxConfirmDialog
               open
-              onOpenChange={(open) => {
-                if (!open) setReview(null);
-              }}
+              onClose={() => setReview(null)}
               title="Confirm payer address"
-              chainId={review.calls[0]!.chainId}
               steps={review.calls.map((call) => ({
                 key: String(call.chainId),
                 title: `Deploy on ${JB_CHAINS[call.chainId]?.name ?? call.chainId}`,
@@ -620,9 +617,7 @@ export function PayerDeployForm({
           {status && !review ? (
             <p className="mt-2 wrap-anywhere text-xs text-zinc-500">{status}</p>
           ) : null}
-          {error && !review ? (
-            <p className="mt-2 wrap-anywhere text-xs text-red-600">{error}</p>
-          ) : null}
+          <TxError error={review ? null : error} />
 
           {deployed.length > 0 ? (
             <div className="mt-4 border border-zinc-200 p-3 rounded">

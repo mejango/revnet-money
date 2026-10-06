@@ -944,7 +944,7 @@
       "id": "burn-tokens",
       "risk": "money",
       "files": ["src/app/[slug]/components/v6/owners/accounts/V6BurnTokensDialog.tsx"],
-      "tests": ["test/burn-tokens.test.ts"]
+      "tests": ["test/burn-tokens.test.ts", "test/burn-tokens-dialog.test.tsx"]
     },
     {
       "id": "liquidity-management",
@@ -965,7 +965,7 @@
       "id": "split-hook",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "tests": ["test/wallet-project-controls.test.ts", "test/split-hook-card.test.tsx"]
     },
     {
       "id": "token-admin",
@@ -995,7 +995,11 @@
       "id": "project-handle",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts", "test/project-handles.test.ts"]
+      "tests": [
+        "test/wallet-project-controls.test.ts",
+        "test/project-handles.test.ts",
+        "test/project-handle-confirm.test.tsx"
+      ]
     },
     {
       "id": "operator-writes",
@@ -1011,14 +1015,16 @@
         "test/wallet-project-controls.test.ts",
         "test/operator-safe-route.test.ts",
         "test/operator-safe-proposal.test.tsx",
-        "test/relayr-write-routing.test.tsx"
+        "test/relayr-write-routing.test.tsx",
+        "test/operator-account-card.test.tsx",
+        "test/sucker-extension-card.test.tsx"
       ]
     },
     {
       "id": "safe-queue",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/operator/SafeQueueCard.tsx"],
-      "tests": ["test/safe-queue-card.test.tsx"]
+      "tests": ["test/safe-queue-card.test.tsx", "test/safe-queue-confirms.test.tsx"]
     },
     {
       "id": "safe-batch",
@@ -1030,13 +1036,13 @@
       "id": "settlement-sync",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "tests": ["test/wallet-project-controls.test.ts", "test/settlement-confirms.test.tsx"]
     },
     {
       "id": "queued-movements",
       "risk": "money",
       "files": ["src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx"],
-      "tests": ["test/wallet-project-controls.test.ts"]
+      "tests": ["test/wallet-project-controls.test.ts", "test/settlement-confirms.test.tsx"]
     },
     {
       "id": "shop-items",
@@ -1051,7 +1057,8 @@
         "test/mint-item-modal.test.ts",
         "test/shop-batch.test.ts",
         "test/shop-media-edit.test.ts",
-        "test/shop-multichain-dialogs.test.tsx"
+        "test/shop-multichain-dialogs.test.tsx",
+        "test/mint-item-confirm.test.tsx"
       ]
     },
     {

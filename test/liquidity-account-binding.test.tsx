@@ -73,7 +73,8 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
   useWaitForTransactionReceipt: () => ({ isSuccess: false }),
   useWriteContract: () => ({ writeContractAsync: mocks.write, isPending: false }),
 }));
-vi.mock("@/lib/waitForReceipt", () => ({
+vi.mock("@/lib/waitForReceipt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/waitForReceipt")>()),
   waitForReceiptWithRetry: async () => ({ status: "success" }),
 }));
 vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => {

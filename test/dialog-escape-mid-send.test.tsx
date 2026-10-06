@@ -1,25 +1,9 @@
 import { Dialog, DialogContent, DialogTitle, useHoldEnclosingModal } from "@/components/ui/dialog";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { openModalDialogs, requestCloseWithoutActivation } from "./native-dialog-shim";
-
-vi.mock("@/components/ButtonWithWallet", () => ({
-  ButtonWithWallet: ({
-    children,
-    onClick,
-    disabled,
-  }: {
-    children: React.ReactNode;
-    onClick?: () => void;
-    disabled?: boolean;
-  }) => (
-    <button type="button" data-confirm-action disabled={disabled} onClick={onClick}>
-      {children}
-    </button>
-  ),
-}));
 
 // The parity audit's proof for item 1, against the real dialog.tsx,
 // TxConfirmDialog.tsx and this repo's native dialog shim. A confirm hosted in a
@@ -36,9 +20,8 @@ const pressBackdrop = (dialog: HTMLDialogElement) => fireEvent.pointerDown(dialo
 function confirmProps(busy: boolean) {
   return {
     open: true,
-    onOpenChange: () => undefined,
+    onClose: () => undefined,
     title: "Confirm",
-    chainId: 1 as never,
     steps: [{ title: "Approve" }, { title: "Send" }],
     activeIndex: 1,
     action: "Send",
@@ -68,7 +51,7 @@ function HostedInUnguardedDialog({ busy, seen }: { busy: boolean; seen: boolean[
 }
 
 const hostDialog = () => screen.getByRole("dialog", { name: "Cash out" }) as HTMLDialogElement;
-const confirm = () => document.querySelector("[data-tx-confirm]");
+const confirm = () => document.querySelector<HTMLElement>("[data-tx-confirm]");
 /** The host's own ×. The hosted confirm hides it, which also hides its accessible name. */
 const hostClose = () =>
   [...hostDialog().querySelectorAll<HTMLButtonElement>("button")].find(
@@ -81,7 +64,9 @@ describe("a confirm hosted in a dialog whose owner does not look at busy", () =>
     render(<HostedInUnguardedDialog busy seen={seen} />);
     const dialog = hostDialog();
     expect(confirm()).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+    // The confirm's own ways back, its × and Cancel, are closed too.
+    expect(within(confirm()!).getByRole("button", { name: "Close" })).toBeDisabled();
+    expect(within(confirm()!).getByRole("button", { name: "Cancel" })).toBeDisabled();
     const close = hostClose();
     expect(close.hidden).toBe(true);
     expect(close).toBeDisabled();
@@ -170,9 +155,9 @@ describe("a standalone TxConfirmDialog (Create, Payouts, the operator cards)", (
       <TxConfirmDialog
         {...confirmProps(busy)}
         open={open}
-        onOpenChange={(next) => {
-          seen.push(next);
-          setOpen(next);
+        onClose={() => {
+          seen.push(false);
+          setOpen(false);
         }}
       />
     );

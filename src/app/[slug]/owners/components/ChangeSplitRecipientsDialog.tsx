@@ -18,6 +18,7 @@ import {
 import { Trash2 as TrashIcon } from "@/components/ui/icons";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
+import { WalletConnectButton } from "@/components/WalletButton";
 import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
@@ -36,6 +37,7 @@ import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { useEffect, useMemo, useState } from "react";
 import { Address, zeroAddress, type PublicClient } from "viem";
+import { useAccount } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { changeSplitsSchema } from "./changeSplitsSchema";
 import { useChainSplits } from "./hooks/useChainSplits";
@@ -104,20 +106,31 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const { stageIdx, initialChainId, splitLimit, triggerVariant = "outline" } = props;
   const [open, setOpen] = useState(false);
   const [reviewing, setReviewing] = useState<ChainFormData[] | null>(null);
+  // A multi-chain change stopped at a Safe proposal: nothing more to send from here.
+  const [proposal, setProposal] = useState<string | null>(null);
+  const { address } = useAccount();
 
   const { hasPermission } = useUserPermissions();
   const { chainSplits, refetch } = useChainSplits(stageIdx);
 
-  const { submitSplits, isSubmitting, isPending, isTxLoading, isTxUnconfirmed, relayrAvailable } =
-    useSetSplitGroups({
-      onSuccess: (txHash) => {
-        console.debug(`Transaction confirmed: ${txHash}`);
-        toast({ title: "Splits updated successfully" });
-        setReviewing(null);
-        setOpen(false);
-        setTimeout(refetch, 4000); // Give it some time to index data
-      },
-    });
+  const {
+    submitSplits,
+    isSubmitting,
+    isPending,
+    isTxLoading,
+    isSafeProposal,
+    isTxUnconfirmed,
+    isTxReceiptUnconfirmed,
+    relayrAvailable,
+  } = useSetSplitGroups({
+    onSuccess: (txHash) => {
+      console.debug(`Transaction confirmed: ${txHash}`);
+      toast({ title: "Splits updated successfully" });
+      setReviewing(null);
+      setOpen(false);
+      setTimeout(refetch, 4000); // Give it some time to index data
+    },
+  });
 
   useEffect(() => {
     if (open) refetch();
@@ -179,6 +192,9 @@ export function ChangeSplitRecipientsDialog(props: Props) {
 
   const [stickyProblem, setStickyProblem] = useState<string | null>(null);
   const handleSubmit = async (values: FormData) => {
+    // Permission can come from a viewed account. The confirm sends from the
+    // connected wallet and cannot connect one, so it opens only once one is.
+    if (!address) return;
     const selectedChains = values.chains.filter((c) => c.selected);
     if (selectedChains.length === 0) {
       console.error("No chains selected");
@@ -208,16 +224,26 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       );
       return;
     }
+    setProposal(null);
     setReviewing(selectedChains);
   };
 
   const confirmSubmit = async () => {
     if (!reviewing) return;
     const result = await submitSplits(reviewing);
+    if (result?.proposal) setProposal(result.proposal);
     if (result?.success && reviewing.length > 1) setReviewing(null);
   };
 
   const writing = isSubmitting || isPending || isTxLoading;
+  // A change proposed to the Safe, on one chain or at the first of several,
+  // waits on its signers, not on a receipt here, so the confirm ends on Done.
+  const proposed = Boolean(isSafeProposal) || proposal !== null;
+  // A single-chain change whose watch ended without a receipt may still land:
+  // the confirm ends on Done and Save stays locked.
+  const unconfirmed = Boolean(isTxReceiptUnconfirmed);
+  // So may a Safe proposal whose result can't be confirmed: Save stays locked.
+  const saveLocked = unconfirmed || Boolean(isTxUnconfirmed);
   const relayed =
     relayrAvailable &&
     (reviewing?.length ?? 0) > 1 &&
@@ -236,11 +262,11 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       {reviewing ? (
         <TxConfirmDialog
           open
-          onOpenChange={(next) => {
-            if (!next) setReviewing(null);
+          onClose={() => {
+            setReviewing(null);
+            setProposal(null);
           }}
           title="Confirm split recipients"
-          chainId={reviewing[0].chainId}
           steps={
             relayed
               ? [
@@ -257,10 +283,21 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                   title: `Update the recipients on ${chainNameOf(chain.chainId)}`,
                 }))
           }
-          activeIndex={writing ? 0 : -1}
+          activeIndex={writing && !proposed ? 0 : -1}
           action="Save changes"
           onConfirm={() => void confirmSubmit()}
-          busy={writing}
+          busy={writing && !proposed}
+          complete={proposed || unconfirmed}
+          status={
+            proposal ??
+            (isTxUnconfirmed
+              ? SAFE_PROPOSAL_UNCONFIRMED_LINE
+              : proposed
+                ? "Proposed to Safe. Approve and execute it there."
+                : unconfirmed
+                  ? "Couldn't confirm the change yet."
+                  : null)
+          }
         >
           <SummaryRow label="Stage">{stageIdx + 1}</SummaryRow>
           {reviewing.map((chain) => (
@@ -572,16 +609,25 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                   >
                     Cancel
                   </Button>
-                  <Button
-                    type="submit"
-                    disabled={
-                      !isValid || !!emptySaveBlock || isSubmitting || isPending || isTxLoading
-                    }
-                    loading={isSubmitting || isPending || isTxLoading}
-                    className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-                  >
-                    Save changes
-                  </Button>
+                  {address ? (
+                    <Button
+                      type="submit"
+                      disabled={
+                        !isValid ||
+                        !!emptySaveBlock ||
+                        isSubmitting ||
+                        isPending ||
+                        isTxLoading ||
+                        saveLocked
+                      }
+                      loading={isSubmitting || isPending || isTxLoading}
+                      className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+                    >
+                      Save changes
+                    </Button>
+                  ) : (
+                    <WalletConnectButton className="bg-teal-500 text-melon-950 hover:bg-teal-600" />
+                  )}
                 </DialogFooter>
               </Form>
             );

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const routeBudgetKiB = Number(process.env.CLIENT_ROUTE_GZIP_BUDGET_KIB ?? 900);
@@ -61,6 +61,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // that learn nothing, a receipt's hour from its execution), the loan dialogs' unconfirmed line
 // and the flows that stop reading such a proposal as pending measure 2643.0 KiB against
 // 2641.9 KiB, at the budget; it rises by the minimum 1 KiB.
+// Routes compiled only into the deterministic browser build (the IPFS and confirm
+// proofs) never ship, so their own files are left out below. Measured that way,
+// Juicebox Money's confirm primitives in every confirm bring all client JavaScript to
+// 2640.6 KiB against origin/main's 2642.2 KiB at 00f0659e (largest route
+// /[slug]/operator 675.4 -> 678.4 KiB), within the budget.
 const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2644);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
@@ -148,7 +153,29 @@ const pages = Object.fromEntries(
     .filter(([, assets]) => assets.length > rootMainFiles.length),
 );
 
-const routes = Object.entries(pages)
+// Routes from `page.browsertest.tsx` compile only into the deterministic
+// browser build (next.config.js) and never ship. Their own files, the chunks
+// under static/chunks/app/<route>/, are left out of every budget. Any other
+// chunk counts, even one only a proof route lists: a shipped route may load it
+// on demand.
+const appDirectory = resolve(process.cwd(), "src", "app");
+const proofRoutes = new Set(
+  filesBelow(appDirectory)
+    .filter((file) => file.endsWith(`${sep}page.browsertest.tsx`))
+    .map((file) => `/${relative(appDirectory, dirname(file)).split(sep).join("/")}`),
+);
+const shippedPages = Object.entries(pages).filter(([route]) => !proofRoutes.has(route));
+const shippedAssets = new Set([...rootMainFiles, ...shippedPages.flatMap(([, assets]) => assets)]);
+const proofOnlyAssets = new Set(
+  Object.entries(pages)
+    .filter(([route]) => proofRoutes.has(route))
+    .flatMap(([route, assets]) =>
+      assets.filter((asset) => asset.startsWith(`static/chunks/app${route}/`)),
+    )
+    .filter((asset) => !shippedAssets.has(asset)),
+);
+
+const routes = shippedPages
   .map(([route, assets]) => {
     const javascript = [...new Set(assets.filter((asset) => asset.endsWith(".js")))];
     return {
@@ -163,8 +190,10 @@ if (routes.length === 0) {
 }
 
 const totalSize = [...gzipSizes.values()].reduce((total, size) => total + size, 0);
-const allClientFiles = filesBelow(resolve(buildDirectory, "static", "chunks")).filter((file) =>
-  file.endsWith(".js"),
+const allClientFiles = filesBelow(resolve(buildDirectory, "static", "chunks")).filter(
+  (file) =>
+    file.endsWith(".js") &&
+    !proofOnlyAssets.has(relative(buildDirectory, file).split(sep).join("/")),
 );
 if (allClientFiles.length === 0) {
   throw new Error("The production build contains no client JavaScript chunks.");

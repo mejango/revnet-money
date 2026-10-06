@@ -281,6 +281,24 @@ describe("reviewed write hook", () => {
     expect(mocks.submit).not.toHaveBeenCalled();
   });
 
+  it("refuses a call that names no chain before review, with no wallet call", async () => {
+    const { review, hooks } = await freshHarness();
+    const reviewHandler = vi.fn(async () => true);
+    review.registerTransactionReviewHandler(reviewHandler);
+    // The wallet is connected on a supported chain the call could otherwise have gone to.
+    const { chainId: _named, ...chainless } = CALL;
+
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await expect(result.current.writeContractAsync(chainless as never)).rejects.toThrow(
+      "This transaction names no chain. Nothing was sent.",
+    );
+    expect(reviewHandler).not.toHaveBeenCalled();
+    expect(mocks.switchChain).not.toHaveBeenCalled();
+    expect(mocks.simulateContract).not.toHaveBeenCalled();
+    expect(mocks.estimateContractGas).not.toHaveBeenCalled();
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
   it("defers generic receipt success until an action-specific verifier releases it", async () => {
     const { review, activity, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
