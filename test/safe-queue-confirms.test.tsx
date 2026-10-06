@@ -5,7 +5,11 @@ import {
   updateTransactionActivity,
   type TransactionActivity,
 } from "@/lib/transaction-activity";
-import { safeProposalFor, type SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
+import {
+  safeProposalFor,
+  safeQueueUrl,
+  type SafeQueuedTransaction,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { zeroAddress, type Address, type Hex } from "viem";
@@ -255,6 +259,31 @@ describe("the Safe queue's execution confirm", () => {
 });
 
 describe("the Safe queue's execute-all confirm", () => {
+  function lostQuote() {
+    const activity: TransactionActivity = {
+      id: "lost-response",
+      kind: "relayr-bundle",
+      title: "Safe execution bundle",
+      status: "pending",
+      message: "Quote response lost.",
+      account: SAFE_OWNER_A,
+      relayrPaymentStatus: "unfunded",
+      createdAt: 1,
+      updatedAt: 1,
+      relayrExpectedTransactions: [1, 8453].map((chainId) => ({
+        chainId,
+        target: SAFE.address,
+        data: "0x",
+        value: "0",
+        gas: "100000",
+        transactionUuid: "",
+        expectedSafeExecution: { safe: SAFE.address, safeTxHash: EXECUTION, nonce: 4 },
+      })),
+    };
+    recordTransactionActivity(activity);
+    return activity;
+  }
+
   async function openBatch(beforeOpen?: () => void) {
     serveQueues(queued(8453, SAFE.owners), queued(10, SAFE.owners));
     renderCard(8453, 10);
@@ -368,6 +397,98 @@ describe("the Safe queue's execute-all confirm", () => {
     fireEvent.click(within(confirm).getByRole("button", { name: "Check existing bundle" }));
     await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
     expect(mocks.quote).toHaveBeenCalledTimes(2);
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it("shows the saved selection's Safe links and visible nonce check results when a quote response is missing", async () => {
+    const activity = lostQuote();
+    const initial = {
+      reason: "safe-nonces-unavailable" as const,
+      message: "The saved Safe nonce could not be checked. Its recovery record remains reserved.",
+      checks: [{ chainId: 1, safe: SAFE.address, nonce: 4, state: "unavailable" as const }],
+    };
+    mocks.quote.mockRejectedValue(new RelayrRecoveryError(activity, initial));
+    const confirm = await openBatch();
+    const check = await within(confirm).findByRole("button", { name: "Check Safe nonces" });
+    expect(within(confirm).getByText(initial.message)).toBeVisible();
+    const links = within(confirm).getAllByRole("link", { name: "Open in Safe ↗" });
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      safeQueueUrl(1, SAFE.address),
+      safeQueueUrl(8453, SAFE.address),
+    ]);
+    expect(within(confirm).getByText("Check unavailable.")).toBeVisible();
+    let finish!: (value: unknown) => void;
+    mocks.check.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    fireEvent.click(check);
+    expect(within(confirm).getByRole("button", { name: "Checking…" })).toBeDisabled();
+    const message =
+      "One saved Safe nonce is still pending. The original recovery record remains reserved.";
+    await act(async () =>
+      finish({
+        state: "pending",
+        recovery: {
+          reason: "safe-nonces-mixed",
+          message,
+          checks: [
+            { chainId: 1, safe: SAFE.address, nonce: 4, state: "consumed", currentNonce: "5" },
+            { chainId: 8453, safe: SAFE.address, nonce: 4, state: "live", currentNonce: "4" },
+          ],
+        },
+      }),
+    );
+    expect(within(confirm).getByText(message)).toBeVisible();
+    expect(within(confirm).getByText("No longer pending.")).toBeVisible();
+    expect(within(confirm).getByText("Still pending.")).toBeVisible();
+    expect(mocks.check).toHaveBeenCalledWith(activity.id);
+    expect(mocks.quote).toHaveBeenCalledOnce();
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the queue after all saved Safe nonces are consumed without preparing the obsolete selection again", async () => {
+    const activity = lostQuote();
+    mocks.quote.mockRejectedValue(new RelayrRecoveryError(activity));
+    const confirm = await openBatch();
+    const check = await within(confirm).findByRole("button", { name: "Check Safe nonces" });
+    const readsBeforeCheck = mocks.live.mock.calls.length;
+    mocks.check.mockResolvedValueOnce({
+      state: "released",
+      session: { releaseReason: "safe-nonces-consumed" },
+    });
+    fireEvent.click(check);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      screen.getByText(
+        "The saved Safe transactions are no longer pending. The Safe queue has been refreshed.",
+      ),
+    ).toBeVisible();
+    await waitFor(() => expect(mocks.live.mock.calls.length).toBeGreaterThan(readsBeforeCheck));
+    expect(mocks.quote).toHaveBeenCalledOnce();
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it("also refreshes when initial preparation discovers an obsolete saved selection", async () => {
+    const activity = {
+      ...lostQuote(),
+      relayrSafeState: "released" as const,
+      relayrSafeReleaseReason: "safe-nonces-consumed" as const,
+    };
+    mocks.quote.mockRejectedValue(
+      new RelayrRecoveryError(activity, {
+        reason: "safe-nonces-consumed",
+        message: "These saved Safe nonces have advanced.",
+      }),
+    );
+    await openBatch();
+    await screen.findByText(
+      "The saved Safe transactions are no longer pending. The Safe queue has been refreshed.",
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mocks.quote).toHaveBeenCalledOnce();
+    expect(mocks.check).not.toHaveBeenCalled();
     expect(mocks.pay).not.toHaveBeenCalled();
   });
 

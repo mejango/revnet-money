@@ -3,6 +3,7 @@
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import type { MetadataSourceGuard } from "@/lib/project-metadata-write";
 import type { RelayrDiscardReason } from "@bananapus/nana-sdk-core/review/relayr";
+import type { SafeRelayrSession } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import { useSyncExternalStore } from "react";
 import type { Address, Hex } from "viem";
@@ -63,6 +64,12 @@ export type TransactionActivity = {
   bundleUuid?: string;
   /** Stable SDK session identity while a publication receives its bundle UUID. */
   relayrSafeSessionId?: string;
+  /** Preserve the SDK's release decision, including cancellation before publication. */
+  relayrSafeState?: SafeRelayrSession["state"];
+  /** Why the SDK proved that this saved Safe execution no longer reserves its nonce. */
+  relayrSafeReleaseReason?: SafeRelayrSession["releaseReason"];
+  /** Retain opaque/incomplete legacy reservations when the SDK saves their recovery state. */
+  relayrSafeReservationKeys?: string[];
   /** A Safe funding wallet invocation has not produced a known hash yet. */
   relayrSafeFundingUnknown?: boolean;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];

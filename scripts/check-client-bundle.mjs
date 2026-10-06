@@ -82,7 +82,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // economics and transaction recovery guidance. On the same locked dependencies,
 // HEAD 006935e2 measures 2650.9 KiB and the updated prompt 2651.5 KiB. Raise only
 // the aggregate ceiling by the minimum 1 KiB; route limits stay unchanged.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2652);
+// Safe recovery preserves lifecycle state and checks missing quotes against
+// finalized Safe nonces. The final SDK/client build with strict journal guards
+// and the updated build prompt measures 2657.1 KiB.
+// Round up only the aggregate ceiling; route and wallet-loading limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2658);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

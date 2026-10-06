@@ -28,6 +28,7 @@ import {
 } from "@bananapus/nana-sdk-core/review/relayr";
 import {
   createSafeRelayrController,
+  requireSafeRelayrExecution,
   safeRelayrPreconditions,
   safeRelayrReservationKey,
   type SafeRelayrExecution,
@@ -45,17 +46,81 @@ type ExecutionContext = {
 };
 type SessionContext = { activity?: TransactionActivity };
 const authorizing = new Set<string>();
+const LEGACY_RELEASE_MESSAGE =
+  "This unpaid Relayr quote expired. Review the action again for a new quote.";
+
+function requireRecoveryArray(value: unknown): void {
+  if (value !== undefined && !Array.isArray(value))
+    throw new Error(
+      "A saved Safe bundle has malformed recovery history. Keep its recovery record and verify the existing bundle before continuing.",
+    );
+}
+
+/** The earlier adapter wrote this exact record after the SDK canceled before POST. */
+function legacyUnpublishedRelease(
+  activity: TransactionActivity,
+  executions: SafeRelayrExecution[],
+): boolean {
+  if (
+    activity.relayrSafeState !== undefined ||
+    activity.relayrSafeReleaseReason !== undefined ||
+    activity.relayrSafeReservationKeys?.length ||
+    !activity.relayrSafeSessionId ||
+    activity.id !== activity.relayrSafeSessionId ||
+    activity.title !== "Safe execution bundle" ||
+    activity.status !== "failed" ||
+    activity.message !== LEGACY_RELEASE_MESSAGE ||
+    activity.relayrPaymentStatus !== "unfunded" ||
+    activity.bundleUuid ||
+    activity.relayrQuote ||
+    activity.hash ||
+    activity.executionHash ||
+    activity.safeProposalHash ||
+    activity.safeProposal ||
+    activity.executionSeenAt ||
+    activity.chainId ||
+    activity.chainStates?.length ||
+    activity.relayrNonces?.length ||
+    activity.relayrPayment ||
+    activity.relayrPayments?.length ||
+    activity.relayrSafeFundingUnknown ||
+    activity.manualVerificationRequired ||
+    activity.relayrDiscardable ||
+    !executions.length ||
+    executions.length !== activity.relayrExpectedTransactions?.length ||
+    activity.relayrExpectedTransactions.some((execution) => execution.transactionUuid !== "")
+  )
+    return false;
+  try {
+    executions.forEach(requireSafeRelayrExecution);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Existing activity records remain the persistence format; the SDK owns their lifecycle. */
 export function safeRelayrSession(activity: TransactionActivity): SafeRelayrSession | undefined {
   const expected = activity.relayrExpectedTransactions;
-  const reservationKeys = (activity.relayrCallKeys ?? []).flatMap((key) => {
-    const match = key.match(/:relayr-scope:safe-execution:(\d+:0x[0-9a-f]{40}:\d+)$/i);
-    return match ? [match[1].toLowerCase()] : [];
-  });
+  requireRecoveryArray(activity.relayrSafeReservationKeys);
+  const reservationKeys = [
+    ...(activity.relayrSafeReservationKeys ?? []),
+    ...(activity.relayrCallKeys ?? []).flatMap((key) => {
+      const match = key.match(/:relayr-scope:safe-execution:(\d+:0x[0-9a-f]{40}:\d+)$/i);
+      return match ? [match[1].toLowerCase()] : [];
+    }),
+  ];
   const safeExpected = expected?.filter((row) => row.expectedSafeExecution) ?? [];
   if (activity.kind !== "relayr-bundle" || (!safeExpected.length && !reservationKeys.length))
     return undefined;
+  // Storage predates the current schema. Never normalize malformed history into
+  // an empty array: that would falsely prove this attempt was never funded.
+  [
+    activity.relayrPayments,
+    activity.chainStates,
+    activity.relayrNonces,
+    activity.relayrCallKeys,
+  ].forEach(requireRecoveryArray);
   if (!activity.account)
     throw new Error(
       "A saved Safe bundle is missing its account. Keep its recovery record and verify the existing bundle before continuing.",
@@ -66,6 +131,21 @@ export function safeRelayrSession(activity: TransactionActivity): SafeRelayrSess
     ...row.expectedSafeExecution!,
     context: { expected: row } satisfies ExecutionContext,
   }));
+  const payments = relayrSavedQuote(activity).payments;
+  const fundingEvidence = Boolean(
+    activity.hash ||
+    activity.executionHash ||
+    activity.relayrPayment ||
+    activity.relayrPayments?.length ||
+    activity.chainStates?.some((row) => row.hash),
+  );
+  const fundingUnknown = Boolean(
+    activity.relayrSafeFundingUnknown ||
+    (!activity.relayrSafeSessionId && activity.relayrPaymentStatus === "submitted") ||
+    (activity.relayrPaymentStatus === "unfunded" && fundingEvidence) ||
+    (activity.hash &&
+      !payments.some((payment) => payment.hash.toLowerCase() === activity.hash!.toLowerCase())),
+  );
   const quote: RelayrQuote | undefined =
     completeIdentity && activity.bundleUuid
       ? {
@@ -82,31 +162,44 @@ export function safeRelayrSession(activity: TransactionActivity): SafeRelayrSess
           })),
         }
       : undefined;
+  const savedState =
+    activity.relayrSafeState ??
+    (legacyUnpublishedRelease(activity, executions) ||
+    activity.relayrPaymentStatus === "expired" ||
+    activity.relayrDiscardable === "expired" ||
+    activity.relayrDiscardable === "changed"
+      ? "released"
+      : activity.status === "success" && !activity.manualVerificationRequired
+        ? "complete"
+        : activity.bundleUuid
+          ? "active"
+          : "publishing");
   return {
     id: activity.relayrSafeSessionId ?? activity.id,
     account: activity.account,
     executions,
     reservationKeys: [
-      ...new Set([...reservationKeys, ...executions.map(safeRelayrReservationKey)]),
+      ...new Set([
+        ...reservationKeys,
+        ...executions.map(safeRelayrReservationKey),
+        ...(!completeIdentity
+          ? executions.map(
+              (execution) => `${execution.entry.chain}:${execution.safe.toLowerCase()}:*`,
+            )
+          : []),
+      ]),
     ],
     quote,
     bundleUuid: activity.bundleUuid,
-    paymentStatus:
-      activity.relayrSafeFundingUnknown ||
-      (!activity.relayrSafeSessionId && activity.relayrPaymentStatus === "submitted")
-        ? "sending"
-        : (activity.relayrPaymentStatus ?? "sending"),
-    payments: relayrSavedQuote(activity).payments,
+    paymentStatus: fundingUnknown ? "sending" : (activity.relayrPaymentStatus ?? "sending"),
+    payments,
     state:
-      activity.relayrPaymentStatus === "expired" ||
-      activity.relayrDiscardable === "expired" ||
-      activity.relayrDiscardable === "changed"
-        ? "released"
-        : activity.status === "success" && !activity.manualVerificationRequired
-          ? "complete"
-          : activity.bundleUuid
-            ? "active"
-            : "publishing",
+      fundingUnknown && savedState === "released"
+        ? activity.bundleUuid
+          ? "active"
+          : "publishing"
+        : savedState,
+    releaseReason: activity.relayrSafeReleaseReason,
     createdAt: activity.createdAt,
     context: { activity } satisfies SessionContext,
   };
@@ -222,6 +315,9 @@ export function safeRelayrController(config: Config, wallet?: Wallet) {
           ...previous,
           id,
           relayrSafeSessionId: session.id,
+          relayrSafeState: session.state,
+          relayrSafeReleaseReason: session.releaseReason,
+          relayrSafeReservationKeys: session.reservationKeys,
           relayrSafeFundingUnknown: session.paymentStatus === "sending",
           kind: "relayr-bundle",
           title: "Safe execution bundle",
@@ -238,7 +334,11 @@ export function safeRelayrController(config: Config, wallet?: Wallet) {
             session.state === "complete"
               ? "All saved destination transactions confirmed. Refresh the Safe queue."
               : session.state === "released"
-                ? "This unpaid Relayr quote expired. Review the action again for a new quote."
+                ? session.releaseReason === "safe-nonces-consumed"
+                  ? "The saved Safe nonces have all advanced onchain. These executions can no longer run. Refresh the Safe queue."
+                  : session.paymentStatus === "unfunded"
+                    ? "This review was canceled before its calls were published. Nothing was paid. Review the executions again to request a quote."
+                    : LEGACY_RELEASE_MESSAGE
                 : session.paymentStatus === "sending" || session.paymentStatus === "submitted"
                   ? "Relayr funding is being submitted. Do not pay again while the wallet result is uncertain."
                   : session.paymentStatus === "confirmed"

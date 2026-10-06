@@ -1,6 +1,9 @@
 "use client";
 
-import { sameSafeRelayrIntents } from "@bananapus/nana-sdk-core/review/safe-relayr";
+import {
+  sameSafeRelayrIntents,
+  type SafeRelayrResult,
+} from "@bananapus/nana-sdk-core/review/safe-relayr";
 
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
@@ -109,6 +112,7 @@ type BatchRun = {
   account: Address;
   preparing: boolean;
   recovery: RelayrRecoveryError | null;
+  recoveryChecks?: NonNullable<SafeRelayrResult["recovery"]>["checks"];
   quote: RelayrPostBundleResponse | null;
   paymentChainId: number | null;
   rows: BatchRow[];
@@ -564,6 +568,13 @@ export function SafeQueueCard({
     resetRelayr();
     setBatch(null);
   };
+  const refreshObsoleteBatch = async () => {
+    closeBatch();
+    setNotice(
+      "The saved Safe transactions are no longer pending. The Safe queue has been refreshed.",
+    );
+    await queue.refetch();
+  };
 
   const prepareAll = async (rows: BatchRow[]) => {
     if (!address || payingBatch.current) return;
@@ -633,10 +644,19 @@ export function SafeQueueCard({
         message: "Choose where to pay the quoted network fee, then confirm execution.",
       });
     } catch (cause) {
+      if (
+        current() &&
+        cause instanceof RelayrRecoveryError &&
+        cause.safeReleaseReason === "safe-nonces-consumed"
+      ) {
+        await refreshObsoleteBatch();
+        return;
+      }
       update({
         message: null,
         error: cause instanceof Error ? cause.message : "Could not check the Safe transactions.",
         recovery: cause instanceof RelayrRecoveryError ? cause : null,
+        recoveryChecks: cause instanceof RelayrRecoveryError ? cause.recovery?.checks : undefined,
       });
     } finally {
       update({ preparing: false });
@@ -654,6 +674,13 @@ export function SafeQueueCard({
     try {
       const checked = await checkRelayrSession(recovery.activityId);
       if (!current()) return;
+      if (
+        checked?.state === "released" &&
+        checked.session.releaseReason === "safe-nonces-consumed"
+      ) {
+        await refreshObsoleteBatch();
+        return;
+      }
       const activity = refreshTransactionActivities().find((row) => row.id === recovery.activityId);
       if (
         (checked?.state === "ready" &&
@@ -677,7 +704,9 @@ export function SafeQueueCard({
         current
           ? {
               ...current,
+              recoveryChecks: checked?.recovery?.checks,
               message:
+                checked?.recovery?.message ??
                 activity?.message ??
                 "The existing bundle could not be located. Its recovery record is still required.",
             }
@@ -1143,7 +1172,9 @@ export function SafeQueueCard({
             batch.preparing
               ? "Checking…"
               : batch.recovery
-                ? "Check existing bundle"
+                ? batch.recovery.bundleUuid
+                  ? "Check existing bundle"
+                  : "Check Safe nonces"
                 : batch.quote
                   ? `Pay once and execute ${batch.rows.length}`
                   : "Retry checks"
@@ -1167,20 +1198,56 @@ export function SafeQueueCard({
         >
           {batch.recovery ? (
             <div className="space-y-2 border border-melon-300 p-3 text-sm">
-              <p>
-                A previous Relayr bundle contains one or more of these executions. Check that bundle
-                before preparing another payment.
-              </p>
               {batch.recovery.bundleUuid ? (
-                <SummaryRow label="Existing bundle">
-                  <span className="break-all">{batch.recovery.bundleUuid}</span>
-                </SummaryRow>
+                <>
+                  <p>
+                    A previous Relayr bundle contains one or more of these executions. Check that
+                    bundle before preparing another payment.
+                  </p>
+                  <SummaryRow label="Existing bundle">
+                    <span className="break-all">{batch.recovery.bundleUuid}</span>
+                  </SummaryRow>
+                </>
               ) : (
                 <p>
-                  The earlier quote response was not saved. Checking will preserve its recovery
-                  record.
+                  The earlier quote response was not saved, so its Relayr bundle cannot be located.
+                  Check whether these saved Safe transactions are still pending before preparing
+                  another payment.
                 </p>
               )}
+              {batch.recovery.safeExecutions.map(({ chainId, safe, nonce }) => {
+                const url = safeQueueUrl(chainId, safe);
+                const check = batch.recoveryChecks?.find(
+                  (check) =>
+                    check.chainId === chainId &&
+                    check.safe.toLowerCase() === safe.toLowerCase() &&
+                    check.nonce === nonce,
+                );
+                return (
+                  <SummaryRow
+                    key={`${chainId}:${safe}:${nonce}`}
+                    label={`${chainName(chainId)} #${nonce}`}
+                  >
+                    {check ? (
+                      <span>
+                        {check.state === "consumed"
+                          ? "No longer pending"
+                          : check.state === "live"
+                            ? "Still pending"
+                            : "Check unavailable"}
+                        .{" "}
+                      </span>
+                    ) : null}
+                    {url ? (
+                      <a className="underline" href={url} target="_blank" rel="noopener noreferrer">
+                        Open in Safe ↗
+                      </a>
+                    ) : (
+                      <span>Safe queue unavailable</span>
+                    )}
+                  </SummaryRow>
+                );
+              })}
             </div>
           ) : null}
           {batch.quote && !batch.done ? (

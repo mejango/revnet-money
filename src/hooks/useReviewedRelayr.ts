@@ -94,6 +94,7 @@ import {
 import {
   SafeRelayrRecoveryError,
   safeRelayrReservationKey,
+  type SafeRelayrRecovery,
   type SafeRelayrResult,
   type SafeRelayrStatus,
 } from "@bananapus/nana-sdk-core/review/safe-relayr";
@@ -228,15 +229,34 @@ export class RelayrRecoveryError extends Error {
   readonly activityId: string;
   readonly bundleUuid?: string;
   readonly paymentStatus: TransactionActivity["relayrPaymentStatus"];
+  readonly safeReleaseReason?: TransactionActivity["relayrSafeReleaseReason"];
+  readonly safeExecutions: { chainId: number; safe: Address; nonce: number }[];
 
-  constructor(activity: TransactionActivity) {
+  constructor(
+    activity: TransactionActivity,
+    readonly recovery?: SafeRelayrRecovery,
+  ) {
     super(
-      `This Relayr action already has ${activity.relayrPaymentStatus === "unfunded" ? "published authorizations" : "a submitted payment"}${activity.hash ? ` (${activity.hash})` : activity.relayrPaymentStatus === "unfunded" ? " awaiting reconciliation" : " with an uncertain wallet result"}. Check the existing bundle before authorizing or paying again.`,
+      recovery?.message ??
+        `This Relayr action already has ${activity.relayrPaymentStatus === "unfunded" ? "published authorizations" : "a submitted payment"}${activity.hash ? ` (${activity.hash})` : activity.relayrPaymentStatus === "unfunded" ? " awaiting reconciliation" : " with an uncertain wallet result"}. Check the existing bundle before authorizing or paying again.`,
     );
     this.name = "RelayrRecoveryError";
     this.activityId = activity.id;
     this.bundleUuid = activity.bundleUuid;
     this.paymentStatus = activity.relayrPaymentStatus;
+    this.safeReleaseReason =
+      activity.relayrSafeState === "released" ? activity.relayrSafeReleaseReason : undefined;
+    this.safeExecutions = (activity.relayrExpectedTransactions ?? []).flatMap((execution) =>
+      execution.expectedSafeExecution
+        ? [
+            {
+              chainId: execution.chainId,
+              safe: execution.expectedSafeExecution.safe,
+              nonce: execution.expectedSafeExecution.nonce,
+            },
+          ]
+        : [],
+    );
   }
 }
 
@@ -827,7 +847,7 @@ function safeNonceCallKey(
 function safeRecoveryError(cause: unknown): unknown {
   if (!(cause instanceof SafeRelayrRecoveryError)) return cause;
   const activity = safeRelayrActivity(cause.session);
-  return activity ? new RelayrRecoveryError(activity) : cause;
+  return activity ? new RelayrRecoveryError(activity, cause.recovery) : cause;
 }
 
 function savedSessionOf(account: Address, callKey: string): TransactionActivity | undefined {
@@ -869,6 +889,7 @@ export async function checkRelayrSession(id: string): Promise<SafeRelayrResult |
       if (result.state === "pending")
         updateTransactionActivity(activity.id, {
           message:
+            result.recovery?.message ??
             "The existing Safe bundle is still awaiting confirmation. Check it again before authorizing or paying again.",
         });
       return result;
