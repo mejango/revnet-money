@@ -431,8 +431,8 @@ function forgetQuote(bundleUuid: string | undefined): void {
 /**
  * A new publication carries these sessions' calls: their published
  * signatures under a new quote, or new signatures at their saved nonces once
- * every request they published is dead. They are never paid from here, and
- * the new session reserves what they did.
+ * every request they published is dead. They are never paid from here, the
+ * new session reserves what they did, and there is nothing left to discard.
  */
 function supersede(sessions: TransactionActivity[]): void {
   for (const session of sessions) {
@@ -440,6 +440,7 @@ function supersede(sessions: TransactionActivity[]): void {
       status: "failed",
       relayrPaymentStatus: "expired",
       manualVerificationRequired: false,
+      relayrDiscardable: undefined,
       message: sentPayments(session).length ? REPLACED : REPLACED_UNPAID,
     });
     forgetQuote(session.bundleUuid);
@@ -873,8 +874,8 @@ export async function checkRelayrSession(id: string): Promise<void> {
 /**
  * Discard a session marked for it (ruling R114): every request it published
  * is dead. Only the session goes, never what its action saved. A pending
- * batch round holds the session by its bundle or by its calls' recovery
- * scopes, which a session whose quote response was lost still carries (as
+ * batch round holds the session by its bundle, or, when Relayr never named
+ * one because the quote response was lost, by its calls' recovery scopes (as
  * jbm's project-batch.ts:114-137 links a round by its scope). After a "ran"
  * Discard, such a batch is abandoned, so its calls go out again only after a
  * fresh review (R114 (f)); after another, its round quotes again.
@@ -887,12 +888,13 @@ export function discardRelayrSession(id: string): void {
   const keys = new Set(activity.relayrCallKeys ?? []);
   const bundleUuid = activity.bundleUuid?.toLowerCase();
   const holds = (batch: MultichainBatch, round: BatchRound) =>
-    (!!bundleUuid && round.bundleUuid?.toLowerCase() === bundleUuid) ||
-    round.indices.some(
-      (index) =>
-        !!batch.calls[index] &&
-        keys.has(scopeKey(batch.account, batchCallScope(batch, batch.calls[index], index))),
-    );
+    bundleUuid
+      ? round.bundleUuid?.toLowerCase() === bundleUuid
+      : round.indices.some(
+          (index) =>
+            !!batch.calls[index] &&
+            keys.has(scopeKey(batch.account, batchCallScope(batch, batch.calls[index], index))),
+        );
   for (const batchId of releaseBatchRound(holds, activity.relayrDiscardable === "ran"))
     updateTransactionActivity(batchId, {
       status: "failed",

@@ -49,9 +49,13 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
   const resumable = isSelf && canCheckRelayrBundle(activity);
   // An unpaid session's signatures are checked onchain; one whose requests are all dead
   // is marked for Discard, and its line is the card's message (ruling R114 (e)). A
-  // completed bundle is never discarded.
+  // completed bundle, or a quote a new one replaced, is never discarded.
   const checkable = isSelf && canCheckRelayrSignatures(activity);
-  const discardable = isSelf && !!activity.relayrDiscardable && activity.status !== "success";
+  const discardable =
+    isSelf &&
+    !!activity.relayrDiscardable &&
+    activity.status !== "success" &&
+    activity.relayrPaymentStatus !== "expired";
   return (
     <div className="border border-melon-200 bg-melon-50 p-3">
       <div className="flex items-start justify-between gap-3">

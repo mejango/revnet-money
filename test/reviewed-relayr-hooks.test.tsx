@@ -2314,6 +2314,112 @@ describe("Relayr sessions decided from the chain", () => {
     });
   });
 
+  describe("a Discard and the batch rounds that hold its session", () => {
+    const call = {
+      chainId: 1,
+      address: TARGET,
+      abi: [],
+      functionName: "setUriOf",
+      args: [],
+      value: 3n,
+      data: "0x1234" as Hex,
+      state: "ready" as const,
+    };
+    const batchOf = (id: string, round: { state: "quoted" | "pending"; bundleUuid?: string }) => ({
+      id,
+      scope: "payouts",
+      label: "Send payouts",
+      account: ACCOUNT,
+      key: "0x",
+      route: "relayr" as const,
+      calls: [call],
+      rounds: [{ indices: [0], ...round }],
+      status: "pending" as const,
+      createdAt: NOW,
+    });
+
+    it("never lets the Discard of a replaced session reset the round that pays its replacement", async () => {
+      const { activity, hooks, review } = await freshHarness();
+      review.registerTransactionReviewHandler(async () => true);
+      guardReads(async () => ({ data: GUARD_VALUE }));
+      const batches = await import("@/lib/multichain-batch");
+      const request = {
+        ...GUARDED,
+        recoveryScope: batches.batchCallScope(
+          batchOf("multichain:batch", { state: "quoted" }),
+          call,
+          0,
+        ),
+      };
+      // The round's calls are signed at nonce 4 and quoted.
+      vi.stubGlobal("fetch", relayrApi());
+      const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+      await act(async () => {
+        await quoter.result.current.getRelayrTxQuote([request]);
+      });
+      batches.saveMultichainBatch(
+        batchOf("multichain:batch", { state: "quoted", bundleUuid: BUNDLE_UUID }),
+      );
+      const old = () =>
+        activity.transactionActivitySnapshot().find((row) => row.bundleUuid === BUNDLE_UUID)!;
+      // Every request is dead and unused: the account view marks the session for Discard.
+      vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+      chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 4n });
+      await hooks.checkRelayrSession(old().id);
+      expect(old()).toMatchObject({ relayrDiscardable: "expired" });
+      // The batch reopens: the same calls are signed again at nonce 4, and the round
+      // pays the new bundle.
+      vi.stubGlobal("fetch", nextQuote());
+      await act(async () => {
+        await quoter.result.current.getRelayrTxQuote([request]);
+      });
+      expect(mocks.signTypedData.mock.calls.map(([signed]) => signed.message.nonce)).toEqual([
+        4n,
+        4n,
+      ]);
+      batches.saveMultichainBatch(
+        batchOf("multichain:batch", { state: "pending", bundleUuid: OTHER_BUNDLE_UUID }),
+      );
+      // The replaced session has nothing left to discard.
+      expect(old()).toMatchObject({ relayrPaymentStatus: "expired" });
+      expect(old().relayrDiscardable).toBeUndefined();
+      expect(() => hooks.discardRelayrSession(old().id)).toThrow(/can no longer run/);
+      // The round still waits on the new bundle, so a resume proves it and never
+      // signs the same calls a third time.
+      expect(batches.readMultichainBatches()[0].rounds[0]).toMatchObject({
+        state: "pending",
+        bundleUuid: OTHER_BUNDLE_UUID,
+      });
+    });
+
+    it("abandons only the round of a discarded session's own bundle, never another pending batch in its scope", async () => {
+      const { activity, hooks, review } = await freshHarness();
+      review.registerTransactionReviewHandler(async () => true);
+      guardReads(async () => ({ data: GUARD_VALUE }));
+      const batches = await import("@/lib/multichain-batch");
+      const other = batchOf("multichain:other", { state: "quoted", bundleUuid: OTHER_BUNDLE_UUID });
+      vi.stubGlobal("fetch", relayrApi());
+      const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+      await act(async () => {
+        await quoter.result.current.getRelayrTxQuote([
+          { ...GUARDED, recoveryScope: batches.batchCallScope(other, call, 0) },
+        ]);
+      });
+      batches.saveMultichainBatch(other);
+      const session = () =>
+        activity.transactionActivitySnapshot().find((row) => row.bundleUuid === BUNDLE_UUID)!;
+      vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+      chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 5n });
+      await hooks.checkRelayrSession(session().id);
+      expect(session()).toMatchObject({ relayrDiscardable: "ran" });
+      hooks.discardRelayrSession(session().id);
+      expect(batches.findPendingBatch(ACCOUNT, "payouts")).toMatchObject({
+        id: "multichain:other",
+        rounds: [{ state: "quoted", bundleUuid: OTHER_BUNDLE_UUID }],
+      });
+    });
+  });
+
   it("abandons a pending batch by its round's scope after a 'ran' Discard of a session Relayr never named (R114 (f))", async () => {
     const { activity, hooks, review } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);

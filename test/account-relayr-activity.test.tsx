@@ -144,6 +144,23 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
     expect(screen.queryByRole("button", { name: "Discard" })).not.toBeInTheDocument();
   });
 
+  it("never offers Discard on a session a new quote replaced", () => {
+    mocks.activities = [
+      activity({
+        status: "failed",
+        manualVerificationRequired: false,
+        relayrPaymentStatus: "expired",
+        relayrDiscardable: "expired",
+        hash: undefined,
+        message: "This unpaid Relayr quote was replaced by a new one. Nothing was paid.",
+        ...signedRequest(),
+      }),
+    ];
+    render(<AccountActivity address={ACCOUNT} />);
+    expect(screen.getByText("Update recipients")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Discard" })).not.toBeInTheDocument();
+  });
+
   it("checks no signatures it can't classify, such as a raw call's", () => {
     mocks.activities = [
       activity({
