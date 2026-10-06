@@ -25,7 +25,7 @@ test("pending routing shows ready, cooldown, and final attempts above activity",
     }
     expect(body.variables).toEqual({
       chainId: 1,
-      sourceProjectId: 1,
+      projectId: 1,
       gateway: protocolRollout.chains["1"].contracts.JBRouterTerminalGateway.toLowerCase(),
       limit: 100,
       offset: 0,

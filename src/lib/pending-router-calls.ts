@@ -137,7 +137,7 @@ async function readGatewayPendingCalls(project: PendingProject, gateway: string)
       RouterPendingCallsOperation,
       {
         chainId: project.chainId,
-        sourceProjectId: project.projectId,
+        projectId: project.projectId,
         gateway,
         limit: 100,
         offset: items.length,
@@ -158,7 +158,7 @@ async function readGatewayPendingCalls(project: PendingProject, gateway: string)
       const key = `${item.chainId}:${item.gateway.toLowerCase()}:${item.pendingCallId.toLowerCase()}`;
       if (
         item.chainId !== project.chainId ||
-        item.sourceProjectId !== project.projectId ||
+        item.projectId !== project.projectId ||
         item.gateway.toLowerCase() !== gateway ||
         item.version !== 6 ||
         !["queued", "retried"].includes(item.status) ||

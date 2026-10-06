@@ -214,7 +214,7 @@ const pendingRoutingRows = [
     beneficiary: fixtureOwner,
     projectId: 1n,
     refundTo: addresses.terminal,
-    sourceProjectId: 1n,
+    sourceProjectId: 6n,
     token,
   };
   const memo = "Fixture retained routing payment";
@@ -224,7 +224,7 @@ const pendingRoutingRows = [
       ...call,
       amount: amount.toString(),
       projectId,
-      sourceProjectId: projectId,
+      sourceProjectId: 6,
       chainId,
       version: 6,
       gateway: addresses.routerGateway,
@@ -854,7 +854,7 @@ const graphqlHandlers = {
   RouterPendingCalls(variables) {
     requireExactVariables("RouterPendingCalls", variables, {
       chainId,
-      sourceProjectId: projectId,
+      projectId,
       gateway: addresses.routerGateway.toLowerCase(),
       limit: 100,
       offset: 0,

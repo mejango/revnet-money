@@ -45,8 +45,8 @@ vi.mock("@/lib/utils", async (importOriginal) => ({
 }));
 
 const projects = [
-  { chainId: 1, projectId: 7, version: 6 },
-  { chainId: 8453, projectId: 9, version: 6 },
+  { chainId: 1, projectId: 1, version: 6 },
+  { chainId: 8453, projectId: 1, version: 6 },
 ];
 const row = (id: string, ready = true) => ({
   id,
@@ -89,7 +89,7 @@ afterEach(() => {
 });
 
 describe("payment recovery", () => {
-  it("renders nothing when all indexed source projects have no pending calls", async () => {
+  it("renders nothing when all indexed destination projects have no pending calls", async () => {
     mocks.indexed.mockResolvedValue([]);
     setup();
     await waitFor(() => expect(mocks.indexed).toHaveBeenCalledTimes(2));

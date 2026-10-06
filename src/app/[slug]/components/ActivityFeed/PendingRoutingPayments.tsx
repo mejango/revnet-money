@@ -47,7 +47,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     NonNullable<BatchResult["obsoleteSafeProposals"]>
   >([]);
   const query = useQuery({
-    queryKey: ["pending-routing-payments", projectKey],
+    queryKey: ["pending-routing-payments", "destination", projectKey],
     enabled: hydrated && identities.length > 0,
     queryFn: async () => {
       const indexed = (await Promise.all(identities.map(readIndexedPendingRouterCalls))).flat();

@@ -313,3 +313,11 @@ Review: 135 focused tests pass, including four-chain queued calldata and rendere
 Final review: 1,567 tests passed in the full run; three live-schema tests initially failed due sandbox DNS, then all three passed in narrowly approved network reruns after inspecting their read-only payloads. One pre-existing test remains skipped. Typecheck, changed-file ESLint and wallet boundary checks pass. Both clients now have readable queued confirmations and paced overlapping checks. No deployment performed.
 
 Rebase verification: integrated origin/main c668b8ed and SDK 2.23.0, keeping SDK-owned canonical MultiSend decoding and the newer Relayr recovery checks. Readable actions now live in the shared TransactionReviewDialog. 2,138 local tests passed; three loopback RPC tests blocked by sandbox permissions passed on a permitted rerun. Typecheck, changed-file ESLint, and wallet boundary checks pass. Confirmed queued signing retains its readable metadata after conflict resolution.
+
+## 2026-10-06 — Pending routing belongs to the destination
+- [x] Query and validate retained payments by destination project, preserving source metadata in retry calldata.
+- [x] Cover source 6 → destination 1, unrelated destinations, and multi-source incoming payments.
+- [x] Verify reader/component/operation tests, typecheck, and matching JBM correction.
+Plan review: correct the existing query owner and boundary validation; no contract behavior change.
+
+Destination-routing review: 30 reader/component/operation tests passed; typecheck, changed-file ESLint, fixture syntax and diff checks pass. Query and validation use destination projectId; sourceProjectId remains unchanged in commitments and calldata. Query cache key distinguishes destination-scoped results. Browser fixture now uses source 6 / destination 1; browser scenario updated, not run.

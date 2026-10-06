@@ -1080,9 +1080,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
   // The complete original calldata is needed to authenticate each permissionless retry.
   [RouterPendingCallsOperation.id]: {
     operationName: "RouterPendingCalls",
-    query: `query RouterPendingCalls($chainId: Int!, $sourceProjectId: Int!, $gateway: String!, $limit: Int!, $offset: Int!) {
+    query: `query RouterPendingCalls($chainId: Int!, $projectId: Int!, $gateway: String!, $limit: Int!, $offset: Int!) {
     routerPendingCalls(
-      where: { chainId: $chainId, sourceProjectId: $sourceProjectId, gateway: $gateway, version: 6, status_in: [queued, retried] }
+      where: { chainId: $chainId, projectId: $projectId, gateway: $gateway, version: 6, status_in: [queued, retried] }
       orderBy: "pendingCallId"
       orderDirection: "asc"
       limit: $limit

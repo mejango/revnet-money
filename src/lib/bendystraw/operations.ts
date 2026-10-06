@@ -507,12 +507,12 @@ export const ShieldGroupOperation = operation<ShieldGroupQuery, ShieldGroupQuery
 
 export const RouterPendingCallsOperation = operation<
   { routerPendingCalls: { items: IndexedRouterPendingCall[]; totalCount: number } },
-  { chainId: number; sourceProjectId: number; gateway: string; limit: number; offset: number }
+  { chainId: number; projectId: number; gateway: string; limit: number; offset: number }
 >(
   "router-pending-calls.v1",
   variablesWith({
     chainId: isInteger,
-    sourceProjectId: isInteger,
+    projectId: isInteger,
     gateway: isString,
     limit: positiveLimit,
     offset,

@@ -1,3 +1,5 @@
+import { RouterPendingCallsOperation } from "@/lib/bendystraw/operations";
+import { BENDYSTRAW_QUERY_REGISTRY } from "@/lib/bendystraw/registry.server";
 import type { IndexedRouterPendingCall } from "@/lib/bendystraw/types";
 import {
   pendingRouterCommitment,
@@ -99,6 +101,37 @@ beforeEach(() => {
 });
 
 describe("original pending router calls", () => {
+  it("lists incoming payments on destination 1, never on their source 6", async () => {
+    const incoming = [
+      { ...item, sourceProjectId: 6 },
+      { ...item, sourceProjectId: 9, pendingCallId: `0x${"2".repeat(64)}` },
+    ];
+    mocks.query.mockImplementation(async (_operation, variables) => {
+      const items = incoming.filter((payment) => payment.projectId === variables.projectId);
+      return { routerPendingCalls: { items, totalCount: items.length } };
+    });
+    expect(await readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 })).toEqual(
+      incoming,
+    );
+    expect(await readIndexedPendingRouterCalls({ chainId: 1, projectId: 6, version: 6 })).toEqual(
+      [],
+    );
+    const query = BENDYSTRAW_QUERY_REGISTRY[RouterPendingCallsOperation.id].query;
+    expect(query).toContain("projectId: $projectId");
+    expect(query).not.toContain("sourceProjectId:");
+    expect(mocks.query.mock.calls[0][1]).toMatchObject({ chainId: 1, projectId: 1 });
+    expect(mocks.query.mock.calls[0][1]).not.toHaveProperty("sourceProjectId");
+  });
+
+  it("rejects an outgoing payment even when its source matches the viewed project", async () => {
+    mocks.query.mockResolvedValue({
+      routerPendingCalls: { items: [{ ...item, sourceProjectId: 6 }], totalCount: 1 },
+    });
+    await expect(
+      readIndexedPendingRouterCalls({ chainId: 1, projectId: 6, version: 6 }),
+    ).rejects.toThrow("inconsistent project");
+  });
+
   it("paginates each recorded gateway independently when generations reuse a pending ID", async () => {
     const original = rollout.rolloutChain(1)!;
     const previous = "0x0000000000000000000000000000000000000099";
@@ -112,12 +145,12 @@ describe("original pending router calls", () => {
         totalCount: 1,
       },
     }));
-    const rows = await readIndexedPendingRouterCalls({ chainId: 1, projectId: 7, version: 6 });
+    const rows = await readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 });
     expect(rows).toHaveLength(2);
     expect(new Set(rows.map((row) => row.gateway))).toEqual(new Set([gateway, previous]));
     expect(mocks.query.mock.calls.every((args) => args[1].offset === 0)).toBe(true);
   });
-  it("loads every source-project page, rejects truncation and cross-project results", async () => {
+  it("loads every destination-project page, rejects truncation and cross-project results", async () => {
     mocks.query
       .mockResolvedValueOnce({ routerPendingCalls: { items: [item], totalCount: 2 } })
       .mockResolvedValueOnce({
@@ -127,24 +160,24 @@ describe("original pending router calls", () => {
         },
       });
     expect(
-      await readIndexedPendingRouterCalls({ chainId: 1, projectId: 7, version: 6 }),
+      await readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 }),
     ).toHaveLength(2);
     expect(mocks.query.mock.calls[1][1]).toEqual({
       chainId: 1,
-      sourceProjectId: 7,
+      projectId: 1,
       gateway,
       limit: 100,
       offset: 1,
     });
     mocks.query.mockResolvedValueOnce({ routerPendingCalls: { items: [], totalCount: 1 } });
     await expect(
-      readIndexedPendingRouterCalls({ chainId: 1, projectId: 7, version: 6 }),
+      readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 }),
     ).rejects.toThrow("changed while loading");
     mocks.query.mockResolvedValueOnce({
-      routerPendingCalls: { items: [{ ...item, sourceProjectId: 8 }], totalCount: 1 },
+      routerPendingCalls: { items: [{ ...item, projectId: 8 }], totalCount: 1 },
     });
     await expect(
-      readIndexedPendingRouterCalls({ chainId: 1, projectId: 7, version: 6 }),
+      readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 }),
     ).rejects.toThrow("inconsistent project");
   });
 
