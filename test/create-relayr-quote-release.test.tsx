@@ -220,6 +220,35 @@ describe("unpaid Relayr launch quotes", () => {
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
+  it("never signs a rebuilt launch at a nonce the stale launch may have used", async () => {
+    const { staleQuote } = await createPage();
+    await submitLaunch();
+    const stale = mocks.formProps.relayrResponse!;
+    expect(mocks.signTypedData.mock.calls.map(([request]) => request.message.nonce)).toEqual([
+      4n,
+      4n,
+    ]);
+    // The stale launch's requests ran since: the forwarder's nonce moved on.
+    mocks.readContract.mockImplementation(
+      async ({ functionName, address }: { functionName: string; address: Address }) =>
+        functionName === "isTrustedForwarder"
+          ? true
+          : functionName === "eip712Domain"
+            ? ["0x0f", "Juicebox", "1", BigInt(mocks.account.chainId), address, HASH, []]
+            : 5n,
+    );
+    vi.setSystemTime(new Date((NOW + 500) * 1_000));
+    await expect(
+      staleQuote.ensureFreshQuote({
+        bundle: stale,
+        payment: stale.payment_info[0],
+        quotedStageStart: mocks.formProps.quotedStageStart,
+        rebuildStaleQuote: mocks.formProps.rebuildStaleQuote,
+      }),
+    ).rejects.toThrow(/may have executed/);
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+  });
+
   it("lets the next launch through once an unpaid launch quote expires", async () => {
     await createPage();
     await submitLaunch();

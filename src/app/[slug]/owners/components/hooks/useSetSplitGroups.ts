@@ -92,12 +92,11 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
           isSafeConnection(config) ||
           !areRelayrChainsCompatible(selectedChains.map((chain) => chain.chainId));
         if (direct)
-          selectedChains.forEach((chain) =>
-            requireRelayrRecoveryScopeAvailable(
+          for (const chain of selectedChains)
+            await requireRelayrRecoveryScopeAvailable(
               userAddress,
               `project-splits:${chain.chainId}:${chain.projectId}:${chain.rulesetId}:${RESERVED_TOKEN_SPLIT_GROUP_ID}`,
-            ),
-          );
+            );
         setSingleTx(undefined);
 
         // Single chain - use direct writeContract

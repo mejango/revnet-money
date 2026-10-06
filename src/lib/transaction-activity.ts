@@ -2,6 +2,7 @@
 
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import type { MetadataSourceGuard } from "@/lib/project-metadata-write";
+import type { RelayrDiscardReason } from "@bananapus/nana-sdk-core/review/relayr";
 import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import { useSyncExternalStore } from "react";
 import type { Address, Hex } from "viem";
@@ -62,8 +63,20 @@ export type TransactionActivity = {
   relayrPayments?: Array<{ hash: Hex; chainId: number; target: Address; data: Hex; value: string }>;
   relayrCallKeys?: string[];
   relayrQuote?: RelayrPostBundleResponse;
-  relayrAuthorizationExpiresAt?: number;
-  /** "expired": an unpaid quote nothing can fund any more, which no longer reserves its calls. */
+  /**
+   * The forwarder nonce each request in `relayrExpectedTransactions` was signed with, in order, in
+   * decimal. Saved only when every request is a forward request.
+   */
+  relayrNonces?: string[];
+  /**
+   * Every request this session published is dead at a canonical finalized block, and why (ruling
+   * R114). Discard ends it; until then a session that may have run still reserves its calls.
+   */
+  relayrDiscardable?: RelayrDiscardReason;
+  /**
+   * "expired": a quote nothing can fund any more, proven onchain, or one a new quote for its calls
+   * replaced at the same forwarder nonces. It no longer reserves its calls.
+   */
   relayrPaymentStatus?: "unfunded" | "submitted" | "confirmed" | "reverted" | "expired";
   /** A caller-specific receipt/postcondition check must pass before success is trusted. */
   manualVerificationRequired?: boolean;
@@ -293,8 +306,10 @@ export function releaseTransactionActivityVerification(hash: Hex, message: strin
 export function dismissTransactionActivity(id: string): void {
   refreshTransactionActivities();
   const row = snapshot.find((activity) => activity.id === id);
-  // A held entry stays until it is verified, unless the app can never confirm it.
-  if (row?.manualVerificationRequired && !row.safeResultUnconfirmed) return;
+  // A held entry stays until it is verified, unless the app can never confirm it, or a Relayr
+  // session none of whose requests can run again is discarded.
+  if (row?.manualVerificationRequired && !row.safeResultUnconfirmed && !row.relayrDiscardable)
+    return;
   emit(snapshot.filter((activity) => activity.id !== id));
 }
 

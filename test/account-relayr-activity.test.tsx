@@ -1,7 +1,9 @@
 import { AccountActivity } from "@/app/account/[id]/components/AccountActivity";
 import type { TransactionActivity } from "@/lib/transaction-activity";
+import { erc2771ForwarderAbi, jbContractAddress } from "@bananapus/nana-sdk-core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
+import { encodeFunctionData } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const ACCOUNT = "0x1111111111111111111111111111111111111111";
@@ -10,10 +12,16 @@ const mocks = vi.hoisted(() => ({
   activities: [] as TransactionActivity[],
   indexed: [] as { id: string; txHash: string; chainId: number }[],
   waitForRelayrBundle: vi.fn(async () => undefined),
+  checkRelayrSession: vi.fn(async () => undefined),
+  discardRelayrSession: vi.fn(),
   dismiss: vi.fn(),
 }));
 
-vi.mock("@/hooks/useReviewedRelayr", () => ({ waitForRelayrBundle: mocks.waitForRelayrBundle }));
+vi.mock("@/hooks/useReviewedRelayr", () => ({
+  waitForRelayrBundle: mocks.waitForRelayrBundle,
+  checkRelayrSession: mocks.checkRelayrSession,
+  discardRelayrSession: mocks.discardRelayrSession,
+}));
 vi.mock("@/hooks/useViewedAccount", () => ({ useViewedAccount: () => ({ address: ACCOUNT }) }));
 vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
   useCompleteAccountActivity: () => ({ data: {}, isLoading: false, isError: false }),
@@ -56,6 +64,85 @@ function activity(overrides: Partial<TransactionActivity> = {}): TransactionActi
 beforeEach(() => {
   mocks.activities = [];
   mocks.indexed = [];
+  mocks.checkRelayrSession.mockClear();
+  mocks.discardRelayrSession.mockClear();
+});
+
+/** One forward request on Base, signed at the forwarder nonce 4. */
+function signedRequest(): Pick<TransactionActivity, "relayrExpectedTransactions" | "relayrNonces"> {
+  const forwarder = jbContractAddress["6"].ERC2771Forwarder[8453]!;
+  return {
+    relayrExpectedTransactions: [
+      {
+        chainId: 8453,
+        target: forwarder,
+        data: encodeFunctionData({
+          abi: erc2771ForwarderAbi,
+          functionName: "execute",
+          args: [
+            {
+              from: ACCOUNT,
+              to: ACCOUNT,
+              value: 0n,
+              gas: 100_000n,
+              deadline: 1_900_000_000,
+              data: "0x1234",
+              signature: `0x${"12".repeat(65)}`,
+            },
+          ],
+        }),
+        value: "0",
+        transactionUuid: "11111111-1111-4111-8111-111111111111",
+      },
+    ],
+    relayrNonces: ["4"],
+  };
+}
+
+describe("account Relayr session rules (ruling R114 (e))", () => {
+  it("checks an unpaid session's signatures", () => {
+    mocks.activities = [
+      activity({ relayrPaymentStatus: "unfunded", hash: undefined, ...signedRequest() }),
+    ];
+    render(<AccountActivity address={ACCOUNT} />);
+    fireEvent.click(screen.getByRole("button", { name: "Check signatures" }));
+    expect(mocks.checkRelayrSession).toHaveBeenCalledExactlyOnceWith("relayr:bundle");
+    expect(screen.queryByRole("button", { name: "Discard" })).not.toBeInTheDocument();
+  });
+
+  it("offers Discard with its line for a session marked for it, and no other check", () => {
+    const line = "This action's earlier signatures expired without running.";
+    mocks.activities = [
+      activity({
+        relayrPaymentStatus: "unfunded",
+        hash: undefined,
+        status: "failed",
+        manualVerificationRequired: true,
+        relayrDiscardable: "expired",
+        message: line,
+        ...signedRequest(),
+      }),
+    ];
+    render(<AccountActivity address={ACCOUNT} />);
+    expect(screen.getByText(line)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check signatures" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(mocks.discardRelayrSession).toHaveBeenCalledExactlyOnceWith("relayr:bundle");
+  });
+
+  it("checks no signatures it can't classify, such as a raw call's", () => {
+    mocks.activities = [
+      activity({
+        relayrPaymentStatus: "unfunded",
+        hash: undefined,
+        relayrExpectedTransactions: [
+          { chainId: 8453, target: ACCOUNT, data: "0x1234", value: "0", transactionUuid: "" },
+        ],
+      }),
+    ];
+    render(<AccountActivity address={ACCOUNT} />);
+    expect(screen.queryByRole("button", { name: "Check signatures" })).not.toBeInTheDocument();
+  });
 });
 
 describe("account Relayr recovery controls", () => {

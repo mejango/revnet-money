@@ -4,7 +4,6 @@ import { Nav } from "@/components/layout/Nav";
 import { pinDraftItems } from "@/components/shop/itemDraft";
 import { useToast } from "@/components/ui/use-toast";
 import {
-  releaseUnpaidRelayrQuote,
   requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
 } from "@/hooks/useReviewedRelayr";
@@ -48,8 +47,10 @@ export default function Page() {
   const [paymentChainId, setPaymentChainId] = useState<number>();
   const quotedFormData = useRef<RevnetFormData | null>(null);
 
+  /** `replaces` names the unpaid launch quote this one replaces. */
   async function deployProject(
     formData: RevnetFormData,
+    replaces?: string,
   ): Promise<RelayrPostBundleResponse | undefined> {
     if (!isConnected || !address) {
       throw new Error("Connect your wallet to launch the revnet.");
@@ -60,7 +61,12 @@ export default function Page() {
     if (formData.chainIds.length > 1 && !areRelayrChainsCompatible(formData.chainIds)) {
       throw new Error("Choose either live chains or test chains, not a mix.");
     }
-    requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
+    // A multichain launch is relayed, and refreshes a live unpaid launch at its saved nonces.
+    await requireRelayrRecoveryScopeAvailable(
+      address,
+      "revnet-launch",
+      formData.chainIds.length > 1 ? { chains: formData.chainIds, replaces } : undefined,
+    );
     setDirectDeployment(null);
 
     let deploymentFormData = formData;
@@ -226,7 +232,7 @@ export default function Page() {
       quotedFormData.current = deploymentFormData;
       setQuotedStageStart(quotedStageStartOf(firstRequest, deploymentFormData));
     }
-    return await getRelayrTxQuote(relayrTransactions);
+    return await getRelayrTxQuote(relayrTransactions, { replaces });
   }
 
   // REVDeployer locks cash-outs and loans for 7 days when the first stage's
@@ -234,8 +240,9 @@ export default function Page() {
   // starts. Paying a stale quote therefore rebuilds the whole request from the
   // same form data: `deployProject` captures one fresh timestamp shared by
   // every chain, keeping the encoded configuration byte-identical across
-  // chains so suckers still pair. The stale quote is released first, so it
-  // can never be paid and no longer holds the launch scope.
+  // chains so suckers still pair. The rebuilt launch replaces the stale quote:
+  // it is signed at the stale requests' nonces, so at most one of them runs on
+  // each chain, and the stale quote is never paid from here.
   async function rebuildStaleQuote(
     stale: RelayrPostBundleResponse,
   ): Promise<RelayrPostBundleResponse> {
@@ -245,8 +252,7 @@ export default function Page() {
         "The original launch request is unavailable. Clear the quote and get a new one.",
       );
     }
-    await releaseUnpaidRelayrQuote(stale.bundle_uuid);
-    const quote = await deployProject(formData);
+    const quote = await deployProject(formData, stale.bundle_uuid);
     if (!quote) {
       throw new Error("Could not refresh the quote. Clear it and try again.");
     }

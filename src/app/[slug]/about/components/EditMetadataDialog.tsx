@@ -167,7 +167,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       });
       if (!client) throw new Error("The metadata network is unavailable.");
       await verifyMetadataSource(client as PublicClient, destination.source, signer);
-      requireRelayrRecoveryScopeAvailable(
+      await requireRelayrRecoveryScopeAvailable(
         signer,
         `project-metadata:${destination.source.chainId}:${destination.source.projectId}`,
       );
@@ -361,12 +361,11 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
         }),
       );
       if (!relayed) {
-        destinations.forEach(({ source }) =>
-          requireRelayrRecoveryScopeAvailable(
+        for (const { source } of destinations)
+          await requireRelayrRecoveryScopeAvailable(
             address,
             `project-metadata:${source.chainId}:${source.projectId}`,
-          ),
-        );
+          );
         await runSequentialWrites({
           writes: destinations.map(({ source, metadataUri }) => ({
             abi: jbControllerAbi,

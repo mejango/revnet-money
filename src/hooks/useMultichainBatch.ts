@@ -393,7 +393,7 @@ export function useMultichainBatch() {
           if (call.state !== "ready" || call.hash || !call.expectedRouterPending) return false;
           // Lost publication responses also reserve this scope. Never skip a
           // signed/published call just because its journal still says ready.
-          requireRelayrRecoveryScopeAvailable(
+          await requireRelayrRecoveryScopeAvailable(
             account,
             call.recoveryScope ?? `${batch!.scope}:${call.chainId}:${index}`,
           );
@@ -622,7 +622,7 @@ export function useMultichainBatch() {
                 throw new Error(
                   "The previous wallet submission has an unknown result. Reconcile it before resubmitting this batch.",
                 );
-              requireRelayrRecoveryScopeAvailable(
+              await requireRelayrRecoveryScopeAvailable(
                 account,
                 call.recoveryScope ?? `${batch.scope}:${call.chainId}:${index}`,
               );
@@ -682,12 +682,11 @@ export function useMultichainBatch() {
               batch.rounds.every((round) => round.state === "ready")
             ) {
               try {
-                batch.calls.forEach((call, index) =>
-                  requireRelayrRecoveryScopeAvailable(
+                for (const [index, call] of batch.calls.entries())
+                  await requireRelayrRecoveryScopeAvailable(
                     account,
-                    call.recoveryScope ?? `${batch!.scope}:${call.chainId}:${index}`,
-                  ),
-                );
+                    call.recoveryScope ?? `${batch.scope}:${call.chainId}:${index}`,
+                  );
                 removeUnsubmittedBatch(batch.id);
                 discarded = true;
               } catch {
