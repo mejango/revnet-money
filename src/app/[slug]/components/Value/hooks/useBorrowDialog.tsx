@@ -3,7 +3,9 @@ import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalPendingError,
+  isSafeProposalUnconfirmedError,
   requireOnchainExecution,
+  SAFE_PROPOSAL_UNCONFIRMED_TITLE,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -47,7 +49,8 @@ type BorrowState =
   | "error-permission-denied"
   | "error-loan-canceled"
   | "error"
-  | "reallocation-pending";
+  | "reallocation-pending"
+  | "safe-unconfirmed";
 
 /**
  * A loan row as the loan tables select it (a superset of Bendystraw's LoanRow;
@@ -445,6 +448,20 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   }, []);
 
   /**
+   * Shows a step refused by its Safe proposal whose result can't be confirmed, which is neither a
+   * failure nor a denial: true when `err` is that refusal.
+   */
+  const showUnconfirmedProposal = useCallback(
+    (err: unknown) => {
+      if (!isSafeProposalUnconfirmedError(err)) return false;
+      setBorrowStatus("safe-unconfirmed");
+      toast({ title: SAFE_PROPOSAL_UNCONFIRMED_TITLE, description: err.message });
+      return true;
+    },
+    [toast],
+  );
+
+  /**
    * Ensure REVLoans holds BURN_TOKENS for this account+project, granting it if not.
    *
    * Shared by BOTH submit paths. The reallocation branch used to skip it entirely, so a
@@ -514,6 +531,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           });
           return false;
         }
+        if (showUnconfirmedProposal(err)) return false;
         setBorrowStatus("error-permission-denied");
         toast({
           variant: "destructive",
@@ -537,6 +555,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     publicClient,
     resolvedPermissionsAddress,
     revLoansContractAddress,
+    showUnconfirmedProposal,
     toast,
   ]);
 
@@ -629,6 +648,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           account: address,
         });
       } catch (err) {
+        if (showUnconfirmedProposal(err)) return;
         setBorrowStatus("error");
         toast({
           variant: "destructive",
@@ -687,6 +707,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             account: address,
           });
         } catch (err) {
+          if (showUnconfirmedProposal(err)) return;
           setBorrowStatus("error");
           toast({
             variant: "destructive",
@@ -723,6 +744,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     tokenConfigForChain,
     collateralCountToTransfer,
     ensureBurnTokensPermission,
+    showUnconfirmedProposal,
   ]);
 
   // ===== EFFECTS =====

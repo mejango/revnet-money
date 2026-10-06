@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
 import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
@@ -29,6 +30,7 @@ const REALLOCATE_STATUS_TEXT: Record<string, string> = {
   "reallocation-pending": "Refinancing loan...",
   success: "Loan refinanced.",
   "error-permission-denied": "Permission was not granted. Approve it to continue.",
+  "safe-unconfirmed": SAFE_PROPOSAL_UNCONFIRMED_LINE,
   "error-loan-canceled": "Refinancing canceled.",
   error: "The loan could not be refinanced.",
 };
@@ -439,7 +441,7 @@ export function ReallocateDialog({
               action="Refinance loan"
               onConfirm={() => void handleBorrow()}
               busy={busy}
-              status={busy ? statusText : null}
+              status={busy || borrowStatus === "safe-unconfirmed" ? statusText : null}
               error={borrowStatus.startsWith("error") ? statusText : null}
             >
               <SummaryRow label="Loan">

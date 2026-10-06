@@ -3,10 +3,12 @@ import { BridgeDialog } from "@/app/[slug]/components/Value/BridgeDialog";
 import { ReallocateDialog } from "@/app/[slug]/components/Value/ReallocateDialog";
 import { RedeemDialog } from "@/app/[slug]/components/Value/RedeemDialog";
 import { RepayDialog } from "@/app/[slug]/components/Value/RepayDialog";
+import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState, type ReactNode } from "react";
+import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Cash out, bridge, borrow, refinance and repay each host their confirm in
@@ -21,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   prepareCashOut: vi.fn(),
   freshBorrowable: vi.fn(),
   ensureAllowance: vi.fn(),
+  hasPermissions: vi.fn(),
+  toast: vi.fn(),
 }));
 
 const tokenBalance = (chainId: number, projectId: number) => ({
@@ -72,11 +76,12 @@ vi.mock("@/app/[slug]/components/Value/SimulatedLoanCard", () => ({
   SimulatedLoanCard: () => null,
 }));
 vi.mock("@/components/ui/use-toast", () => ({
-  toast: vi.fn(),
-  useToast: () => ({ toast: vi.fn() }),
+  toast: mocks.toast,
+  useToast: () => ({ toast: mocks.toast }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeProposalPendingError: () => false,
+vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
+  // The write hook's own refusals, their tests and their lines, as the flows read them.
+  ...(await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>()),
   requireOnchainExecution: () => undefined,
   useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false }),
   useWriteContract: () => ({
@@ -154,7 +159,7 @@ vi.mock("@/lib/loanTransactions", async (importOriginal) => ({
 vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
   getTokenAddress: async () => "0x2222222222222222222222222222222222222222",
-  hasPermissions: async () => true,
+  hasPermissions: mocks.hasPermissions,
   prepareHookAwareCashOut: mocks.prepareCashOut,
 }));
 
@@ -191,6 +196,7 @@ beforeEach(() => {
   mocks.prepareCashOut.mockReset().mockImplementation(never);
   mocks.freshBorrowable.mockReset().mockImplementation(never);
   mocks.ensureAllowance.mockReset().mockResolvedValue(null);
+  mocks.hasPermissions.mockReset().mockResolvedValue(true);
 });
 
 /** Each flow, opened as the app opens it, run up to its confirm's action. */
@@ -345,6 +351,36 @@ describe("value sends name the account they pay", () => {
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({
       account: "0x1111111111111111111111111111111111111111",
+    });
+  });
+});
+
+// A step whose identical Safe proposal ended where the app can't confirm its result is refused.
+// Each flow says to check that proposal in Safe, and neither that the step failed nor that
+// permission was denied.
+describe("loan flows refused by a Safe proposal the app can't confirm", () => {
+  const PROPOSAL = `0x${"ab".repeat(32)}` as Hex;
+
+  it.each([
+    ["borrow's permission step", confirmBorrow, false],
+    ["borrow", confirmBorrow, true],
+    ["refinance", confirmRefinance, true],
+    ["repay", confirmRepay, true],
+  ])("%s", async (_flow, confirmFlow, permitted) => {
+    mocks.hasPermissions.mockResolvedValue(permitted);
+    mocks.freshBorrowable.mockResolvedValue(10n ** 18n);
+    mocks.write.mockRejectedValue(new SafeProposalPendingError(PROPOSAL, "The step", true));
+
+    await confirmFlow();
+
+    const confirm = await confirmPanel();
+    await within(confirm).findByText(
+      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+    );
+    expect(confirm.textContent).not.toMatch(/denied|failed|not granted|could not/i);
+    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
+      title: "Safe proposal unconfirmed",
+      description: `The step was proposed to Safe as ${PROPOSAL}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
     });
   });
 });

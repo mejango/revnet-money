@@ -870,6 +870,15 @@ export function submittedViaSafe(hash?: Hex): boolean {
   return transactionActivityForHash(hash)?.status === "safe-proposed";
 }
 
+/** What an account does about its Safe proposal whose result can't be confirmed. */
+const CHECK_IN_SAFE = "Check it in Safe, then dismiss it in your account activity.";
+
+/** The title a flow gives a step refused by a Safe proposal whose result can't be confirmed. */
+export const SAFE_PROPOSAL_UNCONFIRMED_TITLE = "Safe proposal unconfirmed";
+
+/** The status line a flow shows for that step. */
+export const SAFE_PROPOSAL_UNCONFIRMED_LINE = `This step's Safe proposal can't be confirmed here. ${CHECK_IN_SAFE}`;
+
 /** Refuses a call while its Safe proposal is journaled and not yet settled. */
 export class SafeProposalPendingError extends Error {
   readonly name = "SafeProposalPendingError";
@@ -882,7 +891,7 @@ export class SafeProposalPendingError extends Error {
   ) {
     super(
       unconfirmed
-        ? `${action} was proposed to Safe as ${hash}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`
+        ? `${action} was proposed to Safe as ${hash}, and its result can't be confirmed here. ${CHECK_IN_SAFE}`
         : `${action} was proposed to Safe as ${hash}, but it has not executed. Complete its approvals and execution in Safe, then resume; do not submit it again.`,
     );
   }
@@ -895,6 +904,11 @@ export class SafeProposalPendingError extends Error {
  */
 export function isSafeProposalPendingError(error: unknown): error is SafeProposalPendingError {
   return error instanceof SafeProposalPendingError && !error.unconfirmed;
+}
+
+/** Whether `error` refused a call because its Safe proposal's result can't be confirmed. */
+export function isSafeProposalUnconfirmedError(error: unknown): error is SafeProposalPendingError {
+  return error instanceof SafeProposalPendingError && error.unconfirmed;
 }
 
 /** Stop dependent steps after a Safe connector returns an asynchronous proposal hash. */

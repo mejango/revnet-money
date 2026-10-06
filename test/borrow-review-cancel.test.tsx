@@ -22,9 +22,8 @@ vi.mock("wagmi", () => ({
 vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>();
   return {
-    // The write hook's own refusal and its test, as the dialog reads them.
-    isSafeProposalPendingError: actual.isSafeProposalPendingError,
-    SafeProposalPendingError: actual.SafeProposalPendingError,
+    // The write hook's own refusals, their tests and their lines, as the dialog reads them.
+    ...actual,
     requireOnchainExecution: () => undefined,
     useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false }),
     useWriteContract: () => ({
@@ -99,7 +98,7 @@ describe("wallet-action:loans — a closed permission review", () => {
 });
 
 describe("wallet-action:loans — a permission step refused by a Safe proposal the app can't confirm", () => {
-  it("says to check the proposal in Safe instead of reporting a new proposal", async () => {
+  it("says to check the proposal in Safe, and neither that permission was denied nor that it failed", async () => {
     const proposal = `0x${"ab".repeat(32)}` as Hex;
     mocks.write.mockRejectedValue(
       new SafeProposalPendingError(proposal, "setPermissionsFor", true),
@@ -109,12 +108,10 @@ describe("wallet-action:loans — a permission step refused by a Safe proposal t
     act(() => result.current.handleChainSelection(1));
     await act(() => result.current.handleBorrow());
 
-    expect(result.current.borrowStatus).toBe("error-permission-denied");
-    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        variant: "destructive",
-        description: `setPermissionsFor was proposed to Safe as ${proposal}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
-      }),
-    );
+    expect(result.current.borrowStatus).toBe("safe-unconfirmed");
+    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
+      title: "Safe proposal unconfirmed",
+      description: `setPermissionsFor was proposed to Safe as ${proposal}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
+    });
   });
 });
