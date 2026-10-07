@@ -1,5 +1,7 @@
 "use client";
 
+import { refreshProjectDisplay } from "@/app/[slug]/invalidateProjectDisplay";
+
 import { runSequentialWrites } from "@/app/[slug]/components/v6/operator/operatorLib";
 import { FieldGroup } from "@/app/create/form/Fields";
 import { MarkdownFieldGroup } from "@/app/create/form/MarkdownFieldGroup";
@@ -262,10 +264,16 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       description: "New data will be visible shortly.",
     });
     setTimeout(() => {
-      void metadata.refetch?.();
-      router.refresh();
+      // Evict immediately before refresh, after the existing indexing grace
+      // period. An unavailable refresh action still has the cache's 30s bound.
+      void refreshProjectDisplay(projects.map(({ chainId, projectId }) => ({ chainId, projectId })))
+        .catch(() => undefined)
+        .finally(() => {
+          void metadata.refetch?.();
+          router.refresh();
+        });
     }, 5000);
-  }, [toast, metadata, router, closeReview]);
+  }, [toast, metadata, router, closeReview, projects]);
 
   const review = async (
     values: MetadataFormData,

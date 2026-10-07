@@ -507,8 +507,8 @@ Required workspace resources remain authoritative in this isolated checkout: `/U
 - **Verification:** Focused tests cover equal number/bigint callers, metadata/layout/page deduplication, chain/project separation, reuse through30s then fresh reads, negative/error/incomplete retry, explicit invalidation including a pending stale fill, and layout identity/not-found resolution before secondary streaming. Hold group/ruleset/operator reads to prove independent progress. Preserve onchain outage/fallback and metadata-write tests, run pinned Node26.5 focused tests/types/touched lint/formatter ratchet/source checks, and leave combined production/browser gates to root integration.
 - **Resource budget:** Work only in `.worktrees/perf-revnet-server` on `perf/revnet-server-reads`; original node_modules is a read-only link for focused checks, with no installs/builds against it. One read-only cache reviewer checks architecture while implementation proceeds. Avoid changing alias/client-provider domains; coordinate shared props and invalidation. Replan if strict freshness, streaming status semantics or existing mutation tests cannot be preserved.
 
-- [ ] Extract the layout's existing body without changing await boundaries and commit passing regression checks.
-- [ ] Normalize indexed keys and add bounded successful-result reuse plus targeted invalidation tests.
+- [x] Extract the layout's existing body without changing await boundaries and commit passing regression checks.
+- [x] Normalize indexed keys and add bounded successful-result reuse plus targeted invalidation tests.
 - [ ] Stream group-backed content only after authoritative route/project checks; let start-date and operator display resolve independently.
-- [ ] Wire Retry and metadata completion to server display invalidation; verify shared read owners and recovery.
+- [x] Wire Retry and metadata completion to server display invalidation; verify shared read owners and recovery.
 - [ ] Run focused checks and record exact commits, limitations and integration gates.

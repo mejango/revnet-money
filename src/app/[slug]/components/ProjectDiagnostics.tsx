@@ -12,6 +12,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type PropsWithChildren } from "react";
 import { isAddress, type Address } from "viem";
+import { refreshProjectDisplay } from "../invalidateProjectDisplay";
 import { CheckDeploymentButton, DiagnosticsContext } from "./CheckDeploymentButton";
 
 const statusLabels = {
@@ -226,10 +227,17 @@ export function ProjectDiagnosticsProvider({
   );
 }
 
-export function ProjectDataNotice({ status }: { status: ProjectIndexStatus }) {
+export function ProjectDataNotice({
+  status,
+  project,
+}: {
+  status: ProjectIndexStatus;
+  project: { chainId: number; projectId: number; groupId?: string };
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [pending, startTransition] = useTransition();
+  const [refreshFailed, setRefreshFailed] = useState(false);
   return (
     <div className="border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
       <p>{projectIndexMessage(status)}</p>
@@ -247,13 +255,22 @@ export function ProjectDataNotice({ status }: { status: ProjectIndexStatus }) {
                 "pending-routing-payments",
               ].map((family) => queryClient.invalidateQueries({ queryKey: [family] })),
             );
-            startTransition(() => router.refresh());
+            setRefreshFailed(false);
+            startTransition(async () => {
+              try {
+                await refreshProjectDisplay([project]);
+                router.refresh();
+              } catch {
+                setRefreshFailed(true);
+              }
+            });
           }}
         >
           {pending ? "Retrying…" : "Retry"}
         </button>
         <CheckDeploymentButton />
       </div>
+      {refreshFailed ? <p role="alert">Could not refresh project data. Try again.</p> : null}
     </div>
   );
 }

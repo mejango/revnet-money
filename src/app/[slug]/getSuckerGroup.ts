@@ -2,9 +2,10 @@ import { SuckerGroupOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { SuckerGroupQuery } from "@/lib/bendystraw/types";
 import { indexedGroupStatus, type IndexedReadResult } from "@/lib/projectIndexStatus";
+import { cachedIndexedDisplay } from "@/lib/server/projectDisplayCache";
 import { cache } from "react";
 
-// Deduplicate within a render, but let Retry make a fresh request after a failed read.
+// Share successful display reads briefly; failed/incomplete reads remain retryable.
 export const getIndexedSuckerGroup = cache(
   async (
     suckerGroupId: string,
@@ -12,8 +13,10 @@ export const getIndexedSuckerGroup = cache(
   ): Promise<IndexedReadResult<NonNullable<SuckerGroupQuery["suckerGroup"]>>> => {
     if (!suckerGroupId) return { data: null, status: "not-checked" };
     try {
-      const result = await queryBendystraw(chainId, SuckerGroupOperation, { id: suckerGroupId });
-      return { data: result.suckerGroup, status: indexedGroupStatus(result.suckerGroup) };
+      return await cachedIndexedDisplay(["group", chainId, suckerGroupId], async () => {
+        const result = await queryBendystraw(chainId, SuckerGroupOperation, { id: suckerGroupId });
+        return { data: result.suckerGroup, status: indexedGroupStatus(result.suckerGroup) };
+      });
     } catch {
       return { data: null, status: "unavailable" };
     }

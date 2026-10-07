@@ -6,6 +6,8 @@ import { expectEveryWayOutRefused } from "./support/confirm";
 const mocks = vi.hoisted(() => ({
   pinProjectMetadata: vi.fn(),
   refetch: vi.fn(),
+  refreshDisplay: vi.fn(),
+  refreshRoute: vi.fn(),
   writeContractAsync: vi.fn(),
   switchChainAsync: vi.fn(),
   getRelayrTxQuote: vi.fn(),
@@ -29,6 +31,10 @@ const mocks = vi.hoisted(() => ({
     isLoading: boolean;
     refetch?: () => Promise<{ data?: unknown }>;
   },
+}));
+
+vi.mock("@/app/[slug]/invalidateProjectDisplay", () => ({
+  refreshProjectDisplay: mocks.refreshDisplay,
 }));
 
 vi.mock("@/app/create/helpers/pinProjectMetaData", () => ({
@@ -129,7 +135,7 @@ vi.mock("wagmi", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh: mocks.refreshRoute }),
 }));
 
 import { EditMetadataDialog } from "@/app/[slug]/about/components/EditMetadataDialog";
@@ -212,6 +218,7 @@ beforeEach(() => {
   mocks.requireOnchainExecution.mockImplementation(() => undefined);
   mocks.sendRelayrTx.mockResolvedValue(`0x${"cd".repeat(32)}`);
   mocks.waitForRelayrBundle.mockResolvedValue(undefined);
+  mocks.refreshDisplay.mockResolvedValue(undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
@@ -229,6 +236,7 @@ describe("EditMetadataDialog Relayr payment choice", () => {
   const quote = { bundle_uuid: "metadata-bundle", payment_info: payments };
 
   it("relays all four testnet metadata destinations and waits for a testnet funding choice", async () => {
+    const timers = vi.spyOn(globalThis, "setTimeout");
     const chainIds = [11155111, 11155420, 84532, 421614];
     const testnetPayments = payments.map((payment, index) => ({
       ...payment,
@@ -266,6 +274,24 @@ describe("EditMetadataDialog Relayr payment choice", () => {
       expect(mocks.sendRelayrTx).toHaveBeenCalledExactlyOnceWith(testnetPayments[1]),
     );
     expect(mocks.waitForRelayrBundle).toHaveBeenCalledExactlyOnceWith(quote.bundle_uuid);
+    await waitFor(() => expect(timers.mock.calls.some(([, delay]) => delay === 5000)).toBe(true));
+    const delayedRefresh = timers.mock.calls.findIndex(([, delay]) => delay === 5000);
+    clearTimeout(timers.mock.results[delayedRefresh].value);
+    const callback = timers.mock.calls[delayedRefresh][0];
+    expect(typeof callback).toBe("function");
+    let finishEviction!: () => void;
+    mocks.refreshDisplay.mockReturnValueOnce(
+      new Promise<void>((resolve) => (finishEviction = resolve)),
+    );
+    await act(async () => {
+      if (typeof callback === "function") callback();
+    });
+    expect(mocks.refreshDisplay).toHaveBeenCalledWith(
+      chainIds.map((chainId, index) => ({ chainId, projectId: index + 41 })),
+    );
+    expect(mocks.refreshRoute).not.toHaveBeenCalled();
+    finishEviction();
+    await waitFor(() => expect(mocks.refreshRoute).toHaveBeenCalledOnce());
   });
 
   it("requires an explicit funding choice when the connected chain is not quoted", async () => {

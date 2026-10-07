@@ -21,6 +21,7 @@ vi.mock("@/lib/wagmiTransports", () => ({
 }));
 
 import { getProjectWithFallback } from "@/app/[slug]/getProjectFallback";
+import { invalidateProjectDisplay } from "@/lib/server/projectDisplayCache";
 
 const CHAIN_ID = sepolia.id;
 const PROJECT_ID = 123;
@@ -93,6 +94,7 @@ const nonexistentTokenError = () =>
 
 describe("getProjectWithFallback", () => {
   beforeEach(() => {
+    invalidateProjectDisplay([{ chainId: CHAIN_ID, projectId: PROJECT_ID }]);
     mocks.queryBendystraw.mockReset();
     mocks.readContract.mockReset();
     vi.spyOn(console, "error").mockImplementation(() => undefined);

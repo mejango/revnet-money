@@ -8,7 +8,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), refresh: vi.fn(), copy: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  load: vi.fn(),
+  refresh: vi.fn(),
+  copy: vi.fn(),
+  evict: vi.fn(),
+}));
+vi.mock("@/app/[slug]/invalidateProjectDisplay", () => ({ refreshProjectDisplay: mocks.evict }));
 vi.mock("@/lib/projectDiagnostics", () => ({ loadProjectDiagnostics: mocks.load }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
 const report = {
@@ -49,7 +55,10 @@ function mount(
     <QueryClientProvider client={client}>
       <ProjectDiagnosticsProvider chainId={chainId} projectId={projectId}>
         {notice ? (
-          <ProjectDataNotice status={{ project: "unavailable", group: "missing" }} />
+          <ProjectDataNotice
+            status={{ project: "unavailable", group: "missing" }}
+            project={{ chainId: 1, projectId: 45, groupId: "group" }}
+          />
         ) : (
           <CheckDeploymentButton />
         )}
@@ -62,6 +71,7 @@ function mount(
 beforeEach(() => {
   mocks.load.mockReset();
   mocks.refresh.mockReset();
+  mocks.evict.mockReset().mockResolvedValue(undefined);
   mocks.copy.mockReset().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -273,10 +283,20 @@ describe("project diagnostics", () => {
     expect(screen.queryByText(/hasn't finished indexing/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
+    expect(mocks.evict).toHaveBeenCalledWith([{ chainId: 1, projectId: 45, groupId: "group" }]);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["bendystraw"] });
     for (const key of readKeys) expect(client.getQueryState(key)?.isInvalidated).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
     expect(await screen.findByRole("dialog", { name: "Check deployment" })).toBeInTheDocument();
+  });
+  it("keeps Retry available when server display eviction fails", async () => {
+    mocks.evict.mockRejectedValueOnce(new Error("connection failed"));
+    mount(true);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not refresh project data");
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(mocks.refresh).toHaveBeenCalledOnce());
   });
   it("validates optional operators and only switches the report after an explicit check", async () => {
     mocks.load.mockResolvedValue(report);

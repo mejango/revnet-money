@@ -228,7 +228,14 @@ async function ProjectLayoutContent({
 
             {degraded && (
               <div className="w-full px-4 sm:container pt-4">
-                <ProjectDataNotice status={indexStatus} />
+                <ProjectDataNotice
+                  status={indexStatus}
+                  project={{
+                    chainId,
+                    projectId: Number(projectId),
+                    groupId: project.suckerGroupId,
+                  }}
+                />
               </div>
             )}
             <div className="w-full px-4 sm:container pt-6">
