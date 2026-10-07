@@ -93,7 +93,12 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Shared cross-chain activity grouping and each original transaction link measure
 // 2,726,333 B against HEAD 9d88fecc's 2,725,748 B (+585 B) on the same physical
 // dependency graph. Round up only the aggregate ceiling; other limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2663);
+// Retained navigation with verified identity and bounded read/recovery behavior
+// measures 2,733,461 B against clean 81aeb708's 2,726,293 B (+7,168 B, 0.26%) on
+// identical physical dependencies. Duplicate server React imports and project
+// contexts were removed before measuring. Round up only the aggregate ceiling;
+// route-referenced JavaScript is 960,296 B versus 956,388 B; other limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2670);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
