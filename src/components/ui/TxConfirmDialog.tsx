@@ -7,7 +7,7 @@ import {
   useHoldEnclosingModal,
 } from "@/components/ui/ModalShell";
 import { TxSteps } from "@/components/ui/TxSteps";
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, useId, type ComponentProps, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 export type TxConfirmRow = {
@@ -52,10 +52,11 @@ export function TxConfirmDialog({
   rows?: readonly TxConfirmRow[];
   /** Extra body content under the rows (warnings, notes, custom grids). */
   children?: ReactNode;
-  steps: readonly { key?: string; title: ReactNode; detail?: ReactNode }[];
+  steps: ComponentProps<typeof TxSteps>["steps"];
   activeIndex: number;
   stepsIntro?: string;
-  action: string;
+  /** Null while a read-only phase advances automatically; dismissal remains available. */
+  action: string | null;
   actionDisabled?: boolean;
   cancelLabel?: string;
   onConfirm: () => void;
@@ -91,7 +92,7 @@ export function TxConfirmDialog({
       className={
         host
           ? "w-full bg-melon-25"
-          : "w-full max-w-lg overflow-hidden border border-melon-700 bg-melon-25 shadow-2xl"
+          : "w-full max-w-lg overflow-hidden border border-melon-700 bg-melon-25 shadow-2xl sm:my-auto"
       }
     >
       <header className="flex items-start justify-between gap-4 border-b border-melon-300 bg-melon-25 px-5 py-4">
@@ -129,43 +130,53 @@ export function TxConfirmDialog({
               intro={stepsIntro}
               className="border border-melon-200 bg-melon-50 p-3"
             />
-            {status ? <p className="text-sm text-amber-900">{status}</p> : null}
+            {status ? (
+              <p className="text-sm text-amber-900" role="status">
+                {status}
+              </p>
+            ) : null}
           </>
         )}
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
       </div>
-      <footer className="flex flex-wrap items-end justify-end gap-2 border-t border-melon-300 bg-melon-25 px-5 py-4">
-        {complete ? (
-          <button
-            type="button"
-            className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={onClose}
-          >
-            Done
-          </button>
-        ) : (
-          <>
-            {footerContent ? <div className="w-full">{footerContent}</div> : null}
-            <button
-              type="button"
-              className="min-h-[44px] border border-melon-600 px-5 text-sm disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={busy}
-              onClick={onClose}
-            >
-              {cancelLabel}
-            </button>
+      {complete || action || footerContent ? (
+        <footer className="flex flex-wrap items-end justify-end gap-2 border-t border-melon-300 bg-melon-25 px-5 py-4">
+          {complete ? (
             <button
               type="button"
               className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={busy || preparing || actionDisabled}
-              aria-busy={preparing || undefined}
-              onClick={onConfirm}
+              onClick={onClose}
             >
-              {action}
+              Done
             </button>
-          </>
-        )}
-      </footer>
+          ) : (
+            <>
+              {footerContent ? <div className="w-full">{footerContent}</div> : null}
+              {action ? (
+                <>
+                  <button
+                    type="button"
+                    className="min-h-[44px] border border-melon-600 px-5 text-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={busy}
+                    onClick={onClose}
+                  >
+                    {cancelLabel}
+                  </button>
+                  <button
+                    type="button"
+                    className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={busy || preparing || actionDisabled}
+                    aria-busy={preparing || undefined}
+                    onClick={onConfirm}
+                  >
+                    {action}
+                  </button>
+                </>
+              ) : null}
+            </>
+          )}
+        </footer>
+      ) : null}
     </section>
   );
   if (host) return createPortal(section, host);
@@ -174,7 +185,7 @@ export function TxConfirmDialog({
       onClose={onClose}
       dismissible={!busy}
       labelledBy={titleId}
-      className="items-start justify-center px-3 py-6 sm:items-center"
+      className="items-start justify-center px-3 py-6"
     >
       {section}
     </ModalDialog>

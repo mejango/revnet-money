@@ -323,9 +323,19 @@ describe("the Safe queue's execute-all confirm", () => {
       release = holdLiveRead();
     });
     await waitFor(() => expect(mocks.live).toHaveBeenCalled());
-    expect(within(confirm).getByRole("button", { name: "Checking…" })).toBeDisabled();
-    expect(within(confirm).getAllByText("Checking…").length).toBeGreaterThan(1);
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    expect(
+      within(confirm)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Close"]);
+    expect(within(confirm).queryByRole("combobox")).toBeNull();
+    expect(within(confirm).getAllByText("Checking…")).toHaveLength(2);
+    expect(
+      within(confirm)
+        .getAllByRole("status")
+        .map((status) => status.textContent),
+    ).toEqual(["Base: Checking…", "Optimism: Checking…", "Checking the Safe transactions…"]);
+    fireEvent.click(within(confirm).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await release();
     expect(mocks.quote).not.toHaveBeenCalled();
@@ -384,15 +394,14 @@ describe("the Safe queue's execute-all confirm", () => {
     expect(
       within(confirm).getByText("Review the executions to request a Relayr quote…"),
     ).toBeVisible();
-    expect(within(confirm).getByRole("button", { name: "Checking…" })).toBeDisabled();
+    expect(within(confirm).getAllByRole("button")).toHaveLength(1);
+    expect(within(confirm).getByRole("button", { name: "Close" })).toBeEnabled();
     expect(within(confirm).queryByRole("combobox")).toBeNull();
     expect(mocks.pay).not.toHaveBeenCalled();
 
     await act(async () => acceptReview());
 
-    expect(
-      within(confirm).getByRole("button", { name: "Requesting Relayr quote…" }),
-    ).toBeDisabled();
+    expect(within(confirm).getAllByRole("button")).toHaveLength(1);
     expect(within(confirm).getByText("Requesting Relayr quote…", { selector: "p" })).toBeVisible();
     expect(within(confirm).queryByText(/Review the executions/)).toBeNull();
     expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
@@ -425,7 +434,7 @@ describe("the Safe queue's execute-all confirm", () => {
     );
     const confirm = await openBatch();
     await waitFor(() => expect(mocks.quote).toHaveBeenCalledOnce());
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(within(confirm).getByRole("button", { name: "Close" }));
     await act(async () => lateProgress?.({ type: "phase", phase: "quoting" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     await act(async () =>
@@ -529,7 +538,8 @@ describe("the Safe queue's execute-all confirm", () => {
       }),
     );
     fireEvent.click(check);
-    expect(within(confirm).getByRole("button", { name: "Checking…" })).toBeDisabled();
+    expect(within(confirm).queryByRole("button", { name: "Checking…" })).toBeNull();
+    expect(within(confirm).getByRole("button", { name: "Close" })).toBeEnabled();
     const message =
       "One saved Safe nonce is still pending. The original recovery record remains reserved.";
     await act(async () =>

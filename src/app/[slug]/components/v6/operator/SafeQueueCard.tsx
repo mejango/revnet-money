@@ -1295,18 +1295,20 @@ export function SafeQueueCard({
           stepsIntro="One Relayr payment runs each chain's next fully signed transaction. Later nonces need a new review after these land."
           steps={batch.rows.map(({ row, tx }) => ({
             key: String(row.chainId),
-            title: (
-              <>
-                {chainName(row.chainId)} #{tx.nonce} | {queueLabel(row.chainId, tx)}
-                <QueuedCallSummary chainId={row.chainId} tx={tx} />
-              </>
+            title: `${chainName(row.chainId)} #${tx.nonce}`,
+            status: (
+              <span role="status" aria-atomic="true">
+                <span className="sr-only">{chainName(row.chainId)}: </span>
+                {batch.status[row.chainId] ?? "Waiting"}
+              </span>
             ),
             detail: (
               <>
-                {batch.status[row.chainId] ?? "Waiting"}
+                <span className="block text-sm text-zinc-600">{queueLabel(row.chainId, tx)}</span>
+                <QueuedCallSummary chainId={row.chainId} tx={tx} />
                 {batch.hashes[row.chainId] ? (
                   <a
-                    className="ml-2 underline"
+                    className="mt-2 inline-block underline"
                     href={etherscanLink(batch.hashes[row.chainId], {
                       type: "tx",
                       chainId: row.chainId,
@@ -1333,9 +1335,7 @@ export function SafeQueueCard({
                       ? "Executing…"
                       : "Checking…"
               : batch.preparing
-                ? batch.phase === "quoting"
-                  ? "Requesting Relayr quote…"
-                  : "Checking…"
+                ? null
                 : batch.recovery
                   ? batch.recovery.bundleUuid
                     ? "Check status"

@@ -15,6 +15,8 @@ export function TxSteps({
     /** Stable list key; falls back to the title when it is a plain string. */
     key?: string;
     title: React.ReactNode;
+    /** Independent progress, shown beside the heading rather than buried in details. */
+    status?: React.ReactNode;
     detail?: React.ReactNode;
   }[];
   activeIndex: number;
@@ -39,7 +41,7 @@ export function TxSteps({
               key={step.key ?? String(step.title)}
               data-state={complete ? "complete" : active ? "active" : "pending"}
               aria-current={active ? "step" : undefined}
-              className="flex items-start gap-2 text-sm"
+              className={`flex items-start gap-2 text-sm ${step.status ? "border-melon-200 not-first:border-t not-first:pt-3" : ""}`}
             >
               <span
                 aria-hidden="true"
@@ -54,11 +56,28 @@ export function TxSteps({
                 {complete ? "✓" : index + 1}
               </span>
               <span className="min-w-0 flex-1">
-                <span className={active ? "font-medium text-zinc-900" : "block text-zinc-600"}>
-                  <span className="sr-only">
-                    Step {index + 1} of {steps.length}:{" "}
+                <span
+                  className={
+                    step.status
+                      ? "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
+                      : undefined
+                  }
+                >
+                  <span
+                    className={
+                      active || step.status
+                        ? "min-w-0 font-medium text-zinc-900"
+                        : "block text-zinc-600"
+                    }
+                  >
+                    <span className="sr-only">
+                      Step {index + 1} of {steps.length}:{" "}
+                    </span>
+                    {step.title}
                   </span>
-                  {step.title}
+                  {step.status ? (
+                    <span className="shrink-0 font-medium text-zinc-900">{step.status}</span>
+                  ) : null}
                 </span>
                 {step.detail ? (
                   <span className="mt-0.5 block text-xs text-zinc-500">{step.detail}</span>

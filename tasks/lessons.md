@@ -13,3 +13,7 @@
 - Rule: share display identity probes, render independent chains as they finish, and expose retryable verification failures explicitly. Keep fresh action authority checks separate; never use a cached or failed display probe to authorize a write.
 
 - Follow-up: after consent, say the quote is being requested; after payment, show each chain's submission and verification progress from shared lifecycle events. Never leave a paid flow presenting the Pay action or a stale wallet-confirmation message. A missing receipt is pending until proof is available, not proof of failure.
+## 2026-10-07 — Make automatic phases visually distinct from actions
+
+- User correction: per-chain Checking/Ready was buried in muted detail text, and preparation showed a disabled button despite advancing automatically.
+- Rule: place concurrent status beside its chain heading, separate details below, and render one passive progress message while no action is available. Keep dismissal possible before payment; verify mobile wrapping and the quoted/paid states.
