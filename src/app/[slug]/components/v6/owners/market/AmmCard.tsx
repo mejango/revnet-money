@@ -397,8 +397,7 @@ export function LiquidityVisualization({
         if (overlapLow >= overlapHigh) continue;
         // Average over the logarithmic band so narrow ranges remain visible
         // even when reference prices put the band's midpoint outside them.
-        liquidity +=
-          (range.liquidity * (overlapHigh - overlapLow)) / (bandTickHigh - bandTickLow);
+        liquidity += (range.liquidity * (overlapHigh - overlapLow)) / (bandTickHigh - bandTickLow);
         const amounts = uniswapV4AmountsForLiquidity(
           pool.sqrtP,
           uniswapV4SqrtPriceX96AtTick(Math.round(overlapLow)),
