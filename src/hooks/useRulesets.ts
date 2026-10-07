@@ -4,15 +4,22 @@ import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { readAllProjectRulesets } from "@/lib/nana/rulesets";
 import { PERSIST } from "@/lib/query-persist";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { JBCoreContracts, RulesetWeight, WeightCutPercent } from "@bananapus/nana-sdk-core";
-import { useQuery } from "@tanstack/react-query";
+import {
+  JBCoreContracts,
+  RulesetWeight,
+  WeightCutPercent,
+  type JBChainId,
+} from "@bananapus/nana-sdk-core";
+import { queryOptions, useQuery } from "@tanstack/react-query";
+import type { Address } from "viem";
 import { getPublicClient } from "wagmi/actions";
 
-export function useRulesets() {
-  const { projectId, contractAddress } = useJBContractContext();
-  const chainId = useJBChainId();
-
-  const { data, ...rest } = useQuery({
+export function projectRulesetsQueryOptions(
+  chainId: JBChainId | undefined,
+  projectId: bigint,
+  rulesetsAddress: Address,
+) {
+  return queryOptions({
     queryKey: ["all-rulesets", chainId, projectId.toString()],
     // Ruleset LISTS are immutable only for revnets, whose stages are fixed at deploy. This app also
     // renders ordinary projects, whose owner can queue a new ruleset at any time — caching those
@@ -25,11 +32,7 @@ export function useRulesets() {
     queryFn: async () => {
       const client = getPublicClient(wagmiConfig, { chainId });
       if (!client) throw new Error(`No public client for chain ${chainId}.`);
-      const rulesets = await readAllProjectRulesets(
-        client,
-        contractAddress(JBCoreContracts.JBRulesets),
-        projectId,
-      );
+      const rulesets = await readAllProjectRulesets(client, rulesetsAddress, projectId);
       return rulesets
         .map((ruleset) => ({
           ...ruleset,
@@ -39,6 +42,14 @@ export function useRulesets() {
         .reverse();
     },
   });
+}
+
+export function useRulesets() {
+  const { projectId, contractAddress } = useJBContractContext();
+  const chainId = useJBChainId();
+  const { data, ...rest } = useQuery(
+    projectRulesetsQueryOptions(chainId, projectId, contractAddress(JBCoreContracts.JBRulesets)),
+  );
 
   return { rulesets: data, ...rest };
 }
