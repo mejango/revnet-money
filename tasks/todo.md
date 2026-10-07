@@ -521,7 +521,7 @@ Uses workspace AGENTS.md, workflow/ponytail/SKILL.md and docs/PLAN_REFINEMENT.md
 - [x] Extract duplicated subtab URL owner without behavior change.
 - [x] Add request-verified alias snapshot, short successful reuse and whole-project/page identity gate.
 - [x] Switch tabs/subtabs/graph ranges to retained navigation preserving URL state.
-- [ ] Verify expiry, failures, rebinding, page/layout races, history and state retention.
+- [x] Verify expiry, failures, rebinding, page/layout races, history and state retention.
 
 ## Plan refinement
 
@@ -557,8 +557,9 @@ Root architectural decision: ordinary same-project tabs, graph controls, history
 
 - [x] Preserve both task histories and merge the streamed overview with its identity boundary.
 - [x] Wire and verify the whole-project layout identity boundary.
-- [ ] Run complete static, coverage, production, browser and controlled-comparison checks.
-- [ ] Record exact source revision, evidence, limitations and integration handoff.
+- [x] Run complete static, coverage, production, browser and actual HTTP-status checks.
+- [ ] Run the matched physical-baseline/final comparison after other builds and probes stop.
+- [x] Record qualified source revision, evidence and remaining measurement handoff.
 
 Integration merge review: navigation extraction 2e4652e7 and behavior 656f9a16 preserve both task histories, every requested-project group key, and the streamed StartedProjectChart. The layout now supplies the same verified snapshot to the boundary enclosing all project providers. All 99 focused integration tests across nine suites pass, including the real navigation/cache suites and a new parent/child snapshot assertion. Full release checks follow this source commit.
 
@@ -575,3 +576,7 @@ Final source verification: context extraction f1ec03e9 and exact preview fixture
 Browser-test refinement: the retained alias journey now reaches the valid positive payment preview. Its next assertion incorrectly expected a pool-only selector on a fixture whose IndexedBuybackPools response intentionally has no events. Replace that impossible action with a second supported Time range selection and browser Back/Forward, retaining assertions for range, URL filter/hash, Amount 12, Terms/Overview and zero document requests. Keep unknown fixture requests rejected. This is test-only; it neither fabricates pool data nor claims browser coverage for smooth/trade modes. The complete browser suite must pass again on this corrected test before qualification.
 
 Physical-baseline refinement: the baseline's dependencies are now an APFS physical copy whose package files and internal links match the integration tree; only Vitest's generated results cache changed during coverage. Clean 81aeb708 preserves its original package/lock hashes, and its build, standalone and original budget gates pass. The correct aggregate comparison is 2,726,293 to 2,733,461 bytes (+7,168, or 0.26%); route-referenced JavaScript is 956,388 to 960,296 bytes (+3,908), and the largest route is 717,633 to 721,049 bytes. This supersedes the symlink comparison's apparent route decrease. After removing the duplicated SDK/provider/gate and server React-hook imports, the residual cost is the required navigation verification and display/recovery behavior. Root approved only the minimum aggregate ceiling, 2663 to 2670 KiB; retain every route and lazy-loading limit. Verify the existing budget-checker regression suite, checker lint, source invariants and the actual production artifact. Physical provenance and comparison reports are `/private/tmp/jb-performance-checks/revnet-baseline-physical-provenance.json` and `revnet-bundle-physical-comparison.json`.
+
+Qualification review at 8fbf2e66: all final static and coverage gates pass, as do the production build, standalone and measured bundle gates. The complete corrected browser suite passes 131 tests with four existing skips and no flaky retries, including every viewport's alias range/history/draft journey. The aggregate adjustment passes 19 checker regressions, focused lint/format, source invariants and independent review; route and lazy-wallet limits are unchanged. Actual compiled-server probes return HTTP 404 for explicit ERC721NonexistentToken evidence and HTTP 500 for unavailable RPC evidence, with exact request assertions and no unknown requests. Reports: `/private/tmp/jb-performance-checks/revnet-final-complete.json`, `revnet-final-artifact.json`, `revnet-final-browser-corrected.json`, and `revnet-http-status-final.json`. The application remains byte-equivalent to the production container built from 961f01c4; later changes affect only browser assertions, the budget checker and this record. Parent-owned least-privilege container health/revision/image checks pass. No push or deployment occurred.
+
+Remaining measurement protocol: rerun both the newly physical baseline and final artifact with the same final fixture and identical comparison script, after the parent confirms other builds/browser probes are quiet. Use fresh browser contexts, retain server-cache conditions in the report, assert real content and reject unknown requests/errors. Report cold versus warm observations and request counts without treating local deterministic timings as live-site speed estimates. Earlier symlink and fixture-version timing reports are superseded.
