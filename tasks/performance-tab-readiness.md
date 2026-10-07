@@ -13,8 +13,8 @@ First-batch baseline: `4551eabe`. Work only in `.worktrees/revnet-performance-fo
 
 - [x] Attribute the delay to a specific existing fallback with no app change.
 - [x] Review the evidence and isolate one loading-boundary experiment if supported.
-- [ ] Preserve deep-link/slow/error feedback and all identity/financial gates.
-- [ ] Qualify a measured improvement or discard the experiment and record the remaining limitation.
+- [x] Preserve deep-link/slow/error feedback and all identity/financial gates.
+- [x] Qualify a measured improvement or discard the experiment and record the remaining limitation.
 
 ## Conditional implementation after attribution
 
@@ -43,3 +43,41 @@ The deletion-only commit `1eae3926` passes production build, standalone and exis
 The corrected matched4175 pair passed all twelve journeys on the identical probe SHA256 `ab5a2d41a3f36afdd97c912e015b4bc27e4adbafed27d1c6f6cc7ed3625c4edc`, fixture and CORS adapter, with no unexpected requests/errors/documents. Direct first-matching-DOM medians (not paint): numeric first Terms354.1→61.6 ms; alias revisit330.6→39.9 ms; alias second Overview335.8→38.5 ms. Alias first Terms was already fast in this pair72.2→57.8 ms; numeric revisit20.9→19.8 ms. The baseline repeated Loading terms interval disappeared in the deletion artifact. Raw reports remain `/private/tmp/jb-performance-checks/revnet-fallback-baseline-cors.json` and `revnet-fallback-no-route-loading-cors.json`.
 
 Proceed with the previously reviewed persistent local Suspense and shared-menu transition refinement. Keep one native Link-status descendant for ordinary links; aliases use the existing verified callback and shared transition/target, and selected styling follows committed content. Test deferred first navigation followed by another destination so grouped transitions cannot show stale indicators or commit the older route. Cold server rulesets will be held with a temporary exact allOf/aggregate transport barrier in fresh runtime caches; alias payment UI may legitimately remain inert until child identity acknowledgement. The unrelated4173 preview remains untouched. Final local static/unit/build/bundle and adapted functional/timing checks precede the unchanged full browser suite in hosted PR CI, where4173 is available; no production harness configuration is added for this local conflict.
+
+## Recovery qualification plan
+
+## Plan refinement
+
+- **Objective:** Qualify the committed final persistent-boundary design at `63e6b539` and hand one complete candidate to the release coordinator, retaining draft, alias authority, loading, failure and navigation behavior while removing the measured Terms floor.
+- **System fit:** The existing root release plan owns user authorization and promotion. This worktree owns source and local evidence; existing query, proof, transaction review and recovery owners are unchanged. The final production-shaped browser artifact supplies behavior evidence and hosted CI supplies the clean installation/container gate.
+- **Reuse and simplicity:** Reuse the preserved physical locked dependency graph, pinned toolchain, existing full browser harness and reviewed temporary timing/cold-stream/HTTP-status probes. The existing build follows the last application edit; rebuild only if a source or required gate finding invalidates it. The previously occupied ports are now free, allowing the unchanged browser harness.
+- **Evidence and unknowns:** The source at `2cecaa32` built successfully with a 2666.2 KiB aggregate under the unchanged 2670 KiB ceiling. Later commits add tests only. Final full gates, browser regressions, cold/deep-link ordering, actual 404/500 status and final-design timing remain unverified; deletion-only timings establish attribution, not acceptance.
+- **Verification:** Run dependency, audit, environment, deployment, type, lint, formatting, source, dead-code, protocol and coverage checks on final sources; verify standalone/bundle and all browser projects. Run the prepared cold-stream and HTTP-status probes, then one sequential matched baseline/final direct-DOM comparison with identical fixture/transport. Preserve exact commits, hashes, raw failures and pass evidence; independent review follows.
+- **Resource budget:** One writer and one exclusive local build/timing slot; no parallel browser/load processes. Inspect every failure and rerun only affected checks after corrections. Preserve the first-batch artifact and unrelated processes, and stop for replanning if the final boundary fails readiness or feedback invariants.
+
+- [x] Complete final source, dependency, coverage and bundle gates.
+- [x] Run unchanged full browser suite plus cold-stream and HTTP-status evidence.
+- [x] Measure the final design against the preserved baseline in one quiet matched pair.
+- [x] Record exact evidence and complete candidate for independent review and release.
+
+## Final qualification review
+
+The accepted application source is `2cecaa32`, unchanged through tested head `63e6b539`; the two later commits add regression tests only. Recovery adds this record without changing application code. The preserved physical build `build-TfctsWXpff2fKS` therefore remains valid: source/package/lock/config Git objects match the built commit, installed-lock hash still matches the verified physical clone, and standalone/bundle checks pass again. Aggregate client JavaScript is 2666.2 KiB under the unchanged 2670 KiB ceiling; largest route 689.2 KiB and unique route-referenced JavaScript 934.6 KiB also pass. Provenance: `/private/tmp/jb-performance-checks/revnet-recovered-artifact-provenance.json`.
+
+All final dependency, production-advisory, environment, deployment, type, lint, formatting-ratchet, source, dead-code and independent pinned 44-contract checks pass. Coverage passes 2388 tests with one pre-existing skip. The unchanged full production browser suite passes 139 tests with six viewport/fixture skips, covering retained drafts/history, accessible shapes and the new held Terms→Owners and Terms→Latest interruption regressions. Initial sandbox-only DNS/loopback failures were preserved and rerun with the required access; no application failure was hidden or waived. Gate reports: `revnet-recovered-final-gates.json` and `revnet-recovered-network-gates.json` under the same evidence directory. Hosted clean-install and container jobs remain the release coordinator's gates.
+
+The prepared cold-stream proof passes numeric and alias Terms deep links while the real server `allOf(1,0,100)` read is held. Real header/payment sidebar plus the local Terms fallback appear before release; numeric Amount 12 remains editable and retained, while alias actions correctly stay inert until page identity acknowledgement. Exact financial Terms data, the same sidebar node and alias readiness follow release. The compiled existence probe returns genuine 404 for explicit nonexistent-token evidence and 500 for unavailable RPC evidence. Both probes audit exact traffic and stop their owned processes. Reports: `/private/tmp/jb-performance-tools-20261007/revnet-cold-terms-result.json` and `/private/tmp/jb-performance-checks/revnet-http-status-followup.json`.
+
+Four additional desktop/mobile observations pass: a held numeric native-Link response shows its inline pending status while committed Overview and Amount 12 remain visible, then selects Terms without a document request; an expired alias proof returns a controlled 503, exposes Retry with the draft retained, then recovers and opens Terms without a document request. The first temporary Retry assertion accidentally also selected Next's route announcer; its failure artifacts are preserved, and the corrected specific alert assertion passes both cases. Reports: `revnet-recovered-pending.json` (the two numeric passes and original locator failures) and `revnet-recovered-retry.json` (both corrected Retry passes). Application source was unchanged.
+
+The final quiet pair runs three numeric and three alias journeys per artifact on identical physical dependencies, fixture, Chromium, script and CORS adapter. Each copied runtime starts with an empty Next data cache, then retains server cache between samples; only owned copies are cleared, and all original artifacts remain intact. Baseline is 4551eabe and final source is 63e6b539. Script SHA256: `7ae06a4be11c8b3272e8a7c0f4cf70ee2cdbd8db2576bf0b7c00540a188b6693`. Direct first-matching-DOM medians, in milliseconds:
+
+| Journey | Before | Final |
+| --- | ---: | ---: |
+| Numeric first Terms | 340.4 | 63.7 |
+| Numeric Terms revisit | 20.4 | 20.4 |
+| Alias first Terms | 373.5 | 71.9 |
+| Alias Terms revisit | 331.5 | 41.1 |
+| Alias second Overview | 337.2 | 41.2 |
+
+All twelve journeys pass with correct content and no tab/graph document reloads, unexpected traffic, browser errors or HTTP failures. Terms request counts match in every sample; overall GraphQL-operation and contract-function counts are identical, with normal multicall grouping variation (192→190 eth_call envelopes). One initial chart completion crosses a step boundary, so individual step totals do not establish a separate chart speedup. These bounded local fixture observations measure DOM readiness, not exact paint or production percentiles. Summary and raw pairs: `revnet-recovered-tab-followup-comparison.json`, `revnet-recovered-baseline.json`, and `revnet-recovered-persistent.json` in the evidence directory. Independent source review found no blocker. The local candidate is qualified; the coordinator owns push, hosted checks, promotion and live verification.
