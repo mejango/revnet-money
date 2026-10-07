@@ -90,7 +90,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // measure 2,725,587 B against HEAD 909cf1fd's 2,717,526 B (+8,061 B), using the same
 // physical dependency graph and Node 26.5.0; only the SDK moves from 2.24.2 to 2.24.3.
 // Round up only the aggregate ceiling; route and wallet-loading limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2662);
+// Shared cross-chain activity grouping and each original transaction link measure
+// 2,726,333 B against HEAD 9d88fecc's 2,725,748 B (+585 B) on the same physical
+// dependency graph. Round up only the aggregate ceiling; other limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2663);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

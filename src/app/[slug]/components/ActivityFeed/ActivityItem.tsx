@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { DateRelative } from "@/components/DateRelative";
 import EtherscanLink from "@/components/EtherscanLink";
@@ -41,6 +42,8 @@ export interface ActivityEvent {
   timestamp: number;
   beneficiary: Address;
   chainId: JBChainId;
+  /** Matching setup on other chains, each with its own original transaction. */
+  chains?: { chainId: JBChainId; txHash: string }[];
   baseAmount?: string;
   /** The unabbreviated amount (and raw accounting amount when the headline is USD). */
   exactAmount?: string;
@@ -338,7 +341,7 @@ export function ActivityItemRow({
   return (
     <div className="py-3 border-b border-zinc-200 last:border-b-0 flex gap-2">
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
           {/* One shape for every row: the flow cluster left with "time on
               <chain>" right, the prefixed actor below, then the memo headline
               and the actions as fine-print bullets. The exact value is one
@@ -386,7 +389,26 @@ export function ActivityItemRow({
               <DateRelative timestamp={event.timestamp} />
             </EtherscanLink>
             <span>on</span>
-            <ChainLogo chainId={event.chainId} width={14} height={14} />
+            {event.chains ? (
+              <span className="inline-flex items-center gap-0.5">
+                {event.chains.map((entry) => (
+                  <EtherscanLink
+                    key={entry.chainId}
+                    type="tx"
+                    value={entry.txHash}
+                    chain={JB_CHAINS[entry.chainId].chain}
+                    className="inline-flex size-6 items-center justify-center hover:opacity-70"
+                  >
+                    <span className="sr-only">
+                      View transaction on {chainDisplayName(entry.chainId)}
+                    </span>
+                    <ChainLogo chainId={entry.chainId} width={14} height={14} />
+                  </EtherscanLink>
+                ))}
+              </span>
+            ) : (
+              <ChainLogo chainId={event.chainId} width={14} height={14} />
+            )}
           </span>
         </div>
         {hasTitle && (

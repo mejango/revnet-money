@@ -2,7 +2,7 @@ import type { ActivityEventsQuery } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { exactNumber, formatCompact, formatDecimals, prettyNumber } from "@/lib/number";
 import { isStickyHook } from "@/lib/sticky";
-import { JBProjectToken } from "@bananapus/nana-sdk-core";
+import { JBProjectToken, mergeCrossChainActivityGroups } from "@bananapus/nana-sdk-core";
 import { Address, formatUnits } from "viem";
 import { formatUsd, usdFromScaled } from "../v6/extras/projectPayers";
 import type { ActivityEvent } from "./ActivityItem";
@@ -143,6 +143,31 @@ export function groupSameTxEvents(events: ActivityEvent[]): ActivityEvent[] {
     }
   }
   return order.map(foldSameTxActivities);
+}
+
+/** Project-feed pool setup repeats across chains, with every original tx retained. */
+export function groupCrossChainPoolEvents(events: ActivityEvent[]): ActivityEvent[] {
+  return mergeCrossChainActivityGroups(
+    events.map((event) => ({
+      value: event,
+      // Group standalone pool setup only. Financial and mixed-action rows keep
+      // their own amounts and descriptions rather than a representative.
+      signature:
+        event.type === "buybackPool" && !event.also?.length
+          ? `buybackPool:${event.beneficiary.toLowerCase()}`
+          : `transaction:${event.chainId}:${event.txHash}`,
+      chainId: event.chainId,
+      txHash: event.txHash,
+      timestamp: event.timestamp,
+    })),
+  ).map(({ value, chains }) =>
+    chains.length > 1
+      ? {
+          ...value,
+          chains: chains.map((chain) => ({ ...chain, chainId: chain.chainId as JBChainId })),
+        }
+      : value,
+  );
 }
 
 /** Fold one same-tx group into its primary row, the rest carried in `also`. */

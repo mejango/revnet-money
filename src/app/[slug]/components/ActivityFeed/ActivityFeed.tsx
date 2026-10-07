@@ -10,6 +10,7 @@ import { ProjectTabIcon } from "../ProjectTabIcon";
 import { ActivityItem, type ActivityEvent } from "./ActivityItem";
 import { PendingRoutingPayments } from "./PendingRoutingPayments";
 import {
+  groupCrossChainPoolEvents,
   groupSameTxEvents,
   isProjectFeedActivityEvent,
   mapActivityEvents,
@@ -186,11 +187,13 @@ export function ActivityFeed({ suckerGroupId, projects }: Props) {
   });
   // Filter by category first, then collapse same-tx rows — filtering to one
   // category still surfaces that category's own fragment on its own row.
-  const filteredEvents = groupSameTxEvents(
-    events.filter((event) => {
-      const category = activityCategory(event);
-      return selectedCategories === null || (!!category && selectedCategories.has(category));
-    }),
+  const filteredEvents = groupCrossChainPoolEvents(
+    groupSameTxEvents(
+      events.filter((event) => {
+        const category = activityCategory(event);
+        return selectedCategories === null || (!!category && selectedCategories.has(category));
+      }),
+    ),
   );
   const visibleEvents = filteredEvents.slice(0, visibleCount);
   const hasMore = filteredEvents.length > visibleCount;
