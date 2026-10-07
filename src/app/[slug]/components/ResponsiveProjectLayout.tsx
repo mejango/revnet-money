@@ -1,7 +1,8 @@
 "use client";
 
+import { ProjectContentSkeleton } from "@/components/loading/LoadingSkeletons";
 import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, Suspense, useEffect, useState } from "react";
 import { ProjectMenu } from "./ProjectMenu";
 
 export function ResponsiveProjectLayout({
@@ -79,7 +80,7 @@ export function ResponsiveProjectLayout({
             activityActive ? "hidden" : "block"
           } min-[801px]:order-none min-[801px]:block min-[801px]:pt-0`}
         >
-          {children}
+          <Suspense fallback={<ProjectContentSkeleton segment={segment} />}>{children}</Suspense>
         </div>
       </div>
     </div>

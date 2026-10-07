@@ -2,9 +2,9 @@
 
 import { decodeProjectRouteSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { useParams, useRouter, useSelectedLayoutSegment } from "next/navigation";
-import { PropsWithChildren, useState } from "react";
+import { PropsWithChildren, useId, useState, useTransition } from "react";
 import { useProjectNavigation } from "../ProjectRouteContext";
 import { ProjectOverflowIcon, ProjectTabIcon } from "./ProjectTabIcon";
 
@@ -16,6 +16,24 @@ export function ProjectMenu({
   onMobileActivityChange?: (active: boolean) => void;
 }) {
   const [overflowExpanded, setOverflowExpanded] = useState(false);
+  const [pendingAliasHref, setPendingAliasHref] = useState<string | null>(null);
+  const [aliasPending, startAliasTransition] = useTransition();
+  const navigate = useProjectNavigation();
+  const router = useRouter();
+  const aliasNavigation: AliasNavigation = {
+    pendingHref: aliasPending ? pendingAliasHref : null,
+    navigate: (route, onSelect) => {
+      // The existing proof gate owns ordering and its Checking feedback.
+      setPendingAliasHref(null);
+      navigate(() => {
+        setPendingAliasHref(route);
+        startAliasTransition(() => {
+          onSelect?.();
+          router.push(route, { scroll: false });
+        });
+      }, route);
+    },
+  };
 
   return (
     <div className="flex border-b border-zinc-200">
@@ -25,9 +43,11 @@ export function ProjectMenu({
       >
         <MobileActivityOption
           active={mobileActivityActive}
+          onIntent={() => setPendingAliasHref(null)}
           onSelect={() => onMobileActivityChange?.(true)}
         />
         <MenuOption
+          aliasNavigation={aliasNavigation}
           href=""
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
@@ -36,6 +56,7 @@ export function ProjectMenu({
           Overview
         </MenuOption>
         <MenuOption
+          aliasNavigation={aliasNavigation}
           href="terms"
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
@@ -44,6 +65,7 @@ export function ProjectMenu({
           Terms
         </MenuOption>
         <MenuOption
+          aliasNavigation={aliasNavigation}
           href="owners"
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
@@ -52,6 +74,7 @@ export function ProjectMenu({
           Owners
         </MenuOption>
         <MenuOption
+          aliasNavigation={aliasNavigation}
           href="shop"
           forceInactive={mobileActivityActive}
           onSelect={() => onMobileActivityChange?.(false)}
@@ -62,6 +85,7 @@ export function ProjectMenu({
         {overflowExpanded ? (
           <>
             <MenuOption
+              aliasNavigation={aliasNavigation}
               href="extras"
               forceInactive={mobileActivityActive}
               onSelect={() => onMobileActivityChange?.(false)}
@@ -70,6 +94,7 @@ export function ProjectMenu({
               Extras
             </MenuOption>
             <MenuOption
+              aliasNavigation={aliasNavigation}
               href="operator"
               forceInactive={mobileActivityActive}
               onSelect={() => onMobileActivityChange?.(false)}
@@ -130,7 +155,15 @@ function MoreProjectOptions({
   );
 }
 
-function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect: () => void }) {
+function MobileActivityOption({
+  active,
+  onIntent,
+  onSelect,
+}: {
+  active: boolean;
+  onIntent: () => void;
+  onSelect: () => void;
+}) {
   const navigate = useProjectNavigation();
   const className = cn(
     "-mb-px flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all",
@@ -149,6 +182,7 @@ function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect:
         type="button"
         data-project-navigation="local"
         onClick={() => {
+          onIntent();
           const url = new URL(window.location.href);
           url.searchParams.set("view", "latest");
           navigate(() => {
@@ -164,25 +198,31 @@ function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect:
   );
 }
 
+type AliasNavigation = {
+  pendingHref: string | null;
+  navigate: (route: string, onSelect?: () => void) => void;
+};
+
 function MenuOption({
+  aliasNavigation,
   href,
   children,
   badge,
   forceInactive = false,
   onSelect,
 }: PropsWithChildren<{
+  aliasNavigation: AliasNavigation;
   href: string;
   badge?: string;
   forceInactive?: boolean;
   onSelect?: () => void;
 }>) {
+  const labelId = useId();
   const params = useParams<{ slug: string }>();
   const segment = useSelectedLayoutSegment();
   const isSelected = !forceInactive && (segment || "") === href;
   const slug = decodeProjectRouteSlug(params.slug) ?? params.slug;
   const isMutableHandle = slug.startsWith("@");
-  const navigate = useProjectNavigation();
-  const router = useRouter();
   const route = isMutableHandle && !href ? `/${slug}?view=overview` : `/${slug}/${href}`;
   const linkClassName = cn(
     // -mb-px drops the active border onto the row's persistent baseline.
@@ -196,15 +236,13 @@ function MenuOption({
     <li className="flex shrink-0 items-start gap-2">
       <Link
         href={route}
+        aria-labelledby={labelId}
         prefetch={isMutableHandle ? false : undefined}
         onNavigate={
           isMutableHandle
             ? (event) => {
                 event.preventDefault();
-                navigate(() => {
-                  onSelect?.();
-                  router.push(route, { scroll: false });
-                }, route);
+                aliasNavigation.navigate(route, onSelect);
               }
             : undefined
         }
@@ -212,7 +250,12 @@ function MenuOption({
         className={linkClassName}
         data-project-navigation="client"
       >
-        {children}
+        <MenuOptionContent
+          labelId={labelId}
+          aliasPending={aliasNavigation.pendingHref === route && !isSelected}
+        >
+          {children}
+        </MenuOptionContent>
       </Link>
       {badge && (
         <span className="rounded-xl border border-teal-400 text-teal-500 font-medium text-[13px] px-2 py-1">
@@ -220,5 +263,29 @@ function MenuOption({
         </span>
       )}
     </li>
+  );
+}
+
+function MenuOptionContent({
+  labelId,
+  aliasPending,
+  children,
+}: PropsWithChildren<{ labelId: string; aliasPending: boolean }>) {
+  const { pending: linkPending } = useLinkStatus();
+  const pending = aliasPending || linkPending;
+  return (
+    <>
+      <span id={labelId} aria-busy={pending} className="inline-flex items-center gap-2">
+        {children}
+      </span>
+      <span role="status" className="inline-flex size-3 shrink-0 items-center justify-center">
+        {pending ? (
+          <>
+            <span aria-hidden="true" className="block size-2 rounded-full bg-teal-600" />
+            <span className="sr-only">Loading section</span>
+          </>
+        ) : null}
+      </span>
+    </>
   );
 }
