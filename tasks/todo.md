@@ -477,3 +477,20 @@ Plan: [client performance refinement](performance-client-reads.md), gated by the
 - [ ] Coordinator: integrate with server/navigation changes and run combined production/browser/release checks.
 
 Review: 16 focused suites pass231 tests, with typecheck, touched-file lint, full formatter ratchet, source checks, dead-code checks and diff check. Raw histories are shared across three hooks; no new cache or dependency. Exact local evidence and remaining coordinator gates are recorded in the linked plan.
+
+## 2026-10-07 — Reuse recent project diagnostics
+
+## Plan refinement
+
+- **Objective:** Reopening read-only deployment diagnostics within ten seconds reuses complete evidence for the identical chain/project/operator; explicit refresh, expired, changed, invalidated and failed evidence fetch again.
+- **System fit:** ProjectDiagnosticsProvider owns the sole diagnostics query; its BFF combines independent deployment and indexer evidence, displays checked time/block, and never authorizes sends. Existing Retry checks and repeated Check operator use refetch; transaction authority and saved recovery stay unchanged.
+- **Reuse and simplicity:** Reuse TanStack Query's existing complete key, built-in staleTime callback, deduplication and refetch. No second policy owner or new module is needed for one consumer; complete responses receive a ten-second lease while read failures or missing/incomplete indexed evidence remain immediately stale. Switching operators A to B to A may reuse fresh A evidence; repeated Check operator on unchanged A and Retry checks always fetch.
+- **Evidence and unknowns:** Read workspace AGENTS.md, workflow/ponytail/SKILL.md and README.md, docs/PLAN_REFINEMENT.md, relevant workspace/app lessons and local Next caching docs. No descendant AGENTS.md exists. Baseline 81aeb708 uses staleTime zero; every caller and response fallback was traced. Installed Node 26.7.0 is available, required release Node 26.5.0 is absent; integrated pinned-toolchain release verification belongs to the coordinator.
+- **Verification:** Render the real provider with a real QueryClient to prove fresh reuse, exact expiry, invalidation, changed identity, explicit refresh, in-flight deduplication and failure/degraded retry. Run existing diagnostics loader/route/index-status tests, full typecheck, focused ESLint, complete formatting ratchet and diff checks; no production build/deploy in this worktree.
+- **Resource budget:** One isolated worktree at .worktrees/perf-revnet-preparation with existing node_modules symlink; edit only the owning component, its existing focused suite and this record. One focused regression pass plus repository static gates; replan if endpoint semantics or identities make bounded reuse unsafe.
+
+- [x] Implement complete-result diagnostics freshness in its existing owner.
+- [x] Verify rendered reuse and failure recovery with the real query cache and affected suites.
+- [x] Record exact checks and commit the focused change for integration.
+
+Review: complete diagnostics now reuse the existing chain/project/operator query for ten seconds. No new owner, key or transport cache was added. Explicit Retry checks and unchanged-operator Check still refetch; A/B/A selection can reuse the exact fresh A result. Null deployment, unavailable checks, missing/incomplete indexer evidence and failed refreshes remain immediately retryable; prior data is never displayed/copied after a failed refresh. Baseline regressions reproduced extra reopen/remount requests. Final verification: 33 tests passed across project-diagnostics, project-diagnostics-route, project-diagnostics-loader and project-index-status; full typecheck, focused ESLint, complete formatting ratchet (two unchanged debt entries) and diff checks pass. Read-only independent policy review found no authority-safety blocker. Verification used installed Node 26.7.0, TanStack Query 5.101.4, Next 16.3.8 and Vitest 4.1.10; exact pinned-toolchain/dependency integration and production/browser checks remain coordinator-owned. No build, install, push or deployment ran here.

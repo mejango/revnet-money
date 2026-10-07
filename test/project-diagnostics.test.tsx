@@ -3,8 +3,9 @@ import {
   ProjectDataNotice,
   ProjectDiagnosticsProvider,
 } from "@/app/[slug]/components/ProjectDiagnostics";
+import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), refresh: vi.fn(), copy: vi.fn() }));
@@ -33,12 +34,20 @@ const report = {
     ],
   },
 };
-function mount(notice = false) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const availableReport = {
+  ...report,
+  indexer: { project: "available", group: "available" },
+};
+function mount(
+  notice = false,
+  chainId: JBChainId = 1,
+  projectId = 45n,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   const invalidate = vi.spyOn(client, "invalidateQueries");
-  render(
+  const view = render(
     <QueryClientProvider client={client}>
-      <ProjectDiagnosticsProvider chainId={1} projectId={45n}>
+      <ProjectDiagnosticsProvider chainId={chainId} projectId={projectId}>
         {notice ? (
           <ProjectDataNotice status={{ project: "unavailable", group: "missing" }} />
         ) : (
@@ -47,7 +56,7 @@ function mount(notice = false) {
       </ProjectDiagnosticsProvider>
     </QueryClientProvider>,
   );
-  return { invalidate, client };
+  return { ...view, invalidate, client };
 }
 
 beforeEach(() => {
@@ -61,6 +70,150 @@ beforeEach(() => {
 });
 
 describe("project diagnostics", () => {
+  it.each(["available", "not-checked"])(
+    "reuses complete findings with group %s until ten seconds, then refreshes",
+    async (group) => {
+      let now = Date.now();
+      vi.spyOn(Date, "now").mockImplementation(() => now);
+      mocks.load.mockResolvedValue({
+        ...availableReport,
+        indexer: { project: "available", group },
+      });
+      mount();
+      fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+      await screen.findByText("The hook belongs to another project.");
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      now += 9_999;
+      fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+      expect(screen.getByText("The hook belongs to another project.")).toBeInTheDocument();
+      expect(screen.queryByText("Checking deployment…")).not.toBeInTheDocument();
+      expect(mocks.load).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      now += 1;
+      fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+      await screen.findByText("The hook belongs to another project.");
+      expect(mocks.load).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("honors invalidation and explicit retry and operator checks while findings are fresh", async () => {
+    mocks.load.mockResolvedValue(availableReport);
+    const { client } = mount();
+    fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+    await screen.findByText("The hook belongs to another project.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry checks" }));
+    await screen.findByText("The hook belongs to another project.");
+    expect(mocks.load).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Check operator" }));
+    await screen.findByText("The hook belongs to another project.");
+    expect(mocks.load).toHaveBeenCalledTimes(3);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await act(() =>
+      client.invalidateQueries({ queryKey: ["project-deployment-diagnostics", 1, "45", null] }),
+    );
+    expect(mocks.load).toHaveBeenCalledTimes(3);
+    fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+    await screen.findByText("The hook belongs to another project.");
+    expect(mocks.load).toHaveBeenCalledTimes(4);
+  });
+
+  it("isolates findings by chain, project and operator and reuses them after remount", async () => {
+    mocks.load.mockResolvedValue(availableReport);
+    const first = mount();
+    fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+    await screen.findByText("The hook belongs to another project.");
+    const operator = "0x1111111111111111111111111111111111111111";
+    const otherOperator = "0x2222222222222222222222222222222222222222";
+    for (const address of [operator, otherOperator, operator]) {
+      fireEvent.change(screen.getByRole("textbox", { name: "Operator address (optional)" }), {
+        target: { value: address },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Check operator" }));
+      await screen.findByText("The hook belongs to another project.");
+      expect(screen.getByText(`Operator checked: ${address}`)).toBeInTheDocument();
+    }
+    expect(mocks.load).toHaveBeenCalledTimes(3);
+    fireEvent.click(screen.getByRole("button", { name: "Check operator" }));
+    await screen.findByText("The hook belongs to another project.");
+    expect(mocks.load).toHaveBeenLastCalledWith(1, 45n, operator);
+    first.unmount();
+    for (const [chainId, projectId] of [
+      [10, 45n],
+      [1, 46n],
+      [1, 45n],
+    ] as const) {
+      const view = mount(false, chainId, projectId, first.client);
+      fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+      await screen.findByText("The hook belongs to another project.");
+      view.unmount();
+    }
+    expect(mocks.load.mock.calls).toEqual([
+      [1, 45n, undefined],
+      [1, 45n, operator],
+      [1, 45n, otherOperator],
+      [1, 45n, operator],
+      [10, 45n, undefined],
+      [1, 46n, undefined],
+    ]);
+  });
+
+  it("shares an in-flight check across close and reopen", async () => {
+    let resolve!: (value: typeof availableReport) => void;
+    mocks.load.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+    await screen.findByText("Checking deployment…");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+    expect(mocks.load).toHaveBeenCalledTimes(1);
+    resolve(availableReport);
+    await screen.findByText("The hook belongs to another project.");
+  });
+
+  it.each([
+    ["failed deployment read", { ...availableReport, deployment: null }],
+    ["failed project read", report],
+    [
+      "failed group read",
+      { ...availableReport, indexer: { project: "available", group: "unavailable" } },
+    ],
+    [
+      "missing project",
+      { ...availableReport, indexer: { project: "missing", group: "not-checked" } },
+    ],
+    [
+      "incomplete project",
+      { ...availableReport, indexer: { project: "incomplete", group: "available" } },
+    ],
+    [
+      "incomplete group",
+      { ...availableReport, indexer: { project: "available", group: "incomplete" } },
+    ],
+    [
+      "failed deployment check",
+      {
+        ...availableReport,
+        deployment: {
+          ...report.deployment,
+          checks: [{ ...report.deployment.checks[0], status: "unavailable" }],
+        },
+      },
+    ],
+  ])("retries %s immediately on reopen", async (_name, degraded) => {
+    mocks.load.mockResolvedValueOnce(degraded).mockResolvedValue(availableReport);
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry checks" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+    await screen.findByText("The hook belongs to another project.");
+    expect(mocks.load).toHaveBeenCalledTimes(2);
+  });
+
   it("is opt-in, shows loading, and separates onchain findings from data-service failure", async () => {
     let resolve!: (value: typeof report) => void;
     mocks.load.mockReturnValue(
@@ -142,7 +295,10 @@ describe("project diagnostics", () => {
     await waitFor(() => expect(mocks.load).toHaveBeenLastCalledWith(1, 45n, operator));
   });
   it("does not present or copy an earlier report after a retry fails", async () => {
-    mocks.load.mockResolvedValueOnce(report).mockRejectedValueOnce(new Error("RPC retry failed"));
+    mocks.load
+      .mockResolvedValueOnce(availableReport)
+      .mockRejectedValueOnce(new Error("RPC retry failed"))
+      .mockResolvedValue(availableReport);
     mount();
     fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
     await screen.findByText("The hook belongs to another project.");
@@ -150,5 +306,9 @@ describe("project diagnostics", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Deployment checks are unavailable");
     expect(screen.queryByText("The hook belongs to another project.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Copy diagnostics" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+    await screen.findByText("The hook belongs to another project.");
+    expect(mocks.load).toHaveBeenCalledTimes(3);
   });
 });

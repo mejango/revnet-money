@@ -40,7 +40,17 @@ export function ProjectDiagnosticsProvider({
     queryFn: () => loadProjectDiagnostics(chainId, projectId, operator),
     enabled: open,
     retry: false,
-    staleTime: 0,
+    staleTime: ({ state }) => {
+      const report = state.data;
+      // Reuse complete read-only evidence briefly; failed checks stay retryable on reopen.
+      return state.status === "success" &&
+        report?.deployment &&
+        !report.deployment.checks.some((check) => check.status === "unavailable") &&
+        report.indexer.project === "available" &&
+        (report.indexer.group === "available" || report.indexer.group === "not-checked")
+        ? 10_000
+        : 0;
+    },
   });
   const report = query.isError ? undefined : query.data;
 
