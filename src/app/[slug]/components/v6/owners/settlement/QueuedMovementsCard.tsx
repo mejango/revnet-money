@@ -6,6 +6,7 @@ import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
+import { useHydrated } from "@/hooks/useHydrated";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
@@ -332,7 +333,8 @@ export function QueuedMovementsCard({
 }) {
   const [filter, setFilter] = useState<Filter>("all");
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const hydrated = useHydrated();
+  const query = useQuery({
     queryKey: ["v6BridgeRows", chainProjectsKey(chains)],
     meta: PERSIST,
     enabled: chains.length > 1,
@@ -359,6 +361,11 @@ export function QueuedMovementsCard({
       }));
     },
   });
+
+  const data = hydrated ? query.data : undefined;
+  const isLoading = hydrated ? query.isLoading : chains.length > 1;
+  const isError = hydrated && query.isError;
+  const { refetch } = query;
 
   const rows = data ?? [];
   const visible = filter === "all" ? rows : rows.filter((r) => r.status === filter);

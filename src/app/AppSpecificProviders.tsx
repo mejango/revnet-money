@@ -78,10 +78,9 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
   // hand one visitor's fetched data to the next request.
   const [queryClient] = React.useState(createQueryClient);
 
-  // Last session's values are, by definition, values the server did not render, and
-  // streamed segments keep hydrating after this effect fires. Seeding the cache before
-  // the document settles re-renders a tree React is still matching against the server's
-  // HTML, which it reports as a hydration failure. Restore once the document is done.
+  // Let the document load before restoring last session's display values. Each
+  // consumer still needs its own hydration snapshot: streamed Suspense children
+  // can hydrate after window load, and the server did not render these values.
   React.useEffect(() => {
     let teardown: (() => void) | undefined;
     const restore = () => {

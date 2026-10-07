@@ -5,6 +5,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
+import { useHydrated } from "@/hooks/useHydrated";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
@@ -233,7 +234,8 @@ function PeerRow({
  * (website/ renderGossipSection parity).
  */
 export function GossipCard({ chains }: { chains: ChainProject[] }) {
-  const { data, isLoading, isError, refetch } = useQuery({
+  const hydrated = useHydrated();
+  const query = useQuery({
     queryKey: ["v6Gossip", chainProjectsKey(chains)],
     meta: PERSIST,
     enabled: chains.length > 1,
@@ -241,6 +243,11 @@ export function GossipCard({ chains }: { chains: ChainProject[] }) {
     refetchInterval: 60_000,
     queryFn: () => fetchGossip(chains),
   });
+
+  const data = hydrated ? query.data : undefined;
+  const isLoading = hydrated ? query.isLoading : chains.length > 1;
+  const isError = hydrated && query.isError;
+  const { refetch } = query;
 
   if (chains.length < 2) return null;
 

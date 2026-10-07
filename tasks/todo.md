@@ -650,8 +650,14 @@ Evidence lives under `/private/tmp/jb-performance-checks`: `revnet-activity-fina
 - [x] Preserve original 2bd042fb compiled artifact and prove all files/symlinks equal.
 - [x] Attribute hosted hydration and draft setup failures with deterministic source-owner evidence.
 - [x] Extract the existing hydration rule with no behavior change; all31 existing tests across5 callers pass. Separate refactor commit precedes display behavior changes.
-- [ ] Reproduce concrete sibling consumers and implement only proven owning display fixes with regression checks.
-- [ ] Correct shared alias-test readiness and assert the initial draft before testing retention.
+- [x] Reproduce concrete sibling consumers and implement the proven owning display fixes. Permanent regressions cover all9 Market/Settlement consumers, positive bridge/movement data, Header count/error/revalidation states, SSR node preservation, and immediate cached display on ordinary client navigation.
+- [x] Correct shared alias-test readiness and assert the initial draft before testing retention; no payment runtime changes.
 - [ ] Complete independent source review and full required gates; hand exact candidate/artifact to root.
 
 Preserved original artifact: `/private/tmp/jb-performance-tools-20261007/revnet-activity-2bd042fb-preserved/.next`; 3,351 files, no symlinks, every byte equal. Manifest: `/private/tmp/jb-performance-checks/revnet-activity-2bd042fb-artifact-preserved.json`, manifest SHA256 `ed6a07fc56427a3b8ca8e4be8da465dd29889fd3ababb0735a43560154b6e733`.
+
+
+Bounded sibling refinement: the reviewer reproduced actual MarketPriceChart and BridgesCard with persisted empty query results restored before hydration; both replace their SSR skeleton tree with client output and report React hydration errors. Root approved those display owners and the only other renderer of the same key, AmmCard (`v6AmmStates`); `v6Bridges` has no second renderer. Reuse the component snapshot, preserve disabled/no-chain behavior and all query policies, and require real-persister regressions before full gates. Other unrelated query owners remain outside this bounded release repair.
+
+
+Final bounded scope (root approved after independent proof): all9 actual Market/Settlement consumers fail on pinned99569648 source with valid persisted data: MarketPriceChart, AmmCard, SplitHookCard, BridgesCard, AcrossChainsCard, GossipCard, QueuedMovementsCard, V6MarketSubtab ticker and V6SettlementSubtab ticker. Apply the same display-only per-component snapshot to these owners; keep query keys, enablement, polling, stale times, empty-chain behavior, mutation paths and SSR headings/skeletons unchanged. The permanent regression uses valid per-chain AMM/across-chain/gossip records and the actual persister. No further sibling discovery or unrelated query changes are part of this repair. Before evidence: `/private/tmp/jb-performance-checks/revnet-market-settlement-hydration-before.log`.

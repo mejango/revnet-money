@@ -7,6 +7,7 @@ import {
   type MarketPriceView,
 } from "@/components/ui/market-price-view-toggle";
 import { SkeletonLines } from "@/components/ui/skeleton";
+import { useHydrated } from "@/hooks/useHydrated";
 import { formatClock, formatMonthDay, formatMonthYear, formatShortDateTime } from "@/lib/date";
 import { formatDecimals } from "@/lib/number";
 import { smoothPriceSeries } from "@/lib/priceSeries";
@@ -220,6 +221,7 @@ export function MarketPriceChart({
   chains: ChainProject[];
   tokenSymbol: string;
 }) {
+  const hydrated = useHydrated();
   // Same key as AmmCard: the pools are read once for the whole subtab.
   const { data, isLoading } = useQuery(
     cachedQuery({
@@ -232,7 +234,7 @@ export function MarketPriceChart({
 
   // A ghost while the pools resolve, so the tab does not reflow when the
   // chart lands. Once resolved, a project with no pool renders nothing.
-  if (isLoading) {
+  if (hydrated ? isLoading : chains.length > 0) {
     return (
       <div className="border border-teal-200 bg-teal-50 p-4" aria-hidden="true">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -250,7 +252,7 @@ export function MarketPriceChart({
     );
   }
 
-  const pooled = (data ?? []).filter((state) => state.pool);
+  const pooled = (hydrated ? (data ?? []) : []).filter((state) => state.pool);
   if (pooled.length === 0) return null;
 
   return (
