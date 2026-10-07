@@ -3,8 +3,9 @@
 import { decodeProjectRouteSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { useParams, useSelectedLayoutSegment } from "next/navigation";
+import { useParams, useRouter, useSelectedLayoutSegment } from "next/navigation";
 import { PropsWithChildren, useState } from "react";
+import { useProjectNavigation } from "../ProjectRouteBoundary";
 import { ProjectOverflowIcon, ProjectTabIcon } from "./ProjectTabIcon";
 
 export function ProjectMenu({
@@ -130,8 +131,7 @@ function MoreProjectOptions({
 }
 
 function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect: () => void }) {
-  const params = useParams<{ slug: string }>();
-  const slug = decodeProjectRouteSlug(params.slug) ?? params.slug;
+  const navigate = useProjectNavigation();
   const className = cn(
     "-mb-px flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 pb-2 text-base font-medium uppercase transition-all",
     active ? "border-teal-500 text-black" : "border-transparent text-zinc-500 hover:text-zinc-800",
@@ -145,20 +145,21 @@ function MobileActivityOption({ active, onSelect }: { active: boolean; onSelect:
 
   return (
     <li className="flex items-start min-[801px]:hidden">
-      {slug.startsWith("@") ? (
-        <a
-          href={`/${slug}`}
-          onClick={onSelect}
-          className={className}
-          data-project-navigation="document"
-        >
-          {contents}
-        </a>
-      ) : (
-        <button type="button" onClick={onSelect} className={className}>
-          {contents}
-        </button>
-      )}
+      <button
+        type="button"
+        data-project-navigation="local"
+        onClick={() => {
+          const url = new URL(window.location.href);
+          url.searchParams.set("view", "latest");
+          navigate(() => {
+            window.history.replaceState(null, "", url);
+            onSelect();
+          }, url.href);
+        }}
+        className={className}
+      >
+        {contents}
+      </button>
     </li>
   );
 }
@@ -180,6 +181,8 @@ function MenuOption({
   const isSelected = !forceInactive && (segment || "") === href;
   const slug = decodeProjectRouteSlug(params.slug) ?? params.slug;
   const isMutableHandle = slug.startsWith("@");
+  const navigate = useProjectNavigation();
+  const router = useRouter();
   const route = isMutableHandle && !href ? `/${slug}?view=overview` : `/${slug}/${href}`;
   const linkClassName = cn(
     // -mb-px drops the active border onto the row's persistent baseline.
@@ -191,27 +194,26 @@ function MenuOption({
   );
   return (
     <li className="flex shrink-0 items-start gap-2">
-      {isMutableHandle ? (
-        // A handle can be rebound while this layout is mounted. Native
-        // navigation forces the server to rebuild providers for its new pair.
-        <a
-          href={route}
-          onClick={onSelect}
-          className={linkClassName}
-          data-project-navigation="document"
-        >
-          {children}
-        </a>
-      ) : (
-        <Link
-          href={route}
-          onClick={onSelect}
-          className={linkClassName}
-          data-project-navigation="client"
-        >
-          {children}
-        </Link>
-      )}
+      <Link
+        href={route}
+        prefetch={isMutableHandle ? false : undefined}
+        onNavigate={
+          isMutableHandle
+            ? (event) => {
+                event.preventDefault();
+                navigate(() => {
+                  onSelect?.();
+                  router.push(route, { scroll: false });
+                }, route);
+              }
+            : undefined
+        }
+        onClick={isMutableHandle ? undefined : onSelect}
+        className={linkClassName}
+        data-project-navigation="client"
+      >
+        {children}
+      </Link>
       {badge && (
         <span className="rounded-xl border border-teal-400 text-teal-500 font-medium text-[13px] px-2 py-1">
           {badge}

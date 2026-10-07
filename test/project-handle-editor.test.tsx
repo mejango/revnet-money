@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 // The editor's reads are live RPC and service queries; here each answers its fixture.
 vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ invalidateQueries: vi.fn().mockResolvedValue(undefined) }),
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
     data:
       queryKey[0] === "v6-project-handle-operator"

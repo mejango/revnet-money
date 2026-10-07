@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({ runWrites: vi.fn() }));
 // The operator and account-type reads need bendystraw and RPC; the card's
 // transfer flow is what these tests are about.
 vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ invalidateQueries: vi.fn().mockResolvedValue(undefined) }),
   queryOptions: (options: unknown) => options,
   useQueries: () => [
     {

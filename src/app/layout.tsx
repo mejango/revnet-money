@@ -1,5 +1,4 @@
 import { Footer } from "@/components/layout/Footer";
-import { MutableHandleNavigationGuard } from "@/components/MutableHandleNavigationGuard";
 import { Toaster } from "@/components/ui/toaster";
 import type { Metadata } from "next";
 import { twMerge } from "tailwind-merge";
@@ -42,7 +41,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={twMerge(simplonMono.variable, "min-h-screen font-sans text-zinc-950")}>
         <Providers>
-          <MutableHandleNavigationGuard />
           <main className="min-h-screen">{children}</main>
           <Footer />
         </Providers>

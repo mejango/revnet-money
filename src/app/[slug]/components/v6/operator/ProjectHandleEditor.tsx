@@ -62,7 +62,7 @@ import {
   validateSafeCreationForCurrentPolicy,
   type CrossChainHandleAuthorityStatus,
 } from "@bananapus/nana-sdk-core/safe";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
   isAddress,
@@ -73,6 +73,7 @@ import {
   type PublicClient,
 } from "viem";
 import { useAccount } from "wagmi";
+import { invalidateProjectRouteProofs } from "../../../projectRouteQuery";
 import {
   chainName,
   isLiveRevnetOperator,
@@ -204,6 +205,7 @@ export function ProjectHandleEditor({
   project: ChainProjectRow;
   fallbackOperator?: string;
 }) {
+  const queryClient = useQueryClient();
   const { address } = useAccount();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -666,6 +668,7 @@ export function ProjectHandleEditor({
       const receipt = await waitForReceiptWithRetry(client, hash);
       if (receipt.status !== "success")
         throw new Error("The ENS text-record transaction reverted.");
+      await invalidateProjectRouteProofs(queryClient);
       const confirmedBlock = await client.getBlockNumber();
       const confirmedResolver = await client.readContract({
         address: ENS_REGISTRY_ADDRESS,
@@ -758,6 +761,7 @@ export function ProjectHandleEditor({
       const receipt = await waitForReceiptWithRetry(client, hash);
       if (receipt.status !== "success") throw new Error("The project-handle transaction reverted.");
 
+      await invalidateProjectRouteProofs(queryClient);
       const operatorStillCurrent = await isLiveRevnetOperator(
         liveProjectClient,
         project,

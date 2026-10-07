@@ -1,6 +1,6 @@
 "use client";
 
-import { useSelectedLayoutSegment } from "next/navigation";
+import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { ProjectMenu } from "./ProjectMenu";
 
@@ -16,6 +16,8 @@ export function ResponsiveProjectLayout({
   children: ReactNode;
 }) {
   const segment = useSelectedLayoutSegment();
+  const searchParams = useSearchParams();
+  const requestedView = searchParams.get("view");
   const [isSingleColumn, setIsSingleColumn] = useState(false);
   const [activitySelected, setActivitySelected] = useState(segment === null);
 
@@ -28,10 +30,9 @@ export function ResponsiveProjectLayout({
   }, []);
 
   useEffect(() => {
-    if (segment || new URL(window.location.href).searchParams.get("view") === "overview") {
-      setActivitySelected(false);
-    }
-  }, [segment]);
+    if (requestedView === "latest") setActivitySelected(true);
+    else if (segment || requestedView === "overview") setActivitySelected(false);
+  }, [segment, requestedView]);
 
   const activityActive = isSingleColumn && activitySelected;
 

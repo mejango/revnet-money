@@ -1,5 +1,7 @@
 "use client";
 
+import { ProjectRouteBlockedContext } from "@/lib/project-route-state";
+
 import { X } from "@/components/ui/icons";
 import * as React from "react";
 import { createPortal } from "react-dom";
@@ -268,7 +270,7 @@ export function useNativeModalDialog({
   enabled,
   onEscapeKeyDown,
   onOpenChange,
-  open,
+  open: requestedOpen,
 }: {
   dialogRef: React.RefObject<HTMLDialogElement | null>;
   enabled: boolean;
@@ -276,6 +278,8 @@ export function useNativeModalDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
+  const projectBlocked = React.useContext(ProjectRouteBlockedContext);
+  const open = requestedOpen && !projectBlocked;
   // Callers pass inline arrows, so these identities change on every parent
   // render. Reading them through a ref keeps the effect below tied to real
   // state changes instead of re-running (and re-opening the dialog) on every

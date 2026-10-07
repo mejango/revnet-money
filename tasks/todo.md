@@ -518,7 +518,28 @@ Review: behavior-preserving layout extraction is commit 11c7b631; bounded displa
 
 Uses workspace AGENTS.md, workflow/ponytail/SKILL.md and docs/PLAN_REFINEMENT.md at /Users/jango/Documents/jb/v6/evm. Approved design and six-field refinement: /Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_IMPLEMENTATION.md (gate passed).
 
-- [ ] Extract duplicated subtab URL owner without behavior change.
-- [ ] Add request-verified alias snapshot, short successful reuse and whole-project/page identity gate.
-- [ ] Switch tabs/subtabs/graph ranges to retained navigation preserving URL state.
+- [x] Extract duplicated subtab URL owner without behavior change.
+- [x] Add request-verified alias snapshot, short successful reuse and whole-project/page identity gate.
+- [x] Switch tabs/subtabs/graph ranges to retained navigation preserving URL state.
 - [ ] Verify expiry, failures, rebinding, page/layout races, history and state retention.
+
+## Plan refinement
+
+- **Objective:** Retain alias tab, graph and history navigation without exposing actions for another binding; normal long transaction review remains usable.
+- **System fit:** Server resolver remains identity authority; client navigation checks its five-second successful proof; ProjectPageBoundary compares child/layout tuples. Existing TransactionReviewProvider captures the initiating alias scope and checks it at approval, cancels unapproved dialogs on scope changes, and leaves durable transaction recovery unchanged.
+- **Reuse and simplicity:** Native history handles local URL state, TanStack coalesces reads, and the existing global review queue owns scoped approval. Remove broad click capture instead of intercepting arbitrary form/dialog interactions or changing thirteen write callers.
+- **Evidence and unknowns:** Independent review found global review dialogs live above the project boundary and bypass descendant capture; native dialogs also obscure an external Retry. Installed Next16 docs confirm retained layouts and refresh merging, requiring explicit keys and page acknowledgements. Exact pre-send protection after a completed review is investigated separately from alias approval.
+- **Verification:** Exercise actual global review provider with deferred verification, expiry, cancellation, rebinding and simultaneous queued dialogs. Assert no approval from an obsolete id/scope after awaited work; retain existing review and recovery suite; cover real alias browser tabs, subtabs, graph range and history without documents.
+- **Resource budget:** A focused optional scope API in the existing review owner avoids wider financial pipeline edits. Use isolated worktree and parallel read-only review; final production browser verification belongs to the combined branch with server wrapper installed.
+
+### Navigation implementation review
+
+- `resolveProjectRoute.server.ts` remains the sole bidirectional alias/authority resolver. Request-only `connection()` prevents full-route caching; `/api/project-route` returns no-store successful proof timestamps.
+- `projectRouteQuery.ts` owns the memory-only, nonpersisted five-second lease and explicit invalidation. `localCheckedAt = requestStartedAt - (serverNow - checkedAt)` charges full transport time and tolerates server/browser clock skew; a response slower than the lease is rejected. SSR snapshots trigger one client verification because server time cannot safely establish browser freshness. No idle polling.
+- The whole provider subtree is keyed by chain/project/operator, and each server page acknowledges its own identity before actions are exposed. Native history preserves unrelated parameters/hash. Native project dialogs release the top layer during verification without losing mounted form state.
+- Global transaction review captures the active project scope and checks it at approval/funding selection; cancellation/id checks prevent late async proofs approving another dialog. Saved transaction journals are unchanged. Alias scope is checked at approval; existing per-action authority, simulation and account checks still own later send validation.
+- Combined production/browser validation requires the server-worker layout wrapper and is assigned to integration. Focused tests include browser regressions replacing prior document-reload expectations.
+
+### Refined alias rebinding recovery
+
+Root architectural decision: ordinary same-project tabs, graph controls, history and successful expired-proof checks never reload the document. A positively verified change of tuple/operator replaces the document once, which also cancels old JavaScript preparations before they can enqueue under a new scope. Failed verification never reloads and retains Retry plus the original numeric project link. This exception avoids broad changes to financial execution owners while retaining their previous cancellation boundary. Tests distinguish same-binding/no-document, changed-binding/one-document, and failed-proof/no-document behavior.

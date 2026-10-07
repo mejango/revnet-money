@@ -8,8 +8,11 @@ import {
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ComponentType,
@@ -18,7 +21,23 @@ import {
 import type { Address } from "viem";
 import { useAccount } from "wagmi";
 
+export type TransactionReviewScope = {
+  identity: string;
+  verify: () => Promise<boolean>;
+};
+
+const ReviewScopeContext = createContext<((scope: TransactionReviewScope) => () => void) | null>(
+  null,
+);
+
+/** The project registers its binding with the existing global review owner. */
+export function useTransactionReviewScope(scope: TransactionReviewScope | null) {
+  const register = useContext(ReviewScopeContext);
+  useLayoutEffect(() => (scope && register ? register(scope) : undefined), [register, scope]);
+}
+
 export type PendingReview = {
+  scope?: TransactionReviewScope | null;
   kind: "review";
   id: number;
   request: TransactionReviewRequest;
@@ -26,6 +45,7 @@ export type PendingReview = {
 };
 
 export type PendingFundingChainSelection = {
+  scope?: TransactionReviewScope | null;
   kind: "funding";
   id: number;
   options: readonly FundingChainOption[];
@@ -38,6 +58,7 @@ export type PendingDialog = PendingReview | PendingFundingChainSelection;
 export type TransactionReviewDialogProps = {
   pending: PendingDialog;
   onFinish: (result: boolean | number | null) => void;
+  projectCheckPending?: boolean;
 };
 
 function cancelPendingDialog(pending: PendingDialog) {
@@ -55,6 +76,8 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   const accountRef = useRef<Address | undefined>(address);
   accountRef.current = address;
   const nextId = useRef(1);
+  const scopeRef = useRef<TransactionReviewScope | null>(null);
+  const [checkingScopeId, setCheckingScopeId] = useState<number | null>(null);
   const activeRef = useRef<PendingDialog | null>(null);
   const queueRef = useRef<PendingDialog[]>([]);
   const [active, setActive] = useState<PendingDialog | null>(null);
@@ -85,6 +108,7 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
         };
         const pending: PendingReview = {
           kind: "review",
+          scope: scopeRef.current,
           id: nextId.current++,
           request: snapshot,
           resolve,
@@ -99,6 +123,7 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
       new Promise<number | null>((resolve) => {
         enqueueDialog({
           kind: "funding",
+          scope: scopeRef.current,
           id: nextId.current++,
           options: options.map((option) => ({ ...option })),
           initialChainId,
@@ -124,9 +149,39 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     [],
   );
 
-  const finish = useCallback((id: number, result: boolean | number | null) => {
+  const registerScope = useCallback((scope: TransactionReviewScope) => {
+    scopeRef.current = scope;
+    return () => {
+      if (scopeRef.current === scope) scopeRef.current = null;
+      const cancelled = queueRef.current.filter((dialog) => dialog.scope === scope);
+      queueRef.current = queueRef.current.filter((dialog) => dialog.scope !== scope);
+      cancelled.forEach(cancelPendingDialog);
+      if (activeRef.current?.scope === scope) {
+        cancelPendingDialog(activeRef.current);
+        activeRef.current = queueRef.current.shift() ?? null;
+        setActive(activeRef.current);
+      }
+    };
+  }, []);
+
+  const finish = useCallback(async (id: number, result: boolean | number | null) => {
     const current = activeRef.current;
     if (!current || current.id !== id) return;
+    const approving = result === true || typeof result === "number";
+    if (approving && current.scope) {
+      setCheckingScopeId(id);
+      let verified = false;
+      try {
+        verified = await current.scope.verify();
+      } catch {
+        /* A failed proof never approves. */
+      }
+      setCheckingScopeId((checking) => (checking === id ? null : checking));
+      // Cancellation, navigation and a different queued review can all race the check.
+      if (activeRef.current !== current) return;
+      if (!verified || scopeRef.current !== current.scope) result = null;
+    }
+    if (activeRef.current !== current) return;
     const next = queueRef.current.shift() ?? null;
     activeRef.current = next;
     setActive(next);
@@ -154,13 +209,14 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   }, [active, Dialog, finish]);
 
   return (
-    <>
+    <ReviewScopeContext.Provider value={registerScope}>
       {children}
       {active ? (
         Dialog ? (
           <Dialog
             key={active.id}
             pending={active}
+            projectCheckPending={checkingScopeId === active.id}
             onFinish={(result) => finish(active.id, result)}
           />
         ) : (
@@ -185,6 +241,6 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
           </ModalDialog>
         )
       ) : null}
-    </>
+    </ReviewScopeContext.Provider>
   );
 }

@@ -6,6 +6,8 @@ import { V6OverviewTab } from "./components/v6/overview/V6OverviewTab";
 import { projectItemsWithFallback } from "./components/v6/shared";
 import { getProjectWithFallback } from "./getProjectFallback";
 import { getSuckerGroup } from "./getSuckerGroup";
+import { ProjectPageBoundary } from "./ProjectRouteBoundary";
+import { projectRouteSnapshot } from "./projectRouteIdentity";
 import { resolveProjectRoute } from "./resolveProjectRoute.server";
 import { getRulesets } from "./terms/getRulesets";
 
@@ -44,24 +46,26 @@ export default async function AboutPage(props: Props) {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* A missing accounting context means NOT YET INDEXED, never ETH/18 (tokenUtils.ts:44-48).
+    <ProjectPageBoundary snapshot={projectRouteSnapshot(route)}>
+      <div className="flex flex-col gap-6">
+        {/* A missing accounting context means NOT YET INDEXED, never ETH/18 (tokenUtils.ts:44-48).
           Defaulting here rendered a USDC project's floor history divided by 1e18 and labelled
           ETH — off by twelve orders of magnitude under a wrong symbol. Wait for the real
           context instead. */}
-      {suckerGroup && project.token && project.decimals != null && (
-        <Suspense fallback={<CardSkeleton rows={4} />}>
-          <StartedProjectChart
-            projectId={projectId.toString()}
-            chainId={chainId}
-            suckerGroupId={suckerGroup.id}
-            token={project.token}
-            tokenSymbol={project.tokenSymbol ?? ""}
-            tokenDecimals={project.decimals}
-          />
-        </Suspense>
-      )}
-      <V6OverviewTab projects={projects} />
-    </div>
+        {suckerGroup && project.token && project.decimals != null && (
+          <Suspense fallback={<CardSkeleton rows={4} />}>
+            <StartedProjectChart
+              projectId={projectId.toString()}
+              chainId={chainId}
+              suckerGroupId={suckerGroup.id}
+              token={project.token}
+              tokenSymbol={project.tokenSymbol ?? ""}
+              tokenDecimals={project.decimals}
+            />
+          </Suspense>
+        )}
+        <V6OverviewTab projects={projects} />
+      </div>
+    </ProjectPageBoundary>
   );
 }

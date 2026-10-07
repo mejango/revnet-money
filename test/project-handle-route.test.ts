@@ -63,6 +63,7 @@ vi.mock("@/app/[slug]/getProjectOperator", () => ({
   getIndexedProjectOperatorAddresses: mocks.getOperators,
 }));
 vi.mock("@/app/[slug]/getSuckerGroup", () => ({ getSuckerGroup: async () => null }));
+vi.mock("next/server", () => ({ connection: async () => {} }));
 vi.mock("next/cache", () => ({ unstable_cache: <T>(read: T) => read }));
 
 import { readCanonicalHandle } from "@/app/[slug]/canonicalHandle.server";
@@ -138,6 +139,7 @@ describe("project handle routes", () => {
       chainId: 8453,
       projectId: 42n,
       verifiedOperator: OPERATOR,
+      checkedAt: expect.any(Number),
     });
     expect(mocks.getOperators).toHaveBeenCalledWith(42, 8453);
     expect(mocks.mainnetRequest).toHaveBeenCalledWith({
@@ -167,6 +169,7 @@ describe("project handle routes", () => {
       chainId: 8453,
       projectId: 42n,
       verifiedOperator: OPERATOR,
+      checkedAt: expect.any(Number),
     });
   });
 
@@ -200,6 +203,7 @@ describe("project handle routes", () => {
         chainId: 8453,
         projectId: 42n,
         verifiedOperator: safe.address,
+        checkedAt: expect.any(Number),
       });
       // A route render never waits on Safe's service without a bound.
       expect(service).toHaveBeenCalledWith(
@@ -216,6 +220,7 @@ describe("project handle routes", () => {
       for (let render = 0; render < 3; render += 1) {
         await expect(resolveProjectRouteUncached("@design.juicebox")).resolves.toMatchObject({
           verifiedOperator: safe.address,
+          checkedAt: expect.any(Number),
         });
       }
       expect(creationRequests(service)).toBe(1);
@@ -299,6 +304,7 @@ describe("project handle routes", () => {
       chainId: 8453,
       projectId: 42n,
       verifiedOperator: OPERATOR,
+      checkedAt: expect.any(Number),
     });
 
     mocks.projectCode.mockResolvedValue(`${DELEGATED_EOA_CODE}00`);
@@ -312,6 +318,7 @@ describe("project handle routes", () => {
       chainId: 8453,
       projectId: 42n,
       verifiedOperator: OPERATOR,
+      checkedAt: expect.any(Number),
     });
     expect(mocks.handleSetters).toEqual([OPERATOR]);
     expect(mocks.getOperators).toHaveBeenCalledWith(42, 8453);
@@ -324,6 +331,7 @@ describe("project handle routes", () => {
       chainId: 8453,
       projectId: 42n,
       verifiedOperator: OPERATOR,
+      checkedAt: expect.any(Number),
     });
     expect(
       mocks.projectRead.mock.calls
@@ -367,6 +375,7 @@ describe("project handle routes", () => {
       chainId: 8453,
       projectId: 42n,
       verifiedOperator: OPERATOR,
+      checkedAt: expect.any(Number),
     });
     expect(mocks.projectGetLogs).toHaveBeenCalledWith(
       expect.objectContaining({
