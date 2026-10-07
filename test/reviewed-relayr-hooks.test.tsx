@@ -1274,7 +1274,11 @@ describe("reviewed Relayr payment hook", () => {
   it("reviews the exact selected funding chain and persists its signed destination calls", async () => {
     const { review, activity, result } = await quotedPayment();
     review.registerTransactionReviewHandler(async (request) => {
-      expect(request).toMatchObject({ kind: "transaction", title: "Review payment" });
+      expect(request).toMatchObject({
+        kind: "transaction",
+        title: "Review payment",
+        confirmLabel: "Pay",
+      });
       expect(request.calls[0]).toMatchObject({
         chainId: 1,
         from: ACCOUNT,
@@ -2027,6 +2031,11 @@ describe("Safe execution bundles", () => {
     const payer = renderHook(() => hooks.useSendRelayrTx());
     await act(async () => {
       await payer.result.current.sendRelayrTx(payment());
+    });
+    expect(reviews.at(-1)).toMatchObject({
+      kind: "transaction",
+      title: "Review payment",
+      confirmLabel: "Pay",
     });
     expect(mocks.sendTransaction).toHaveBeenCalledOnce();
   });

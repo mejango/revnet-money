@@ -556,7 +556,7 @@ export function safeRelayrController(
         title: "Review payment",
         description:
           "This one payment funds the signed calls on every selected chain. Destination transactions confirm separately.",
-        confirmLabel: "Agree & pay",
+        confirmLabel: "Pay",
         calls: [
           {
             chainId,

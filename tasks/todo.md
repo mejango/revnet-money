@@ -728,3 +728,24 @@ Before runtime changes, six actual server-contract tests reject valid global gra
 The existing live schema contract passes3 tests against both published schemas and its real positive-project filter. Dependency integrity, full typecheck, ESLint, the unchanged formatting ratchet, source invariants, wallet-write inventory and `git diff --check` pass. No full build/browser or deployment was run here; root owns full hosted qualification of the final combined tree and exact-revision production verification, including the preserved failing returning-cache journey. Independent review of the scoped diff found no blocker on the returned valid global-grant data; final commit review remains part of root integration.
 
 Evidence under `/private/tmp/jb-performance-checks`: `revnet-permission-before.log`, `revnet-permission-focused.log`, `revnet-permission-live-schema.log`, `revnet-permission-{dependencies,typecheck,lint,format,source,wallet}.log`, and `revnet-permission-physical-provenance.json`. The original production failure and public differential remain preserved separately. No wallet action, push, deployment, local server or browser process was started.
+
+
+## 2026-10-07 concise funding actions
+
+## Plan refinement
+
+- **Objective:** Make the ready Safe bundle funding action and its nested funding confirmation read exactly “Pay”, as the user requested, while preserving the existing execution and recovery behavior.
+- **System fit:** SafeQueueCard owns the ready funding action; the Safe adapter and forwarded-call hook own the shared payment review requests. These pass labels into existing dialog renderers. Root owns integration and release, and separate investigators own the newly reported funded-bundle mismatch/status issue.
+- **Reuse and simplicity:** Change only the three existing label literals and the existing exact button/payment-review assertions; add no UI layer, handler, state rule or shared abstraction for a single word.
+- **Evidence and unknowns:** Clean f9244fd5 includes the previously reviewed copy and permission integration. The request is an explicit label correction; the new funding/status failure has no demonstrated cause in this patch and is outside its scope.
+- **Verification:** Run the existing Safe queue preparation/payment/recovery tests and actual shared payment-review hook tests, retaining every enabled/disabled, wallet, nonce and recovery assertion; check types, lint and formatting.
+- **Resource budget:** One writer, three literal changes and focused existing tests. No build, quote request, wallet action, push or deployment; hand the clean scoped commit to root.
+
+- [x] Update the ready funding and nested payment labels to Pay.
+- [x] Qualify the existing payment/recovery tests and static checks; hand off the scoped commit.
+
+### Pay-label verification
+
+Only the ready Safe bundle action and the two existing funding-review `confirmLabel` literals changed in runtime source. The review renderer already respects the request label; these payment calls do not enable the separate protocol-fee review override. Existing exact selectors now require Pay, and both the Safe and forwarded payment hook assertions require `confirmLabel: "Pay"`. All readiness, funding-selection, disabled-state, recovery, nonce, wallet and receipt checks remain.
+
+All261 focused tests across5 suites pass, covering Safe queue rendering, payment/recovery hooks, legacy adaptation and the actual review provider. Typecheck, lint, formatting ratchet, wallet-write inventory and `git diff --check` pass. Reports: `/private/tmp/jb-performance-checks/revnet-pay-label-tests.json` with its invocation log, and `revnet-pay-label-static.json` with hashed gate logs. No build, push, deployment, quote request or wallet transaction was performed. The separate reported paid-bundle mismatch/progress issue is unchanged by this label-only patch and remains with its investigators.

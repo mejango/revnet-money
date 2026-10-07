@@ -1338,7 +1338,7 @@ export function SafeQueueCard({
                     ? "Check status"
                     : "Check Safe nonces"
                   : batch.quote
-                    ? `Pay once and execute ${batch.rows.length}`
+                    ? "Pay"
                     : "Retry checks"
           }
           actionDisabled={

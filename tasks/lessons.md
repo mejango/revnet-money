@@ -17,3 +17,8 @@
 
 - User correction: per-chain Checking/Ready was buried in muted detail text, and preparation showed a disabled button despite advancing automatically.
 - Rule: place concurrent status beside its chain heading, separate details below, and render one passive progress message while no action is available. Keep dismissal possible before payment; verify mobile wrapping and the quoted/paid states.
+
+
+## 2026-10-07 — Keep payment actions concise
+- Correction: the user wants the initial Safe bundle funding action and nested payment confirmation both labeled “Pay”.
+- Rule: put the transaction count and execution explanation in the review content; keep the payment button label Pay. Preserve disabled, pending, recovery and authority behavior when changing labels. Existing Safe queue and payment-review assertions enforce the exact label.
