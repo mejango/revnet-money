@@ -1,11 +1,13 @@
 import { Nav } from "@/components/layout/Nav";
+import { ProjectHeaderSkeleton, ProjectPageSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
 import { formatProjectPreviewBalance, projectPreviewSlogan } from "@/lib/project-link-preview";
 import { indexedGroupStatus } from "@/lib/projectIndexStatus";
 import { decodeProjectRouteSlug, slugFor } from "@/lib/slug";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { PropsWithChildren } from "react";
+import { connection } from "next/server";
+import { PropsWithChildren, Suspense } from "react";
 import { lookupCanonicalHandle } from "./canonicalHandle.server";
 import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
 import { Header } from "./components/Header/Header";
@@ -20,7 +22,7 @@ import { getProjectOperator } from "./getProjectOperator";
 import { getIndexedSuckerGroup, getSuckerGroup } from "./getSuckerGroup";
 import { ProjectProviders } from "./ProjectProviders";
 import { resolveProjectRoute } from "./resolveProjectRoute.server";
-import { getRulesets } from "./terms/getRulesets";
+import { getRulesets, type Ruleset } from "./terms/getRulesets";
 
 export const revalidate = 300;
 
@@ -97,7 +99,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // Scrapers cache og:image by URL, so bake the numbers into it: the card refreshes
   // whenever the balance or payment count moves.
   const suckerGroup = project?.suckerGroupId
-    ? await getSuckerGroup(project.suckerGroupId, chainId)
+    ? await getSuckerGroup(project.suckerGroupId, chainId, projectId)
     : null;
   const version = `${suckerGroup?.paymentsCount ?? 0}-${formatProjectPreviewBalance(
     suckerGroup?.projects?.items ?? [],
@@ -130,6 +132,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function SlugLayout({ children, params }: PropsWithChildren<Props>) {
+  // The bounded display cache owns reuse; never turn a cache hit into a
+  // longer-lived Full Route Cache entry on a request that makes no new fetches.
+  await connection();
   const { slug } = await params;
   const route = await resolveProjectRoute(slug);
   if (!route) notFound();
@@ -138,7 +143,36 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
   const resolved = await getProjectWithFallback(projectId, chainId);
   if (!resolved) notFound();
 
-  return ProjectLayoutContent({ children, slug, route, resolved });
+  // Existence and alias checks must finish before the first streamed byte so
+  // missing projects retain their HTTP 404. Secondary display reads can stream.
+  return (
+    <Suspense
+      fallback={
+        <ProjectPageSkeleton
+          hint={{
+            name: resolved.project.name || `Revnet ${projectId}`,
+            logoUri: resolved.project.logoUri,
+          }}
+        />
+      }
+    >
+      <ProjectLayoutContent slug={slug} route={route} resolved={resolved}>
+        {children}
+      </ProjectLayoutContent>
+    </Suspense>
+  );
+}
+
+async function ProjectStartNotice({ rulesets }: { rulesets: Promise<Ruleset[] | null> }) {
+  const stages = await rulesets;
+  if (!stages)
+    return (
+      <p role="status" className="text-sm text-zinc-500">
+        Start time is unavailable.
+      </p>
+    );
+  const startDate = stages[0]?.start;
+  return startDate ? <NewProjectNotice startDate={startDate} /> : null;
 }
 
 async function ProjectLayoutContent({
@@ -161,14 +195,14 @@ async function ProjectLayoutContent({
     ? Promise.resolve({ address: route.verifiedOperator })
     : getProjectOperator(Number(projectId), chainId).catch(() => undefined);
   const suckerGroupPromise = project.suckerGroupId
-    ? getIndexedSuckerGroup(project.suckerGroupId, chainId)
+    ? getIndexedSuckerGroup(project.suckerGroupId, chainId, projectId)
     : Promise.resolve({ data: null, status: "not-checked" as const });
   const isRevnet = project.isRevnet !== false;
   const rulesetsPromise = isRevnet
-    ? getRulesets(projectId.toString(), chainId)
+    ? getRulesets(projectId.toString(), chainId).catch(() => null)
     : Promise.resolve([]);
 
-  const [indexedGroup, rulesets] = await Promise.all([suckerGroupPromise, rulesetsPromise]);
+  const indexedGroup = await suckerGroupPromise;
 
   const indexStatus = {
     project: resolved.indexStatus,
@@ -200,7 +234,6 @@ async function ProjectLayoutContent({
   };
 
   const projects = suckerGroup.projects?.items ?? [];
-  const startDate = rulesets[0]?.start;
 
   return (
     <>
@@ -239,18 +272,37 @@ async function ProjectLayoutContent({
               </div>
             )}
             <div className="w-full px-4 sm:container pt-6">
-              <Header
-                isRevnet={isRevnet}
-                operatorPromise={operatorPromise}
-                projects={projects}
-                createdAt={project.createdAt}
-              />
+              <Suspense
+                fallback={
+                  <ProjectHeaderSkeleton
+                    hint={{
+                      name: project.name || `Revnet ${projectId}`,
+                      logoUri: project.logoUri,
+                    }}
+                  />
+                }
+              >
+                <Header
+                  isRevnet={isRevnet}
+                  operatorPromise={operatorPromise}
+                  projects={projects}
+                  createdAt={project.createdAt}
+                />
+              </Suspense>
             </div>
             {isRevnet ? (
               <ResponsiveProjectLayout
                 sidebar={
                   <>
-                    {startDate && <NewProjectNotice startDate={startDate} />}
+                    <Suspense
+                      fallback={
+                        <p role="status" className="text-sm text-zinc-500">
+                          Loading start time…
+                        </p>
+                      }
+                    >
+                      <ProjectStartNotice rulesets={rulesetsPromise} />
+                    </Suspense>
                     <div className="mt-1 mb-4">
                       <PayCard />
                     </div>

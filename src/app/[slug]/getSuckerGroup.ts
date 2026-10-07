@@ -6,16 +6,20 @@ import { cachedIndexedDisplay } from "@/lib/server/projectDisplayCache";
 import { cache } from "react";
 
 // Share successful display reads briefly; failed/incomplete reads remain retryable.
-export const getIndexedSuckerGroup = cache(
+const getNormalizedIndexedSuckerGroup = cache(
   async (
     suckerGroupId: string,
     chainId: number,
+    projectId: number | undefined,
   ): Promise<IndexedReadResult<NonNullable<SuckerGroupQuery["suckerGroup"]>>> => {
     if (!suckerGroupId) return { data: null, status: "not-checked" };
     try {
-      return await cachedIndexedDisplay(["group", chainId, suckerGroupId], async () => {
+      return await cachedIndexedDisplay(["group", chainId, suckerGroupId, projectId], async () => {
         const result = await queryBendystraw(chainId, SuckerGroupOperation, { id: suckerGroupId });
-        return { data: result.suckerGroup, status: indexedGroupStatus(result.suckerGroup) };
+        return {
+          data: result.suckerGroup,
+          status: indexedGroupStatus(result.suckerGroup, projectId, chainId),
+        };
       });
     } catch {
       return { data: null, status: "unavailable" };
@@ -23,7 +27,19 @@ export const getIndexedSuckerGroup = cache(
   },
 );
 
+export function getIndexedSuckerGroup(
+  suckerGroupId: string,
+  chainId: number,
+  projectId?: number | bigint,
+) {
+  return getNormalizedIndexedSuckerGroup(
+    suckerGroupId,
+    chainId,
+    projectId === undefined ? undefined : Number(projectId),
+  );
+}
+
 export const getSuckerGroup = cache(
-  async (suckerGroupId: string, chainId: number) =>
-    (await getIndexedSuckerGroup(suckerGroupId, chainId)).data,
+  async (suckerGroupId: string, chainId: number, projectId?: number | bigint) =>
+    (await getIndexedSuckerGroup(suckerGroupId, chainId, projectId)).data,
 );

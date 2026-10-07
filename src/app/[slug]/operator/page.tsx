@@ -23,7 +23,7 @@ export default async function OperatorPage(props: Props) {
   if (!resolved) notFound();
   const { project } = resolved;
 
-  const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId);
+  const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId, projectId);
   const projects = projectItemsWithFallback(
     suckerGroup?.projects?.items,
     project,

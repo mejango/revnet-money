@@ -128,7 +128,9 @@ const metadataSchema = schema<MetadataFormData>((input) => {
 });
 
 interface Props {
-  projects: Array<Pick<Project, "projectId" | "token" | "chainId">>;
+  projects: Array<
+    Pick<Project, "projectId" | "token" | "chainId"> & Partial<Pick<Project, "suckerGroupId">>
+  >;
   triggerVariant?: "default" | "outline" | "secondary";
 }
 
@@ -266,7 +268,13 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     setTimeout(() => {
       // Evict immediately before refresh, after the existing indexing grace
       // period. An unavailable refresh action still has the cache's 30s bound.
-      void refreshProjectDisplay(projects.map(({ chainId, projectId }) => ({ chainId, projectId })))
+      void refreshProjectDisplay(
+        projects.map(({ chainId, projectId, suckerGroupId }) => ({
+          chainId,
+          projectId,
+          groupId: suckerGroupId,
+        })),
+      )
         .catch(() => undefined)
         .finally(() => {
           void metadata.refetch?.();

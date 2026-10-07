@@ -73,7 +73,7 @@ export async function GET(
   if (!project) return new Response(null, { status: 404 });
 
   const suckerGroup = project.suckerGroupId
-    ? await getSuckerGroup(project.suckerGroupId, chainId)
+    ? await getSuckerGroup(project.suckerGroupId, chainId, projectId)
     : null;
   const deployments = suckerGroup?.projects?.items ?? [];
   const balance = formatProjectPreviewBalance(deployments);

@@ -22,7 +22,7 @@ export default async function Owners(props: Props) {
   if (!resolved) notFound();
   const { project } = resolved;
 
-  const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId);
+  const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId, projectId);
   return (
     <V6OwnersTab
       projects={projectItemsWithFallback(suckerGroup?.projects?.items, project, chainId, projectId)}

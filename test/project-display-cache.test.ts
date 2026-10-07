@@ -9,6 +9,7 @@ vi.mock("@/lib/projectMetadataFill.server", () => ({
 let projects: typeof import("@/app/[slug]/getProject");
 let groups: typeof import("@/app/[slug]/getSuckerGroup");
 let refresh: typeof import("@/app/[slug]/invalidateProjectDisplay");
+let fallback: typeof import("@/app/[slug]/getProjectFallback");
 
 const project = (projectId = 7, name = "Example") => ({
   projectId,
@@ -30,6 +31,7 @@ beforeEach(async () => {
   projects = await import("@/app/[slug]/getProject");
   groups = await import("@/app/[slug]/getSuckerGroup");
   refresh = await import("@/app/[slug]/invalidateProjectDisplay");
+  fallback = await import("@/app/[slug]/getProjectFallback");
 });
 
 afterEach(async () => {
@@ -44,11 +46,20 @@ describe("server indexed display reuse", () => {
     const metadata = projects.getProject(7n, 1);
     const layout = projects.getIndexedProject(7, 1);
     const tab = projects.getIndexedProject(7n, 1);
+    const resolvedLayout = fallback.getProjectWithFallback(7n, 1);
+    const resolvedTab = fallback.getProjectWithFallback(7, 1);
     expect(reads.query).toHaveBeenCalledOnce();
     finish({ project: project() });
     expect(await metadata).toEqual(project());
     expect(await layout).toEqual({ data: project(), status: "available" });
     expect(await tab).toEqual(await layout);
+    expect(await resolvedLayout).toEqual({
+      project: project(),
+      degraded: false,
+      indexStatus: "available",
+    });
+    expect(await resolvedTab).toEqual(await resolvedLayout);
+    expect(reads.query).toHaveBeenCalledOnce();
   });
 
   it("reuses successful reads for 30 seconds, then waits for a fresh result", async () => {
@@ -100,6 +111,18 @@ describe("server indexed display reuse", () => {
     expect(reads.query).toHaveBeenCalledTimes(5);
   });
 
+  it("does not cache a nonempty group that omits the requested project", async () => {
+    reads.query.mockResolvedValueOnce({ suckerGroup: group(8) });
+    expect(await groups.getIndexedSuckerGroup("group", 1, 7n)).toEqual({
+      data: group(8),
+      status: "incomplete",
+    });
+    reads.query.mockResolvedValueOnce({ suckerGroup: group(7) });
+    expect(await groups.getSuckerGroup("group", 1, 7)).toEqual(group(7));
+    expect(await groups.getSuckerGroup("group", 1, 7n)).toEqual(group(7));
+    expect(reads.query).toHaveBeenCalledTimes(2);
+  });
+
   it("invalidates the project and its cross-chain group without evicting unrelated projects", async () => {
     reads.query.mockResolvedValue({ project: project(), suckerGroup: group() });
     await projects.getProject(7, 1);
@@ -120,13 +143,56 @@ describe("server indexed display reuse", () => {
   it("prevents a canceled older group read from replacing a post-invalidation result", async () => {
     let finishOld!: (value: unknown) => void;
     reads.query.mockReturnValueOnce(new Promise((resolve) => (finishOld = resolve)));
-    const old = groups.getIndexedSuckerGroup("group", 1);
+    const old = groups.getIndexedSuckerGroup("group", 1, 7);
     await refresh.refreshProjectDisplay([{ chainId: 1, projectId: 7 }]);
     reads.query.mockResolvedValueOnce({ suckerGroup: group(7, "Current") });
-    expect(await groups.getSuckerGroup("group", 1)).toEqual(group(7, "Current"));
+    expect(await groups.getSuckerGroup("group", 1, 7)).toEqual(group(7, "Current"));
     finishOld({ suckerGroup: group(7, "Obsolete") });
     expect(await old).toEqual({ data: null, status: "unavailable" });
-    expect(await groups.getSuckerGroup("group", 1)).toEqual(group(7, "Current"));
+    expect(await groups.getSuckerGroup("group", 1, 7)).toEqual(group(7, "Current"));
+    expect(reads.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cancel another project's in-flight group during invalidation", async () => {
+    let finishOther!: (value: unknown) => void;
+    reads.query.mockReturnValueOnce(new Promise((resolve) => (finishOther = resolve)));
+    const other = groups.getSuckerGroup("other-group", 1, 8);
+    await refresh.refreshProjectDisplay([{ chainId: 1, projectId: 7 }]);
+    const joined = groups.getSuckerGroup("other-group", 1, 8n);
+    expect(reads.query).toHaveBeenCalledOnce();
+    finishOther({ suckerGroup: group(8) });
+    expect(await other).toEqual(group(8));
+    expect(await joined).toEqual(group(8));
+  });
+
+  it("cancels an unresolved peer group when the refresh supplies its known group ID", async () => {
+    let finishOld!: (value: unknown) => void;
+    reads.query.mockReturnValueOnce(new Promise((resolve) => (finishOld = resolve)));
+    const old = groups.getIndexedSuckerGroup("group", 1, 7);
+    await refresh.refreshProjectDisplay([{ chainId: 10, projectId: 8, groupId: "group" }]);
+    reads.query.mockResolvedValueOnce({ suckerGroup: group(7, "Current") });
+    expect(await groups.getSuckerGroup("group", 1, 7)).toEqual(group(7, "Current"));
+    finishOld({ suckerGroup: group(7, "Obsolete") });
+    expect(await old).toEqual({ data: null, status: "unavailable" });
+    expect(await groups.getSuckerGroup("group", 1, 7)).toEqual(group(7, "Current"));
+    expect(reads.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds an unknown peer group's retained result by the 30-second freshness window", async () => {
+    let finishOld!: (value: unknown) => void;
+    reads.query.mockReturnValueOnce(new Promise((resolve) => (finishOld = resolve)));
+    const old = groups.getSuckerGroup("group", 1, 7);
+    // No project row or supplied group ID can identify this peer relationship yet.
+    await refresh.refreshProjectDisplay([{ chainId: 10, projectId: 8 }]);
+    const indexed = group(7, "Before update");
+    indexed.projects.items.push({ chainId: 10, projectId: 8, version: 6 });
+    finishOld({ suckerGroup: indexed });
+    expect(await old).toEqual(indexed);
+    expect(await groups.getSuckerGroup("group", 1, 7)).toEqual(indexed);
+    expect(reads.query).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(30_000);
+    reads.query.mockResolvedValueOnce({ suckerGroup: group(7, "Current") });
+    expect(await groups.getSuckerGroup("group", 1, 7)).toEqual(group(7, "Current"));
     expect(reads.query).toHaveBeenCalledTimes(2);
   });
 

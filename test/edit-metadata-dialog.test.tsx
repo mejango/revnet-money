@@ -148,7 +148,9 @@ const CURRENT_METADATA = {
   tags: ["defi"],
 };
 
-const PROJECTS = [{ chainId: 11155111, projectId: 4, token: `0x${"33".repeat(20)}` }] as any;
+const PROJECTS = [
+  { chainId: 11155111, projectId: 4, token: `0x${"33".repeat(20)}`, suckerGroupId: "group" },
+] as any;
 
 function renderDialog(projects = PROJECTS) {
   return render(
@@ -287,7 +289,7 @@ describe("EditMetadataDialog Relayr payment choice", () => {
       if (typeof callback === "function") callback();
     });
     expect(mocks.refreshDisplay).toHaveBeenCalledWith(
-      chainIds.map((chainId, index) => ({ chainId, projectId: index + 41 })),
+      chainIds.map((chainId, index) => ({ chainId, projectId: index + 41, groupId: "group" })),
     );
     expect(mocks.refreshRoute).not.toHaveBeenCalled();
     finishEviction();

@@ -11,7 +11,8 @@ const displayCache = new QueryClient({
   },
 });
 
-type DisplayKey = readonly ["project", number, number] | readonly ["group", number, string];
+type DisplayKey =
+  readonly ["project", number, number] | readonly ["group", number, string, number | undefined];
 
 class IncompleteIndexedRead extends Error {
   constructor(readonly result: IndexedReadResult<unknown>) {
@@ -42,8 +43,9 @@ export async function cachedIndexedDisplay<T>(
 export type ProjectDisplayRef = { chainId: number; projectId: number; groupId?: string };
 
 /**
- * Cancel old fills as well as evicting successes, so a pre-update read cannot
- * repopulate the entry after refresh. Other server processes expire within 30s.
+ * Cancel known affected fills as well as evicting successes. Callers supply a
+ * group ID when available so even unresolved peer groups can be identified.
+ * Unknown peer groups and other server processes retain the 30s expiry bound.
  */
 export function invalidateProjectDisplay(refs: readonly ProjectDisplayRef[]): void {
   const groupIds = new Set(refs.flatMap((ref) => (ref.groupId ? [ref.groupId] : [])));
@@ -58,14 +60,18 @@ export function invalidateProjectDisplay(refs: readonly ProjectDisplayRef[]): vo
 
   displayCache.removeQueries({
     predicate: (query) => {
-      const [family, chainId, id] = query.queryKey;
+      const [family, chainId, id, requestedProjectId] = query.queryKey;
       if (family === "project") {
         return refs.some((ref) => ref.chainId === chainId && ref.projectId === id);
       }
       if (family !== "group") return false;
-      // Pending groups have no membership evidence yet. Drop these as well,
-      // rather than allowing an older in-flight group to win after invalidation.
-      if (query.state.fetchStatus === "fetching" || groupIds.has(String(id))) return true;
+      // The requested tuple scopes pending groups before membership is known.
+      // Never cancel unrelated visitors' in-flight reads to refresh one project.
+      if (
+        groupIds.has(String(id)) ||
+        refs.some((ref) => ref.chainId === chainId && ref.projectId === requestedProjectId)
+      )
+        return true;
       const result = query.state.data as
         IndexedReadResult<{ projects?: { items?: ProjectDisplayRef[] } }> | undefined;
       return Boolean(

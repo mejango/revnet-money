@@ -22,7 +22,7 @@ export default async function ShopPage(props: Props) {
   if (!resolved) notFound();
   const { project } = resolved;
 
-  const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId);
+  const suckerGroup = await getSuckerGroup(project.suckerGroupId, chainId, projectId);
   return (
     <V6ShopTab
       projects={projectItemsWithFallback(suckerGroup?.projects?.items, project, chainId, projectId)}
