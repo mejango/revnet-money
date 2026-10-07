@@ -137,6 +137,21 @@ export default async function SlugLayout({ children, params }: PropsWithChildren
 
   const resolved = await getProjectWithFallback(projectId, chainId);
   if (!resolved) notFound();
+
+  return ProjectLayoutContent({ children, slug, route, resolved });
+}
+
+async function ProjectLayoutContent({
+  children,
+  slug,
+  route,
+  resolved,
+}: PropsWithChildren<{
+  slug: string;
+  route: NonNullable<Awaited<ReturnType<typeof resolveProjectRoute>>>;
+  resolved: NonNullable<Awaited<ReturnType<typeof getProjectWithFallback>>>;
+}>) {
+  const { chainId, projectId } = route;
   const { project } = resolved;
 
   // `undefined` = the operator could not be read, which is not the same claim
