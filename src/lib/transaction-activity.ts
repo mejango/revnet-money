@@ -215,7 +215,7 @@ export function requireTransactionActivityPersistence(): void {
   refreshTransactionActivities();
   if (typeof window === "undefined" || storageWriteFailed || storageReadFailed) {
     throw new Error(
-      "Transaction recovery storage is unavailable. Restore browser storage before publishing signatures or sending a Relayr payment.",
+      "Transaction recovery storage is unavailable. Restore browser storage before publishing signatures or sending a payment.",
     );
   }
 }

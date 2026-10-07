@@ -276,7 +276,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                   },
                   {
                     title: "Pay the relay fee",
-                    detail: "Choose a funding chain and pay once. Relayr updates each chain.",
+                    detail: "Choose a funding chain and pay once to update each chain.",
                   },
                 ]
               : reviewing.map((chain) => ({

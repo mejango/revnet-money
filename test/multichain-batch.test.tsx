@@ -508,7 +508,7 @@ describe("routing draft replacement", () => {
         calls: [retryCall(1), retryCall(10)],
         replaceDraftId: draft.id,
       }),
-    ).rejects.toThrow("saved Relayr session");
+    ).rejects.toThrow("saved session");
     expect(readMultichainBatches()).toEqual([draft]);
     expect(mocks.review).not.toHaveBeenCalled();
   });

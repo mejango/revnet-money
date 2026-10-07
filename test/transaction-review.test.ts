@@ -110,9 +110,7 @@ describe("Relayr funding selection", () => {
   it("rejects an empty quote before asking", async () => {
     const asked = answer(8453);
 
-    await expect(chooseRelayrPayment([])).rejects.toThrow(
-      "Relayr did not return a payment option.",
-    );
+    await expect(chooseRelayrPayment([])).rejects.toThrow("No payment option is available.");
     expect(asked).toEqual([]);
   });
 

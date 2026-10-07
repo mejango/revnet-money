@@ -16,6 +16,7 @@ import { FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
@@ -271,7 +272,7 @@ export default function Page() {
             toast({
               variant: "destructive",
               title: "Error",
-              description: e.message || "Could not prepare the transaction. Try again.",
+              description: formatWalletError(e, "Could not prepare the transaction. Try again."),
             });
             console.error(e);
           } finally {

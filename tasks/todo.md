@@ -676,3 +676,26 @@ The extraction is commit `99569648`; the independently reviewed runtime repair i
 Evidence is under `/private/tmp/jb-performance-checks`: `revnet-hydration-final-source.json` preserves the first gate batch; `revnet-hydration-final-network.json` records successful required audit/full coverage; `revnet-hydration-fixture-{correction,typecheck,lint,format}.log` qualifies the test-only correction; `revnet-hydration-build.json`, `revnet-hydration-full-browser.json`, and `revnet-hydration-returning.json` record final qualification. The first saved-cache precondition diagnostic is retained as `revnet-hydration-returning-precondition-5s.json`.
 
 Complete artifact manifest: `revnet-hydration-artifact.json`, 3,352 files, manifest SHA256 `8ff9caeb9c6f26a7a351e49a5e1c3dc475400880a1604a009662ff0857fe3d94`; tested source tree `e02fde16285da30859bd1c8a11784fbcaa4eb8dd`. The prior 2bd artifact and all earlier activity evidence remain retained separately. Browser ports were released to the performance owner after all local functional checks; this writer will not run concurrent builds/browsers during final timing. Root owns hosted CI, exact production promotion and public verification; no deployment or wallet transaction was performed by this writer.
+
+
+## 2026-10-07 service-neutral transaction copy
+
+Owning refined plan: `/Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_RELEASE_FOLLOWUPS.md`; required refinement gate passed before source edits. Isolated branch starts at deployed `acaf540b`; root retains release authority and coordinates the separate permission and simulation fixes.
+
+- [x] Replace controlled visible service branding with action/status copy, retaining internal names, links and legacy storage discriminators.
+- [x] Reuse `formatWalletError` for SDK errors and one shared display formatter for saved transaction text; preserve original errors and persisted records.
+- [x] Prove actual Safe pending/failure and saved-history rendering, legacy release compatibility and focused caller regressions; run relevant static gates and hand off the scoped commit without deployment.
+
+### Copy verification review
+
+The controlled transaction status/review/recovery copy and public guide labels no longer name the background service. Internal symbols, API URLs, stored keys and the exact `LEGACY_RELEASE_MESSAGE` discriminator remain. New saved messages use neutral copy; existing journal rows and SDK error objects are not rewritten. `formatTransactionMessage` is the shared display owner, reused by wallet errors, transaction-confirm status/errors, account history and saved routing explanations. The simulation wording preserves the chain and revert detail; generic transport failures retain their HTTP status and do not become a simulation diagnosis or a claim that no payment was sent.
+
+Three actual-component regressions fail on deployed acaf540b source and pass after the change: automatic Safe pending review, the screenshot's simulation failure, and old saved activity text. Evidence: `/private/tmp/jb-performance-checks/revnet-service-copy-before-ci-env.log` and `revnet-service-copy-focused.log`. The first temporary baseline run omitted CI's `NODE_OPTIONS=--no-experimental-webstorage`; that harness-only failure is preserved in `revnet-service-copy-before.log` and is not the causal comparison. Legacy release/recovery guards continue to pass. Existing assertion changes update only the requested wording, leaving every payment, nonce, signature and recovery assertion in place. The SDK-originated expiry diagnostic remains tested verbatim.
+
+Focused verification passes 564 tests across25 suites (353 boundary/recovery/core cases,135 further callers,76 launch/review/storage cases). Typecheck, lint, formatting ratchet, dead-code, source invariants and all142 wallet-write inventory sites pass under the pinned Node26.5/npm12 toolchain. The literal component-copy gate prevents reintroducing the service name in UI source. No production build, wallet action, push or deployment was performed; root owns combined integration, independent review, hosted full gates and exact-revision release verification.
+
+Independent review corrected two copy-only nits (authorization article and confirmation capitalization). The legacy display formatter also corrects the same article when formatting an old saved authorization message; its focused regression and affected batch/launch suites pass.
+
+Independent source review finds no remaining blocker and confirms unchanged authority, query, transaction and recovery behavior. Final typecheck, lint and formatting checks pass after the copy nits.
+
+Final consolidation on the reviewed source passes all564 affected tests across25 suites in one run, with zero skips or failures. Machine-readable evidence: `/private/tmp/jb-performance-checks/revnet-service-copy-final-tests.json`; companion log has the exact invocation. The final format ratchet initially required reflowing the shortened transaction-review expectation, then passed without changing the assertion.

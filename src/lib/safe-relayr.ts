@@ -297,7 +297,7 @@ export function safeRelayrController(
       (chainId !== undefined && current.chainId !== chainId) ||
       isSafeConnection(config)
     )
-      throw new Error("Connected account or chain changed. Review the Relayr payment again.");
+      throw new Error("Connected account or chain changed. Review the payment again.");
   };
   return createSafeRelayrController({
     onProgress,
@@ -363,11 +363,11 @@ export function safeRelayrController(
                       ? "This review was canceled before its calls were published. Nothing was paid. Review the executions again to request a quote."
                       : LEGACY_RELEASE_MESSAGE
                 : session.paymentStatus === "sending" || session.paymentStatus === "submitted"
-                  ? "Relayr funding is being submitted. Do not pay again while the wallet result is uncertain."
+                  ? "Funding is being submitted. Do not pay again while the wallet result is uncertain."
                   : session.paymentStatus === "confirmed"
-                    ? "Relayr payment confirmed. Destination transactions are pending."
+                    ? "Payment confirmed. Destination transactions are pending."
                     : fundingObserved
-                      ? "Relayr funding or execution was reported. Check the existing bundle before paying again."
+                      ? "Funding or execution was reported. Check the existing bundle before paying again."
                       : session.quote
                         ? "The Safe execution quote is ready. Review the current transactions before paying."
                         : "Review the current Safe transactions to request a new quote. No funding payment has been started.",
@@ -423,8 +423,7 @@ export function safeRelayrController(
       },
       async withLock(account, run) {
         const key = "safe-relayr";
-        if (authorizing.has(key))
-          throw new Error("Another Safe Relayr action is already in progress.");
+        if (authorizing.has(key)) throw new Error("Another Safe action is already in progress.");
         authorizing.add(key);
         try {
           return await (typeof navigator !== "undefined" && navigator.locks
@@ -434,7 +433,7 @@ export function safeRelayrController(
                 (lock) => {
                   if (!lock)
                     throw new Error(
-                      "Another browser tab is preparing Relayr authorizations for this account.",
+                      "Another browser tab is preparing authorizations for this account.",
                     );
                   return navigator.locks.request(
                     `revnet:relayr-authorizations:${account.toLowerCase()}`,
@@ -442,7 +441,7 @@ export function safeRelayrController(
                     (accountLock) => {
                       if (!accountLock)
                         throw new Error(
-                          "Another Relayr authorization is being prepared for this account.",
+                          "Another authorization is being prepared for this account.",
                         );
                       return run();
                     },
@@ -513,9 +512,9 @@ export function safeRelayrController(
           ? "Resume saved Safe execution quote"
           : `Review ${executions.length} Safe executions`,
         description: resumed
-          ? "These are the original signed calls in the existing unpaid Relayr quote. Additional Safe confirmations do not change the saved execution. No new bundle will be created."
-          : "Relayr submits each fully signed Safe transaction below from its own account; the Safe signatures authorize it. A separate payment funds the bundle.",
-        confirmLabel: resumed ? "Use saved quote" : "Agree & request Relayr quote",
+          ? "These are the original signed calls in the existing unpaid quote. Additional Safe confirmations do not change the saved execution. No new bundle will be created."
+          : "Your Safe signatures authorize the transactions below. A separate payment covers execution on each chain.",
+        confirmLabel: resumed ? "Use saved quote" : "Review & get payment options",
         calls: executions.map((execution) => {
           const decoded = decodeFunctionData({ abi: SAFE_EXEC_ABI, data: execution.entry.data });
           if (decoded.functionName !== "execTransaction")
@@ -554,10 +553,10 @@ export function safeRelayrController(
       requireAccount(session.account, chainId);
       await requireTransactionReview({
         kind: "transaction",
-        title: "Review Relayr payment",
+        title: "Review payment",
         description:
           "This one payment funds the signed calls on every selected chain. Destination transactions confirm separately.",
-        confirmLabel: "Agree & pay Relayr",
+        confirmLabel: "Agree & pay",
         calls: [
           {
             chainId,
@@ -566,13 +565,13 @@ export function safeRelayrController(
             value: details.amount,
             gas: RELAYR_PAYMENT_GAS,
             data: details.calldata,
-            label: "Pay Relayr bundle fee",
+            label: "Pay network fee",
           },
         ],
       });
       requireAccount(session.account, chainId);
       const client = clientFor(chainId);
-      if (!client) throw new Error("Relayr payment network is unavailable.");
+      if (!client) throw new Error("Payment network is unavailable.");
       await requireRelayrPaymentRuntime(client);
       await simulateRelayrPayment(client, { from: session.account, payment: details });
       await beforeSend();

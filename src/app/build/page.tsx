@@ -101,7 +101,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
         [
           "6. Deploy",
-          "Refresh the launch quote, review, then sign. On one network, submit a transaction or propose it to a shared Safe wallet. For several networks, the Relayr service submits a group of transactions funded from one network. Confirm each destination separately.",
+          "Refresh the launch quote, review, then sign. On one network, submit a transaction or propose it to a shared Safe wallet. For several networks, submit a group of transactions funded from one network. Confirm each destination separately.",
         ],
       ],
     },
@@ -167,7 +167,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Chains",
-        text: "with two or more chains, Relayr submits a paid bundle. Completion depends on each chain and the relay service; do not promise a fixed settlement time. With one chain, use a wallet transaction or Safe proposal and wait for execution.",
+        text: "With two or more chains, submit a paid bundle. Completion depends on each chain and the execution service; do not promise a fixed settlement time. With one chain, use a wallet transaction or Safe proposal and wait for execution.",
       },
       {
         key: "Afterwards",
@@ -900,9 +900,9 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     id: "wallets-safe-relayr",
     part: "App builders",
     audience: ["frontend"],
-    title: "Wallets, Safes, Relayr, and Permit2",
+    title: "Wallets, Safes, network fees, and Permit2",
     summary:
-      "Four kinds of signing show up in a revnet app: a plain wallet write, a Safe proposal, a Relayr bundle for many chains at once, and a Permit2 signature for pool swaps. Each has its own reviewed path here.",
+      "Four kinds of signing show up in a revnet app: a plain wallet write, a Safe proposal, a transaction bundle for many chains at once, and a Permit2 signature for pool swaps. Each has its own reviewed path here.",
     table: {
       label: "Signing paths in this site",
       rows: [
@@ -915,7 +915,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           "The Safe App connector plus the transaction service: proposals are polled, never reported as done; a Safe is trusted on another chain, or deployed at its address there, only when its creation record proves it is the same Safe",
         ],
         [
-          "Relayr",
+          "Multiple chains",
           "One exact ERC-2771 authorization per destination chain, posted as a prepaid bundle; choose a funding chain and pay once for multichain launch, metadata edits, and operator writes",
         ],
         [
@@ -930,7 +930,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     ],
     links: [
       { href: `${REFERENCE_ROOT}/src/hooks/useReviewedWriteContract.ts`, label: "Reviewed write" },
-      { href: `${REFERENCE_ROOT}/src/hooks/useReviewedRelayr.ts`, label: "Relayr bundle" },
+      { href: `${REFERENCE_ROOT}/src/hooks/useReviewedRelayr.ts`, label: "Transaction bundle" },
       {
         href: `${REFERENCE_ROOT}/src/app/%5Bslug%5D/components/v6/operator/SafeQueueCard.tsx`,
         label: "Safe queue",
@@ -938,7 +938,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       { href: `${REFERENCE_ROOT}/src/lib/wagmiConfig.ts`, label: "Wallet config" },
       {
         href: `${SKILLS}/jb-relayr/SKILL.md`,
-        label: "Relayr integration skill",
+        label: "Multichain integration skill",
       },
     ],
   },
@@ -1073,7 +1073,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Tests",
-        text: "PR tests use fixtures; nothing in them reaches a wallet, an RPC, the index, or Relayr.",
+        text: "PR tests use fixtures; nothing in them reaches a wallet, an RPC, the index, or the execution service.",
       },
     ],
     links: [

@@ -111,9 +111,7 @@ export function requireRawPayerCall(
     !isAddressEqual(target, JB_PROJECT_PAYER_DEPLOYER) ||
     value !== 0n
   )
-    throw new Error(
-      "Only the reviewed canonical project payer deployment supports raw Relayr calls.",
-    );
+    throw new Error("Only the reviewed canonical project payer deployment supports raw calls.");
   const exact = encodeFunctionData({
     abi: jbProjectPayerDeployerAbi,
     functionName: "deployProjectPayer",

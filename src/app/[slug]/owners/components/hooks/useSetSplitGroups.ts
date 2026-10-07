@@ -27,6 +27,7 @@ import {
   stickyGroupOf,
 } from "@/lib/sticky";
 import { chooseRelayrPayment } from "@/lib/transaction-review";
+import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
@@ -194,12 +195,12 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
 
         const payment = await chooseRelayrPayment(quote.payment_info, connectedChainId);
         const hash = await sendRelayrTx?.(payment);
-        if (!hash) throw new Error("Relayr payment was not submitted.");
+        if (!hash) throw new Error("Payment was not submitted.");
         if (submittedViaSafe(hash)) {
           toast({
             title: "Safe payment proposal submitted",
             description:
-              "The split changes are not executing yet. Complete the Relayr payment proposal in Safe and do not submit another payment.",
+              "The split changes are not executing yet. Complete the payment proposal in Safe and do not submit another payment.",
           });
           return { success: true };
         }
@@ -211,13 +212,13 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
       } catch (e: any) {
         // A chain's write went to the Safe as a proposal, and the later chains wait on it.
         if (isSafeProposalPendingError(e)) {
-          toast({ title: "Safe proposal submitted", description: e.message });
-          return { success: false, proposal: e.message as string };
+          toast({ title: "Safe proposal submitted", description: formatWalletError(e) });
+          return { success: false, proposal: formatWalletError(e) };
         }
         toast({
           variant: "destructive",
           title: "Error",
-          description: e.message || "Failed to update splits",
+          description: formatWalletError(e, "Failed to update splits"),
         });
         console.error(e);
         return { success: false };

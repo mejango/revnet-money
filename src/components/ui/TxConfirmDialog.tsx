@@ -7,6 +7,7 @@ import {
   useHoldEnclosingModal,
 } from "@/components/ui/ModalShell";
 import { TxSteps } from "@/components/ui/TxSteps";
+import { formatTransactionMessage } from "@/lib/utils";
 import { useEffect, useId, type ComponentProps, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -86,6 +87,8 @@ export function TxConfirmDialog({
     return () => hidden.forEach((child) => (child.hidden = false));
   }, [host, open]);
   if (!open) return null;
+  const statusText = typeof status === "string" ? formatTransactionMessage(status) : status;
+  const errorText = typeof error === "string" ? formatTransactionMessage(error) : error;
   const section = (
     <section
       data-tx-confirm
@@ -112,7 +115,7 @@ export function TxConfirmDialog({
       <div className="space-y-4 px-5 py-5">
         {preparing ? (
           <p className="py-2 text-sm text-amber-900" role="status">
-            {status ?? "Preparing…"}
+            {statusText ?? "Preparing…"}
           </p>
         ) : (
           <>
@@ -132,12 +135,12 @@ export function TxConfirmDialog({
             />
             {status ? (
               <p className="text-sm text-amber-900" role="status">
-                {status}
+                {statusText}
               </p>
             ) : null}
           </>
         )}
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-red-600">{errorText}</p> : null}
       </div>
       {complete || action || footerContent ? (
         <footer className="flex flex-wrap items-end justify-end gap-2 border-t border-melon-300 bg-melon-25 px-5 py-4">

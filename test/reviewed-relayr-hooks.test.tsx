@@ -509,13 +509,13 @@ describe("reviewed Relayr authorization hook", () => {
     // Only the publication lock for the signed calls remains: no payable quote.
     expect(activity.transactionActivitySnapshot()).toEqual([
       expect.objectContaining({
-        title: "Relayr authorization publication",
+        title: "Authorization publication",
         relayrPaymentStatus: "unfunded",
       }),
     ]);
     const payer = renderHook(() => hooks.useSendRelayrTx());
     await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
-      /does not belong to a reviewed Relayr quote/,
+      /does not belong to a reviewed quote/,
     );
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
@@ -748,7 +748,7 @@ describe("reviewed Relayr authorization hook", () => {
     vi.stubGlobal("fetch", relayrApi({ payments: [payment(override)] }));
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
-      /Relayr|quote deadline/,
+      /Relayr|quote deadline|No funding option/,
     );
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
@@ -1198,14 +1198,14 @@ describe("reviewed Relayr payment hook", () => {
     const authorizer = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(
       authorizer.result.current.getRelayrTxQuote([{ ...REQUEST, chainId: 11155111 }]),
-    ).rejects.toThrow(/no funding option/);
+    ).rejects.toThrow(/No funding option/);
     expect(activity.transactionActivitySnapshot()).toEqual([
       expect.objectContaining({ relayrPaymentStatus: "unfunded" }),
     ]);
     // The same calls are quoted again with the published signatures, never signed again.
     await expect(
       authorizer.result.current.getRelayrTxQuote([{ ...REQUEST, chainId: 11155111 }]),
-    ).rejects.toThrow(/no funding option/);
+    ).rejects.toThrow(/No funding option/);
     expect(activity.transactionActivitySnapshot()).toEqual([
       expect.objectContaining({ relayrPaymentStatus: "unfunded" }),
     ]);
@@ -1274,7 +1274,7 @@ describe("reviewed Relayr payment hook", () => {
   it("reviews the exact selected funding chain and persists its signed destination calls", async () => {
     const { review, activity, result } = await quotedPayment();
     review.registerTransactionReviewHandler(async (request) => {
-      expect(request).toMatchObject({ kind: "transaction", title: "Review Relayr payment" });
+      expect(request).toMatchObject({ kind: "transaction", title: "Review payment" });
       expect(request.calls[0]).toMatchObject({
         chainId: 1,
         from: ACCOUNT,
@@ -1362,7 +1362,7 @@ describe("reviewed Relayr payment hook", () => {
     const { hooks } = await freshHarness();
     const { result } = renderHook(() => hooks.useSendRelayrTx());
     await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
-      /does not belong to a reviewed Relayr quote/,
+      /does not belong to a reviewed quote/,
     );
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
@@ -2915,7 +2915,7 @@ describe("paying a reverted Relayr payment again", () => {
       Object.fromEntries(hashes.map((hash) => [hash, "reverted"])) as Record<Hex, "reverted">,
     );
     await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
-      "This Relayr quote was paid too many times to pay again. Keep it pending; do not pay again.",
+      "This quote was paid too many times to pay again. Keep it pending; do not pay again.",
     );
     expect(reviewed).not.toHaveBeenCalled();
     expect(mocks.sendTransaction).toHaveBeenCalledOnce();
@@ -3084,7 +3084,7 @@ describe("unpaid Relayr quotes", () => {
     });
     const payer = renderHook(() => hooks.useSendRelayrTx());
     await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
-      "This Relayr quote expired. Review the action again for a new quote.",
+      "This quote expired. Review the action again for a new quote.",
     );
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
@@ -3376,7 +3376,7 @@ describe("Relayr sessions decided from the chain", () => {
       chainAt({ timestamp: NOW + 700, finalizedNonce: 4n });
       relayrReads({ payment_received: true });
       await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
-        "Another payment funded this Relayr quote. Check again once its calls have run; do not pay again.",
+        "Another payment funded this quote. Check again once its calls have run; do not pay again.",
       );
       expect(mocks.signTypedData).toHaveBeenCalledOnce();
       expect(mocks.sendTransaction).toHaveBeenCalledOnce();
@@ -3419,7 +3419,7 @@ describe("Relayr sessions decided from the chain", () => {
           : { ...onchain(PAYMENT_TARGET, payment().calldata), status: "reverted" },
       );
       await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
-        "Another payment funded this Relayr quote. Check again once its calls have run; do not pay again.",
+        "Another payment funded this quote. Check again once its calls have run; do not pay again.",
       );
       await expect(hooks.waitForRelayrBundle(BUNDLE_UUID)).resolves.toMatchObject({
         payment_received: true,
