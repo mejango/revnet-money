@@ -15,7 +15,7 @@ import {
 } from "@/lib/transaction-activity";
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom, simulateStateChangingTransaction } from "@bananapus/nana-sdk-core/review";
 import {
   RELAYR_NATIVE_TOKEN,
   RELAYR_PAYMENT_GAS,
@@ -32,10 +32,18 @@ import {
   safeRelayrPreconditions,
   safeRelayrReservationKey,
   type SafeRelayrExecution,
+  type SafeRelayrProgress,
   type SafeRelayrSession,
 } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
-import { decodeFunctionData, isHash, maxUint256, type Address, type Hex } from "viem";
+import {
+  decodeFunctionData,
+  decodeFunctionResult,
+  isHash,
+  zeroAddress,
+  type Address,
+  type Hex,
+} from "viem";
 import type { Config } from "wagmi";
 import { getAccount, getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
 
@@ -275,7 +283,11 @@ type Wallet = {
 };
 
 /** Translate storage, review and wallet effects. All Safe session decisions live in the SDK. */
-export function safeRelayrController(config: Config, wallet?: Wallet) {
+export function safeRelayrController(
+  config: Config,
+  wallet?: Wallet,
+  onProgress?: (progress: SafeRelayrProgress) => void,
+) {
   const clientFor = (chainId: number) => getPublicClient(config, { chainId: chainId as JBChainId });
   const requireAccount = (account: Address, chainId?: number) => {
     requireNoViewAs();
@@ -288,6 +300,7 @@ export function safeRelayrController(config: Config, wallet?: Wallet) {
       throw new Error("Connected account or chain changed. Review the Relayr payment again.");
   };
   return createSafeRelayrController({
+    onProgress,
     clientFor,
     currentAccount: () => getAccount(config).address,
     store: {
@@ -456,14 +469,24 @@ export function safeRelayrController(config: Config, wallet?: Wallet) {
         ...(expected.preconditions ?? []),
         ...safeRelayrPreconditions(execution),
       ]);
-      await client.call({
-        account,
+      const result = await simulateStateChangingTransaction(client, {
+        // Relayr executes from its own account. An owner's connected address
+        // can incorrectly satisfy a v=1 approved-hash signature during eth_call.
+        from: zeroAddress,
         to: execution.entry.target,
         data: execution.entry.data,
         value: BigInt(execution.entry.value),
         gas: BigInt(expected.gas),
-        stateOverride: [{ address: account, balance: maxUint256 }],
+        maxReturnBytes: 32,
       });
+      if (
+        decodeFunctionResult({
+          abi: SAFE_EXEC_ABI,
+          functionName: "execTransaction",
+          data: result,
+        }) !== true
+      )
+        throw new Error("The Safe execution simulation did not succeed.");
     },
     async afterVerified(execution, verified) {
       const client = clientFor(execution.entry.chain);

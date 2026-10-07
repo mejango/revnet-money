@@ -15,7 +15,7 @@ export function TxSteps({
     /** Stable list key; falls back to the title when it is a plain string. */
     key?: string;
     title: React.ReactNode;
-    detail?: string;
+    detail?: React.ReactNode;
   }[];
   activeIndex: number;
   intro?: string;

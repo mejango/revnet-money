@@ -86,7 +86,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // finalized Safe nonces. The final SDK/client build with strict journal guards
 // and the updated build prompt measures 2657.1 KiB.
 // Round up only the aggregate ceiling; route and wallet-loading limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2658);
+// Independent account/queue reads, shared Safe progress and liquidity price markers
+// measure 2,725,587 B against HEAD 909cf1fd's 2,717,526 B (+8,061 B), using the same
+// physical dependency graph and Node 26.5.0; only the SDK moves from 2.24.2 to 2.24.3.
+// Round up only the aggregate ceiling; route and wallet-loading limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2662);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

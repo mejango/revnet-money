@@ -1399,7 +1399,7 @@ export function executeContractCall(to, data) {
   });
 }
 
-function handleRpc(request) {
+export function handleRpc(request) {
   requireFixture(
     request && typeof request === "object" && !Array.isArray(request),
     "JSON-RPC request must be an object",
@@ -1471,15 +1471,20 @@ function handleRpc(request) {
     );
     const exactEnsTextRead = getAddress(call.to) === addresses.ensTextResolver;
     const exactProjectHandleRead = getAddress(call.to) === addresses.projectHandles;
+    // Queue discovery probes nonce alongside identity; an EOA returns empty data.
+    const exactOwnerNonceRead =
+      getAddress(call.to) === fixtureOwner && call.data === toFunctionSelector("nonce()");
     requireFixture(
       exactEnsTextRead
         ? call.gas === "0x1e848" && getAddress(call.from) === addresses.projectHandles
         : exactProjectHandleRead
           ? call.gas === "0x493e0" && call.from === undefined
-          : call.gas === undefined && call.from === undefined,
+          : exactOwnerNonceRead
+            ? call.gas === "0x186a0" && call.from === undefined && params[1] === "latest"
+            : call.gas === undefined && call.from === undefined,
       `eth_call gas=${String(call.gas)}`,
     );
-    result = executeContractCall(call.to, call.data);
+    result = exactOwnerNonceRead ? "0x" : executeContractCall(call.to, call.data);
   } else if (method === "eth_getLogs") {
     requireFixture(params.length === 1, `eth_getLogs params=${JSON.stringify(params)}`);
     const filter = params[0];

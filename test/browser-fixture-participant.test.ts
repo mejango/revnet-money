@@ -7,7 +7,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { decodeFunctionResult, encodeFunctionData, erc20Abi, getAddress, type Address } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { executeContractCall } from "../scripts/browser-fixture-server.mjs";
+import { executeContractCall, handleRpc } from "../scripts/browser-fixture-server.mjs";
 
 const participant = getAddress("0x2222222222222222222222222222222222222222");
 const otherAccount = getAddress("0x1111111111111111111111111111111111111111");
@@ -20,6 +20,38 @@ beforeEach(() => {
 });
 
 describe("browser fixture's long viewed identity", () => {
+  const nonceProbe = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "eth_call",
+    params: [{ to: otherAccount, data: "0xaffed0e0", gas: "0x186a0" }, "latest"],
+  };
+
+  it("returns empty EOA data for the exact bounded queue nonce probe", () => {
+    expect(handleRpc(nonceProbe)).toEqual({ jsonrpc: "2.0", id: 1, result: "0x" });
+  });
+
+  it.each([
+    { to: participant },
+    { data: "0xaffed0e000" },
+    { gas: "0x186a1" },
+    { gas: undefined },
+    { from: otherAccount },
+  ])("rejects a changed nonce probe: %j", (changed) => {
+    expect(() =>
+      handleRpc({
+        ...nonceProbe,
+        params: [{ ...(nonceProbe.params[0] as object), ...changed }, "latest"],
+      }),
+    ).toThrow("fixture input");
+  });
+
+  it("rejects a nonce probe at a different block", () => {
+    expect(() => handleRpc({ ...nonceProbe, params: [nonceProbe.params[0], "0x18281d2"] })).toThrow(
+      "fixture input",
+    );
+  });
+
   it("returns an ABI-encoded zero USDC balance for exactly the participant", () => {
     const data = encodeFunctionData({
       abi: erc20Abi,

@@ -1,10 +1,14 @@
 import { SafeQueueCard } from "@/app/[slug]/components/v6/operator/SafeQueueCard";
-import { RelayrRecoveryError } from "@/hooks/useReviewedRelayr";
+import { RelayrRecoveryError, type ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import {
   recordTransactionActivity,
   updateTransactionActivity,
   type TransactionActivity,
 } from "@/lib/transaction-activity";
+import type {
+  SafeRelayrProgress,
+  SafeRelayrSession,
+} from "@bananapus/nana-sdk-core/review/safe-relayr";
 import {
   safeProposalFor,
   safeQueueUrl,
@@ -235,6 +239,26 @@ describe("the Safe queue's execution confirm", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
+  it("does not authorize execution from the cached display identity when the fresh identity check fails", async () => {
+    const confirm = await openExecute();
+    const unavailable = safeChain(SAFE.address, { nonce: 5n });
+    unavailable.getCode.mockRejectedValue(new Error("RPC temporarily unavailable"));
+    mocks.client = unavailable.client;
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Execute" }));
+
+    expect(
+      await within(confirm).findByText(
+        "The operator no longer has a supported canonical Safe identity.",
+      ),
+    ).toBeVisible();
+    expect(unavailable.getCode).toHaveBeenCalled();
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
   it("wallet-action:safe-queue refuses every way out from Confirm through the reads before the wallet prompt, then closes once executed", async () => {
     const confirm = await openExecute();
     const release = holdLiveRead();
@@ -308,27 +332,102 @@ describe("the Safe queue's execute-all confirm", () => {
     expect(mocks.pay).not.toHaveBeenCalled();
   });
 
-  it("gets a quote on opening, then waits for an explicit payment confirmation", async () => {
+  it("keeps fee selection in the footer after the reviewed steps and waits for explicit payment", async () => {
+    const payments = [
+      { chain: 8453, amount: "1000", token: zeroAddress },
+      { chain: 10, amount: "2000", token: zeroAddress },
+    ];
+    mocks.quote.mockResolvedValue({ bundle_uuid: "bundle-1", payment_info: payments });
     const confirm = await openBatch();
     const pay = await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
     expect(pay).toBeEnabled();
     expect(mocks.quote).toHaveBeenCalledOnce();
-    expect(within(confirm).getByRole("combobox", { name: "Pay network fee on" })).toBeVisible();
+    const fee = within(confirm).getByRole("combobox", { name: "Pay network fee on" });
+    const footer = confirm.querySelector("footer")!;
+    expect(footer).toContainElement(fee);
+    expect(footer).toContainElement(pay);
+    expect(
+      within(confirm).getByRole("list").compareDocumentPosition(fee) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(fee.compareDocumentPosition(pay) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(fee).toHaveValue("8453");
+    fireEvent.change(fee, { target: { value: "10" } });
     expect(mocks.pay).not.toHaveBeenCalled();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(pay);
+
+    await waitFor(() =>
+      expect(mocks.pay).toHaveBeenCalledWith(
+        payments[1],
+        expect.objectContaining({ onStatus: expect.any(Function) }),
+      ),
+    );
+    expect(mocks.pay).toHaveBeenCalledOnce();
+  });
+
+  it("changes review copy to requesting a quote immediately after acceptance while Relayr is pending", async () => {
+    let acceptReview!: () => void;
+    let finishQuote!: (quote: unknown) => void;
+    mocks.quote.mockImplementation(
+      async (
+        _requests: unknown,
+        options: { onProgress?: (progress: SafeRelayrProgress) => void },
+      ) => {
+        await new Promise<void>((resolve) => (acceptReview = resolve));
+        options.onProgress?.({ type: "phase", phase: "quoting" });
+        return new Promise((resolve) => (finishQuote = resolve));
+      },
+    );
+    const confirm = await openBatch();
+    await waitFor(() => expect(mocks.quote).toHaveBeenCalledOnce());
+    expect(
+      within(confirm).getByText("Review the executions to request a Relayr quote…"),
+    ).toBeVisible();
+    expect(within(confirm).getByRole("button", { name: "Checking…" })).toBeDisabled();
+    expect(within(confirm).queryByRole("combobox")).toBeNull();
+    expect(mocks.pay).not.toHaveBeenCalled();
+
+    await act(async () => acceptReview());
+
+    expect(
+      within(confirm).getByRole("button", { name: "Requesting Relayr quote…" }),
+    ).toBeDisabled();
+    expect(within(confirm).getByText("Requesting Relayr quote…", { selector: "p" })).toBeVisible();
+    expect(within(confirm).queryByText(/Review the executions/)).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
+    expect(within(confirm).queryByRole("combobox")).toBeNull();
+    expect(mocks.pay).not.toHaveBeenCalled();
+
+    await act(async () =>
+      finishQuote({
+        bundle_uuid: "reviewed",
+        payment_info: [{ chain: 8453, amount: "1000", token: zeroAddress }],
+      }),
+    );
+    expect(
+      await within(confirm).findByRole("button", { name: "Pay once and execute 2" }),
+    ).toBeEnabled();
+    expect(within(confirm).getByRole("combobox", { name: "Pay network fee on" })).toBeVisible();
     expect(mocks.pay).not.toHaveBeenCalled();
   });
 
   it("ignores a quote that returns after the user closes preparation", async () => {
     let finish!: (quote: unknown) => void;
-    mocks.quote.mockReturnValue(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
+    let lateProgress: ((progress: SafeRelayrProgress) => void) | undefined;
+    mocks.quote.mockImplementation(
+      (_requests: unknown, options: { onProgress?: (progress: SafeRelayrProgress) => void }) => {
+        lateProgress = options.onProgress;
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
     );
     const confirm = await openBatch();
     await waitFor(() => expect(mocks.quote).toHaveBeenCalledOnce());
     fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    await act(async () => lateProgress?.({ type: "phase", phase: "quoting" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
     await act(async () =>
       finish({
         bundle_uuid: "late",
@@ -379,11 +478,17 @@ describe("the Safe queue's execute-all confirm", () => {
     recordTransactionActivity(activity);
     mocks.quote.mockRejectedValue(new RelayrRecoveryError(activity));
     const confirm = await openBatch();
-    const check = await within(confirm).findByRole("button", { name: "Check existing bundle" });
+    const check = await within(confirm).findByRole("button", { name: "Check status" });
     expect(within(confirm).queryByRole("button", { name: "Retry checks" })).toBeNull();
     expect(within(confirm).getByText("saved-bundle")).toBeVisible();
     fireEvent.click(check);
-    await waitFor(() => expect(mocks.check).toHaveBeenCalledWith("existing"));
+    await waitFor(() =>
+      expect(mocks.check).toHaveBeenCalledWith(
+        "existing",
+        expect.any(Function),
+        expect.any(AbortSignal),
+      ),
+    );
     await within(confirm).findByText("An unpaid quote is still payable.");
     expect(mocks.quote).toHaveBeenCalledOnce();
     expect(mocks.pay).not.toHaveBeenCalled();
@@ -394,7 +499,7 @@ describe("the Safe queue's execute-all confirm", () => {
       bundle_uuid: "fresh",
       payment_info: [{ chain: 8453, amount: "1000", token: zeroAddress }],
     });
-    fireEvent.click(within(confirm).getByRole("button", { name: "Check existing bundle" }));
+    fireEvent.click(within(confirm).getByRole("button", { name: "Check status" }));
     await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
     expect(mocks.quote).toHaveBeenCalledTimes(2);
     expect(mocks.pay).not.toHaveBeenCalled();
@@ -443,7 +548,11 @@ describe("the Safe queue's execute-all confirm", () => {
     expect(within(confirm).getByText(message)).toBeVisible();
     expect(within(confirm).getByText("No longer pending.")).toBeVisible();
     expect(within(confirm).getByText("Still pending.")).toBeVisible();
-    expect(mocks.check).toHaveBeenCalledWith(activity.id);
+    expect(mocks.check).toHaveBeenCalledWith(
+      activity.id,
+      expect.any(Function),
+      expect.any(AbortSignal),
+    );
     expect(mocks.quote).toHaveBeenCalledOnce();
     expect(mocks.pay).not.toHaveBeenCalled();
   });
@@ -490,6 +599,151 @@ describe("the Safe queue's execute-all confirm", () => {
     expect(mocks.quote).toHaveBeenCalledOnce();
     expect(mocks.check).not.toHaveBeenCalled();
     expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it("shows payment confirmation and each chain's verified progress while the bundle is still running", async () => {
+    const confirm = await openBatch();
+    const pay = await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    const requests = mocks.quote.mock.calls[0][0] as ReviewedRelayrRequest[];
+    const session: SafeRelayrSession = {
+      id: "progress-session",
+      account: SAFE_OWNER_A,
+      bundleUuid: "bundle-1",
+      executions: requests.map((request) => ({
+        ...request.expectedSafeExecution!,
+        entry: {
+          chain: request.chainId,
+          target: request.data.to,
+          data: request.data.data,
+          value: request.data.value.toString(),
+        },
+      })),
+      paymentStatus: "submitted",
+      payments: [],
+      state: "active",
+      createdAt: 1,
+    };
+    let paymentProgress!: (progress: SafeRelayrProgress) => void;
+    let finishPayment!: () => void;
+    mocks.pay.mockImplementation(
+      (_payment: unknown, options: { onProgress: (progress: SafeRelayrProgress) => void }) => {
+        paymentProgress = options.onProgress;
+        return new Promise((resolve) => (finishPayment = () => resolve(EXECUTION)));
+      },
+    );
+    let executionProgress!: (progress: SafeRelayrProgress) => void;
+    let finishWatch!: () => void;
+    mocks.bundle.mockImplementation(
+      (_uuid: string, _listener: unknown, onProgress: (progress: SafeRelayrProgress) => void) => {
+        executionProgress = onProgress;
+        return new Promise<void>((resolve) => (finishWatch = resolve));
+      },
+    );
+    fireEvent.click(pay);
+    await waitFor(() => expect(mocks.pay).toHaveBeenCalledOnce());
+
+    await act(async () => paymentProgress({ type: "phase", phase: "payment-confirming", session }));
+
+    expect(within(confirm).getByText("Waiting for the Relayr payment to confirm…")).toBeVisible();
+    expect(within(confirm).getAllByText("Waiting for payment")).toHaveLength(2);
+    expect(within(confirm).getByRole("button", { name: "Confirming payment…" })).toBeDisabled();
+    expect(within(confirm).queryByText("Ready", { exact: true })).toBeNull();
+    expect(within(confirm).queryByText("Confirm the Relayr payment in your wallet…")).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
+    expect(mocks.bundle).not.toHaveBeenCalled();
+
+    await act(async () => finishPayment());
+    await waitFor(() =>
+      expect(mocks.bundle).toHaveBeenCalledWith("bundle-1", undefined, expect.any(Function)),
+    );
+    const optimismHash = `0x${"ab".repeat(32)}` as Hex;
+    await act(async () => {
+      executionProgress({ type: "phase", phase: "executing", session });
+      executionProgress({
+        type: "execution",
+        session,
+        index: 0,
+        execution: session.executions[0],
+        status: "confirming",
+        hash: EXECUTION,
+      });
+      executionProgress({
+        type: "execution",
+        session,
+        index: 1,
+        execution: session.executions[1],
+        status: "executed",
+        hash: optimismHash,
+      });
+    });
+
+    const [base, optimism] = within(confirm).getAllByRole("listitem");
+    expect(base).toHaveTextContent("Base #5");
+    expect(within(base).getByText("Confirming", { exact: true })).toBeVisible();
+    expect(within(base).getByRole("link", { name: "View transaction ↗" })).toHaveAttribute(
+      "href",
+      `https://basescan.org/tx/${EXECUTION}`,
+    );
+    expect(optimism).toHaveTextContent("Optimism #5");
+    expect(within(optimism).getByText("Executed", { exact: true })).toBeVisible();
+    expect(within(optimism).getByRole("link", { name: "View transaction ↗" })).toHaveAttribute(
+      "href",
+      `https://optimistic.etherscan.io/tx/${optimismHash}`,
+    );
+    expect(within(confirm).getByRole("button", { name: "Executing…" })).toBeDisabled();
+    expect(within(confirm).queryByText("Ready", { exact: true })).toBeNull();
+    expect(within(confirm).queryByText("Confirm the Relayr payment in your wallet…")).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: /Pay once|Done/ })).toBeNull();
+
+    await act(async () => finishWatch());
+    expect(await within(confirm).findByRole("button", { name: "Done" })).toBeEnabled();
+  });
+
+  it("recovers a submitted payment with Check status instead of offering another payment", async () => {
+    const confirm = await openBatch();
+    const pay = await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    const activity: TransactionActivity = {
+      id: "submitted-payment",
+      kind: "relayr-bundle",
+      title: "Saved Safe executions",
+      status: "pending",
+      message: "The submitted Relayr payment is still awaiting confirmation.",
+      account: SAFE_OWNER_A,
+      chainId: 8453,
+      hash: EXECUTION,
+      bundleUuid: "bundle-1",
+      relayrPaymentStatus: "submitted",
+      relayrSafeState: "active",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.pay.mockImplementation(async () => {
+      recordTransactionActivity(activity);
+      throw new RelayrRecoveryError(activity);
+    });
+
+    fireEvent.click(pay);
+
+    const check = await within(confirm).findByRole("button", { name: "Check status" });
+    expect(check).toBeEnabled();
+    expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
+    expect(within(confirm).queryByRole("combobox", { name: "Pay network fee on" })).toBeNull();
+    expect(within(confirm).queryByText("Confirm the Relayr payment in your wallet…")).toBeNull();
+    expect(within(confirm).getByText(/already has a submitted payment/)).toBeVisible();
+
+    fireEvent.click(check);
+
+    await waitFor(() =>
+      expect(mocks.check).toHaveBeenCalledWith(
+        activity.id,
+        expect.any(Function),
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(await within(confirm).findByText(activity.message)).toBeVisible();
+    expect(mocks.pay).toHaveBeenCalledOnce();
+    expect(mocks.quote).toHaveBeenCalledOnce();
+    expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
   });
 
   it("refuses every way out during payment, then ends on Done", async () => {

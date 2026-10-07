@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
 // The route and preset reads need RPC; the shell test has none, so useQuery
 // answers each key with its fixture and the submit hook is a spy.
 vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ fetchQuery: vi.fn() }),
   useQuery: ({ queryKey, enabled }: { queryKey: unknown[]; enabled?: boolean }) => {
     if (queryKey[0] === "revnet-safe-batch-proposed") mocks.proposedQuery = { enabled };
     return {

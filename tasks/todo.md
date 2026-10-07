@@ -384,3 +384,43 @@ Published-install verification: SDK 2.24.2 and the reified lockfile installation
 - **Evidence and unknowns:** The user's three-current/four-saved screenshot proves that the historical selection still blocks progress after 2.24.1; the agreed SDK contract replaces overlapping quote-only sessions after current-call review, retains them as quote-replaced, and protects fundingObserved or remote execution evidence. RNM will normalize legacy chainStates into shared records rather than classify statuses itself.
 - **Verification:** Exercise actual prepare/storage/reload for four-to-three replacement and missing quote responses, assert current exact calls are reviewed/posted before any wallet payment and funded once only after explicit consent, and retain malformed, submitted and hashless-funding refusal regressions.
 - **Resource budget:** Investigate RNM while the SDK policy is resolved in parallel; make the smallest adapter change, then run focused tests/types/lint against the preview. Repeat the full suite and static gates on the published 2.24.2 installation because npm reified dependency entries beyond the SDK archive; bound any subsequent rerun to a concrete failure.
+
+
+## 2026-10-07 — Load operator accounts and Safe queues independently
+
+- [x] Share display-only Safe identity queries per chain/address; retain fresh action checks.
+- [x] Show per-chain discovery/account/queue progress and overlap independent queue reads.
+- [x] Surface transient verification failures with per-chain retry, withholding actions until verified.
+- [x] Verify deduplication, slow-chain independence, retry recovery and unchanged action safety.
+- [x] Display shared quote/payment/execution phases, preserve each verified chain on recovery, and move the fee control to the footer.
+- [x] Require successful bounded neutral-caller Safe simulation before quoting and payment.
+
+Plan refinement (approved by parent): Account and queue already mount independently, but each repeats the full SDK identity proof and aggregate promises hide faster chains. Reuse React Query as the display read owner and retain bounded SDK proofs. Preserve the existing complete operator map for write consumers while exposing a partial discovery map only to Account/Queue. Begin read-only service discovery after the bounded nonce while identity and live authority checks run; expose transactions only after every proof completes. No SDK or RPC pacing changes. Test deferred and failed reads with real query caching; run focused component tests, types, lint and source/wallet gates.
+
+Follow-up scope from the user: consume the SDK's quoting phase after the actual Safe review acceptance so the modal says “Requesting Relayr quote…” while Relayr responds; move the network-fee selector after the execution list into the confirmation footer. Reuse the shared lifecycle and dialog footer; leave quote/payment policy unchanged. Regress delayed quote, cancellation and the fee control's final placement.
+
+Further same-flow corrections: consume shared SDK lifecycle progress for quote phases, per-chain hashes and receipt verification; paid or ambiguous failures return to read-only Check status. Keep verified execution distinct from a Relayr success report. Align RNM preflight with JBM by using the SDK's bounded neutral-caller simulation and requiring execTransaction=true; test false/malformed results before quote and before payment. These fixes keep state ownership in the SDK and do not retry payment implicitly.
+
+Review: against the final frozen SDK distribution, the full suite passes 2,282 tests with one existing skip. Two subsequent review regressions cover repeated recovery subscribers and failed identity refreshes; the final 272-test focused rerun passes, giving 2,284 verified tests. Typecheck, touched-file ESLint, source invariants, source-only dependency audit, unchanged 142-site wallet inventory and diff checks pass. The actual SDK/hook test proves one chain can remain Confirming while another is Executed, closing/reopening recovery retains both states, delayed receipt proof completes on watch, and the wallet sends once. The display-query test proves cached successful identity is hidden after failed refresh and retry restores it. SDK controller reuse retains verified progress through fund/watch; display-only snapshots replay for new subscribers. Production/browser builds and published-package verification belong to the parent release task. No commit or push performed here.
+
+Browser verification refinement: the queue now probes bounded nonce concurrently with account identity. Its exact EOA fixture call (owner 0x1111111111111111111111111111111111111111, nonce() selector 0xaffed0e0, gas 100,000, latest block, no sender) must return empty data as Ethereum does. The fixture accepts only that tuple, retains unknown-request rejection, and adds negative cases for changed target, selector, gas, sender and block. Product code is unchanged. With the frozen SDK candidate, 13 fixture unit tests and the focused operator browser case pass; the complete production browser suite passes 126 tests with four existing skips. ESLint, source guards and diff checks pass. Evidence remains preview-only until official SDK 2.24.3 and installed dependency contents are reconciled.
+
+## 2026-10-07 — Keep narrow liquidity visible with reference prices
+
+## Plan refinement
+
+- **Objective:** Include the authorized liquidity reference markers in this release while keeping funded LP ranges visible when reference prices widen the graph axis.
+- **System fit:** AmmCard displays existing pair-token-denominated reference prices and LP composition; only histogram sampling changes, with all amount calculations and transaction authority unchanged.
+- **Reuse and simplicity:** Reuse the existing per-band tick intersection and weight each range by its covered fraction; retain existing reference filtering and logarithmic marker placement.
+- **Evidence and unknowns:** The supplied 0.5/2 reference fixture brackets a -100/100-tick range, but none of 48 band midpoints intersects it, hiding all bars. Both pair orientations need the same normalized intersection.
+- **Verification:** Assert nonzero symmetric partial-band bars for both pair orientations; run liquidity depth/presence/range tests, types, focused lint and diff checks.
+- **Resource budget:** One small sampling change and one parameterized regression; production/browser verification resumes with the release owner after source freeze.
+
+- [x] Regress widened-axis narrow ranges for both pair orientations.
+- [x] Weight existing tick intersections and verify focused checks.
+
+Review: discovered and reproduced missing depth bars when the reference-price axis [0.5, 2] surrounds a narrow -100/100-tick LP range. Both orientation regressions failed with zero bars before the fix and now pass with two positive symmetric partial-band bars; marker positions remain unchanged. Liquidity now averages the existing tick overlap across each logarithmic bucket. Token/pair amount calculations and reference sources are unchanged. All 16 focused liquidity tests, full typecheck, touched-file ESLint and diff checks pass against the published SDK 2.24.3 installation. Runtime source frozen at AmmCard.tsx SHA256 2f951e84492ee69a9a2489a3bb5ae1910749f5d44488d927a241dccdea308abb; release owner handles combined production/browser verification and commit.
+
+Final published-release verification: official SDK 2.24.3 tarball integrity and all 745 distribution files match the tested candidate; the full installed graph differs only in SDK version/lock metadata and Vitest result timing cache. A fresh physical snapshot includes the reviewed liquidity-price graph and interval-overlap regression fix (AmmCard SHA256 2f951e84492ee69a9a2489a3bb5ae1910749f5d44488d927a241dccdea308abb). On pinned Node 26.5.0/npm 12.0.1, production build and standalone checks pass, and the complete browser suite passes 126 tests with four existing skips. The final 113,074-entry dependency hash remains unchanged and product sources match the workspace.
+
+Bundle review: the matched HEAD 909cf1fd/official SDK 2.24.2 baseline measures 2,717,526 bytes gzip; final combined SDK/account/progress/liquidity changes measure 2,725,587 bytes (+8,061). Only the aggregate ceiling moves from 2658 to the minimum 2662 KiB. Largest operator route is 716,852 bytes and unique route JavaScript is 955,660 bytes; route and wallet lazy-loading limits remain unchanged. Final budget, touched-script lint, source invariants and diff checks pass. All comparison/source/dependency manifests and logs are under /tmp/safe-progress-final-verification.y3xQVa. Remote Linux CI and live revision checks remain parent-owned.

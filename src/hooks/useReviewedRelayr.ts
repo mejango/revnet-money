@@ -94,6 +94,7 @@ import {
 import {
   SafeRelayrRecoveryError,
   safeRelayrReservationKey,
+  type SafeRelayrProgress,
   type SafeRelayrRecovery,
   type SafeRelayrResult,
   type SafeRelayrStatus,
@@ -165,6 +166,60 @@ const bundleInflight = new Map<string, Promise<RelayrGetBundleResponse>>();
 const paymentInflight = new Set<string>();
 const fundedBundles = new Set<string>();
 const bundleListeners = new Map<string, Set<(bundle: RelayrGetBundleResponse) => void>>();
+const bundleProgressListeners = new Map<string, Set<(progress: SafeRelayrProgress) => void>>();
+const bundleProgressSnapshots = new Map<string, Map<string, SafeRelayrProgress>>();
+const safeBundleControllers = new Map<string, ReturnType<typeof safeRelayrController>>();
+
+function notifySafeProgress(
+  listener: (progress: SafeRelayrProgress) => void,
+  progress: SafeRelayrProgress,
+) {
+  try {
+    listener(structuredClone(progress));
+  } catch {
+    // Display listeners cannot interrupt reconciliation or other observers.
+  }
+}
+
+function subscribeSafeProgress(key: string, listener?: (progress: SafeRelayrProgress) => void) {
+  const listeners =
+    bundleProgressListeners.get(key) ?? new Set<(progress: SafeRelayrProgress) => void>();
+  if (listener) listeners.add(listener);
+  bundleProgressListeners.set(key, listeners);
+  // A reopened dialog needs the latest displayed state even when the shared
+  // controller correctly suppresses duplicate proof/progress notifications.
+  if (listener)
+    for (const progress of bundleProgressSnapshots.get(key)?.values() ?? [])
+      notifySafeProgress(listener, progress);
+  return () => {
+    if (listener) listeners.delete(listener);
+  };
+}
+
+function safeBundleController(
+  config: Parameters<typeof safeRelayrController>[0],
+  key: string,
+  wallet?: Parameters<typeof safeRelayrController>[1],
+) {
+  let controller = safeBundleControllers.get(key);
+  // Funding supplies the current wallet adapter. Reuse that SDK instance for
+  // subsequent checks/watching so its verified row progress does not restart.
+  if (!controller || wallet) {
+    controller = safeRelayrController(config, wallet, (progress) => {
+      const snapshots = bundleProgressSnapshots.get(key) ?? new Map<string, SafeRelayrProgress>();
+      snapshots.set(
+        progress.type === "phase" ? "phase" : `execution:${progress.index}`,
+        structuredClone(progress),
+      );
+      bundleProgressSnapshots.set(key, snapshots);
+      for (const listener of bundleProgressListeners.get(key) ?? [])
+        notifySafeProgress(listener, progress);
+    });
+    safeBundleControllers.set(key, controller);
+  }
+  return controller;
+}
+
 const authorizingAccounts = new Set<string>();
 
 async function withAuthorizationLock<T>(account: Address, action: () => Promise<T>): Promise<T> {
@@ -847,7 +902,10 @@ function safeNonceCallKey(
 function safeRecoveryError(cause: unknown): unknown {
   if (!(cause instanceof SafeRelayrRecoveryError)) return cause;
   const activity = safeRelayrActivity(cause.session);
-  return activity ? new RelayrRecoveryError(activity, cause.recovery) : cause;
+  if (!activity) return cause;
+  const recovery = new RelayrRecoveryError(activity, cause.recovery);
+  recovery.message = cause.message;
+  return recovery;
 }
 
 function savedSessionOf(account: Address, callKey: string): TransactionActivity | undefined {
@@ -875,14 +933,21 @@ function savedSessionOf(account: Address, callKey: string): TransactionActivity 
  * still signs them again at their saved nonces); while one can still run it
  * says until when.
  */
-export async function checkRelayrSession(id: string): Promise<SafeRelayrResult | undefined> {
+export async function checkRelayrSession(
+  id: string,
+  onProgress?: (progress: SafeRelayrProgress) => void,
+  signal?: AbortSignal,
+): Promise<SafeRelayrResult | undefined> {
   const activity = refreshTransactionActivities().find((row) => row.id === id);
   if (!activity) return;
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
   const safeSession = safeRelayrSession(activity);
   if (safeSession) {
+    const key = safeSession.bundleUuid ?? safeSession.id;
+    const unsubscribe = subscribeSafeProgress(key, onProgress);
     try {
-      const result = await safeRelayrController(wagmiConfig).check({
+      const result = await safeBundleController(wagmiConfig, key).check({
+        signal,
         account: safeSession.account,
         sessionId: safeSession.id,
       });
@@ -895,6 +960,8 @@ export async function checkRelayrSession(id: string): Promise<SafeRelayrResult |
       return result;
     } catch (cause) {
       throw safeRecoveryError(cause);
+    } finally {
+      unsubscribe();
     }
   }
   const verdict = await savedRequestsVerdict(wagmiConfig, activity);
@@ -1281,11 +1348,13 @@ function bundleChainStates(bundle: RelayrGetBundleResponse) {
 export async function waitForRelayrBundle(
   bundleUuid: string,
   onUpdate?: (bundle: RelayrGetBundleResponse) => void,
+  onProgress?: (progress: SafeRelayrProgress) => void,
 ): Promise<RelayrGetBundleResponse> {
   const listeners =
     bundleListeners.get(bundleUuid) ?? new Set<(bundle: RelayrGetBundleResponse) => void>();
   if (onUpdate) listeners.add(onUpdate);
   bundleListeners.set(bundleUuid, listeners);
+  const unsubscribeProgress = subscribeSafeProgress(bundleUuid, onProgress);
   const notify = (bundle: RelayrGetBundleResponse) =>
     listeners.forEach((listener) => listener(bundle));
   const existing = bundleInflight.get(bundleUuid);
@@ -1296,25 +1365,34 @@ export async function waitForRelayrBundle(
     const safeSession = activity && safeRelayrSession(activity);
     if (safeSession) {
       const { wagmiConfig } = await import("@/lib/wagmiConfig");
-      const result = await safeRelayrController(wagmiConfig).watch({
-        account: safeSession.account,
-        sessionId: safeSession.id,
-        onUpdate: (update) =>
-          notify({
-            bundle_uuid: bundleUuid,
-            transactions: update.session.records ?? [],
-          } as RelayrGetBundleResponse),
-      });
+      const result = await safeBundleController(wagmiConfig, bundleUuid)
+        .watch({
+          account: safeSession.account,
+          sessionId: safeSession.id,
+          onUpdate: (update) =>
+            notify({
+              bundle_uuid: bundleUuid,
+              transactions: update.session.records ?? [],
+            } as RelayrGetBundleResponse),
+        })
+        .catch((cause) => {
+          throw safeRecoveryError(cause);
+        });
       if (result.state === "complete")
         return {
           bundle_uuid: bundleUuid,
           transactions: result.session.records ?? [],
         } as RelayrGetBundleResponse;
-      throw new Error(
-        result.state === "released"
-          ? "The saved Safe quote expired. Review the execution again."
-          : `Relayr bundle ${bundleUuid} is still pending. Resume checking the existing bundle before paying again.`,
+      const recovery = new RelayrRecoveryError(
+        safeRelayrActivity(result.session) ?? activity,
+        result.recovery,
       );
+      if (!result.recovery)
+        recovery.message =
+          result.state === "released"
+            ? "The saved Safe quote expired. Review the execution again."
+            : `Relayr bundle ${bundleUuid} is still pending. Check its status before paying again.`;
+      throw recovery;
     }
     let last: RelayrGetBundleResponse | null = null;
     for (let attempt = 0; attempt < 180; attempt += 1) {
@@ -1407,6 +1485,10 @@ export async function waitForRelayrBundle(
     .finally(() => {
       bundleInflight.delete(bundleUuid);
       bundleListeners.delete(bundleUuid);
+      unsubscribeProgress();
+      bundleProgressListeners.delete(bundleUuid);
+      bundleProgressSnapshots.delete(bundleUuid);
+      safeBundleControllers.delete(bundleUuid);
     })
     .catch(() => undefined);
   return request;
@@ -1442,7 +1524,11 @@ export function useGetRelayrTxQuote() {
   const getRelayrTxQuote = useCallback(
     async (
       requests: ReviewedRelayrRequest[],
-      options?: { signal?: AbortSignal; onStatus?: SafeRelayrStatus },
+      options?: {
+        signal?: AbortSignal;
+        onStatus?: SafeRelayrStatus;
+        onProgress?: (progress: SafeRelayrProgress) => void;
+      },
     ) => {
       if (!address) throw new Error("Connect a wallet first.");
       const safeCount = requests.filter((request) => request.relayrMode === "safe-exec").length;
@@ -1459,7 +1545,11 @@ export function useGetRelayrTxQuote() {
         setIsPending(true);
         setError(null);
         try {
-          const prepared = await safeRelayrController(config).prepare({
+          const prepared = await safeRelayrController(
+            config,
+            undefined,
+            options?.onProgress,
+          ).prepare({
             account: address,
             executions: requests.map(safeRelayrExecution),
             signal: options?.signal,
@@ -1919,7 +2009,10 @@ export function useSendRelayrTx() {
   const sendRelayrTx = useCallback(
     async (
       offeredPayment: ChainPayment,
-      options?: { onStatus?: SafeRelayrStatus },
+      options?: {
+        onStatus?: SafeRelayrStatus;
+        onProgress?: (progress: SafeRelayrProgress) => void;
+      },
     ): Promise<Hex> => {
       requireNoViewAs();
       if (!address) throw new Error("Connect a wallet first.");
@@ -1937,8 +2030,9 @@ export function useSendRelayrTx() {
       const activity = refreshTransactionActivities().find((row) => row.id === activityId);
       const safeSession = activity && safeRelayrSession(activity);
       if (safeSession) {
+        const unsubscribe = subscribeSafeProgress(remembered.bundleUuid, options?.onProgress);
         try {
-          const result = await safeRelayrController(config, {
+          const result = await safeBundleController(config, remembered.bundleUuid, {
             switchChain: (chainId) => switchChainAsync({ chainId }),
             sendTransaction: (request) => transaction.sendTransactionAsync(request),
           }).fund({
@@ -1955,6 +2049,8 @@ export function useSendRelayrTx() {
           return hash;
         } catch (cause) {
           throw safeRecoveryError(cause);
+        } finally {
+          unsubscribe();
         }
       }
       const submit = async () => {

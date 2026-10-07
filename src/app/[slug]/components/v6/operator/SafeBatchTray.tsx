@@ -23,11 +23,7 @@ import {
   type BatchStep,
 } from "@/lib/safe-batch";
 import { stepResolverFor } from "@/lib/safe-batch-presets";
-import {
-  multiSendCallsOf,
-  readAuthorityIdentity,
-  readBoundedSafeNonce,
-} from "@bananapus/nana-sdk-core/safe";
+import { multiSendCallsOf, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   hasSafeService,
   listPendingSafeTransactions,
@@ -35,9 +31,10 @@ import {
   usableSafeConfirmations,
   type SafeQueuedTransaction,
 } from "@bananapus/nana-sdk-core/safe-service";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Address } from "viem";
+import { authorityIdentityQuery } from "./authorityIdentityQuery";
 import { chainName, publicClientFor, type ChainProjectRow } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
 import { SafeBatchDialog } from "./SafeBatchDialog";
@@ -61,6 +58,7 @@ function useProposedBatch(
   authority: Address | undefined,
   steps: readonly BatchStep[],
 ): ProposedBatch | null {
+  const queryClient = useQueryClient();
   const key = steps.length ? callsKey(composeBatch(steps).calls) : null;
   const query = useQuery({
     queryKey: ["revnet-safe-batch-proposed", chainId, authority, key],
@@ -71,7 +69,9 @@ function useProposedBatch(
     queryFn: async (): Promise<ProposedBatch | null> => {
       const client = publicClientFor(chainId as ChainProjectRow["chainId"]);
       const [identity, nonce] = await Promise.all([
-        readAuthorityIdentity(client, authority!),
+        queryClient.fetchQuery(
+          authorityIdentityQuery(chainId as ChainProjectRow["chainId"], authority!),
+        ),
         readBoundedSafeNonce(client, authority!),
       ]);
       if (identity?.kind !== "safe" || nonce === null) return null;

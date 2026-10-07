@@ -293,10 +293,13 @@ describe("Safe Relayr shared ownership gate", () => {
     const hook = readFileSync("src/hooks/useReviewedRelayr.ts", "utf8");
     expect(adapter).toContain('from "@bananapus/nana-sdk-core/review/safe-relayr"');
     expect(adapter).toContain("createSafeRelayrController({");
-    expect(hook).toMatch(/safeRelayrController\(config\)\.prepare\(/);
+    expect(hook).toMatch(
+      /safeRelayrController\(\s*config,\s*undefined,\s*options\?\.onProgress,?\s*\)\s*\.prepare\(/,
+    );
+    expect(hook).toContain("controller = safeRelayrController(config, wallet,");
     expect(hook).toMatch(/\.fund\(\{/);
-    expect(hook).toMatch(/safeRelayrController\(wagmiConfig\)\.check\(/);
-    expect(hook).toMatch(/safeRelayrController\(wagmiConfig\)\.watch\(/);
+    expect(hook).toMatch(/safeBundleController\(wagmiConfig, key\)\.check\(/);
+    expect(hook).toMatch(/safeBundleController\(wagmiConfig, bundleUuid\)\s*\.watch\(/);
     expect(adapter).not.toMatch(
       /\b(?:bindRelayrQuote|relayrBundleRequest|relayrDeadlinePassed|verifyRelayrDestinations|requireRelayrBundleUnpaid)\b/,
     );

@@ -43,6 +43,7 @@ export function TxConfirmDialog({
   preparing = false,
   status,
   error,
+  footerContent,
 }: {
   open: boolean;
   onClose: () => void;
@@ -51,7 +52,7 @@ export function TxConfirmDialog({
   rows?: readonly TxConfirmRow[];
   /** Extra body content under the rows (warnings, notes, custom grids). */
   children?: ReactNode;
-  steps: readonly { key?: string; title: ReactNode; detail?: string }[];
+  steps: readonly { key?: string; title: ReactNode; detail?: ReactNode }[];
   activeIndex: number;
   stepsIntro?: string;
   action: string;
@@ -64,6 +65,8 @@ export function TxConfirmDialog({
   preparing?: boolean;
   status?: ReactNode;
   error?: ReactNode;
+  /** Controls tied to the final action, after the review's rows and steps. */
+  footerContent?: ReactNode;
 }) {
   const titleId = useId();
   // Inside a ModalShell already, the confirm replaces that card's content in
@@ -131,7 +134,7 @@ export function TxConfirmDialog({
         )}
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
       </div>
-      <footer className="flex justify-end gap-2 border-t border-melon-300 bg-melon-25 px-5 py-4">
+      <footer className="flex flex-wrap items-end justify-end gap-2 border-t border-melon-300 bg-melon-25 px-5 py-4">
         {complete ? (
           <button
             type="button"
@@ -142,6 +145,7 @@ export function TxConfirmDialog({
           </button>
         ) : (
           <>
+            {footerContent ? <div className="w-full">{footerContent}</div> : null}
             <button
               type="button"
               className="min-h-[44px] border border-melon-600 px-5 text-sm disabled:cursor-not-allowed disabled:opacity-40"

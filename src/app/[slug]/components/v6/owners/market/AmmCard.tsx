@@ -314,14 +314,16 @@ function LiquidityProviders({ pool, tokenSymbol }: { pool: PoolSnapshot; tokenSy
   );
 }
 
-function LiquidityVisualization({
+export function LiquidityVisualization({
   pool,
   composition,
   tokenSymbol,
+  reference,
 }: {
   pool: PoolSnapshot;
   composition: PoolComposition;
   tokenSymbol: string;
+  reference: AmmChainState["reference"];
 }) {
   const model = useMemo(() => {
     const pairAmount = Number(formatUnits(composition.pairAmount, pool.pair.decimals));
@@ -357,8 +359,17 @@ function LiquidityVisualization({
       return { pairAmount, tokenAmount, pairPercent, tokenPercent, depth: null };
     }
 
-    const low = Math.min(...ranges.map((range) => range.low), pool.price);
-    const high = Math.max(...ranges.map((range) => range.high), pool.price);
+    const prices = [
+      { label: "Pool price", value: pool.price, color: "#f59e0b" },
+      { label: "Cash out price", value: reference.cashOut, color: "#6366f1" },
+      { label: "Issuance price", value: reference.issuance, color: "#65a578" },
+    ].filter(
+      (price): price is { label: string; value: number; color: string } =>
+        price.value != null && Number.isFinite(price.value) && price.value > 0,
+    );
+    // Include reference prices outside the LP ranges so every marker stays visible.
+    const low = Math.min(...ranges.map((range) => range.low), ...prices.map((p) => p.value));
+    const high = Math.max(...ranges.map((range) => range.high), ...prices.map((p) => p.value));
     if (!(high > low)) {
       return { pairAmount, tokenAmount, pairPercent, tokenPercent, depth: null };
     }
@@ -381,10 +392,13 @@ function LiquidityVisualization({
       let pair = 0n;
       let token = 0n;
       for (const range of ranges) {
-        if (mid >= range.low && mid <= range.high) liquidity += range.liquidity;
         const overlapLow = Math.max(bandTickLow, range.tickLower);
         const overlapHigh = Math.min(bandTickHigh, range.tickUpper);
         if (overlapLow >= overlapHigh) continue;
+        // Average over the logarithmic band so narrow ranges remain visible
+        // even when reference prices put the band's midpoint outside them.
+        liquidity +=
+          (range.liquidity * (overlapHigh - overlapLow)) / (bandTickHigh - bandTickLow);
         const amounts = uniswapV4AmountsForLiquidity(
           pool.sqrtP,
           uniswapV4SqrtPriceX96AtTick(Math.round(overlapLow)),
@@ -397,16 +411,19 @@ function LiquidityVisualization({
       return { mid, liquidity, pair, token };
     });
     const maxLiquidity = Math.max(...bands.map((band) => band.liquidity), 1);
-    const priceX = ((Math.log(pool.price) - logLow) / span) * DEPTH_WIDTH;
+    const markers = prices.map((price) => ({
+      ...price,
+      x: ((Math.log(price.value) - logLow) / span) * DEPTH_WIDTH,
+    }));
 
     return {
       pairAmount,
       tokenAmount,
       pairPercent,
       tokenPercent,
-      depth: { bands, maxLiquidity, low, high, priceX },
+      depth: { bands, maxLiquidity, low, high, markers },
     };
-  }, [composition, pool]);
+  }, [composition, pool, reference]);
 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   // With nothing hovered, report the band holding the current price.
@@ -458,9 +475,21 @@ function LiquidityVisualization({
       {model.depth ? (
         <div>
           <div className="text-xs text-zinc-500">Depth</div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs">
+            {model.depth.markers.map((marker) => (
+              <span key={marker.label} className="flex items-center gap-1.5">
+                <span
+                  className="h-2.5 w-2.5 shrink-0"
+                  style={{ backgroundColor: marker.color }}
+                  aria-hidden="true"
+                />
+                {marker.label}: {formatPrice(marker.value)} {pool.pair.symbol}/{tokenSymbol}
+              </span>
+            ))}
+          </div>
           <svg
-            viewBox={`0 0 ${DEPTH_WIDTH} 128`}
-            className="mt-2 h-auto w-full cursor-crosshair touch-none"
+            viewBox={`0 16 ${DEPTH_WIDTH} 84`}
+            className="mt-2 h-auto w-full cursor-crosshair touch-none overflow-visible"
             role="img"
             aria-label={`${tokenSymbol} liquidity depth from ${formatPrice(model.depth.low)} to ${formatPrice(model.depth.high)} ${pool.pair.symbol}`}
             onPointerMove={(event) => {
@@ -487,51 +516,29 @@ function LiquidityVisualization({
                 />
               );
             })}
-            <line x1="1" y1="20" x2="1" y2="98" stroke="#71717a" strokeDasharray="3 2" />
-            <line
-              x1={model.depth.priceX.toFixed(1)}
-              y1="20"
-              x2={model.depth.priceX.toFixed(1)}
-              y2="98"
-              stroke="#f59e0b"
-              strokeWidth="1.5"
-              strokeDasharray="3 2"
-            />
-            <line x1="319" y1="20" x2="319" y2="98" stroke="#14b8a6" strokeDasharray="3 2" />
-            <text x="1" y="13" fontSize="8" fill="#71717a">
-              floor
-            </text>
-            {/* ponytail: measured at 8px in the page font, "floor" and the
-                centered "price" are 24.3 wide and "ceiling" 34.1 — so the
-                centered label collides with an end label outside this band.
-                Drop it there rather than print over them: the amber line still
-                marks the price and the readout below the chart names it. */}
-            {model.depth.priceX > 42 && model.depth.priceX < DEPTH_WIDTH - 52 ? (
-              <text
-                x={model.depth.priceX.toFixed(1)}
-                y="13"
-                fontSize="8"
-                fill="#71717a"
-                textAnchor="middle"
+            {model.depth.markers.map((marker) => (
+              <line
+                key={marker.label}
+                aria-label={`${marker.label}: ${formatPrice(marker.value)} ${pool.pair.symbol}/${tokenSymbol}`}
+                x1={marker.x.toFixed(1)}
+                y1="20"
+                x2={marker.x.toFixed(1)}
+                y2="98"
+                stroke={marker.color}
+                strokeWidth="1"
+                strokeDasharray="3 2"
               >
-                price
-              </text>
-            ) : null}
-            <text x="319" y="13" fontSize="8" fill="#71717a" textAnchor="end">
-              ceiling
-            </text>
-            <text x="1" y="119" fontSize="8" fill="#71717a">
-              {formatPrice(model.depth.low)}
-            </text>
-            <text x="319" y="119" fontSize="8" fill="#71717a" textAnchor="end">
-              {formatPrice(model.depth.high)}
-            </text>
+                <title>
+                  {marker.label}: {formatPrice(marker.value)} {pool.pair.symbol}/{tokenSymbol}
+                </title>
+              </line>
+            ))}
           </svg>
           <p className="mt-1 text-xs text-zinc-600" aria-live="polite">
             {shownBand ? (
               <>
                 <span className="font-medium text-zinc-900">
-                  ~{formatPrice(shownBand.mid)} {pool.pair.symbol}/{tokenSymbol}
+                  Band near {formatPrice(shownBand.mid)} {pool.pair.symbol}/{tokenSymbol}
                 </span>
                 , {shownBand.mid < pool.price! ? "buy-side" : "sell-side"}:{" "}
                 {fmtUnits(shownBand.token, 18)} {tokenSymbol} +{" "}
@@ -584,6 +591,7 @@ function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; token
               pool={pool}
               composition={composition}
               tokenSymbol={tokenSymbol}
+              reference={state.reference}
             />
           )}
         </>

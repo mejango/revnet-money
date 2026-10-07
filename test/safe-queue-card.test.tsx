@@ -118,8 +118,8 @@ function renderCard(...chainIds: (8453 | 10 | 11155420)[]) {
  * after the review opens to reach the guards behind the hidden buttons.
  */
 function listedTransaction(queryClient: QueryClient, chainId: number) {
-  const [queue] = queryClient.getQueryCache().findAll({ queryKey: ["revnet-safe-queues"] });
-  const rows = queue!.state.data as {
+  const queries = queryClient.getQueryCache().findAll({ queryKey: ["revnet-safe-queues"] });
+  const rows = queries.flatMap((query) => query.state.data ?? []) as {
     chainId: number;
     handleOnly: boolean;
     transactions: { transaction: SafeQueuedTransaction }[];
@@ -169,7 +169,7 @@ describe("Safe queue card", () => {
 
     expect(await screen.findByText("Ethereum handles")).toBeVisible();
     expect(
-      screen.getByText("Can't verify this Safe is the same on Ethereum.", { exact: true }),
+      await screen.findByText("Can't verify this Safe is the same on Ethereum.", { exact: true }),
     ).toBeVisible();
   });
 

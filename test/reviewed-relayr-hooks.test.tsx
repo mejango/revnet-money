@@ -1627,6 +1627,15 @@ describe("Safe execution bundles", () => {
       ...client,
       call: (args: object) => mocks.clientCall({ ...args, chainId }),
     }));
+    mocks.rawRequest.mockImplementation(async ({ params }: { params?: [{ data?: Hex }] }) =>
+      params?.[0]?.data?.startsWith(exec.slice(0, 10))
+        ? encodeFunctionResult({
+            abi: SAFE_EXEC_ABI,
+            functionName: "execTransaction",
+            result: true,
+          })
+        : "0x",
+    );
     mocks.clientCall.mockImplementation(
       async ({ data, chainId = 1 }: { data?: Hex; chainId?: number }) => {
         if (data?.startsWith(NONCE))
@@ -1638,6 +1647,113 @@ describe("Safe execution bundles", () => {
         return { data: "0x" };
       },
     );
+  });
+
+  it("reports the shared quoting phase after consent while the quote response is pending", async () => {
+    const { hooks, review } = await freshHarness();
+    let accept!: (accepted: boolean) => void;
+    const reviewed = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          accept = resolve;
+        }),
+    );
+    review.registerTransactionReviewHandler(reviewed);
+    let releasePost!: () => void;
+    const posted = new Promise<void>((resolve) => {
+      releasePost = resolve;
+    });
+    const api = relayrApi();
+    const progress = vi.fn();
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(progress).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "phase", phase: "quoting" }),
+      );
+      await posted;
+      return api(input, init);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      const quote = result.current.getRelayrTxQuote([safeExec(1)], { onProgress: progress });
+      await vi.waitFor(() => expect(reviewed).toHaveBeenCalledOnce());
+      expect(progress).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "phase", phase: "quoting" }),
+      );
+      expect(fetch).not.toHaveBeenCalled();
+      accept(true);
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+      expect(progress).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "phase", phase: "quoting" }),
+      );
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+      releasePost();
+      await quote;
+    });
+  });
+
+  it("simulates exact Safe calldata from a neutral executor before publishing", async () => {
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi());
+    const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await result.current.getRelayrTxQuote([safeExec(1)]);
+    });
+    expect(mocks.rawRequest).toHaveBeenCalledWith({
+      method: "eth_call",
+      params: [{ from: zeroAddress, to: SAFE, data: exec, value: "0x0", gas: "0x927c0" }, "latest"],
+    });
+  });
+
+  it.each([false, "empty", "oversized"])(
+    "refuses %s Safe execution simulation before publishing",
+    async (response) => {
+      const { hooks, review } = await freshHarness();
+      const reviewed = vi.fn(async () => true);
+      review.registerTransactionReviewHandler(reviewed);
+      mocks.rawRequest.mockResolvedValue(
+        response === false
+          ? encodeFunctionResult({
+              abi: SAFE_EXEC_ABI,
+              functionName: "execTransaction",
+              result: false,
+            })
+          : response === "empty"
+            ? "0x"
+            : `0x${"01".repeat(33)}`,
+      );
+      vi.stubGlobal("fetch", vi.fn());
+      const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+      await expect(result.current.getRelayrTxQuote([safeExec(1)])).rejects.toThrow();
+      expect(reviewed).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refuses a Safe execution that returns false when rechecked before payment", async () => {
+    const { hooks, review } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.stubGlobal("fetch", relayrApi());
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await quoter.result.current.getRelayrTxQuote([safeExec(1)]);
+    });
+    mocks.rawRequest.mockImplementation(async ({ params }: { params?: [{ data?: Hex }] }) =>
+      params?.[0]?.data === exec
+        ? encodeFunctionResult({
+            abi: SAFE_EXEC_ABI,
+            functionName: "execTransaction",
+            result: false,
+          })
+        : "0x",
+    );
+    const payer = renderHook(() => hooks.useSendRelayrTx());
+    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
+      "The Safe execution simulation did not succeed.",
+    );
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
   it("reviews every Safe execution once, pins nonce and hash, and never switches chains", async () => {
@@ -1743,9 +1859,9 @@ describe("Safe execution bundles", () => {
         calls: [expect.objectContaining({ to: TARGET, data: "0x1234", value: 0n })],
       })),
     });
-    expect(mocks.clientCall.mock.calls.some(([call]) => call.data === changed[0].data.data)).toBe(
-      true,
-    );
+    expect(
+      mocks.rawRequest.mock.calls.some(([call]) => call.params?.[0]?.data === changed[0].data.data),
+    ).toBe(true);
   });
 
   it("replaces a legacy unfunded Safe quote after reload without a new wallet signature", async () => {
@@ -2023,6 +2139,7 @@ describe("Safe execution bundles", () => {
       timestamp: BigInt(NOW),
     });
     mocks.rawRequest.mockResolvedValue(encodeAbiParameters([{ type: "uint256" }], [8n]));
+    mocks.rawRequest.mockClear();
     await expect(hooks.checkRelayrSession(saved.id)).rejects.toThrow(/malformed recovery history/);
     expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
       relayrSafeState: "publishing",
@@ -2037,10 +2154,10 @@ describe("Safe execution bundles", () => {
     review.registerTransactionReviewHandler(async () => true);
     const api = relayrApi();
     vi.stubGlobal("fetch", api);
-    const original = mocks.clientCall.getMockImplementation()!;
+    const original = mocks.rawRequest.getMockImplementation()!;
     let release: (() => void) | undefined;
-    mocks.clientCall.mockImplementation(async (args) => {
-      if (args.data === exec)
+    mocks.rawRequest.mockImplementation(async (args) => {
+      if (args.params?.[0]?.data === exec)
         await new Promise<void>((resolve) => {
           release = resolve;
         });
@@ -2402,10 +2519,11 @@ describe("Safe execution bundles", () => {
     const { hooks, review } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
     vi.stubGlobal("fetch", relayrApi());
-    const defaultCall = mocks.clientCall.getMockImplementation()!;
+    const defaultCall = mocks.rawRequest.getMockImplementation()!;
     let releases: Array<() => void> = [];
-    mocks.clientCall.mockImplementation(async (args) => {
-      if (args.data === exec) await new Promise<void>((resolve) => releases.push(resolve));
+    mocks.rawRequest.mockImplementation(async (args) => {
+      if (args.params?.[0]?.data === exec)
+        await new Promise<void>((resolve) => releases.push(resolve));
       return defaultCall(args);
     });
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -2450,6 +2568,131 @@ describe("Safe execution bundles", () => {
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])(
+    "keeps a paid Safe bundle checking and reports each verified chain while another destination is unavailable (reopen recovery: %s)",
+    async (reopenRecovery) => {
+      const { hooks, review } = await freshHarness();
+      review.registerTransactionReviewHandler(async () => true);
+      const ethereumHash = `0x${"11".repeat(32)}` as Hex;
+      const optimismHash = `0x${"22".repeat(32)}` as Hex;
+      let funded = false;
+      let ethereumAvailable = false;
+      const landed = (hash: Hex) => {
+        const chainId = hash === ethereumHash ? 1 : 10;
+        return {
+          ...onchain(SAFE, exec, 0n, chainId),
+          hash,
+          transactionHash: hash,
+          logs: [
+            {
+              address: SAFE,
+              topics: encodeEventTopics({
+                abi: SAFE_EXEC_ABI,
+                eventName: "ExecutionSuccess",
+                args: { txHash: safeHash(chainId) },
+              }),
+              data: encodeAbiParameters([{ type: "uint256" }], [0n]),
+            },
+          ],
+        };
+      };
+      mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => {
+        if (hash === HASH) return onchain(PAYMENT_TARGET, payment().calldata);
+        if (hash === ethereumHash && !ethereumAvailable) return null;
+        return landed(hash);
+      });
+      mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) => {
+        if (hash === HASH) return onchain(PAYMENT_TARGET, payment().calldata);
+        if (hash === ethereumHash && !ethereumAvailable) return null;
+        return landed(hash);
+      });
+      mocks.sendTransaction.mockImplementation(async () => {
+        funded = true;
+        return HASH;
+      });
+      vi.stubGlobal(
+        "fetch",
+        relayrApi({
+          records: (records) =>
+            funded
+              ? records.map((record) => ({
+                  ...record,
+                  status: {
+                    state: "Success",
+                    data: { hash: record.request.chain === 1 ? ethereumHash : optimismHash },
+                  },
+                }))
+              : records,
+        }),
+      );
+      const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+      await act(async () => {
+        await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
+      });
+      const progress = vi.fn();
+      const payer = renderHook(() => hooks.useSendRelayrTx());
+      await act(async () => {
+        await expect(
+          payer.result.current.sendRelayrTx(payment(), { onProgress: progress }),
+        ).resolves.toBe(HASH);
+      });
+      expect(progress).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "phase", phase: "payment-confirming" }),
+      );
+      expect(progress).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "execution", status: "confirming", hash: ethereumHash }),
+      );
+      expect(progress).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "execution", status: "executed", hash: optimismHash }),
+      );
+      expect(progress).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "execution", status: "executed", hash: ethereumHash }),
+      );
+      expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+      if (reopenRecovery) {
+        // Each listener represents a newly opened recovery dialog. The SDK may
+        // suppress unchanged statuses, but both dialogs still need every row.
+        for (let reopened = 0; reopened < 2; reopened += 1) {
+          const recoveredProgress = vi.fn();
+          await expect(
+            hooks.checkRelayrSession(`relayr:${BUNDLE_UUID}`, recoveredProgress),
+          ).resolves.toMatchObject({ state: "pending" });
+          expect(recoveredProgress).toHaveBeenCalledWith(
+            expect.objectContaining({
+              type: "execution",
+              status: "confirming",
+              hash: ethereumHash,
+            }),
+          );
+          expect(recoveredProgress).toHaveBeenCalledWith(
+            expect.objectContaining({ type: "execution", status: "executed", hash: optimismHash }),
+          );
+          expect(recoveredProgress).not.toHaveBeenCalledWith(
+            expect.objectContaining({
+              type: "execution",
+              status: "confirming",
+              hash: optimismHash,
+            }),
+          );
+        }
+        expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+      }
+      ethereumAvailable = true;
+      progress.mockClear();
+      await hooks.waitForRelayrBundle(BUNDLE_UUID, undefined, progress);
+      expect(progress).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "execution", status: "executed", hash: ethereumHash }),
+      );
+      expect(progress).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "execution", status: "confirming", hash: optimismHash }),
+      );
+      expect(progress).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "phase", phase: "complete" }),
+      );
+      expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+    },
+  );
+
   it("persists an uncertain Safe wallet invocation before returning its error", async () => {
     const { hooks, review, activity } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
@@ -2460,8 +2703,8 @@ describe("Safe execution bundles", () => {
     });
     mocks.sendTransaction.mockRejectedValue(new Error("Wallet connection lost"));
     const payer = renderHook(() => hooks.useSendRelayrTx());
-    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
-      /Wallet connection lost/,
+    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toBeInstanceOf(
+      hooks.RelayrRecoveryError,
     );
     expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
       relayrSafeFundingUnknown: true,
