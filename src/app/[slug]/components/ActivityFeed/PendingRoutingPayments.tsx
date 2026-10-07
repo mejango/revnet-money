@@ -3,6 +3,7 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
+import { useHydrated } from "@/hooks/useHydrated";
 import { useMultichainBatch, type BatchResult } from "@/hooks/useMultichainBatch";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import {
@@ -18,16 +19,13 @@ import { getViemPublicClient } from "@/lib/wagmiTransports";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { safeQueueUrl } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 
-const subscribe = () => () => {};
-const clientSnapshot = () => true;
-const serverSnapshot = () => false;
 type Prepared = Awaited<ReturnType<typeof preparePendingRouterPayment>>;
 
 export function PendingRoutingPayments({ projects }: { projects: PendingProject[] }) {
-  const hydrated = useSyncExternalStore(subscribe, clientSnapshot, serverSnapshot);
+  const hydrated = useHydrated();
   const { address, chainId } = useAccount();
   const queryClient = useQueryClient();
   const { runBatch, getPendingBatch, recheckPendingRoutingBatch } = useMultichainBatch();

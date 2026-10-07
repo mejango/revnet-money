@@ -20,6 +20,7 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
+import { useHydrated } from "@/hooks/useHydrated";
 import {
   useGetRelayrTxQuote,
   useSendRelayrTx,
@@ -55,7 +56,7 @@ import {
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { getTokenAddress, hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Address,
   encodeAbiParameters,
@@ -102,15 +103,11 @@ function TokenField({ label, children }: { label: string; children: React.ReactN
   );
 }
 
-const subscribeToHydration = () => () => {};
-const clientIsHydrated = () => true;
-const serverIsHydrated = () => false;
-
 /** Token identity and omnichain edit/deploy controls, ahead of the Owners subtabs. */
 export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
   // The persisted query can restore before this streamed panel hydrates.
   // Keep its first client snapshot identical to the server's loading state.
-  const hydrated = useSyncExternalStore(subscribeToHydration, clientIsHydrated, serverIsHydrated);
+  const hydrated = useHydrated();
   const { contractAddress } = useJBContractContext();
   const { metadata } = useJBProjectMetadataContext();
   const { token: contextToken } = useJBTokenContext();
