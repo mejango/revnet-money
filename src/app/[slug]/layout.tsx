@@ -21,6 +21,8 @@ import { getProjectWithFallback } from "./getProjectFallback";
 import { getProjectOperator } from "./getProjectOperator";
 import { getIndexedSuckerGroup, getSuckerGroup } from "./getSuckerGroup";
 import { ProjectProviders } from "./ProjectProviders";
+import { ProjectRouteBoundary } from "./ProjectRouteBoundary";
+import { projectRouteSnapshot } from "./projectRouteIdentity";
 import { resolveProjectRoute } from "./resolveProjectRoute.server";
 import { getRulesets, type Ruleset } from "./terms/getRulesets";
 
@@ -247,75 +249,77 @@ async function ProjectLayoutContent({
         path={`/${decodeProjectRouteSlug(slug) ?? slug}`}
         identifier={slugFor(chainId, projectId) ?? `${chainId}:${projectId}`}
       />
-      <ProjectProviders
-        chainId={chainId}
-        projectId={projectId}
-        project={project}
-        projects={projects}
-      >
-        <ProjectDiagnosticsProvider chainId={chainId} projectId={projectId}>
-          <ShopCartProvider>
-            <div id="project-top">
-              <Nav wide />
-            </div>
-
-            {degraded && (
-              <div className="w-full px-4 sm:container pt-4">
-                <ProjectDataNotice
-                  status={indexStatus}
-                  project={{
-                    chainId,
-                    projectId: Number(projectId),
-                    groupId: project.suckerGroupId,
-                  }}
-                />
+      <ProjectRouteBoundary slug={slug} snapshot={projectRouteSnapshot(route)}>
+        <ProjectProviders
+          chainId={chainId}
+          projectId={projectId}
+          project={project}
+          projects={projects}
+        >
+          <ProjectDiagnosticsProvider chainId={chainId} projectId={projectId}>
+            <ShopCartProvider>
+              <div id="project-top">
+                <Nav wide />
               </div>
-            )}
-            <div className="w-full px-4 sm:container pt-6">
-              <Suspense
-                fallback={
-                  <ProjectHeaderSkeleton
-                    hint={{
-                      name: project.name || `Revnet ${projectId}`,
-                      logoUri: project.logoUri,
+
+              {degraded && (
+                <div className="w-full px-4 sm:container pt-4">
+                  <ProjectDataNotice
+                    status={indexStatus}
+                    project={{
+                      chainId,
+                      projectId: Number(projectId),
+                      groupId: project.suckerGroupId,
                     }}
                   />
-                }
-              >
-                <Header
-                  isRevnet={isRevnet}
-                  operatorPromise={operatorPromise}
-                  projects={projects}
-                  createdAt={project.createdAt}
-                />
-              </Suspense>
-            </div>
-            {isRevnet ? (
-              <ResponsiveProjectLayout
-                sidebar={
-                  <>
-                    <Suspense
-                      fallback={
-                        <p role="status" className="text-sm text-zinc-500">
-                          Loading start time…
-                        </p>
-                      }
-                    >
-                      <ProjectStartNotice rulesets={rulesetsPromise} />
-                    </Suspense>
-                    <div className="mt-1 mb-4">
-                      <PayCard />
-                    </div>
-                  </>
-                }
-                activity={<ActivityFeed suckerGroupId={suckerGroup.id} projects={projects} />}
-              >
-                {children}
-              </ResponsiveProjectLayout>
-            ) : null}
-          </ShopCartProvider>
-        </ProjectDiagnosticsProvider>
-      </ProjectProviders>
+                </div>
+              )}
+              <div className="w-full px-4 sm:container pt-6">
+                <Suspense
+                  fallback={
+                    <ProjectHeaderSkeleton
+                      hint={{
+                        name: project.name || `Revnet ${projectId}`,
+                        logoUri: project.logoUri,
+                      }}
+                    />
+                  }
+                >
+                  <Header
+                    isRevnet={isRevnet}
+                    operatorPromise={operatorPromise}
+                    projects={projects}
+                    createdAt={project.createdAt}
+                  />
+                </Suspense>
+              </div>
+              {isRevnet ? (
+                <ResponsiveProjectLayout
+                  sidebar={
+                    <>
+                      <Suspense
+                        fallback={
+                          <p role="status" className="text-sm text-zinc-500">
+                            Loading start time…
+                          </p>
+                        }
+                      >
+                        <ProjectStartNotice rulesets={rulesetsPromise} />
+                      </Suspense>
+                      <div className="mt-1 mb-4">
+                        <PayCard />
+                      </div>
+                    </>
+                  }
+                  activity={<ActivityFeed suckerGroupId={suckerGroup.id} projects={projects} />}
+                >
+                  {children}
+                </ResponsiveProjectLayout>
+              ) : null}
+            </ShopCartProvider>
+          </ProjectDiagnosticsProvider>
+        </ProjectProviders>
+      </ProjectRouteBoundary>
     </>
   );
 }

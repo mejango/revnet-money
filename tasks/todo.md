@@ -543,3 +543,21 @@ Uses workspace AGENTS.md, workflow/ponytail/SKILL.md and docs/PLAN_REFINEMENT.md
 ### Refined alias rebinding recovery
 
 Root architectural decision: ordinary same-project tabs, graph controls, history and successful expired-proof checks never reload the document. A positively verified change of tuple/operator replaces the document once, which also cancels old JavaScript preparations before they can enqueue under a new scope. Failed verification never reloads and retains Retry plus the original numeric project link. This exception avoids broad changes to financial execution owners while retaining their previous cancellation boundary. Tests distinguish same-binding/no-document, changed-binding/one-document, and failed-proof/no-document behavior.
+
+## 2026-10-07 — Verify the combined website performance changes
+
+## Plan refinement
+
+- **Objective:** Qualify the combined wallet, server-read, client-cache and retained-navigation changes against repository release checks and measured project/tab/graph journeys.
+- **System fit:** The layout's verified route snapshot surrounds project providers, while child snapshots acknowledge the same binding; indexed display caching and metadata invalidation retain their separate owners. Alias proof gates review scope, and existing final transaction/recovery checks remain authoritative.
+- **Reuse and simplicity:** Preserve both append-only task records and combine the navigation page wrapper with the existing streamed chart. Add only the agreed layout wrapper and a meaningful integration assertion, then reuse the repository's pinned CI/build/browser tools and unchanged baseline comparison scripts.
+- **Evidence and unknowns:** Combined server/client/diagnostics changes have passed focused checks; baseline production client JavaScript already exceeds its aggregate budget slightly. Final navigation integration, exact production size, 404 behavior and browser journeys remain unverified. Build inputs use the locked install and pinned Node 26.5/npm 12; root owns Docker and Para-enabled production smoke.
+- **Verification:** Run full dependency, environment, deployment, type, lint, formatting, source, dead-code, protocol, wallet and coverage gates; build the production browser artifact, verify standalone output and measured budgets, then run the complete two-worker browser suite and unchanged comparison journey. Diagnose failures before modifying source or budgets.
+- **Resource budget:** One owner mutates this integration checkout and serializes builds; fixture ports 4173/4174 are confirmed free. Use the existing log runner and bounded progress polling, preserve baseline artifact/source hashes, and rerun checks only for relevant subsequent changes or failures. No push or deployment is authorized by this verification.
+
+- [x] Preserve both task histories and merge the streamed overview with its identity boundary.
+- [x] Wire and verify the whole-project layout identity boundary.
+- [ ] Run complete static, coverage, production, browser and controlled-comparison checks.
+- [ ] Record exact source revision, evidence, limitations and integration handoff.
+
+Integration merge review: navigation extraction 2e4652e7 and behavior 656f9a16 preserve both task histories, every requested-project group key, and the streamed StartedProjectChart. The layout now supplies the same verified snapshot to the boundary enclosing all project providers. All 99 focused integration tests across nine suites pass, including the real navigation/cache suites and a new parent/child snapshot assertion. Full release checks follow this source commit.

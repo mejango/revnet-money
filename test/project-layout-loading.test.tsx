@@ -39,6 +39,10 @@ vi.mock("@/app/[slug]/components/ResponsiveProjectLayout", () => ({
 }));
 vi.mock("@/app/[slug]/components/v6/ShopCartContext", () => ({ ShopCartProvider: "shop-cart" }));
 vi.mock("@/app/[slug]/ProjectProviders", () => ({ ProjectProviders: "project-providers" }));
+vi.mock("@/app/[slug]/ProjectRouteBoundary", () => ({
+  ProjectRouteBoundary: "project-route-boundary",
+  ProjectPageBoundary: "project-page-boundary",
+}));
 vi.mock("@/app/[slug]/components/v6/overview/V6OverviewTab", () => ({ V6OverviewTab: "overview" }));
 
 import SlugLayout from "@/app/[slug]/layout";
@@ -108,6 +112,34 @@ describe("project layout resolution", () => {
     await expect(SlugLayout(props)).rejects.toThrow("RPC unavailable");
     expect(reads.notFound).not.toHaveBeenCalled();
     expect(reads.group).not.toHaveBeenCalled();
+  });
+
+  it("binds every project provider to the same verified route as its child page", async () => {
+    const route = {
+      chainId: 1,
+      projectId: 1n,
+      verifiedOperator: `0x${"a".repeat(40)}`,
+      checkedAt: 1234,
+    };
+    reads.route.mockResolvedValue(route);
+    const shell = await SlugLayout(props);
+    const content = await renderServer(shell.props.children);
+    const boundary = elements(content).find((element) => element.type === "project-route-boundary");
+    expect(boundary?.props.slug).toBe("eth:1");
+    expect(boundary?.props.snapshot).toEqual({
+      chainId: 1,
+      projectId: "1",
+      authority: route.verifiedOperator,
+      checkedAt: 1234,
+    });
+    expect(
+      elements(boundary?.props.children as ReactNode).filter(
+        (element) => element.type === "project-providers",
+      ),
+    ).toHaveLength(1);
+    const page = await OverviewPage(props);
+    expect(page.props.snapshot).toEqual(boundary?.props.snapshot);
+    expect(reads.operator).not.toHaveBeenCalled();
   });
 
   it("returns an identified loading shell before waiting for group and ruleset data", async () => {
