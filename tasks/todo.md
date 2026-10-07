@@ -608,8 +608,8 @@ Root `/Users/jango/Documents/jb/v6/evm/AGENTS.md`, pinned `workflow/ponytail/SKI
 - **Resource budget:** One writer in this isolated checkout; minimal runtime owners and existing tests. No build, browser, timing probe or heavy dependency work until root grants the slot. Preserve unrelated processes and worktrees, and replan if amount semantics or bundle limits would change.
 
 - [x] Implement the shared row hierarchy and owner-level quantity presentation.
-- [ ] Verify focused regressions and repository gates; inspect responsive production output in an assigned slot.
-- [ ] Record evidence, independent review readiness and commit the isolated change for root delivery.
+- [x] Verify focused regressions and repository gates; inspect responsive production output in an assigned slot.
+- [x] Record evidence, independent review readiness and commit the isolated change for root delivery.
 
 Consumer check: the homepage also consumes `mapActivityEvents`' auto-issuance count, so its existing summary retains the same exact-token title. Its layout and grouping remain unchanged. The quantity's full decimal string is grouped directly, avoiding floating-point conversion for the exact value.
 
@@ -625,3 +625,13 @@ Source review: independent review reports no remaining source blocker. All 54 fo
 - **Evidence and unknowns:** The activity-only source passed independent review and 54 focused tests. Performance `63e6b539` (or its notes-only final successor) has independent qualification. Merged source, bundle size, full coverage and browser layout still need qualification and must not inherit a passing claim from either separate base.
 - **Verification:** Resolve only append-only task-history conflicts, inspect the runtime union, then run every CI/package gate, production build, standalone/bundle checks and full browser suite. Supplement the unchanged browser harness with a deterministic activity-response/profile overlay on desktop/mobile to inspect overlapping links, exact quantities, attribution and wrapping.
 - **Resource budget:** One combined local gate/build sequence after the root releases the timing slot; coordinate 4173/4174 with the performance owner. No push/deploy here. Replan instead of relaxing a bundle cap or changing data semantics if combined verification fails.
+
+### Activity qualification review
+
+Activity-only `8f9bd2bf` is stacked on final reviewed performance `d8e9f9ea` through merge `06575d32`; only this task history conflicted, and both appendices are preserved. Runtime source and performance tests match their respective reviewed changes exactly. No runtime edits followed the successful source/coverage/build/browser checks.
+
+Pinned Node 26.5.0/npm 12.0.1 with verified physical dependencies passes every local package/CI gate: dependency integrity/audit, environment/deployment, types, lint, formatting ratchet, source/dead-code, pinned protocol and wallet inventory; 2,395 coverage tests across 254 suites pass, with one existing skipped test/suite. Production build and standalone checks pass. Bundle output is 2666.6 KiB aggregate, 934.9 KiB route-referenced and 689.5 KiB largest route, within every unchanged cap. The complete unchanged browser harness passes 139 tests with six declared skips and no flaky retries.
+
+Supplemental production rendering passes at 1280, 390 and 320 pixels: all four original chain transaction links remain individually named/focusable; 18px marks advance 12px for a 6px overlap; intrinsic logo proportions and exact token titles survive; rows have no horizontal overflow, browser errors, external attempts or unknown fixture requests. Both worker and root visually inspected the hierarchy and keyboard focus ring. The test-only activity/profile response overlay is recorded in the report; it changes neither app source nor the normal browser harness and is not a performance measurement. Clean screenshots also preserve the same rows after clearing keyboard focus.
+
+Evidence lives under `/private/tmp/jb-performance-checks`: `revnet-activity-final-source.json`, `revnet-activity-build.json`, `revnet-activity-full-browser.json`, `revnet-activity-browser.json`, `revnet-activity-browser-clean.json`, `revnet-activity-physical-provenance.json`, and final `revnet-activity-verification.json`. Screenshots: `revnet-activity-clean-{1280,390,320}.png` (focused originals are retained). Independent source review has no remaining blocker. No push/deployment was performed; root owns hosted PR/container checks and exact production verification. All owned browser/app/fixture processes are stopped.
