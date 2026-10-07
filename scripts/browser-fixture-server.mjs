@@ -2,6 +2,7 @@ import {
   JBBuybackHookContracts,
   JBCoreContracts,
   JBRouterTerminalContracts,
+  MAX_RESERVED_PERCENT,
   RevnetCoreContracts,
   jbBuybackHookRegistryAbi,
   jbContractAddress,
@@ -1148,6 +1149,27 @@ registerCall({
       `accountingContextsOf projectId=${requestedProjectId}`,
     );
     return [{ token: usdc, decimals: 6, currency: 2 }];
+  },
+});
+registerCall({
+  abi: jbMultiTerminalAbi,
+  functionName: "previewPayFor",
+  address: addresses.terminal,
+  result: ([requestedProjectId, token, amount, beneficiary, metadata]) => {
+    requireFixture(requestedProjectId === 1n, `previewPayFor projectId=${requestedProjectId}`);
+    requireFixture(token === usdc, `previewPayFor token=${token}`);
+    requireFixture(amount === 12_000_000n, `previewPayFor amount=${amount}`);
+    requireFixture(beneficiary === zeroAddress, `previewPayFor beneficiary=${beneficiary}`);
+    requireFixture(metadata === "0x", `previewPayFor metadata=${metadata}`);
+
+    // The unsigned $12 USDC draft uses this fixture's USD-denominated weight,
+    // 6-decimal accounting context, and 20% reserved share. Match the store's
+    // same-currency conversion and the controller's beneficiary-first rounding.
+    const tokenCount = (amount * ruleset.weight) / 10n ** BigInt(fixtureProject.decimals);
+    const beneficiaryTokenCount =
+      (tokenCount * BigInt(MAX_RESERVED_PERCENT - rulesetMetadata.reservedPercent)) /
+      BigInt(MAX_RESERVED_PERCENT);
+    return [ruleset, beneficiaryTokenCount, tokenCount - beneficiaryTokenCount, []];
   },
 });
 registerCall({
