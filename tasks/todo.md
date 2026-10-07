@@ -587,7 +587,7 @@ Bounded timing diagnosis: a separately reviewed temporary observer records actua
 
 ## Follow-up — Attribute and shorten tab readiness
 
-- [ ] Follow the checked [tab readiness plan](performance-tab-readiness.md): attribute the existing fallback first, then isolate one loading-boundary experiment if supported.
+- [x] Follow the checked [tab readiness plan](performance-tab-readiness.md): attribute the existing fallback first, then isolate one loading-boundary experiment if supported.
 - [ ] Preserve deep-link, slow/error, identity and financial behavior; qualify the accepted change with matched DOM measurements and repository gates.
 
-Plan review: the first batch remains immutable while release runs. Only planning files are changed in the separate follow-up worktree. The workspace refinement checker passes; application edits and browser/build work await the coordinator's execution window.
+Plan review: the first batch remains immutable. The reviewed deletion-only experiment proves the repeated route fallback cost: matched alias Terms revisit DOM readiness330.6→39.9 ms and numeric first Terms354.1→61.6 ms. Final work moves the existing fallback into one persistent content boundary and adds one shared pending destination in ProjectMenu, retaining committed selection and all authority rules. The plan checker passes; cold/slow/interrupted acceptance and final release gates remain required. An unrelated4173 preview stays untouched; temporary matched probes use4175 with an exact fixture CORS-header adapter. The unchanged full browser suite will run in hosted PR CI before merge.
