@@ -17,7 +17,7 @@ Mandatory workspace resources remain /Users/jango/Documents/jb/v6/evm/AGENTS.md,
 - [x] Behavior-preserving options extraction and regression commit (9b3c4a18; 109 tests, typecheck and focused lint passed).
 - [x] Shared raw ruleset query, bounded mutable-controller read, complete chart identity/freshness and description fallback.
 - [x] Focused regression checks, typecheck, lint and format.
-- [ ] Review results and hand off tested commits.
+- [x] Review results and hand off tested commits (9b3c4a18 extraction, 338f1f1b behavior).
 
 ## Review
 
@@ -26,3 +26,5 @@ The public raw ruleset list now has one per-chain/project/contract TanStack owne
 Indexed descriptions render while richer metadata is pending or unavailable; the full metadata error/retry remains available and authoritative write-time JSON/controller/permission checks are unchanged. Controller freshness inherits the existing 30-second app default: it is eligible for revalidation on existing mount/reconnect/invalidation triggers, not a newly introduced polling promise. Actual wagmi and custom RPC tests verify a migrated controller is picked up after expiry/revisit. Chart identity includes all base-token inputs; range changes can retain prior chart data only within that exact identity and use the existing 15-second polling cadence for freshness.
 
 Verification on Node26.5.0 with the installed dependency symlink: 16 focused suites/231 tests passed; typecheck, focused ESLint, full formatting ratchet, source checks, dead-code checks and git diff checks passed. Tests include expiry/invalidation/recovery, distinct project/chain/contract and persisted-shape isolation, complete multichain loading, metadata fallback/retry and chart identity. NODE_OPTIONS=--no-experimental-webstorage avoids Node26's unconfigured global storage shadowing jsdom; no app settings changed. Root owns final combined production build, browser navigation and release gates; this task did not build, publish or deploy.
+
+Independent read-only review of 338f1f1b found no blockers: exact raw identity, one freshness owner, stable selectors, aggregate error semantics, persisted-shape isolation and chart placeholder identity all hold. Existing server getRulesets still uses its prior Next stale-while-revalidate policy; these client changes do not claim a hard upper age limit for every server source. Final selector-refinement rerun passed 7 affected tests, and final typecheck/lint/format checks passed afterward. Integration retains responsibility for the other workstreams and combined release gates.
