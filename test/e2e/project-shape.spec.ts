@@ -569,6 +569,7 @@ test("deployment diagnostics are available from Extras without a wallet", async 
 
 test("alias tabs and chart ranges retain document, payment draft and URL filters", async ({
   page,
+  request,
 }) => {
   const boundary = await installBrowserBoundary(page);
   await page.goto("/@fixture-revnet?view=overview&filter=held#chart");
@@ -583,8 +584,22 @@ test("alias tabs and chart ranges retain document, payment draft and URL filters
   await expect(range).toBeVisible();
   await range.selectOption("7d");
   await expect(page).toHaveURL(/filter=held.*range=7d#chart$/u);
-  await page.getByLabel("Pool price detail").selectOption("trades");
-  await page.getByLabel("Pool price detail").selectOption("smooth");
+  await expect(range).toHaveValue("7d");
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
+  // This fixture has issuance history but no pool. Exercise its real range
+  // control and native history instead of a pool-only view selector.
+  await range.selectOption("1d");
+  await expect(page).toHaveURL(/filter=held.*range=1d#chart$/u);
+  await expect(range).toHaveValue("1d");
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
+  await page.goBack();
+  await expect(page).toHaveURL(/filter=held.*range=7d#chart$/u);
+  await expect(range).toHaveValue("7d");
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
+  await page.goForward();
+  await expect(page).toHaveURL(/filter=held.*range=1d#chart$/u);
+  await expect(range).toHaveValue("1d");
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
   await page.getByRole("link", { name: "Terms", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Stages", exact: true })).toBeVisible();
   await expect(page.getByLabel("Amount")).toHaveValue("12");
@@ -592,5 +607,6 @@ test("alias tabs and chart ranges retain document, payment draft and URL filters
   await expect(page.getByRole("heading", { name: "About", exact: true })).toBeVisible();
   await expect(page.getByLabel("Amount")).toHaveValue("12");
   expect(documents).toEqual([]);
+  expect((await fixtureStatus(request)).unknownRequests).toEqual([]);
   expectBoundaryToStayLocal(boundary);
 });
