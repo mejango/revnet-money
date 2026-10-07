@@ -114,6 +114,8 @@ describe("project cross-chain pool activity", () => {
       chains: input.map(({ chainId, txHash }) => ({ chainId, txHash })),
     });
     render(<ActivityItemRow event={rows[0]} projectTokenSymbol="REV" />);
+    expect(screen.getByText("Buyback pool", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("by", { exact: true })).toBeInTheDocument();
     expect(screen.getAllByText("set the buyback pool")).toHaveLength(1);
     for (const [index, [name, explorer]] of [
       ["Ethereum", "https://etherscan.io"],
@@ -126,6 +128,100 @@ describe("project cross-chain pool activity", () => {
         `${explorer}/tx/${input[index].txHash}`,
       );
     }
+  });
+
+  it.each([
+    ["1000000000000000000000000", "1M", "1,000,000"],
+    ["1234567890123456789012345", "1.23M", "1,234,567.890123456789012345"],
+    ["1", "0.000000000000000001", "0.000000000000000001"],
+  ])("compacts auto issuance while retaining the exact amount %s", (count, compact, exact) => {
+    const source = poolEvent(0);
+    const autoIssue = {
+      ...source,
+      buybackPoolEvent: null,
+      autoIssueEvent: {
+        id: "auto-issue-1",
+        txHash: source.txHash,
+        timestamp: source.timestamp,
+        from: otherActor,
+        beneficiary: actor,
+        count,
+      },
+    };
+    const [row] = map([autoIssue]);
+    expect(row).toMatchObject({
+      id: source.id,
+      txHash: source.txHash,
+      beneficiary: actor,
+      chainId: source.chainId,
+      tokenCount: compact,
+      exactTokenCount: exact,
+    });
+    render(<ActivityItemRow event={row} projectTokenSymbol="BAN" />);
+    expect(screen.getByText("Auto issuance", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("to", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText(actor, { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("by", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText(otherActor, { exact: true })).not.toBeInTheDocument();
+    expect(screen.getByTitle(`${exact} BAN`)).toHaveTextContent(`${compact} BAN`);
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByRole("listitem")).toHaveTextContent(`auto-issued ${compact} BAN`);
+  });
+
+  it("labels a mint without changing its receipt or adding an auto-issuance claim", () => {
+    const source = poolEvent(0);
+    const [row] = map([
+      {
+        ...source,
+        buybackPoolEvent: null,
+        mintTokensEvent: {
+          id: "mint-1",
+          txHash: source.txHash,
+          timestamp: source.timestamp,
+          from: otherActor,
+          caller: otherActor,
+          beneficiary: actor,
+          beneficiaryTokenCount: "1000000000000000000000000",
+          memo: null,
+        },
+      },
+    ]);
+    render(<ActivityItemRow event={row} projectTokenSymbol="BAN" />);
+    expect(screen.getByText("Minted", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("to", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText(actor, { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("by", { exact: true })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByRole("listitem")).toHaveTextContent("minted 1M BAN");
+    expect(screen.queryByText(/auto-issued/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { type: "in" as const, prefix: "from" },
+    { type: "out" as const, prefix: "to" },
+  ])("keeps $type amounts and the $prefix actor prefix", ({ type, prefix }) => {
+    render(
+      <ActivityItemRow
+        event={{
+          id: "flow-1",
+          type,
+          txHash: poolUpdates[0][2],
+          timestamp: poolUpdates[0][1],
+          beneficiary: actor,
+          chainId: 1,
+          baseAmount: "1",
+          baseTokenSymbol: "ETH",
+          exactAmount: "1 ETH",
+          tokenCount: "10",
+        }}
+        projectTokenSymbol="BAN"
+      />,
+    );
+    expect(screen.getByText(type, { exact: true })).toBeInTheDocument();
+    expect(screen.getByText(prefix, { exact: true })).toBeInTheDocument();
+    expect(screen.getByTitle("1 ETH")).toHaveTextContent("1 ETH");
+    expect(screen.queryByText("Payment", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("Cash out", { exact: true })).not.toBeInTheDocument();
   });
 
   it("keeps different actors, same-chain repeats and updates beyond six hours separate", () => {

@@ -2,6 +2,7 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { useHydrated } from "@/hooks/useHydrated";
 import { PERSIST } from "@/lib/query-persist";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -25,7 +26,8 @@ export function AcrossChainsCard({
   chains: ChainProject[];
   tokenSymbol: string;
 }) {
-  const { data, isLoading, isError } = useQuery({
+  const hydrated = useHydrated();
+  const query = useQuery({
     queryKey: ["v6AcrossChains", chainProjectsKey(chains)],
     meta: PERSIST,
     enabled: chains.length > 0,
@@ -33,6 +35,10 @@ export function AcrossChainsCard({
     refetchInterval: 60_000,
     queryFn: () => fetchAcrossChains(chains),
   });
+
+  const data = hydrated ? query.data : undefined;
+  const isLoading = hydrated ? query.isLoading : chains.length > 0;
+  const isError = hydrated && query.isError;
 
   return (
     <div className="border border-zinc-200 bg-melon-50 p-4">

@@ -1,6 +1,7 @@
 "use client";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useHydrated } from "@/hooks/useHydrated";
 import type { Project } from "@/lib/bendystraw/types";
 import { PERSIST } from "@/lib/query-persist";
 import { formatTokenAmount } from "@/lib/token";
@@ -117,6 +118,7 @@ function formatUsd18(value: bigint): string {
 
 export function TvlDatum({ projects }: Props) {
   const config = useConfig();
+  const hydrated = useHydrated();
   const query = useQuery({
     queryKey: [
       "revnet",
@@ -130,10 +132,12 @@ export function TvlDatum({ projects }: Props) {
     retry: 1,
   });
 
-  const chainResults = query.data ?? [];
+  // A restored treasury may be available before this streamed component hydrates.
+  const chainResults = hydrated ? (query.data ?? []) : [];
   const rows = chainResults.flatMap((result) => result.rows);
   const totalUsd = treasuryUsdTotal(chainResults, projects.length);
-  const total = query.isLoading ? "…" : totalUsd == null ? "—" : formatUsd18(totalUsd);
+  const loading = hydrated ? query.isLoading : projects.length > 0;
+  const total = loading ? "…" : totalUsd == null ? "—" : formatUsd18(totalUsd);
 
   return (
     <Tooltip>

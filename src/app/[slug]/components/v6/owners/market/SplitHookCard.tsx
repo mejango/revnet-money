@@ -5,6 +5,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
+import { useHydrated } from "@/hooks/useHydrated";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
@@ -267,13 +268,18 @@ export function SplitHookCard({
   chains: ChainProject[];
   tokenSymbol: string;
 }) {
-  const { data, isLoading, refetch } = useQuery({
+  const hydrated = useHydrated();
+  const query = useQuery({
     queryKey: ["v6SplitHookStates", chainProjectsKey(chains)],
     meta: PERSIST,
     enabled: chains.length > 0,
     staleTime: 60_000,
     queryFn: () => fetchSplitHookStates(chains),
   });
+
+  const data = hydrated ? query.data : undefined;
+  const isLoading = hydrated ? query.isLoading : chains.length > 0;
+  const { refetch } = query;
 
   if (isLoading) return <CardSkeleton rows={5} />;
 

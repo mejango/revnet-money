@@ -1,6 +1,12 @@
 import type { ActivityEventsQuery } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
-import { exactNumber, formatCompact, formatDecimals, prettyNumber } from "@/lib/number";
+import {
+  commaNumber,
+  exactNumber,
+  formatCompact,
+  formatDecimals,
+  prettyNumber,
+} from "@/lib/number";
 import { isStickyHook } from "@/lib/sticky";
 import { JBProjectToken, mergeCrossChainActivityGroups } from "@bananapus/nana-sdk-core";
 import { Address, formatUnits } from "viem";
@@ -444,6 +450,7 @@ export function mapActivityEvents(
       });
     } else if (event.autoIssueEvent) {
       const e = event.autoIssueEvent;
+      const count = formatUnits(BigInt(e.count), 18);
       events.push({
         id: event.id,
         type: "autoIssue",
@@ -451,7 +458,8 @@ export function mapActivityEvents(
         timestamp: e.timestamp,
         beneficiary: e.beneficiary as Address,
         chainId,
-        tokenCount: new JBProjectToken(BigInt(e.count)).format(6),
+        tokenCount: prettyNumber(count),
+        exactTokenCount: commaNumber(count),
       });
     } else if (event.deployErc20Event) {
       const e = event.deployErc20Event;

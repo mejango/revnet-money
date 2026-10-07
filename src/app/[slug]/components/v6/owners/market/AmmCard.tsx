@@ -18,6 +18,7 @@ import {
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
 import { useAllowance } from "@/hooks/useAllowance";
+import { useHydrated } from "@/hooks/useHydrated";
 import {
   ACCOUNT_CHANGED,
   isSafeConnection,
@@ -1922,7 +1923,8 @@ function ChainPositionRows({
  * hardcoded native token.
  */
 export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; tokenSymbol: string }) {
-  const { data, isLoading, isError, isFetching } = useQuery(
+  const hydrated = useHydrated();
+  const query = useQuery(
     cachedQuery({
       queryKey: ["v6AmmStates", chainProjectsKey(chains)],
       enabled: chains.length > 0,
@@ -1931,6 +1933,9 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
     }),
   );
 
+  const data = hydrated ? query.data : undefined;
+  const isLoading = hydrated ? query.isLoading : chains.length > 0;
+  const isError = hydrated && query.isError;
   const anyHook = data?.some((s) => s.hook) ?? false;
 
   const content = (kind: "market" | "liquidity") => {
@@ -1951,7 +1956,7 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
           key={state.chainId}
           state={state}
           tokenSymbol={tokenSymbol}
-          pending={isFetching}
+          pending={query.isFetching}
         />
       ) : (
         <LiquidityChainRow key={state.chainId} state={state} tokenSymbol={tokenSymbol} />

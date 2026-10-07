@@ -2,12 +2,13 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
+import { useHydrated } from "@/hooks/useHydrated";
 import type { JBChainId } from "@/lib/nana/types";
 import { rememberProjectNavigation } from "@/lib/project-navigation";
 import { parseProjectHandleInput } from "@/lib/projectHandles";
 import { formatEthAddress } from "@/lib/utils";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Address, isAddress } from "viem";
 
 type SearchResult = {
@@ -46,10 +47,6 @@ function looksLikeEnsName(value: string) {
   return value.includes(".") && ENS_NAME_PATTERN.test(value);
 }
 
-const subscribeToHydration = () => () => {};
-const clientIsHydrated = () => true;
-const serverIsHydrated = () => false;
-
 export function Magnifier() {
   return (
     <svg
@@ -79,7 +76,7 @@ export function RevnetSearch({
   const router = useRouter();
   // The server form has no search action yet. Typing before its handlers attach
   // can lose the controlled value or submit back to the current project URL.
-  const hydrated = useSyncExternalStore(subscribeToHydration, clientIsHydrated, serverIsHydrated);
+  const hydrated = useHydrated();
   const containerRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);

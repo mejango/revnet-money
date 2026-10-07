@@ -567,6 +567,19 @@ test("deployment diagnostics are available from Extras without a wallet", async 
   expectBoundaryToStayLocal(boundary);
 });
 
+/** An enabled input may still be inert while its alias authority is being verified. */
+async function fillReadyPaymentDraft(page: Page, amount: string) {
+  const boundary = page.locator("[data-project-route-boundary]");
+  await expect(boundary).toHaveAttribute("aria-busy", "false");
+  const input = page.getByLabel("Amount");
+  await expect(input).toBeEnabled();
+  await expect
+    .poll(() => input.evaluate((element) => element.closest("[inert]") === null))
+    .toBe(true);
+  await input.fill(amount);
+  await expect(input).toHaveValue(amount);
+}
+
 test("alias tabs and chart ranges retain document, payment draft and URL filters", async ({
   page,
   request,
@@ -574,12 +587,11 @@ test("alias tabs and chart ranges retain document, payment draft and URL filters
   const boundary = await installBrowserBoundary(page);
   await page.goto("/@fixture-revnet?view=overview&filter=held#chart");
   await expect(page.getByRole("heading", { level: 1, name: "Fixture Revnet" })).toBeVisible();
-  await expect(page.locator("[data-project-route-boundary][aria-busy='true']")).toHaveCount(0);
   const documents: string[] = [];
   page.on("request", (request) => {
     if (request.resourceType() === "document") documents.push(request.url());
   });
-  await page.getByLabel("Amount").fill("12");
+  await fillReadyPaymentDraft(page, "12");
   const range = page.getByLabel("Time range");
   await expect(range).toBeVisible();
   await range.selectOption("7d");
@@ -652,8 +664,7 @@ test("alias tab pending feedback follows the latest intent and committed content
   const boundary = await installBrowserBoundary(page);
   await page.goto("/@fixture-revnet?view=overview");
   await expect(page.getByRole("heading", { name: "About", exact: true })).toBeVisible();
-  await expect(page.getByLabel("Amount")).toBeEnabled();
-  await page.getByLabel("Amount").fill("12");
+  await fillReadyPaymentDraft(page, "12");
   const documents: string[] = [];
   page.on("request", (request) => {
     if (request.resourceType() === "document") documents.push(request.url());
@@ -725,8 +736,7 @@ test("Latest supersedes a pending alias tab without reviving its feedback", asyn
   const boundary = await installBrowserBoundary(page);
   await page.goto("/@fixture-revnet?view=overview");
   await expect(page.getByRole("heading", { name: "About", exact: true })).toBeVisible();
-  await expect(page.getByLabel("Amount")).toBeEnabled();
-  await page.getByLabel("Amount").fill("12");
+  await fillReadyPaymentDraft(page, "12");
   const documents: string[] = [];
   page.on("request", (request) => {
     if (request.resourceType() === "document") documents.push(request.url());

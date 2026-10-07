@@ -8,6 +8,7 @@ import { SafeBadge } from "@/components/SafeBadge";
 import { FastForward as ForwardIcon } from "@/components/ui/icons";
 import { Revalidating } from "@/components/ui/Revalidating";
 import { useCompleteParticipants } from "@/hooks/useCompleteBendystrawLists";
+import { useHydrated } from "@/hooks/useHydrated";
 import type { Project } from "@/lib/bendystraw/types";
 import { formatShortDate } from "@/lib/date";
 import {
@@ -43,6 +44,7 @@ interface Props {
 export function Header(props: Props) {
   const { isRevnet, operatorPromise, projects, createdAt } = props;
   const operator = use(operatorPromise);
+  const hydrated = useHydrated();
   const chainId = useJBChainId();
   const project = useJBProject();
   const { metadata } = useJBProjectMetadataContext();
@@ -58,22 +60,24 @@ export function Header(props: Props) {
     hasParticipantGroup,
   );
 
+  // Persisted queries can restore before this streamed header hydrates. Keep its
+  // first client render identical to the server, then expose the cached count.
+  const participants = hydrated ? participantsQuery.data : undefined;
   const holderSummary = useMemo(
-    () => participantCountSummary(participantsQuery.data, participantsQuery.data?.length),
-    [participantsQuery.data],
+    () => participantCountSummary(participants, participants?.length),
+    [participants],
   );
   const holderUnavailable =
     !hasParticipantGroup ||
-    participantsQuery.isError ||
-    (!participantsQuery.isLoading && !participantsQuery.data);
+    (hydrated && (participantsQuery.isError || (!participantsQuery.isLoading && !participants)));
   const holderValue = holderUnavailable
     ? "—"
-    : participantsQuery.isLoading
+    : !hydrated || participantsQuery.isLoading
       ? "…"
       : `${holderSummary.count}${holderSummary.exact ? "" : "+"}`;
   // Restored from the last session: show the count now, mark it unconfirmed
   // until the 15s poll answers.
-  const holdersPending = participantsQuery.isFetching && !participantsQuery.isLoading;
+  const holdersPending = hydrated && participantsQuery.isFetching && !participantsQuery.isLoading;
   const { data: suckers } = useSuckers();
   const { name: projectName, logoUri } = metadata?.data ?? {};
   const tokenSymbol = tokenContext?.data ? formatTokenSymbol(tokenContext) : undefined;

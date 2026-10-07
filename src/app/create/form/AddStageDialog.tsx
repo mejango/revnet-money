@@ -14,13 +14,14 @@ import {
 } from "@/components/ui/dialog";
 import { Trash2 as TrashIcon } from "@/components/ui/icons";
 import { toast } from "@/components/ui/use-toast";
+import { useHydrated } from "@/hooks/useHydrated";
 import { withSchema } from "@/lib/formValidation";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
 import { isStickyRow, stickyGroupOf, stickyUnavailableReason } from "@/lib/sticky";
 import { cn, sortChains } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
-import { cloneElement, useState, useSyncExternalStore } from "react";
+import { cloneElement, useState } from "react";
 import { defaultStageData, PERMANENTLY_DISABLED_OPERATOR } from "../constants";
 import { getResolvedIssuance } from "../helpers/calculatePickupIssuance";
 import { formatFormErrors } from "../helpers/formatFormErrors";
@@ -67,10 +68,6 @@ export function NotesSection({
   );
 }
 
-const subscribeToHydration = () => () => {};
-const clientIsHydrated = () => true;
-const serverIsHydrated = () => false;
-
 export function AddStageDialog({
   stageIdx,
   children,
@@ -114,7 +111,7 @@ export function AddStageDialog({
 
   const [open, setOpen] = useState(false);
   // The server-rendered trigger cannot open a dialog until its handler is attached.
-  const hydrated = useSyncExternalStore(subscribeToHydration, clientIsHydrated, serverIsHydrated);
+  const hydrated = useHydrated();
 
   // The issuance denomination is a single global value (the ruleset's base
   // currency for the whole revnet), edited inline in the first stage's issuance
