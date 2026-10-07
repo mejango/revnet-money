@@ -106,7 +106,7 @@ const pendingMovement: V6BridgeRow & { tokenSymbol: string } = {
   remoteToken: "0x000000000000000000000000000000000000eeee",
   tokenDecimals: 18,
   tokenSymbol: "ETH",
-  infra: "optimism",
+  infra: "native",
 };
 
 type HydrationCase = {
