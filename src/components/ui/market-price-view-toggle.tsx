@@ -1,5 +1,7 @@
 "use client";
 
+import { useProjectNavigation } from "@/app/[slug]/ProjectRouteContext";
+
 export type MarketPriceView = "smooth" | "trades";
 
 export function MarketPriceViewToggle({
@@ -9,11 +11,16 @@ export function MarketPriceViewToggle({
   value: MarketPriceView;
   onChange: (value: MarketPriceView) => void;
 }) {
+  const navigate = useProjectNavigation();
   return (
     <div className="relative inline-flex shrink-0 items-center text-teal-700">
       <select
         value={value}
-        onChange={(event) => onChange(event.target.value as MarketPriceView)}
+        data-project-navigation="local"
+        onChange={(event) => {
+          const next = event.target.value as MarketPriceView;
+          navigate(() => onChange(next));
+        }}
         aria-label="Pool price detail"
         title={
           value === "smooth"

@@ -12,10 +12,11 @@ import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Address, isAddress, zeroAddress } from "viem";
 import { useAccount } from "wagmi";
+import { invalidateProjectRouteProofs } from "../../../projectRouteQuery";
 import { authorityIdentityQuery } from "./authorityIdentityQuery";
 import { ChainProjectRow, ChainWrite, chainName, v6ContractAddress } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
@@ -232,6 +233,7 @@ export function OperatorAccountCard({
 }
 
 function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: () => void }) {
+  const queryClient = useQueryClient();
   const { address } = useAccount();
   const { runWrites } = useOperatorWrites();
   const { toast } = useToast();
@@ -327,6 +329,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         toast({ title: "Revnet operator transferred" });
         setOpen(false);
       }
+      await invalidateProjectRouteProofs(queryClient);
       setReview(false);
       onDone();
     } catch (e) {

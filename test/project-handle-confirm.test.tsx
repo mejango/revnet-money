@@ -24,31 +24,37 @@ const mocks = vi.hoisted(() => ({
 
 // The operator, authority and ENS reads need bendystraw and two chains' RPC;
 // each query answers with a verified operator and a name that needs its record.
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
-    const data: Record<string, unknown> = {
-      "v6-project-handle-operator": "0x2222222222222222222222222222222222222222",
-      "v6-project-handle-authority": mocks.authority ?? {
-        allowed: true,
-        status: "valid",
-        source: { kind: "eoa" },
-      },
-      "v6-project-handle-current": null,
-      "v6-project-handle-setup": {
-        resolver: "0x4444444444444444444444444444444444444444",
-        textRecord: null,
-        verifiedHandle: null,
-        ensController: "0x2222222222222222222222222222222222222222",
-      },
-    };
-    return {
-      data: data[String(queryKey[0])],
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn(),
-    };
-  },
-}));
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  const queryClient = new actual.QueryClient();
+  return {
+    ...actual,
+    useQueryClient: () => queryClient,
+    useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
+      const data: Record<string, unknown> = {
+        "v6-project-handle-operator": "0x2222222222222222222222222222222222222222",
+        "v6-project-handle-authority": mocks.authority ?? {
+          allowed: true,
+          status: "valid",
+          source: { kind: "eoa" },
+        },
+        "v6-project-handle-current": null,
+        "v6-project-handle-setup": {
+          resolver: "0x4444444444444444444444444444444444444444",
+          textRecord: null,
+          verifiedHandle: null,
+          ensController: "0x2222222222222222222222222222222222222222",
+        },
+      };
+      return {
+        data: data[String(queryKey[0])],
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      };
+    },
+  };
+});
 vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
   useCompleteProjectPermissions: () => ({ data: [], isLoading: false }),
 }));

@@ -61,11 +61,11 @@ it.each([false, true])(
     const server = new QueryClient();
     const client = new QueryClient();
     const previous = new QueryClient();
-    const key = ["all-rulesets-by-chain", "1:1"];
+    const key = ["all-rulesets", 1, "1", zeroAddress];
     const storageKey = "revnet:query-cache:v1";
     const previousCache = window.localStorage.getItem(storageKey);
     previous.setQueryDefaults(key, { meta: PERSIST });
-    previous.setQueryData(key, { 1: restoredRulesets });
+    previous.setQueryData(key, restoredRulesets);
     window.localStorage.setItem(storageKey, serializeState(dehydrate(previous)));
 
     const container = document.createElement("div");

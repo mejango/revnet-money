@@ -517,7 +517,9 @@ function PrettyCall({
 function ReviewModal({
   pending,
   onFinish,
+  projectCheckPending,
 }: {
+  projectCheckPending?: boolean;
   pending: PendingReview;
   onFinish: (approved: boolean) => void;
 }) {
@@ -629,6 +631,7 @@ function ReviewModal({
 
         <footer className="shrink-0 border-t border-melon-300 bg-melon-50 px-4 py-4 sm:px-6">
           <FeeBuybackNotice review={feeReview} />
+          {projectCheckPending ? <p role="status">Checking project identity…</p> : null}
           <label className="flex cursor-pointer items-start gap-3 border border-melon-300 bg-melon-25 p-3 text-sm leading-relaxed text-zinc-900">
             <input
               type="checkbox"
@@ -659,7 +662,7 @@ function ReviewModal({
               onClick={async () => {
                 if (await feeReview.confirm()) onFinish(true);
               }}
-              disabled={!agreed || feeReview.busy}
+              disabled={!agreed || feeReview.busy || projectCheckPending}
               className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
             >
               {feeReview.confirmLabel ??
@@ -676,7 +679,9 @@ function ReviewModal({
 function FundingChainSelectionModal({
   pending,
   onFinish,
+  projectCheckPending,
 }: {
+  projectCheckPending?: boolean;
   pending: PendingFundingChainSelection;
   onFinish: (chainId: number | null) => void;
 }) {
@@ -725,9 +730,10 @@ function FundingChainSelectionModal({
           >
             Cancel
           </button>
+          {projectCheckPending ? <p role="status">Checking project identity…</p> : null}
           <button
             type="button"
-            disabled={!selectedOption}
+            disabled={!selectedOption || projectCheckPending}
             onClick={() => {
               if (selectedOption) onFinish(selectedOption.chainId);
             }}
@@ -741,10 +747,24 @@ function FundingChainSelectionModal({
   );
 }
 
-export function TransactionReviewDialog({ pending, onFinish }: TransactionReviewDialogProps) {
+export function TransactionReviewDialog({
+  pending,
+  onFinish,
+  projectCheckPending,
+}: TransactionReviewDialogProps) {
   return pending.kind === "review" ? (
-    <ReviewModal key={pending.id} pending={pending} onFinish={onFinish} />
+    <ReviewModal
+      key={pending.id}
+      pending={pending}
+      onFinish={onFinish}
+      projectCheckPending={projectCheckPending}
+    />
   ) : (
-    <FundingChainSelectionModal key={pending.id} pending={pending} onFinish={onFinish} />
+    <FundingChainSelectionModal
+      key={pending.id}
+      pending={pending}
+      onFinish={onFinish}
+      projectCheckPending={projectCheckPending}
+    />
   );
 }

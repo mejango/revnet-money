@@ -333,17 +333,15 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
     waitUntil: "domcontentloaded",
   });
   expectSecurityHeaders(handleOwnersResponse);
-  const refreshedSubtab = page.waitForResponse(
-    (response) =>
-      response.request().resourceType() === "document" &&
-      new URL(response.url()).pathname === "/@fixture-revnet/owners" &&
-      new URL(response.url()).searchParams.get("subtab") === "splits",
-  );
+  const subtabDocuments: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "document") subtabDocuments.push(request.url());
+  });
   await retryUntilVisible(
     () => page.getByRole("button", { name: "Splits", exact: true }).click(),
     page.getByText("No splits on this chain."),
   );
-  expectSecurityHeaders(await refreshedSubtab);
+  expect(subtabDocuments).toEqual([]);
   await expect(page).toHaveURL(/\/@fixture-revnet\/owners\?subtab=splits$/u);
   await expect(page.getByText("No splits on this chain.")).toBeVisible();
 
@@ -430,8 +428,7 @@ test("verified handle routes decode exactly once", async ({ page, request }) => 
   expect(handleResponse?.status()).toBe(200);
   await expect(page.locator("main").getByText("Set project handle")).toBeVisible();
 
-  // On a mutable alias, mobile Latest/Overview changes must survive the
-  // document navigation which revalidates the alias.
+  // Verified alias view changes retain the project and never reload the document.
   await page.setViewportSize({ width: 390, height: 844 });
   const mobileHandleResponse = await page.goto("/@fixture-revnet", {
     waitUntil: "domcontentloaded",
@@ -439,47 +436,36 @@ test("verified handle routes decode exactly once", async ({ page, request }) => 
   expectSecurityHeaders(mobileHandleResponse);
   await expect(page.locator("[data-mobile-project-activity]")).toBeVisible();
   await expect(page.locator("[data-mobile-project-content]")).toBeHidden();
-  const overviewNavigation = page.waitForResponse(
-    (response) =>
-      response.request().resourceType() === "document" &&
-      new URL(response.url()).pathname === "/@fixture-revnet" &&
-      new URL(response.url()).searchParams.get("view") === "overview",
-  );
+  const viewDocuments: string[] = [];
+  const trackDocument = (request: import("@playwright/test").Request) => {
+    if (request.resourceType() === "document") viewDocuments.push(request.url());
+  };
+  page.on("request", trackDocument);
   await page.getByRole("link", { name: "Overview", exact: true }).click();
-  expectSecurityHeaders(await overviewNavigation);
+
   await expect(page).toHaveURL(/\/@fixture-revnet\?view=overview$/u);
   await expect(page.locator("[data-mobile-project-content]")).toBeVisible();
   await expect(page.locator("[data-mobile-project-activity]")).toBeHidden();
-  const latestNavigation = page.waitForResponse(
-    (response) =>
-      response.request().resourceType() === "document" &&
-      new URL(response.url()).pathname === "/@fixture-revnet" &&
-      !new URL(response.url()).search,
-  );
-  await page.getByRole("link", { name: "Latest", exact: true }).click();
-  expectSecurityHeaders(await latestNavigation);
+  await page.getByRole("button", { name: "Latest", exact: true }).click();
   await expect(page.locator("[data-mobile-project-activity]")).toBeVisible();
 
-  // Returning to a cached alias through browser history also gets a fresh
-  // document request instead of reviving an old ProjectProviders layout.
+  expect(viewDocuments).toEqual([]);
+  page.off("request", trackDocument);
+
+  // Returning to a cached alias verifies the binding without reloading its document.
   const aliasBeforeHistory = await page.goto("/@fixture-revnet/operator", {
     waitUntil: "domcontentloaded",
   });
   expectSecurityHeaders(aliasBeforeHistory);
   await page.getByRole("link", { name: "Learn", exact: true }).click();
   await expect(page).toHaveURL(/\/learn$/u);
-  const backNavigation = page.waitForResponse(
-    (response) =>
-      response.request().resourceType() === "document" &&
-      new URL(response.url()).pathname === "/@fixture-revnet/operator",
-  );
-  // The alias guard intentionally starts a second document reload from the
-  // popstate handler. Waiting for the first navigation's load event races that
-  // replacement; commit proves history moved, while backNavigation below
-  // proves the fresh alias document was actually requested.
-  await page.goBack({ waitUntil: "commit" });
-  expectSecurityHeaders(await backNavigation);
+  viewDocuments.length = 0;
+  page.on("request", trackDocument);
+  await page.goBack();
   await expect(page.locator("main").getByText("Set project handle")).toBeVisible();
+
+  expect(viewDocuments).toEqual([]);
+  page.off("request", trackDocument);
 
   const doubleEncodedResponse = await page.goto("/%2540fixture-revnet/operator", {
     waitUntil: "domcontentloaded",
@@ -577,6 +563,50 @@ test("deployment diagnostics are available from Extras without a wallet", async 
   });
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  expect((await fixtureStatus(request)).unknownRequests).toEqual([]);
+  expectBoundaryToStayLocal(boundary);
+});
+
+test("alias tabs and chart ranges retain document, payment draft and URL filters", async ({
+  page,
+  request,
+}) => {
+  const boundary = await installBrowserBoundary(page);
+  await page.goto("/@fixture-revnet?view=overview&filter=held#chart");
+  await expect(page.getByRole("heading", { level: 1, name: "Fixture Revnet" })).toBeVisible();
+  await expect(page.locator("[data-project-route-boundary][aria-busy='true']")).toHaveCount(0);
+  const documents: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "document") documents.push(request.url());
+  });
+  await page.getByLabel("Amount").fill("12");
+  const range = page.getByLabel("Time range");
+  await expect(range).toBeVisible();
+  await range.selectOption("7d");
+  await expect(page).toHaveURL(/filter=held.*range=7d#chart$/u);
+  await expect(range).toHaveValue("7d");
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
+  // This fixture has issuance history but no pool. Exercise its real range
+  // control and native history instead of a pool-only view selector.
+  await range.selectOption("1d");
+  await expect(page).toHaveURL(/filter=held.*range=1d#chart$/u);
+  await expect(range).toHaveValue("1d");
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
+  await page.goBack();
+  await expect(page).toHaveURL(/filter=held.*range=7d#chart$/u);
+  await expect(range).toHaveValue("7d");
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
+  await page.goForward();
+  await expect(page).toHaveURL(/filter=held.*range=1d#chart$/u);
+  await expect(range).toHaveValue("1d");
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
+  await page.getByRole("link", { name: "Terms", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Stages", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "About", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Amount")).toHaveValue("12");
+  expect(documents).toEqual([]);
   expect((await fixtureStatus(request)).unknownRequests).toEqual([]);
   expectBoundaryToStayLocal(boundary);
 });

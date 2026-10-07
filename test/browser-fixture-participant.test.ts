@@ -3,9 +3,18 @@ import {
   JBCoreContracts,
   RevnetCoreContracts,
   jbContractAddress,
+  jbMultiTerminalAbi,
   jbPermissionsAbi,
 } from "@bananapus/nana-sdk-core";
-import { decodeFunctionResult, encodeFunctionData, erc20Abi, getAddress, type Address } from "viem";
+import {
+  decodeFunctionResult,
+  encodeFunctionData,
+  erc20Abi,
+  getAddress,
+  zeroAddress,
+  type Address,
+  type Hex,
+} from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeContractCall, handleRpc } from "../scripts/browser-fixture-server.mjs";
 
@@ -14,9 +23,53 @@ const otherAccount = getAddress("0x1111111111111111111111111111111111111111");
 const usdc = getAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
 const permissions = getAddress(jbContractAddress[6][JBCoreContracts.JBPermissions][1]);
 const revOwner = getAddress(jbContractAddress[6][RevnetCoreContracts.REVOwner][1]);
+const terminal = getAddress(jbContractAddress[6][JBCoreContracts.JBMultiTerminal][1]);
 
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => undefined);
+});
+
+describe("browser fixture's unsigned payment draft", () => {
+  const args = [1n, usdc, 12_000_000n, zeroAddress, "0x"] as const;
+
+  it("previews the $12 USDC draft with the fixture's issuance and reserved share", () => {
+    const data = encodeFunctionData({
+      abi: jbMultiTerminalAbi,
+      functionName: "previewPayFor",
+      args,
+    });
+    const [ruleset, beneficiaryTokenCount, reservedTokenCount, hookSpecifications] =
+      decodeFunctionResult({
+        abi: jbMultiTerminalAbi,
+        functionName: "previewPayFor",
+        data: executeContractCall(terminal, data),
+      });
+
+    expect(ruleset).toMatchObject({ id: 1, weight: 1_000_000n * 10n ** 18n });
+    expect(beneficiaryTokenCount).toBe(9_600_000n * 10n ** 18n);
+    expect(reservedTokenCount).toBe(2_400_000n * 10n ** 18n);
+    expect(hookSpecifications).toEqual([]);
+    expect(() => executeContractCall(otherAccount, data)).toThrow("contract call");
+  });
+
+  it.each([
+    [2n, usdc, 12_000_000n, zeroAddress, "0x", "projectId"],
+    [1n, otherAccount, 12_000_000n, zeroAddress, "0x", "token"],
+    [1n, usdc, 0n, zeroAddress, "0x", "amount"],
+    [1n, usdc, 12_000_001n, zeroAddress, "0x", "amount"],
+    [1n, usdc, 12_000_000n, participant, "0x", "beneficiary"],
+    [1n, usdc, 12_000_000n, zeroAddress, "0x00", "metadata"],
+  ] as const)(
+    "rejects an unsupported preview tuple %s/%s/%s/%s/%s",
+    (projectId, token, amount, beneficiary, metadata, mismatch) => {
+      const data = encodeFunctionData({
+        abi: jbMultiTerminalAbi,
+        functionName: "previewPayFor",
+        args: [projectId, token as Address, amount, beneficiary as Address, metadata as Hex],
+      });
+      expect(() => executeContractCall(terminal, data)).toThrow(`previewPayFor ${mismatch}`);
+    },
+  );
 });
 
 describe("browser fixture's long viewed identity", () => {

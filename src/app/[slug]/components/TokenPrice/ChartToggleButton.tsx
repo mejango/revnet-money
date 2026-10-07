@@ -2,6 +2,7 @@
 
 import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import { cn } from "@/lib/utils";
+import { useProjectNavigation } from "../../ProjectRouteContext";
 
 interface Props {
   label: string;
@@ -22,11 +23,13 @@ export function ChartToggleButton({
   onClick,
   note,
 }: Props) {
+  const navigate = useProjectNavigation();
   const isActive = active && !disabled;
 
   return (
     <button
-      onClick={onClick}
+      data-project-navigation="local"
+      onClick={() => navigate(onClick)}
       disabled={disabled}
       className={cn(
         "flex min-h-11 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",

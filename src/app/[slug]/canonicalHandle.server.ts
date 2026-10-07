@@ -25,7 +25,7 @@ export async function readCanonicalHandle(
   if (!operators.length) return null;
   const deployments: [number, number][] = [[chainId, projectId]];
   if (suckerGroupId) {
-    const group = await getSuckerGroup(suckerGroupId, chainId);
+    const group = await getSuckerGroup(suckerGroupId, chainId, projectId);
     for (const sibling of group?.projects?.items ?? []) {
       const pair: [number, number] = [Number(sibling.chainId), Number(sibling.projectId)];
       if (!deployments.some(([chain, id]) => chain === pair[0] && id === pair[1])) {

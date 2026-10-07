@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   useParams: () => ({ slug: mocks.slug }),
   useSelectedLayoutSegment: () => mocks.segment,
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 import { ProjectMenu } from "@/app/[slug]/components/ProjectMenu";
@@ -70,22 +71,22 @@ describe("ProjectMenu", () => {
 
     const terms = screen.getByRole("link", { name: "Terms" });
     expect(terms).toHaveAttribute("href", "/@design.juicebox/terms");
-    expect(terms).toHaveAttribute("data-project-navigation", "document");
+    expect(terms).toHaveAttribute("data-project-navigation", "client");
     expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
       "href",
       "/@design.juicebox?view=overview",
     );
-    expect(screen.getByRole("link", { name: "Latest" })).toHaveAttribute(
-      "href",
-      "/@design.juicebox",
+    expect(screen.getByRole("button", { name: "Latest" })).toHaveAttribute(
+      "data-project-navigation",
+      "local",
     );
     fireEvent.click(screen.getByRole("button", { name: "More project sections" }));
     const operator = screen.getByRole("link", { name: "Operator" });
     expect(operator).toHaveAttribute("href", "/@design.juicebox/operator");
-    expect(operator).toHaveAttribute("data-project-navigation", "document");
+    expect(operator).toHaveAttribute("data-project-navigation", "client");
   });
 
-  it("retains client navigation only for immutable numeric project slugs", () => {
+  it("retains client navigation for numeric project slugs", () => {
     mocks.segment = null;
     mocks.slug = "base:42";
     render(<ProjectMenu />);
