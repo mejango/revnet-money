@@ -41,6 +41,8 @@ vi.mock("@/app/[slug]/components/v6/ShopCartContext", () => ({ ShopCartProvider:
 vi.mock("@/app/[slug]/ProjectProviders", () => ({ ProjectProviders: "project-providers" }));
 vi.mock("@/app/[slug]/ProjectRouteBoundary", () => ({
   ProjectRouteBoundary: "project-route-boundary",
+}));
+vi.mock("@/app/[slug]/ProjectRouteContext", () => ({
   ProjectPageBoundary: "project-page-boundary",
 }));
 vi.mock("@/app/[slug]/components/v6/overview/V6OverviewTab", () => ({ V6OverviewTab: "overview" }));

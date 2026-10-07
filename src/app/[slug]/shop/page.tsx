@@ -3,7 +3,7 @@ import { projectItemsWithFallback } from "../components/v6/shared";
 import { V6ShopTab } from "../components/v6/shop/V6ShopTab";
 import { getProjectWithFallback } from "../getProjectFallback";
 import { getSuckerGroup } from "../getSuckerGroup";
-import { ProjectPageBoundary } from "../ProjectRouteBoundary";
+import { ProjectPageBoundary } from "../ProjectRouteContext";
 import { projectRouteSnapshot } from "../projectRouteIdentity";
 import { resolveProjectRoute } from "../resolveProjectRoute.server";
 

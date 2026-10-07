@@ -2,7 +2,7 @@
 
 import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import { cn } from "@/lib/utils";
-import { useProjectNavigation } from "../../ProjectRouteBoundary";
+import { useProjectNavigation } from "../../ProjectRouteContext";
 
 interface Props {
   label: string;

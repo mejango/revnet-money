@@ -6,7 +6,7 @@ import { V6OverviewTab } from "./components/v6/overview/V6OverviewTab";
 import { projectItemsWithFallback } from "./components/v6/shared";
 import { getProjectWithFallback } from "./getProjectFallback";
 import { getSuckerGroup } from "./getSuckerGroup";
-import { ProjectPageBoundary } from "./ProjectRouteBoundary";
+import { ProjectPageBoundary } from "./ProjectRouteContext";
 import { projectRouteSnapshot } from "./projectRouteIdentity";
 import { resolveProjectRoute } from "./resolveProjectRoute.server";
 import { getRulesets } from "./terms/getRulesets";

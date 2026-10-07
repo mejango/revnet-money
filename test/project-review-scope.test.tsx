@@ -1,8 +1,8 @@
+import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import {
-  TransactionReviewProvider,
   useTransactionReviewScope,
   type TransactionReviewScope,
-} from "@/components/TransactionReviewProvider";
+} from "@/components/TransactionReviewScope";
 import { requireFundingChainSelection } from "@/lib/transaction-review";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";

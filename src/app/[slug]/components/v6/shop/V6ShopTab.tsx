@@ -6,7 +6,7 @@ import { projectViewHref } from "@/lib/projectSubtabNavigation";
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { useProjectNavigation } from "../../../ProjectRouteBoundary";
+import { useProjectNavigation } from "../../../ProjectRouteContext";
 import { ProjectItem } from "../shared";
 import { CustomersSection } from "./CustomersSection";
 import { InventorySection } from "./InventorySection";

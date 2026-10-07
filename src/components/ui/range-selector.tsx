@@ -1,6 +1,6 @@
 "use client";
 
-import { useProjectNavigation } from "@/app/[slug]/ProjectRouteBoundary";
+import { useProjectNavigation } from "@/app/[slug]/ProjectRouteContext";
 import { projectViewHref } from "@/lib/projectSubtabNavigation";
 import { useSearchParams } from "next/navigation";
 

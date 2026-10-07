@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  ReviewScopeContext,
+  type TransactionReviewScope,
+} from "@/components/TransactionReviewScope";
 import { ModalDialog } from "@/components/ui/ModalShell";
 import {
   registerFundingChainSelectionHandler,
@@ -8,11 +12,8 @@ import {
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type ComponentType,
@@ -20,21 +21,6 @@ import {
 } from "react";
 import type { Address } from "viem";
 import { useAccount } from "wagmi";
-
-export type TransactionReviewScope = {
-  identity: string;
-  verify: () => Promise<boolean>;
-};
-
-const ReviewScopeContext = createContext<((scope: TransactionReviewScope) => () => void) | null>(
-  null,
-);
-
-/** The project registers its binding with the existing global review owner. */
-export function useTransactionReviewScope(scope: TransactionReviewScope | null) {
-  const register = useContext(ReviewScopeContext);
-  useLayoutEffect(() => (scope && register ? register(scope) : undefined), [register, scope]);
-}
 
 export type PendingReview = {
   scope?: TransactionReviewScope | null;

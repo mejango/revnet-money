@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useRouter, useSelectedLayoutSegment } from "next/navigation";
 import { PropsWithChildren, useState } from "react";
-import { useProjectNavigation } from "../ProjectRouteBoundary";
+import { useProjectNavigation } from "../ProjectRouteContext";
 import { ProjectOverflowIcon, ProjectTabIcon } from "./ProjectTabIcon";
 
 export function ProjectMenu({

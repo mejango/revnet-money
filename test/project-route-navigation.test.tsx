@@ -1,8 +1,5 @@
-import {
-  ProjectPageBoundary,
-  ProjectRouteBoundary,
-  useProjectNavigation,
-} from "@/app/[slug]/ProjectRouteBoundary";
+import { ProjectRouteBoundary } from "@/app/[slug]/ProjectRouteBoundary";
+import { ProjectPageBoundary, useProjectNavigation } from "@/app/[slug]/ProjectRouteContext";
 import { PROJECT_ROUTE_TTL_MS, type ProjectRouteSnapshot } from "@/app/[slug]/projectRouteIdentity";
 import {
   invalidateProjectRouteProofs,

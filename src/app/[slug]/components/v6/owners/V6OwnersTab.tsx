@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { twJoin } from "tailwind-merge";
-import { useProjectNavigation } from "../../../ProjectRouteBoundary";
+import { useProjectNavigation } from "../../../ProjectRouteContext";
 import { ProjectItem } from "../shared";
 import { V6AccountsSubtab } from "./accounts/V6AccountsSubtab";
 import { V6TokenPanel } from "./V6TokenPanel";

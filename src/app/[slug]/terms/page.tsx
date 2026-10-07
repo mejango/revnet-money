@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { V6TermsTab } from "../components/v6/terms/V6TermsTab";
 import { getProjectWithFallback } from "../getProjectFallback";
-import { ProjectPageBoundary } from "../ProjectRouteBoundary";
+import { ProjectPageBoundary } from "../ProjectRouteContext";
 import { projectRouteSnapshot } from "../projectRouteIdentity";
 import { resolveProjectRoute } from "../resolveProjectRoute.server";
 import { getRulesets } from "./getRulesets";

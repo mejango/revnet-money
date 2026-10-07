@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransactionReviewScope } from "@/components/TransactionReviewProvider";
+import { useTransactionReviewScope } from "@/components/TransactionReviewScope";
 import { ProjectRouteBlockedContext } from "@/lib/project-route-state";
 import { replaceProjectDocument } from "@/lib/projectSubtabNavigation";
 import { decodeProjectRouteSlug, slugFor } from "@/lib/slug";
@@ -8,10 +8,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  createContext,
   Fragment,
   useCallback,
-  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -19,15 +17,9 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
+import { ProjectRouteContext } from "./ProjectRouteContext";
 import { projectRouteIdentity, type ProjectRouteSnapshot } from "./projectRouteIdentity";
 import { verifyProjectRoute } from "./projectRouteQuery";
-
-type RouteContext = {
-  identity: string;
-  acknowledgePage: (identity: string) => void;
-  navigate: (action: () => void, href?: string) => void;
-};
-const ProjectRouteContext = createContext<RouteContext | null>(null);
 
 /** Shared layouts survive RSC navigation. Keep their providers bound to the verified tuple. */
 export function ProjectRouteBoundary({
@@ -231,23 +223,4 @@ export function ProjectRouteBoundary({
       </div>
     </ProjectRouteContext.Provider>
   );
-}
-
-/** A freshly resolved child must never render under a retained layout for another tuple. */
-export function ProjectPageBoundary({
-  snapshot,
-  children,
-}: PropsWithChildren<{ snapshot: ProjectRouteSnapshot }>) {
-  const context = useContext(ProjectRouteContext);
-  const identity = projectRouteIdentity(snapshot);
-  const acknowledge = context?.acknowledgePage;
-  useLayoutEffect(() => {
-    acknowledge?.(identity);
-  }, [acknowledge, identity]);
-  return !context || context.identity === identity ? children : null;
-}
-
-export function useProjectNavigation() {
-  const context = useContext(ProjectRouteContext);
-  return context?.navigate ?? ((action: () => void) => action());
 }

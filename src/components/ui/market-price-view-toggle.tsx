@@ -1,6 +1,6 @@
 "use client";
 
-import { useProjectNavigation } from "@/app/[slug]/ProjectRouteBoundary";
+import { useProjectNavigation } from "@/app/[slug]/ProjectRouteContext";
 
 export type MarketPriceView = "smooth" | "trades";
 

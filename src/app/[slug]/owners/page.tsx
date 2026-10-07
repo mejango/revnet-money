@@ -3,7 +3,7 @@ import { V6OwnersTab } from "../components/v6/owners/V6OwnersTab";
 import { projectItemsWithFallback } from "../components/v6/shared";
 import { getProjectWithFallback } from "../getProjectFallback";
 import { getSuckerGroup } from "../getSuckerGroup";
-import { ProjectPageBoundary } from "../ProjectRouteBoundary";
+import { ProjectPageBoundary } from "../ProjectRouteContext";
 import { projectRouteSnapshot } from "../projectRouteIdentity";
 import { resolveProjectRoute } from "../resolveProjectRoute.server";
 

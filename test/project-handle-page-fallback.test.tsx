@@ -1,4 +1,4 @@
-import { ProjectPageBoundary } from "@/app/[slug]/ProjectRouteBoundary";
+import { ProjectPageBoundary } from "@/app/[slug]/ProjectRouteContext";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
