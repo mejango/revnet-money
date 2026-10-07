@@ -19,9 +19,18 @@ function sourceFiles(root) {
 }
 
 for (const path of sourceFiles("src")) {
-  if (/from\s+["']viem\/chains["']/.test(read(path))) {
+  const source = read(path);
+  if (/from\s+["']viem\/chains["']/.test(source)) {
     failures.push(
       `${path}: production code must use the SDK's supported chain definitions, not the all-chain viem barrel`,
+    );
+  }
+  if (
+    /import\s+["']server-only["']/.test(source) &&
+    /from\s+["']@tanstack\/react-query["']/.test(source)
+  ) {
+    failures.push(
+      `${path}: server-only query owners must import @tanstack/query-core to avoid emitting React client-hook references`,
     );
   }
 }

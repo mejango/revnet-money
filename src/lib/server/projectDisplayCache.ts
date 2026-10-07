@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { IndexedReadResult } from "@/lib/projectIndexStatus";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/query-core";
 
 // Public indexed display data only. A stale fetch waits for its replacement;
 // Next's stale-while-revalidate cache could keep an old success through an outage.
