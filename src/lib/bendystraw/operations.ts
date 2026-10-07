@@ -145,19 +145,23 @@ function hasRoot(
   };
 }
 
-function hasDeploymentIdentity(value: unknown): boolean {
+function hasDeploymentIdentity(value: unknown, allowGlobalProject = false): boolean {
   return (
     isObject(value) &&
     isInteger(value.chainId) &&
     value.chainId > 0 &&
     isInteger(value.projectId) &&
-    value.projectId > 0 &&
+    value.projectId >= (allowGlobalProject ? 0 : 1) &&
     isInteger(value.version) &&
     value.version > 0
   );
 }
 
-function hasIdentityItems(root: string, nullableRoot = false): (value: unknown) => boolean {
+function hasIdentityItems(
+  root: string,
+  nullableRoot = false,
+  { allowGlobalProject = false } = {},
+): (value: unknown) => boolean {
   return (value) => {
     if (!isObject(value) || !(root in value)) return false;
     const rootValue = value[root];
@@ -165,7 +169,7 @@ function hasIdentityItems(root: string, nullableRoot = false): (value: unknown) 
     return (
       isObject(rootValue) &&
       Array.isArray(rootValue.items) &&
-      rootValue.items.every(hasDeploymentIdentity)
+      rootValue.items.every((item) => hasDeploymentIdentity(item, allowGlobalProject))
     );
   };
 }
@@ -299,7 +303,7 @@ export const AccountPermissionHoldersOperation = operation<
 >(
   "account-permission-holders.v1",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
-  hasIdentityItems("permissionHolders", true),
+  hasIdentityItems("permissionHolders", true, { allowGlobalProject: true }),
 );
 export const HasPermissionOperation = operation<HasPermissionQuery, HasPermissionQueryVariables>(
   "has-permission.v1",
@@ -392,7 +396,7 @@ export const PermissionHoldersOperation = operation<
 >(
   "permission-holders.v1",
   variablesWith({ where: filter }, { limit: positiveLimit, offset }),
-  hasIdentityItems("permissionHolders", true),
+  hasIdentityItems("permissionHolders", true, { allowGlobalProject: true }),
 );
 export const V6StoredAutoIssuancesOperation = operation<
   V6StoredAutoIssuancesQuery,

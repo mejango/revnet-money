@@ -699,3 +699,32 @@ Independent review corrected two copy-only nits (authorization article and confi
 Independent source review finds no remaining blocker and confirms unchanged authority, query, transaction and recovery behavior. Final typecheck, lint and formatting checks pass after the copy nits.
 
 Final consolidation on the reviewed source passes all564 affected tests across25 suites in one run, with zero skips or failures. Machine-readable evidence: `/private/tmp/jb-performance-checks/revnet-service-copy-final-tests.json`; companion log has the exact invocation. The final format ratchet initially required reflowing the shortened transaction-review expectation, then passed without changing the assertion.
+
+
+## 2026-10-07 global-permission response repair
+
+## Plan refinement
+
+- **Objective:** Remove the proven Operator permission-response 502 and accurately display account-wide permission grants without creating project 0 links; preserve the deployed performance/activity behavior.
+- **System fit:** The registered query and installed SDK accept global project ID 0, but the shared operation validator rejects it. Change the two permission-list opt-ins at that owner, then keep newly admitted account grants distinct by chain and grantor in OperatedProjects. Transaction authority, query policies, data sources and positive project navigation remain unchanged. Root owns combined integration, hosted gates, deployment and the unchanged exact-revision returning-cache probe.
+- **Reuse and simplicity:** Reuse hasDeploymentIdentity/hasIdentityItems with a strict default and explicit unary Array.every callback; reuse current account grouping, labels, EthereumAddress and ProjectLink. Global grants use unlinked All projects labels and one group per grantor. Add no metadata query, dependency, new UI primitive or global validator relaxation.
+- **Evidence and unknowns:** Exact production acaf540b returns 502 for three genuine Base v6 projectId0 records while the upstream and SDK accept them; positive project 3 passes the same proxy. The account consumer currently merges grantors into a fake project0 link. Juicebox already accepts the response and its separate pre-existing display issue is outside this patch. The original failed live probe and differential remain in /private/tmp/jb-performance-checks.
+- **Verification:** Add failing-before/passing-after tests through actual registered document and operation validators for global grants first/later, malformed identity/scalars, strict ordinary project lists and exact ProjectOperator. Render the actual account component to prove separate grantor permissions/attribution, no global project link, and unchanged positive links. Run focused schema/query/proxy/permission tests, types, lint, formatting ratchet, source and wallet checks; leave full build/browser/hosted release gates to the final combined tree.
+- **Resource budget:** One new writer checkout/branch rooted at exact deployed acaf540b; preserve activity8691 and both performance artifacts. Reuse a verified physical copy of the pinned dependency graph and existing test runners. Keep discovery bounded to the demonstrated permission-list family and its newly exposed account consumer; replan for any contradictory scope/authority evidence.
+
+- [x] Add and capture focused fail-before schema and account-rendering regressions.
+- [x] Implement narrow permission-list wildcard opt-ins and truthful account grant grouping/display.
+- [x] Run focused/static checks and inspect the scoped repair for root integration.
+
+Required resources: /Users/jango/Documents/jb/v6/evm/AGENTS.md, /Users/jango/Documents/jb/v6/evm/workflow/ponytail/SKILL.md, /Users/jango/Documents/jb/v6/evm/workflow/ponytail/README.md, /Users/jango/Documents/jb/v6/evm/docs/PLAN_REFINEMENT.md and relevant root/app tasks/lessons.md. No descendant app AGENTS.md is present. Installed Next16.3.8 use-client and Link documentation was read before app edits. Owning release design: /Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_RELEASE_FOLLOWUPS.md.
+
+
+### Permission repair verification and handoff
+
+The new checkout is based on exact deployed merge `acaf540b901b565d0ae8b44fb19fc40a8066fc5c`; the qualified activity8691 worktree and build are unchanged. The physical dependency copy matches the verified locked graph byte-for-byte: 113,031 distinct files, 51 internal symlinks, SHA256 `8162a7426287213667b3547570717d2e3cf0a5c4d991e35888ccf937ef6734b3`. Node26.5.0/npm12.0.1 runs the checks.
+
+Before runtime changes, six actual server-contract tests reject valid global grants in both permission lists with status502, covering first/later/all-zero positions; two rendered account cases fail on the missing global label and fake project0 link. The other 13 tests in that batch pass. After the narrow owner changes, all53 focused tests across8 suites pass, including the actual registered SDK document plus application response validator, strict positive identities in ordinary lists and exact ProjectOperator, 14 malformed identity shapes at both list positions, selected-field/nested-shape rejection, global grantor/chain separation, case-insensitive merging within the same scope, grant permissions and attribution, and unchanged positive links. The SDK contract checks selected-field presence/nested shape; this patch does not claim or add address/scalar validation beyond the existing app identity checks.
+
+The existing live schema contract passes3 tests against both published schemas and its real positive-project filter. Dependency integrity, full typecheck, ESLint, the unchanged formatting ratchet, source invariants, wallet-write inventory and `git diff --check` pass. No full build/browser or deployment was run here; root owns full hosted qualification of the final combined tree and exact-revision production verification, including the preserved failing returning-cache journey. Independent review of the scoped diff found no blocker on the returned valid global-grant data; final commit review remains part of root integration.
+
+Evidence under `/private/tmp/jb-performance-checks`: `revnet-permission-before.log`, `revnet-permission-focused.log`, `revnet-permission-live-schema.log`, `revnet-permission-{dependencies,typecheck,lint,format,source,wallet}.log`, and `revnet-permission-physical-provenance.json`. The original production failure and public differential remain preserved separately. No wallet action, push, deployment, local server or browser process was started.
