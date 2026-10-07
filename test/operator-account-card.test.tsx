@@ -9,19 +9,24 @@ const mocks = vi.hoisted(() => ({ runWrites: vi.fn() }));
 
 // The operator and account-type reads need bendystraw and RPC; the card's
 // transfer flow is what these tests are about.
-vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn().mockResolvedValue(undefined) }),
-  queryOptions: (options: unknown) => options,
-  useQueries: () => [
-    {
-      data: { kind: "eoa", address: "0x2222222222222222222222222222222222222222" },
-      isLoading: false,
-      isPending: false,
-      isError: false,
-      refetch: vi.fn(),
-    },
-  ],
-}));
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  const queryClient = new actual.QueryClient();
+  return {
+    ...actual,
+    useQueryClient: () => queryClient,
+    queryOptions: (options: unknown) => options,
+    useQueries: () => [
+      {
+        data: { kind: "eoa", address: "0x2222222222222222222222222222222222222222" },
+        isLoading: false,
+        isPending: false,
+        isError: false,
+        refetch: vi.fn(),
+      },
+    ],
+  };
+});
 vi.mock("@/app/[slug]/components/v6/operator/useLiveRevnetOperators", () => ({
   useLiveRevnetOperators: () => ({
     operatorByChain: new Map([[8453, "0x2222222222222222222222222222222222222222"]]),

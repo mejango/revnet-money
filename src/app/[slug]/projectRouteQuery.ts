@@ -4,8 +4,11 @@ import { isProjectRouteFresh, type ProjectRouteSnapshot } from "./projectRouteId
 
 const QUERY_KEY = "verified-project-route";
 
-export function invalidateProjectRouteProofs(client: QueryClient) {
-  return client.invalidateQueries({ queryKey: [QUERY_KEY] });
+export async function invalidateProjectRouteProofs(client: QueryClient) {
+  // A pre-mutation response cannot renew proof after the confirmed write.
+  // Retain invalidation so the caller's initial snapshot cannot bypass it.
+  await client.cancelQueries({ queryKey: [QUERY_KEY] });
+  await client.invalidateQueries({ queryKey: [QUERY_KEY], refetchType: "none" });
 }
 
 export function projectRouteQueryKey(slug: string) {

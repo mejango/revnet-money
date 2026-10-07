@@ -199,7 +199,8 @@ async function ProjectLayoutContent({
   const suckerGroupPromise = project.suckerGroupId
     ? getIndexedSuckerGroup(project.suckerGroupId, chainId, projectId)
     : Promise.resolve({ data: null, status: "not-checked" as const });
-  const isRevnet = project.isRevnet !== false;
+  // Alias verification already proved the live REVOwner; the indexed flag may lag.
+  const isRevnet = Boolean(route.verifiedOperator) || project.isRevnet !== false;
   const rulesetsPromise = isRevnet
     ? getRulesets(projectId.toString(), chainId).catch(() => null)
     : Promise.resolve([]);

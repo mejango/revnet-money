@@ -4,7 +4,11 @@ import {
   useProjectNavigation,
 } from "@/app/[slug]/ProjectRouteBoundary";
 import { PROJECT_ROUTE_TTL_MS, type ProjectRouteSnapshot } from "@/app/[slug]/projectRouteIdentity";
-import { projectRouteQueryKey, verifyProjectRoute } from "@/app/[slug]/projectRouteQuery";
+import {
+  invalidateProjectRouteProofs,
+  projectRouteQueryKey,
+  verifyProjectRoute,
+} from "@/app/[slug]/projectRouteQuery";
 import { ModalDialog } from "@/components/ui/ModalShell";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -90,6 +94,22 @@ describe("alias proof reuse", () => {
     expect(client.getQueryData(projectRouteQueryKey("@design"))).toEqual(original);
     fetcher.mockImplementation(async () => response());
     await expect(verifyProjectRoute(client, "@design", original)).resolves.toMatchObject(proof());
+  });
+
+  it("cancels a pre-mutation proof and cannot reuse it or the initial lease afterward", async () => {
+    const client = new QueryClient();
+    client.setQueryData(projectRouteQueryKey("@design"), original);
+    const read = deferred();
+    const fetcher = vi.fn().mockReturnValueOnce(read.promise);
+    vi.stubGlobal("fetch", fetcher);
+    const old = verifyProjectRoute(client, "@design", original, true).catch((error) => error);
+    await invalidateProjectRouteProofs(client);
+    read.resolve(response(original));
+    await old;
+    const rebound = { ...original, projectId: "43" };
+    fetcher.mockResolvedValueOnce(response(rebound));
+    expect(await verifyProjectRoute(client, "@design", original)).toMatchObject(rebound);
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -211,6 +231,27 @@ describe("retained project boundary", () => {
     view.rerender(tree(client, original, next));
     expect(screen.queryByText("Send")).not.toBeInTheDocument();
     await waitFor(() => expect(router.replaceDocument).toHaveBeenCalledOnce());
+  });
+
+  it("retains the mounted binding when same-alias server props change to a newly verified project", async () => {
+    const client = new QueryClient();
+    const view = render(tree(client));
+    await waitFor(() =>
+      expect(screen.getByText("View 0").closest("[aria-busy]")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      ),
+    );
+    now += PROJECT_ROUTE_TTL_MS;
+    const next = { ...original, projectId: "43", authority: `0x${"2".repeat(40)}` };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => response(proof(next))),
+    );
+    view.rerender(tree(client, next, next));
+    await waitFor(() => expect(router.replaceDocument).toHaveBeenCalledOnce());
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(screen.getByText("View 0").closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
   });
 
   it("rechecks expired history and BFCache restores, coalescing concurrent reads", async () => {

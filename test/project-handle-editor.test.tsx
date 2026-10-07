@@ -11,20 +11,25 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // The editor's reads are live RPC and service queries; here each answers its fixture.
-vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn().mockResolvedValue(undefined) }),
-  useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
-    data:
-      queryKey[0] === "v6-project-handle-operator"
-        ? OPERATOR
-        : queryKey[0] === "v6-project-handle-authority"
-          ? mocks.authority
-          : undefined,
-    isLoading: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-}));
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  const queryClient = new actual.QueryClient();
+  return {
+    ...actual,
+    useQueryClient: () => queryClient,
+    useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
+      data:
+        queryKey[0] === "v6-project-handle-operator"
+          ? OPERATOR
+          : queryKey[0] === "v6-project-handle-authority"
+            ? mocks.authority
+            : undefined,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    }),
+  };
+});
 vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
   useCompleteProjectPermissions: () => ({ data: [], isLoading: false }),
 }));

@@ -142,6 +142,25 @@ describe("project layout resolution", () => {
     expect(reads.operator).not.toHaveBeenCalled();
   });
 
+  it("renders a live-verified revnet even when its indexed classification lags", async () => {
+    reads.route.mockResolvedValue({
+      chainId: 1,
+      projectId: 1n,
+      verifiedOperator: `0x${"a".repeat(40)}`,
+      checkedAt: 1234,
+    });
+    reads.project.mockResolvedValue({
+      project: { projectId: 1, name: "Example", suckerGroupId: "group", isRevnet: false },
+      degraded: false,
+      indexStatus: "available",
+    });
+    const shell = await SlugLayout(props);
+    const content = await renderServer(shell.props.children);
+    const layout = elements(content).find((element) => element.type === "responsive-layout");
+    expect(layout?.props.children).toBe("tab content");
+    expect(reads.rulesets).toHaveBeenCalledOnce();
+  });
+
   it("returns an identified loading shell before waiting for group and ruleset data", async () => {
     let finishGroup!: (value: unknown) => void;
     reads.group.mockReturnValueOnce(new Promise((resolve) => (finishGroup = resolve)));

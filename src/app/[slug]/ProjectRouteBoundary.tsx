@@ -224,7 +224,7 @@ export function ProjectRouteBoundary({
           ) : null}
         </div>
       ) : null}
-      <div inert={blocked} aria-busy={blocked}>
+      <div data-project-route-boundary inert={blocked} aria-busy={blocked}>
         <ProjectRouteBlockedContext.Provider value={blocked}>
           <Fragment key={identity}>{children}</Fragment>
         </ProjectRouteBlockedContext.Provider>
