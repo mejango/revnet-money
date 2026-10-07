@@ -222,7 +222,7 @@ function ContractProvider({ projectId, children }: PropsWithChildren<{ projectId
     functionName: "controllerOf",
     chainId,
     args: [projectId],
-    query: { enabled: !!directory, staleTime: Infinity },
+    query: { enabled: !!directory },
   });
   const controllerAddress =
     controller.data && !isAddressEqual(controller.data, zeroAddress) ? controller.data : undefined;

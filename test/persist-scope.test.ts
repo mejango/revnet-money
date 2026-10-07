@@ -285,7 +285,7 @@ describe("persisted query scope", () => {
     // The floor is the number of files that tag a persisted query. Raise it when a task tags another file, and lower it
     // only when a file stops persisting one on purpose.
     expect(tagged).toContain(join("src", "hooks", "useRulesets.ts"));
-    expect(tagged.length).toBeGreaterThanOrEqual(15);
+    expect(tagged.length).toBeGreaterThanOrEqual(14);
   });
 });
 

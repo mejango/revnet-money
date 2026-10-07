@@ -466,3 +466,14 @@ Official package qualification: both manifests pin published core2.24.4 with ver
 Plan review: use `/Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_IMPLEMENTATION.md` (refinement gate passed), root `AGENTS.md`, pinned `workflow/ponytail/SKILL.md`/`README.md`, `docs/PLAN_REFINEMENT.md`, and relevant root/app lessons. Existing Para context, lazy host, reconnect marker, and module preload already own the behavior; remove the conflicting unsolicited mount without introducing a second wallet loader. The new provider tests run with Para enabled, and both idle cases fail on the original provider while explicit requests and session verification pass. The installed Next16.3.8 lazy-loading guide confirms the existing conditional React.lazy boundary is appropriate.
 
 Review: all 29 focused wallet tests pass, including the new provider idle regressions and existing connector restoration/auth/host behavior. Full types, touched-file ESLint, source invariants and the full formatting ratchet, and whitespace checks pass. Independent read-only review found no blockers. Existing browser builds intentionally disable Para, so these enabled-provider timing regressions provide the direct guard; a production-environment browser network capture remains part of combined integration verification. No build, dependency installation, push or deployment was performed in this worktree.
+
+## 2026-10-07 — Reuse client project reads during navigation
+
+Plan: [client performance refinement](performance-client-reads.md), gated by the workspace checker and coordinator before implementation. Separate behavior-preserving extraction: 9b3c4a18.
+
+- [x] Consolidate public complete ruleset history in the existing TanStack cache and preserve aggregate/error semantics.
+- [x] Render indexed descriptions while full metadata loads; bound mutable-controller freshness and chart identity.
+- [x] Verify TTL reuse/expiry, explicit invalidation, errors/recovery, data-scope changes, hydration and unchanged transaction guards.
+- [ ] Coordinator: integrate with server/navigation changes and run combined production/browser/release checks.
+
+Review: 16 focused suites pass231 tests, with typecheck, touched-file lint, full formatter ratchet, source checks, dead-code checks and diff check. Raw histories are shared across three hooks; no new cache or dependency. Exact local evidence and remaining coordinator gates are recorded in the linked plan.

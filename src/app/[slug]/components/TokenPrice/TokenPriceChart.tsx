@@ -22,7 +22,7 @@ import { cachedQuery } from "@/lib/query-persist";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ChartToggleButton } from "./ChartToggleButton";
@@ -67,7 +67,16 @@ export function TokenPriceChart({
 
   const { data, isLoading } = useQuery(
     cachedQuery({
-      queryKey: ["chartData", projectId, chainId, suckerGroupId, range],
+      queryKey: [
+        "chartData",
+        projectId,
+        chainId,
+        suckerGroupId,
+        range,
+        token,
+        tokenSymbol,
+        tokenDecimals,
+      ],
       queryFn: () =>
         getTokenPriceChartData({
           projectId,
@@ -76,7 +85,21 @@ export function TokenPriceChart({
           suckerGroupId,
           baseToken: { address: token, symbol: tokenSymbol, decimals: tokenDecimals },
         }),
-      placeholderData: keepPreviousData,
+      // Retain the last range while another loads, never another project's or
+      // accounting token's values under the new chart labels.
+      placeholderData: (
+        previousData: Awaited<ReturnType<typeof getTokenPriceChartData>> | undefined,
+        previousQuery: { queryKey: readonly unknown[] } | undefined,
+      ) =>
+        previousQuery?.queryKey[1] === projectId &&
+        previousQuery.queryKey[2] === chainId &&
+        previousQuery.queryKey[3] === suckerGroupId &&
+        previousQuery.queryKey[5] === token &&
+        previousQuery.queryKey[6] === tokenSymbol &&
+        previousQuery.queryKey[7] === tokenDecimals
+          ? previousData
+          : undefined,
+      staleTime: PRICE_REFRESH_MS,
       refetchInterval: PRICE_REFRESH_MS,
       refetchOnWindowFocus: true,
     }),
