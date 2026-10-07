@@ -364,3 +364,23 @@ Review: 23 Safe dialog/card tests pass and 145 transport/check/Relayr tests pass
 - [x] Protect legacy and current same-nonce reservations against changed signature/subset/alternative-hash attempts.
 - [x] Offer structured existing-bundle checks for incompatible/paid/ambiguous records instead of Retry checks.
 Review: 140 hook tests pass, plus 79 UI/activity/release/routing tests. Types and focused ESLint pass; wallet-boundary inventory remains unchanged. Existing quote recovery makes no new publication or payment. JBM has no equivalent persisted-unpaid-quote lookup deadlock. Local, not pushed.
+
+## 2026-10-06 — Replace unfunded Safe quotes for the current selection
+
+- [x] Trace the current Safe prepare path and storage adapter; coordinate the replacement rule with the shared SDK owner.
+- [x] Consume the SDK's quote-only replacement result without implementing another app policy; retain actual or ambiguous funding evidence.
+- [x] Cover four saved calls to three currently ready calls, lost quote response without funding, and funded/unknown recovery using the real hook and storage adapter.
+- [x] Run focused tests, typecheck, lint and relevant source/wallet checks; record the verified result.
+
+Review: both saved-quote and lost-response four-to-three flows review the current calls, post a fresh bundle, and fund once. Archived quotes cannot be funded; canceled review preserves the old record. Legacy remote execution observations and funding flags remain sticky across reloads. Final focused suites pass 205 tests; the full run plus bounded reruns verifies 2,266 tests with one existing skip. The reruns covered six sandbox-blocked network/loopback tests and the final copy change. Types, touched-file lint, source invariants, wallet inventory and diff checks pass. Release and dependency publication are tracked by the parent task.
+
+Published-install verification: SDK 2.24.2 and the reified lockfile installation were tested on Node 26.7.0. The full suite passed 2,265 tests with one existing skip; its only failure was a stale generic-message assertion, replaced with the shared funding-unresolved result, sticky observed-funding flag and refusal to quote again. The final 205-test focused rerun passes, giving 2,266 verified tests and one skip. Full typecheck, lint, source guards and the 142-site wallet inventory pass. No production code changed during this final verification.
+
+## Plan refinement
+
+- **Objective:** Opening Execute all should review and quote the currently ready Safe selection even when an earlier quote-only record exists; actual or ambiguous funding must still recover without paying twice.
+- **System fit:** SafeQueueCard collects live ready transactions, the reviewed hook delegates lifecycle decisions to the SDK, and the RNM adapter preserves journal evidence; the shared SDK remains the owner of replacement and funding gates, while explicit review and payment authority stay unchanged.
+- **Reuse and simplicity:** Reuse the existing SDK prepare path and storage adapter; add only necessary release-copy integration and regression coverage, without another discard action or app-side replacement heuristic.
+- **Evidence and unknowns:** The user's three-current/four-saved screenshot proves that the historical selection still blocks progress after 2.24.1; the agreed SDK contract replaces overlapping quote-only sessions after current-call review, retains them as quote-replaced, and protects fundingObserved or remote execution evidence. RNM will normalize legacy chainStates into shared records rather than classify statuses itself.
+- **Verification:** Exercise actual prepare/storage/reload for four-to-three replacement and missing quote responses, assert current exact calls are reviewed/posted before any wallet payment and funded once only after explicit consent, and retain malformed, submitted and hashless-funding refusal regressions.
+- **Resource budget:** Investigate RNM while the SDK policy is resolved in parallel; make the smallest adapter change, then run focused tests/types/lint against the preview. Repeat the full suite and static gates on the published 2.24.2 installation because npm reified dependency entries beyond the SDK archive; bound any subsequent rerun to a concrete failure.

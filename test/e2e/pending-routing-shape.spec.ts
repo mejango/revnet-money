@@ -52,10 +52,20 @@ test("pending routing shows ready, cooldown, and final attempts above activity",
   // action controls with their wallet gate; the cooldown still disables its row.
   const actions = section.getByRole("button", { name: "Connect Wallet", exact: true });
   await expect(actions).toHaveCount(4);
-  await expect(actions.nth(0)).toBeEnabled();
-  await expect(actions.nth(1)).toBeDisabled();
-  await expect(actions.nth(2)).toBeEnabled();
-  await expect(actions.nth(3)).toBeEnabled();
+  const paymentAction = (amount: string) =>
+    section
+      .getByText(amount, { exact: true })
+      .locator("..")
+      .getByRole("button", { name: "Connect Wallet", exact: true });
+  await expect(
+    section
+      .getByText("Includes 2 ready payments. Payments in cooldown must wait.")
+      .locator("..")
+      .getByRole("button", { name: "Connect Wallet", exact: true }),
+  ).toBeEnabled();
+  await expect(paymentAction("0.01 ETH")).toBeEnabled();
+  await expect(paymentAction("12.5 USDC")).toBeDisabled();
+  await expect(paymentAction("0.03 ETH")).toBeEnabled();
   const latest = page.getByRole("heading", { name: "Latest", exact: true });
   await expect(latest).toBeVisible();
   const [pendingBox, latestBox] = await Promise.all([section.boundingBox(), latest.boundingBox()]);

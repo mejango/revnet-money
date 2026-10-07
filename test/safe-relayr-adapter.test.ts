@@ -1,5 +1,6 @@
 import { safeRelayrSession } from "@/lib/safe-relayr";
 import type { TransactionActivity } from "@/lib/transaction-activity";
+import { canReplaceSafeRelayrQuote } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import { SAFE_EXEC_ABI, canonicalSafeTxHash } from "@bananapus/nana-sdk-core/safe-service";
 import { readFileSync } from "node:fs";
 import { encodeFunctionData, zeroAddress } from "viem";
@@ -172,6 +173,38 @@ describe("Safe Relayr legacy storage adapter", () => {
       releaseReason: "safe-nonces-consumed",
       paymentStatus: "unfunded",
     });
+  });
+
+  it("passes legacy remote execution observations to the shared quote replacement rule", () => {
+    const quoteOnly = { ...releasedDraft, relayrSafeState: "publishing" as const };
+    expect(canReplaceSafeRelayrQuote(safeRelayrSession(quoteOnly)!)).toBe(true);
+    for (const status of ["Running", "Success", "Failed", "unknown", ""]) {
+      const session = safeRelayrSession({
+        ...quoteOnly,
+        chainStates: [{ chainId: 1, status }],
+      })!;
+      expect(session.records).toEqual([{ chain: 1, status: { state: status, data: undefined } }]);
+      expect(canReplaceSafeRelayrQuote(session)).toBe(false);
+    }
+    expect(
+      canReplaceSafeRelayrQuote(
+        safeRelayrSession({
+          ...quoteOnly,
+          chainStates: [{ chainId: 1, status: "Pending" }],
+        })!,
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves observed remote funding without a local wallet hash", () => {
+    const session = safeRelayrSession({
+      ...releasedDraft,
+      relayrSafeState: "publishing",
+      relayrSafeFundingObserved: true,
+    })!;
+    expect(session.fundingObserved).toBe(true);
+    expect(session.payments).toEqual([]);
+    expect(canReplaceSafeRelayrQuote(session)).toBe(false);
   });
 
   it("marks a partially identified legacy selection incomplete instead of releasing only its known Safe calls", () => {

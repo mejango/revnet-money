@@ -72,6 +72,8 @@ export type TransactionActivity = {
   relayrSafeReservationKeys?: string[];
   /** A Safe funding wallet invocation has not produced a known hash yet. */
   relayrSafeFundingUnknown?: boolean;
+  /** Relayr has reported funding or execution, even if no local payment hash was captured. */
+  relayrSafeFundingObserved?: boolean;
   relayrExpectedTransactions?: RelayrExpectedTransaction[];
   relayrPayment?: { target: Address; data: Hex; value: string };
   /** Every funding payment the wallet broadcast for this bundle, oldest first. */

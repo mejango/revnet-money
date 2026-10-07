@@ -84,6 +84,7 @@ function legacyUnpublishedRelease(
     activity.relayrPayment ||
     activity.relayrPayments?.length ||
     activity.relayrSafeFundingUnknown ||
+    activity.relayrSafeFundingObserved ||
     activity.manualVerificationRequired ||
     activity.relayrDiscardable ||
     !executions.length ||
@@ -193,6 +194,11 @@ export function safeRelayrSession(activity: TransactionActivity): SafeRelayrSess
     bundleUuid: activity.bundleUuid,
     paymentStatus: fundingUnknown ? "sending" : (activity.relayrPaymentStatus ?? "sending"),
     payments,
+    fundingObserved: activity.relayrSafeFundingObserved,
+    records: activity.chainStates?.map((row) => ({
+      chain: row.chainId,
+      status: { state: row.status, data: row.hash === undefined ? undefined : { hash: row.hash } },
+    })),
     state:
       fundingUnknown && savedState === "released"
         ? activity.bundleUuid
@@ -311,6 +317,7 @@ export function safeRelayrController(config: Config, wallet?: Wallet) {
           },
         }));
         const latest = session.payments.at(-1);
+        const fundingObserved = session.fundingObserved || previous?.relayrSafeFundingObserved;
         recordTransactionActivity({
           ...previous,
           id,
@@ -319,6 +326,7 @@ export function safeRelayrController(config: Config, wallet?: Wallet) {
           relayrSafeReleaseReason: session.releaseReason,
           relayrSafeReservationKeys: session.reservationKeys,
           relayrSafeFundingUnknown: session.paymentStatus === "sending",
+          relayrSafeFundingObserved: fundingObserved,
           kind: "relayr-bundle",
           title: "Safe execution bundle",
           account: session.account,
@@ -336,14 +344,20 @@ export function safeRelayrController(config: Config, wallet?: Wallet) {
               : session.state === "released"
                 ? session.releaseReason === "safe-nonces-consumed"
                   ? "The saved Safe nonces have all advanced onchain. These executions can no longer run. Refresh the Safe queue."
-                  : session.paymentStatus === "unfunded"
-                    ? "This review was canceled before its calls were published. Nothing was paid. Review the executions again to request a quote."
-                    : LEGACY_RELEASE_MESSAGE
+                  : session.releaseReason === "quote-replaced"
+                    ? "This unfunded quote was replaced by a fresh review of the current Safe transactions. Nothing was paid."
+                    : session.paymentStatus === "unfunded"
+                      ? "This review was canceled before its calls were published. Nothing was paid. Review the executions again to request a quote."
+                      : LEGACY_RELEASE_MESSAGE
                 : session.paymentStatus === "sending" || session.paymentStatus === "submitted"
                   ? "Relayr funding is being submitted. Do not pay again while the wallet result is uncertain."
                   : session.paymentStatus === "confirmed"
                     ? "Relayr payment confirmed. Destination transactions are pending."
-                    : "The saved Safe quote remains reserved. Review its original complete selection or check the existing bundle.",
+                    : fundingObserved
+                      ? "Relayr funding or execution was reported. Check the existing bundle before paying again."
+                      : session.quote
+                        ? "The Safe execution quote is ready. Review the current transactions before paying."
+                        : "Review the current Safe transactions to request a new quote. No funding payment has been started.",
           createdAt: session.createdAt,
           bundleUuid: session.bundleUuid,
           relayrExpectedTransactions: expected,
