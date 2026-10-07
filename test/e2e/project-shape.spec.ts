@@ -610,3 +610,152 @@ test("alias tabs and chart ranges retain document, payment draft and URL filters
   expect((await fixtureStatus(request)).unknownRequests).toEqual([]);
   expectBoundaryToStayLocal(boundary);
 });
+
+async function holdProjectPage(page: Page, pathname: string) {
+  let requested = false;
+  let completed = false;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const matches = (url: URL) =>
+    decodeURIComponent(url.pathname) === pathname && url.searchParams.has("_rsc");
+  await page.route(matches, async (route) => {
+    requested = true;
+    // Fetch the real page while withholding its delivery to the router. This
+    // exercises actual React transitions and allows a discarded page to arrive late.
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+    completed = true;
+  });
+  return {
+    release,
+    waitUntilRequested: () => expect.poll(() => requested).toBe(true),
+    deliver: async () => {
+      release();
+      await expect.poll(() => completed).toBe(true);
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+    },
+  };
+}
+
+test("alias tab pending feedback follows the latest intent and committed content", async ({
+  page,
+  request,
+}) => {
+  const boundary = await installBrowserBoundary(page);
+  await page.goto("/@fixture-revnet?view=overview");
+  await expect(page.getByRole("heading", { name: "About", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Amount")).toBeEnabled();
+  await page.getByLabel("Amount").fill("12");
+  const documents: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "document") documents.push(request.url());
+  });
+
+  const termsResponse = await holdProjectPage(page, "/@fixture-revnet/terms");
+  const ownersResponse = await holdProjectPage(page, "/@fixture-revnet/owners");
+  const overview = page.getByRole("link", { name: "Overview", exact: true });
+  const terms = page.getByRole("link", { name: "Terms", exact: true });
+  const owners = page.getByRole("link", { name: "Owners", exact: true });
+  const menu = page.locator("[data-project-tab-scroll]");
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  const termsWidth = await terms.evaluate((element) => element.getBoundingClientRect().width);
+  try {
+    await terms.click();
+    await termsResponse.waitUntilRequested();
+    await expect(terms.locator('[aria-busy="true"]')).toBeVisible();
+    await expect(menu.locator('[aria-busy="true"]')).toHaveCount(1);
+    await expect(terms).toHaveAccessibleName("Terms");
+    await expect(terms.getByRole("status").locator('[aria-hidden="true"]')).toBeVisible();
+    expect(await terms.evaluate((element) => element.getBoundingClientRect().width)).toBe(
+      termsWidth,
+    );
+    await expect(overview).toHaveClass(/border-teal-500/u);
+    await expect(terms).not.toHaveClass(/border-teal-500/u);
+    await expect(page.getByRole("heading", { name: "About", exact: true })).toBeVisible();
+    await expect(page.getByRole("status", { name: "Loading terms", exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("Amount")).toHaveValue("12");
+
+    await owners.click();
+    await ownersResponse.waitUntilRequested();
+    await expect(owners.locator('[aria-busy="true"]')).toBeVisible();
+    await expect(terms.locator('[aria-busy="true"]')).toHaveCount(0);
+    await expect(menu.locator('[aria-busy="true"]')).toHaveCount(1);
+    await expect(owners).toHaveAccessibleName("Owners");
+    await expect(overview).toHaveClass(/border-teal-500/u);
+    await expect(owners).not.toHaveClass(/border-teal-500/u);
+    await expect(page.getByRole("heading", { name: "About", exact: true })).toBeVisible();
+
+    await ownersResponse.deliver();
+    await expect(page).toHaveURL(/\/@fixture-revnet\/owners$/u);
+    await expect(page.getByRole("button", { name: "Accounts", exact: true })).toBeVisible();
+    await expect(owners).toHaveClass(/border-teal-500/u);
+    await expect(overview).not.toHaveClass(/border-teal-500/u);
+    await expect(menu.locator('[aria-busy="true"]')).toHaveCount(0);
+
+    // The older response must neither select Terms nor restart its indicator.
+    await termsResponse.deliver();
+    await expect(page).toHaveURL(/\/@fixture-revnet\/owners$/u);
+    await expect(page.getByRole("button", { name: "Accounts", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Stages", exact: true })).toHaveCount(0);
+    await expect(owners).toHaveClass(/border-teal-500/u);
+    await expect(menu.locator('[aria-busy="true"]')).toHaveCount(0);
+    await expect(page.getByLabel("Amount")).toHaveValue("12");
+    expect(documents).toEqual([]);
+    expect((await fixtureStatus(request)).unknownRequests).toEqual([]);
+    expectBoundaryToStayLocal(boundary);
+  } finally {
+    termsResponse.release();
+    ownersResponse.release();
+  }
+});
+
+test("Latest supersedes a pending alias tab without reviving its feedback", async ({
+  page,
+  request,
+}) => {
+  test.skip((page.viewportSize()?.width ?? 0) > 800, "Latest is a single-column control");
+  const boundary = await installBrowserBoundary(page);
+  await page.goto("/@fixture-revnet?view=overview");
+  await expect(page.getByRole("heading", { name: "About", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Amount")).toBeEnabled();
+  await page.getByLabel("Amount").fill("12");
+  const documents: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "document") documents.push(request.url());
+  });
+  const termsResponse = await holdProjectPage(page, "/@fixture-revnet/terms");
+  const terms = page.getByRole("link", { name: "Terms", exact: true });
+  const latest = page.getByRole("button", { name: "Latest", exact: true });
+  const menu = page.locator("[data-project-tab-scroll]");
+  try {
+    await terms.click();
+    await termsResponse.waitUntilRequested();
+    await expect(terms.locator('[aria-busy="true"]')).toBeVisible();
+    await latest.click();
+    await expect(page).toHaveURL(/\/@fixture-revnet\?view=latest$/u);
+    await expect(page.locator("[data-mobile-project-activity]")).toBeVisible();
+    await expect(page.locator("[data-mobile-project-content]")).toBeHidden();
+    await expect(latest).toHaveClass(/border-teal-500/u);
+    await expect(menu.locator('[aria-busy="true"]')).toHaveCount(0);
+
+    await termsResponse.deliver();
+    await expect(page).toHaveURL(/\/@fixture-revnet\?view=latest$/u);
+    await expect(page.locator("[data-mobile-project-activity]")).toBeVisible();
+    await expect(latest).toHaveClass(/border-teal-500/u);
+    await expect(menu.locator('[aria-busy="true"]')).toHaveCount(0);
+    await expect(page.getByLabel("Amount")).toHaveValue("12");
+    expect(documents).toEqual([]);
+    expect((await fixtureStatus(request)).unknownRequests).toEqual([]);
+    expectBoundaryToStayLocal(boundary);
+  } finally {
+    termsResponse.release();
+  }
+});
