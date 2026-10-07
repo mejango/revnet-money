@@ -231,7 +231,18 @@ export function HomepageActivityFeed({
                   ) : (
                     <span>{formatEthAddress(activity.beneficiary)}</span>
                   )}
-                  <span className="text-zinc-700"> {combinedDescription(activity, symbol)}</span>
+                  <span
+                    className="text-zinc-700"
+                    title={
+                      activities
+                        .filter((entry) => entry.exactTokenCount)
+                        .map((entry) => `${entry.exactTokenCount} ${symbol}`)
+                        .join(", ") || undefined
+                    }
+                  >
+                    {" "}
+                    {combinedDescription(activity, symbol)}
+                  </span>
                 </div>
               </div>
             </div>

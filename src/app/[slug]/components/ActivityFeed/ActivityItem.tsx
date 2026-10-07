@@ -35,6 +35,28 @@ type ActivityEventType =
   | "reservedSplit"
   | "mintNft";
 
+const ACTIVITY_LABELS: Record<ActivityEventType, string> = {
+  in: "Payment",
+  out: "Cash out",
+  addToBalance: "Deposit",
+  mint: "Minted",
+  autoIssue: "Auto issuance",
+  deployErc20: "Token deployed",
+  projectCreate: "Created",
+  projectTransfer: "Ownership",
+  operatorPermissionsSet: "Permissions",
+  rulesetQueued: "Rules queued",
+  swapBuy: "Swap",
+  swapSell: "Swap",
+  issuance: "Issuance",
+  swap: "Swap",
+  buybackPool: "Buyback pool",
+  payout: "Payout",
+  reserved: "Reserved tokens",
+  reservedSplit: "Reserved tokens",
+  mintNft: "Item minted",
+};
+
 export interface ActivityEvent {
   id: string;
   type: ActivityEventType;
@@ -49,6 +71,8 @@ export interface ActivityEvent {
   exactAmount?: string;
   baseTokenSymbol?: string;
   tokenCount?: string;
+  /** Exact whole-token amount retained when the displayed count is abbreviated. */
+  exactTokenCount?: string;
   /** The unformatted token count, for ordering same-tx reserved-split receipts. */
   rawTokenCount?: string;
   memo?: string;
@@ -290,10 +314,16 @@ export function ActivityItemRow({
     event.type === "swapBuy" ||
     event.type === "issuance";
   const isOutflow = event.type === "out" || event.type === "swapSell";
+  // These rows identify the recipient, which need not be the caller.
+  const isRecipient =
+    event.type === "mint" ||
+    event.type === "autoIssue" ||
+    event.type === "reservedSplit" ||
+    event.type === "mintNft";
   // A reserved distribution leads with the count the way value flows lead
   // with the amount: "3.6M ART" tagged "reserved distro".
   const isReserved = event.type === "reserved";
-  const hasTitle = !!event.baseAmount || isInflow || isOutflow || isReserved;
+  const hasFlowTitle = !!event.baseAmount || isInflow || isOutflow || isReserved;
   const distributed = distributesReserved(event);
   const fanOut = fansOut([event, ...(event.also ?? [])]);
   // One fragment per same-tx event: a lone one reads inline, several read as bullets.
@@ -306,7 +336,16 @@ export function ActivityItemRow({
       <li key={index} className={BULLET_CLASS}>
         {parts.lead ? <ProfileAvatar address={parts.lead} short chain={chain} /> : null}
         {parts.pre}
-        {parts.strong ? <span className="font-medium">{parts.strong}</span> : null}
+        {parts.strong ? (
+          <span
+            className="font-medium"
+            title={
+              entry.exactTokenCount ? `${entry.exactTokenCount} ${projectTokenSymbol}` : undefined
+            }
+          >
+            {parts.strong}
+          </span>
+        ) : null}
         {parts.post}
         {parts.recipient ? <ProfileAvatar address={parts.recipient} short chain={chain} /> : null}
         {parts.sticky ? <StickyRecipient split={parts.sticky} chainId={entry.chainId} /> : null}
@@ -375,12 +414,9 @@ export function ActivityItemRow({
                 reserved distro
               </span>
             )}
-            {/* No amount and no flow tag = nothing for the title slot; the
-                actor takes its place (bare, no "to/from/by") instead of
-                leaving a blank line. */}
-            {!hasTitle && (
-              <span className="min-w-0 truncate text-xs">
-                <ProfileAvatar address={event.beneficiary} short chain={chain} />
+            {!hasFlowTitle && (
+              <span className="inline-flex h-5 items-center border border-zinc-300 px-1.5 text-[10px] font-medium leading-none text-zinc-600">
+                {ACTIVITY_LABELS[event.type]}
               </span>
             )}
           </span>
@@ -390,35 +426,38 @@ export function ActivityItemRow({
             </EtherscanLink>
             <span>on</span>
             {event.chains ? (
-              <span className="inline-flex items-center gap-0.5">
-                {event.chains.map((entry) => (
-                  <EtherscanLink
+              <span className="isolate inline-flex items-center">
+                {event.chains.map((entry, index, chains) => (
+                  <span
                     key={entry.chainId}
-                    type="tx"
-                    value={entry.txHash}
-                    chain={JB_CHAINS[entry.chainId].chain}
-                    className="inline-flex size-6 items-center justify-center hover:opacity-70"
+                    className="relative -ml-1.5 inline-flex first:ml-0"
+                    style={{ zIndex: chains.length - index }}
                   >
-                    <span className="sr-only">
-                      View transaction on {chainDisplayName(entry.chainId)}
-                    </span>
-                    <ChainLogo chainId={entry.chainId} width={14} height={14} />
-                  </EtherscanLink>
+                    <EtherscanLink
+                      type="tx"
+                      value={entry.txHash}
+                      chain={JB_CHAINS[entry.chainId].chain}
+                      className="inline-flex items-center justify-center rounded-full hover:opacity-70"
+                    >
+                      <span className="sr-only">
+                        View transaction on {chainDisplayName(entry.chainId)}
+                      </span>
+                      <ChainLogo chainId={entry.chainId} width={18} height={18} />
+                    </EtherscanLink>
+                  </span>
                 ))}
               </span>
             ) : (
-              <ChainLogo chainId={event.chainId} width={14} height={14} />
+              <ChainLogo chainId={event.chainId} width={18} height={18} standalone />
             )}
           </span>
         </div>
-        {hasTitle && (
-          <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500">
-            {isOutflow ? "to" : isInflow ? "from" : "by"}{" "}
-            <span className="min-w-0 truncate">
-              <ProfileAvatar address={event.beneficiary} short chain={chain} />
-            </span>
-          </div>
-        )}
+        <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500">
+          {isOutflow || isRecipient ? "to" : isInflow ? "from" : "by"}{" "}
+          <span className="min-w-0 truncate">
+            <ProfileAvatar address={event.beneficiary} short chain={chain} />
+          </span>
+        </div>
         {event.memo && (
           <p className="text-sm text-zinc-700 break-all mt-3">
             <button
