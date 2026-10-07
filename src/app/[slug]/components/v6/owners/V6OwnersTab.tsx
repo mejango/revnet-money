@@ -1,7 +1,7 @@
 "use client";
 
 import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
-import { decodeProjectRouteSlug } from "@/lib/slug";
+import { projectSubtabNavigation as ownersSubtabNavigation } from "@/lib/projectSubtabNavigation";
 import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -42,14 +42,7 @@ const SUBTABS = [
 
 type SubtabKey = (typeof SUBTABS)[number]["key"];
 
-export function ownersSubtabNavigation(slug: string, currentHref: string, key: SubtabKey) {
-  const url = new URL(currentHref);
-  url.searchParams.set("subtab", key);
-  return {
-    href: url.href,
-    mode: decodeProjectRouteSlug(slug)?.startsWith("@") ? "document" : "client",
-  } as const;
-}
+export { projectSubtabNavigation as ownersSubtabNavigation } from "@/lib/projectSubtabNavigation";
 
 /**
  * The website/-parity Owners tab for V6 projects: a caps-label subtab row over

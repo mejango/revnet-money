@@ -2,7 +2,7 @@
 
 import { ShopInventorySkeleton } from "@/components/loading/LoadingSkeletons";
 import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
-import { decodeProjectRouteSlug } from "@/lib/slug";
+import { projectSubtabNavigation as shopSubtabNavigation } from "@/lib/projectSubtabNavigation";
 import { cn } from "@/lib/utils";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -18,14 +18,7 @@ const SUBTABS = [
 
 type SubtabKey = (typeof SUBTABS)[number]["key"];
 
-export function shopSubtabNavigation(slug: string, currentHref: string, key: SubtabKey) {
-  const url = new URL(currentHref);
-  url.searchParams.set("subtab", key);
-  return {
-    href: url.href,
-    mode: decodeProjectRouteSlug(slug)?.startsWith("@") ? "document" : "client",
-  } as const;
-}
+export { projectSubtabNavigation as shopSubtabNavigation } from "@/lib/projectSubtabNavigation";
 
 /**
  * The Shop tab (website/ renderShopTab parity): INVENTORY | CUSTOMERS

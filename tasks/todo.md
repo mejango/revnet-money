@@ -514,3 +514,11 @@ Required workspace resources remain authoritative in this isolated checkout: `/U
 - [x] Run focused checks and record exact commits, limitations and integration gates.
 
 Review: behavior-preserving layout extraction is commit 11c7b631; bounded display reuse is c881dc02. Header skeleton extraction is dda04735, with exact rendered HTML equality for both populated and empty hints checked before reuse. The final layout retains route/project existence checks before its own streaming boundary, shows the known identity while group/operator data waits, and renders start-time and chart failures locally. Group success eligibility includes the requested project; all production callers now use that normalized key. Explicit invalidation cancels exact and known-group fills, retains unrelated reads, and documents unknown peer/replica expiry rather than promising global consistency. An independent cache review found no remaining blocker. On pinned Node 26.5, all 71 focused tests across 8 suites, full typecheck, touched-file ESLint, source invariants, formatter ratchet and diff checks pass. Navigation identity-boundary wiring and combined production/browser/404 measurements remain parent integration work; no build, dependency install, push or deployment occurred in this worktree. The shared installed graph reports Vitest 4.1.10 versus manifest 4.1.9, so these focused checks do not replace the parent's locked-install integration qualification.
+## 2026-10-07 — Retained project navigation
+
+Uses workspace AGENTS.md, workflow/ponytail/SKILL.md and docs/PLAN_REFINEMENT.md at /Users/jango/Documents/jb/v6/evm. Approved design and six-field refinement: /Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_IMPLEMENTATION.md (gate passed).
+
+- [ ] Extract duplicated subtab URL owner without behavior change.
+- [ ] Add request-verified alias snapshot, short successful reuse and whole-project/page identity gate.
+- [ ] Switch tabs/subtabs/graph ranges to retained navigation preserving URL state.
+- [ ] Verify expiry, failures, rebinding, page/layout races, history and state retention.
