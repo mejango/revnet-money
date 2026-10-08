@@ -964,3 +964,17 @@ Observer ownership review: reproduced both pre-fix failures (incomplete original
 
 
 Lifecycle review: explicit dev/build commands and the browser wrapper now prepare both pinned framework files and check the standalone CJS output without enabling npm lifecycle scripts. The five actual npm subprocess cases plus three existing compatibility cases pass (8 tests), including deliberately unpatched standalone output rejected by both build paths. Scoped ESLint, Prettier and diff checks pass. The initial restricted run failed only because the sandbox denied localhost fixture listeners; the test now rejects listen errors immediately and the permitted-loopback rerun passed in2.52s. Evidence is `/private/tmp/jb-image-oci-20261008/rnm-lifecycle-tests-loopback.log`; root started the actual browser build with these unchanged entrypoints and owns its result. Juicebox resolves ignore-scripts=false and retains its functioning hooks.
+
+
+## Plan refinement
+
+- **Objective:** Include the single canonical synthetic AVIF fixture needed to typecheck the image-proof source route in clean production Docker builds.
+- **System fit:** Next's production route selection excludes browser-only routes, but TypeScript still resolves their source imports. The Docker context must therefore retain this source dependency without exposing other test fixtures; deployed routes, original image authority and optimizer behavior remain unchanged.
+- **Reuse and simplicity:** Add only the existing `test/fixtures/image-optimizer-animated.ts` to `.dockerignore` exceptions, with parent directory rules where required. Keep one fixture shared by regression and browser proof rather than duplicating bytes under production source.
+- **Evidence and unknowns:** Read-only OCI preparation found both contexts excluded this imported fixture. The existing local browser build has all files and cannot prove a fresh Docker context; root's serialized OCI smoke is the final acceptance evidence.
+- **Verification:** Run the root refinement gate, existing `deployment:check` gate and diff checks. Inspect effective patterns for retained existing exclusions; the subsequent clean Docker build must typecheck and retain the guarded runtime optimizer hash.
+- **Resource budget:** One narrow ignore-file exception and this note, no package/lock/runtime change, fixture copy or local build. Root assigns the later OCI slot after current serialized browser builds.
+
+- [x] Add the narrow context exception and pass the existing container definition gate.
+
+Docker-context review: the single existing synthetic AVIF fixture is now explicitly allowed while other test inputs retain their exclusions. The owning container/deployment configuration check and diff check pass; no Next artifact was rebuilt or changed by this edit. OCI execution remains queued with root.

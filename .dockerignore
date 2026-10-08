@@ -20,3 +20,4 @@ test/*
 !test/fixtures
 test/fixtures/*
 !test/fixtures/browser-project.json
+!test/fixtures/image-optimizer-animated.ts
