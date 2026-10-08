@@ -676,3 +676,229 @@ The extraction is commit `99569648`; the independently reviewed runtime repair i
 Evidence is under `/private/tmp/jb-performance-checks`: `revnet-hydration-final-source.json` preserves the first gate batch; `revnet-hydration-final-network.json` records successful required audit/full coverage; `revnet-hydration-fixture-{correction,typecheck,lint,format}.log` qualifies the test-only correction; `revnet-hydration-build.json`, `revnet-hydration-full-browser.json`, and `revnet-hydration-returning.json` record final qualification. The first saved-cache precondition diagnostic is retained as `revnet-hydration-returning-precondition-5s.json`.
 
 Complete artifact manifest: `revnet-hydration-artifact.json`, 3,352 files, manifest SHA256 `8ff9caeb9c6f26a7a351e49a5e1c3dc475400880a1604a009662ff0857fe3d94`; tested source tree `e02fde16285da30859bd1c8a11784fbcaa4eb8dd`. The prior 2bd artifact and all earlier activity evidence remain retained separately. Browser ports were released to the performance owner after all local functional checks; this writer will not run concurrent builds/browsers during final timing. Root owns hosted CI, exact production promotion and public verification; no deployment or wallet transaction was performed by this writer.
+
+
+## 2026-10-07 service-neutral transaction copy
+
+Owning refined plan: `/Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_RELEASE_FOLLOWUPS.md`; required refinement gate passed before source edits. Isolated branch starts at deployed `acaf540b`; root retains release authority and coordinates the separate permission and simulation fixes.
+
+- [x] Replace controlled visible service branding with action/status copy, retaining internal names, links and legacy storage discriminators.
+- [x] Reuse `formatWalletError` for SDK errors and one shared display formatter for saved transaction text; preserve original errors and persisted records.
+- [x] Prove actual Safe pending/failure and saved-history rendering, legacy release compatibility and focused caller regressions; run relevant static gates and hand off the scoped commit without deployment.
+
+### Copy verification review
+
+The controlled transaction status/review/recovery copy and public guide labels no longer name the background service. Internal symbols, API URLs, stored keys and the exact `LEGACY_RELEASE_MESSAGE` discriminator remain. New saved messages use neutral copy; existing journal rows and SDK error objects are not rewritten. `formatTransactionMessage` is the shared display owner, reused by wallet errors, transaction-confirm status/errors, account history and saved routing explanations. The simulation wording preserves the chain and revert detail; generic transport failures retain their HTTP status and do not become a simulation diagnosis or a claim that no payment was sent.
+
+Three actual-component regressions fail on deployed acaf540b source and pass after the change: automatic Safe pending review, the screenshot's simulation failure, and old saved activity text. Evidence: `/private/tmp/jb-performance-checks/revnet-service-copy-before-ci-env.log` and `revnet-service-copy-focused.log`. The first temporary baseline run omitted CI's `NODE_OPTIONS=--no-experimental-webstorage`; that harness-only failure is preserved in `revnet-service-copy-before.log` and is not the causal comparison. Legacy release/recovery guards continue to pass. Existing assertion changes update only the requested wording, leaving every payment, nonce, signature and recovery assertion in place. The SDK-originated expiry diagnostic remains tested verbatim.
+
+Focused verification passes 564 tests across25 suites (353 boundary/recovery/core cases,135 further callers,76 launch/review/storage cases). Typecheck, lint, formatting ratchet, dead-code, source invariants and all142 wallet-write inventory sites pass under the pinned Node26.5/npm12 toolchain. The literal component-copy gate prevents reintroducing the service name in UI source. No production build, wallet action, push or deployment was performed; root owns combined integration, independent review, hosted full gates and exact-revision release verification.
+
+Independent review corrected two copy-only nits (authorization article and confirmation capitalization). The legacy display formatter also corrects the same article when formatting an old saved authorization message; its focused regression and affected batch/launch suites pass.
+
+Independent source review finds no remaining blocker and confirms unchanged authority, query, transaction and recovery behavior. Final typecheck, lint and formatting checks pass after the copy nits.
+
+Final consolidation on the reviewed source passes all564 affected tests across25 suites in one run, with zero skips or failures. Machine-readable evidence: `/private/tmp/jb-performance-checks/revnet-service-copy-final-tests.json`; companion log has the exact invocation. The final format ratchet initially required reflowing the shortened transaction-review expectation, then passed without changing the assertion.
+
+
+## 2026-10-07 global-permission response repair
+
+## Plan refinement
+
+- **Objective:** Remove the proven Operator permission-response 502 and accurately display account-wide permission grants without creating project 0 links; preserve the deployed performance/activity behavior.
+- **System fit:** The registered query and installed SDK accept global project ID 0, but the shared operation validator rejects it. Change the two permission-list opt-ins at that owner, then keep newly admitted account grants distinct by chain and grantor in OperatedProjects. Transaction authority, query policies, data sources and positive project navigation remain unchanged. Root owns combined integration, hosted gates, deployment and the unchanged exact-revision returning-cache probe.
+- **Reuse and simplicity:** Reuse hasDeploymentIdentity/hasIdentityItems with a strict default and explicit unary Array.every callback; reuse current account grouping, labels, EthereumAddress and ProjectLink. Global grants use unlinked All projects labels and one group per grantor. Add no metadata query, dependency, new UI primitive or global validator relaxation.
+- **Evidence and unknowns:** Exact production acaf540b returns 502 for three genuine Base v6 projectId0 records while the upstream and SDK accept them; positive project 3 passes the same proxy. The account consumer currently merges grantors into a fake project0 link. Juicebox already accepts the response and its separate pre-existing display issue is outside this patch. The original failed live probe and differential remain in /private/tmp/jb-performance-checks.
+- **Verification:** Add failing-before/passing-after tests through actual registered document and operation validators for global grants first/later, malformed identity/scalars, strict ordinary project lists and exact ProjectOperator. Render the actual account component to prove separate grantor permissions/attribution, no global project link, and unchanged positive links. Run focused schema/query/proxy/permission tests, types, lint, formatting ratchet, source and wallet checks; leave full build/browser/hosted release gates to the final combined tree.
+- **Resource budget:** One new writer checkout/branch rooted at exact deployed acaf540b; preserve activity8691 and both performance artifacts. Reuse a verified physical copy of the pinned dependency graph and existing test runners. Keep discovery bounded to the demonstrated permission-list family and its newly exposed account consumer; replan for any contradictory scope/authority evidence.
+
+- [x] Add and capture focused fail-before schema and account-rendering regressions.
+- [x] Implement narrow permission-list wildcard opt-ins and truthful account grant grouping/display.
+- [x] Run focused/static checks and inspect the scoped repair for root integration.
+
+Required resources: /Users/jango/Documents/jb/v6/evm/AGENTS.md, /Users/jango/Documents/jb/v6/evm/workflow/ponytail/SKILL.md, /Users/jango/Documents/jb/v6/evm/workflow/ponytail/README.md, /Users/jango/Documents/jb/v6/evm/docs/PLAN_REFINEMENT.md and relevant root/app tasks/lessons.md. No descendant app AGENTS.md is present. Installed Next16.3.8 use-client and Link documentation was read before app edits. Owning release design: /Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_RELEASE_FOLLOWUPS.md.
+
+
+### Permission repair verification and handoff
+
+The new checkout is based on exact deployed merge `acaf540b901b565d0ae8b44fb19fc40a8066fc5c`; the qualified activity8691 worktree and build are unchanged. The physical dependency copy matches the verified locked graph byte-for-byte: 113,031 distinct files, 51 internal symlinks, SHA256 `8162a7426287213667b3547570717d2e3cf0a5c4d991e35888ccf937ef6734b3`. Node26.5.0/npm12.0.1 runs the checks.
+
+Before runtime changes, six actual server-contract tests reject valid global grants in both permission lists with status502, covering first/later/all-zero positions; two rendered account cases fail on the missing global label and fake project0 link. The other 13 tests in that batch pass. After the narrow owner changes, all53 focused tests across8 suites pass, including the actual registered SDK document plus application response validator, strict positive identities in ordinary lists and exact ProjectOperator, 14 malformed identity shapes at both list positions, selected-field/nested-shape rejection, global grantor/chain separation, case-insensitive merging within the same scope, grant permissions and attribution, and unchanged positive links. The SDK contract checks selected-field presence/nested shape; this patch does not claim or add address/scalar validation beyond the existing app identity checks.
+
+The existing live schema contract passes3 tests against both published schemas and its real positive-project filter. Dependency integrity, full typecheck, ESLint, the unchanged formatting ratchet, source invariants, wallet-write inventory and `git diff --check` pass. No full build/browser or deployment was run here; root owns full hosted qualification of the final combined tree and exact-revision production verification, including the preserved failing returning-cache journey. Independent review of the scoped diff found no blocker on the returned valid global-grant data; final commit review remains part of root integration.
+
+Evidence under `/private/tmp/jb-performance-checks`: `revnet-permission-before.log`, `revnet-permission-focused.log`, `revnet-permission-live-schema.log`, `revnet-permission-{dependencies,typecheck,lint,format,source,wallet}.log`, and `revnet-permission-physical-provenance.json`. The original production failure and public differential remain preserved separately. No wallet action, push, deployment, local server or browser process was started.
+
+
+## 2026-10-07 concise funding actions
+
+## Plan refinement
+
+- **Objective:** Make the ready Safe bundle funding action and its nested funding confirmation read exactly “Pay”, as the user requested, while preserving the existing execution and recovery behavior.
+- **System fit:** SafeQueueCard owns the ready funding action; the Safe adapter and forwarded-call hook own the shared payment review requests. These pass labels into existing dialog renderers. Root owns integration and release, and separate investigators own the newly reported funded-bundle mismatch/status issue.
+- **Reuse and simplicity:** Change only the three existing label literals and the existing exact button/payment-review assertions; add no UI layer, handler, state rule or shared abstraction for a single word.
+- **Evidence and unknowns:** Clean f9244fd5 includes the previously reviewed copy and permission integration. The request is an explicit label correction; the new funding/status failure has no demonstrated cause in this patch and is outside its scope.
+- **Verification:** Run the existing Safe queue preparation/payment/recovery tests and actual shared payment-review hook tests, retaining every enabled/disabled, wallet, nonce and recovery assertion; check types, lint and formatting.
+- **Resource budget:** One writer, three literal changes and focused existing tests. No build, quote request, wallet action, push or deployment; hand the clean scoped commit to root.
+
+- [x] Update the ready funding and nested payment labels to Pay.
+- [x] Qualify the existing payment/recovery tests and static checks; hand off the scoped commit.
+
+### Pay-label verification
+
+Only the ready Safe bundle action and the two existing funding-review `confirmLabel` literals changed in runtime source. The review renderer already respects the request label; these payment calls do not enable the separate protocol-fee review override. Existing exact selectors now require Pay, and both the Safe and forwarded payment hook assertions require `confirmLabel: "Pay"`. All readiness, funding-selection, disabled-state, recovery, nonce, wallet and receipt checks remain.
+
+All261 focused tests across5 suites pass, covering Safe queue rendering, payment/recovery hooks, legacy adaptation and the actual review provider. Typecheck, lint, formatting ratchet, wallet-write inventory and `git diff --check` pass. Reports: `/private/tmp/jb-performance-checks/revnet-pay-label-tests.json` with its invocation log, and `revnet-pay-label-static.json` with hashed gate logs. No build, push, deployment, quote request or wallet transaction was performed. The separate reported paid-bundle mismatch/progress issue is unchanged by this label-only patch and remains with its investigators.
+
+## 2026-10-07 eliminate repeated reads within one precondition check
+
+## Plan refinement
+
+- **Objective:** Remove demonstrated duplicate Safe nonce/hash reads within each validation pass, retaining fresh review-to-send checks and protection for old saved quotes.
+- **System fit:** `safeRelayrExecution` saves mandatory guards alongside requested guards, and adapter revalidation synthesizes mandatory guards again for legacy compatibility. Existing `verifyCallPreconditions` owns live snapshot comparisons for Safe, raw/forwarded and direct batch paths. Deduplicate at that read owner only; journal evidence, simulation, authority, final checks and payment/recovery behavior stay intact. Root owns shared SDK progress/funding fixes and release integration.
+- **Reuse and simplicity:** Add an invocation-local set in the existing verifier keyed by case-insensitive address, calldata and expected bytes. Read each identical tuple once; preserve different expectations, all distinct calls, original input and mandatory legacy guard synthesis. No helper, dependency, cross-pass cache or caller-specific rule.
+- **Evidence and unknowns:** Clean238b6343 and installed SDK2.24.4 demonstrate two stored Safe guards plus the same two synthesized guards in a single pass. Root approved the generic owner and requires independent caller coverage. The separate wrapped-payment proof and payment-checking phase remain outside this commit until their qualified SDK artifact is available.
+- **Verification:** Capture failing-before duplicate read counts, then run guard, Safe adapter/payment/recovery hook and independent batch regressions. Cover mixed-case equivalents, retained conflicting expectations, rereads on later passes, legacy journals without saved guards and state drift after payment review with no wallet send. Run typecheck, lint, formatting, source and wallet-write checks plus diff review.
+- **Resource budget:** One writer in this isolated tree, bounded existing fixtures and static gates; no remote quote, wallet action, production build, push or deployment. Commit separately atop238b6343 and report exact evidence to root; replan if the change needs a broader lifecycle or persistence rule.
+
+- [x] Add and capture failing-before read-count and safety regressions.
+- [x] Deduplicate equivalent preconditions within the existing verification invocation.
+- [x] Run focused/static checks and review the scoped diff for handoff.
+
+Required resources remain the absolute root AGENTS.md, workflow/ponytail/SKILL.md and README.md, docs/PLAN_REFINEMENT.md, relevant root/app lessons and docs/WEBSITE_PERFORMANCE_RELEASE_FOLLOWUPS.md. No descendant AGENTS.md is present in this checkout.
+
+### Precondition read verification
+
+The before-change run fails exactly four new read-count assertions: the Safe adapter reads each nonce/hash twice, raw source checks read equivalent guards twice per pass, direct batch checks read duplicates eight times across four passes, and the generic verifier repeats mixed-case equivalents. The other243 cases pass, including retained conflicting expectations and reconstructed legacy nonce/hash guards after payment review. The five-line runtime change makes all318 cases across six guard, batch, hook, Safe adapter and queue suites pass. Tests also prove fresh reads on later invocations, unchanged saved guards, distinct address/calldata reads, and no wallet send after final drift.
+
+Typecheck, lint, formatting ratchet, wallet-write inventory, source checks, dead-code checks and `git diff --check` pass. Before/after JSON, invocation logs and the hashed static manifest are `/private/tmp/jb-performance-checks/revnet-precondition-dedup-{before,tests,static}.json` with associated logs. The only runtime change is the local exact-tuple set in `verifyCallPreconditions`; no lifecycle, persistence, final authority, simulation, payment or recovery policy changed. Root's independent reviewer owns final pinned approval and integration. No SDK adoption, build, remote quote, wallet action, push or deployment occurred here.
+
+## 2026-10-07 final payment checks and submitted progress
+
+## Plan refinement
+
+- **Objective:** Show the actual final Safe validation phase and stop describing submitted or ambiguous funding as waiting for payment; verify automatic per-chain progress with the shared wrapped-payment proof.
+- **System fit:** The SDK owns payment proof, beforeSend, stored funding evidence and destination recovery/watch. The existing Safe adapter supplies full clients and unchanged final guards; SafeQueueCard maps SDK phases and rows into product copy. Adopt the qualified preview only in this checkout's installed core package, then exercise the actual adapter/controller, existing hooks and rendered queue. Root owns official SDK publication, final dependency pin and release qualification.
+- **Reuse and simplicity:** Extend the current exhaustive phase map with payment-checking and reuse the existing progress/session and recovery evidence for row labels. Use the SDK's receipt proof and existing watch path; add no parser, polling loop, cached authority, journal rewrite or independent lifecycle. Preserve Pay and the approved per-invocation guard dedup.
+- **Evidence and unknowns:** Preview365ebd65cd4c1ffb96d026f07cc45936c40419d7 tarball SHA256a137b8db853940e931988f1d67780bfcc912d2c9c0d8f9215a419c9558201856 is still version2.24.4 and is not a release. Current43ad4295 shows Waiting for payment during payment-confirming; the SDK adds payment-checking at beforeSend. Root resolved the adapter timing boundary without changing guard order: payment-review spans nested review plus runtime authentication/simulation and says Preparing payment; payment-checking says Checking before payment during beforeSend. The nested review retains its explicit Pay action.
+- **Verification:** Record package provenance and unchanged manifests/lock. Add deferred actual-adapter review-to-beforeSend checks, no premature wallet send, submission evidence, wrapped funding verification and delayed independent destination progress/recovery. Render checking/submitted/ambiguous states without another Pay action, retaining rejection/failure protections. Run focused financial/queue tests and types, lint, formatting, source, wallet and dead-code gates; qualify again against the official pin before any build/release.
+- **Resource budget:** One app writer, one SDK-only preview staging operation without dependency resolution, bounded existing fixtures and no live quote or wallet calls. Reuse SDK evidence and coordinate wording with Juicebox. No Next build, lock change, push or deployment until root supplies the published artifact; replan if UI accuracy needs another SDK lifecycle contract.
+
+- [x] Stage the exact SDK preview locally and record immutable provenance.
+- [x] Extend phase/submitted presentation and actual adapter/recovery regressions.
+- [x] Qualify focused/static checks and prepare source for official SDK adoption.
+
+### SDK preview and progress verification
+
+The exact preview tarball was staged by replacing only this checkout's physical core package, retaining its original bytes at `/private/tmp/revnet-sdk-original-43ad4295`. No resolver ran; package.json, package-lock.json and node_modules/.package-lock.json hashes are unchanged. `/private/tmp/jb-performance-checks/revnet-safe-payment-preview-provenance.json` records the source365ebd65, tarball hash and754 installed-file tree. This is still an unpublished version2.24.4 preview, and these checks do not qualify a clean install, official dependency pin, build or deployment.
+
+Runtime edits are confined to SafeQueueCard's existing display mapping. Preparing payment spans nested consent plus unchanged local preparation; Checking before payment identifies SDK beforeSend. Submitted/ambiguous funding shows Checking payment status until the SDK supplies execution evidence. The initial funding and nested confirmation remain Pay; payment/guard/proof/watch owners are unchanged.
+
+The rendered before-change regression fails on stale payment-review copy (180 other cases pass). After the presentation change, all349 tests across7 focused suites pass. The actual adapter/controller regression holds nested Pay review, runtime authentication, both chains' final nonce checks, wallet response and receipt in turn, requiring their true SDK phases and no premature send. Its synthetic wrapped payment changes outer target/data/value/sender and is accepted only through the SDK's canonical event plus historical runtime proof. One destination remains unavailable while the other verifies; reopening recovery retains progress, the final watch completes both and the wallet is called once. The SDK owner separately retains the user's actual wrapped-transaction fixture and invalid-proof matrix.
+
+Typecheck, lint, formatting ratchet, wallet-write inventory, source checks, dead-code checks and `git diff --check` pass. Evidence is `/private/tmp/jb-performance-checks/revnet-safe-payment-preview-{before,tests,static}.json` with invocation/gate logs and immutable package provenance. Root must supply the published core pin and independently qualify the resulting dependency graph and final app before build/release. No live quote, signature, wallet transaction, build, push or deployment was performed.
+
+## 2026-10-07 single preview bundle diagnostic
+
+## Plan refinement
+
+- **Objective:** Use the root-granted sole local build slot for one diagnostic build of reviewed54d47ca2 with SDK365ebd65 preview bytes, detecting bundle/lazy-loading regressions before official release qualification.
+- **System fit:** Reuse the existing deterministic browser-build script, standalone check and client budget/lazy-wallet gate; these inspect the compiled product without starting a browser or authorizing transactions. Root owns SDK publication, official dependency adoption and full hosted build/release gates.
+- **Reuse and simplicity:** Keep the verified physical dependency layout and pinned Node26.5.0/npm12.0.1, with only the recorded SDK preview replacement. There is no prior .next in this checkout to overwrite. Read the qualified8691 activity checkout's existing build-TfctsWXpff2fKS artifact as the baseline, leaving its source/artifact and prior2bd archive unchanged. Reuse the existing bundle measurement helper; change no budgets or application source.
+- **Evidence and unknowns:** The latest qualified baseline has2,666.7KiB aggregate,935.0KiB route-referenced and689.6KiB largest route with the same physical lock graph and fixture script. Its existing manifest is revnet-hydration-artifact.json. The comparison includes service-neutral copy, permission repair, Pay, guard dedup, progress and SDK changes; it cannot isolate SDK cost or prove official build size. Current preview provenance remains explicit and package manifests/lock unchanged.
+- **Verification:** Confirm baseline artifact identity, SDK preview hash, clean application inputs and toolchain; run exactly one build:browser then standalone:check and unchanged bundle:check. Record exact byte totals, route sizes, lazy-wallet results, source/artifact/provenance hashes and comparison limits. Preserve failure output and replan for a real failure; no automatic cap increase.
+- **Resource budget:** One sequential build and bounded read-only measurements, no browser, resolver, live quote, wallet action or deployment. Preserve the diagnostic artifact for official-pin comparison and release the local build slot promptly; official npm adoption and final hosted qualification remain required regardless of this result.
+
+- [x] Run the single preview production build and owning artifact gates.
+- [x] Record the qualified-baseline comparison and return the quiet build slot to root.
+
+### Diagnostic build result
+
+One actual Next16.3.8/webpack build passes with the existing deterministic fixture; an earlier sandbox attempt stopped at local-listen EPERM before Next started and is retained separately. Standalone checks and unchanged bundle/lazy-wallet gates pass. Aggregate client JavaScript is2,733,775 bytes gzip (2,669.7KiB;305 bytes below cap), route-referenced JavaScript961,153 bytes, and largest operator route707,634 bytes (691.0KiB). WalletConnect, Coinbase and Safe remain lazy; emitted client chunks stay210. No cap or source change was needed.
+
+The qualified8691 baseline is2,730,720 aggregate bytes, so the complete subsequent copy/permission/Pay/dedup/progress/SDK change is+3,055 bytes; this does not isolate SDK cost. Baseline/home/project/operator/create sizes were measured from each existing artifact using the same owning algorithm, unchanged caps, physical dependencies and identical deterministic fixture script/input. All3,352 baseline artifact files match their prior manifest. The diagnostic's3,035 files were cloned and verified byte-for-byte at `/private/tmp/jb-performance-tools-20261007/revnet-safe-payment-preview-54d47ca2-preserved/.next`; the baseline includes its prior browser staging, which this diagnostic does not repeat. The deterministic build ID is shared across these fixture builds and does not identify a revision; source and SDK manifests provide attribution.
+
+Evidence: `/private/tmp/jb-performance-checks/revnet-safe-payment-preview-build-diagnostic.json`, `revnet-safe-payment-preview-artifact.json` and build/standalone/bundle/measurement logs. Root's build slot was returned after build/fixture processes ended. No browser, resolver, manifest/lock edit, production transaction or deployment occurred. The official SDK pin and final hosted build remain required; the small measured aggregate headroom makes that exact artifact's gate decisive.
+
+## 2026-10-07 official core adoption preparation and graph correction
+
+## Plan refinement
+
+- **Objective:** Prepare the exact official core2.24.5 adoption while awaiting root's registry integrity signal, and correct the demonstrated preview dependency-layout mistake without changing application source or budgets.
+- **System fit:** The preview staging moved the installed core directory, including its nested bs58/base-x dependencies, into the preserved backup. Its replacement tarball contains package files only, so imports resolved to incompatible root major versions. Restore only those preserved nested bytes; official adoption will replace verified core package files while retaining the locked dependency graph. Root owns publication verification, PR74 and decisive hosted npm-ci/full test/build/browser gates.
+- **Reuse and simplicity:** Reuse the original core backup and existing package lock, installed package graph and checksum tooling. Inventory every installed path/content before and after restoration and compare with the qualified physical baseline, distinguishing only verified core package changes. Pin only the core exact version, lock-root version and registry version/resolved/integrity fields after the official signal; no general resolver, transitive update or new logic.
+- **Evidence and unknowns:** Core's preserved nested bs58 is5.0.0 and its base-x dependency is4.x; the preview installation lacks both and resolves root bs58 6.0.0/base-x5.x. The previous manifest-only checks missed this. Preserve all preview reports/artifacts but invalidate their locked-graph bundle comparison and305-byte headroom claim. The official release is not yet authorized for fetching/pinning here, and its753 compiled/package-support files must be compared before reusing scoped source evidence.
+- **Verification:** Capture before/after whole-graph files, symlinks, package versions, dependency resolution and unchanged manifests; restore only the missing nested graph from the retained original package. At official adoption, verify registry/tarball integrity, all official package files and metadata, unchanged dependency graph excluding only official core replacement, exact lock diff, dependency check, typecheck and formatting/diff gates. Reuse preview tests only where compiled bytes and restored dependency evidence justify it; final hosted npm-ci, full tests/build/budget remain required.
+- **Resource budget:** No new local build or repeated preview suite; root explicitly made hosted clean-install qualification decisive after this finding. One bounded full-graph inventory/restoration and a narrow official pin after the root signal; preserve every immutable archive. Stop and report any unrelated graph discrepancy rather than silently resolving or changing dependencies.
+
+- [x] Capture the missing nested dependency graph and restore its exact preserved bytes.
+- [x] Wait for root's official registry integrity evidence before package adoption.
+- [x] Apply the narrow official pin, verify package/graph/static checks and hand off to root.
+
+The prior preview build's size/graph comparison is invalidated by this finding. Its archive and reports remain historical evidence, not locked-dependency release qualification.
+
+Restoration evidence: `/private/tmp/jb-performance-checks/revnet-sdk-nested-restore.json` links complete113,075-path before,113,084-path qualified-baseline and113,086-path after inventories. Exactly11 missing nested dependency files were restored from the original backup, with no other restoration change. Deep npm traversal failed beforehand on SDK resolution to invalid bs58 6.0.0/base-x5.0.1; it now passes with nested bs58 5.0.0/base-x4.0.1. Every other installed package path/content matches the qualified baseline apart from16 expected core preview files. Three explicitly listed non-package differences are generated jiti configuration caches and Vitest results; none was removed or silently treated as a package change.
+
+Final adoption will require official package integrity and all753 non-metadata files to match the reviewed preview, retain the restored nested graph, and verify the complete package-path/content differential. Narrow local gates are dependency integrity, explicit deep SDK dependency resolution, typecheck, formatting and diff/lock-scope checks. The prior focused/static passes describe the former staged graph only; no new local build or repeat suite is authorized. Hosted clean-install full CI owns the final tests and compiled artifact.
+
+## 2026-10-07 verified official core2.24.5 adoption
+
+## Plan refinement
+
+- **Objective:** Adopt root's verified official core2.24.5 with an exact pin and unchanged application source, budgets and restored dependency graph.
+- **System fit:** The shared SDK owns payment proof and lifecycle; the already reviewed app consumes its unchanged753 compiled/support files. Root supplied official release evidence and owns PR74 plus final hosted clean-install tests/build/budget/browser qualification. This metadata adoption does not create payment or deployment authority.
+- **Reuse and simplicity:** Compare the official tarball against the current installed core, then write only its package.json bytes when every other package file already matches. Update only the exact application/root-lock pin and core version/resolved/integrity fields in tracked and installed locks; retain nested node_modules and every transitive package path/content. Run no resolver.
+- **Evidence and unknowns:** Official gitHead3a0c1561bb80dc8db6702698b3ab0cdb2d9a0b59 and tarball SHA256a8a1fb5501aab4c028129c4c393774cfff41d3f356ac931db453f13a7999adcc are authorized by root with matching registry SHA512 integrity. The restored graph evidence is revnet-sdk-nested-restore.json; the former preview build and tests remain qualified only for their incorrect staged graph, not release evidence.
+- **Verification:** Verify all754 official package files, whole installed path/content inventories before and after, retained nested bs58 5.0.0/base-x4.0.1 resolution, and an exact metadata-only lock delta. Run dependency check, deep SDK npm traversal, typecheck, formatting and diff checks; report immutable evidence and clean commit for independent review. Final hosted clean-install full CI remains decisive.
+- **Resource budget:** One narrow metadata adoption and bounded static gates, no repeated preview tests, source or cap changes, local build, browser, live quote or wallet action. Preserve every archive and prior report. Stop and replan on any unrelated graph change; root handles push and release.
+
+- [x] Receive and verify root's official registry integrity signal.
+- [x] Apply the exact official pin while retaining the complete restored graph.
+- [x] Verify metadata, graph and static checks; commit the scoped handoff for root.
+
+### Official adoption verification
+
+The official tarball matches the registry SHA1/SHA512 and root's SHA256, version2.24.5 and gitHead3a0c1561. All753 compiled/support files already match the installed reviewed preview, so only the exact official core package.json bytes were written. The application pin, root-lock pin and core lock version/resolved/integrity fields are the only tracked dependency changes; the installed hidden lock has the same three-field update. No resolver ran and no transitive lock entry changed.
+
+The whole installed graph before adoption exactly matches the restored113,086-path inventory. Its after inventory retains every path, file and symlink, with differences confined to core package.json and the installed hidden lock. All754 official package files match the tarball. Direct Node resolution and deep npm traversal confirm the retained SDK-local bs58 5.0.0/base-x4.0.1. Dependency integrity, deep SDK dependency traversal, typecheck, formatting ratchet, refinement and diff checks pass with pinned Node26.5.0/npm12.0.1; application, test, script and budget source remain identical to reviewed54d47ca2.
+
+Immutable evidence is `/private/tmp/jb-performance-checks/revnet-sdk-official-adoption-integrity.json` with before/after full graph inventories, original metadata snapshots, official file hashes and explicit structural metadata diffs. Gate logs, actual resolved paths and the final commit manifest use the same prefix, ending in `-verification.json` for the handoff manifest. Independent review and root-owned PR74 promotion follow. The invalid preview build and former staged-graph tests are preserved with their correction; this adoption ran no repeated suite, local build, browser, remote quote or wallet action. Final hosted clean-install full tests/build/budget/browser gates still qualify release behavior and size.
+
+## 2026-10-08 official-graph aggregate budget investigation
+
+## Plan refinement
+
+- **Objective:** Explain the final hosted aggregate bundle failure at2670.4 KiB against2670 and propose the smallest measured correction while preserving the payment and performance fixes.
+- **System fit:** Hosted CI37710473620 passed all preceding source, unit, audit, production build and standalone checks, plus the separate OCI job; route budgets and lazy wallet boundaries pass. Reuse the exact33b66876 application with verified official core2.24.5 and the restored physical dependency graph. Root owns any approved correction and final hosted release qualification.
+- **Reuse and simplicity:** Use one existing build:browser invocation, bundle/standalone gates, artifact hashing, bundle measurement and Acorn module inspector. Verify the current preview has its immutable matching archive before overwrite; compare the new artifact to the qualified activity baseline with matching physical package layout. Add no bundler instrumentation, dependency, source refactor or cap change before the causal evidence is reviewed.
+- **Evidence and unknowns:** The failed hosted log is revnet-payment-progress-ci-37710473620-failed.log. The earlier preview omitted nested dependencies and remains invalid for attribution. Qualified activity aggregate is2,730,720 bytes with210 chunks; the complete subsequent copy, permission, guard, progress and SDK changes may affect module placement, so per-chunk evidence must bound claims about individual causes. Local and hosted environment differences must remain explicit.
+- **Verification:** Verify preserved artifacts and the complete official package graph; run one pinned Node26.5.0/npm12.0.1 production fixture build and unchanged standalone/budget gates. Archive/hash the result, compare route/chunk/module totals and import placement against the qualified baseline, and send independent review evidence before proposing a minimal reduction or narrowly rounded aggregate limit. Final hosted full CI must pass after any accepted correction.
+- **Resource budget:** Root grants this sole sequential local build slot; no browser, repeated full unit suite, resolver, remote quote or wallet action. Keep the invalid preview and every qualified archive untouched. Stop and replan if the measured difference exceeds known source/dependency scope or changes lazy boundaries; release the build slot as soon as the single build ends.
+
+- [x] Verify official graph and archive identity before the single build.
+- [x] Build once and compare exact artifact/chunk/module measurements.
+- [x] Hand measured correction proposal to root and independent reviewer.
+
+### Official-graph measurement
+
+The single authorized production build and standalone check pass. The unchanged aggregate gate reproduces the failure at2,734,565 bytes (2670.5 KiB),485 bytes over2670 KiB; all route budgets and wallet vendor lazy-loading boundaries pass. The qualified matching-fixture activity artifact is2,730,720 bytes, so the complete reviewed app/SDK change adds3,845 bytes (0.14%). Hosted CI reports2670.4 KiB with additional deterministic public RPC/subgraph/Dwellir inputs; local and hosted artifacts are not claimed byte-identical.
+
+Acorn extraction pairs every1,872 unique module across31 generated ID renames. All2,365 emitted copies, every210 chunk's mapped module set and all33 shipped client-reference manifests remain equivalent; the two browser-only proof routes stay excluded by the existing budget. The ten existing chunks containing utils collectively grow3,162 bytes, shared review chunk9203 grows551 bytes, and all other chunks net132 bytes. The shared review was already initially referenced in both artifacts; its proof and lifecycle retain one copy each. Whole-chunk deltas include app copy/permission and generated hash/minifier differences, so standalone module gzip diagnostics are not additive feature savings.
+
+The original invalid preview/archive and qualified baseline retain all verified hashes. The new official3,035-file artifact is preserved at `/private/tmp/jb-performance-tools-20261007/revnet-safe-payment-official-33b66876-preserved/.next`. `/private/tmp/jb-performance-checks/revnet-official-budget-analysis.json` links inputs, graph, artifact, chunk/module/route evidence and original failure logs. Root and the independent reviewer received the proposal to round only2670→2671 KiB, leaving539 bytes of measured headroom and every route/lazy boundary unchanged. No cap or source change has been applied; a speculative formatter split would require another build without a demonstrated loading benefit. The build slot has been returned, and final hosted full CI remains required after an accepted correction.
+
+## Plan refinement
+
+- **Objective:** Apply the independently approved minimum aggregate budget adjustment2670→2671 KiB and hand off a clean correction for hosted CI.
+- **System fit:** Only the existing bundle gate's aggregate threshold and evidence comment change; runtime, payment authority/recovery, route limits and lazy-wallet checks remain unchanged. Root owns final hosted qualification and release.
+- **Reuse and simplicity:** Reuse the already-built verified official artifact and current gate; no rebuild, dependency change, source refactor or new test.
+- **Evidence and unknowns:** Root and the independent reviewer approve analysis1166147c88206f7e3c14599f29144443616609d7ab045630ada410fd65ea1eb6 after independent artifact/module/route verification. Measured excess is485 bytes and the one-KiB rounding leaves539 bytes; final hosted evidence remains required.
+- **Verification:** Run the owning bundle gate on the same official artifact, preserving the original failed log; run formatting and diff checks, assert all non-aggregate checks unchanged, then commit only the budget script and task notes for exact-head review.
+- **Resource budget:** One threshold/comment edit and bounded existing artifact/static checks. No second build, browser, full unit suite or production action; send the clean head immediately for root's hosted CI.
+
+- [x] Apply the approved aggregate threshold/comment and qualify the unchanged artifact.
+- [x] Commit the scoped correction and report its exact source/evidence to root.
+
+### Approved correction result
+
+The aggregate threshold is2671 KiB with a three-line measured comment. An exact text comparison proves these are the bundle script's only changes:900 KiB per-route and1100 KiB route-referenced limits, asset counting/exclusions and all lazy-wallet assertions are unchanged. The owning bundle check now passes on the same official artifact at2,734,565 bytes; formatting and diff checks pass. No rebuild or repeated unit suite occurred. The original failed gate and invalid preview evidence remain intact. `/private/tmp/jb-performance-checks/revnet-official-budget-correction-verification.json` pins the scoped commit, approved analysis, artifact and successful gate/scope logs for independent exact-head review and root's final hosted CI.

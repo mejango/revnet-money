@@ -71,7 +71,7 @@ export async function chooseRelayrPayment(
   payments: readonly ChainPayment[],
   preferredChainId?: number,
 ): Promise<ChainPayment> {
-  if (!payments.length) throw new Error("Relayr did not return a payment option.");
+  if (!payments.length) throw new Error("No payment option is available.");
   const chosen = await requireFundingChainSelection(
     relayrPaymentOptions(payments),
     preferredChainId,

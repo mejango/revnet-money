@@ -104,10 +104,10 @@ export function routingBatchRecoveryReason(batch: MultichainBatch): string {
   if (batch.calls.some(isBatchCallHandled))
     return "Some saved attempts have already been handled. Resume the remaining attempts.";
   if (batch.rounds.some((round) => round.state === "funding" || round.state === "pending"))
-    return "A Relayr payment may be in progress. Resume to check its existing payment and results.";
+    return "A payment may be in progress. Resume to check its existing payment and results.";
   if (batch.rounds.some((round) => round.bundleUuid || round.state === "quoted"))
-    return "A Relayr quote is saved. Re-check whether it is still payable before changing this selection.";
-  return "An earlier Relayr authorization may still reserve this selection. Re-check its status before changing it.";
+    return "A quote is saved. Re-check whether it is still payable before changing this selection.";
+  return "An earlier authorization may still reserve this selection. Re-check its status before changing it.";
 }
 
 /** Reset only unsubmitted rounds whose named quotes were proved unpaid and released by Relayr recovery. */

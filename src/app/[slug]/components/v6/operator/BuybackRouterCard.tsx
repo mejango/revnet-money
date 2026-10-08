@@ -382,10 +382,10 @@ export function BuybackRouterCard({
             Choose the hook that decides, on every payment, whether to issue tokens or buy them on
             the AMM, then point it at a Uniswap pool and tune the pool&apos;s TWAP window. An
             operator wallet signs one chain directly and runs several supported mainnets or several
-            supported testnets as one Relayr bundle. Other routes use a wallet transaction on each
-            chain. When the operator is a Safe, a connected signer proposes the call to each
-            chain&apos;s Safe queue for the other signers to confirm. Initialize pools one chain at
-            a time with Safe or other networks.
+            supported testnets as one bundle. Other routes use a wallet transaction on each chain.
+            When the operator is a Safe, a connected signer proposes the call to each chain&apos;s
+            Safe queue for the other signers to confirm. Initialize pools one chain at a time with
+            Safe or other networks.
           </p>
           {body(["hook", "pool", "setPool", "twap"])}
         </div>
@@ -826,10 +826,10 @@ function BuybackActionForm({
         onProgress: setStatus,
       });
       if (result.safeProposal) {
-        setStatus("Relayr payment proposed to the Safe. The bundle runs once it executes.");
+        setStatus("Payment proposed to the Safe. The bundle runs once it executes.");
         toast({
           title: "Safe payment proposal submitted",
-          description: `${action.title} is not applied yet. Complete the Relayr payment in Safe.`,
+          description: `${action.title} is not applied yet. Complete the payment in Safe.`,
         });
       } else if (result.safeQueued || result.safeConfirmed) {
         const message = describeSafeOutcome(action.title, result);
@@ -1024,8 +1024,8 @@ function BuybackActionForm({
               detail:
                 review.length > 1
                   ? kind === "pool"
-                    ? "Use an operator wallet with Relayr across supported mainnets or across supported testnets. With Safe or other networks, initialize and confirm one chain at a time."
-                    : "One Relayr bundle when the selected networks are all supported mainnets or all supported testnets; otherwise, one wallet transaction per chain. Safe signers propose to each chain's queue."
+                    ? "Use an operator wallet across supported mainnets or across supported testnets. With Safe or other networks, initialize and confirm one chain at a time."
+                    : "One bundle when the selected networks are all supported mainnets or all supported testnets; otherwise, one wallet transaction per chain. Safe signers propose to each chain's queue."
                   : "From the operator wallet, or proposed to the operator Safe from a signer.",
             },
           ]}

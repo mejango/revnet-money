@@ -479,7 +479,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
         toast({
           title: "Safe payment proposal submitted",
           description:
-            "The Relayr bundle is not paid yet. Approve and execute this proposal in Safe; do not submit another payment.",
+            "The bundle is not paid yet. Approve and execute this proposal in Safe; do not submit another payment.",
         });
         return;
       }
@@ -487,7 +487,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
 
       toast({
         title: "Metadata updated on every chain",
-        description: "Relayr confirmed every destination transaction.",
+        description: "Every destination transaction is confirmed.",
       });
       onSuccess();
     } catch (e: unknown) {

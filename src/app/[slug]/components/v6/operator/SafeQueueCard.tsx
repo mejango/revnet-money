@@ -51,7 +51,7 @@ import {
   relayrPaymentOptions,
   requireTransactionReview,
 } from "@/lib/transaction-review";
-import { etherscanLink } from "@/lib/utils";
+import { etherscanLink, formatWalletError } from "@/lib/utils";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import {
   multiSendCallsOf,
@@ -481,8 +481,7 @@ export function SafeQueueCard({
             })
             .catch((cause: unknown) => ({
               pending: [] as SafeQueuedTransaction[],
-              queueError:
-                cause instanceof Error ? cause.message : "Safe queue service is unavailable.",
+              queueError: formatWalletError(cause, "Safe queue service is unavailable."),
             }));
           const proofs = Promise.all([nonceRead, authorityRead]).then(
             ([nonce]) => ({ nonce }),
@@ -511,10 +510,10 @@ export function SafeQueueCard({
                 return {
                   transaction,
                   handleBinding: null,
-                  handleError:
-                    cause instanceof Error
-                      ? cause.message
-                      : "This queued handle transaction could not be decoded safely.",
+                  handleError: formatWalletError(
+                    cause,
+                    "This queued handle transaction could not be decoded safely.",
+                  ),
                 };
               }
               if (
@@ -538,10 +537,10 @@ export function SafeQueueCard({
                 return {
                   transaction,
                   handleBinding,
-                  handleError:
-                    cause instanceof Error
-                      ? cause.message
-                      : "This queued handle transaction is no longer authorized.",
+                  handleError: formatWalletError(
+                    cause,
+                    "This queued handle transaction is no longer authorized.",
+                  ),
                 };
               }
             }),
@@ -554,8 +553,7 @@ export function SafeQueueCard({
           return [
             {
               ...target,
-              notice:
-                cause instanceof Error ? cause.message : "The Safe queue could not be verified.",
+              notice: formatWalletError(cause, "The Safe queue could not be verified."),
               retryable: true,
             },
           ];
@@ -631,7 +629,11 @@ export function SafeQueueCard({
                 ? "Confirming"
                 : progress.hash
                   ? "Submitted"
-                  : "Waiting for execution";
+                  : !progress.session.fundingObserved &&
+                      (progress.session.paymentStatus === "sending" ||
+                        progress.session.paymentStatus === "submitted")
+                    ? "Checking payment status…"
+                    : "Waiting for execution";
         return {
           ...current,
           status: { ...current.status, [chainId]: status },
@@ -639,24 +641,29 @@ export function SafeQueueCard({
         };
       }
       const messages: Record<SafeRelayrPhase, string> = {
-        reviewing: "Review the executions to request a Relayr quote…",
-        quoting: "Requesting Relayr quote…",
-        "payment-review": "Review the Relayr network fee…",
-        "payment-submitting": "Confirm the Relayr payment in your wallet…",
-        "payment-confirming": "Waiting for the Relayr payment to confirm…",
-        executing: "Relayr is executing the Safe transactions…",
+        reviewing: "Review the executions to get payment options…",
+        quoting: "Getting payment options…",
+        "payment-review": "Preparing payment…",
+        "payment-checking": "Checking before payment…",
+        "payment-submitting": "Confirm the payment in your wallet…",
+        "payment-confirming": "Waiting for the payment to confirm…",
+        executing: "Executing the Safe transactions…",
         complete: `Executed ${current.rows.length} Safe transactions.`,
       };
-      const waitingForPayment =
-        progress.phase === "payment-review" ||
-        progress.phase === "payment-submitting" ||
-        progress.phase === "payment-confirming";
+      const rowStatus =
+        progress.phase === "payment-checking"
+          ? "Checking…"
+          : progress.phase === "payment-confirming"
+            ? "Checking payment status…"
+            : progress.phase === "payment-review" || progress.phase === "payment-submitting"
+              ? "Waiting for payment"
+              : undefined;
       return {
         ...current,
         phase: progress.phase,
         message: messages[progress.phase],
-        status: waitingForPayment
-          ? Object.fromEntries(current.rows.map(({ row }) => [row.chainId, "Waiting for payment"]))
+        status: rowStatus
+          ? Object.fromEntries(current.rows.map(({ row }) => [row.chainId, rowStatus]))
           : current.status,
       };
     });
@@ -698,7 +705,7 @@ export function SafeQueueCard({
         );
       });
       if (!current()) return;
-      update({ message: "Review the executions to request a Relayr quote…" });
+      update({ message: "Review the executions to get payment options…" });
       const quote = await getRelayrTxQuote(requests, {
         signal: abort.signal,
         onProgress: (progress) => updateBatchProgress(progress, generation),
@@ -724,7 +731,7 @@ export function SafeQueueCard({
         },
       });
       if (!current()) return;
-      if (!quote?.payment_info.length) throw new Error("Relayr did not return a payment option.");
+      if (!quote?.payment_info.length) throw new Error("No payment option is available.");
       update({
         quote,
         paymentChainId:
@@ -742,7 +749,7 @@ export function SafeQueueCard({
       }
       update({
         message: null,
-        error: cause instanceof Error ? cause.message : "Could not check the Safe transactions.",
+        error: formatWalletError(cause, "Could not check the Safe transactions."),
         recovery: cause instanceof RelayrRecoveryError ? cause : null,
         recoveryChecks: cause instanceof RelayrRecoveryError ? cause.recovery?.checks : undefined,
       });
@@ -808,7 +815,7 @@ export function SafeQueueCard({
       );
       if (activity?.status === "success" && !activity.manualVerificationRequired) {
         closeBatch();
-        setNotice("The existing Relayr bundle is confirmed. The Safe queue has been refreshed.");
+        setNotice("The existing bundle is confirmed. The Safe queue has been refreshed.");
         await queue.refetch();
       }
     } catch (cause) {
@@ -817,8 +824,7 @@ export function SafeQueueCard({
           batch
             ? {
                 ...batch,
-                error:
-                  cause instanceof Error ? cause.message : "Could not check the existing bundle.",
+                error: formatWalletError(cause, "Could not check the existing bundle."),
               }
             : batch,
         );
@@ -871,7 +877,7 @@ export function SafeQueueCard({
       await queue.refetch();
     } catch (cause) {
       update({
-        error: cause instanceof Error ? cause.message : "Could not execute the Safe transactions.",
+        error: formatWalletError(cause, "Could not execute the Safe transactions."),
         message: null,
         recovery: cause instanceof RelayrRecoveryError ? cause : null,
         ...(cause instanceof RelayrRecoveryError ? { quote: null, paymentChainId: null } : {}),
@@ -925,7 +931,7 @@ export function SafeQueueCard({
       setReview(null);
       await queue.refetch();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not sign the Safe transaction.");
+      setError(formatWalletError(cause, "Could not sign the Safe transaction."));
     } finally {
       setBusy(null);
     }
@@ -1027,7 +1033,7 @@ export function SafeQueueCard({
       setReview(null);
       await queue.refetch();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not execute the Safe transaction.");
+      setError(formatWalletError(cause, "Could not execute the Safe transaction."));
     } finally {
       setBusy(null);
     }
@@ -1292,7 +1298,7 @@ export function SafeQueueCard({
           open
           onClose={closeBatch}
           title={`Execute ${batch.rows.length} Safe transactions`}
-          stepsIntro="One Relayr payment runs each chain's next fully signed transaction. Later nonces need a new review after these land."
+          stepsIntro="One payment runs each chain's next fully signed transaction. Later nonces need a new review after these land."
           steps={batch.rows.map(({ row, tx }) => ({
             key: String(row.chainId),
             title: `${chainName(row.chainId)} #${tx.nonce}`,
@@ -1326,7 +1332,7 @@ export function SafeQueueCard({
           action={
             batch.running
               ? batch.phase === "payment-review"
-                ? "Review payment…"
+                ? "Preparing payment…"
                 : batch.phase === "payment-submitting"
                   ? "Confirm payment…"
                   : batch.phase === "payment-confirming"
@@ -1341,7 +1347,7 @@ export function SafeQueueCard({
                     ? "Check status"
                     : "Check Safe nonces"
                   : batch.quote
-                    ? `Pay once and execute ${batch.rows.length}`
+                    ? "Pay"
                     : "Retry checks"
           }
           actionDisabled={
@@ -1397,8 +1403,8 @@ export function SafeQueueCard({
               {batch.recovery.bundleUuid ? (
                 <>
                   <p>
-                    A previous Relayr bundle contains one or more of these executions. Check that
-                    bundle before preparing another payment.
+                    A previous bundle contains one or more of these executions. Check that bundle
+                    before preparing another payment.
                   </p>
                   <SummaryRow label="Existing bundle">
                     <span className="break-all">{batch.recovery.bundleUuid}</span>
@@ -1406,9 +1412,9 @@ export function SafeQueueCard({
                 </>
               ) : (
                 <p>
-                  The earlier quote response was not saved, so its Relayr bundle cannot be located.
-                  Check whether these saved Safe transactions are still pending before preparing
-                  another payment.
+                  The earlier quote response was not saved, so its bundle cannot be located. Check
+                  whether these saved Safe transactions are still pending before preparing another
+                  payment.
                 </p>
               )}
               {batch.recovery.safeExecutions.map(({ chainId, safe, nonce }) => {

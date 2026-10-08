@@ -307,7 +307,7 @@ function TokenEditDialog({
   // A partial deployment cannot safely replay if a later direct transaction fails.
   const deploymentRouteError =
     !relayed && states.length > 1 && states.some((state) => !state.token)
-      ? "Choose one chain at a time to deploy an ERC-20 with this connection. Multi-chain deployment requires supported networks that are all mainnets or all testnets and a wallet that can sign Relayr authorizations."
+      ? "Choose one chain at a time to deploy an ERC-20 with this connection. Multi-chain deployment requires supported networks that are all mainnets or all testnets and a wallet that can sign authorizations."
       : null;
 
   const resetQuote = () => {
@@ -466,7 +466,7 @@ function TokenEditDialog({
         }),
       );
       const relayrQuote = await getRelayrTxQuote(transactions);
-      if (!relayrQuote) throw new Error("Relayr did not return a quote.");
+      if (!relayrQuote) throw new Error("No payment options are available.");
       setQuote(relayrQuote);
       // Signing may switch the wallet; prefer the chain captured before this submission.
       setSelectedPayment(preselectedRelayrPayment(relayrQuote.payment_info, connectedChainId));
@@ -494,14 +494,12 @@ function TokenEditDialog({
         toast({
           title: "Safe payment proposal submitted",
           description:
-            "The Relayr bundle is not paid yet. Complete the payment proposal in Safe; do not submit another payment.",
+            "The bundle is not paid yet. Complete the payment proposal in Safe; do not submit another payment.",
         });
         return true;
       }
       await waitForRelayrBundle(quote.bundle_uuid);
-      finish(
-        `Relayr confirmed the ${deployed ? "update" : "deployment"} on ${states.length} chains.`,
-      );
+      finish(`Confirmed the ${deployed ? "update" : "deployment"} on ${states.length} chains.`);
       return true;
     } catch (cause) {
       setError(formatWalletError(cause));
@@ -544,7 +542,7 @@ function TokenEditDialog({
           title: selectedPayment
             ? `Pay ${formatHexEther(selectedPayment.amount)} ETH to relay`
             : "Pay the relay fee",
-          detail: "Relayr then submits the transaction on each chain.",
+          detail: "The transaction is then submitted on each chain.",
         },
       ]
     : states.map((state) => ({

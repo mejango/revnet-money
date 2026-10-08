@@ -123,7 +123,7 @@ export function PayAndDeploy({
             {
               title: `Pay ${formatHexEther(selectedPayment.amount)} ETH to relay`,
               detail:
-                "Relayr sends the launch transactions to each selected chain. No further wallet prompts are needed.",
+                "The launch transactions are sent to each selected chain. No further wallet prompts are needed.",
             },
           ]}
           activeIndex={payIsProcessing ? 0 : -1}
@@ -198,7 +198,7 @@ export function PayAndDeploy({
           className="mt-4 border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800"
         >
           {formatWalletError(bundleError)} Check the launch in transaction activity. Do not make
-          another Relayr payment.
+          another payment.
         </p>
       ) : null}
       {!!bundleResponse && (
@@ -245,11 +245,11 @@ export function PayAndDeploy({
           ) : bundleError ? null : hasFailed ? (
             <p className="border border-peel-400 bg-peel-25 p-3 text-sm text-peel-800">
               At least one launch transaction failed. Review each chain’s status above; do not make
-              another Relayr payment.
+              another payment.
             </p>
           ) : (
             <p className="text-sm text-melon-700">
-              Relayr payment confirmed. The launch transactions are still pending.
+              Payment confirmed. The launch transactions are still pending.
             </p>
           )}
         </div>

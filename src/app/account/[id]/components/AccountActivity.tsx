@@ -22,6 +22,7 @@ import {
   useTransactionActivities,
   type TransactionActivity,
 } from "@/lib/transaction-activity";
+import { formatTransactionMessage } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import { useMemo, useState } from "react";
 import type { Address } from "viem";
@@ -61,7 +62,9 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-bold uppercase text-melon-700">{statusLabel(activity)}</p>
-          <p className="mt-0.5 text-sm font-medium text-zinc-800">{activity.title}</p>
+          <p className="mt-0.5 text-sm font-medium text-zinc-800">
+            {formatTransactionMessage(activity.title)}
+          </p>
         </div>
         {resumable ? (
           <button
@@ -106,7 +109,7 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
           </button>
         ) : null}
       </div>
-      <p className="mt-1 text-xs text-zinc-600">{activity.message}</p>
+      <p className="mt-1 text-xs text-zinc-600">{formatTransactionMessage(activity.message)}</p>
       {activity.chainStates?.length ? (
         <ul className="mt-2 space-y-0.5">
           {activity.chainStates.map((state) => (

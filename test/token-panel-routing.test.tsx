@@ -266,7 +266,7 @@ describe("token panel Relayr funding", () => {
     await act(async () => bundle.resolve());
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalledOnce());
     expect(mocks.toast).toHaveBeenCalledWith(
-      expect.objectContaining({ description: expect.stringMatching(/Relayr confirmed.*2 chains/) }),
+      expect.objectContaining({ description: expect.stringMatching(/Confirmed.*2 chains/) }),
     );
   });
 

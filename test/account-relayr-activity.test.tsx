@@ -100,6 +100,27 @@ function signedRequest(): Pick<TransactionActivity, "relayrExpectedTransactions"
 }
 
 describe("account Relayr session rules (ruling R114 (e))", () => {
+  it("renders legacy titles and recovery messages without rewriting the saved evidence", () => {
+    const saved = Object.freeze(
+      activity({
+        title: "Relayr multi-chain bundle",
+        message:
+          "Relayr funding is being submitted. Do not pay again while the wallet result is uncertain.",
+      }),
+    );
+    mocks.activities = [saved];
+    const { container } = render(<AccountActivity address={ACCOUNT} />);
+    expect(screen.getByText("Multi-chain bundle")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Funding is being submitted. Do not pay again while the wallet result is uncertain.",
+      ),
+    ).toBeVisible();
+    expect(container).not.toHaveTextContent(/Relayr/i);
+    expect(saved.title).toBe("Relayr multi-chain bundle");
+    expect(saved.message).toContain("Relayr funding is being submitted");
+  });
+
   it("checks an unpaid session's signatures", () => {
     mocks.activities = [
       activity({ relayrPaymentStatus: "unfunded", hash: undefined, ...signedRequest() }),

@@ -349,7 +349,7 @@ describe("the Safe queue's execute-all confirm", () => {
     ];
     mocks.quote.mockResolvedValue({ bundle_uuid: "bundle-1", payment_info: payments });
     const confirm = await openBatch();
-    const pay = await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    const pay = await within(confirm).findByRole("button", { name: "Pay" });
     expect(pay).toBeEnabled();
     expect(mocks.quote).toHaveBeenCalledOnce();
     const fee = within(confirm).getByRole("combobox", { name: "Pay network fee on" });
@@ -392,7 +392,7 @@ describe("the Safe queue's execute-all confirm", () => {
     const confirm = await openBatch();
     await waitFor(() => expect(mocks.quote).toHaveBeenCalledOnce());
     expect(
-      within(confirm).getByText("Review the executions to request a Relayr quote…"),
+      within(confirm).getByText("Review the executions to get payment options…"),
     ).toBeVisible();
     expect(within(confirm).getAllByRole("button")).toHaveLength(1);
     expect(within(confirm).getByRole("button", { name: "Close" })).toBeEnabled();
@@ -402,9 +402,10 @@ describe("the Safe queue's execute-all confirm", () => {
     await act(async () => acceptReview());
 
     expect(within(confirm).getAllByRole("button")).toHaveLength(1);
-    expect(within(confirm).getByText("Requesting Relayr quote…", { selector: "p" })).toBeVisible();
+    expect(within(confirm).getByText("Getting payment options…", { selector: "p" })).toBeVisible();
+    expect(confirm).not.toHaveTextContent(/Relayr/i);
     expect(within(confirm).queryByText(/Review the executions/)).toBeNull();
-    expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: /^Pay$/ })).toBeNull();
     expect(within(confirm).queryByRole("combobox")).toBeNull();
     expect(mocks.pay).not.toHaveBeenCalled();
 
@@ -414,9 +415,7 @@ describe("the Safe queue's execute-all confirm", () => {
         payment_info: [{ chain: 8453, amount: "1000", token: zeroAddress }],
       }),
     );
-    expect(
-      await within(confirm).findByRole("button", { name: "Pay once and execute 2" }),
-    ).toBeEnabled();
+    expect(await within(confirm).findByRole("button", { name: "Pay" })).toBeEnabled();
     expect(within(confirm).getByRole("combobox", { name: "Pay network fee on" })).toBeVisible();
     expect(mocks.pay).not.toHaveBeenCalled();
   });
@@ -451,8 +450,25 @@ describe("the Safe queue's execute-all confirm", () => {
     mocks.quote.mockRejectedValueOnce(new Error("Quote temporarily unavailable"));
     const confirm = await openBatch();
     fireEvent.click(await within(confirm).findByRole("button", { name: "Retry checks" }));
-    await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    await within(confirm).findByRole("button", { name: "Pay" });
     expect(mocks.quote).toHaveBeenCalledTimes(2);
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it("shows the chain and simulation failure without service branding or a payment claim", async () => {
+    const cause = Object.freeze({ status: 406, body: { error: "SimulationReverted", chain: 1 } });
+    const failure = Object.freeze(
+      new Error("Relayr HTTP 406: SimulationReverted on chain 1: GS013", { cause }),
+    );
+    mocks.quote.mockRejectedValueOnce(failure);
+    const confirm = await openBatch();
+    expect(
+      await within(confirm).findByText("Transaction simulation failed on chain 1: GS013"),
+    ).toBeVisible();
+    expect(within(confirm).getByRole("button", { name: "Retry checks" })).toBeEnabled();
+    expect(confirm).not.toHaveTextContent(/Relayr|nothing was (?:sent|paid)|no payment was sent/i);
+    expect(failure.message).toBe("Relayr HTTP 406: SimulationReverted on chain 1: GS013");
+    expect(failure.cause).toBe(cause);
     expect(mocks.pay).not.toHaveBeenCalled();
   });
 
@@ -461,12 +477,10 @@ describe("the Safe queue's execute-all confirm", () => {
     const view = renderCard(8453, 10);
     fireEvent.click(await screen.findByRole("button", { name: "Execute 2 ready" }));
     const confirm = await screen.findByRole("dialog", { name: "Execute 2 Safe transactions" });
-    await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    await within(confirm).findByRole("button", { name: "Pay" });
     mocks.address = COSIGNER;
     view.refresh();
-    await waitFor(() =>
-      expect(within(confirm).queryByRole("button", { name: "Pay once and execute 2" })).toBeNull(),
-    );
+    await waitFor(() => expect(within(confirm).queryByRole("button", { name: "Pay" })).toBeNull());
     expect(mocks.pay).not.toHaveBeenCalled();
     expect(within(confirm).getByText(/account changed/i)).toBeVisible();
   });
@@ -509,7 +523,7 @@ describe("the Safe queue's execute-all confirm", () => {
       payment_info: [{ chain: 8453, amount: "1000", token: zeroAddress }],
     });
     fireEvent.click(within(confirm).getByRole("button", { name: "Check status" }));
-    await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    await within(confirm).findByRole("button", { name: "Pay" });
     expect(mocks.quote).toHaveBeenCalledTimes(2);
     expect(mocks.pay).not.toHaveBeenCalled();
   });
@@ -613,7 +627,7 @@ describe("the Safe queue's execute-all confirm", () => {
 
   it("shows payment confirmation and each chain's verified progress while the bundle is still running", async () => {
     const confirm = await openBatch();
-    const pay = await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    const pay = await within(confirm).findByRole("button", { name: "Pay" });
     const requests = mocks.quote.mock.calls[0][0] as ReviewedRelayrRequest[];
     const session: SafeRelayrSession = {
       id: "progress-session",
@@ -652,15 +666,43 @@ describe("the Safe queue's execute-all confirm", () => {
     fireEvent.click(pay);
     await waitFor(() => expect(mocks.pay).toHaveBeenCalledOnce());
 
+    const unpaid = { ...session, paymentStatus: "unfunded" as const };
+    await act(async () =>
+      paymentProgress({ type: "phase", phase: "payment-review", session: unpaid }),
+    );
+    expect(within(confirm).getByText("Preparing payment…", { selector: "p" })).toBeVisible();
+    expect(within(confirm).getByRole("button", { name: "Preparing payment…" })).toBeDisabled();
+    await act(async () =>
+      paymentProgress({ type: "phase", phase: "payment-checking", session: unpaid }),
+    );
+    expect(within(confirm).getByText("Checking before payment…")).toBeVisible();
+    expect(within(confirm).getByRole("button", { name: "Checking…" })).toBeDisabled();
+    expect(within(confirm).queryByText("Review the network fee…")).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: "Pay" })).toBeNull();
+
     await act(async () => paymentProgress({ type: "phase", phase: "payment-confirming", session }));
 
-    expect(within(confirm).getByText("Waiting for the Relayr payment to confirm…")).toBeVisible();
-    expect(within(confirm).getAllByText("Waiting for payment")).toHaveLength(2);
+    expect(within(confirm).getByText("Waiting for the payment to confirm…")).toBeVisible();
+    expect(within(confirm).getAllByText("Checking payment status…")).toHaveLength(2);
     expect(within(confirm).getByRole("button", { name: "Confirming payment…" })).toBeDisabled();
     expect(within(confirm).queryByText("Ready", { exact: true })).toBeNull();
-    expect(within(confirm).queryByText("Confirm the Relayr payment in your wallet…")).toBeNull();
-    expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
+    expect(within(confirm).queryByText("Confirm the payment in your wallet…")).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: /^Pay$/ })).toBeNull();
     expect(mocks.bundle).not.toHaveBeenCalled();
+
+    for (const paymentStatus of ["sending", "submitted"] as const) {
+      await act(async () =>
+        paymentProgress({
+          type: "execution",
+          session: { ...session, paymentStatus },
+          index: 0,
+          execution: session.executions[0],
+          status: "pending",
+        }),
+      );
+      expect(within(confirm).getAllByText("Checking payment status…")).toHaveLength(2);
+      expect(within(confirm).queryByText("Waiting for payment")).toBeNull();
+    }
 
     await act(async () => finishPayment());
     await waitFor(() =>
@@ -702,8 +744,8 @@ describe("the Safe queue's execute-all confirm", () => {
     );
     expect(within(confirm).getByRole("button", { name: "Executing…" })).toBeDisabled();
     expect(within(confirm).queryByText("Ready", { exact: true })).toBeNull();
-    expect(within(confirm).queryByText("Confirm the Relayr payment in your wallet…")).toBeNull();
-    expect(within(confirm).queryByRole("button", { name: /Pay once|Done/ })).toBeNull();
+    expect(within(confirm).queryByText("Confirm the payment in your wallet…")).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: /^(Pay|Done)$/ })).toBeNull();
 
     await act(async () => finishWatch());
     expect(await within(confirm).findByRole("button", { name: "Done" })).toBeEnabled();
@@ -711,7 +753,7 @@ describe("the Safe queue's execute-all confirm", () => {
 
   it("recovers a submitted payment with Check status instead of offering another payment", async () => {
     const confirm = await openBatch();
-    const pay = await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    const pay = await within(confirm).findByRole("button", { name: "Pay" });
     const activity: TransactionActivity = {
       id: "submitted-payment",
       kind: "relayr-bundle",
@@ -736,9 +778,9 @@ describe("the Safe queue's execute-all confirm", () => {
 
     const check = await within(confirm).findByRole("button", { name: "Check status" });
     expect(check).toBeEnabled();
-    expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: /^Pay$/ })).toBeNull();
     expect(within(confirm).queryByRole("combobox", { name: "Pay network fee on" })).toBeNull();
-    expect(within(confirm).queryByText("Confirm the Relayr payment in your wallet…")).toBeNull();
+    expect(within(confirm).queryByText("Confirm the payment in your wallet…")).toBeNull();
     expect(within(confirm).getByText(/already has a submitted payment/)).toBeVisible();
 
     fireEvent.click(check);
@@ -750,15 +792,19 @@ describe("the Safe queue's execute-all confirm", () => {
         expect.any(AbortSignal),
       ),
     );
-    expect(await within(confirm).findByText(activity.message)).toBeVisible();
+    expect(
+      await within(confirm).findByText("The submitted payment is still awaiting confirmation."),
+    ).toBeVisible();
+    expect(confirm).not.toHaveTextContent(/Relayr/i);
+    expect(activity.message).toContain("Relayr payment");
     expect(mocks.pay).toHaveBeenCalledOnce();
     expect(mocks.quote).toHaveBeenCalledOnce();
-    expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: /^Pay$/ })).toBeNull();
   });
 
   it("refuses every way out during payment, then ends on Done", async () => {
     const confirm = await openBatch();
-    const pay = await within(confirm).findByRole("button", { name: "Pay once and execute 2" });
+    const pay = await within(confirm).findByRole("button", { name: "Pay" });
     let release!: () => void;
     mocks.pay.mockReturnValue(
       new Promise((resolve) => {
@@ -772,7 +818,7 @@ describe("the Safe queue's execute-all confirm", () => {
     const done = await within(confirm).findByRole("button", { name: "Done" });
     expect(confirm).toHaveTextContent("Executed 2 Safe transactions.");
     expect(within(confirm).queryByRole("button", { name: "Cancel" })).toBeNull();
-    expect(within(confirm).queryByRole("button", { name: /Pay once/ })).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: /^Pay$/ })).toBeNull();
     fireEvent.click(done);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });

@@ -76,4 +76,18 @@ describe("confirm copy", () => {
       .map(({ text, at }) => `${at}: ${text}`);
     expect(offenders).toEqual([]);
   });
+
+  it("keeps background-service branding out of visible component copy", () => {
+    const offenders: string[] = [];
+    for (const file of sourceFiles(join(root, "src"), (name) => extname(name) === ".tsx")) {
+      const source = parseSource(file);
+      const visit = (node: ts.Node) => {
+        if (isTextNode(node) && /\bRelayr\b/.test(node.text))
+          offenders.push(`${relative(root, file)}: ${node.text}`);
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+    }
+    expect(offenders).toEqual([]);
+  });
 });

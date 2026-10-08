@@ -201,14 +201,31 @@ export function decodeRulesetMetadata(packed: bigint): RulesetMetadata {
   };
 }
 
+/** Presentation only: saved recovery evidence and original SDK errors stay unchanged. */
+export function formatTransactionMessage(message: string): string {
+  const formatted = message
+    .replace(/\bRelayr HTTP \d+:\s*SimulationReverted\b/gi, "Transaction simulation failed")
+    .replace(/\bRelayr HTTP (\d+):\s*/gi, "Transaction request failed (HTTP $1): ")
+    .replace(/\ba Relayr\s+(?=[aeiou])/gi, "an ")
+    .replace(
+      /\bRelayr\s+(?=(?:quotes?|payments?|bundles?|authorizations?|requests?|calls?|actions?|sessions?|funding|confirmations?|entries|entry|options?|polling|Safe executions?|multi-chain bundles?|network fees?)\b)/gi,
+      "",
+    )
+    .replace(/\bRelayr's\b/gi, "the execution service's")
+    .replace(/(?<![\w./:-])Relayr(?![\w./:-])/gi, "the execution service");
+  return formatted === message
+    ? message
+    : formatted.replace(/^([a-z])/, (letter) => letter.toUpperCase());
+}
+
 export function formatWalletError(error: unknown, defaultMessage = "Please try again") {
-  if (typeof error === "string") return error;
-  if (!error || typeof error !== "object") return defaultMessage;
+  if (typeof error === "string") return formatTransactionMessage(error);
+  if (!error || typeof error !== "object") return formatTransactionMessage(defaultMessage);
 
   const { shortMessage, message } = error as Record<string, unknown>;
   if (typeof shortMessage === "string" && shortMessage) {
-    return shortMessage.replace("User rejected", "You rejected");
+    return formatTransactionMessage(shortMessage.replace("User rejected", "You rejected"));
   }
-  if (typeof message === "string" && message) return message;
-  return defaultMessage;
+  if (typeof message === "string" && message) return formatTransactionMessage(message);
+  return formatTransactionMessage(defaultMessage);
 }

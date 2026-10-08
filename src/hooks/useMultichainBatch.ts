@@ -514,7 +514,7 @@ export function useMultichainBatch() {
                 const scope = batchCallScope(candidate, call, index);
                 if (hasRelayrRecoveryScopeSession(account, scope))
                   throw new Error(
-                    "A saved Relayr session must be reconciled before replacing this batch.",
+                    "A saved session must be reconciled before replacing this batch.",
                   );
                 await requireRelayrRecoveryScopeAvailable(account, scope);
               }
@@ -541,7 +541,7 @@ export function useMultichainBatch() {
             const compatible = areRelayrChainsCompatible(chainIds);
             if (multichainEoa && chainIds.every(isRelayrSupportedChain) && !compatible)
               throw new Error(
-                "Choose destinations from one network family. Mainnet and testnet transactions cannot share a Relayr batch.",
+                "Choose destinations from one network family. Mainnet and testnet transactions cannot share a batch.",
               );
             // Routing is decided only for a new journal. An older direct testnet
             // job must resume its original transport and skip confirmed calls.
@@ -597,7 +597,7 @@ export function useMultichainBatch() {
                 const scope = batchCallScope(replacingDraft, call, index);
                 if (hasRelayrRecoveryScopeSession(account, scope))
                   throw new Error(
-                    "A saved Relayr session must be reconciled before replacing this batch.",
+                    "A saved session must be reconciled before replacing this batch.",
                   );
                 await requireRelayrRecoveryScopeAvailable(account, scope);
               }
@@ -623,12 +623,10 @@ export function useMultichainBatch() {
           if (batch.route === "relayr") {
             if (batch.calls.some((call) => call.expectedRouterPending && call.relayrMode !== "raw"))
               throw new Error(
-                "The saved routing batch contains a Relayr authorization. Reconcile that original authorization before starting a direct retry.",
+                "The saved routing batch contains an authorization. Reconcile that original authorization before starting a direct retry.",
               );
             if (isSafeConnection(config))
-              throw new Error(
-                "Resume this Relayr batch using its original EOA account connection.",
-              );
+              throw new Error("Resume this batch using its original EOA account connection.");
             for (const [roundIndex, round] of batch.rounds.entries()) {
               if (round.state === "success") continue;
               if (round.state === "funding" && round.bundleUuid) {
@@ -697,7 +695,7 @@ export function useMultichainBatch() {
                   });
                 }
                 const quote = await getRelayrTxQuote(requests);
-                if (!quote) throw new Error("Relayr did not return a payable quote.");
+                if (!quote) throw new Error("No payable quote is available.");
                 const quotedCalls = refreshTransactionActivities().find(
                   (row) => row.bundleUuid === quote.bundle_uuid,
                 )?.relayrExpectedTransactions;

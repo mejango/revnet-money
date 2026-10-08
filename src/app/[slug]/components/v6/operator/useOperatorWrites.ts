@@ -279,19 +279,19 @@ export function useOperatorWrites() {
       }),
     );
 
-    onProgress("Quoting the Relayr bundle…");
+    onProgress("Getting payment options…");
     const quote = await getRelayrTxQuote(requests);
-    if (!quote) throw new Error("Relayr did not return a quote.");
+    if (!quote) throw new Error("No payment options are available.");
 
-    onProgress("Choose the chain for your Relayr payment…");
+    onProgress("Choose the chain for your payment…");
     const payment = await chooseRelayrPayment(quote.payment_info, preferredPaymentChainId);
-    onProgress("Confirm the Relayr payment in your wallet…");
+    onProgress("Confirm the payment in your wallet…");
     const hash = await sendRelayrTx(payment);
     if (submittedViaSafe(hash)) {
       return { ...result, chains: direct.length, viaRelayr: true, safeProposal: true };
     }
 
-    onProgress("Waiting for Relayr to execute on every chain…");
+    onProgress("Waiting for execution on every chain…");
     await waitForRelayrBundle(quote.bundle_uuid);
     resetRelayr();
     return { ...result, chains: direct.length, viaRelayr: true };

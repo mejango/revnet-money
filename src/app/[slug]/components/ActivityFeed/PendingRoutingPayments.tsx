@@ -14,7 +14,7 @@ import {
   type PendingProject,
   type PendingRouterPayment,
 } from "@/lib/pending-router-calls";
-import { formatWalletError } from "@/lib/utils";
+import { formatTransactionMessage, formatWalletError } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { safeQueueUrl } from "@bananapus/nana-sdk-core/safe-service";
@@ -285,7 +285,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           </ButtonWithWallet>
           {resume ? (
             <p className="mt-1 text-xs text-zinc-500">
-              Saved batch: {resume.completed} of {resume.total} attempts handled. {savedReason}
+              Saved batch: {resume.completed} of {resume.total} attempts handled.{" "}
+              {savedReason && formatTransactionMessage(savedReason)}
             </p>
           ) : null}
           {resume ? (
@@ -370,7 +371,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               }))
         }
         activeIndex={busy ? 0 : -1}
-        stepsIntro="Review every selected attempt. Eligible Relayr batches use one funding payment for all retries; each payment keeps its own result."
+        stepsIntro="Review every selected attempt. Eligible batches use one funding payment for all retries; each payment keeps its own result."
         onConfirm={() => (needsReview ? void review(ready) : void submit())}
         action={needsReview ? "Review again" : savedSelection ? "Continue" : "Confirm routing"}
         busy={busy}
@@ -405,8 +406,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
           <p className="text-sm text-zinc-600">
             Routing uses the original amount, destination and beneficiary. A retry can remain
             pending. A final attempt may return the payment to its source project's balance if the
-            route still fails with the same error. You pay network fees only. Relayr submits
-            eligible wallet batches together; Safe proposals and unsupported networks use direct
+            route still fails with the same error. You pay network fees only. Eligible wallet
+            batches are submitted together; Safe proposals and unsupported networks use direct
             submission. Progress is saved so you can resume.
           </p>
           {savedSelection ? (
@@ -415,7 +416,10 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
             </SummaryRow>
           ) : null}
           {savedSelection ? (
-            <p className="text-sm text-zinc-600">{savedSelection.recoveryReason}</p>
+            <p className="text-sm text-zinc-600">
+              {savedSelection.recoveryReason &&
+                formatTransactionMessage(savedSelection.recoveryReason)}
+            </p>
           ) : null}
           {savedDetails.map((payment) => (
             <div key={payment.id} className="space-y-2 border-t border-teal-100 pt-3 text-sm">

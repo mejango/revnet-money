@@ -17,3 +17,23 @@
 
 - User correction: per-chain Checking/Ready was buried in muted detail text, and preparation showed a disabled button despite advancing automatically.
 - Rule: place concurrent status beside its chain heading, separate details below, and render one passive progress message while no action is available. Keep dismissal possible before payment; verify mobile wrapping and the quoted/paid states.
+
+
+## 2026-10-07 — Keep payment actions concise
+- Correction: the user wants the initial Safe bundle funding action and nested payment confirmation both labeled “Pay”.
+- Rule: put the transaction count and execution explanation in the review content; keep the payment button label Pay. Preserve disabled, pending, recovery and authority behavior when changing labels. Existing Safe queue and payment-review assertions enforce the exact label.
+
+## 2026-10-07 — Remove duplicate reads without removing final validation
+
+- Correction: repeated checks delayed the final payment flow. Saved Safe preconditions and mandatory legacy guards caused identical nonce/hash reads within one validation pass.
+- Rule: deduplicate only equivalent address/calldata/expected tuples inside the existing verifier invocation; retain conflicting expectations, synthesize missing legacy guards and reread on every later pass. Guard, raw-payment, direct-batch and Safe-payment regressions enforce exact per-pass counts and refusal after final state drift.
+
+## 2026-10-07 — Describe the actual payment phase and verified effect
+
+- Correction: final preparation retained Review payment copy, and a wrapped wallet payment left rows waiting for payment after submission.
+- Rule: use the shared lifecycle's phase boundaries: Preparing payment covers consent and local preparation, Checking before payment covers final beforeSend guards, and submitted/ambiguous evidence says Checking payment status. Keep canonical wrapped-funding proof and per-chain verification in the SDK. Deferred actual-adapter and rendered progress regressions enforce the order without new app polling or weaker guards.
+
+## 2026-10-07 — A package tarball does not include its installed nested dependencies
+
+- Finding: replacing the entire installed SDK directory with a preview tarball also removed its nested bs58/base-x packages, causing fallback to different root major versions while every manifest hash stayed unchanged.
+- Rule: retain nested node_modules when replacing only a package's own files, then verify the whole installed package-path/content graph and actual dependency resolution. Package metadata and compiled-file equality alone do not qualify the installation or bundle measurement. Invalidate measurements from an incorrect graph; require final clean-install CI before release.

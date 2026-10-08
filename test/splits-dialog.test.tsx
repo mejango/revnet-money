@@ -246,7 +246,9 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
       const confirm = (await screen.findAllByRole("dialog")).at(-1)!;
       await waitFor(() => expect(confirm).toHaveTextContent("Confirm split recipients"));
       if (relayed) {
-        expect(confirm).toHaveTextContent("Choose a funding chain and pay once.");
+        expect(confirm).toHaveTextContent(
+          "Choose a funding chain and pay once to update each chain.",
+        );
         expect(confirm).toHaveTextContent("Quoted in ETH after you sign");
       } else {
         expect(confirm).toHaveTextContent("Update the recipients on Base Sepolia");

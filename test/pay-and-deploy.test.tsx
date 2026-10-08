@@ -148,7 +148,7 @@ describe("PayAndDeploy settlement", () => {
     view.rerender(component());
 
     expect(screen.getByRole("alert")).toHaveTextContent("does not match the signed request");
-    expect(screen.getByRole("alert")).toHaveTextContent("Do not make another Relayr payment");
+    expect(screen.getByRole("alert")).toHaveTextContent("Do not make another payment");
     const pay = screen.getByRole("button", { name: "Pay and launch" });
     expect(pay).toBeDisabled();
     expect(screen.getByRole("combobox")).toBeDisabled();
