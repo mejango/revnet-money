@@ -27,3 +27,8 @@
 
 - Correction: repeated checks delayed the final payment flow. Saved Safe preconditions and mandatory legacy guards caused identical nonce/hash reads within one validation pass.
 - Rule: deduplicate only equivalent address/calldata/expected tuples inside the existing verifier invocation; retain conflicting expectations, synthesize missing legacy guards and reread on every later pass. Guard, raw-payment, direct-batch and Safe-payment regressions enforce exact per-pass counts and refusal after final state drift.
+
+## 2026-10-07 — Describe the actual payment phase and verified effect
+
+- Correction: final preparation retained Review payment copy, and a wrapped wallet payment left rows waiting for payment after submission.
+- Rule: use the shared lifecycle's phase boundaries: Preparing payment covers consent and local preparation, Checking before payment covers final beforeSend guards, and submitted/ambiguous evidence says Checking payment status. Keep canonical wrapped-funding proof and per-chain verification in the SDK. Deferred actual-adapter and rendered progress regressions enforce the order without new app polling or weaker guards.

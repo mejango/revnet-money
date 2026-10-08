@@ -3,6 +3,7 @@ import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { pendingRouterCommitment } from "@/lib/pending-router-calls";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import type { TransactionReviewRequest } from "@/lib/transaction-review";
+import { RELAYR_PAYMENT_EVENT } from "@bananapus/nana-sdk-core/review/relayr";
 import { canonicalSafeTxHash, SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import { act, renderHook } from "@testing-library/react";
@@ -2602,14 +2603,28 @@ describe("Safe execution bundles", () => {
   });
 
   it.each([false, true])(
-    "keeps a paid Safe bundle checking and reports each verified chain while another destination is unavailable (reopen recovery: %s)",
+    "tracks deferred Safe payment checks, wrapped funding and each verified chain (reopen recovery: %s)",
     async (reopenRecovery) => {
-      const { hooks, review } = await freshHarness();
+      const { hooks, review, activity } = await freshHarness();
       review.registerTransactionReviewHandler(async () => true);
       const ethereumHash = `0x${"11".repeat(32)}` as Hex;
       const optimismHash = `0x${"22".repeat(32)}` as Hex;
       let funded = false;
       let ethereumAvailable = false;
+      const wrappedPayment = {
+        ...onchain(TARGET, "0xdeadbeef", 0n),
+        from: OTHER_ACCOUNT,
+        logs: [
+          {
+            address: PAYMENT_TARGET,
+            topics: [RELAYR_PAYMENT_EVENT, `0x${BUNDLE_UUID.replaceAll("-", "").padEnd(64, "0")}`],
+            data: encodeAbiParameters([{ type: "uint256" }, { type: "uint40" }], [16n, NOW + 600]),
+            transactionHash: HASH,
+            blockHash: BLOCK_HASH,
+            blockNumber: 123n,
+          },
+        ],
+      };
       const landed = (hash: Hex) => {
         const chainId = hash === ethereumHash ? 1 : 10;
         return {
@@ -2630,19 +2645,32 @@ describe("Safe execution bundles", () => {
         };
       };
       mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => {
-        if (hash === HASH) return onchain(PAYMENT_TARGET, payment().calldata);
+        if (hash === HASH) return wrappedPayment;
         if (hash === ethereumHash && !ethereumAvailable) return null;
         return landed(hash);
       });
       mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) => {
-        if (hash === HASH) return onchain(PAYMENT_TARGET, payment().calldata);
+        if (hash === HASH) return wrappedPayment;
         if (hash === ethereumHash && !ethereumAvailable) return null;
         return landed(hash);
       });
-      mocks.sendTransaction.mockImplementation(async () => {
-        funded = true;
-        return HASH;
-      });
+      let submitPayment!: () => void;
+      mocks.sendTransaction.mockImplementation(
+        () =>
+          new Promise<Hex>((resolve) => {
+            submitPayment = () => {
+              funded = true;
+              resolve(HASH);
+            };
+          }),
+      );
+      let confirmPayment!: () => void;
+      mocks.waitForTransactionReceipt.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            confirmPayment = () => resolve({ status: "success", transactionHash: HASH });
+          }),
+      );
       vi.stubGlobal(
         "fetch",
         relayrApi({
@@ -2662,13 +2690,69 @@ describe("Safe execution bundles", () => {
       await act(async () => {
         await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
       });
+      let acceptPaymentReview!: () => void;
+      review.registerTransactionReviewHandler((request) => {
+        expect(request).toMatchObject({ title: "Review payment", confirmLabel: "Pay" });
+        return new Promise<boolean>((resolve) => {
+          acceptPaymentReview = () => resolve(true);
+        });
+      });
+      let authenticatePayment!: () => void;
+      mocks.getCode.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            authenticatePayment = () => resolve(PAYMENT_RUNTIME);
+          }),
+      );
+      const read = mocks.clientCall.getMockImplementation()!;
+      const rechecks: Array<() => void> = [];
+      mocks.clientCall.mockImplementation(async (args) => {
+        if (args.data?.startsWith(NONCE))
+          await new Promise<void>((resolve) => rechecks.push(resolve));
+        return read(args);
+      });
       const progress = vi.fn();
       const payer = renderHook(() => hooks.useSendRelayrTx());
       await act(async () => {
-        await expect(
-          payer.result.current.sendRelayrTx(payment(), { onProgress: progress }),
-        ).resolves.toBe(HASH);
+        const pending = payer.result.current.sendRelayrTx(payment(), { onProgress: progress });
+        await vi.waitFor(() => expect(acceptPaymentReview).toBeTypeOf("function"));
+        expect(progress).toHaveBeenLastCalledWith(
+          expect.objectContaining({ phase: "payment-review" }),
+        );
+        expect(rechecks).toHaveLength(0);
+        expect(mocks.sendTransaction).not.toHaveBeenCalled();
+        acceptPaymentReview();
+        await vi.waitFor(() => expect(authenticatePayment).toBeTypeOf("function"));
+        expect(progress).toHaveBeenLastCalledWith(
+          expect.objectContaining({ phase: "payment-review" }),
+        );
+        expect(rechecks).toHaveLength(0);
+        authenticatePayment();
+        await vi.waitFor(() => expect(rechecks).toHaveLength(2));
+        expect(progress).toHaveBeenLastCalledWith(
+          expect.objectContaining({ phase: "payment-checking" }),
+        );
+        expect(mocks.sendTransaction).not.toHaveBeenCalled();
+        rechecks.forEach((resolve) => resolve());
+        await vi.waitFor(() => expect(submitPayment).toBeTypeOf("function"));
+        expect(progress).toHaveBeenLastCalledWith(
+          expect.objectContaining({ phase: "payment-submitting" }),
+        );
+        submitPayment();
+        await vi.waitFor(() => expect(confirmPayment).toBeTypeOf("function"));
+        expect(progress).toHaveBeenLastCalledWith(
+          expect.objectContaining({ phase: "payment-confirming" }),
+        );
+        expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
+          hash: HASH,
+          relayrPaymentStatus: "submitted",
+          relayrPayments: [expect.objectContaining({ hash: HASH })],
+        });
+        confirmPayment();
+        await expect(pending).resolves.toBe(HASH);
       });
+      expect(mocks.getCode).toHaveBeenCalledWith({ address: PAYMENT_TARGET, blockNumber: 123n });
+      expect(activity.transactionActivitySnapshot()[0].relayrPaymentStatus).toBe("confirmed");
       expect(progress).toHaveBeenCalledWith(
         expect.objectContaining({ type: "phase", phase: "payment-confirming" }),
       );

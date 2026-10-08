@@ -629,7 +629,11 @@ export function SafeQueueCard({
                 ? "Confirming"
                 : progress.hash
                   ? "Submitted"
-                  : "Waiting for execution";
+                  : !progress.session.fundingObserved &&
+                      (progress.session.paymentStatus === "sending" ||
+                        progress.session.paymentStatus === "submitted")
+                    ? "Checking payment status…"
+                    : "Waiting for execution";
         return {
           ...current,
           status: { ...current.status, [chainId]: status },
@@ -639,22 +643,27 @@ export function SafeQueueCard({
       const messages: Record<SafeRelayrPhase, string> = {
         reviewing: "Review the executions to get payment options…",
         quoting: "Getting payment options…",
-        "payment-review": "Review the network fee…",
+        "payment-review": "Preparing payment…",
+        "payment-checking": "Checking before payment…",
         "payment-submitting": "Confirm the payment in your wallet…",
         "payment-confirming": "Waiting for the payment to confirm…",
         executing: "Executing the Safe transactions…",
         complete: `Executed ${current.rows.length} Safe transactions.`,
       };
-      const waitingForPayment =
-        progress.phase === "payment-review" ||
-        progress.phase === "payment-submitting" ||
-        progress.phase === "payment-confirming";
+      const rowStatus =
+        progress.phase === "payment-checking"
+          ? "Checking…"
+          : progress.phase === "payment-confirming"
+            ? "Checking payment status…"
+            : progress.phase === "payment-review" || progress.phase === "payment-submitting"
+              ? "Waiting for payment"
+              : undefined;
       return {
         ...current,
         phase: progress.phase,
         message: messages[progress.phase],
-        status: waitingForPayment
-          ? Object.fromEntries(current.rows.map(({ row }) => [row.chainId, "Waiting for payment"]))
+        status: rowStatus
+          ? Object.fromEntries(current.rows.map(({ row }) => [row.chainId, rowStatus]))
           : current.status,
       };
     });
@@ -1323,7 +1332,7 @@ export function SafeQueueCard({
           action={
             batch.running
               ? batch.phase === "payment-review"
-                ? "Review payment…"
+                ? "Preparing payment…"
                 : batch.phase === "payment-submitting"
                   ? "Confirm payment…"
                   : batch.phase === "payment-confirming"

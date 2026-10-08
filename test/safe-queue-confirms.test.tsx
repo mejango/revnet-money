@@ -666,15 +666,43 @@ describe("the Safe queue's execute-all confirm", () => {
     fireEvent.click(pay);
     await waitFor(() => expect(mocks.pay).toHaveBeenCalledOnce());
 
+    const unpaid = { ...session, paymentStatus: "unfunded" as const };
+    await act(async () =>
+      paymentProgress({ type: "phase", phase: "payment-review", session: unpaid }),
+    );
+    expect(within(confirm).getByText("Preparing payment…", { selector: "p" })).toBeVisible();
+    expect(within(confirm).getByRole("button", { name: "Preparing payment…" })).toBeDisabled();
+    await act(async () =>
+      paymentProgress({ type: "phase", phase: "payment-checking", session: unpaid }),
+    );
+    expect(within(confirm).getByText("Checking before payment…")).toBeVisible();
+    expect(within(confirm).getByRole("button", { name: "Checking…" })).toBeDisabled();
+    expect(within(confirm).queryByText("Review the network fee…")).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: "Pay" })).toBeNull();
+
     await act(async () => paymentProgress({ type: "phase", phase: "payment-confirming", session }));
 
     expect(within(confirm).getByText("Waiting for the payment to confirm…")).toBeVisible();
-    expect(within(confirm).getAllByText("Waiting for payment")).toHaveLength(2);
+    expect(within(confirm).getAllByText("Checking payment status…")).toHaveLength(2);
     expect(within(confirm).getByRole("button", { name: "Confirming payment…" })).toBeDisabled();
     expect(within(confirm).queryByText("Ready", { exact: true })).toBeNull();
     expect(within(confirm).queryByText("Confirm the payment in your wallet…")).toBeNull();
     expect(within(confirm).queryByRole("button", { name: /^Pay$/ })).toBeNull();
     expect(mocks.bundle).not.toHaveBeenCalled();
+
+    for (const paymentStatus of ["sending", "submitted"] as const) {
+      await act(async () =>
+        paymentProgress({
+          type: "execution",
+          session: { ...session, paymentStatus },
+          index: 0,
+          execution: session.executions[0],
+          status: "pending",
+        }),
+      );
+      expect(within(confirm).getAllByText("Checking payment status…")).toHaveLength(2);
+      expect(within(confirm).queryByText("Waiting for payment")).toBeNull();
+    }
 
     await act(async () => finishPayment());
     await waitFor(() =>
