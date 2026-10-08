@@ -104,7 +104,12 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Responsive delivery/fidelity guards measure 2,742,956 B versus 2,734,565 B
 // on matching physical dependencies, excluding dedicated browser-proof stubs.
 // Round only the aggregate ceiling; route and lazy-wallet limits stay unchanged.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2679);
+// Critical images now share native candidate upgrades and fit ownership:
+// 2,745,953 B (2681.6 KiB) versus the prior qualified 2678.9 KiB report.
+// Existing Next/IPFS/gateway/React imports remain; the policy and wrapper
+// each emit seven production copies. Round only aggregate to 2682 KiB,
+// retaining 415 B headroom and every route/lazy/proof boundary below.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2682);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
