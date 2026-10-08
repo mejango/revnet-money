@@ -260,6 +260,35 @@ describe("the wallet-prompt queue", () => {
     expect(screen.queryByText("Your wallet will ask for one action.")).toBeNull();
   });
 
+  it.each([-1, 4])("keeps independent result states when activeIndex is %s", (activeIndex) => {
+    render(
+      <TxSteps
+        steps={[
+          { title: "First", status: "Waiting", state: "pending" },
+          { title: "Second", status: "Confirmed", state: "complete" },
+          { title: "Third", status: "Checking result", state: "active" },
+          { title: "Fourth", status: "Reverted", state: "failed" },
+        ]}
+        activeIndex={activeIndex}
+        ariaLabel="Results"
+      />,
+    );
+
+    const items = within(screen.getByLabelText("Results")).getAllByRole("listitem");
+    expect(items.map((item) => item.getAttribute("data-state"))).toEqual([
+      "pending",
+      "complete",
+      "active",
+      "failed",
+    ]);
+    expect(items[0]).not.toHaveAttribute("aria-current");
+    expect(items[1]).toHaveTextContent("✓");
+    expect(items[2]).toHaveAttribute("aria-current", "step");
+    expect(items[3]).toHaveTextContent("×");
+    expect(items[3]).not.toHaveTextContent("✓");
+    expect(within(items[3]).getByText("Reverted")).toHaveClass("text-red-700");
+  });
+
   it("keeps a resumable step's own state and body", () => {
     expect(stepStatus(true, true)).toBe("done");
     expect(stepStatus(false, true)).toBe("active");

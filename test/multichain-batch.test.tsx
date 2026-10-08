@@ -1,4 +1,5 @@
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
+import type { RelayrDestinationProgress } from "@/hooks/useReviewedRelayr";
 import {
   batchCallKey,
   createMultichainBatch,
@@ -1677,6 +1678,42 @@ describe("reviewed selected-call orchestration", () => {
     expect(readMultichainBatches()[0].route).toBe("relayr");
   });
 
+  it("reports saved mixed outcomes when recovery finishes an already handled batch", async () => {
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "handled-routing",
+      "Route payments",
+      [1, 8453].map((chainId) => ({ ...retryCall(chainId), relayrMode: "raw" as const })),
+      "relayr",
+    );
+    batch.calls[0].state = "success";
+    batch.calls[0].hash = HASH;
+    batch.calls[1].state = "reverted";
+    batch.calls[1].hash = HASH;
+    batch.rounds.forEach((round) => (round.state = "success"));
+    saveMultichainBatch(batch);
+    const onCallProgress = vi.fn();
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({
+          scope: "handled-routing",
+          label: "Route payments",
+          calls: [],
+          onCallProgress,
+        }),
+      ).resolves.toMatchObject({ status: "success" });
+    });
+    expect(onCallProgress).toHaveBeenLastCalledWith([
+      { status: "confirmed", hash: HASH },
+      { status: "reverted", hash: HASH },
+    ]);
+    expect(mocks.wait).not.toHaveBeenCalled();
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
   it("keeps fresh testnet Safe batches on the staged proposal route", async () => {
     mocks.safe = true;
     const { result } = renderHook(() => useMultichainBatch());
@@ -1876,6 +1913,103 @@ describe("reviewed selected-call orchestration", () => {
       expect(mocks.pay).toHaveBeenCalledOnce();
       expect(mocks.write).not.toHaveBeenCalled();
       expect(readMultichainBatches()[0].rounds).toHaveLength(1);
+    });
+    it("maps live 14-call results by UUID without treating progress as durable completion or paying again", async () => {
+      quotedIdentities();
+      const queued = Array.from({ length: 14 }, (_, index) => ({
+        ...retryCall(1),
+        args: [BigInt(index + 1)],
+        recoveryScope: `pending:1:${index}`,
+        relayrMode: "raw" as const,
+      }));
+      const complete = Promise.withResolvers<void>();
+      const updates = vi.fn();
+      const progress = vi.fn();
+      let notify!: (results: readonly RelayrDestinationProgress[]) => void;
+      const resultFor = (index: number, status: RelayrDestinationProgress["status"]) => ({
+        transactionUuid: `pending-${index}`,
+        status,
+        ...(status === "pending" ? {} : { hash: toHex(index + 1, { size: 32 }) }),
+      });
+      mocks.wait.mockImplementation(async (_uuid, _update, _safe, onResults) => {
+        notify = onResults;
+        await complete.promise;
+        const activity = refreshTransactionActivities().find(
+          (row) => row.bundleUuid === "pending-bundle",
+        )!;
+        updateTransactionActivity(activity.id, {
+          relayrExpectedTransactions: activity.relayrExpectedTransactions!.map((row, index) => ({
+            ...row,
+            receiptStatus: index === 2 ? "reverted" : "success",
+          })),
+        });
+        return {
+          transactions: queued
+            .map((_, index) => ({
+              tx_uuid: `pending-${index}`,
+              request: { chain: 1 },
+              status: { data: { hash: toHex(index + 1, { size: 32 }) } },
+            }))
+            .reverse(),
+        };
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        const running = result.current.runBatch({
+          scope: "pending-all",
+          label: "Route payments",
+          calls: queued,
+          onProgress: progress,
+          onCallProgress: updates,
+        });
+        await vi.waitFor(() => expect(mocks.wait).toHaveBeenCalledOnce());
+        notify(
+          queued.map((_, index) => resultFor(index, index < 2 ? "pending" : "submitted")).reverse(),
+        );
+        expect(progress).toHaveBeenLastCalledWith("12 of 14 attempts submitted. Checking results…");
+        expect(updates.mock.lastCall![0].map((row: { status: string }) => row.status)).toEqual([
+          "pending",
+          "pending",
+          ...Array(12).fill("submitted"),
+        ]);
+        notify(
+          queued
+            .map((_, index) =>
+              resultFor(
+                index,
+                index === 0
+                  ? "pending"
+                  : index === 1
+                    ? "submitted"
+                    : index === 2
+                      ? "reverted"
+                      : "confirmed",
+              ),
+            )
+            .reverse(),
+        );
+        expect(progress).toHaveBeenLastCalledWith(
+          "12 of 14 attempts checked. 2 remaining. 1 reverted.",
+        );
+        expect(updates.mock.lastCall![0][2]).toEqual({
+          status: "reverted",
+          hash: toHex(3, { size: 32 }),
+        });
+        // These are display snapshots; the paid round is still unresolved and cannot fund again.
+        expect(readMultichainBatches()[0].rounds[0].state).toBe("pending");
+        expect(readMultichainBatches()[0].calls.every((call) => call.state === "ready")).toBe(true);
+        expect(mocks.quote).toHaveBeenCalledOnce();
+        expect(mocks.pay).toHaveBeenCalledOnce();
+        complete.resolve();
+        await expect(running).resolves.toMatchObject({ status: "success" });
+      });
+      expect(updates.mock.lastCall![0].map((row: { status: string }) => row.status)).toEqual([
+        "confirmed",
+        "confirmed",
+        "reverted",
+        ...Array(11).fill("confirmed"),
+      ]);
+      expect(mocks.pay).toHaveBeenCalledOnce();
     });
     it("reports each deferred quote and payment handoff without paying before a funding choice", async () => {
       quotedIdentities();

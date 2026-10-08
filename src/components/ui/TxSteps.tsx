@@ -1,8 +1,9 @@
 /**
  * The wallet-prompt queue for a multi-transaction flow, shown before the first
- * prompt so a signer knows how many are coming and why. Steps are strictly
+ * prompt so a signer knows how many are coming and why. Steps default to
  * sequential: everything before `activeIndex` is done, and a flow that has
- * finished passes `steps.length`. Pass -1 while nothing is running yet.
+ * finished passes `steps.length`. Pass -1 while nothing is running yet, or
+ * an explicit state per step for results that arrive independently.
  */
 export function TxSteps({
   steps,
@@ -17,6 +18,8 @@ export function TxSteps({
     title: React.ReactNode;
     /** Independent progress, shown beside the heading rather than buried in details. */
     status?: React.ReactNode;
+    /** Overrides sequential progress when results arrive out of order. */
+    state?: "pending" | "active" | "complete" | "failed";
     detail?: React.ReactNode;
   }[];
   activeIndex: number;
@@ -34,26 +37,32 @@ export function TxSteps({
       </p>
       <ol className="mt-3 space-y-2">
         {steps.map((step, index) => {
-          const complete = activeIndex > index;
-          const active = activeIndex === index;
+          const state =
+            step.state ??
+            (activeIndex > index ? "complete" : activeIndex === index ? "active" : "pending");
+          const complete = state === "complete";
+          const active = state === "active";
+          const failed = state === "failed";
           return (
             <li
               key={step.key ?? String(step.title)}
-              data-state={complete ? "complete" : active ? "active" : "pending"}
+              data-state={state}
               aria-current={active ? "step" : undefined}
               className={`flex items-start gap-2 text-sm ${step.status ? "border-melon-200 not-first:border-t not-first:pt-3" : ""}`}
             >
               <span
                 aria-hidden="true"
                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs ${
-                  complete
-                    ? "border-melon-400 bg-melon-400 text-zinc-900"
-                    : active
-                      ? "border-melon-600 bg-melon-50 text-melon-700"
-                      : "border-zinc-300 text-zinc-500"
+                  failed
+                    ? "border-red-600 bg-red-50 text-red-700"
+                    : complete
+                      ? "border-melon-400 bg-melon-400 text-zinc-900"
+                      : active
+                        ? "border-melon-600 bg-melon-50 text-melon-700"
+                        : "border-zinc-300 text-zinc-500"
                 }`}
               >
-                {complete ? "✓" : index + 1}
+                {failed ? "×" : complete ? "✓" : index + 1}
               </span>
               <span className="min-w-0 flex-1">
                 <span
@@ -76,7 +85,11 @@ export function TxSteps({
                     {step.title}
                   </span>
                   {step.status ? (
-                    <span className="shrink-0 font-medium text-zinc-900">{step.status}</span>
+                    <span
+                      className={`shrink-0 font-medium ${failed ? "text-red-700" : "text-zinc-900"}`}
+                    >
+                      {step.status}
+                    </span>
                   ) : null}
                 </span>
                 {step.detail ? (

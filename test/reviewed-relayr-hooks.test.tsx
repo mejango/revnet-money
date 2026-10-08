@@ -1425,7 +1425,28 @@ describe("raw pending-payment publication and funding", () => {
           : [],
     }));
     completed = true;
-    await hooks.waitForRelayrBundle(BUNDLE_UUID);
+    const onResults = vi.fn();
+    await hooks.waitForRelayrBundle(BUNDLE_UUID, undefined, undefined, onResults);
+    expect(onResults.mock.calls).toEqual([
+      [
+        [
+          { transactionUuid: TX_UUIDS[1], hash: BLOCK_HASH, status: "submitted" },
+          { transactionUuid: TX_UUIDS[0], hash: HASH, status: "submitted" },
+        ],
+      ],
+      [
+        [
+          { transactionUuid: TX_UUIDS[1], hash: BLOCK_HASH, status: "reverted" },
+          { transactionUuid: TX_UUIDS[0], hash: HASH, status: "submitted" },
+        ],
+      ],
+      [
+        [
+          { transactionUuid: TX_UUIDS[1], hash: BLOCK_HASH, status: "reverted" },
+          { transactionUuid: TX_UUIDS[0], hash: HASH, status: "confirmed" },
+        ],
+      ],
+    ]);
     const saved = activity.transactionActivitySnapshot()[0];
     expect(saved.status).toBe("success");
     expect(saved.relayrExpectedTransactions?.map((row) => row.receiptStatus)).toEqual([

@@ -111,7 +111,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Cancellable routing quotes, phase messages and strict unsigned-publication
 // recovery measure 2684.5 KiB versus c5ccbca6's 2683.4 KiB on the same locked
 // Node 26.7.0 dependency tree. Raise only the aggregate ceiling by 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2685);
+// Per-attempt routing progress measures 2685.2 KiB versus 29803a68's 2684.5 KiB
+// with the same locked toolchain/dependencies. Keep route and lazy-load limits.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2686);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

@@ -89,6 +89,25 @@ export type BatchResult = {
     callIndex: number;
   }>;
 };
+export type BatchCallProgress = {
+  status: "pending" | "submitted" | "confirmed" | "reverted" | "skipped";
+  hash?: Hash;
+};
+
+function callProgress(call: FrozenBatchCall): BatchCallProgress {
+  return {
+    status:
+      call.state === "success"
+        ? "confirmed"
+        : call.state === "reverted" || call.state === "skipped"
+          ? call.state
+          : call.hash
+            ? "submitted"
+            : "pending",
+    hash: call.hash,
+  };
+}
+
 type BatchInput = {
   label: string;
   scope: string;
@@ -101,6 +120,8 @@ type BatchInput = {
   signal?: AbortSignal;
   onBeforePayment?: () => void;
   onProgress?: (message: string) => void;
+  /** Display-only snapshots in the frozen call order; never execution authority. */
+  onCallProgress?: (calls: readonly BatchCallProgress[]) => void;
 };
 const running = new Set<string>();
 
@@ -677,6 +698,14 @@ export function useMultichainBatch() {
               message: "The exact selected calls are saved. Resume this batch to continue safely.",
             });
           }
+          const displayedCalls = batch.calls.map(callProgress);
+          const reportCalls = () => {
+            try {
+              input.onCallProgress?.(structuredClone(displayedCalls));
+            } catch {
+              // A display observer cannot interrupt execution or change the saved batch.
+            }
+          };
           if (batch.route === "relayr") {
             if (batch.calls.some((call) => call.expectedRouterPending && call.relayrMode !== "raw"))
               throw new Error(
@@ -811,7 +840,32 @@ export function useMultichainBatch() {
               progress(
                 `Checking payment and ${round.indices.length} transaction results${batch.rounds.length > 1 ? ` (round ${roundIndex + 1} of ${batch.rounds.length})` : ""}…`,
               );
-              const bundle = await waitForRelayrBundle(round.bundleUuid);
+              reportCalls();
+              const bundle = input.onCallProgress
+                ? await waitForRelayrBundle(round.bundleUuid, undefined, undefined, (results) => {
+                    for (const [position, index] of round.indices.entries()) {
+                      const id = round.transactionUuids?.[position];
+                      // Legacy bundles without exact UUID bindings keep their existing recovery.
+                      const update = id && results.find((item) => item.transactionUuid === id);
+                      if (update)
+                        displayedCalls[index] = { status: update.status, hash: update.hash };
+                    }
+                    reportCalls();
+                    const checked = displayedCalls.filter((call) =>
+                      ["confirmed", "reverted", "skipped"].includes(call.status),
+                    ).length;
+                    const submitted = displayedCalls.filter((call) => call.hash).length;
+                    const reverted = displayedCalls.filter(
+                      (call) => call.status === "reverted",
+                    ).length;
+                    const count = displayedCalls.length;
+                    progress(
+                      checked
+                        ? `${checked} of ${count} attempts checked. ${count - checked} remaining.${reverted ? ` ${reverted} reverted.` : ""}`
+                        : `${submitted} of ${count} attempts submitted. Checking results…`,
+                    );
+                  })
+                : await waitForRelayrBundle(round.bundleUuid);
               for (const [position, index] of round.indices.entries()) {
                 const call = batch.calls[index];
                 const transaction = bundle.transactions.find((item) =>
@@ -828,9 +882,11 @@ export function useMultichainBatch() {
                     (item) => item.transactionUuid === transaction.tx_uuid,
                   );
                 call.state = identity?.receiptStatus === "reverted" ? "reverted" : "success";
+                displayedCalls[index] = callProgress(call);
               }
               round.state = "success";
               saveMultichainBatch(batch);
+              reportCalls();
             }
           } else {
             requireAccount();
@@ -845,6 +901,8 @@ export function useMultichainBatch() {
               if (call.hash) {
                 Object.assign(call, await verifyDirectResult(client, batch, call));
                 saveMultichainBatch(batch);
+                displayedCalls[index] = callProgress(call);
+                reportCalls();
                 continue;
               }
               if (call.state === "submitting")
@@ -855,7 +913,11 @@ export function useMultichainBatch() {
                 account,
                 batchCallScope(batch, call, index),
               );
-              if (await reconcileReadyCall(call, index)) continue;
+              if (await reconcileReadyCall(call, index)) {
+                displayedCalls[index] = callProgress(call);
+                reportCalls();
+                continue;
+              }
               await verifyCallPreconditions(client, call.preconditions);
               direct.current = { batch, index };
               const variables = {
@@ -880,6 +942,8 @@ export function useMultichainBatch() {
               }
               call.state = submittedViaSafe(call.hash) ? "safe" : "submitted";
               saveMultichainBatch(batch);
+              displayedCalls[index] = callProgress(call);
+              reportCalls();
               if (call.state === "safe") {
                 progress(
                   "Safe proposal saved. Execute it, then resume this batch; no other call will be proposed yet.",
@@ -889,10 +953,13 @@ export function useMultichainBatch() {
               await client.waitForTransactionReceipt({ hash: call.hash });
               Object.assign(call, await verifyDirectResult(client, batch, call));
               saveMultichainBatch(batch);
+              displayedCalls[index] = callProgress(call);
+              reportCalls();
             }
           }
           batch.status = "success";
           saveMultichainBatch(batch);
+          reportCalls();
           updateTransactionActivity(batch.id, {
             status: batch.calls.some((call) => call.state === "reverted") ? "failed" : "success",
             manualVerificationRequired: false,

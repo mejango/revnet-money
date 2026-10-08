@@ -4,7 +4,11 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
 import { useHydrated } from "@/hooks/useHydrated";
-import { useMultichainBatch, type BatchResult } from "@/hooks/useMultichainBatch";
+import {
+  useMultichainBatch,
+  type BatchCallProgress,
+  type BatchResult,
+} from "@/hooks/useMultichainBatch";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import {
   describeSavedRoutingCall,
@@ -23,6 +27,14 @@ import { useEffect, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 
 type Prepared = Awaited<ReturnType<typeof preparePendingRouterPayment>>;
+
+const routingCallSteps = {
+  pending: { status: "Waiting", state: "pending" },
+  submitted: { status: "Checking result", state: "active" },
+  confirmed: { status: "Confirmed", state: "complete" },
+  reverted: { status: "Reverted", state: "failed" },
+  skipped: { status: "Already handled", state: "complete" },
+} as const;
 
 export function PendingRoutingPayments({ projects }: { projects: PendingProject[] }) {
   const hydrated = useHydrated();
@@ -66,6 +78,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   const [reviewedAccount, setReviewedAccount] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+  const [callProgress, setCallProgress] = useState<readonly BatchCallProgress[] | null>(null);
   const [obsoleteProposals, setObsoleteProposals] = useState<
     NonNullable<BatchResult["obsoleteSafeProposals"]>
   >([]);
@@ -139,7 +152,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   }
   // A read-only check resolves stale quote reservations before presenting a recovery-only action.
   useEffect(() => {
-    if (!resume || !recheckPendingRoutingBatch) return;
+    if (busy || !resume || !recheckPendingRoutingBatch) return;
     const key = `${address}:${resume.id}`;
     if (lastChecked.current === key) return;
     lastChecked.current = key;
@@ -171,6 +184,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
 
   async function review(selected: PendingRouterPayment[]) {
     setError(null);
+    setCallProgress(null);
     setRefreshBatchId(undefined);
     if (resume) {
       setNeedsReview(false);
@@ -240,6 +254,9 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         },
         onProgress: (message) => {
           if (current()) setProgress(message);
+        },
+        onCallProgress: (calls) => {
+          if (current()) setCallProgress(calls);
         },
       });
       if (!current()) return;
@@ -407,15 +424,19 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         open={open}
         onClose={closeReview}
         title="Route pending payments"
-        steps={
-          savedSelection
-            ? savedDetails.map((payment) => ({
-                title: `${payment.amountLabel} to project ${payment.projectId}`,
-              }))
-            : (reviewed ?? []).map(({ payment }) => ({
-                title: `${payment.amountLabel} to project ${payment.indexed.projectId}`,
-              }))
-        }
+        steps={(savedSelection
+          ? savedDetails.map((payment) => ({
+              key: payment.id,
+              title: `${payment.amountLabel} to project ${payment.projectId}`,
+            }))
+          : (reviewed ?? []).map(({ payment }) => ({
+              key: payment.id,
+              title: `${payment.amountLabel} to project ${payment.indexed.projectId}`,
+            }))
+        ).map((step, index) => ({
+          ...step,
+          ...(callProgress?.[index] ? routingCallSteps[callProgress[index].status] : {}),
+        }))}
         activeIndex={busy ? 0 : -1}
         stepsIntro="Eligible wallet batches use one network-fee payment for all selected attempts. Each attempt keeps its own result."
         onConfirm={() => (needsReview ? void review(ready) : void submit())}

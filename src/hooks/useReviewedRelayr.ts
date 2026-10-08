@@ -165,6 +165,14 @@ type RememberedQuote = {
   expectedTransactions: RelayrExpectedTransaction[];
 };
 
+export type RelayrDestinationProgress = {
+  transactionUuid: string;
+  hash?: Hex;
+  status: "pending" | "submitted" | "confirmed" | "reverted";
+};
+
+type DestinationResultsListener = (results: readonly RelayrDestinationProgress[]) => void;
+
 const quotes = new Map<string, RememberedQuote>();
 const bundleInflight = new Map<string, Promise<RelayrGetBundleResponse>>();
 const paymentInflight = new Set<string>();
@@ -172,12 +180,28 @@ const fundedBundles = new Set<string>();
 const bundleListeners = new Map<string, Set<(bundle: RelayrGetBundleResponse) => void>>();
 const bundleProgressListeners = new Map<string, Set<(progress: SafeRelayrProgress) => void>>();
 const bundleProgressSnapshots = new Map<string, Map<string, SafeRelayrProgress>>();
+const bundleResultListeners = new Map<string, Set<DestinationResultsListener>>();
+const bundleResultSnapshots = new Map<string, readonly RelayrDestinationProgress[]>();
 const safeBundleControllers = new Map<string, ReturnType<typeof safeRelayrController>>();
 
-function notifySafeProgress(
-  listener: (progress: SafeRelayrProgress) => void,
-  progress: SafeRelayrProgress,
-) {
+function publishDestinationResults(key: string, results: readonly RelayrDestinationProgress[]) {
+  bundleResultSnapshots.set(key, structuredClone(results));
+  for (const listener of bundleResultListeners.get(key) ?? []) notifyProgress(listener, results);
+}
+
+function subscribeDestinationResults(key: string, listener?: DestinationResultsListener) {
+  if (!listener) return () => undefined;
+  const listeners = bundleResultListeners.get(key) ?? new Set<DestinationResultsListener>();
+  listeners.add(listener);
+  bundleResultListeners.set(key, listeners);
+  const latest = bundleResultSnapshots.get(key);
+  if (latest) notifyProgress(listener, latest);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notifyProgress<T>(listener: (progress: T) => void, progress: T) {
   try {
     listener(structuredClone(progress));
   } catch {
@@ -194,7 +218,7 @@ function subscribeSafeProgress(key: string, listener?: (progress: SafeRelayrProg
   // controller correctly suppresses duplicate proof/progress notifications.
   if (listener)
     for (const progress of bundleProgressSnapshots.get(key)?.values() ?? [])
-      notifySafeProgress(listener, progress);
+      notifyProgress(listener, progress);
   return () => {
     if (listener) listeners.delete(listener);
   };
@@ -217,7 +241,7 @@ function safeBundleController(
       );
       bundleProgressSnapshots.set(key, snapshots);
       for (const listener of bundleProgressListeners.get(key) ?? [])
-        notifySafeProgress(listener, progress);
+        notifyProgress(listener, progress);
     });
     safeBundleControllers.set(key, controller);
   }
@@ -1284,6 +1308,7 @@ function verifyBundleIdentity(
 async function verifyDestinationReceipts(
   bundle: RelayrGetBundleResponse,
   expected: RelayrExpectedTransaction[],
+  onVerified?: (result: RelayrDestinationProgress) => void,
 ): Promise<void> {
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
   for (const transaction of bundle.transactions) {
@@ -1317,13 +1342,13 @@ async function verifyDestinationReceipts(
       throw new Error("Destination receipt is not in the current canonical chain.");
     if (receipt.status === "reverted" && identity.expectedRouterPending) {
       identity.receiptStatus = "reverted";
+      onVerified?.({ transactionUuid: transaction.tx_uuid, hash, status: "reverted" });
       continue;
     }
     if (receipt.status !== "success")
       throw new RelayrVerificationError(
         "A destination transaction reverted onchain. Review the original bundle before attempting recovery.",
       );
-    identity.receiptStatus = "success";
     try {
       await verifyActionReceipt(
         client,
@@ -1342,6 +1367,8 @@ async function verifyDestinationReceipts(
           : "The destination action result could not be verified.",
       );
     }
+    identity.receiptStatus = "success";
+    onVerified?.({ transactionUuid: transaction.tx_uuid, hash, status: "confirmed" });
   }
 }
 
@@ -1418,16 +1445,23 @@ export async function waitForRelayrBundle(
   bundleUuid: string,
   onUpdate?: (bundle: RelayrGetBundleResponse) => void,
   onProgress?: (progress: SafeRelayrProgress) => void,
+  onResults?: DestinationResultsListener,
 ): Promise<RelayrGetBundleResponse> {
   const listeners =
     bundleListeners.get(bundleUuid) ?? new Set<(bundle: RelayrGetBundleResponse) => void>();
   if (onUpdate) listeners.add(onUpdate);
   bundleListeners.set(bundleUuid, listeners);
   const unsubscribeProgress = subscribeSafeProgress(bundleUuid, onProgress);
+  const unsubscribeResults = subscribeDestinationResults(bundleUuid, onResults);
+  const unsubscribe = () => {
+    if (onUpdate) listeners.delete(onUpdate);
+    unsubscribeProgress();
+    unsubscribeResults();
+  };
   const notify = (bundle: RelayrGetBundleResponse) =>
     listeners.forEach((listener) => listener(bundle));
   const existing = bundleInflight.get(bundleUuid);
-  if (existing) return existing;
+  if (existing) return existing.finally(unsubscribe);
   const activityId = `relayr:${bundleUuid}`;
   const request = (async () => {
     const activity = refreshTransactionActivities().find((row) => row.bundleUuid === bundleUuid);
@@ -1477,6 +1511,15 @@ export async function waitForRelayrBundle(
         verifyBundleIdentity(bundleUuid, last, expected);
         if (reverted && !relayrBundleFunded(last))
           throw new RelayrVerificationError("The funding transaction reverted onchain.");
+        const results: RelayrDestinationProgress[] = last.transactions.map((transaction) => {
+          const hash = relayrDestinationHash(transaction) ?? undefined;
+          return {
+            transactionUuid: transaction.tx_uuid,
+            hash,
+            status: hash ? "submitted" : "pending",
+          };
+        });
+        publishDestinationResults(bundleUuid, results);
         const states = last.transactions.map((transaction) => transaction.status?.state);
         const summary = bundleSummary(last);
         const routingComplete =
@@ -1499,7 +1542,13 @@ export async function waitForRelayrBundle(
           throw new Error(`Transaction bundle ${bundleUuid} failed. ${summary}`);
         }
         if (states.length > 0 && (states.every(stateIsSuccess) || routingComplete)) {
-          await verifyDestinationReceipts(last, expected);
+          await verifyDestinationReceipts(last, expected, (result) => {
+            const index = results.findIndex(
+              (item) => item.transactionUuid === result.transactionUuid,
+            );
+            results[index] = result;
+            publishDestinationResults(bundleUuid, results);
+          });
           updateTransactionActivity(activityId, {
             status: "success",
             manualVerificationRequired: false,
@@ -1554,13 +1603,14 @@ export async function waitForRelayrBundle(
     .finally(() => {
       bundleInflight.delete(bundleUuid);
       bundleListeners.delete(bundleUuid);
-      unsubscribeProgress();
       bundleProgressListeners.delete(bundleUuid);
       bundleProgressSnapshots.delete(bundleUuid);
+      bundleResultListeners.delete(bundleUuid);
+      bundleResultSnapshots.delete(bundleUuid);
       safeBundleControllers.delete(bundleUuid);
     })
     .catch(() => undefined);
-  return request;
+  return request.finally(unsubscribe);
 }
 
 export function resumePendingRelayrBundles(): void {

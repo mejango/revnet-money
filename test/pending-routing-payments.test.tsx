@@ -537,6 +537,45 @@ describe("payment recovery", () => {
     expect(mocks.batch).not.toHaveBeenCalled();
   });
 
+  it("defers automatic recovery checks until its active batch releases the execution lock", async () => {
+    let finish!: (result: unknown) => void;
+    let processing = true;
+    const saved = {
+      id: "active-batch",
+      scope: "pending-routing:destination:1:1,8453:1",
+      completed: 0,
+      total: 1,
+      recoveryReason: "Checking the submitted payment.",
+    };
+    mocks.batch.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    mocks.recheck.mockImplementation(async () => {
+      if (processing) throw new Error("Another multichain batch is already being processed.");
+      return saved;
+    });
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+    act(() => {
+      mocks.saved.mockReturnValue(saved);
+      mocks.batch.mock.calls[0][0].onBeforePayment();
+      mocks.batch.mock.calls[0][0].onProgress("Checking payment and 1 transaction result…");
+    });
+    expect(screen.getByRole("button", { name: "Resume saved batch" })).toBeDisabled();
+    expect(mocks.recheck).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Another multichain batch/)).toBeNull();
+
+    await act(async () => {
+      processing = false;
+      finish({ status: "pending", hashes: [] });
+    });
+    await waitFor(() => expect(mocks.recheck).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/Another multichain batch/)).toBeNull();
+    expect(screen.getByText(/Saved batch: 0 of 1 attempts handled/)).toHaveTextContent(
+      "Checking the submitted payment.",
+    );
+  });
+
   it("blocks submit if the wallet changed after review", async () => {
     const rendered = setup();
     fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
@@ -677,6 +716,7 @@ describe("payment recovery", () => {
 
       await act(async () => {
         options.onProgress("Late quote progress");
+        options.onCallProgress([{ status: "confirmed" }]);
         options.onBeforePayment();
         if (outcome === "success") finish({ status: "success", hashes: [] });
         else fail(new Error("Late quote failure"));
@@ -689,8 +729,12 @@ describe("payment recovery", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Review routing" }));
       const nextDialog = await screen.findByRole("dialog", { name: "Route pending payments" });
-      act(() => options.onProgress("Late quote progress"));
+      act(() => {
+        options.onProgress("Late quote progress");
+        options.onCallProgress([{ status: "confirmed" }]);
+      });
       expect(within(nextDialog).queryByRole("status")).toBeNull();
+      expect(within(nextDialog).queryByText("Confirmed")).toBeNull();
       expect(within(nextDialog).queryByRole("button", { name: "Done" })).toBeNull();
       expect(within(nextDialog).getByRole("button", { name: "Confirm routing" })).toBeEnabled();
     },
@@ -715,6 +759,7 @@ describe("payment recovery", () => {
       try {
         await act(async () => {
           options.onProgress("Late progress after navigation");
+          options.onCallProgress([{ status: "confirmed" }]);
           finish({ status: "success", hashes: [] });
         });
         expect(invalidate).not.toHaveBeenCalled();
@@ -724,6 +769,93 @@ describe("payment recovery", () => {
       }
     },
   );
+
+  it("shows each of 14 independently checked results in the modal through completion", async () => {
+    let finish!: (result: unknown) => void;
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    );
+    mocks.prepare.mockImplementation(async (_client, indexed) => ({
+      payment: {
+        ...row(indexed.pendingCallId),
+        amountLabel: `${Number(indexed.pendingCallId.slice(5)) + 1} ETH`,
+      },
+      call: { id: indexed.pendingCallId },
+    }));
+    mocks.batch.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
+    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+    expect(within(dialog).queryByText("Waiting")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+    const options = mocks.batch.mock.calls[0][0];
+    expect(options.calls).toEqual(Array.from({ length: 14 }, (_, i) => ({ id: `item-${i}` })));
+
+    act(() => {
+      options.onBeforePayment();
+      options.onProgress("0 of 14 results checked. 12 submitted; 2 waiting.");
+      options.onCallProgress(
+        Array.from({ length: 14 }, (_, i) => ({
+          status: i === 0 || i === 8 ? "pending" : "submitted",
+        })),
+      );
+    });
+    expect(within(dialog).getByRole("status")).toHaveTextContent("0 of 14 results checked");
+    expect(within(dialog).getAllByText("Checking result")).toHaveLength(12);
+    expect(within(dialog).getAllByText("Waiting")).toHaveLength(2);
+    const items = within(dialog).getAllByRole("listitem");
+    expect(items[0]).toHaveAttribute("data-state", "pending");
+    expect(items[1]).toHaveAttribute("data-state", "active");
+    expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
+
+    act(() => {
+      options.onProgress("13 of 14 results checked. 12 confirmed; 1 reverted; 1 waiting.");
+      options.onCallProgress(
+        Array.from({ length: 14 }, (_, i) => ({
+          status: i === 0 ? "pending" : i === 4 ? "reverted" : "confirmed",
+        })),
+      );
+    });
+    expect(within(dialog).getByRole("status")).toHaveTextContent("13 of 14 results checked");
+    expect(within(dialog).getAllByText("Confirmed")).toHaveLength(12);
+    expect(within(dialog).getByText("Waiting")).toBeTruthy();
+    expect(items[0]).toHaveAttribute("data-state", "pending");
+    expect(items[13]).toHaveAttribute("data-state", "complete");
+    expect(items[13]).toHaveTextContent("14 ETH to project 1");
+    expect(items[4]).toHaveAttribute("data-state", "failed");
+    expect(items[4]).toHaveTextContent("5 ETH to project 1");
+    expect(items[4]).toHaveTextContent("Reverted");
+    expect(items[4]).toHaveTextContent("×");
+    expect(items[4]).not.toHaveTextContent("✓");
+
+    await act(async () => {
+      options.onCallProgress(
+        Array.from({ length: 14 }, (_, i) => ({
+          status: i === 0 ? "skipped" : i === 4 ? "reverted" : "confirmed",
+        })),
+      );
+      finish({ status: "success", hashes: [], revertedHashes: [`0x${"a".repeat(64)}`] });
+    });
+    const done = await within(dialog).findByRole("button", { name: "Done" });
+    expect(within(dialog).getByText("Already handled")).toBeTruthy();
+    expect(within(dialog).getAllByText("Confirmed")).toHaveLength(12);
+    expect(items[4]).toHaveAttribute("data-state", "failed");
+    expect(items[4]).not.toHaveTextContent("✓");
+    expect(mocks.batch).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(done);
+    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
+    const nextDialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+    act(() => options.onCallProgress(Array.from({ length: 14 }, () => ({ status: "confirmed" }))));
+    expect(within(nextDialog).queryByText("Confirmed")).toBeNull();
+    expect(within(nextDialog).queryByText("Already handled")).toBeNull();
+    expect(
+      within(nextDialog)
+        .getAllByRole("listitem")
+        .every((item) => item.getAttribute("data-state") === "pending"),
+    ).toBe(true);
+  });
 
   it("ends the round on Done, still listing what it routed", async () => {
     setup();
