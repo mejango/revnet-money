@@ -832,11 +832,34 @@ Evidence: `/private/tmp/jb-performance-checks/revnet-safe-payment-preview-build-
 - **Resource budget:** No new local build or repeated preview suite; root explicitly made hosted clean-install qualification decisive after this finding. One bounded full-graph inventory/restoration and a narrow official pin after the root signal; preserve every immutable archive. Stop and report any unrelated graph discrepancy rather than silently resolving or changing dependencies.
 
 - [x] Capture the missing nested dependency graph and restore its exact preserved bytes.
-- [ ] Wait for root's official registry integrity evidence before package adoption.
-- [ ] Apply the narrow official pin, verify package/graph/static checks and hand off to root.
+- [x] Wait for root's official registry integrity evidence before package adoption.
+- [x] Apply the narrow official pin, verify package/graph/static checks and hand off to root.
 
 The prior preview build's size/graph comparison is invalidated by this finding. Its archive and reports remain historical evidence, not locked-dependency release qualification.
 
 Restoration evidence: `/private/tmp/jb-performance-checks/revnet-sdk-nested-restore.json` links complete113,075-path before,113,084-path qualified-baseline and113,086-path after inventories. Exactly11 missing nested dependency files were restored from the original backup, with no other restoration change. Deep npm traversal failed beforehand on SDK resolution to invalid bs58 6.0.0/base-x5.0.1; it now passes with nested bs58 5.0.0/base-x4.0.1. Every other installed package path/content matches the qualified baseline apart from16 expected core preview files. Three explicitly listed non-package differences are generated jiti configuration caches and Vitest results; none was removed or silently treated as a package change.
 
 Final adoption will require official package integrity and all753 non-metadata files to match the reviewed preview, retain the restored nested graph, and verify the complete package-path/content differential. Narrow local gates are dependency integrity, explicit deep SDK dependency resolution, typecheck, formatting and diff/lock-scope checks. The prior focused/static passes describe the former staged graph only; no new local build or repeat suite is authorized. Hosted clean-install full CI owns the final tests and compiled artifact.
+
+## 2026-10-07 verified official core2.24.5 adoption
+
+## Plan refinement
+
+- **Objective:** Adopt root's verified official core2.24.5 with an exact pin and unchanged application source, budgets and restored dependency graph.
+- **System fit:** The shared SDK owns payment proof and lifecycle; the already reviewed app consumes its unchanged753 compiled/support files. Root supplied official release evidence and owns PR74 plus final hosted clean-install tests/build/budget/browser qualification. This metadata adoption does not create payment or deployment authority.
+- **Reuse and simplicity:** Compare the official tarball against the current installed core, then write only its package.json bytes when every other package file already matches. Update only the exact application/root-lock pin and core version/resolved/integrity fields in tracked and installed locks; retain nested node_modules and every transitive package path/content. Run no resolver.
+- **Evidence and unknowns:** Official gitHead3a0c1561bb80dc8db6702698b3ab0cdb2d9a0b59 and tarball SHA256a8a1fb5501aab4c028129c4c393774cfff41d3f356ac931db453f13a7999adcc are authorized by root with matching registry SHA512 integrity. The restored graph evidence is revnet-sdk-nested-restore.json; the former preview build and tests remain qualified only for their incorrect staged graph, not release evidence.
+- **Verification:** Verify all754 official package files, whole installed path/content inventories before and after, retained nested bs58 5.0.0/base-x4.0.1 resolution, and an exact metadata-only lock delta. Run dependency check, deep SDK npm traversal, typecheck, formatting and diff checks; report immutable evidence and clean commit for independent review. Final hosted clean-install full CI remains decisive.
+- **Resource budget:** One narrow metadata adoption and bounded static gates, no repeated preview tests, source or cap changes, local build, browser, live quote or wallet action. Preserve every archive and prior report. Stop and replan on any unrelated graph change; root handles push and release.
+
+- [x] Receive and verify root's official registry integrity signal.
+- [x] Apply the exact official pin while retaining the complete restored graph.
+- [x] Verify metadata, graph and static checks; commit the scoped handoff for root.
+
+### Official adoption verification
+
+The official tarball matches the registry SHA1/SHA512 and root's SHA256, version2.24.5 and gitHead3a0c1561. All753 compiled/support files already match the installed reviewed preview, so only the exact official core package.json bytes were written. The application pin, root-lock pin and core lock version/resolved/integrity fields are the only tracked dependency changes; the installed hidden lock has the same three-field update. No resolver ran and no transitive lock entry changed.
+
+The whole installed graph before adoption exactly matches the restored113,086-path inventory. Its after inventory retains every path, file and symlink, with differences confined to core package.json and the installed hidden lock. All754 official package files match the tarball. Direct Node resolution and deep npm traversal confirm the retained SDK-local bs58 5.0.0/base-x4.0.1. Dependency integrity, deep SDK dependency traversal, typecheck, formatting ratchet, refinement and diff checks pass with pinned Node26.5.0/npm12.0.1; application, test, script and budget source remain identical to reviewed54d47ca2.
+
+Immutable evidence is `/private/tmp/jb-performance-checks/revnet-sdk-official-adoption-integrity.json` with before/after full graph inventories, original metadata snapshots, official file hashes and explicit structural metadata diffs. Gate logs, actual resolved paths and the final commit manifest use the same prefix, ending in `-verification.json` for the handoff manifest. Independent review and root-owned PR74 promotion follow. The invalid preview build and former staged-graph tests are preserved with their correction; this adoption ran no repeated suite, local build, browser, remote quote or wallet action. Final hosted clean-install full tests/build/budget/browser gates still qualify release behavior and size.
