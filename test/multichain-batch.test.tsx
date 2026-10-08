@@ -7,6 +7,7 @@ import {
   makeBatchRounds,
   readMultichainBatches,
   replaceRoutingDraft,
+  resetUnsubmittedBatchCall,
   saveMultichainBatch,
   type MultichainCall,
 } from "@/lib/multichain-batch";
@@ -99,6 +100,7 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   receipt: vi.fn(),
   block: vi.fn(),
+  finalGuard: vi.fn(),
 }));
 vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
 vi.mock("wagmi/actions", () => ({
@@ -129,6 +131,7 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
     reviewedInParent?: boolean;
     reverify?: () => Promise<void>;
     beforeSubmission?: () => Promise<void>;
+    onBeforeSubmissionAborted?: () => Promise<void>;
     preflightSimulation?: (variables: unknown, account: Address) => Promise<{ gas: bigint } | void>;
   }) => {
     return {
@@ -141,6 +144,12 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
         await options.reverify?.();
         await options.preflightSimulation?.(variables, mocks.account as Address);
         await options.beforeSubmission?.();
+        try {
+          mocks.finalGuard();
+        } catch (error) {
+          await options.onBeforeSubmissionAborted?.();
+          throw error;
+        }
         return mocks.write(variables);
       },
     };
@@ -232,6 +241,20 @@ describe("durable multichain batch journal", () => {
     localStorage.setItem("revnet:multichain-batches:v1", "bad JSON");
     expect(() => readMultichainBatches()).toThrow(/recovery data is unavailable/);
   });
+  it.each(["hash", "changed call", "changed sibling"])(
+    "preserves a %s instead of releasing a stale prewrite snapshot",
+    (change) => {
+      const job = createMultichainBatch(ACCOUNT, "direct", "Direct", [call(1), call(10)], "direct");
+      job.calls[0].state = "submitting";
+      const expected = structuredClone(job);
+      if (change === "hash") job.calls[0].hash = HASH;
+      else if (change === "changed call") job.calls[0].value = 1n;
+      else job.calls[1].state = "submitting";
+      saveMultichainBatch(job);
+      expect(() => resetUnsubmittedBatchCall(expected, 0)).toThrow(/submission changed/);
+      expect(readMultichainBatches()[0]).toEqual(job);
+    },
+  );
 });
 
 describe("read-only saved routing re-check", () => {
@@ -1475,6 +1498,73 @@ describe("reviewed selected-call orchestration", () => {
       await expect(
         second.result.current.runBatch({ scope: "one", label: "Distribute", calls: [] }),
       ).rejects.toThrow(/unknown result/);
+    });
+    expect(mocks.write).toHaveBeenCalledOnce();
+  });
+  it.each([
+    { code: 4001 },
+    { name: "UserRejectedRequestError" },
+    { cause: { name: "UserRejectedRequestError" } },
+  ])(
+    "releases a definitely rejected wallet attempt using the SDK classifier: %j",
+    async (rejection) => {
+      mocks.write.mockRejectedValue(rejection);
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(
+          result.current.runBatch({ scope: "one", label: "Distribute", calls: [call(1)] }),
+        ).rejects.toBe(rejection);
+        expect(readMultichainBatches()).toEqual([]);
+        expect(mocks.write).toHaveBeenCalledOnce();
+      });
+    },
+  );
+  it.each([
+    { name: "TransactionExecutionError" },
+    { code: -32000 },
+    { name: "UserRejectedRequestErrorExtra", code: "4001" },
+  ])("keeps an ambiguous wallet attempt using the SDK classifier: %j", async (failure) => {
+    mocks.write.mockRejectedValue(failure);
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({ scope: "one", label: "Distribute", calls: [call(1)] }),
+      ).rejects.toBe(failure);
+      expect(readMultichainBatches()[0].calls[0]).toMatchObject({ state: "submitting" });
+      expect(mocks.write).toHaveBeenCalledOnce();
+    });
+  });
+  it("resumes a call refused after persistence without leaving an unknown wallet submission", async () => {
+    const existing = createMultichainBatch(
+      ACCOUNT,
+      "one",
+      "Distribute",
+      [call(1), call(1)],
+      "direct",
+    );
+    existing.calls[0].state = "success";
+    existing.calls[0].hash = HASH;
+    saveMultichainBatch(existing);
+    mocks.finalGuard.mockImplementationOnce(() => {
+      throw new Error("The wallet chain changed");
+    });
+    const first = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        first.result.current.runBatch({ scope: "one", label: "Distribute", calls: [] }),
+      ).rejects.toThrow(/chain changed/);
+    });
+    expect(readMultichainBatches()[0].calls.map((call) => call.state)).toEqual([
+      "success",
+      "ready",
+    ]);
+    expect(mocks.write).not.toHaveBeenCalled();
+    first.unmount();
+    const second = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        second.result.current.runBatch({ scope: "one", label: "Distribute", calls: [] }),
+      ).resolves.toMatchObject({ status: "success" });
     });
     expect(mocks.write).toHaveBeenCalledOnce();
   });

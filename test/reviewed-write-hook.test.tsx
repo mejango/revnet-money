@@ -1,3 +1,4 @@
+import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@bananapus/nana-sdk-core/safe";
 import {
   SAFE_EXEC_ABI,
   safeProposalFor,
@@ -183,7 +184,9 @@ beforeEach(() => {
   mocks.simulateContract.mockImplementation(async (_config, request) => ({ request }));
   mocks.estimateContractGas.mockResolvedValue(50_000n);
   mocks.submit.mockResolvedValue(HASH);
-  mocks.switchChain.mockResolvedValue(undefined);
+  mocks.switchChain.mockImplementation(async (_config, { chainId }) => {
+    mocks.account = { ...mocks.account, chainId };
+  });
   mocks.waitForTransactionReceipt.mockImplementation(() => new Promise(() => undefined));
   mocks.getTransactionReceipt.mockRejectedValue(new Error("Receipt not found"));
   // A Safe proposal hash is never a transaction the chain knows.
@@ -540,7 +543,7 @@ describe("reviewed write hook", () => {
     const { result } = renderHook(() => hooks.useWriteContract());
 
     await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
-      "Connected account changed",
+      hooks.ACCOUNT_CHANGED,
     );
     expect(mocks.simulateContract).not.toHaveBeenCalled();
     expect(mocks.submit).not.toHaveBeenCalled();
@@ -556,7 +559,7 @@ describe("reviewed write hook", () => {
     const { result } = renderHook(() => hooks.useWriteContract());
 
     await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
-      "Connected account changed",
+      hooks.ACCOUNT_CHANGED,
     );
     expect(mocks.submit).not.toHaveBeenCalled();
   });
@@ -587,6 +590,189 @@ describe("reviewed write hook", () => {
     expect(mocks.submit).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ account: ACCOUNT, address: TARGET }),
     );
+  });
+
+  for (const stage of [
+    "switch",
+    "reverify",
+    "preflight",
+    "simulation",
+    "estimate",
+    "persistence",
+  ] as const) {
+    it.each([
+      [
+        "account",
+        () => {
+          mocks.account.address = OTHER_ACCOUNT;
+        },
+        /account changed/i,
+      ],
+      [
+        "disconnected account",
+        () => {
+          mocks.account.address = undefined;
+        },
+        /account changed/i,
+      ],
+      [
+        "chain",
+        () => {
+          mocks.account.chainId = 8453;
+        },
+        /chain changed/i,
+      ],
+      [
+        "another connection of the same wallet type",
+        () => {
+          mocks.account.connector = { id: "injected", name: "Injected" };
+        },
+        /connection changed/i,
+      ],
+      [
+        "view-as mode",
+        async () => {
+          (await import("@/lib/view-as")).setViewAs(OTHER_ACCOUNT);
+        },
+        /Exit View as/i,
+      ],
+    ] as const)(`refuses a changed %s after awaiting ${stage}`, async (_name, change, error) => {
+      const { review, activity, hooks } = await freshHarness();
+      review.registerTransactionReviewHandler(async () => true);
+      let resume!: () => void;
+      let entered = false;
+      const pending = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      const pause = async () => {
+        entered = true;
+        await pending;
+      };
+      const beforeSubmission = vi.fn(async () => {
+        if (stage === "persistence") await pause();
+      });
+      if (stage === "switch") {
+        mocks.account.chainId = 1;
+        mocks.switchChain.mockImplementation(async (_config, { chainId }) => {
+          mocks.account.chainId = chainId;
+          await pause();
+        });
+      }
+      if (stage === "simulation")
+        mocks.simulateContract.mockImplementation(async (_config, request) => {
+          await pause();
+          return { request };
+        });
+      if (stage === "estimate")
+        mocks.estimateContractGas.mockImplementation(async () => {
+          await pause();
+          return 50_000n;
+        });
+      const { result } = renderHook(() =>
+        hooks.useWriteContract({
+          beforeSubmission,
+          reverify: stage === "reverify" ? pause : undefined,
+          preflightSimulation:
+            stage === "preflight"
+              ? async () => {
+                  await pause();
+                  return { gas: 100_000n };
+                }
+              : undefined,
+        }),
+      );
+      const attempt = result.current.writeContractAsync(CALL as never);
+      const refused = expect(attempt).rejects.toThrow(error);
+      await waitFor(() => expect(entered).toBe(true));
+      await change();
+      resume();
+      await refused;
+      expect(mocks.submit).not.toHaveBeenCalled();
+      expect(activity.transactionActivityForHash(HASH)).toBeUndefined();
+      expect(beforeSubmission).toHaveBeenCalledTimes(stage === "persistence" ? 1 : 0);
+    });
+  }
+
+  it("uses the shared switch, reverify, simulation, persistence, write order", async () => {
+    const { review, hooks } = await freshHarness();
+    const order: string[] = [];
+    review.registerTransactionReviewHandler(async () => {
+      order.push("review");
+      return true;
+    });
+    mocks.account.chainId = 1;
+    mocks.switchChain.mockImplementation(async (_config, { chainId }) => {
+      order.push("switch");
+      mocks.account.chainId = chainId;
+    });
+    mocks.simulateContract.mockImplementation(async (_config, request) => {
+      order.push("simulate");
+      return { request };
+    });
+    mocks.submit.mockImplementation(async () => {
+      order.push("write");
+      return HASH;
+    });
+    const { result } = renderHook(() =>
+      hooks.useWriteContract({
+        reverify: async () => {
+          order.push("reverify");
+        },
+        beforeSubmission: async () => {
+          order.push("persist");
+        },
+      }),
+    );
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    expect(order).toEqual(["review", "switch", "reverify", "simulate", "persist", "write"]);
+  });
+
+  it("does not clear persisted recovery when the wallet submission fails ambiguously", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    let persisted = false;
+    const onBeforeSubmissionAborted = vi.fn(async () => {
+      persisted = false;
+    });
+    mocks.submit.mockRejectedValue(new Error("Wallet transport timed out"));
+    const { result } = renderHook(() =>
+      hooks.useWriteContract({
+        beforeSubmission: async () => {
+          persisted = true;
+        },
+        onBeforeSubmissionAborted,
+      }),
+    );
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow("timed out");
+    expect(persisted).toBe(true);
+    expect(onBeforeSubmissionAborted).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("releases the saved intent only when the final shared gate refuses before the wallet", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    let persisted = false;
+    const onBeforeSubmissionAborted = vi.fn(async () => {
+      persisted = false;
+    });
+    const { result } = renderHook(() =>
+      hooks.useWriteContract({
+        beforeSubmission: async () => {
+          persisted = true;
+          mocks.account.chainId = 8453;
+        },
+        onBeforeSubmissionAborted,
+      }),
+    );
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      /chain changed/i,
+    );
+    expect(persisted).toBe(false);
+    expect(onBeforeSubmissionAborted).toHaveBeenCalledOnce();
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 
   it("deduplicates identical pending direct writes before opening another review", async () => {
@@ -961,6 +1147,29 @@ describe("reviewed write hook", () => {
       }),
     ],
     ["another Safe's execution", executionOf(TRANSFER_7, OTHER_ACCOUNT)],
+    [
+      "the single reviewed call wrapped as an unreviewed batch",
+      {
+        hash: HASH,
+        to: ACCOUNT,
+        input: encodeFunctionData({
+          abi: SAFE_EXEC_ABI,
+          functionName: "execTransaction",
+          args: [
+            MULTI_SEND_CALL_ONLY,
+            0n,
+            encodeMultiSend([{ ...TRANSFER_7, value: 0n }]),
+            1,
+            0n,
+            0n,
+            0n,
+            zeroAddress,
+            zeroAddress,
+            "0x",
+          ],
+        }),
+      },
+    ],
     ["no execTransaction", { hash: HASH, to: ACCOUNT, input: TRANSFER_7.data }],
   ])("leaves a reply unconfirmed that executes %s", async (_case, execution) => {
     mocks.account = {

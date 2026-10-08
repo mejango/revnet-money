@@ -274,6 +274,24 @@ export function updateTransactionActivity(
   ]);
 }
 
+/** Restore only the exact payment marker whose wallet invocation was refused. */
+export function restoreUnsentPaymentActivity(
+  expected: TransactionActivity,
+  previous: TransactionActivity,
+): void {
+  requireTransactionActivityPersistence();
+  const current = snapshot.find((row) => row.id === expected.id);
+  if (
+    expected.id !== previous.id ||
+    expected.relayrPaymentStatus !== "submitted" ||
+    JSON.stringify(current) !== JSON.stringify(expected)
+  ) {
+    throw new Error("The saved submission changed. Preserve its recovery record.");
+  }
+  emit(snapshot.map((row) => (row.id === expected.id ? structuredClone(previous) : row)));
+  requireTransactionActivityPersistence();
+}
+
 /**
  * Quarantine a mined write whose action-specific verification did not finish.
  * The hash remains an in-flight dedupe lock, and the generic receipt watcher

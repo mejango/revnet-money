@@ -36,6 +36,7 @@ import {
   sentPayments,
 } from "@/lib/relayr-activity";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import {
   safeRelayrActivity,
@@ -49,6 +50,7 @@ import {
   recordTransactionActivity,
   refreshTransactionActivities,
   requireTransactionActivityPersistence,
+  restoreUnsentPaymentActivity,
   transactionActivitySnapshot,
   updateTransactionActivity,
   type RelayrExpectedTransaction,
@@ -74,6 +76,7 @@ import {
   relayrForwardRequest,
   relayrPaymentAttemptOutcome,
   relayrPaymentDetails,
+  RelayrPaymentNotSentError,
   RelayrProofError,
   relayrQuotedOptions,
   relayrRequestsDead,
@@ -81,6 +84,7 @@ import {
   relayrRequestsVerdict,
   relayrRetryOption,
   relayrSessionOutcome,
+  relayrWalletPaymentError,
   requireRelayrBundleUnpaid,
   requireRelayrRetry,
   revertedRelayrQuote,
@@ -112,7 +116,7 @@ import {
   type Hex,
 } from "viem";
 import { useAccount, useConfig, useSendTransaction, useSignTypedData, useSwitchChain } from "wagmi";
-import { getAccount, getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
+import { getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
 
 export type ReviewedRelayrRequest = {
   chainId: JBChainId;
@@ -1527,6 +1531,11 @@ export function useGetRelayrTxQuote() {
       },
     ) => {
       if (!address) throw new Error("Connect a wallet first.");
+      const requireWalletContext = captureReviewedWalletContext(
+        config,
+        address,
+        "Connected account changed. Review the authorization again.",
+      );
       const safeCount = requests.filter((request) => request.relayrMode === "safe-exec").length;
       if (safeCount && safeCount !== requests.length)
         throw new Error("Safe executions are quoted as a bundle of their own.");
@@ -1575,7 +1584,7 @@ export function useGetRelayrTxQuote() {
         }
       }
       return withAuthorizationLock(address, async () => {
-        requireNoViewAs();
+        requireWalletContext();
         requests = requests.map((request) => ({ ...request, data: { ...request.data } }));
         if (!address) throw new Error("Connect a wallet first.");
         if (!requests.length) throw new Error("There are no calls to quote.");
@@ -1682,15 +1691,10 @@ export function useGetRelayrTxQuote() {
             const transactions: RelayrEntry[] = [];
             const signedNonces: string[] = [];
             for (const request of requests) {
+              requireWalletContext();
               if (!request.expectedRouterPending)
                 await switchChainAsync({ chainId: request.chainId });
-              const current = getAccount(config);
-              if (!current.address || current.address.toLowerCase() !== address.toLowerCase()) {
-                throw new Error("Connected account changed. Review the authorization again.");
-              }
-              if (!request.expectedRouterPending && current.chainId !== request.chainId) {
-                throw new Error("Connected chain did not switch. Review the authorization again.");
-              }
+              requireWalletContext(request.expectedRouterPending ? undefined : request.chainId);
               const version = request.version ?? 6;
               const forwarder = jbContractAddress[version].ERC2771Forwarder[request.chainId];
               const client = getPublicClient(config, { chainId: request.chainId });
@@ -1735,8 +1739,7 @@ export function useGetRelayrTxQuote() {
                       },
                     ],
                   });
-                if (getAccount(config).address?.toLowerCase() !== address.toLowerCase())
-                  throw new Error("Connected account changed. Review the deployment again.");
+                requireWalletContext(request.expectedRouterPending ? undefined : request.chainId);
                 await verifyCallPreconditions(client, request.preconditions);
                 if (request.expectedRouterPending)
                   await simulatePendingRouterCall(client, {
@@ -1842,33 +1845,19 @@ export function useGetRelayrTxQuote() {
                   },
                 ],
               });
-              const live = getAccount(config);
-              if (
-                !live.address ||
-                live.address.toLowerCase() !== address.toLowerCase() ||
-                live.chainId !== request.chainId
-              ) {
-                throw new Error("Connected account changed. Review the authorization again.");
-              }
+              requireWalletContext(request.chainId);
               if (request.metadataSource)
                 await verifyMetadataSource(client, request.metadataSource, address);
               await verifyCallPreconditions(client, request.preconditions);
+              requireWalletContext(request.chainId);
               const signature = await signTypedDataAsync({
+                account: address,
                 domain,
                 types: FORWARD_REQUEST_TYPES,
                 primaryType: "ForwardRequest",
                 message,
               });
-              const afterSignature = getAccount(config);
-              if (
-                !afterSignature.address ||
-                afterSignature.address.toLowerCase() !== address.toLowerCase() ||
-                afterSignature.chainId !== request.chainId
-              ) {
-                throw new Error(
-                  "Connected account changed while signing. Review the authorization again.",
-                );
-              }
+              requireWalletContext(request.chainId);
               executionGas.push(gasWithHeadroom(message.gas + 100_000n).toString());
               const signedData = encodeFunctionData({
                 abi: erc2771ForwarderAbi,
@@ -1912,6 +1901,7 @@ export function useGetRelayrTxQuote() {
           // A response can be lost after Relayr receives executable signatures. Persist
           // the intent first so a reload cannot authorize a fresh copy of the same calls.
           await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id);
+          requireWalletContext();
           const publicationId = `relayr-publication:${callKey}`;
           recordTransactionActivity({
             id: publicationId,
@@ -2009,6 +1999,11 @@ export function useSendRelayrTx() {
         throw new Error(
           "Submit each action through the Safe proposal flow instead of paying an EOA quote.",
         );
+      const requireWalletContext = captureReviewedWalletContext(
+        config,
+        address,
+        "Connected account or chain changed. Review the payment again.",
+      );
       const payment = { ...offeredPayment };
       const remembered = quotes.get(paymentKey(payment));
       if (!remembered || remembered.account.toLowerCase() !== address.toLowerCase())
@@ -2055,17 +2050,7 @@ export function useSendRelayrTx() {
           destinationChainIds: remembered.chainIds,
         });
         await switchChainAsync({ chainId: payment.chain });
-        const requireAccount = () => {
-          requireNoViewAs();
-          const current = getAccount(config);
-          if (
-            !current.address ||
-            current.address.toLowerCase() !== address.toLowerCase() ||
-            current.chainId !== payment.chain ||
-            isSafeConnection(config)
-          )
-            throw new Error("Connected account or chain changed. Review the payment again.");
-        };
+        const requireAccount = () => requireWalletContext(payment.chain);
         requireAccount();
         await requireTransactionReview({
           kind: "transaction",
@@ -2118,28 +2103,46 @@ export function useSendRelayrTx() {
           destinationChainIds: remembered.chainIds,
         });
         await requireUnfunded(config, remembered);
-        recordTransactionActivity({
-          id: activityId,
-          kind: "relayr-bundle",
-          title: "Multi-chain bundle",
-          status: "submitted",
-          message:
-            "Funding is being submitted. Do not pay again while the wallet result is uncertain.",
-          chainId: payment.chain,
-          account: address,
-          bundleUuid: remembered.bundleUuid,
-          relayrExpectedTransactions: remembered.expectedTransactions,
-          relayrPayment: {
-            target: payment.target,
-            data: payment.calldata,
-            value: value.toString(),
-          },
-          relayrPayments: sent,
-          relayrPaymentStatus: "submitted",
-          chainStates: remembered.chainIds.map((chainId) => ({ chainId, status: "Pending" })),
-          callKey: remembered.callKey,
-        });
+        requireAccount();
+        const previousPayment = structuredClone(journal());
+        if (!previousPayment)
+          throw new Error("The saved payment disappeared. Recover the quote before paying.");
+        const submitting = structuredClone(
+          recordTransactionActivity({
+            id: activityId,
+            kind: "relayr-bundle",
+            title: "Multi-chain bundle",
+            status: "submitted",
+            message:
+              "Funding is being submitted. Do not pay again while the wallet result is uncertain.",
+            chainId: payment.chain,
+            account: address,
+            bundleUuid: remembered.bundleUuid,
+            relayrExpectedTransactions: remembered.expectedTransactions,
+            relayrPayment: {
+              target: payment.target,
+              data: payment.calldata,
+              value: value.toString(),
+            },
+            relayrPayments: sent,
+            relayrPaymentStatus: "submitted",
+            chainStates: remembered.chainIds.map((chainId) => ({ chainId, status: "Pending" })),
+            callKey: remembered.callKey,
+          }),
+        );
         requireTransactionActivityPersistence();
+        try {
+          requireAccount();
+          relayrPaymentDetails(payment, {
+            bundleUuid: remembered.bundleUuid,
+            destinationChainIds: remembered.chainIds,
+          });
+        } catch (error) {
+          // This exact marker belongs to a wallet call we have not invoked. A changed
+          // record may contain another attempt's evidence and must remain untouched.
+          restoreUnsentPaymentActivity(submitting, previousPayment);
+          throw new RelayrPaymentNotSentError(error);
+        }
         let hash: Hex;
         try {
           hash = await transaction.sendTransactionAsync({
@@ -2150,7 +2153,8 @@ export function useSendRelayrTx() {
             data: payment.calldata,
             gas: RELAYR_PAYMENT_GAS,
           });
-        } catch (error) {
+        } catch (walletError) {
+          const error = relayrWalletPaymentError(walletError);
           // Only an explicit wallet rejection proves that no transaction was broadcast. A quote
           // paid before stays on the SDK's retry rule when the wallet declines to pay it again:
           // another payment may still fund it.

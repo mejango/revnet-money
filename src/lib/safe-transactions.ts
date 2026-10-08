@@ -8,18 +8,12 @@ import {
   settleTransactionActivityFailure,
 } from "@/lib/transaction-activity";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { multiSendCallsOf } from "@bananapus/nana-sdk-core/safe";
 import {
   requireSafeExecutionSuccess,
+  safeTransactionRunsCalls as runsCalls,
   safeExecutionResult,
 } from "@bananapus/nana-sdk-core/safe-service";
-import {
-  isAddressEqual,
-  type Address,
-  type Hex,
-  type PublicClient,
-  type TransactionReceipt,
-} from "viem";
+import { type Address, type Hex, type PublicClient, type TransactionReceipt } from "viem";
 
 /** The origin every Safe proposal from this app names. */
 export const SAFE_PROPOSAL_ORIGIN = "revnet.money";
@@ -46,20 +40,7 @@ export function safeTransactionRunsCalls(
   calls: readonly ReviewedSafeCall[],
   batch: boolean,
 ): boolean {
-  const runs = (call: ReviewedSafeCall, to: Address, value: bigint, data: Hex) =>
-    isAddressEqual(call.to, to) &&
-    BigInt(call.value) === value &&
-    call.data.toLowerCase() === data.toLowerCase();
-  if (calls.length === 1 && tx.operation === 0 && runs(calls[0]!, tx.to, tx.value, tx.data)) {
-    return true;
-  }
-  if (!batch || tx.value !== 0n) return false;
-  const inner = multiSendCallsOf(tx);
-  return (
-    !!inner &&
-    inner.length === calls.length &&
-    inner.every((call, index) => runs(calls[index]!, call.to, call.value, call.data))
-  );
+  return runsCalls(tx, calls, batch);
 }
 
 /** What a Safe queue shows on a chain where Safe hosts no transaction service. */
