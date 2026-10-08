@@ -1,6 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/vendor/HeartbeatWorker.js", "vitest.live.config.ts"],
+  "entry": [
+    "src/vendor/HeartbeatWorker.js",
+    "vitest.live.config.ts",
+    "scripts/prepare-image-optimizer.d.mts"
+  ],
   "ignore": ["src/app/**/*.browsertest.tsx"],
   "ignoreDependencies": [
     "@getpara/core-sdk",
