@@ -175,6 +175,7 @@ export function Header(props: Props) {
           className="block size-[120px] overflow-hidden border border-zinc-200 object-cover sm:size-36"
           alt={`${projectName || "Project"} logo`}
           width={144}
+          sizes="(min-width: 640px) 144px, 120px"
           height={144}
           fallback={
             <ImageWithFallback
@@ -182,6 +183,7 @@ export function Header(props: Props) {
               className="block size-[120px] overflow-hidden border border-zinc-200 object-cover sm:size-36"
               alt={`${projectName || "Project"} logo`}
               width={144}
+              sizes="(min-width: 640px) 144px, 120px"
               height={144}
               fallback={
                 <div className="flex h-[120px] w-[120px] items-center justify-center rounded bg-zinc-100 sm:size-36">

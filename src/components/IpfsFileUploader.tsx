@@ -60,6 +60,7 @@ export function IpfsImageUploader({
             src={ipfsUri(uploadFile.data.Hash)}
             alt="Uploaded file"
             width={80}
+            sizes="80px"
             height={200}
             fallback={<div className="text-sm text-zinc-500">Preview unavailable.</div>}
           />

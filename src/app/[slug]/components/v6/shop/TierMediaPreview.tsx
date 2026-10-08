@@ -1,5 +1,6 @@
 "use client";
 
+import { ResponsiveImage } from "@/components/ResponsiveImage";
 import { useEffect, useState } from "react";
 import { TierMedia } from "./shopLib";
 
@@ -26,12 +27,17 @@ export function TierMediaPreview({
   tierId,
   alt,
   detail = false,
+  sizes = detail
+    ? "(min-width: 768px) 270px, (min-width: 672px) 638px, calc(100vw - 34px)"
+    : "(min-width: 1225px) 251px, (min-width: 801px) calc((100vw - 468px) / 3), (min-width: 640px) calc((100vw - 128px) / 3), calc((100vw - 84px) / 2)",
 }: {
   media: TierMedia | undefined;
   tierId: number;
   alt: string;
   /** Larger, interactive rendering for the detail modal. */
   detail?: boolean;
+  /** Display slot width; fixed strip/holdings callers override the inventory grid. */
+  sizes?: string;
 }) {
   const source = media?.animationUrl || media?.image || "";
   const [failed, setFailed] = useState(false);
@@ -49,9 +55,9 @@ export function TierMediaPreview({
 
   if (kind === "image") {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
+      <ResponsiveImage
         src={source}
+        sizes={sizes}
         alt={alt}
         loading={detail ? "eager" : "lazy"}
         decoding="async"

@@ -2,7 +2,7 @@ import { RichPreview } from "@/app/[slug]/about/components/RichPreview";
 import { ProjectRichText } from "@/components/ui/html";
 import { getProjectLinks } from "@/lib/projectLinks";
 import type { JBProjectMetadata } from "@bananapus/nana-sdk-core";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
@@ -77,11 +77,32 @@ describe("untrusted project content", () => {
     expect(screen.getByText("Heading").tagName).toBe("H1");
     expect(screen.getByText("bold").tagName).toBe("STRONG");
     const images = [...container.querySelectorAll("img")];
-    expect(images.map((image) => image.getAttribute("src"))).toEqual([
-      `https://juicebox.center/ipfs/${cid}`,
-      "https://example.com/a.png",
-    ]);
+    expect(images[0].getAttribute("src")).toContain("/_next/image?url=");
+    expect(images[0]).toHaveAttribute("data-original-src", `https://juicebox.center/ipfs/${cid}`);
+    expect(images[0]).toHaveAttribute("srcset");
+    expect(images[1]).toHaveAttribute("src", "https://example.com/a.png");
+    expect(images[1]).not.toHaveAttribute("srcset");
     expect(images.map((image) => image.getAttribute("alt"))).toEqual(["pinned", "hot"]);
+  });
+
+  it("owns responsive attributes after sanitization and retries the original only once", () => {
+    const cid = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
+    render(
+      <ProjectRichText
+        source={`<img alt="Pinned art" src="ipfs://${cid}" srcset="https://attacker.example/track.png 1w" sizes="1px" data-original-src="https://attacker.example/track.png" data-original-fallback="true" style="position:fixed" onerror="alert(1)">`}
+      />,
+    );
+    const image = screen.getByAltText("Pinned art");
+    expect(image.outerHTML).not.toContain("attacker.example");
+    expect(image).not.toHaveAttribute("onerror");
+    expect(image).not.toHaveAttribute("data-original-fallback");
+    expect(image).toHaveStyle({ visibility: "hidden" });
+    fireEvent.error(image);
+    expect(image).toHaveAttribute("src", `https://juicebox.center/ipfs/${cid}`);
+    expect(image).not.toHaveAttribute("srcset");
+    fireEvent.error(image);
+    expect(image).toHaveAttribute("src", `https://juicebox.center/ipfs/${cid}`);
+    expect(image).not.toHaveStyle({ visibility: "hidden" });
   });
 
   it("caps project-controlled input before parsing", () => {

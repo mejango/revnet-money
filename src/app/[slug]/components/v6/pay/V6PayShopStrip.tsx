@@ -86,7 +86,7 @@ export function V6PayShopStrip({
                 title={soldOut ? `${name} is sold out` : `Add ${name} to cart`}
               >
                 <span className="block aspect-square w-full overflow-hidden">
-                  <TierMediaPreview media={media} tierId={tier.id} alt={name} />
+                  <TierMediaPreview media={media} tierId={tier.id} alt={name} sizes="96px" />
                 </span>
               </button>
               {soldOut ? (

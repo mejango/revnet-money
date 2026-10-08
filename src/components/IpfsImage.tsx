@@ -1,11 +1,12 @@
 "use client";
 
+import { ResponsiveImage } from "@/components/ResponsiveImage";
 import { ipfsUriToAppUrl } from "@/lib/ipfs";
 import { safeDataImageUrl } from "@/lib/safe-data-image";
 import type { ImgHTMLAttributes, ReactNode } from "react";
 import { useState } from "react";
 
-type Props = Omit<ImgHTMLAttributes<HTMLImageElement>, "onError" | "src"> & {
+type Props = Omit<ImgHTMLAttributes<HTMLImageElement>, "onError" | "src" | "srcSet"> & {
   alt: string;
   fallback: ReactNode;
   src: string | null | undefined;
@@ -17,9 +18,9 @@ export function ImageWithFallback({ alt, fallback, src, ...props }: Props) {
   if (!src || failedSrc === src) return fallback;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <ResponsiveImage
       {...props}
+      sizes={props.sizes ?? "100vw"}
       src={src}
       alt={alt}
       decoding={props.decoding ?? (props.loading === "eager" ? "sync" : "async")}
@@ -30,9 +31,9 @@ export function ImageWithFallback({ alt, fallback, src, ...props }: Props) {
 }
 
 /**
- * Render only CID-validated IPFS media, without involving Next's image
- * optimizer. Juicebox Center owns the shared gateway boundary; a failed
- * browser load becomes an intentional UI fallback rather than a broken icon.
+ * Render only CID-validated IPFS or safe inline media. Delivery may use a
+ * disposable derivative; failures retry the accepted original once before
+ * displaying the intentional UI fallback.
  */
 export function IpfsImage({ alt, fallback, src, ...props }: Props) {
   const inlineSrc = safeDataImageUrl(src);
@@ -44,9 +45,9 @@ export function IpfsImage({ alt, fallback, src, ...props }: Props) {
   if (!safeSrc) return fallback;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <ResponsiveImage
       {...props}
+      sizes={props.sizes ?? "100vw"}
       src={safeSrc}
       alt={alt}
       decoding={props.decoding ?? (props.loading === "eager" ? "sync" : "async")}

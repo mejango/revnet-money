@@ -1,7 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
+import { imageConfigDefault } from "next/dist/shared/lib/image-config";
 import { afterEach, beforeEach, vi } from "vitest";
+import nextConfig from "../next.config";
 import { installNativeDialogShim, resetNativeDialogShim } from "./native-dialog-shim";
+
+// Vitest does not run Next's webpack image-config substitution. Feed its public
+// getImageProps API the actual app settings instead of testing default q75.
+Object.assign(imageConfigDefault, nextConfig.images);
 
 // Route handlers run in the node environment, where there is no DOM to shim.
 const hasDom = typeof window !== "undefined";

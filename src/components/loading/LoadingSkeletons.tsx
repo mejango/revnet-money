@@ -314,6 +314,7 @@ export function ProjectHeaderSkeleton({ hint }: { hint?: ProjectNavigationHint |
               src={hint.logoUri}
               alt=""
               width={144}
+              sizes="(min-width: 640px) 144px, 120px"
               height={144}
               className="h-[120px] w-[120px] object-cover sm:size-36"
               fallback={

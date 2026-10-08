@@ -66,6 +66,7 @@ export function TopProjectsFeed({
               src={project.logoUri}
               alt={project.name}
               width={40}
+              sizes="40px"
               height={40}
               loading={project.rank <= 4 ? "eager" : "lazy"}
               fetchPriority={project.rank <= 4 ? "high" : "auto"}

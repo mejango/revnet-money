@@ -173,6 +173,7 @@ export function HomepageActivityFeed({
                   src={project.logoUri}
                   alt=""
                   width={46}
+                  sizes="46px"
                   height={46}
                   loading={index < 4 ? "eager" : "lazy"}
                   fetchPriority={index < 4 ? "high" : "auto"}

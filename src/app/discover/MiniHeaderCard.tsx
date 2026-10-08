@@ -23,6 +23,7 @@ export default function MiniHeaderCard({
         src={logoUri}
         alt={`${handle || "Project"} logo`}
         width={48}
+        sizes="48px"
         height={48}
         className="size-12 rounded-full object-cover"
         fallback={<div className="size-12 rounded-full bg-zinc-100" />}

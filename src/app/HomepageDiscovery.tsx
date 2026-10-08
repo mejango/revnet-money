@@ -270,6 +270,7 @@ function ProjectRows({
                 src={project.logoUri}
                 alt=""
                 width={40}
+                sizes="40px"
                 height={40}
                 loading={index < 4 ? "eager" : "lazy"}
                 fetchPriority={index < 4 ? "high" : "auto"}

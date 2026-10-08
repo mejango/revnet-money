@@ -1377,6 +1377,7 @@ export function V6PayCard() {
                             <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border border-zinc-200 bg-zinc-100 text-xs text-zinc-500">
                               <ImageWithFallback
                                 src={item.imageUri}
+                                sizes="48px"
                                 alt=""
                                 className="h-full w-full object-contain"
                                 fallback={<span>#{item.tierId.toString()}</span>}

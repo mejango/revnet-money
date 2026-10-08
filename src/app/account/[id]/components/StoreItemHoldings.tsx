@@ -177,7 +177,12 @@ export function StoreItemHoldings({ address }: { address: Address }) {
                     return (
                       <div key={tier.key} className="flex items-center gap-3 py-1.5 text-sm">
                         <div className="h-10 w-10 shrink-0 overflow-hidden border border-zinc-200 bg-white">
-                          <TierMediaPreview media={media} tierId={tier.tierId} alt={name} />
+                          <TierMediaPreview
+                            media={media}
+                            tierId={tier.tierId}
+                            alt={name}
+                            sizes="40px"
+                          />
                         </div>
                         <span className="min-w-0 flex-1 truncate font-medium text-zinc-900">
                           {name}

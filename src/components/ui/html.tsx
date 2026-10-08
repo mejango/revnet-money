@@ -1,9 +1,14 @@
 "use client";
 
 import { ipfsUriToAppUrl } from "@/lib/ipfs";
+import {
+  observeResponsiveImage,
+  responsiveImageProps,
+  retryOriginalImage,
+} from "@/lib/responsive-image";
 import createDOMPurify from "dompurify";
 import { marked } from "marked";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const PROJECT_RICH_TEXT_TAGS = [
   "a",
@@ -150,7 +155,17 @@ function sanitizeProjectRichText(source: string): string {
       image.remove();
       continue;
     }
-    image.setAttribute("src", src);
+    const delivery = responsiveImageProps(
+      src,
+      "(min-width: 1044px) 640px, (min-width: 801px) calc(100vw - 404px), (min-width: 704px) 640px, (min-width: 640px) calc(100vw - 64px), calc(100vw - 32px)",
+    );
+    image.setAttribute("src", delivery.src);
+    if (delivery.srcSet) image.setAttribute("srcset", delivery.srcSet);
+    if (delivery.sizes) image.setAttribute("sizes", delivery.sizes);
+    if (delivery["data-original-src"]) {
+      image.dataset.originalSrc = delivery["data-original-src"];
+      image.style.visibility = "hidden";
+    }
     image.setAttribute("loading", "lazy");
     image.setAttribute("referrerpolicy", "no-referrer");
   }
@@ -167,6 +182,7 @@ function sanitizeProjectRichText(source: string): string {
 }
 
 export const ProjectRichText = ({ className, source }: { className?: string; source: string }) => {
+  const contentRef = useRef<HTMLDivElement>(null);
   const [sanitized, setSanitized] = useState<{
     source: string;
     html: string;
@@ -179,6 +195,13 @@ export const ProjectRichText = ({ className, source }: { className?: string; sou
       html: sanitizeProjectRichText(source),
     });
   }, [source]);
+
+  useEffect(() => {
+    const cleanups = [...(contentRef.current?.querySelectorAll("img") ?? [])].map((image) =>
+      observeResponsiveImage(image),
+    );
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [sanitizedHtml]);
 
   if (sanitizedHtml === null) {
     return (
@@ -193,7 +216,12 @@ export const ProjectRichText = ({ className, source }: { className?: string; sou
   return (
     <div
       id="rich-text"
+      ref={contentRef}
       className={className}
+      onErrorCapture={(event) => {
+        if (event.target instanceof HTMLImageElement) retryOriginalImage(event.target);
+      }}
+      // Source attributes are sanitized first; derivative attributes above are app-owned.
       // This is the single reviewed project-controlled HTML boundary.
       dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
     />

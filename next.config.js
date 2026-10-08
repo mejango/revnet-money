@@ -103,6 +103,15 @@ module.exports = {
     // Content-addressed project media and hashed app artwork can safely retain
     // optimized variants for a year.
     minimumCacheTTL: 60 * 60 * 24 * 365,
+    // Derivatives are disposable; original pins and metadata remain unchanged.
+    maximumDiskCacheSize: 500_000_000,
+    qualities: [75, 90],
+    formats: ["image/webp"],
+    // Extensionless CIDs can contain SVG. Preserve the vector under a sandbox
+    // and attachment disposition rather than rejecting it or rasterizing it.
+    dangerouslyAllowSVG: true,
+    contentDispositionType: "attachment",
+    contentSecurityPolicy: "script-src 'none'; frame-src 'none'; sandbox;",
     remotePatterns: [
       {
         protocol: "https",

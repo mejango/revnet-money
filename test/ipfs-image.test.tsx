@@ -1,30 +1,97 @@
 import { TierMediaPreview } from "@/app/[slug]/components/v6/shop/TierMediaPreview";
-import { IpfsImage } from "@/components/IpfsImage";
+import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 const CID = "bafkreihz5xk2crdko5mllpxbfa443m2o6pmzcmbg5b3uvif6ho4x45z674";
 
 describe("IPFS image failure handling", () => {
-  it("uses the shared Juicebox Center gateway and falls back cleanly", () => {
+  it("requests a responsive derivative and retries the accepted original before fallback", () => {
     render(
       <IpfsImage
         src={`ipfs://${CID}/logo.png`}
         alt="Project logo"
         width={48}
         height={48}
+        sizes="48px"
         fallback={<span>Project image unavailable</span>}
       />,
     );
 
-    const image = screen.getByRole("img", { name: "Project logo" });
-    expect(image).toHaveAttribute("src", `https://juicebox.center/ipfs/${CID}/logo.png`);
-    expect(image).not.toHaveAttribute("srcset");
+    const image = screen.getByAltText("Project logo");
+    expect(image.getAttribute("src")).toContain("/_next/image?url=");
+    expect(image.getAttribute("src")).toContain("q=90");
+    expect(image.getAttribute("srcset")).toContain("128w");
+    expect(image).toHaveAttribute("sizes", "48px");
+    expect(image).toHaveAttribute(
+      "data-original-src",
+      `https://juicebox.center/ipfs/${CID}/logo.png`,
+    );
     expect(image).toHaveAttribute("referrerpolicy", "no-referrer");
 
     fireEvent.error(image);
+    expect(image).toHaveAttribute("src", `https://juicebox.center/ipfs/${CID}/logo.png`);
+    expect(image).not.toHaveAttribute("srcset");
+    expect(screen.queryByText("Project image unavailable")).not.toBeInTheDocument();
+    fireEvent.error(image);
     expect(screen.getByText("Project image unavailable")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Project logo" })).not.toBeInTheDocument();
+  });
+
+  it("starts a newly selected source hidden with its own original retry", () => {
+    const { rerender } = render(
+      <IpfsImage
+        src={`ipfs://${CID}/first.png`}
+        sizes="48px"
+        alt="Changing logo"
+        fallback={<span>Unavailable</span>}
+      />,
+    );
+    const first = screen.getByAltText("Changing logo");
+    fireEvent.error(first);
+    expect(first).toHaveAttribute("data-original-fallback", "true");
+    rerender(
+      <IpfsImage
+        src={`ipfs://${CID}/second.png`}
+        sizes="48px"
+        alt="Changing logo"
+        fallback={<span>Unavailable</span>}
+      />,
+    );
+    const second = screen.getByAltText("Changing logo");
+    expect(second).not.toBe(first);
+    expect(second).not.toHaveAttribute("data-original-fallback");
+    expect(second).toHaveStyle({ visibility: "hidden" });
+    expect(second.getAttribute("src")).toContain("second.png");
+    fireEvent.error(second);
+    expect(second).toHaveAttribute("src", `https://juicebox.center/ipfs/${CID}/second.png`);
+    fireEvent.error(second);
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+  });
+
+  it("retains the original across same-source layout and parent updates", () => {
+    const src = `ipfs://${CID}/logo.png`;
+    const { rerender } = render(
+      <IpfsImage src={src} sizes="48px" alt="Resized logo" fallback={<span>Unavailable</span>} />,
+    );
+    const image = screen.getByAltText("Resized logo");
+    fireEvent.error(image);
+    rerender(
+      <IpfsImage
+        src={src}
+        sizes="144px"
+        className="large"
+        alt="Resized logo"
+        fallback={<span>Unavailable</span>}
+      />,
+    );
+    expect(screen.getByAltText("Resized logo")).toBe(image);
+    expect(image).toHaveAttribute("src", `https://juicebox.center/ipfs/${CID}/logo.png`);
+    expect(image).not.toHaveAttribute("srcset");
+    expect(image).not.toHaveAttribute("sizes");
+    expect(image).toHaveAttribute("data-original-fallback", "true");
+    fireEvent.error(image);
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
   });
 
   it("never renders an arbitrary metadata URL", () => {
@@ -61,6 +128,26 @@ describe("IPFS image failure handling", () => {
     expect(screen.queryByRole("img", { name: "Unsafe project logo" })).not.toBeInTheDocument();
   });
 
+  it.each(["https://example.com/image.png", "blob:https://revnet.money/preview"])(
+    "keeps an already accepted non-IPFS image direct: %s",
+    (src) => {
+      render(
+        <ImageWithFallback
+          src={src}
+          alt="Preview"
+          fallback={<span>Unavailable</span>}
+          sizes="48px"
+        />,
+      );
+      const image = screen.getByRole("img", { name: "Preview" });
+      expect(image).toHaveAttribute("src", src);
+      expect(image).not.toHaveAttribute("srcset");
+      expect(image).not.toHaveAttribute("data-original-src");
+      fireEvent.error(image);
+      expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    },
+  );
+
   it("keeps shop cards usable when tier media fails in the browser", () => {
     render(
       <TierMediaPreview
@@ -70,7 +157,10 @@ describe("IPFS image failure handling", () => {
       />,
     );
 
-    fireEvent.error(screen.getByRole("img", { name: "Shop item" }));
+    const image = screen.getByAltText("Shop item");
+    fireEvent.error(image);
+    expect(image).toHaveAttribute("src", `https://juicebox.center/ipfs/${CID}/item.png`);
+    fireEvent.error(image);
     expect(screen.getByText("#7")).toBeInTheDocument();
   });
 });
