@@ -101,7 +101,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Official SDK 2.24.5 plus the reviewed copy, permission and payment changes
 // measure 2,734,565 B versus 2,730,720 B on the same physical dependency layout.
 // Module copies and route references are unchanged; round only aggregate by 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2671);
+// Responsive delivery/fidelity guards measure 2,742,956 B versus 2,734,565 B
+// on matching physical dependencies, excluding dedicated browser-proof stubs.
+// Round only the aggregate ceiling; route and lazy-wallet limits stay unchanged.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2679);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
@@ -190,7 +193,8 @@ const pages = Object.fromEntries(
 
 // Routes from `page.browsertest.tsx` compile only into the deterministic
 // browser build (next.config.js) and never ship. Their own files, the chunks
-// under static/chunks/app/<route>/, are left out of every budget. Any other
+// under static/chunks/app/<route>/ (including source-route stubs omitted from
+// page manifests), are left out unless a shipped page references them. Any other
 // chunk counts, even one only a proof route lists: a shipped route may load it
 // on demand.
 const appDirectory = resolve(process.cwd(), "src", "app");
@@ -202,10 +206,11 @@ const proofRoutes = new Set(
 const shippedPages = Object.entries(pages).filter(([route]) => !proofRoutes.has(route));
 const shippedAssets = new Set([...rootMainFiles, ...shippedPages.flatMap(([, assets]) => assets)]);
 const proofOnlyAssets = new Set(
-  Object.entries(pages)
-    .filter(([route]) => proofRoutes.has(route))
-    .flatMap(([route, assets]) =>
-      assets.filter((asset) => asset.startsWith(`static/chunks/app${route}/`)),
+  filesBelow(resolve(buildDirectory, "static", "chunks", "app"))
+    .filter((file) => file.endsWith(".js"))
+    .map((file) => relative(buildDirectory, file).split(sep).join("/"))
+    .filter((asset) =>
+      [...proofRoutes].some((route) => asset.startsWith(`static/chunks/app${route}/`)),
     )
     .filter((asset) => !shippedAssets.has(asset)),
 );

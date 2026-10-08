@@ -204,6 +204,38 @@ describe("routes only the deterministic browser build compiles", () => {
     expect(result.status).toBe(0);
   });
 
+  it("excludes a dedicated proof source-route stub absent from the page manifest", () => {
+    const checked = fixture({
+      files: {
+        ...defaultFiles,
+        "static/chunks/app/proof/source/route.browsertest.js": `globalThis.proofSource = "${randomBytes(3000).toString("hex")}";`,
+      },
+    });
+    checked.addProofRoute("/proof", {
+      "static/chunks/app/proof/page.js": 'globalThis.proof = "page";',
+    });
+
+    expect(checked.run({ CLIENT_ALL_JS_GZIP_BUDGET_KIB: "1" }).status).toBe(0);
+  });
+
+  it("retains a dedicated proof file when a shipped route references it", () => {
+    const proofSource = "static/chunks/app/proof/source/route.browsertest.js";
+    const checked = fixture({
+      chunks: [pageChunk, proofSource],
+      files: {
+        ...defaultFiles,
+        [proofSource]: `globalThis.shippedSource = "${randomBytes(3000).toString("hex")}";`,
+      },
+    });
+    checked.addProofRoute("/proof", {
+      "static/chunks/app/proof/page.js": 'globalThis.proof = "page";',
+    });
+
+    const result = checked.run({ CLIENT_ALL_JS_GZIP_BUDGET_KIB: "1" });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("all client JavaScript is");
+  });
+
   it("still counts a chunk outside a proof route's own files, which a shipped route may load lazily", () => {
     const checked = fixture();
     checked.addProofRoute("/proof", {
