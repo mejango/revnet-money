@@ -15,6 +15,23 @@ export async function installBrowserBoundary(page: Page): Promise<BrowserBoundar
   page.on("pageerror", (error) => boundary.pageErrors.push(error.message));
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
+    const original = url.pathname === "/_next/image" ? url.searchParams.get("url") : url.href;
+    if (
+      original &&
+      new RegExp(
+        `^https://juicebox\\.center/ipfs/${FIXTURE_CID}/home-(top|trending|new|activity)\\.png$`,
+      ).test(original)
+    ) {
+      // Keep each feed's browser-visible source distinct while the actual Next
+      // optimizer resizes a deterministic local raster with no external traffic.
+      const asset = "/assets/img/small-bw-200x200.png";
+      if (url.pathname === "/_next/image") url.searchParams.set("url", asset);
+      else {
+        url.href = new URL(asset, page.url()).href;
+      }
+      await route.fulfill({ response: await route.fetch({ url: url.href }) });
+      return;
+    }
     if (url.pathname === `/ipfs/${FIXTURE_CID}`) {
       await route.fulfill({
         status: 200,

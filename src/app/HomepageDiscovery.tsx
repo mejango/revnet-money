@@ -272,8 +272,8 @@ function ProjectRows({
                 width={40}
                 sizes="40px"
                 height={40}
-                loading={index < 4 ? "eager" : "lazy"}
-                fetchPriority={index < 4 ? "high" : "auto"}
+                loading="lazy"
+                fetchPriority="auto"
                 className="size-10 shrink-0 object-cover"
                 fallback={<div className="size-10 shrink-0 bg-teal-100" />}
               />

@@ -450,7 +450,22 @@ const graphqlHandlers = {
         typeof variables.where === "object",
       `IndexedProjects variables=${JSON.stringify(variables)}`,
     );
-    return { projects: { items: [fixtureProject], totalCount: 1 } };
+    const homepageFeed =
+      variables.limit === 60 && ["trendingScore", "createdAt"].includes(variables.orderBy)
+        ? variables.orderBy === "trendingScore"
+          ? "trending"
+          : "new"
+        : null;
+    return {
+      projects: {
+        items: [
+          homepageFeed
+            ? { ...fixtureProject, logoUri: `ipfs://${fixtureCid}/home-${homepageFeed}.png` }
+            : fixtureProject,
+        ],
+        totalCount: 1,
+      },
+    };
   },
   IndexedSuckerGroup(variables) {
     requireExactVariables("IndexedSuckerGroup", variables, { id: suckerGroupId });
@@ -469,6 +484,15 @@ const graphqlHandlers = {
     return { project: fixtureProject };
   },
   ProjectErc20Tickers(variables) {
+    if (variables.where?.chainId_in) {
+      requireExactVariables("ProjectErc20Tickers", variables, {
+        where: { chainId_in: [chainId], projectId_in: [projectId], version: 6 },
+        limit: 200,
+      });
+      return {
+        deployErc20Events: { items: [{ chainId, projectId, symbol: "FREV" }], totalCount: 1 },
+      };
+    }
     requireFixture(
       variables.where && typeof variables.where.symbol_contains_nocase === "string",
       `ProjectErc20Tickers variables=${JSON.stringify(variables)}`,
@@ -558,7 +582,8 @@ const graphqlHandlers = {
   },
   ActivityEvents(variables) {
     // Two callers: a project's own feed (scoped to its sucker group) and the homepage
-    // feed (every v6 event). Both are deterministic and empty here.
+    // feed (every v6 event). Keep the project's empty state separate from the
+    // homepage image fixture so project-shape checks retain their original data.
     const projectScoped =
       variables.where?.suckerGroupId === suckerGroupId && variables.limit === 250;
     const homepageScoped = variables.where?.version === 6 && variables.limit === 100;
@@ -569,7 +594,43 @@ const graphqlHandlers = {
         (projectScoped || homepageScoped),
       `ActivityEvents variables=${JSON.stringify(variables)}`,
     );
-    return { activityEvents: { items: [], totalCount: 0 } };
+    const items = homepageScoped
+      ? [
+          {
+            id: "fixture-homepage-create",
+            chainId,
+            timestamp: fixtureProject.createdAt,
+            txHash: zeroHash,
+            project: {
+              ...fixtureProject,
+              id: "fixture-homepage-project",
+              logoUri: `ipfs://${fixtureCid}/home-activity.png`,
+            },
+            payEvent: null,
+            cashOutTokensEvent: null,
+            addToBalanceEvent: null,
+            mintTokensEvent: null,
+            manualMintTokensEvent: null,
+            autoIssueEvent: null,
+            deployErc20Event: null,
+            projectCreateEvent: {
+              from: fixtureOwner,
+              txHash: zeroHash,
+              timestamp: fixtureProject.createdAt,
+            },
+            projectTransferEvent: null,
+            operatorPermissionsSetEvent: null,
+            rulesetQueuedEvent: null,
+            swapEvent: null,
+            buybackPoolEvent: null,
+            mintNftEvent: null,
+            sendPayoutsEvent: null,
+            sendReservedTokensToSplitsEvent: null,
+            sendReservedTokensToSplitEvent: null,
+          },
+        ]
+      : [];
+    return { activityEvents: { items, totalCount: items.length } };
   },
   CashOutTaxSnapshots(variables) {
     requireExactVariables("CashOutTaxSnapshots", variables, { suckerGroupId });
@@ -671,7 +732,7 @@ const graphqlHandlers = {
                   currency: "2",
                   decimals: 6,
                   isRevnet: true,
-                  logoUri: null,
+                  logoUri: `ipfs://${fixtureCid}/home-top.png`,
                   metadataUri: null,
                   name: browserProject.metadata.name,
                   projectId,
@@ -882,7 +943,7 @@ const graphqlHandlers = {
   },
 };
 
-function handleGraphql(body) {
+export function handleGraphql(body) {
   requireFixture(
     body && typeof body === "object" && !Array.isArray(body),
     "GraphQL body must be an object",

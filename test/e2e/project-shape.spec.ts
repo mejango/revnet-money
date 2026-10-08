@@ -486,9 +486,8 @@ test("home and discover shells stay contained and deterministic", async ({ page,
   expectSecurityHeaders(homeResponse);
   await expect(page.locator("main").getByText("Shape that stands the test of time.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Create yours" })).toBeVisible();
-  // The Top and Trending panels are the dashboard's project rows, and the layout
-  // hides both below the tablet breakpoint — mobile home is the activity feed. Above
-  // it, the same revnet appears in each panel, so take the first.
+  // Top is initially visible at every breakpoint; wider layouts display other
+  // feeds beside it, so the same fixture revnet can appear in several panels.
   if ((page.viewportSize()?.width ?? 0) >= 768) {
     await expect(page.getByRole("link", { name: /Fixture Revnet/ }).first()).toBeVisible();
     await expect(page.getByText("$1,250", { exact: true }).first()).toBeVisible();
@@ -511,6 +510,79 @@ test("home and discover shells stay contained and deterministic", async ({ page,
   const status = await fixtureStatus(request);
   expect(status.unknownRequests).toEqual([]);
   await page.waitForTimeout(250);
+  expectBoundaryToStayLocal(boundary);
+});
+
+test("homepage defers hidden feed logos until tab or responsive reveal", async ({ page }) => {
+  const boundary = await installBrowserBoundary(page);
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() !== "image") return;
+    const url = new URL(request.url());
+    const source = url.pathname === "/_next/image" ? url.searchParams.get("url") : url.href;
+    const feed = source?.match(/\/home-(top|trending|new|activity)\.png$/)?.[1];
+    if (feed) requests.push(feed);
+  });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const width = page.viewportSize()!.width;
+  const logo = (feed: string) => page.locator(`#home-${feed}-panel img[data-original-src]`);
+  const decoded = async (feed: string) => {
+    const image = logo(feed);
+    await image.scrollIntoViewIfNeeded();
+    await expect(image).toBeVisible();
+    await expect
+      .poll(() =>
+        image.evaluate(
+          (node: HTMLImageElement) =>
+            node.complete && node.naturalWidth > 0 && node.naturalHeight > 0,
+        ),
+      )
+      .toBe(true);
+    await expect(image).toHaveCSS("object-fit", "cover");
+    await expect(image).not.toHaveAttribute("data-original-fallback");
+    expect(requests).toContain(feed);
+  };
+  for (const feed of ["top", "trending", "new", "activity"]) {
+    await expect(logo(feed)).toHaveCount(1);
+    await expect(logo(feed)).toHaveAttribute("loading", feed === "top" ? "eager" : "lazy");
+    await expect(logo(feed)).toHaveAttribute("fetchpriority", feed === "top" ? "high" : "auto");
+  }
+  await decoded("top");
+  const hidden =
+    width < 640 ? ["trending", "new", "activity"] : width < 1280 ? ["trending", "new"] : [];
+  for (const feed of hidden) await expect(page.locator(`#home-${feed}-panel`)).toBeHidden();
+  // Give the old eager behavior time to issue its request after streamed rows
+  // arrive. Unique feed sources make cache reuse unable to mask a regression.
+  await page.waitForTimeout(300);
+  expect(requests.filter((feed) => hidden.includes(feed))).toEqual([]);
+
+  if (width < 1280) {
+    const tabs = page.getByRole("tablist", {
+      name: width < 640 ? "Revnet feeds" : "Revnet rankings",
+    });
+    await retryUntilVisible(
+      () => tabs.getByRole("tab", { name: "Trending", exact: true }).click(),
+      page.locator("#home-trending-panel"),
+    );
+    await decoded("trending");
+    const retained = await logo("trending").elementHandle();
+    const count = requests.filter((feed) => feed === "trending").length;
+    await tabs.getByRole("tab", { name: "Top", exact: true }).click();
+    await expect(page.locator("#home-trending-panel")).toBeHidden();
+    expect(await retained!.evaluate((node) => node.isConnected)).toBe(true);
+    await tabs.getByRole("tab", { name: "Trending", exact: true }).click();
+    await decoded("trending");
+    expect(
+      await retained!.evaluate(
+        (node) => node === document.querySelector("#home-trending-panel img[data-original-src]"),
+      ),
+    ).toBe(true);
+    expect(requests.filter((feed) => feed === "trending")).toHaveLength(count);
+    // Both New and mobile Latest have never been revealed: CSS alone should
+    // let the browser load them when the layout becomes wide.
+    await page.setViewportSize({ width: 1280, height: 900 });
+  }
+  for (const feed of ["trending", "new", "activity"]) await decoded(feed);
   expectBoundaryToStayLocal(boundary);
 });
 

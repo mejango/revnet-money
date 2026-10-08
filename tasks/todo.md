@@ -1040,3 +1040,30 @@ The owning workspace implementation plan’s measured Revnet refinement passed `
 - [x] Run existing checker regressions, scoped lint/format and the same-artifact gate, then commit only the checker and this review.
 
 Review: all 21 real-checker regressions, scoped ESLint, Prettier and the unchanged actual-artifact bundle gate pass. Largest route is 711,705 B (695.0 KiB against 900); route-referenced total is 973,992 B (951.2 KiB against 1100), with all wallet lazy checks passing. Only aggregate’s measured feature allowance changes. The initial failure, exact current bytes, emitted-copy inspection and final checks are retained under `/private/tmp/jb-critical-images-20261008/checks/` as `revnet-build-bundle-check.log`, `revnet-budget-exact-before-cap.log`, `revnet-critical-bundle-inspection.json` and `revnet-budget-{tests,lint,format,final}.log`. No runtime source, artifact, dependency, optimizer behavior or timing changed.
+
+## 2026-10-08 — Defer hidden homepage feed logos
+
+## Plan refinement
+
+- **Objective:** Prevent hidden Latest, Trending and New homepage logos from requesting until their feed is revealed, retaining the first four Top logos' eager/high priority and all current image quality behavior.
+- **System fit:** Homepage callers own timing hints; native lazy image loading follows existing CSS display rules. Shared responsive sizing, source authority, metadata, loaded feed state, original recovery and financial actions remain unchanged. Root's approved hidden-homepage plan owns both clients; this worker changes Revnet only.
+- **Reuse and simplicity:** Set lazy/auto at the two existing caller sites, leaving Top unchanged. Reuse the actual homepage, existing fixture server and Playwright boundary; add distinct fixture CID paths per feed and one homepage-only activity because current fixtures have null logos and empty Latest. Serve an existing local raster through the browser boundary. No visibility context, new proof route or dependency.
+- **Evidence and unknowns:** The two callers currently mark four logos eager/high even inside display:none panels. Installed Next docs define eager as immediate independent of position. Native lazy suppression and tab/resize recovery need real browser proof; a repeated fixture URL or missing logo cannot establish either.
+- **Verification:** Check hidden feed requests, decoded visible images and Top priority on the real homepage at mobile, intermediate and wide widths, including retained rows after tab changes and responsive reveal. Run affected unit/fixture checks, application types, scoped lint/format. Root coordinates production build/browser execution; report reviewable changes before committing.
+- **Resource budget:** Two small runtime edits, bounded fixture/test extensions and these task notes. One writer, read-only review delegated, no builds or broad suites before root's resource slot. Replan if native lazy loading does not suppress hidden requests.
+
+- [x] Trace homepage callers, panel visibility and fixture boundaries.
+- [x] Apply native loading hints and real-homepage request/reveal regression.
+- [x] Pass focused static checks, root-coordinated browser verification and review before commit.
+
+### Focused review
+
+The two non-Top callers now use lazy/auto; Top is unchanged. The populated Latest fixture exposed its existing logo-only link without an accessible name; the link now uses the existing project name. All68 focused tests across five files, application native typecheck and scoped lint pass. The source and browser-test design passed independent review. Final browser/build qualification is pending with root; this record does not count an older artifact after a blocked build as current evidence. No commit, push or deployment yet.
+
+### Final hidden-feed review
+
+The full production browser suite passes150 tests with30 skips, two workers and zero retries. All five homepage viewport cases prove no hidden-feed image requests before reveal, successful decoded/cropped images after selection or resizing, retained rows, and unchanged first-four Top priority. The existing image quality matrix and populated-homepage accessibility checks also pass. Non-Top logos use native lazy/auto hints; the shared sizing, density, crop, zoom and recovery behavior is unchanged.
+
+The first browser attempt exposed a malformed new Latest fixture: its GraphQL response omitted selected nullable event fields, project.id and ticker totalCount, so the SDK correctly rejected it. Two new checks against the actual registered SDK document contracts failed before the fixture correction and pass afterward; all22 focused fixture tests, final application typecheck and scoped lint/format pass. This correction changes only deterministic test data. Independent final review approved the fixture, source and browser coverage.
+
+The complete runtime suite passed2489 tests with one existing skip before that fixture-only correction; the two new contract cases supplement that result. Full lint, format ratchet and source checks passed. A fresh production browser build with the corrected fixture, standalone artifact check and all unchanged bundle gates pass:695.0KiB largest route,951.2KiB route-referenced and2681.6KiB aggregate against900/1100/2682KiB limits. Wallet lazy-loading gates pass. Evidence, including the retained initial browser failure, is under `/private/tmp/jb-hidden-feeds-20261008/` with `revnet-final-*`, `revnet-fixture-contract-{before,after}.log` and `revnet-fixture-final-*` filenames. Source is ready for coordinator commit; no push or deployment was performed, and no live timing improvement is claimed.

@@ -134,7 +134,7 @@ export function HomepageActivityFeed({
     );
   return (
     <ol className="divide-y divide-teal-100">
-      {eventGroups.map((group, index) => {
+      {eventGroups.map((group) => {
         const event = group[0];
         const project = event.project;
         const activities = group
@@ -162,6 +162,7 @@ export function HomepageActivityFeed({
             <div className="relative z-10 flex items-start gap-3">
               <ProjectLink
                 href={href}
+                aria-label={name}
                 projectHint={{
                   name,
                   logoUri: project.logoUri ?? null,
@@ -175,8 +176,8 @@ export function HomepageActivityFeed({
                   width={46}
                   sizes="46px"
                   height={46}
-                  loading={index < 4 ? "eager" : "lazy"}
-                  fetchPriority={index < 4 ? "high" : "auto"}
+                  loading="lazy"
+                  fetchPriority="auto"
                   className="size-[46px] object-cover"
                   fallback={<div className="size-[46px] bg-teal-100" />}
                 />
