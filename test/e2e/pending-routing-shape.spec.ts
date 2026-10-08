@@ -44,9 +44,7 @@ test("pending routing shows ready, cooldown, and final attempts above activity",
   await expect(section.getByText("12.5 USDC", { exact: true })).toBeVisible();
   await expect(section.getByText("0.03 ETH", { exact: true })).toBeVisible();
   await expect(section.getByText(/Available after/)).toHaveCount(1);
-  await expect(
-    section.getByText("Includes 2 ready payments. Payments in cooldown must wait."),
-  ).toBeVisible();
+  await expect(section.getByText("Payments in cooldown must wait.")).toBeVisible();
 
   // Browser builds deliberately have no wallet connectors. These are the real
   // action controls with their wallet gate; the cooldown still disables its row.
@@ -59,7 +57,7 @@ test("pending routing shows ready, cooldown, and final attempts above activity",
       .getByRole("button", { name: "Connect Wallet", exact: true });
   await expect(
     section
-      .getByText("Includes 2 ready payments. Payments in cooldown must wait.")
+      .getByText("Payments in cooldown must wait.")
       .locator("..")
       .getByRole("button", { name: "Connect Wallet", exact: true }),
   ).toBeEnabled();

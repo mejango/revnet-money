@@ -393,14 +393,82 @@ function discardableSession(
   return new RelayrDiscardError(activity.id, reason, cause);
 }
 
+/** An unsigned routing quote request cannot charge the wallet or authorize another action. */
+function unboundRoutingPublication(
+  activity: Omit<TransactionActivity, "createdAt" | "updatedAt">,
+): boolean {
+  if (
+    activity.kind !== "relayr-bundle" ||
+    activity.status !== "pending" ||
+    activity.relayrPaymentStatus !== "unfunded" ||
+    !activity.callKey ||
+    activity.id !== `relayr-publication:${activity.callKey}` ||
+    !activity.relayrExpectedTransactions?.length ||
+    (
+      [
+        "bundleUuid",
+        "chainId",
+        "relayrQuote",
+        "relayrPayment",
+        "relayrPayments",
+        "hash",
+        "executionHash",
+        "safeProposalHash",
+        "safeProposal",
+        "obsoleteSafeNonce",
+        "safeResultUnconfirmed",
+        "executionSeenAt",
+        "relayrNonces",
+        "relayrDiscardable",
+        "relayrSafeSessionId",
+        "relayrSafeState",
+        "relayrSafeReleaseReason",
+        "relayrSafeReservationKeys",
+        "relayrSafeFundingUnknown",
+        "relayrSafeFundingObserved",
+        "manualVerificationRequired",
+        "chainStates",
+      ] as const
+    ).some((field) => activity[field] !== undefined)
+  )
+    return false;
+  try {
+    return activity.relayrExpectedTransactions.every((transaction) => {
+      if (
+        transaction.transactionUuid !== "" ||
+        transaction.value !== "0" ||
+        transaction.receiptStatus !== undefined ||
+        transaction.expectedSafeExecution !== undefined ||
+        transaction.expectedDeployment !== undefined ||
+        transaction.expectedPayout !== undefined ||
+        transaction.reservedReceipt !== undefined
+      )
+        return false;
+      requireRawPendingRouterCall(
+        transaction.chainId,
+        transaction.target,
+        transaction.data,
+        0n,
+        transaction.expectedRouterPending,
+        transaction.preconditions,
+      );
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Whether a session no longer reserves anything: its quote was proven
+ * Whether a session no longer reserves anything: an unbound unsigned routing
+ * request needs no recovery, or its quote was proven
  * unfundable onchain or replaced at the same forwarder nonces ("expired"), or
  * every request it published is dead and none ran. One that may have run
  * keeps its calls until it is discarded.
  */
 function sessionReleased(activity: TransactionActivity): boolean {
   return (
+    unboundRoutingPublication(activity) ||
     activity.relayrPaymentStatus === "expired" ||
     activity.relayrDiscardable === "expired" ||
     activity.relayrDiscardable === "changed"
@@ -918,6 +986,7 @@ function savedSessionOf(account: Address, callKey: string): TransactionActivity 
         activity.callKey === callKey &&
         activity.account?.toLowerCase() === account.toLowerCase() &&
         !!activity.relayrExpectedTransactions?.length &&
+        !unboundRoutingPublication(activity) &&
         (activity.status !== "success" || activity.manualVerificationRequired),
     )
     .sort((a, b) => b.createdAt - a.createdAt)[0];
@@ -1526,6 +1595,7 @@ export function useGetRelayrTxQuote() {
       requests: ReviewedRelayrRequest[],
       options?: {
         signal?: AbortSignal;
+        onMessage?: (message: string) => void;
         onStatus?: SafeRelayrStatus;
         onProgress?: (progress: SafeRelayrProgress) => void;
       },
@@ -1584,6 +1654,7 @@ export function useGetRelayrTxQuote() {
         }
       }
       return withAuthorizationLock(address, async () => {
+        options?.signal?.throwIfAborted();
         requireWalletContext();
         requests = requests.map((request) => ({ ...request, data: { ...request.data } }));
         if (!address) throw new Error("Connect a wallet first.");
@@ -1650,6 +1721,7 @@ export function useGetRelayrTxQuote() {
             relayrCallKeys: continuedKeys,
           });
           requireTransactionActivityPersistence();
+          options?.signal?.throwIfAborted();
           rememberQuote(quote, address, callKey, continuedKeys, saved.relayrExpectedTransactions!);
           setData(quote);
           setError(null);
@@ -1690,7 +1762,11 @@ export function useGetRelayrTxQuote() {
             const executionGas: string[] = [];
             const transactions: RelayrEntry[] = [];
             const signedNonces: string[] = [];
-            for (const request of requests) {
+            for (const [index, request] of requests.entries()) {
+              options?.signal?.throwIfAborted();
+              options?.onMessage?.(
+                `Checking ${request.expectedRouterPending ? "routing attempt" : "transaction"} ${index + 1} of ${requests.length}.`,
+              );
               requireWalletContext();
               if (!request.expectedRouterPending)
                 await switchChainAsync({ chainId: request.chainId });
@@ -1740,6 +1816,7 @@ export function useGetRelayrTxQuote() {
                     ],
                   });
                 requireWalletContext(request.expectedRouterPending ? undefined : request.chainId);
+                options?.signal?.throwIfAborted();
                 await verifyCallPreconditions(client, request.preconditions);
                 if (request.expectedRouterPending)
                   await simulatePendingRouterCall(client, {
@@ -1850,6 +1927,7 @@ export function useGetRelayrTxQuote() {
                 await verifyMetadataSource(client, request.metadataSource, address);
               await verifyCallPreconditions(client, request.preconditions);
               requireWalletContext(request.chainId);
+              options?.signal?.throwIfAborted();
               const signature = await signTypedDataAsync({
                 account: address,
                 domain,
@@ -1899,11 +1977,12 @@ export function useGetRelayrTxQuote() {
             })),
           );
           // A response can be lost after Relayr receives executable signatures. Persist
-          // the intent first so a reload cannot authorize a fresh copy of the same calls.
+          // the intent first; only authenticated unsigned routing remains freely retryable.
           await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id);
+          options?.signal?.throwIfAborted();
           requireWalletContext();
           const publicationId = `relayr-publication:${callKey}`;
-          recordTransactionActivity({
+          const publication: Omit<TransactionActivity, "createdAt" | "updatedAt"> = {
             id: publicationId,
             kind: "relayr-bundle",
             title: "Authorization publication",
@@ -1918,18 +1997,47 @@ export function useGetRelayrTxQuote() {
             relayrNonces: nonces,
             relayrDiscardable: undefined,
             manualVerificationRequired: undefined,
-          });
+          };
+          const unsignedRouting = unboundRoutingPublication(publication);
+          if (unsignedRouting) {
+            publication.title = "Routing fee quote requested";
+            publication.message =
+              "Unsigned routing calls were sent for a fee quote. No payment was sent. If no quote returns, review the currently ready payments again.";
+          }
+          recordTransactionActivity(publication);
           requireTransactionActivityPersistence();
           // The new publication carries the continued session's calls: its own
           // signatures again, or new ones once every request it published is dead.
           if (continued && continued.id !== publicationId) supersede([continued]);
-          const response = await fetch(`${RELAYR_API}/v1/bundle/prepaid`, {
-            method: "POST",
-            signal: AbortSignal.timeout(45_000),
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(bundleRequest),
-          });
+          options?.onMessage?.(
+            unsignedRouting && requests.length > 1
+              ? "Requesting the network-fee quote. This batch may take a few minutes."
+              : "Requesting the network-fee quote.",
+          );
+          let response: Response;
+          try {
+            // The public 14-call routing quote takes about 154 seconds. Unsigned
+            // routing can wait longer without extending any signed authorization.
+            const timeout = AbortSignal.timeout(unsignedRouting ? 300_000 : 45_000);
+            response = await fetch(`${RELAYR_API}/v1/bundle/prepaid`, {
+              method: "POST",
+              signal: options?.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(bundleRequest),
+            });
+          } catch (cause) {
+            if ((cause as { name?: string } | undefined)?.name === "TimeoutError")
+              throw new Error(
+                unsignedRouting
+                  ? "The network-fee quote timed out. No payment was sent. Review again to request a fresh quote."
+                  : "The network-fee quote timed out. Check the saved authorization in account activity before trying again.",
+                { cause },
+              );
+            throw cause;
+          }
+          options?.signal?.throwIfAborted();
           // Relayr's records must be exactly the signed calls before any payment is offered.
+          options?.onMessage?.("Checking the returned network-fee quote.");
           const bound = await bindRelayrQuote(response, bundleRequest);
           const quote = quoteForDestinationChains(
             { bundle_uuid: bound.bundle_uuid, payment_info: bound.payment_info as ChainPayment[] },
@@ -1948,8 +2056,9 @@ export function useGetRelayrTxQuote() {
             kind: "relayr-bundle",
             title: "Transaction bundle ready for payment",
             status: "pending",
-            message:
-              "The destination authorizations are signed. Choose a funding chain to pay this existing quote once.",
+            message: unsignedRouting
+              ? "The selected routing attempts are ready. Choose a funding chain to pay this existing quote once."
+              : "The destination authorizations are signed. Choose a funding chain to pay this existing quote once.",
             account: address,
             callKey,
             relayrCallKeys: callKeys,
@@ -1960,6 +2069,7 @@ export function useGetRelayrTxQuote() {
             relayrQuote: structuredClone(quote),
           });
           dismissTransactionActivity(publicationId);
+          options?.signal?.throwIfAborted();
           rememberQuote(quote, address, callKey, callKeys, expectedTransactions);
 
           setData(quote);
@@ -1989,6 +2099,7 @@ export function useSendRelayrTx() {
     async (
       offeredPayment: ChainPayment,
       options?: {
+        onMessage?: (message: string) => void;
         onStatus?: SafeRelayrStatus;
         onProgress?: (progress: SafeRelayrProgress) => void;
       },
@@ -2038,6 +2149,7 @@ export function useSendRelayrTx() {
         }
       }
       const submit = async () => {
+        options?.onMessage?.("Preparing the network-fee payment.");
         const journal = () => refreshTransactionActivities().find((row) => row.id === activityId);
         // The SDK keeps no more payments for a quote than this, so none is sent beyond them.
         if (sentPayments(journal()).length >= MAX_RELAYR_SENT_PAYMENTS)
@@ -2052,6 +2164,7 @@ export function useSendRelayrTx() {
         await switchChainAsync({ chainId: payment.chain });
         const requireAccount = () => requireWalletContext(payment.chain);
         requireAccount();
+        options?.onMessage?.("Review the network-fee payment.");
         await requireTransactionReview({
           kind: "transaction",
           title: "Review payment",
@@ -2071,6 +2184,7 @@ export function useSendRelayrTx() {
           ],
         });
         requireAccount();
+        options?.onMessage?.("Checking the selected transactions before payment.");
         const publicClient = getPublicClient(config, { chainId: payment.chain });
         if (!publicClient) throw new Error("Payment network is unavailable.");
         const code = await publicClient.getCode({ address: payment.target });
@@ -2145,6 +2259,7 @@ export function useSendRelayrTx() {
         }
         let hash: Hex;
         try {
+          options?.onMessage?.("Confirm the network-fee payment in your wallet.");
           hash = await transaction.sendTransactionAsync({
             account: address,
             chainId: payment.chain,
@@ -2202,6 +2317,7 @@ export function useSendRelayrTx() {
         });
         let mined = hash;
         try {
+          options?.onMessage?.("Checking the submitted network-fee payment.");
           const receipt = await waitForTransactionReceipt(config, { chainId: payment.chain, hash });
           // A wallet that sped the payment up mined it under another hash; that
           // transaction is the payment to prove and to remember.

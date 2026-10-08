@@ -1,6 +1,6 @@
 import { PendingRoutingPayments } from "@/app/[slug]/components/ActivityFeed/PendingRoutingPayments";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -107,6 +107,7 @@ describe("payment recovery", () => {
 
   it("offers a per-payment review with the original beneficiary and no settlement claim", async () => {
     setup();
+    expect(await screen.findByText("1 payment ready to route.")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByText(/A retry can remain pending/)).toBeTruthy();
@@ -131,10 +132,9 @@ describe("payment recovery", () => {
       row(indexed.pendingCallId, indexed.pendingCallId !== "waiting"),
     );
     setup();
+    expect(await screen.findByText("2 of 3 payments ready to route.")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
-    expect(
-      screen.getByText("Includes 2 ready payments. Payments in cooldown must wait."),
-    ).toBeTruthy();
+    expect(screen.getByText("Payments in cooldown must wait.")).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Confirm routing" })).toBeEnabled();
     expect(screen.queryByRole("checkbox")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
@@ -159,7 +159,7 @@ describe("payment recovery", () => {
       project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
     );
     const rendered = setup();
-    await screen.findByText("14 payments awaiting routing. 14 ready");
+    await screen.findByText("14 payments ready to route.");
     expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Re-check saved status" })).toBeNull();
     expect(screen.queryByText(/Saved batch:/)).toBeNull();
@@ -301,7 +301,7 @@ describe("payment recovery", () => {
       project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
     );
     setup();
-    await screen.findByText("14 payments awaiting routing. 14 ready");
+    await screen.findByText("14 payments ready to route.");
     expect(screen.queryByRole("button", { name: "Batch all pending" })).toBeNull();
     expect(
       screen
@@ -374,7 +374,7 @@ describe("payment recovery", () => {
     expect(screen.getByText(/Saved batch: 0 of 3 attempts handled/)).toBeTruthy();
     expect(mocks.prepare).not.toHaveBeenCalled();
     finish();
-    await screen.findByText("7 payments awaiting routing. 7 ready");
+    await screen.findByText("7 payments ready to route.");
     expect(screen.getAllByText("0.1 ETH")).toHaveLength(7);
     expect(
       screen
@@ -580,7 +580,7 @@ describe("payment recovery", () => {
     expect(screen.getByRole("button", { name: "Review routing" })).toBeEnabled();
   });
 
-  it("refuses every way out while the routing round runs", async () => {
+  it("refuses every way out after preparation reaches the payment boundary", async () => {
     let finish!: (result: unknown) => void;
     mocks.batch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     setup();
@@ -590,22 +590,140 @@ describe("payment recovery", () => {
     })) as HTMLDialogElement;
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
     await waitFor(() => expect(mocks.batch).toHaveBeenCalledTimes(1));
-
-    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
     const close = within(dialog).getByRole("button", { name: "Close" });
-    expect(cancel).toBeDisabled();
+    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+    expect(close).toBeEnabled();
+    expect(cancel).toBeEnabled();
+    act(() => {
+      mocks.batch.mock.calls[0][0].onBeforePayment();
+      // The boundary locks immediately, before React renders the disabled close control.
+      fireEvent.click(close);
+      fireEvent.click(cancel);
+    });
     expect(close).toBeDisabled();
-    expect(within(dialog).getByRole("button", { name: "Confirm routing" })).toBeDisabled();
-    fireEvent.click(cancel);
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Preparing routing…");
+    expect(within(dialog).queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
     fireEvent.click(close);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(dialog);
     expect(screen.getByRole("dialog", { name: "Route pending payments" })).toBe(dialog);
+    expect(mocks.batch.mock.calls[0][0].signal.aborted).toBe(false);
 
     finish({ status: "success", hashes: [] });
     await within(dialog).findByRole("button", { name: "Done" });
     expect(mocks.batch).toHaveBeenCalledTimes(1);
   });
+
+  it("shows passive progress for all 14 payments and restores the action after a timeout", async () => {
+    let fail!: (cause: Error) => void;
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    );
+    mocks.batch.mockReturnValueOnce(new Promise((_resolve, reject) => (fail = reject)));
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
+    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Preparing routing…");
+    expect(within(dialog).getAllByRole("listitem")).toHaveLength(14);
+    expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Close" })).toBeEnabled();
+    expect(mocks.batch.mock.calls[0][0].calls).toHaveLength(14);
+
+    act(() => mocks.batch.mock.calls[0][0].onProgress("Requesting network fee…"));
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Requesting network fee…");
+    expect(within(dialog).queryByText("Preparing routing…")).toBeNull();
+    await act(async () => fail(new Error("The network-fee request timed out. Try again.")));
+
+    expect(within(dialog).getByText("The network-fee request timed out. Try again.")).toBeTruthy();
+    expect(within(dialog).queryByRole("status")).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Close" })).toBeEnabled();
+    const confirm = within(dialog).getByRole("button", { name: "Confirm routing" });
+    expect(confirm).toBeEnabled();
+    expect(mocks.batch).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(confirm);
+    await within(dialog).findByRole("button", { name: "Done" });
+    expect(mocks.batch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["success", "error"])(
+    "cancels quote preparation and ignores its late %s and progress callbacks",
+    async (outcome) => {
+      let finish!: (result: unknown) => void;
+      let fail!: (cause: Error) => void;
+      mocks.batch.mockReturnValueOnce(
+        new Promise((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+      );
+      setup();
+      fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+      const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+      const options = mocks.batch.mock.calls[0][0];
+      expect(options.signal.aborted).toBe(false);
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: outcome === "success" ? "Cancel" : "Close" }),
+      );
+      expect(options.signal.aborted).toBe(true);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByRole("button", { name: "Review routing" })).toBeDisabled();
+
+      await act(async () => {
+        options.onProgress("Late quote progress");
+        options.onBeforePayment();
+        if (outcome === "success") finish({ status: "success", hashes: [] });
+        else fail(new Error("Late quote failure"));
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByText(/Late quote/)).toBeNull();
+      expect(screen.queryByText(/Routing review complete/)).toBeNull();
+      expect(screen.getByRole("button", { name: "Review routing" })).toBeEnabled();
+      expect(mocks.batch).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole("button", { name: "Review routing" }));
+      const nextDialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+      act(() => options.onProgress("Late quote progress"));
+      expect(within(nextDialog).queryByRole("status")).toBeNull();
+      expect(within(nextDialog).queryByRole("button", { name: "Done" })).toBeNull();
+      expect(within(nextDialog).getByRole("button", { name: "Confirm routing" })).toBeEnabled();
+    },
+  );
+
+  it.each(["quote", "payment"])(
+    "unmounting during %s only aborts preparation and ignores late completion",
+    async (phase) => {
+      let finish!: (result: unknown) => void;
+      mocks.batch.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+      const rendered = setup();
+      fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+      const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+      const options = mocks.batch.mock.calls[0][0];
+      if (phase === "payment") act(() => options.onBeforePayment());
+      expect(options.signal.aborted).toBe(false);
+
+      rendered.unmount();
+      expect(options.signal.aborted).toBe(phase === "quote");
+      const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+      try {
+        await act(async () => {
+          options.onProgress("Late progress after navigation");
+          finish({ status: "success", hashes: [] });
+        });
+        expect(invalidate).not.toHaveBeenCalled();
+        expect(screen.queryByRole("dialog")).toBeNull();
+      } finally {
+        invalidate.mockRestore();
+      }
+    },
+  );
 
   it("ends the round on Done, still listing what it routed", async () => {
     setup();

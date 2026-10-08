@@ -2,6 +2,7 @@ import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { pendingRouterCommitment } from "@/lib/pending-router-calls";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
+import type { TransactionActivity } from "@/lib/transaction-activity";
 import type { TransactionReviewRequest } from "@/lib/transaction-review";
 import {
   RELAYR_PAYMENT_EVENT,
@@ -766,6 +767,46 @@ describe("reviewed Relayr authorization hook", () => {
     expect(mocks.signTypedData).toHaveBeenCalledOnce();
   });
 
+  it("keeps the 45-second signed-publication timeout and its authorization reservation", async () => {
+    const { hooks, review, activity } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const deadline = vi.spyOn(AbortSignal, "timeout");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("signal timed out", "TimeoutError")),
+    );
+    const scoped = { ...REQUEST, recoveryScope: "revnet-launch" };
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await expect(quoter.result.current.getRelayrTxQuote([scoped])).rejects.toThrow(
+      "The network-fee quote timed out. Check the saved authorization in account activity before trying again.",
+    );
+    expect(deadline).toHaveBeenCalledWith(45_000);
+    expect(deadline).not.toHaveBeenCalledWith(300_000);
+    expect(activity.transactionActivitySnapshot()[0].relayrNonces).toEqual(["4"]);
+    expect(hooks.hasRelayrRecoveryScopeSession(ACCOUNT, scoped.recoveryScope)).toBe(true);
+    await expect(
+      hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, scoped.recoveryScope),
+    ).rejects.toThrow(/earlier signature can still run/);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("does not request a signature after cancellation during authorization review", async () => {
+    const { hooks, review, activity } = await freshHarness();
+    const controller = new AbortController();
+    review.registerTransactionReviewHandler(async () => {
+      controller.abort();
+      return true;
+    });
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await expect(
+      quoter.result.current.getRelayrTxQuote([REQUEST], { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(mocks.signTypedData).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(activity.transactionActivitySnapshot()).toEqual([]);
+  });
+
   it.each(["project-metadata:1:4", "project-splits:1:4:123:1"])(
     "keeps changed setter calldata blocked by an unresolved destination scope: %s",
     async (recoveryScope) => {
@@ -1009,6 +1050,276 @@ describe("raw pending-payment publication and funding", () => {
           .find((guard) => guard.data === data)?.expected ?? "0x",
     }));
   }
+  it.each(["source checks", "quote request"] as const)(
+    "stops canceled routing during %s before offering a quote or payment",
+    async (stage) => {
+      const request = { ...pendingRequest(HASH), reviewedInParent: true };
+      sources([request]);
+      const { hooks, activity } = await freshHarness();
+      const controller = new AbortController();
+      let release!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const api = relayrApi();
+      if (stage === "source checks")
+        mocks.rawRequest.mockImplementationOnce(async () => {
+          await waiting;
+          return "0x";
+        });
+      else {
+        const respond = api.getMockImplementation()!;
+        api.mockImplementationOnce(async (input, init) => {
+          await waiting;
+          expect(init?.signal?.aborted).toBe(true);
+          // Model a response completing despite abort, so the post-await check matters.
+          return respond(input, init);
+        });
+      }
+      vi.stubGlobal("fetch", api);
+      const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+      let canceled!: Promise<unknown>;
+      await act(async () => {
+        canceled = quoter.result.current
+          .getRelayrTxQuote([request], { signal: controller.signal })
+          .catch((error) => error);
+      });
+      await act(async () => {
+        controller.abort();
+        release();
+        expect(await canceled).toMatchObject({ name: "AbortError" });
+      });
+      expect(api).toHaveBeenCalledTimes(stage === "source checks" ? 0 : 1);
+      expect(quoter.result.current.data).toBeUndefined();
+      expect(activity.transactionActivitySnapshot().some((row) => row.bundleUuid)).toBe(false);
+      expect(hooks.hasRelayrRecoveryScopeSession(ACCOUNT, request.recoveryScope!)).toBe(false);
+      expect(mocks.signTypedData).not.toHaveBeenCalled();
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    },
+  );
+  it("reports all 14 checks and recovers a timed-out unsigned quote with one reviewed payment", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(new Date(NOW * 1_000));
+    const deadline = vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      const controller = new AbortController();
+      setTimeout(
+        () => controller.abort(new DOMException("signal timed out", "TimeoutError")),
+        milliseconds,
+      );
+      return controller.signal;
+    });
+    const requests = Array.from({ length: 14 }, (_, index) => ({
+      ...pendingRequest(`0x${(index + 1).toString(16).padStart(64, "0")}`),
+      reviewedInParent: true,
+    }));
+    sources(requests);
+    const { hooks, review, activity } = await freshHarness();
+    const reviewPayment = vi.fn(async () => true);
+    review.registerTransactionReviewHandler(reviewPayment);
+    const api = relayrApi({
+      ids: requests.map((_, index) => `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`),
+    });
+    const respond = api.getMockImplementation()!;
+    api.mockImplementationOnce(
+      (_input, init) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+        }),
+    );
+    api.mockImplementationOnce(
+      (input, init) =>
+        new Promise<Response>((resolve) => {
+          setTimeout(() => resolve(respond(input, init)), 153_565);
+        }),
+    );
+    vi.stubGlobal("fetch", api);
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    const messages: string[] = [];
+    let failure!: Promise<unknown>;
+    await act(async () => {
+      failure = quoter.result.current
+        .getRelayrTxQuote(requests, { onMessage: (message) => messages.push(message) })
+        .catch((error) => error);
+    });
+    expect(messages).toEqual([
+      ...requests.map((_, index) => `Checking routing attempt ${index + 1} of 14.`),
+      "Requesting the network-fee quote. This batch may take a few minutes.",
+    ]);
+    expect(api).toHaveBeenCalledOnce();
+    expect(reviewPayment).not.toHaveBeenCalled();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    expect(deadline).toHaveBeenCalledWith(300_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(45_001);
+    });
+    expect(quoter.result.current.isPending).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(254_999);
+      expect(await failure).toMatchObject({
+        message:
+          "The network-fee quote timed out. No payment was sent. Review again to request a fresh quote.",
+      });
+    });
+    expect(api).toHaveBeenCalledOnce();
+    const publication = activity.transactionActivitySnapshot()[0];
+    expect(publication).toMatchObject({
+      title: "Routing fee quote requested",
+      status: "pending",
+      relayrPaymentStatus: "unfunded",
+    });
+    expect(publication.bundleUuid).toBeUndefined();
+    expect(publication.relayrExpectedTransactions).toHaveLength(14);
+    expect(hooks.hasRelayrRecoveryScopeSession(ACCOUNT, requests[0].recoveryScope!)).toBe(false);
+    await expect(
+      hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, requests[0].recoveryScope!),
+    ).resolves.toBeUndefined();
+    let retried!: Promise<RelayrPostBundleResponse>;
+    await act(async () => {
+      retried = quoter.result.current.getRelayrTxQuote(requests, {
+        onMessage: (message) => messages.push(message),
+      });
+      void retried.catch(() => undefined);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(45_001);
+    });
+    expect(quoter.result.current.isPending).toBe(true);
+    expect(quoter.result.current.data).toBeUndefined();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(108_564);
+      await expect(retried).resolves.toMatchObject({ bundle_uuid: BUNDLE_UUID });
+    });
+    expect(messages.at(-1)).toBe("Checking the returned network-fee quote.");
+    expect(activity.transactionActivitySnapshot()[0].relayrExpectedTransactions).toHaveLength(14);
+    expect(reviewPayment).not.toHaveBeenCalled();
+    expect(mocks.signTypedData).not.toHaveBeenCalled();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    const payer = renderHook(() => hooks.useSendRelayrTx());
+    const paymentMessages: string[] = [];
+    await act(async () => {
+      await expect(
+        payer.result.current.sendRelayrTx(payment(), {
+          onMessage: (message) => paymentMessages.push(message),
+        }),
+      ).resolves.toBe(HASH);
+    });
+    expect(paymentMessages).toEqual([
+      "Preparing the network-fee payment.",
+      "Review the network-fee payment.",
+      "Checking the selected transactions before payment.",
+      "Confirm the network-fee payment in your wallet.",
+      "Checking the submitted network-fee payment.",
+    ]);
+    expect(reviewPayment).toHaveBeenCalledOnce();
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
+      /already has a submitted payment/,
+    );
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
+  it("reloads a legacy unsigned publication and quotes the current selection without expiring history", async () => {
+    const firstRequest = { ...pendingRequest(HASH), reviewedInParent: true };
+    const secondRequest = { ...pendingRequest(BLOCK_HASH), reviewedInParent: true };
+    sources([firstRequest, secondRequest]);
+    const initial = await freshHarness();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
+    const first = renderHook(() => initial.hooks.useGetRelayrTxQuote());
+    await expect(first.result.current.getRelayrTxQuote([firstRequest])).rejects.toThrow(
+      /POST response lost/,
+    );
+    const publication = initial.activity.transactionActivitySnapshot()[0];
+    initial.activity.updateTransactionActivity(publication.id, {
+      title: "Authorization publication",
+      message: "Signed calls were published.",
+    });
+    const legacy = structuredClone(initial.activity.transactionActivitySnapshot()[0]);
+    first.unmount();
+    const resumed = await freshHarness();
+    expect(resumed.hooks.hasRelayrRecoveryScopeSession(ACCOUNT, firstRequest.recoveryScope!)).toBe(
+      false,
+    );
+    await expect(
+      resumed.hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, firstRequest.recoveryScope!),
+    ).resolves.toBeUndefined();
+    vi.stubGlobal("fetch", relayrApi());
+    const current = renderHook(() => resumed.hooks.useGetRelayrTxQuote());
+    await act(async () => {
+      await current.result.current.getRelayrTxQuote([firstRequest, secondRequest]);
+    });
+    expect(
+      resumed.activity.transactionActivitySnapshot().find((row) => row.id === legacy.id),
+    ).toEqual(legacy);
+    expect(
+      resumed.activity.transactionActivitySnapshot().find((row) => row.bundleUuid === BUNDLE_UUID)
+        ?.relayrExpectedTransactions,
+    ).toHaveLength(2);
+    expect(mocks.signTypedData).not.toHaveBeenCalled();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["a quote ID", { bundleUuid: BUNDLE_UUID }],
+    ["a returned quote", { relayrQuote: quote() }],
+    ["a payment hash", { hash: HASH }],
+    ["an execution hash", { executionHash: HASH }],
+    ["a Safe proposal", { safeProposalHash: HASH }],
+    ["a payment intent", { relayrPayment: { target: PAYMENT_TARGET, data: "0x", value: "0" } }],
+    ["a funding attempt's empty payment history", { relayrPayments: [] }],
+    ["signed nonces", { relayrNonces: ["0"] }],
+    ["a Safe session", { relayrSafeSessionId: "saved-safe" }],
+    ["an uncertain wallet result", { manualVerificationRequired: true }],
+    ["a submitted payment", { relayrPaymentStatus: "submitted" }],
+    [
+      "a receipt-bearing chain state",
+      { chainStates: [{ chainId: 1, status: "Pending", hash: HASH }] },
+    ],
+  ] satisfies Array<[string, Partial<TransactionActivity>]>)(
+    "keeps an unsigned publication reserved when it also has %s",
+    async (_, patch) => {
+      const request = { ...pendingRequest(HASH), reviewedInParent: true };
+      sources([request]);
+      const { hooks, activity } = await freshHarness();
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
+      const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+      await expect(quoter.result.current.getRelayrTxQuote([request])).rejects.toThrow(
+        /POST response lost/,
+      );
+      const publication = activity.transactionActivitySnapshot()[0];
+      activity.updateTransactionActivity(publication.id, patch);
+      expect(hooks.hasRelayrRecoveryScopeSession(ACCOUNT, request.recoveryScope!)).toBe(true);
+      await expect(
+        hooks.requireRelayrRecoveryScopeAvailable(ACCOUNT, request.recoveryScope!),
+      ).rejects.toThrow();
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    ["a transaction ID", { transactionUuid: TX_UUIDS[0] }],
+    ["a receipt", { receiptStatus: "success" as const }],
+    ["native value", { value: "1" }],
+    ["a different target", { target: TARGET }],
+    ["noncanonical calldata", { data: "0x1234" as Hex }],
+    ["missing state guards", { preconditions: [] }],
+    ["a missing routing identity", { expectedRouterPending: undefined }],
+  ])("does not release saved routing with %s", async (_, patch) => {
+    const request = { ...pendingRequest(HASH), reviewedInParent: true };
+    sources([request]);
+    const { hooks, activity } = await freshHarness();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
+    const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+    await expect(quoter.result.current.getRelayrTxQuote([request])).rejects.toThrow(
+      /POST response lost/,
+    );
+    const publication = activity.transactionActivitySnapshot()[0];
+    activity.updateTransactionActivity(publication.id, {
+      relayrExpectedTransactions: [{ ...publication.relayrExpectedTransactions![0], ...patch }],
+    });
+    expect(hooks.hasRelayrRecoveryScopeSession(ACCOUNT, request.recoveryScope!)).toBe(true);
+    await expect(quoter.result.current.getRelayrTxQuote([request])).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
   it("publishes repeated-chain pending calls as distinct raw transactions without forwarder signatures", async () => {
     const requests = [pendingRequest(HASH), pendingRequest(BLOCK_HASH)];
     sources(requests);

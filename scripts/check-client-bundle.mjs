@@ -108,7 +108,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Independent import review found no avoidable eager wallet or barrel load; all
 // lazy checks pass. Round the measured aggregate to 2684 KiB; keep the 900 KiB
 // route and 1100 KiB route-referenced ceilings and every lazy constraint unchanged.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2684);
+// Cancellable routing quotes, phase messages and strict unsigned-publication
+// recovery measure 2684.5 KiB versus c5ccbca6's 2683.4 KiB on the same locked
+// Node 26.7.0 dependency tree. Raise only the aggregate ceiling by 1 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2685);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

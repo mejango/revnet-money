@@ -1877,6 +1877,129 @@ describe("reviewed selected-call orchestration", () => {
       expect(mocks.write).not.toHaveBeenCalled();
       expect(readMultichainBatches()[0].rounds).toHaveLength(1);
     });
+    it("reports each deferred quote and payment handoff without paying before a funding choice", async () => {
+      quotedIdentities();
+      const quoted = mocks.quote.getMockImplementation()!;
+      const quoteReady = Promise.withResolvers<void>();
+      const paymentChosen = Promise.withResolvers<void>();
+      const paymentSent = Promise.withResolvers<void>();
+      const destinationsDone = Promise.withResolvers<void>();
+      const progress = vi.fn();
+      const beforePayment = vi.fn();
+      mocks.quote.mockImplementation(async (requests, options) => {
+        options.onMessage("Requesting the network-fee quote…");
+        await quoteReady.promise;
+        return quoted(requests);
+      });
+      mocks.choose.mockImplementation(async () => {
+        await paymentChosen.promise;
+        return { chain: 1 };
+      });
+      mocks.pay.mockImplementation(async (_payment, options) => {
+        options.onMessage("Confirm the network-fee payment in your wallet.");
+        await paymentSent.promise;
+        return HASH;
+      });
+      const settled = mocks.wait.getMockImplementation()!;
+      mocks.wait.mockImplementation(async (...args) => {
+        await destinationsDone.promise;
+        return settled(...args);
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        const running = result.current.runBatch({
+          scope: "pending-all",
+          label: "Route payments",
+          calls: calls(),
+          onProgress: progress,
+          onBeforePayment: beforePayment,
+        });
+        await vi.waitFor(() =>
+          expect(progress).toHaveBeenLastCalledWith("Requesting the network-fee quote…"),
+        );
+        expect(mocks.choose).not.toHaveBeenCalled();
+        expect(mocks.pay).not.toHaveBeenCalled();
+        expect(beforePayment).not.toHaveBeenCalled();
+        quoteReady.resolve();
+        await vi.waitFor(() =>
+          expect(progress).toHaveBeenLastCalledWith("Choose a network for the fee payment."),
+        );
+        expect(mocks.pay).not.toHaveBeenCalled();
+        expect(beforePayment).toHaveBeenCalledOnce();
+        paymentChosen.resolve();
+        await vi.waitFor(() =>
+          expect(progress).toHaveBeenLastCalledWith(
+            "Confirm the network-fee payment in your wallet.",
+          ),
+        );
+        expect(mocks.wait).not.toHaveBeenCalled();
+        paymentSent.resolve();
+        await vi.waitFor(() =>
+          expect(progress).toHaveBeenLastCalledWith("Checking payment and 3 transaction results…"),
+        );
+        destinationsDone.resolve();
+        await expect(running).resolves.toMatchObject({ status: "success" });
+      });
+      expect(mocks.pay).toHaveBeenCalledOnce();
+    });
+    it("does not offer or send payment when a quote resolves after preparation was cancelled", async () => {
+      quotedIdentities();
+      const quoted = mocks.quote.getMockImplementation()!;
+      const quoteReady = Promise.withResolvers<void>();
+      const controller = new AbortController();
+      const beforePayment = vi.fn();
+      mocks.quote.mockImplementation(async (requests, options) => {
+        expect(options.signal).toBe(controller.signal);
+        await quoteReady.promise;
+        return quoted(requests);
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        const running = result.current.runBatch({
+          scope: "pending-all",
+          label: "Route payments",
+          calls: calls(),
+          signal: controller.signal,
+          onBeforePayment: beforePayment,
+        });
+        const cancelled = expect(running).rejects.toMatchObject({ name: "AbortError" });
+        await vi.waitFor(() => expect(mocks.quote).toHaveBeenCalledOnce());
+        controller.abort();
+        quoteReady.resolve();
+        await cancelled;
+      });
+      expect(beforePayment).not.toHaveBeenCalled();
+      expect(mocks.choose).not.toHaveBeenCalled();
+      expect(mocks.pay).not.toHaveBeenCalled();
+      expect(mocks.wait).not.toHaveBeenCalled();
+    });
+    it("drains concurrent source checks and never requests a quote after a failed check", async () => {
+      const checked = Promise.withResolvers<void>();
+      let callsStarted = 0;
+      mocks.verify.mockImplementation(async () => {
+        callsStarted += 1;
+        if (callsStarted === 1) throw new Error("source RPC unavailable");
+        await checked.promise;
+        return { data: HASH };
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        let finished = false;
+        const running = result.current
+          .runBatch({ scope: "pending-all", label: "Route payments", calls: calls() })
+          .finally(() => {
+            finished = true;
+          });
+        const rejected = expect(running).rejects.toThrow("source RPC unavailable");
+        await vi.waitFor(() => expect(callsStarted).toBe(3));
+        expect(finished).toBe(false);
+        expect(mocks.quote).not.toHaveBeenCalled();
+        checked.resolve();
+        await rejected;
+      });
+      expect(mocks.pay).not.toHaveBeenCalled();
+      expect(readMultichainBatches()).toEqual([]);
+    });
     it("resumes the original paid pending-payment entry without another quote or payment", async () => {
       quotedIdentities();
       mocks.wait.mockRejectedValueOnce(new Error("destination RPC unavailable"));

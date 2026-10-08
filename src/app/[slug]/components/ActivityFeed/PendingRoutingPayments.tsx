@@ -48,6 +48,18 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   const lastChecked = useRef<string | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cancellable, setCancellable] = useState(false);
+  const activeSubmission = useRef<{ controller: AbortController; cancellable: boolean } | null>(
+    null,
+  );
+  useEffect(
+    () => () => {
+      const submission = activeSubmission.current;
+      if (submission?.cancellable) submission.controller.abort();
+      activeSubmission.current = null;
+    },
+    [],
+  );
   const [reviewed, setReviewed] = useState<Prepared[] | null>(null);
   // The routing round ended. The confirm keeps listing what it routed and ends on Done.
   const [routed, setRouted] = useState(false);
@@ -170,6 +182,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     }
     if (!address) return;
     setBusy(true);
+    setProgress("Preparing routing…");
     try {
       const prepared = await mapConcurrentChecks(selected, (payment) =>
         preparePendingRouterPayment(
@@ -189,6 +202,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       setRouted(false);
       setOpen(true);
     } catch (cause) {
+      setProgress(null);
       setError(formatWalletError(cause));
     } finally {
       setBusy(false);
@@ -197,8 +211,14 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
 
   async function submit() {
     if (!savedSelection && !reviewed) return;
+    const submission = { controller: new AbortController(), cancellable: true };
+    activeSubmission.current = submission;
+    const current = () =>
+      activeSubmission.current === submission && !submission.controller.signal.aborted;
     setBusy(true);
+    setCancellable(true);
     setError(null);
+    setProgress("Preparing routing…");
     try {
       if (reviewed && address?.toLowerCase() !== reviewedAccount) {
         throw new Error(
@@ -212,8 +232,17 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         replaceDraftId: savedSelection ? undefined : replacementId,
         refreshBatchId: savedSelection ? undefined : refreshBatchId,
         calls: savedSelection ? [] : (reviewed ?? []).map((row) => row.call),
-        onProgress: setProgress,
+        signal: submission.controller.signal,
+        onBeforePayment: () => {
+          if (!current()) return;
+          submission.cancellable = false;
+          setCancellable(false);
+        },
+        onProgress: (message) => {
+          if (current()) setProgress(message);
+        },
       });
+      if (!current()) return;
       setObsoleteProposals(result.obsoleteSafeProposals ?? []);
       if (result.status === "pending") return;
       setProgress(
@@ -224,11 +253,29 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       setRouted(true);
       await refresh();
     } catch (cause) {
+      if (!current()) return;
+      setProgress(null);
       setError(formatWalletError(cause));
       if (replacementId || refreshBatchId) setNeedsReview(true);
     } finally {
-      setBusy(false);
+      if (activeSubmission.current === submission) {
+        activeSubmission.current = null;
+        setBusy(false);
+        setCancellable(false);
+      }
     }
+  }
+
+  function closeReview() {
+    if (busy) {
+      if (!activeSubmission.current?.cancellable) return;
+      activeSubmission.current.controller.abort();
+    }
+    setProgress(null);
+    setOpen(false);
+    if (!routed) return;
+    setRouted(false);
+    setReviewed(null);
   }
 
   if (!hydrated || !identities.length) return null;
@@ -269,7 +316,9 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         </p>
       ) : !unavailable ? (
         <p role="status" className="mt-2 text-sm text-zinc-600">
-          {payments.length} payments awaiting routing. {ready.length} ready
+          {ready.length === payments.length
+            ? `${ready.length} ${ready.length === 1 ? "payment" : "payments"} ready to route.`
+            : `${ready.length} of ${payments.length} ${payments.length === 1 ? "payment" : "payments"} ready to route.`}
         </p>
       ) : null}
       {rows.length > 1 || resume ? (
@@ -304,9 +353,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
             </button>
           ) : null}
           {ready.length < payments.length && !resume ? (
-            <p className="mt-1 text-xs text-zinc-500">
-              Includes {ready.length} ready payments. Payments in cooldown must wait.
-            </p>
+            <p className="mt-1 text-xs text-zinc-500">Payments in cooldown must wait.</p>
           ) : null}
         </div>
       ) : null}
@@ -358,12 +405,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       <TxError error={open ? null : error} />
       <TxConfirmDialog
         open={open}
-        onClose={() => {
-          setOpen(false);
-          if (!routed) return;
-          setRouted(false);
-          setReviewed(null);
-        }}
+        onClose={closeReview}
         title="Route pending payments"
         steps={
           savedSelection
@@ -377,8 +419,27 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         activeIndex={busy ? 0 : -1}
         stepsIntro="Eligible wallet batches use one network-fee payment for all selected attempts. Each attempt keeps its own result."
         onConfirm={() => (needsReview ? void review(ready) : void submit())}
-        action={needsReview ? "Review again" : savedSelection ? "Continue" : "Confirm routing"}
-        busy={busy}
+        action={
+          busy
+            ? null
+            : needsReview
+              ? "Review again"
+              : savedSelection
+                ? "Continue"
+                : "Confirm routing"
+        }
+        busy={busy && !cancellable}
+        footerContent={
+          busy && cancellable ? (
+            <button
+              type="button"
+              className="ml-auto block min-h-[44px] border border-melon-600 px-5 text-sm"
+              onClick={closeReview}
+            >
+              Cancel
+            </button>
+          ) : undefined
+        }
         error={error}
         status={progress}
         actionDisabled={

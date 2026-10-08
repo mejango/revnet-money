@@ -13,6 +13,7 @@ import {
   submittedViaSafe,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import {
   batchCallKey,
   batchCallScope,
@@ -96,6 +97,9 @@ type BatchInput = {
   /** The exact hashless routing selection superseded by the normal fresh review. */
   refreshBatchId?: string;
   expectedBatchId?: string;
+  /** Stops preparation; an in-flight wallet submission still requires reconciliation. */
+  signal?: AbortSignal;
+  onBeforePayment?: () => void;
   onProgress?: (message: string) => void;
 };
 const running = new Set<string>();
@@ -451,6 +455,7 @@ export function useMultichainBatch() {
 
   const runBatch = useCallback(
     async (input: BatchInput): Promise<BatchResult> => {
+      input.signal?.throwIfAborted();
       requireNoViewAs();
       if (
         [input.expectedBatchId, input.replaceDraftId, input.refreshBatchId].filter(Boolean).length >
@@ -475,6 +480,7 @@ export function useMultichainBatch() {
           if (batch) updateTransactionActivity(batch.id, { message });
         };
         const requireAccount = () => {
+          input.signal?.throwIfAborted();
           requireNoViewAs();
           if (getAccount(config).address?.toLowerCase() !== account.toLowerCase())
             throw new Error("The connected account changed. Resume with the original account.");
@@ -605,9 +611,11 @@ export function useMultichainBatch() {
               replacingDraft?.id,
             );
             for (const call of input.calls) await call.validate?.();
+            requireAccount();
             // A Safe proposes each call with gas 0, so its reviewed envelope is
             // safeTxGas 0 rather than the EOA gas limit.
             const safe = isSafeConnection(config);
+            progress("Review the selected transactions.");
             await requireTransactionReview({
               title: `Review ${input.label}`,
               description: relayr
@@ -629,12 +637,14 @@ export function useMultichainBatch() {
             });
             reviewedHere = true;
             requireAccount();
-            for (const call of batch.calls) {
+            progress("Checking the selected transactions…");
+            await mapConcurrentChecks(batch.calls, async (call) => {
               if (input.refreshBatchId) describeSavedRoutingCall(call);
               const client = getPublicClient(config, { chainId: call.chainId });
               if (!client) throw new Error("Destination RPC unavailable.");
               await verifyCallPreconditions(client, call.preconditions);
-            }
+            });
+            requireAccount();
             if (replacingDraft) {
               for (const [index, call] of replacingDraft.calls.entries()) {
                 const scope = batchCallScope(replacingDraft, call, index);
@@ -676,6 +686,8 @@ export function useMultichainBatch() {
               throw new Error("Resume this batch using its original EOA account connection.");
             for (const [roundIndex, round] of batch.rounds.entries()) {
               if (round.state === "success") continue;
+              requireAccount();
+              if (round.state === "funding" || round.state === "pending") input.onBeforePayment?.();
               if (round.state === "funding" && round.bundleUuid) {
                 const activity = refreshTransactionActivities().find(
                   (item) => item.bundleUuid === round.bundleUuid,
@@ -690,13 +702,10 @@ export function useMultichainBatch() {
                 }
               }
               requireAccount();
-              progress(
-                `Round ${roundIndex + 1} of ${batch.rounds.length}: ${round.indices.length} destination(s).`,
-              );
               if (round.state === "ready" || round.state === "quoted") {
-                const requests = [];
-                for (const index of round.indices) {
-                  const call = batch.calls[index];
+                progress(`Checking ${round.indices.length} transactions for the fee quote…`);
+                const requests = await mapConcurrentChecks(round.indices, async (index) => {
+                  const call = batch!.calls[index];
                   const client = getPublicClient(config, { chainId: call.chainId });
                   if (!client) throw new Error("Destination RPC unavailable.");
                   await verifyCallPreconditions(client, call.preconditions);
@@ -712,13 +721,13 @@ export function useMultichainBatch() {
                         value: call.value,
                       }),
                     );
-                  requests.push({
+                  return {
                     chainId: call.chainId as JBChainId,
                     version: 6 as const,
                     relayrMode: call.relayrMode,
                     // The batch review in this run showed this exact call.
                     reviewedInParent: reviewedHere,
-                    recoveryScope: batchCallScope(batch, call, index),
+                    recoveryScope: batchCallScope(batch!, call, index),
                     preconditions: call.preconditions,
                     expectedDeployment: call.expectedDeployment,
                     rejectEvents: call.rejectEvents,
@@ -737,11 +746,16 @@ export function useMultichainBatch() {
                       functionName: call.functionName,
                       args: call.args,
                       contractName: call.contractName,
-                      label: batch.label,
+                      label: batch!.label,
                     },
-                  });
-                }
-                const quote = await getRelayrTxQuote(requests);
+                  };
+                });
+                requireAccount();
+                const quote = await getRelayrTxQuote(requests, {
+                  signal: input.signal,
+                  onMessage: progress,
+                });
+                requireAccount();
                 if (!quote) throw new Error("No payable quote is available.");
                 const quotedCalls = refreshTransactionActivities().find(
                   (row) => row.bundleUuid === quote.bundle_uuid,
@@ -756,12 +770,15 @@ export function useMultichainBatch() {
                 round.bundleUuid = quote.bundle_uuid;
                 round.state = "quoted";
                 saveMultichainBatch(batch);
+                input.onBeforePayment?.();
+                progress("Choose a network for the fee payment.");
                 const payment = await chooseRelayrPayment(quote.payment_info, startChainId);
                 requireAccount();
                 round.state = "funding";
                 saveMultichainBatch(batch);
                 try {
-                  await sendRelayrTx(payment);
+                  progress("Review the network-fee payment.");
+                  await sendRelayrTx(payment, { onMessage: progress });
                 } catch (cause) {
                   const activity = refreshTransactionActivities().find(
                     (row) => row.bundleUuid === round.bundleUuid,
@@ -791,6 +808,9 @@ export function useMultichainBatch() {
                 throw new Error(
                   "The saved bundle has no unique transaction identity for every routing attempt. Reconcile the original bundle before continuing.",
                 );
+              progress(
+                `Checking payment and ${round.indices.length} transaction results${batch.rounds.length > 1 ? ` (round ${roundIndex + 1} of ${batch.rounds.length})` : ""}…`,
+              );
               const bundle = await waitForRelayrBundle(round.bundleUuid);
               for (const [position, index] of round.indices.entries()) {
                 const call = batch.calls[index];
@@ -813,6 +833,8 @@ export function useMultichainBatch() {
               saveMultichainBatch(batch);
             }
           } else {
+            requireAccount();
+            input.onBeforePayment?.();
             for (const [index, call] of batch.calls.entries()) {
               if (isBatchCallHandled(call)) continue;
               requireAccount();
