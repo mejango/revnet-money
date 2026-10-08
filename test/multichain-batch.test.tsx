@@ -9,10 +9,13 @@ import {
   replaceRoutingDraft,
   resetUnsubmittedBatchCall,
   saveMultichainBatch,
+  type MultichainBatch,
   type MultichainCall,
 } from "@/lib/multichain-batch";
+import { pendingRouterCommitment } from "@/lib/pending-router-calls";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import {
+  contractTransactionKey,
   recordTransactionActivity,
   refreshTransactionActivities,
   updateTransactionActivity,
@@ -29,8 +32,10 @@ import {
   encodeEventTopics,
   encodeFunctionData,
   encodeFunctionResult,
+  keccak256,
   parseAbi,
   parseAbiParameters,
+  toHex,
   zeroAddress,
   zeroHash,
   type Address,
@@ -535,6 +540,471 @@ describe("routing draft replacement", () => {
     expect(readMultichainBatches()).toEqual([draft]);
     expect(mocks.review).not.toHaveBeenCalled();
   });
+});
+
+describe("fresh review of hashless routing selections", () => {
+  const gateway = "0x4a56aef5b6a5b9742abb02ca67c5a85ba183d901" as Address;
+  const scope = "pending-routing:1:1";
+  const routingCalls = (): MultichainCall[] =>
+    Array.from({ length: 14 }, (_, index) => {
+      const pendingCallId = toHex(index + 1, { size: 32 });
+      const payment = {
+        amount: BigInt(100 + index),
+        preferAddToBalance: false,
+        shouldReturnHeldFees: false,
+        beneficiary: ACCOUNT,
+        projectId: 1n,
+        refundTo: ACCOUNT,
+        sourceProjectId: 6n,
+        token: "0x000000000000000000000000000000000000EEEe" as Address,
+      };
+      return {
+        chainId: 1,
+        address: gateway,
+        abi: routerGatewayAbi,
+        functionName: "processPendingCall",
+        args: [pendingCallId, payment, "original memo", "0x"],
+        gas: 6_600_000n,
+        relayrMode: "raw",
+        recoveryScope: `pending-routing:1:${gateway}:${pendingCallId}`,
+        preconditions: [
+          {
+            address: gateway,
+            data: encodeFunctionData({
+              abi: routerGatewayAbi,
+              functionName: "pendingCallCommitmentOf",
+              args: [pendingCallId],
+            }),
+            expected: pendingRouterCommitment(payment, "original memo", "0x"),
+          },
+          {
+            address: gateway,
+            data: encodeFunctionData({
+              abi: routerGatewayAbi,
+              functionName: "pendingCallFailureOf",
+              args: [pendingCallId],
+            }),
+            expected: failureSnapshot,
+          },
+        ],
+        expectedRouterPending: {
+          gateway,
+          pendingCallId,
+          callHash: keccak256(
+            encodeAbiParameters(
+              parseAbiParameters(
+                "(uint256 amount,bool preferAddToBalance,bool shouldReturnHeldFees,address beneficiary,uint256 projectId,address refundTo,uint256 sourceProjectId,address token)",
+              ),
+              [payment],
+            ),
+          ),
+        },
+      };
+    });
+  const saveUnknownSelection = (savedScope = scope) => {
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      savedScope,
+      "Route payments",
+      routingCalls()
+        .slice(0, 3)
+        .map((call) => ({ ...call, relayrMode: undefined })),
+      "direct",
+    );
+    batch.calls[0].state = "submitting";
+    saveMultichainBatch(batch);
+    return batch;
+  };
+  const inputFor = (batch: MultichainBatch) => ({
+    scope,
+    label: "Route payments",
+    calls: routingCalls(),
+    refreshBatchId: batch.id,
+  });
+  const recordSubmittedCall = (
+    batch: MultichainBatch,
+    evidence: { hash?: Hash; executionHash?: Hash; safeProposalHash?: Hash } = { hash: HASH },
+  ) =>
+    recordTransactionActivity({
+      id: "tx:routing-submission",
+      kind: evidence.hash ? "direct" : "safe",
+      title: "Route payment",
+      status: "failed",
+      message: "Recorded before the batch received its transaction hash",
+      account: batch.account,
+      chainId: batch.calls[0].chainId,
+      callKey: contractTransactionKey(batch.account, batch.calls[0].chainId, batch.calls[0]),
+      ...evidence,
+    });
+  beforeEach(() => {
+    const conditions = routingCalls().flatMap((call) => call.preconditions!);
+    mocks.verify.mockImplementation(async ({ data }) => ({
+      data: conditions.find((condition) => condition.data === data)?.expected ?? "0x",
+    }));
+  });
+
+  it.each([scope, "pending-routing:1:6"])(
+    "supersedes the unknown three-call journal from %s and funds all 14 current calls once",
+    async (savedScope) => {
+      const original = saveUnknownSelection(savedScope);
+      recordTransactionActivity({
+        id: original.id,
+        kind: "direct",
+        account: ACCOUNT,
+        title: "Routing",
+        status: "pending",
+        message: "Wallet result unknown",
+        manualVerificationRequired: true,
+      });
+      // An unrelated wallet's identical call must not prevent this user's recovery.
+      recordSubmittedCall({ ...original, account: TARGET });
+      const { result } = renderHook(() => useMultichainBatch());
+      expect(result.current.getPendingBatch(savedScope)).toMatchObject({
+        id: original.id,
+        total: 3,
+        refreshable: true,
+        replaceableDraft: false,
+      });
+      mocks.review.mockImplementation(async () => {
+        expect(readMultichainBatches()).toEqual([original]);
+        expect(mocks.quote).not.toHaveBeenCalled();
+        expect(mocks.pay).not.toHaveBeenCalled();
+      });
+      mocks.quote.mockImplementation(
+        async (requests: { chainId: number; data: { to: Address; data: Hash } }[]) => {
+          recordTransactionActivity({
+            id: "relayr:full-routing-queue",
+            kind: "relayr-bundle",
+            title: "Route payments",
+            status: "pending",
+            message: "Awaiting funding",
+            bundleUuid: "full-routing-queue",
+            account: ACCOUNT,
+            relayrExpectedTransactions: requests.map((request, index) => ({
+              chainId: request.chainId,
+              target: request.data.to,
+              data: request.data.data,
+              value: "0",
+              transactionUuid: `routing-${index}`,
+            })),
+          });
+          return { bundle_uuid: "full-routing-queue", payment_info: [{ chain: 1 }] };
+        },
+      );
+      mocks.wait.mockResolvedValue({
+        transactions: routingCalls().map((call, index) => ({
+          tx_uuid: `routing-${index}`,
+          request: { chain: call.chainId },
+          status: { data: { hash: toHex(index + 100, { size: 32 }) } },
+        })),
+      });
+      await act(async () => {
+        await expect(result.current.runBatch(inputFor(original))).resolves.toMatchObject({
+          status: "success",
+          hashes: expect.any(Array),
+        });
+      });
+      const saved = readMultichainBatches();
+      const replacement = saved.find((batch) => batch.id !== original.id)!;
+      expect(saved).toHaveLength(2);
+      expect(saved.find((batch) => batch.id === original.id)).toEqual({
+        ...original,
+        status: "superseded",
+        supersession: {
+          reason: "fresh-routing-review",
+          at: expect.any(Number),
+          replacementId: replacement.id,
+        },
+      });
+      expect(
+        refreshTransactionActivities().find((activity) => activity.id === original.id),
+      ).toMatchObject({
+        status: "pending",
+        manualVerificationRequired: true,
+        message: expect.stringContaining("previous wallet result remains unknown"),
+      });
+      expect(replacement).toMatchObject({ status: "success", route: "relayr", scope });
+      expect(replacement.calls).toHaveLength(14);
+      expect(replacement.calls.every((call) => call.state === "success")).toBe(true);
+      expect(replacement.rounds).toEqual([
+        expect.objectContaining({ indices: Array.from({ length: 14 }, (_, index) => index) }),
+      ]);
+      expect(mocks.review).toHaveBeenCalledOnce();
+      expect(mocks.review.mock.calls[0][0].calls.map((call: { data: Hash }) => call.data)).toEqual(
+        replacement.calls.map((call) => call.data),
+      );
+      expect(mocks.quote).toHaveBeenCalledOnce();
+      expect(mocks.quote.mock.calls[0][0]).toHaveLength(14);
+      expect(mocks.pay).toHaveBeenCalledOnce();
+      expect(mocks.write).not.toHaveBeenCalled();
+      expect(findPendingBatch(ACCOUNT, savedScope)).toBeUndefined();
+    },
+  );
+
+  it.each([false, true])(
+    "keeps the original locked without selecting its exact ID for fresh review (fresh calls: %s)",
+    async (freshCalls) => {
+      const original = saveUnknownSelection();
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(
+          result.current.runBatch({
+            scope,
+            label: "Route payments",
+            calls: freshCalls ? routingCalls() : [],
+          }),
+        ).rejects.toThrow();
+      });
+      expect(readMultichainBatches()).toEqual([original]);
+      expect(mocks.review).not.toHaveBeenCalled();
+      expect(mocks.quote).not.toHaveBeenCalled();
+      expect(mocks.write).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the original untouched when the fresh review is cancelled", async () => {
+    const original = saveUnknownSelection();
+    mocks.review.mockRejectedValue(new Error("Cancelled"));
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(result.current.runBatch(inputFor(original))).rejects.toThrow("Cancelled");
+    });
+    expect(readMultichainBatches()).toEqual([original]);
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original when gateway state advances during fresh review", async () => {
+    const original = saveUnknownSelection();
+    mocks.review.mockImplementation(async () => {
+      mocks.verify.mockResolvedValue({ data: zeroHash });
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(result.current.runBatch(inputFor(original))).rejects.toThrow(
+        "reviewed state changed",
+      );
+    });
+    expect(readMultichainBatches()).toEqual([original]);
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it("does not supersede routing history with a noncanonical fresh call", async () => {
+    const original = saveUnknownSelection();
+    const fresh = routingCalls()[0];
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({
+          ...inputFor(original),
+          calls: [{ ...fresh, abi: ABI, functionName: "distribute", args: [1n] }],
+        }),
+      ).rejects.toThrow();
+    });
+    expect(readMultichainBatches()).toEqual([original]);
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: "transaction hash",
+      change: (batch: MultichainBatch) => {
+        batch.calls[0].hash = HASH;
+      },
+    },
+    {
+      label: "Safe nonce zero",
+      change: (batch: MultichainBatch) => {
+        batch.calls[0].safeNonce = 0;
+      },
+    },
+    ...(["submitted", "safe", "success", "skipped", "reverted"] as const).map((state) => ({
+      label: `${state} call`,
+      change: (batch: MultichainBatch) => {
+        batch.calls[1].state = state;
+      },
+    })),
+    {
+      label: "Relayr transport",
+      change: (batch: MultichainBatch) => {
+        batch.route = "relayr";
+      },
+    },
+    {
+      label: "funding round",
+      change: (batch: MultichainBatch) => {
+        batch.rounds[0].state = "funding";
+      },
+    },
+    {
+      label: "bundle identity",
+      change: (batch: MultichainBatch) => {
+        batch.rounds[0].bundleUuid = "existing-quote";
+      },
+    },
+    {
+      label: "transaction identities",
+      change: (batch: MultichainBatch) => {
+        batch.rounds[0].transactionUuids = ["existing-transaction"];
+      },
+    },
+    {
+      label: "non-routing calldata",
+      change: (batch: MultichainBatch) => {
+        batch.calls[0].data = encodeFunctionData({
+          abi: ABI,
+          functionName: "distribute",
+          args: [1n],
+        });
+      },
+    },
+  ])("refuses refresh when the saved selection contains $label", async ({ change }) => {
+    const original = saveUnknownSelection();
+    change(original);
+    saveMultichainBatch(original);
+    const { result } = renderHook(() => useMultichainBatch());
+    expect(result.current.getPendingBatch(scope)?.refreshable).toBe(false);
+    await act(async () => {
+      await expect(result.current.runBatch(inputFor(original))).rejects.toThrow();
+    });
+    expect(readMultichainBatches()).toEqual([original]);
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it.each(["snapshot", "account", "Relayr session", "transaction activity"] as const)(
+    "refuses replacement when the %s changes during review",
+    async (changed) => {
+      const original = saveUnknownSelection();
+      mocks.review.mockImplementation(async () => {
+        if (changed === "snapshot") {
+          original.calls[0].hash = HASH;
+          saveMultichainBatch(original);
+        } else if (changed === "account") mocks.account = TARGET;
+        else if (changed === "transaction activity") recordSubmittedCall(original);
+        else mocks.scopeSession.mockReturnValue(true);
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(result.current.runBatch(inputFor(original))).rejects.toThrow(
+          /changed|saved session|submission or recovery evidence/i,
+        );
+      });
+      expect(readMultichainBatches()).toEqual([original]);
+      expect(mocks.quote).not.toHaveBeenCalled();
+      expect(mocks.pay).not.toHaveBeenCalled();
+      expect(mocks.write).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{ hash: HASH }, { executionHash: HASH }, { safeProposalHash: HASH }])(
+    "retains hashless batches when transaction activity records submission evidence: %j",
+    async (evidence) => {
+      const original = saveUnknownSelection();
+      recordSubmittedCall(original, evidence);
+      const { result } = renderHook(() => useMultichainBatch());
+      expect(result.current.getPendingBatch(scope)?.refreshable).toBe(false);
+      await act(async () => {
+        await expect(result.current.runBatch(inputFor(original))).rejects.toThrow();
+      });
+      expect(readMultichainBatches()).toEqual([original]);
+      expect(mocks.review).not.toHaveBeenCalled();
+      expect(mocks.quote).not.toHaveBeenCalled();
+      expect(mocks.pay).not.toHaveBeenCalled();
+      expect(mocks.write).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { status: "success", manual: false, offset: -1, eligible: true },
+    { status: "failed", manual: false, offset: -1, eligible: true },
+    { status: "success", manual: false, offset: 0, eligible: false },
+    { status: "failed", manual: false, offset: 1, eligible: false },
+    { status: "pending", manual: false, offset: -1, eligible: false },
+    { status: "submitted", manual: false, offset: -1, eligible: false },
+    { status: "safe-proposed", manual: false, offset: -1, eligible: false },
+    { status: "failed", manual: true, offset: -1, eligible: false },
+    { status: "success", manual: undefined, offset: -1, eligible: false },
+  ] as const)(
+    "distinguishes completed earlier attempts from unresolved or contemporaneous evidence: $status, manual=$manual, offset=$offset",
+    async ({ status, manual, offset, eligible }) => {
+      const original = saveUnknownSelection();
+      recordTransactionActivity({
+        ...recordSubmittedCall(original),
+        status,
+        manualVerificationRequired: manual,
+        createdAt: original.createdAt - 100,
+        updatedAt: original.createdAt + offset,
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      expect(result.current.getPendingBatch(scope)?.refreshable).toBe(eligible);
+      if (!eligible) {
+        await act(async () => {
+          await expect(result.current.runBatch(inputFor(original))).rejects.toThrow();
+        });
+      }
+      expect(readMultichainBatches()).toEqual([original]);
+      expect(mocks.review).not.toHaveBeenCalled();
+      expect(mocks.quote).not.toHaveBeenCalled();
+      expect(mocks.pay).not.toHaveBeenCalled();
+      expect(mocks.write).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refuses refresh when the transaction activity evidence cannot be read", async () => {
+    const original = saveUnknownSelection();
+    localStorage.setItem("revnet:transaction-activities:v1", "invalid JSON");
+    const { result } = renderHook(() => useMultichainBatch());
+    expect(result.current.getPendingBatch(scope)?.refreshable).toBe(false);
+    await act(async () => {
+      await expect(result.current.runBatch(inputFor(original))).rejects.toThrow();
+    });
+    expect(readMultichainBatches()).toEqual([original]);
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("refuses an existing held Relayr session before fresh review", async () => {
+    const original = saveUnknownSelection();
+    mocks.scopeSession.mockReturnValue(true);
+    const { result } = renderHook(() => useMultichainBatch());
+    expect(result.current.getPendingBatch(scope)?.refreshable).toBe(false);
+    await act(async () => {
+      await expect(result.current.runBatch(inputFor(original))).rejects.toThrow();
+    });
+    expect(readMultichainBatches()).toEqual([original]);
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
+
+  it.each(["wrong ID", "draft replacement", "saved review"] as const)(
+    "refuses conflicting fresh-review identity: %s",
+    async (option) => {
+      const original = saveUnknownSelection();
+      const input = {
+        ...inputFor(original),
+        ...(option === "wrong ID" ? { refreshBatchId: "other-saved-batch" } : {}),
+        ...(option === "draft replacement" ? { replaceDraftId: original.id } : {}),
+        ...(option === "saved review" ? { expectedBatchId: original.id } : {}),
+      };
+      const { result } = renderHook(() => useMultichainBatch());
+      await act(async () => {
+        await expect(result.current.runBatch(input)).rejects.toThrow();
+      });
+      expect(readMultichainBatches()).toEqual([original]);
+      expect(mocks.review).not.toHaveBeenCalled();
+      expect(mocks.quote).not.toHaveBeenCalled();
+      expect(mocks.pay).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("reviewed selected-call orchestration", () => {

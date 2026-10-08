@@ -79,6 +79,7 @@ function setup() {
   );
 }
 beforeEach(() => {
+  mocks.address = "0x0000000000000000000000000000000000000001";
   mocks.saved.mockReturnValue(undefined);
   mocks.recheck.mockImplementation(async () => mocks.saved());
   mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
@@ -116,6 +117,13 @@ describe("payment recovery", () => {
   });
 
   it("wallet-action:pending-routing batches every ready payment across chains and explicitly leaves cooldown calls pending", async () => {
+    mocks.saved.mockReturnValue({
+      id: "unknown",
+      scope: "legacy",
+      completed: 0,
+      total: 3,
+      refreshable: true,
+    });
     mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
       project.chainId === 1 ? [row("one").indexed, row("waiting").indexed] : [row("base").indexed],
     );
@@ -127,13 +135,182 @@ describe("payment recovery", () => {
     expect(
       screen.getByText("Includes 2 ready payments. Payments in cooldown must wait."),
     ).toBeTruthy();
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm routing" }));
+    expect(await screen.findByRole("button", { name: "Confirm routing" })).toBeEnabled();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
     await waitFor(() =>
       expect(mocks.batch).toHaveBeenCalledWith(
         expect.objectContaining({ calls: [{ id: "one" }, { id: "base" }] }),
       ),
     );
     expect(mocks.prepare).toHaveBeenCalledTimes(2);
+  });
+
+  it("reviews all 14 ready payments and offers normal confirmation despite a hashless three-attempt selection", async () => {
+    mocks.saved.mockReturnValue({
+      id: "unknown-three",
+      scope: "legacy",
+      completed: 0,
+      total: 3,
+      refreshable: true,
+      recoveryReason: "A wallet submission has an unknown result.",
+    });
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    );
+    const rendered = setup();
+    await screen.findByText("14 payments awaiting routing. 14 ready");
+    expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Re-check saved status" })).toBeNull();
+    expect(screen.queryByText(/Saved batch:/)).toBeNull();
+    expect(screen.queryByText(/A wallet submission has an unknown result/)).toBeNull();
+    expect(mocks.recheck).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Batch all pending" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getAllByRole("listitem")).toHaveLength(14);
+    const confirm = within(dialog).getByRole("button", { name: "Confirm routing" });
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    expect(confirm).toBeEnabled();
+    expect(mocks.batch).not.toHaveBeenCalled();
+    expect(within(dialog).queryByText(/Check your wallet has no pending transaction/)).toBeNull();
+
+    // The eventual write must recheck the reviewed ID, never silently supersede a newer journal.
+    mocks.saved.mockReturnValue({
+      id: "different",
+      scope: "other",
+      completed: 0,
+      total: 1,
+      refreshable: true,
+    });
+    rendered.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <PendingRoutingPayments projects={projects} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.batch).toHaveBeenCalledTimes(1));
+    expect(mocks.batch.mock.calls[0][0]).toMatchObject({
+      scope: "pending-routing:destination:1:1,8453:1",
+      refreshBatchId: "unknown-three",
+      calls: Array.from({ length: 14 }, (_, i) => ({ id: `item-${i}` })),
+    });
+    expect(mocks.batch.mock.calls[0][0].replaceDraftId).toBeUndefined();
+    expect(mocks.batch.mock.calls[0][0].expectedBatchId).toBeUndefined();
+    expect(mocks.prepare).toHaveBeenCalledTimes(14);
+  });
+
+  it("cancels a fresh review without changing the saved batch and prepares all current payments again", async () => {
+    mocks.saved.mockReturnValue({
+      id: "unknown",
+      scope: "legacy",
+      completed: 0,
+      total: 3,
+      refreshable: true,
+    });
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    );
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
+    expect(await screen.findByRole("button", { name: "Confirm routing" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.batch).not.toHaveBeenCalled();
+    expect(mocks.saved()).toMatchObject({ id: "unknown", refreshable: true });
+    fireEvent.click(screen.getByRole("button", { name: "Batch all pending" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getAllByRole("listitem")).toHaveLength(14);
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Confirm routing" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
+    expect(mocks.prepare).toHaveBeenCalledTimes(28);
+    expect(mocks.batch).not.toHaveBeenCalled();
+  });
+
+  it("requires a fresh full-set review after a failed submission and captures the current saved identity", async () => {
+    mocks.saved.mockReturnValue({
+      id: "unknown",
+      scope: "legacy",
+      completed: 0,
+      total: 3,
+      refreshable: true,
+    });
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    );
+    mocks.batch.mockImplementationOnce(async () => {
+      mocks.saved.mockReturnValue({
+        id: "newer-unknown",
+        scope: "legacy",
+        completed: 0,
+        total: 3,
+        refreshable: true,
+      });
+      throw new Error("The saved batch changed. Review again.");
+    });
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review again" }));
+    const confirm = await screen.findByRole("button", { name: "Confirm routing" });
+    expect(confirm).toBeEnabled();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(within(screen.getByRole("dialog")).getAllByRole("listitem")).toHaveLength(14);
+    expect(mocks.prepare).toHaveBeenCalledTimes(28);
+    expect(mocks.batch).toHaveBeenCalledTimes(1);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.batch).toHaveBeenCalledTimes(2));
+    expect(mocks.batch.mock.calls[0][0].refreshBatchId).toBe("unknown");
+    expect(mocks.batch.mock.calls[1][0]).toMatchObject({
+      refreshBatchId: "newer-unknown",
+      calls: Array.from({ length: 14 }, (_, i) => ({ id: `item-${i}` })),
+    });
+  });
+
+  it("blocks refreshing a hashless selection when the reviewed account changes", async () => {
+    mocks.saved.mockReturnValue({
+      id: "unknown",
+      scope: "legacy",
+      completed: 0,
+      total: 3,
+      refreshable: true,
+    });
+    const rendered = setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+    expect(await screen.findByRole("button", { name: "Confirm routing" })).toBeEnabled();
+    mocks.address = "0x0000000000000000000000000000000000000002";
+    rendered.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <PendingRoutingPayments projects={projects} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
+    await screen.findByText(/connected account changed/);
+    expect(mocks.batch).not.toHaveBeenCalled();
+  });
+
+  it("keeps submitted selections in recovery without offering a fresh batch", async () => {
+    mocks.saved.mockReturnValue({
+      id: "submitted",
+      scope: "legacy",
+      completed: 0,
+      total: 3,
+      refreshable: false,
+    });
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    );
+    setup();
+    await screen.findByText("14 payments awaiting routing. 14 ready");
+    expect(screen.queryByRole("button", { name: "Batch all pending" })).toBeNull();
+    expect(
+      screen
+        .getAllByRole("button", { name: "Review routing" })
+        .every((button) => button.hasAttribute("disabled")),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Resume saved batch" }));
+    expect(within(await screen.findByRole("dialog")).queryByRole("checkbox")).toBeNull();
+    expect(mocks.prepare).not.toHaveBeenCalled();
   });
 
   it("keeps the batch action above the payment list", async () => {

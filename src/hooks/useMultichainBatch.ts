@@ -21,6 +21,7 @@ import {
   hasUntouchedRoutingCalls,
   isBatchCallHandled,
   isReplaceableRoutingDraft,
+  isUnconfirmedRoutingBatch,
   readMultichainBatches,
   removeUnsubmittedBatch,
   replaceRoutingDraft,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/multichain-guards";
 import type { JBChainId } from "@/lib/nana/types";
 import {
+  describeSavedRoutingCall,
   findPendingRoutingBatch,
   simulatePendingRouterCall,
   type PendingProject,
@@ -46,8 +48,10 @@ import {
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
+  contractTransactionKey,
   recordTransactionActivity,
   refreshTransactionActivities,
+  requireTransactionActivityPersistence,
   updateTransactionActivity,
 } from "@/lib/transaction-activity";
 import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
@@ -89,10 +93,39 @@ type BatchInput = {
   scope: string;
   calls: MultichainCall[];
   replaceDraftId?: string;
+  /** The exact hashless routing selection superseded by the normal fresh review. */
+  refreshBatchId?: string;
   expectedBatchId?: string;
   onProgress?: (message: string) => void;
 };
 const running = new Set<string>();
+
+function canRefreshRoutingBatch(batch: MultichainBatch): boolean {
+  if (!isUnconfirmedRoutingBatch(batch)) return false;
+  try {
+    requireTransactionActivityPersistence();
+    const activities = refreshTransactionActivities();
+    return batch.calls.every((call, index) => {
+      describeSavedRoutingCall(call);
+      const key = contractTransactionKey(batch.account, call.chainId, call);
+      return (
+        !activities.some(
+          (activity) =>
+            activity.callKey === key &&
+            (activity.hash || activity.executionHash || activity.safeProposalHash) &&
+            // A verified earlier attempt can legitimately leave the same payment pending.
+            !(
+              (activity.status === "success" || activity.status === "failed") &&
+              activity.manualVerificationRequired === false &&
+              activity.updatedAt < batch.createdAt
+            ),
+        ) && !hasRelayrRecoveryScopeSession(batch.account, batchCallScope(batch, call, index))
+      );
+    });
+  } catch {
+    return false;
+  }
+}
 
 /** The one call a saved batch call proposes to its Safe. */
 function savedCall(call: FrozenBatchCall) {
@@ -344,6 +377,7 @@ export function useMultichainBatch() {
             id: batch.id,
             calls: batch.calls,
             recoveryReason: routingBatchRecoveryReason(batch),
+            refreshable: canRefreshRoutingBatch(batch),
             replaceableDraft:
               isReplaceableRoutingDraft(batch) &&
               batch.calls.every(
@@ -418,6 +452,12 @@ export function useMultichainBatch() {
   const runBatch = useCallback(
     async (input: BatchInput): Promise<BatchResult> => {
       requireNoViewAs();
+      if (
+        [input.expectedBatchId, input.replaceDraftId, input.refreshBatchId].filter(Boolean).length >
+        1
+      )
+        throw new Error("Choose either recovery or a fresh routing review.");
+      const replacementId = input.refreshBatchId ?? input.replaceDraftId;
       const { address: account, chainId: startChainId } = getAccount(config);
       if (!account) throw new Error("Connect a wallet first.");
       const lock = `revnet:multichain:${account.toLowerCase()}`;
@@ -500,14 +540,14 @@ export function useMultichainBatch() {
               "The reviewed saved batch changed. Review its latest selection before resuming.",
             );
           batch = pending;
-          if (input.replaceDraftId) {
-            const candidate = readMultichainBatches().find(
-              (item) => item.id === input.replaceDraftId,
-            );
+          if (replacementId) {
+            const candidate = readMultichainBatches().find((item) => item.id === replacementId);
             if (candidate) {
               if (
                 candidate.account.toLowerCase() !== account.toLowerCase() ||
-                !isReplaceableRoutingDraft(candidate) ||
+                !(input.refreshBatchId
+                  ? canRefreshRoutingBatch(candidate)
+                  : isReplaceableRoutingDraft(candidate)) ||
                 !input.calls.length ||
                 !input.calls.every((call) => call.expectedRouterPending)
               )
@@ -523,7 +563,7 @@ export function useMultichainBatch() {
               requireAccount();
               replacingDraft = candidate;
               if (batch?.id === candidate.id) batch = undefined;
-            } else if (!batch || batch.key !== batchCallKey(input.calls)) {
+            } else if (input.refreshBatchId || !batch || batch.key !== batchCallKey(input.calls)) {
               throw new Error("The saved batch changed. Refresh before starting another batch.");
             }
           }
@@ -590,6 +630,7 @@ export function useMultichainBatch() {
             reviewedHere = true;
             requireAccount();
             for (const call of batch.calls) {
+              if (input.refreshBatchId) describeSavedRoutingCall(call);
               const client = getPublicClient(config, { chainId: call.chainId });
               if (!client) throw new Error("Destination RPC unavailable.");
               await verifyCallPreconditions(client, call.preconditions);
@@ -604,12 +645,16 @@ export function useMultichainBatch() {
                 await requireRelayrRecoveryScopeAvailable(account, scope);
               }
               requireAccount();
-              replaceRoutingDraft(replacingDraft, batch);
+              if (input.refreshBatchId && !canRefreshRoutingBatch(replacingDraft))
+                throw new Error("Saved submission or recovery evidence must be resumed.");
+              replaceRoutingDraft(replacingDraft, batch, Boolean(input.refreshBatchId));
               replacementCommitted = true;
               updateTransactionActivity(replacingDraft.id, {
-                status: "failed",
-                manualVerificationRequired: false,
-                message: "The unsubmitted selection was replaced after a fresh review.",
+                status: input.refreshBatchId ? "pending" : "failed",
+                manualVerificationRequired: Boolean(input.refreshBatchId),
+                message: input.refreshBatchId
+                  ? "A fresh routing review superseded this selection. The previous wallet result remains unknown."
+                  : "The unsubmitted selection was replaced after a fresh review.",
               });
             } else saveMultichainBatch(batch);
             recordTransactionActivity({
@@ -837,10 +882,10 @@ export function useMultichainBatch() {
           });
           return result("success");
         } catch (cause) {
-          if (batch && (!input.replaceDraftId || replacementCommitted)) {
+          if (batch && (!replacementId || replacementCommitted)) {
             let discarded = false;
             if (
-              !input.replaceDraftId &&
+              !replacementId &&
               batch.calls.every((call) => call.state === "ready") &&
               batch.rounds.every((round) => round.state === "ready")
             ) {

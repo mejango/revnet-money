@@ -4,6 +4,7 @@ import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
+  contractTransactionKey,
   recordTransactionActivity,
   refreshTransactionActivities,
   transactionActivityForHash,
@@ -699,7 +700,7 @@ export function useWriteContract(
         functionName,
         args: variables.args,
       });
-      const callKey = `${initialAddress.toLowerCase()}:${chainId}:${variables.address.toLowerCase()}:${variables.value ?? 0n}:${data}`;
+      const callKey = contractTransactionKey(initialAddress, chainId, { ...variables, data });
       const submitReviewedCall = async () => {
         const duplicate = refreshTransactionActivities().find(
           (activity) =>

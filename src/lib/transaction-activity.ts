@@ -117,6 +117,15 @@ let storageWriteFailed = false;
 let storageReadFailed = false;
 const listeners = new Set<() => void>();
 
+/** Shared identity for one reviewed direct call and its durable submission evidence. */
+export function contractTransactionKey(
+  account: Address,
+  chainId: number,
+  call: { address: Address; value?: bigint; data: Hex },
+): string {
+  return `${account.toLowerCase()}:${chainId}:${call.address.toLowerCase()}:${call.value ?? 0n}:${call.data}`;
+}
+
 function parseActivities(raw: string | null): TransactionActivity[] {
   const parsed: unknown = JSON.parse(raw ?? "[]");
   if (

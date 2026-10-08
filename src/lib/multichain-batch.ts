@@ -63,7 +63,12 @@ export type MultichainBatch = {
   route: "relayr" | "direct";
   calls: FrozenBatchCall[];
   rounds: BatchRound[];
-  status: "pending" | "success";
+  status: "pending" | "success" | "superseded";
+  supersession?: {
+    reason: "fresh-routing-review";
+    at: number;
+    replacementId: string;
+  };
   createdAt: number;
 };
 /** Submission evidence always retains routing recovery, even before any receipt is handled. */
@@ -91,6 +96,20 @@ export function isReplaceableRoutingDraft(batch: MultichainBatch): boolean {
         round.bundleUuid === undefined &&
         round.transactionUuids === undefined,
     )
+  );
+}
+
+/** A hashless routing selection can be superseded after fresh review; its past outcome stays unknown. */
+export function isUnconfirmedRoutingBatch(batch: MultichainBatch): boolean {
+  return (
+    batch.route === "direct" &&
+    batch.calls.some((call) => call.state === "submitting") &&
+    isReplaceableRoutingDraft({
+      ...batch,
+      calls: batch.calls.map((call) =>
+        call.state === "submitting" ? { ...call, state: "ready" } : call,
+      ),
+    })
   );
 }
 
@@ -147,13 +166,34 @@ export function resetUnpaidRoutingDraft(
 }
 
 /** Atomic replacement after review; a stale snapshot must never erase newer recovery evidence. */
-export function replaceRoutingDraft(expected: MultichainBatch, replacement: MultichainBatch) {
+export function replaceRoutingDraft(
+  expected: MultichainBatch,
+  replacement: MultichainBatch,
+  refreshUnconfirmed = false,
+) {
   const batches = readMultichainBatches();
   const current = batches.find((batch) => batch.id === expected.id);
-  if (!current || serialize(current) !== serialize(expected) || !isReplaceableRoutingDraft(current))
+  if (
+    !current ||
+    serialize(current) !== serialize(expected) ||
+    !(refreshUnconfirmed ? isUnconfirmedRoutingBatch(current) : isReplaceableRoutingDraft(current))
+  )
     throw new Error("The saved batch changed. Refresh and resume its existing progress.");
   writeMultichainBatches([
     replacement,
+    ...(refreshUnconfirmed
+      ? [
+          {
+            ...current,
+            status: "superseded" as const,
+            supersession: {
+              reason: "fresh-routing-review" as const,
+              at: Date.now(),
+              replacementId: replacement.id,
+            },
+          },
+        ]
+      : []),
     ...batches.filter((batch) => batch.id !== expected.id && batch.id !== replacement.id),
   ]);
 }

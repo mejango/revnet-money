@@ -36,11 +36,12 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     .join(",");
   const scope = `pending-routing:destination:${projectKey}`;
   const saved = hydrated ? getPendingBatch(scope, identities) : undefined;
-  const resume = saved && !saved.replaceableDraft ? saved : undefined;
+  const resume = saved && !saved.replaceableDraft && !saved.refreshable ? saved : undefined;
   const [savedSelection, setSavedSelection] = useState<NonNullable<
     ReturnType<typeof getPendingBatch>
   > | null>(null);
   const [replacementId, setReplacementId] = useState<string | undefined>();
+  const [refreshBatchId, setRefreshBatchId] = useState<string | undefined>();
   const [needsReview, setNeedsReview] = useState(false);
   const [checkingSaved, setCheckingSaved] = useState(false);
   const [savedCheck, setSavedCheck] = useState<{ id: string; reason: string } | null>(null);
@@ -158,6 +159,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
 
   async function review(selected: PendingRouterPayment[]) {
     setError(null);
+    setRefreshBatchId(undefined);
     if (resume) {
       setNeedsReview(false);
       setSavedSelection(resume);
@@ -180,6 +182,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       setNeedsReview(false);
       setSavedSelection(null);
       setReplacementId(saved?.replaceableDraft ? saved.id : undefined);
+      setRefreshBatchId(saved?.refreshable ? saved.id : undefined);
       setReviewed(prepared);
       setReviewedAccount(address.toLowerCase());
       setProgress(null);
@@ -207,6 +210,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         scope: savedSelection?.scope ?? scope,
         expectedBatchId: savedSelection?.id,
         replaceDraftId: savedSelection ? undefined : replacementId,
+        refreshBatchId: savedSelection ? undefined : refreshBatchId,
         calls: savedSelection ? [] : (reviewed ?? []).map((row) => row.call),
         onProgress: setProgress,
       });
@@ -221,7 +225,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       await refresh();
     } catch (cause) {
       setError(formatWalletError(cause));
-      if (replacementId) setNeedsReview(true);
+      if (replacementId || refreshBatchId) setNeedsReview(true);
     } finally {
       setBusy(false);
     }
@@ -371,7 +375,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               }))
         }
         activeIndex={busy ? 0 : -1}
-        stepsIntro="Review every selected attempt. Eligible batches use one funding payment for all retries; each payment keeps its own result."
+        stepsIntro="Eligible wallet batches use one network-fee payment for all selected attempts. Each attempt keeps its own result."
         onConfirm={() => (needsReview ? void review(ready) : void submit())}
         action={needsReview ? "Review again" : savedSelection ? "Continue" : "Confirm routing"}
         busy={busy}
