@@ -32,3 +32,8 @@
 
 - Correction: final preparation retained Review payment copy, and a wrapped wallet payment left rows waiting for payment after submission.
 - Rule: use the shared lifecycle's phase boundaries: Preparing payment covers consent and local preparation, Checking before payment covers final beforeSend guards, and submitted/ambiguous evidence says Checking payment status. Keep canonical wrapped-funding proof and per-chain verification in the SDK. Deferred actual-adapter and rendered progress regressions enforce the order without new app polling or weaker guards.
+
+## 2026-10-07 — A package tarball does not include its installed nested dependencies
+
+- Finding: replacing the entire installed SDK directory with a preview tarball also removed its nested bs58/base-x packages, causing fallback to different root major versions while every manifest hash stayed unchanged.
+- Rule: retain nested node_modules when replacing only a package's own files, then verify the whole installed package-path/content graph and actual dependency resolution. Package metadata and compiled-file equality alone do not qualify the installation or bundle measurement. Invalidate measurements from an incorrect graph; require final clean-install CI before release.
