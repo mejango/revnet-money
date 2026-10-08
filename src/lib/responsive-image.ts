@@ -87,7 +87,12 @@ export function observeResponsiveImage(
       const requestedWidth = Number(selected.searchParams.get("w"));
       // Browser srcset selection may economize pixels. Respect the user's
       // quality requirement, including cover crops, zoom and large displays.
-      if (requestedWidth < sourceWidth * (window.devicePixelRatio || 1)) {
+      if (
+        requestedWidth <
+        sourceWidth *
+          (window.devicePixelRatio || 1) *
+          Math.max(1, window.visualViewport?.scale || 1)
+      ) {
         chooseOriginal();
         return;
       }
@@ -99,6 +104,8 @@ export function observeResponsiveImage(
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
   observer?.observe(image);
   window.addEventListener("resize", check);
+  const viewport = window.visualViewport;
+  viewport?.addEventListener("resize", check);
   // Moving between displays can change DPR without changing CSS geometry.
   let density: MediaQueryList | undefined;
   const watchDensity = () => {
@@ -116,6 +123,7 @@ export function observeResponsiveImage(
     image.removeEventListener("load", check);
     observer?.disconnect();
     window.removeEventListener("resize", check);
+    viewport?.removeEventListener("resize", check);
     density?.removeEventListener("change", densityChanged);
   };
 }
