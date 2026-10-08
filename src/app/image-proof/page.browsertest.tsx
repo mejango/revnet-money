@@ -16,6 +16,48 @@ export default function ImageProofPage() {
   return (
     <main style={{ padding: 16, background: "#fff", color: "#111" }}>
       <h1>Responsive image proof</h1>
+      <div data-testid="critical-project-logo">
+        <IpfsImage
+          src={`ipfs://${CID}/bigcritical`}
+          alt="Critical project logo"
+          loading="eager"
+          fetchPriority="high"
+          sizes="144px"
+          className="object-cover"
+          style={{ width: 144, height: 144 }}
+          fallback={<span>Missing logo</span>}
+        />
+      </div>
+      <ResponsiveImage
+        loading="eager"
+        fetchPriority="high"
+        alt="Critical header cover"
+        src={source("bigcritical")}
+        sizes="(max-width: 1136px) calc(100vw - 32px), 1104px"
+        className="object-cover"
+        style={{ width: "min(1104px, 100%)", height: 240 }}
+      />
+      <ResponsiveImage
+        loading="eager"
+        alt="Critical inline cover"
+        src={source("transition")}
+        sizes="128px"
+        style={{ width: 128, height: 128, objectFit: "cover" }}
+      />
+      <ResponsiveImage
+        fetchPriority="high"
+        alt="High priority thumbnail"
+        src={source("bigcritical")}
+        sizes="96px"
+        style={{ width: 96, height: 96, objectFit: "contain" }}
+      />
+      <ResponsiveImage
+        alt="Default cart thumbnail"
+        src={source("bigcritical")}
+        sizes="64px"
+        style={{ width: 64, height: 64, objectFit: "contain" }}
+      />
+
       <div data-testid="eager-project-logo">
         <IpfsImage
           src={`ipfs://${CID}/alpha`}
@@ -77,7 +119,7 @@ export default function ImageProofPage() {
       </div>
       <div style={{ width: 320 }}>
         <TierMediaPreview
-          media={{ image: source("raster") }}
+          media={{ image: source("bigcritical") }}
           tierId={1}
           alt="Shop detail slot"
           sizes="320px"
