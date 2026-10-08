@@ -947,3 +947,20 @@ Critical-image policy follow-up: default/eager/high-priority React images now re
 - **Resource budget:** One guard and one parameterized regression, no build/full-suite/browser rerun in this worker and no edits to root's knip or QA files. Root retains final artifact qualification.
 
 Observer ownership review: reproduced both pre-fix failures (incomplete original rehidden; completed original received one synthetic error) with the parameterized native-event regression. One marker guard now stops obsolete callbacks before any visibility/source/error work. All40 focused image tests and scoped ESLint/Prettier pass. Only the helper, owning regression and this task note are included; root's knip and QA changes remain independently owned.
+
+
+## Plan refinement
+
+- **Objective:** Ensure every Revnet dev, production build and browser build applies and verifies the pinned AVIF compatibility patch despite the repository's intentional `ignore-scripts=true` npm policy.
+- **System fit:** The existing optimizer patch remains the single implementation owner; explicit app build commands must invoke it because npm suppresses pre/post hooks under this policy. Canonical images, runtime quality, dependency install policy and financial authority remain unchanged. Root retains OCI/build/browser qualification.
+- **Reuse and simplicity:** Reuse `prepare-image-optimizer.mjs` in explicit dev/build commands and the existing browser build wrapper. Remove ineffective lifecycle hooks, retain all install restrictions, and avoid another patch mechanism or dependency. Juicebox's `ignore-scripts` resolves false and its existing hooks remain appropriate.
+- **Evidence and unknowns:** Read-only OCI preparation found Revnet's builder copies `.npmrc` before `npm run build`; a tiny real npm12 probe with `ignore-scripts=true` executes BUILD but skips PREBUILD/POSTBUILD. Existing unit tests prepared local dependencies directly and therefore did not prove fresh build lifecycle behavior. Final clean Docker builds remain pending the root-coordinated CPU slot.
+- **Verification:** Execute actual npm dev/build/build:browser commands in isolated scratch projects with ignore-scripts enabled, the real pinned patch and copied pristine framework targets, and a tiny compiler/fixture stand-in. Require compiler entry to see patched targets and deliberately corrupted standalone output to fail the post-build check. Run focused guard/lifecycle tests, scoped formatting/lint and diff checks; root later runs exact production OCI smoke.
+- **Resource budget:** One package-script edit, two explicit wrapper invocations and one focused subprocess regression file; no dependency/lock change, full build, network fetch or source-runtime edit. Keep scratch evidence under `/private/tmp/jb-image-oci-20261008` and coordinate serialized production work with root.
+
+- [x] Make optimizer preparation and standalone verification explicit under ignore-scripts.
+- [x] Prove the actual npm entrypoints and retained policy with focused regressions.
+- [ ] Hand the scoped commit and OCI commands to root; run containers only after its build slot opens.
+
+
+Lifecycle review: explicit dev/build commands and the browser wrapper now prepare both pinned framework files and check the standalone CJS output without enabling npm lifecycle scripts. The five actual npm subprocess cases plus three existing compatibility cases pass (8 tests), including deliberately unpatched standalone output rejected by both build paths. Scoped ESLint, Prettier and diff checks pass. The initial restricted run failed only because the sandbox denied localhost fixture listeners; the test now rejects listen errors immediately and the permitted-loopback rerun passed in2.52s. Evidence is `/private/tmp/jb-image-oci-20261008/rnm-lifecycle-tests-loopback.log`; root started the actual browser build with these unchanged entrypoints and owns its result. Juicebox resolves ignore-scripts=false and retains its functioning hooks.

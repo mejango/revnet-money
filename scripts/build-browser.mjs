@@ -23,6 +23,8 @@ function run(command, args) {
   }
 }
 
+// .npmrc deliberately disables lifecycle hooks; invoke this compatibility gate explicitly.
+run(process.execPath, ["scripts/prepare-image-optimizer.mjs"]);
 run(process.execPath, ["scripts/validate-env.mjs", "build"]);
 // The release validator rejects this test-only mode. Enable it only after the
 // production-shaped public environment above has passed validation.
@@ -52,6 +54,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   run(process.execPath, ["node_modules/next/dist/bin/next", "build", "--webpack"]);
+  run(process.execPath, ["scripts/prepare-image-optimizer.mjs", "--check-standalone"]);
   const statusResponse = await fetch(`${fixtureOrigin}/__fixture/status`, {
     signal: AbortSignal.timeout(1_000),
   });
