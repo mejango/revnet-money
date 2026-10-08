@@ -163,6 +163,46 @@ describe("multichain source and exact recipient-result guards", () => {
     ).rejects.toThrow(/reviewed state changed/);
     expect(call).toHaveBeenCalledWith({ to: OWNER, data: "0x1234" });
   });
+  it("reads equivalent hex snapshots once per pass and reads fresh state on the next pass", async () => {
+    const guard = {
+      address: "0x000000000000000000000000000000000000aBcD",
+      data: "0xabcd",
+      expected: "0xAb",
+    } as const;
+    const guards = [
+      guard,
+      {
+        address: guard.address.toLowerCase() as Address,
+        data: "0xABCD" as Hex,
+        expected: "0xaB" as Hex,
+      },
+      { ...guard, address: PAYER },
+      { ...guard, data: "0xabce" as Hex },
+    ];
+    const original = structuredClone(guards);
+    const call = vi.fn().mockResolvedValue({ data: "0xab" });
+    const client = { call } as unknown as PublicClient;
+    await verifyCallPreconditions(client, guards);
+    expect(call.mock.calls).toEqual([
+      [{ to: guard.address, data: guard.data }],
+      [{ to: PAYER, data: guard.data }],
+      [{ to: guard.address, data: "0xabce" }],
+    ]);
+    expect(guards).toEqual(original);
+    call.mockResolvedValue({ data: "0xac" });
+    await expect(verifyCallPreconditions(client, guards)).rejects.toThrow(/reviewed state changed/);
+    expect(call).toHaveBeenCalledTimes(4);
+  });
+  it("retains conflicting expectations for the same read and refuses the mismatch", async () => {
+    const call = vi.fn().mockResolvedValue({ data: "0x01" });
+    await expect(
+      verifyCallPreconditions({ call } as unknown as PublicClient, [
+        { address: OWNER, data: "0x1234", expected: "0x01" },
+        { address: OWNER, data: "0x1234", expected: "0x02" },
+      ]),
+    ).rejects.toThrow(/reviewed state changed/);
+    expect(call).toHaveBeenCalledTimes(2);
+  });
   it("restricts raw Relayr to the exact caller-independent canonical payer factory call", () => {
     expect(() =>
       requireRawPayerCall(JB_PROJECT_PAYER_DEPLOYER, calldata, 0n, expected),

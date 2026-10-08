@@ -1531,6 +1531,26 @@ describe("reviewed selected-call orchestration", () => {
     );
   });
 
+  it("reads duplicate direct batch guards once per pass without skipping final checks", async () => {
+    const source = { address: TARGET, data: "0xabcd", expected: "0x01" } as const;
+    mocks.verify.mockResolvedValue({ data: "0x01" });
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await expect(
+        result.current.runBatch({
+          scope: "duplicate-guards",
+          label: "Distribute",
+          calls: [{ ...call(1), preconditions: [source, source] }],
+        }),
+      ).resolves.toMatchObject({ status: "success" });
+    });
+    // Post-review, preparation, wallet reverify and final submission stay fresh.
+    expect(mocks.verify).toHaveBeenCalledTimes(4);
+    expect(mocks.verify).toHaveBeenCalledWith({ to: TARGET, data: source.data });
+    expect(mocks.write).toHaveBeenCalledOnce();
+    expect(readMultichainBatches()[0].calls[0].preconditions).toEqual([source, source]);
+  });
+
   it("reviews a fresh Safe batch as a Safe proposal and proposes without a second review", async () => {
     mocks.safe = true;
     const { result } = renderHook(() => useMultichainBatch());

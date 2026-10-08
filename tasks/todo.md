@@ -749,3 +749,26 @@ Evidence under `/private/tmp/jb-performance-checks`: `revnet-permission-before.l
 Only the ready Safe bundle action and the two existing funding-review `confirmLabel` literals changed in runtime source. The review renderer already respects the request label; these payment calls do not enable the separate protocol-fee review override. Existing exact selectors now require Pay, and both the Safe and forwarded payment hook assertions require `confirmLabel: "Pay"`. All readiness, funding-selection, disabled-state, recovery, nonce, wallet and receipt checks remain.
 
 All261 focused tests across5 suites pass, covering Safe queue rendering, payment/recovery hooks, legacy adaptation and the actual review provider. Typecheck, lint, formatting ratchet, wallet-write inventory and `git diff --check` pass. Reports: `/private/tmp/jb-performance-checks/revnet-pay-label-tests.json` with its invocation log, and `revnet-pay-label-static.json` with hashed gate logs. No build, push, deployment, quote request or wallet transaction was performed. The separate reported paid-bundle mismatch/progress issue is unchanged by this label-only patch and remains with its investigators.
+
+## 2026-10-07 eliminate repeated reads within one precondition check
+
+## Plan refinement
+
+- **Objective:** Remove demonstrated duplicate Safe nonce/hash reads within each validation pass, retaining fresh review-to-send checks and protection for old saved quotes.
+- **System fit:** `safeRelayrExecution` saves mandatory guards alongside requested guards, and adapter revalidation synthesizes mandatory guards again for legacy compatibility. Existing `verifyCallPreconditions` owns live snapshot comparisons for Safe, raw/forwarded and direct batch paths. Deduplicate at that read owner only; journal evidence, simulation, authority, final checks and payment/recovery behavior stay intact. Root owns shared SDK progress/funding fixes and release integration.
+- **Reuse and simplicity:** Add an invocation-local set in the existing verifier keyed by case-insensitive address, calldata and expected bytes. Read each identical tuple once; preserve different expectations, all distinct calls, original input and mandatory legacy guard synthesis. No helper, dependency, cross-pass cache or caller-specific rule.
+- **Evidence and unknowns:** Clean238b6343 and installed SDK2.24.4 demonstrate two stored Safe guards plus the same two synthesized guards in a single pass. Root approved the generic owner and requires independent caller coverage. The separate wrapped-payment proof and payment-checking phase remain outside this commit until their qualified SDK artifact is available.
+- **Verification:** Capture failing-before duplicate read counts, then run guard, Safe adapter/payment/recovery hook and independent batch regressions. Cover mixed-case equivalents, retained conflicting expectations, rereads on later passes, legacy journals without saved guards and state drift after payment review with no wallet send. Run typecheck, lint, formatting, source and wallet-write checks plus diff review.
+- **Resource budget:** One writer in this isolated tree, bounded existing fixtures and static gates; no remote quote, wallet action, production build, push or deployment. Commit separately atop238b6343 and report exact evidence to root; replan if the change needs a broader lifecycle or persistence rule.
+
+- [x] Add and capture failing-before read-count and safety regressions.
+- [x] Deduplicate equivalent preconditions within the existing verification invocation.
+- [x] Run focused/static checks and review the scoped diff for handoff.
+
+Required resources remain the absolute root AGENTS.md, workflow/ponytail/SKILL.md and README.md, docs/PLAN_REFINEMENT.md, relevant root/app lessons and docs/WEBSITE_PERFORMANCE_RELEASE_FOLLOWUPS.md. No descendant AGENTS.md is present in this checkout.
+
+### Precondition read verification
+
+The before-change run fails exactly four new read-count assertions: the Safe adapter reads each nonce/hash twice, raw source checks read equivalent guards twice per pass, direct batch checks read duplicates eight times across four passes, and the generic verifier repeats mixed-case equivalents. The other243 cases pass, including retained conflicting expectations and reconstructed legacy nonce/hash guards after payment review. The five-line runtime change makes all318 cases across six guard, batch, hook, Safe adapter and queue suites pass. Tests also prove fresh reads on later invocations, unchanged saved guards, distinct address/calldata reads, and no wallet send after final drift.
+
+Typecheck, lint, formatting ratchet, wallet-write inventory, source checks, dead-code checks and `git diff --check` pass. Before/after JSON, invocation logs and the hashed static manifest are `/private/tmp/jb-performance-checks/revnet-precondition-dedup-{before,tests,static}.json` with associated logs. The only runtime change is the local exact-tuple set in `verifyCallPreconditions`; no lifecycle, persistence, final authority, simulation, payment or recovery policy changed. Root's independent reviewer owns final pinned approval and integration. No SDK adoption, build, remote quote, wallet action, push or deployment occurred here.

@@ -39,7 +39,12 @@ export async function verifyCallPreconditions(
   client: Pick<PublicClient, "call">,
   guards: readonly CallPrecondition[] = [],
 ) {
+  // Only identical snapshots in this pass share a read; later passes must read fresh state.
+  const checked = new Set<string>();
   for (const guard of guards) {
+    const key = `${guard.address}:${guard.data}:${guard.expected}`.toLowerCase();
+    if (checked.has(key)) continue;
+    checked.add(key);
     const result = await client.call({ to: guard.address, data: guard.data });
     if ((result.data ?? "0x").toLowerCase() !== guard.expected.toLowerCase())
       throw new Error(

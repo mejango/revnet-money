@@ -843,18 +843,24 @@ describe("raw payer publication and durable source guards", () => {
     vi.stubGlobal("fetch", relayrApi());
     mocks.clientCall.mockResolvedValue({ data: "0x01" });
     const source = { address: TARGET, data: "0xabcd" as Hex, expected: "0x01" as Hex };
+    const preconditions = [source, { ...source, data: "0xABCD" as Hex }];
     const authorizer = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
-      await authorizer.result.current.getRelayrTxQuote([{ ...raw, preconditions: [source] }]);
+      await authorizer.result.current.getRelayrTxQuote([{ ...raw, preconditions }]);
     });
     expect(
       activity.transactionActivitySnapshot()[0].relayrExpectedTransactions?.[0].preconditions,
-    ).toEqual([source]);
+    ).toEqual(preconditions);
+    // The source is checked before and after the review, once in each pass.
+    const sourceReads = () =>
+      mocks.clientCall.mock.calls.filter(([{ data }]) => data?.toLowerCase() === source.data);
+    expect(sourceReads()).toHaveLength(2);
     mocks.clientCall.mockResolvedValue({ data: "0x02" });
     const payer = renderHook(() => hooks.useSendRelayrTx());
     await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
       /reviewed state changed/,
     );
+    expect(sourceReads()).toHaveLength(3);
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 });
@@ -1791,6 +1797,24 @@ describe("Safe execution bundles", () => {
       nonce: 7,
     });
     expect(expected.preconditions).toHaveLength(2);
+    const reads = (chainId: number, selector: Hex) =>
+      mocks.clientCall.mock.calls.filter(
+        ([read]) => read.chainId === chainId && read.data?.startsWith(selector),
+      );
+    for (const chainId of [1, 10]) {
+      expect(reads(chainId, NONCE)).toHaveLength(1);
+      expect(reads(chainId, TX_HASH)).toHaveLength(1);
+    }
+    const payer = renderHook(() => hooks.useSendRelayrTx());
+    await act(async () => {
+      await payer.result.current.sendRelayrTx(payment());
+    });
+    // Funding still runs a fresh validation after its own payment review.
+    for (const chainId of [1, 10]) {
+      expect(reads(chainId, NONCE)).toHaveLength(2);
+      expect(reads(chainId, TX_HASH)).toHaveLength(2);
+    }
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
   });
 
   it("reviews fresh Safe calldata after another owner signs and archives the old unfunded quote", async () => {
@@ -2740,6 +2764,47 @@ describe("Safe execution bundles", () => {
     );
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
+
+  it.each(["nonce", "hash"] as const)(
+    "reconstructs missing legacy guards and refuses %s drift after payment review",
+    async (changed) => {
+      const { hooks, review, activity } = await freshHarness();
+      review.registerTransactionReviewHandler(async () => true);
+      vi.stubGlobal("fetch", relayrApi());
+      const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
+      await act(async () => {
+        await quoter.result.current.getRelayrTxQuote([safeExec(1)]);
+      });
+      const saved = activity.transactionActivitySnapshot()[0];
+      activity.updateTransactionActivity(saved.id, {
+        relayrExpectedTransactions: saved.relayrExpectedTransactions!.map((row) => ({
+          ...row,
+          preconditions: undefined,
+        })),
+      });
+      mocks.clientCall.mockClear();
+      const paymentReview = vi.fn(async (request: TransactionReviewRequest) => {
+        if (request.title === "Review payment") {
+          mocks.clientCall.mockImplementation(async ({ data }) => ({
+            data: data?.startsWith(NONCE)
+              ? encodeAbiParameters([{ type: "uint256" }], [changed === "nonce" ? 8n : 7n])
+              : zeroHash,
+          }));
+        }
+        return true;
+      });
+      review.registerTransactionReviewHandler(paymentReview);
+      const payer = renderHook(() => hooks.useSendRelayrTx());
+      await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
+        /reviewed state changed/,
+      );
+      expect(paymentReview).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Review payment", confirmLabel: "Pay" }),
+      );
+      expect(mocks.clientCall).toHaveBeenCalledTimes(changed === "nonce" ? 1 : 2);
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects a Safe call that is not execTransaction, and mixed bundles", async () => {
     const { hooks, review } = await freshHarness();

@@ -22,3 +22,8 @@
 ## 2026-10-07 — Keep payment actions concise
 - Correction: the user wants the initial Safe bundle funding action and nested payment confirmation both labeled “Pay”.
 - Rule: put the transaction count and execution explanation in the review content; keep the payment button label Pay. Preserve disabled, pending, recovery and authority behavior when changing labels. Existing Safe queue and payment-review assertions enforce the exact label.
+
+## 2026-10-07 — Remove duplicate reads without removing final validation
+
+- Correction: repeated checks delayed the final payment flow. Saved Safe preconditions and mandatory legacy guards caused identical nonce/hash reads within one validation pass.
+- Rule: deduplicate only equivalent address/calldata/expected tuples inside the existing verifier invocation; retain conflicting expectations, synthesize missing legacy guards and reread on every later pass. Guard, raw-payment, direct-batch and Safe-payment regressions enforce exact per-pass counts and refusal after final state drift.
