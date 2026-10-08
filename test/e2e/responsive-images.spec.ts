@@ -104,6 +104,7 @@ async function displayedPixels(page: Page, alt: string, deliveries: Map<string, 
       height: box.height,
       fit: getComputedStyle(element).objectFit,
       density: window.devicePixelRatio,
+      scale: Math.max(1, window.visualViewport?.scale ?? 1),
       original:
         element.dataset.originalFallback === "true" || !element.currentSrc.includes("/_next/image"),
     };
@@ -116,7 +117,9 @@ async function displayedPixels(page: Page, alt: string, deliveries: Map<string, 
       ? Math.max(display.width, fittedWidth)
       : display.fit === "contain"
         ? Math.min(display.width, fittedWidth)
-        : display.width) * display.density;
+        : display.width) *
+    display.density *
+    display.scale;
   // Original is the quality ceiling. Otherwise use actual decoded body pixels,
   // never just a claimed width in the URL or density-corrected naturalWidth.
   if (!display.original && !decoded!.contentType.includes("svg"))
@@ -226,24 +229,6 @@ test("resize and density changes keep source detail; failures and animations rec
 }, testInfo) => {
   const { context, page, deliveries, attempts } = await fixture(browser, baseURL!, 390, 1);
   try {
-    const resized = await loaded(page, "Resizable image");
-    const session = await context.newCDPSession(page);
-    await session.send("Emulation.setDeviceMetricsOverride", {
-      width: 390,
-      height: 900,
-      deviceScaleFactor: 3,
-      mobile: false,
-    });
-    await expect.poll(() => page.evaluate(() => window.devicePixelRatio)).toBe(3);
-    await displayedPixels(page, "Resizable image", deliveries);
-    await page.getByRole("button", { name: "Expand beyond derivatives" }).click();
-    await expect(resized).toHaveAttribute("data-original-fallback", "true");
-    await displayedPixels(page, "Resizable image", deliveries);
-    const recovered = await loaded(page, "Recovered image");
-    await expect(recovered).toHaveAttribute("data-original-fallback", "true");
-    await expect(page.getByText("Original also unavailable", { exact: true })).toBeVisible();
-    expect(attempts.get("missing:original")).toBe(1);
-    expect(attempts.get("recover:original")).toBe(1);
     for (const kind of ["gif", "avif", "avis"]) {
       const image = await loaded(page, `${kind} animation`);
       if (kind === "avis") await expect(image).toHaveAttribute("data-original-fallback", "true");
@@ -265,6 +250,29 @@ test("resize and density changes keep source detail; failures and animations rec
     const gif = await loaded(page, "gif animation");
     const first = await gif.screenshot();
     await expect.poll(async () => !(await gif.screenshot()).equals(first)).toBe(true);
+    const resized = await loaded(page, "Resizable image");
+    const session = await context.newCDPSession(page);
+    await session.send("Emulation.setDeviceMetricsOverride", {
+      width: 391,
+      height: 900,
+      deviceScaleFactor: 3,
+      mobile: false,
+    });
+    await expect.poll(() => page.evaluate(() => window.devicePixelRatio)).toBe(3);
+    // CDP density-only overrides emit no resolution/resize event; change the
+    // real viewport too, then inspect after Chromium processes its frame.
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    await displayedPixels(page, "Resizable image", deliveries);
+    await page.getByRole("button", { name: "Expand beyond derivatives" }).click();
+    await expect(resized).toHaveAttribute("data-original-fallback", "true");
+    await displayedPixels(page, "Resizable image", deliveries);
+    const recovered = await loaded(page, "Recovered image");
+    await expect(recovered).toHaveAttribute("data-original-fallback", "true");
+    await expect(page.getByText("Original also unavailable", { exact: true })).toBeVisible();
+    expect(attempts.get("missing:original")).toBe(1);
+    expect(attempts.get("recover:original")).toBe(1);
     await testInfo.attach("fallback-attempts", {
       body: JSON.stringify(Object.fromEntries(attempts), null, 2),
       contentType: "application/json",
@@ -332,4 +340,32 @@ test("the real optimizer transforms a cold raster and reuses identical cached by
     }),
     contentType: "application/json",
   });
+});
+
+test("pinch zoom switches an undersampled candidate to its full-resolution original", async ({
+  browser,
+  baseURL,
+}, testInfo) => {
+  const { context, page, deliveries } = await fixture(browser, baseURL!, 390, 1);
+  try {
+    const image = await loaded(page, "Resizable image");
+    expect(await image.evaluate((element: HTMLImageElement) => element.currentSrc)).toContain(
+      "/_next/image?",
+    );
+    const session = await context.newCDPSession(page);
+    await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 2 });
+    await expect.poll(() => page.evaluate(() => window.visualViewport?.scale)).toBe(2);
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    await expect(image).toHaveAttribute("data-original-fallback", "true");
+    const display = await displayedPixels(page, "Resizable image", deliveries);
+    expect(display.decodedWidth).toBeGreaterThanOrEqual(display.required);
+    await testInfo.attach("pinch-zoom-delivery", {
+      body: JSON.stringify(display),
+      contentType: "application/json",
+    });
+  } finally {
+    await context.close();
+  }
 });
