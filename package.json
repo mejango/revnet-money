@@ -39,7 +39,12 @@
     "format:write": "prettier --write \"**/*.{js,jsx,mjs,ts,tsx,json,css,scss}\"",
     "format:check": "prettier --check \"**/*.{js,jsx,mjs,ts,tsx,json,css,scss}\"",
     "protocol:rollout:generate": "node scripts/generate-protocol-rollout.mjs",
-    "protocol:rollout:check": "node scripts/generate-protocol-rollout.mjs --check"
+    "protocol:rollout:check": "node scripts/generate-protocol-rollout.mjs --check",
+    "predev": "node scripts/prepare-image-optimizer.mjs",
+    "prebuild": "node scripts/prepare-image-optimizer.mjs",
+    "postbuild": "node scripts/prepare-image-optimizer.mjs --check-standalone",
+    "postbuild:browser": "node scripts/prepare-image-optimizer.mjs --check-standalone",
+    "prebuild:browser": "node scripts/prepare-image-optimizer.mjs"
   },
   "dependencies": {
     "@bananapus/nana-sdk-core": "2.24.5",
