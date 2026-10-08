@@ -936,3 +936,14 @@ Focused boundary/quality suite passes35 tests: native Next output/q90, 3x descri
 - **Resource budget:** One narrow wrapper policy change plus precise test updates and brief review notes. No new storage, package, broad loading-default changes or third-party size discovery. Root-owned browser QA handles the additional blocked-JS proof; no local build in this worker.
 
 Critical-image policy follow-up: default/eager/high-priority React images now render direct originals with no hidden or derivative attributes, so their SSR paint does not depend on JavaScript. Existing lazy feed/store/rich content keeps guarded resizing, while eager project headers/detail and omitted-loading cart previews deliberately keep full originals. Focused coverage is now38 passing tests, including static SSR for all three critical-image cases; final narrow lint and typecheck (including QA's three browser files) pass. The parent owns all final artifact/browser timing claims.
+
+## Plan refinement
+
+- **Objective:** Keep a newly eager native original visible and error-free during the short interval before its prior lazy-image observer is cleaned up.
+- **System fit:** React removes the managed-image marker at commit; passive effect cleanup follows later. That marker is the existing authority boundary for every native load/resize/DPR quality callback, so recheck it at callback entry. All image storage, eligibility, sizing and fallback policies remain unchanged.
+- **Reuse and simplicity:** Add one ownership guard in the existing shared `check` function, reused by every event; no extra listener/state/effect or duplicated caller fix.
+- **Evidence and unknowns:** The independent optimizer reviewer reproduced an obsolete observer reporting a synthetic error for a completed original or rehiding an incomplete original after marker removal. Both apps share this implementation; this worker owns only the Revnet helper, regression and task note.
+- **Verification:** Parameterize completed/incomplete images, remove the marker and switch to the original before observer cleanup, then dispatch load/window-resize/ResizeObserver callbacks; assert no fallback callback, error, rehide or source mutation. Run the focused image suite, scoped lint/format and diff checks, then commit exact files.
+- **Resource budget:** One guard and one parameterized regression, no build/full-suite/browser rerun in this worker and no edits to root's knip or QA files. Root retains final artifact qualification.
+
+Observer ownership review: reproduced both pre-fix failures (incomplete original rehidden; completed original received one synthetic error) with the parameterized native-event regression. One marker guard now stops obsolete callbacks before any visibility/source/error work. All40 focused image tests and scoped ESLint/Prettier pass. Only the helper, owning regression and this task note are included; root's knip and QA changes remain independently owned.

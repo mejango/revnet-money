@@ -114,6 +114,47 @@ describe("responsive project image delivery", () => {
     cleanup();
   });
 
+  it.each([false, true])(
+    "stops observing an image whose lazy ownership ended before cleanup (complete=%s)",
+    (complete) => {
+      let resize: (() => void) | undefined;
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          constructor(callback: () => void) {
+            resize = callback;
+          }
+          observe() {}
+          disconnect() {}
+        },
+      );
+      const image = loadedImage();
+      const onOriginal = vi.fn();
+      const onError = vi.fn();
+      image.addEventListener("error", onError);
+      const cleanup = observeResponsiveImage(image, onOriginal);
+      expect(image.style.visibility).toBe("");
+
+      // React commits the eager original before the passive effect disposes
+      // the old lazy observer, so native callbacks can still arrive here.
+      delete image.dataset.originalSrc;
+      image.removeAttribute("srcset");
+      image.removeAttribute("sizes");
+      image.src = original;
+      Object.defineProperty(image, "complete", { configurable: true, value: complete });
+      image.dispatchEvent(new Event("load"));
+      window.dispatchEvent(new Event("resize"));
+      resize?.();
+
+      expect(image.style.visibility).toBe("");
+      expect(image.src).toBe(original);
+      expect(image.dataset.originalFallback).toBeUndefined();
+      expect(onOriginal).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+      cleanup();
+    },
+  );
+
   it("rechecks layout and zoom, retaining the original after a beyond-limit display", () => {
     vi.stubGlobal("devicePixelRatio", 1);
     let resize: (() => void) | undefined;

@@ -64,6 +64,7 @@ export function observeResponsiveImage(
     }
   };
   const check = () => {
+    if (!image.dataset.originalSrc) return;
     if (!image.complete) {
       image.style.visibility = "hidden";
       return;
