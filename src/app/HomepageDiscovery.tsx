@@ -318,6 +318,7 @@ function HeroColumn() {
         alt=""
         width={1619}
         height={971}
+        sizes="(max-width: 482px) calc(100vw - 48px), 434px"
         // Phones keep the rocket close under the header; wider screens let it
         // drop toward the wordmark.
         className="mb-3 h-auto max-h-[260px] min-w-0 max-w-full translate-y-2 object-contain sm:translate-y-12"
