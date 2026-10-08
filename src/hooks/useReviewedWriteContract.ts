@@ -1,5 +1,6 @@
 "use client";
 
+import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
@@ -21,14 +22,18 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
-import { gasWithHeadroom, simulateCallSequence } from "@bananapus/nana-sdk-core/review";
+import {
+  gasWithHeadroom,
+  simulateCallSequence,
+  submitReviewedContractWrite,
+} from "@bananapus/nana-sdk-core/review";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   hasSafeService,
   readSafeTransaction,
-  SAFE_EXEC_ABI,
   SAFE_NONCE_GUIDANCE,
   safeExecutionResult,
+  safeExecutionRunsCalls,
   safeTransactionMessage,
   usableSafeConfirmations,
   type SafeQueuedTransaction,
@@ -37,9 +42,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
 import { useCallback, useMemo } from "react";
 import {
-  decodeFunctionData,
   encodeFunctionData,
-  isAddressEqual,
   isHash,
   keccak256,
   stringToHex,
@@ -160,20 +163,10 @@ async function watchSafeProposal(
   /** Whether an execution the chain knows is this Safe's execTransaction of the reviewed calls. */
   const executesReviewed = (transaction: { to?: Address | null; input?: Hex }) => {
     // Without reviewed calls, the Safe's one execution in the receipt decides (see runsReviewed).
-    if (!tracked()?.safeProposal) return true;
+    const proposal = tracked()?.safeProposal;
+    if (!proposal) return true;
     const safe = safeOf();
-    if (!safe || !transaction.to || !isAddressEqual(transaction.to, safe)) return false;
-    try {
-      const { functionName, args } = decodeFunctionData({
-        abi: SAFE_EXEC_ABI,
-        data: transaction.input ?? "0x",
-      });
-      if (functionName !== "execTransaction") return false;
-      const [to, value, data, operation] = args;
-      return runsReviewed({ to, value, data, operation });
-    } catch {
-      return false;
-    }
+    return !!safe && safeExecutionRunsCalls(transaction, safe, proposal.calls, proposal.batch);
   };
   /** The Safe's live owners and threshold, for the approvals line. */
   const livePolicy = rereadEveryMinute(async (safe) => {
@@ -460,6 +453,11 @@ export async function proposeSafeBatch(
   if (!isSafeConnection(config)) {
     throw new Error("A batch can only be proposed through a Safe connection.");
   }
+  const requireWalletContext = captureReviewedWalletContext(
+    config,
+    account,
+    "Connected account or chain changed. Review the transaction again.",
+  );
   const encoded = calls.map((call) => ({
     to: call.address,
     value: call.value,
@@ -513,15 +511,11 @@ export async function proposeSafeBatch(
       confirmLabel: "Agree & propose to Safe",
       description: `These ${calls.length} calls go to Safe as one batch that executes together, in this order, once the Safe's approvals are in.\n\n${SAFE_NONCE_GUIDANCE}`,
     });
-    if (getAccount(config).address?.toLowerCase() !== account.toLowerCase()) {
-      throw new Error("Connected account changed. Review the transaction again.");
-    }
-    if (!isSafeConnection(config)) {
-      throw new Error("Wallet connection changed. Review the transaction again.");
-    }
+    requireWalletContext();
     if (getAccount(config).chainId !== chainId) {
       await switchChain(config, { chainId } as Parameters<typeof switchChain>[1]);
     }
+    requireWalletContext(chainId);
     const { id } = await sendCalls(config, { chainId, calls: encoded });
     const hash = id as Hex;
     followSubmission(
@@ -640,6 +634,8 @@ type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] 
   reviewedInParent?: boolean;
   /** Persist caller-specific recovery immediately before the wallet broadcast boundary. */
   beforeSubmission?: () => Promise<void>;
+  /** The shared final gate refused after persistence, before the wallet writer was invoked. */
+  onBeforeSubmissionAborted?: () => Promise<void>;
   /** A batch verifier reconstructs the exact Safe execution before releasing child activity. */
   allowSafeManualReceiptVerification?: boolean;
   reverify?: (
@@ -669,6 +665,7 @@ export function useWriteContract(
     transactionReview,
     reviewedInParent,
     beforeSubmission,
+    onBeforeSubmissionAborted,
     allowSafeManualReceiptVerification,
     reverify,
     preflightSimulation,
@@ -690,6 +687,12 @@ export function useWriteContract(
       // binds the send to the account connected now, so the two must agree.
       requirePlannedAccount(variables.account, before.address);
       const initialAddress = before.address;
+      const requireWalletContext = captureReviewedWalletContext(
+        config,
+        initialAddress,
+        ACCOUNT_CHANGED,
+        "The wallet chain changed. Review the transaction again.",
+      );
       const functionName = String(variables.functionName);
       const data = encodeFunctionData({
         abi: variables.abi as Abi,
@@ -728,107 +731,123 @@ export function useWriteContract(
         }
         // A bounded preflight fixes the gas before review, so the review shows it.
         const reviewedGas = preflightSimulation && !safe ? variables.gas : undefined;
-        if (!reviewedInParent) {
-          await requireContractTransactionReview(
-            {
-              chainId,
-              address: variables.address,
-              abi: variables.abi as Abi,
-              functionName,
-              args: variables.args,
-              value: variables.value,
-              gas: reviewedGas,
-              account: initialAddress,
-              safeTxGas: safe ? 0n : undefined,
-            },
-            {
-              title: `Review ${functionName}`,
-              label: functionName,
-              ...transactionReview,
-              confirmLabel: safe
-                ? "Agree & propose to Safe"
-                : (transactionReview?.confirmLabel ?? "Agree & continue"),
-              description:
-                [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
-                  .filter(Boolean)
-                  .join("\n\n") || undefined,
-            },
-          );
-        }
-
-        const reviewedAccount = getAccount(config).address;
-        if (!reviewedAccount || reviewedAccount.toLowerCase() !== initialAddress.toLowerCase()) {
-          throw new Error("Connected account changed. Review the transaction again.");
-        }
-        await reverify?.(variables, reviewedAccount);
-        const reverifiedAccount = getAccount(config).address;
-        if (
-          !reverifiedAccount ||
-          reverifiedAccount.toLowerCase() !== reviewedAccount.toLowerCase()
-        ) {
-          throw new Error("Connected account changed. Review the transaction again.");
-        }
-
-        const boundedPreflight = preflightSimulation
-          ? await preflightSimulation(variables, reviewedAccount)
-          : undefined;
-        const simulation = preflightSimulation
-          ? { request: { ...variables, chainId, account: reviewedAccount } }
-          : await simulateContract(config, {
-              ...variables,
-              chainId,
-              account: reviewedAccount,
-            } as Parameters<typeof simulateContract>[1]);
-        const publicClient = getPublicClient(config, { chainId });
-        if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
-        const estimateRequest = {
-          ...variables,
-          gas: undefined,
-          account: reviewedAccount,
-        };
-        const estimate = boundedPreflight?.gas
-          ? boundedPreflight.gas
-          : await publicClient.estimateContractGas(
-              estimateRequest as Parameters<typeof publicClient.estimateContractGas>[0],
+        const review = async () => {
+          if (!reviewedInParent) {
+            await requireContractTransactionReview(
+              {
+                chainId,
+                address: variables.address,
+                abi: variables.abi as Abi,
+                functionName,
+                args: variables.args,
+                value: variables.value,
+                gas: reviewedGas,
+                account: initialAddress,
+                safeTxGas: safe ? 0n : undefined,
+              },
+              {
+                title: `Review ${functionName}`,
+                label: functionName,
+                ...transactionReview,
+                confirmLabel: safe
+                  ? "Agree & propose to Safe"
+                  : (transactionReview?.confirmLabel ?? "Agree & continue"),
+                description:
+                  [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
+                    .filter(Boolean)
+                    .join("\n\n") || undefined,
+              },
             );
-        // Safe Apps maps the Ethereum gas field directly to Safe's signed
-        // safeTxGas. Keep its canonical envelope at zero and let Safe estimate
-        // execution gas; the bounded preflight above remains mandatory.
-        const gas = safe ? 0n : (boundedPreflight?.gas ?? gasWithHeadroom(estimate));
-        if (reviewedGas !== undefined && gas !== reviewedGas) {
-          throw new Error("The gas limit changed after review. Nothing was sent; review it again.");
-        }
-        const liveAccount = getAccount(config).address;
-        if (!liveAccount || liveAccount.toLowerCase() !== reviewedAccount.toLowerCase()) {
-          throw new Error("Connected account changed. Review the transaction again.");
-        }
-        if (isSafeConnection(config) !== safe) {
-          throw new Error("Wallet connection changed. Review the transaction again.");
-        }
-        // Every call names its own chain, so a wallet parked elsewhere is a
-        // switch away rather than an error the caller has to explain.
-        if (getAccount(config).chainId !== chainId) {
-          try {
-            await switchChain(config, { chainId } as Parameters<typeof switchChain>[1]);
-          } catch {
-            const target = config.chains.find((chain) => chain.id === chainId)?.name;
-            throw new Error(`Switch your wallet to ${target ?? `chain ${chainId}`} to continue.`);
           }
-        }
-        await beforeSubmission?.();
-        const hash = await mutation.writeContractAsync({
-          ...simulation.request,
-          gas,
-        } as Parameters<typeof mutation.writeContractAsync>[0]);
+        };
+        const simulate = async (reviewedAccount: Address) => {
+          const boundedPreflight = preflightSimulation
+            ? await preflightSimulation(variables, reviewedAccount)
+            : undefined;
+          const simulation = preflightSimulation
+            ? { request: { ...variables, chainId, account: reviewedAccount } }
+            : await simulateContract(config, {
+                ...variables,
+                chainId,
+                account: reviewedAccount,
+              } as Parameters<typeof simulateContract>[1]);
+          const publicClient = getPublicClient(config, { chainId });
+          if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
+          const estimateRequest = {
+            ...variables,
+            gas: undefined,
+            account: reviewedAccount,
+          };
+          const estimate = boundedPreflight?.gas
+            ? boundedPreflight.gas
+            : await publicClient.estimateContractGas(
+                estimateRequest as Parameters<typeof publicClient.estimateContractGas>[0],
+              );
+          // Safe Apps maps the Ethereum gas field directly to Safe's signed
+          // safeTxGas. Keep its canonical envelope at zero and let Safe estimate
+          // execution gas; the bounded preflight above remains mandatory.
+          const gas = safe ? 0n : (boundedPreflight?.gas ?? gasWithHeadroom(estimate));
+          if (reviewedGas !== undefined && gas !== reviewedGas) {
+            throw new Error(
+              "The gas limit changed after review. Nothing was sent; review it again.",
+            );
+          }
+          return { ...simulation.request, gas };
+        };
+        // Connector identity matters even when both wallets are ordinary EOAs.
+        // Refuse known context drift before journaling, and at the shared final gate.
+        const assertWalletContext = () => requireWalletContext(chainId);
+        const hash = await submitReviewedContractWrite({
+          request: variables as typeof variables & { chainId: number },
+          expectedAccount: initialAddress,
+          guard: requireNoViewAs,
+          accountChangedError: ACCOUNT_CHANGED,
+          review,
+          switchChain: async () => {
+            // Refuse changed review identity before even opening a switch prompt.
+            requireWalletContext();
+            if (getAccount(config).address?.toLowerCase() !== initialAddress.toLowerCase()) {
+              throw new Error(ACCOUNT_CHANGED);
+            }
+            if (getAccount(config).chainId !== chainId) {
+              try {
+                await switchChain(config, { chainId } as Parameters<typeof switchChain>[1]);
+              } catch {
+                const target = config.chains.find((chain) => chain.id === chainId)?.name;
+                throw new Error(
+                  `Switch your wallet to ${target ?? `chain ${chainId}`} to continue.`,
+                );
+              }
+            }
+            assertWalletContext();
+          },
+          currentAccount: () => getAccount(config).address,
+          reverify: async () => {
+            await reverify?.(variables, initialAddress);
+            assertWalletContext();
+          },
+          simulate: async () => {
+            const prepared = await simulate(initialAddress);
+            assertWalletContext();
+            return prepared;
+          },
+          beforeWrite: beforeSubmission,
+          onBeforeWriteAborted: onBeforeSubmissionAborted,
+          beforeSend: assertWalletContext,
+          write: (prepared) =>
+            mutation.writeContractAsync(
+              prepared as Parameters<typeof mutation.writeContractAsync>[0],
+            ),
+        });
         followSubmission(
           config,
           hash,
           chainId,
           functionName,
-          reviewedAccount,
+          initialAddress,
           callKey,
           safe && {
-            safe: reviewedAccount,
+            safe: initialAddress,
             calls: [{ to: variables.address, value: String(variables.value ?? 0n), data }],
             batch: false,
           },
@@ -854,6 +873,7 @@ export function useWriteContract(
       reviewedInParent,
       reverify,
       beforeSubmission,
+      onBeforeSubmissionAborted,
       allowSafeManualReceiptVerification,
       transactionReview,
     ],

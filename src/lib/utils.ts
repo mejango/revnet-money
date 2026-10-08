@@ -2,6 +2,7 @@ import { chainSortIndex } from "@/app/constants";
 import { mainnet } from "@/lib/chains";
 import type { JBChainId, JBTokenContextData } from "@/lib/nana/types";
 import { CashOutTaxRate, JB_CHAINS, ReservedPercent } from "@bananapus/nana-sdk-core";
+import { transactionMessage as formatTransactionMessage } from "@bananapus/nana-sdk-core/review";
 import { twMerge } from "tailwind-merge";
 import { Address, Chain, formatEther } from "viem";
 
@@ -201,22 +202,7 @@ export function decodeRulesetMetadata(packed: bigint): RulesetMetadata {
   };
 }
 
-/** Presentation only: saved recovery evidence and original SDK errors stay unchanged. */
-export function formatTransactionMessage(message: string): string {
-  const formatted = message
-    .replace(/\bRelayr HTTP \d+:\s*SimulationReverted\b/gi, "Transaction simulation failed")
-    .replace(/\bRelayr HTTP (\d+):\s*/gi, "Transaction request failed (HTTP $1): ")
-    .replace(/\ba Relayr\s+(?=[aeiou])/gi, "an ")
-    .replace(
-      /\bRelayr\s+(?=(?:quotes?|payments?|bundles?|authorizations?|requests?|calls?|actions?|sessions?|funding|confirmations?|entries|entry|options?|polling|Safe executions?|multi-chain bundles?|network fees?)\b)/gi,
-      "",
-    )
-    .replace(/\bRelayr's\b/gi, "the execution service's")
-    .replace(/(?<![\w./:-])Relayr(?![\w./:-])/gi, "the execution service");
-  return formatted === message
-    ? message
-    : formatted.replace(/^([a-z])/, (letter) => letter.toUpperCase());
-}
+export { formatTransactionMessage };
 
 export function formatWalletError(error: unknown, defaultMessage = "Please try again") {
   if (typeof error === "string") return formatTransactionMessage(error);

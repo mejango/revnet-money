@@ -1,6 +1,8 @@
 import { jbCenterAppOrigin, jbCenterBaseUrl } from "@/lib/jbcenter-config";
-import { createPacedRpcFetch } from "@/lib/rpc-request-pacing";
-import { createJBCenterRpcProvider } from "@bananapus/nana-sdk-core/jbcenter";
+import {
+  createJBCenterRpcProvider,
+  createPacedJBCenterLimiter,
+} from "@bananapus/nana-sdk-core/jbcenter";
 import { custom, http, type Transport } from "viem";
 
 const serverFetch: typeof fetch = (input, init) => {
@@ -10,7 +12,8 @@ const serverFetch: typeof fetch = (input, init) => {
 };
 
 // One scheduler per page, shared by every chain and every provider retry.
-const browserFetch = createPacedRpcFetch((input, init) => window.fetch(input, init));
+const browserLimiter = createPacedJBCenterLimiter();
+const browserFetch: typeof fetch = (input, init) => window.fetch(input, init);
 
 /** Center's RPC for `chainId`. Center load balances reads across nodes that import blocks at
  * slightly different times, so a read pinned to a block one node has imported can land on one
@@ -29,6 +32,7 @@ export function jbCenterRpcTransport(chainId: number): Transport {
     createJBCenterRpcProvider(chainId, {
       baseUrl: jbCenterBaseUrl(),
       fetch: typeof window === "undefined" ? serverFetch : browserFetch,
+      limiter: typeof window === "undefined" ? undefined : browserLimiter,
     }),
     { retryCount: 1 },
   );

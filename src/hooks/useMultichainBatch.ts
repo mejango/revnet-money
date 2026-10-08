@@ -25,6 +25,7 @@ import {
   removeUnsubmittedBatch,
   replaceRoutingDraft,
   resetUnpaidRoutingDraft,
+  resetUnsubmittedBatchCall,
   routingBatchRecoveryReason,
   saveMultichainBatch,
   type FrozenBatchCall,
@@ -51,7 +52,7 @@ import {
 } from "@/lib/transaction-activity";
 import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom, isDefiniteWalletRejection } from "@bananapus/nana-sdk-core/review";
 import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
 import {
   readSafeTransaction,
@@ -96,17 +97,6 @@ const running = new Set<string>();
 /** The one call a saved batch call proposes to its Safe. */
 function savedCall(call: FrozenBatchCall) {
   return { to: call.address, value: call.value ?? 0n, data: call.data };
-}
-
-function explicitRejection(cause: unknown): boolean {
-  const seen = new Set<unknown>();
-  while (cause && typeof cause === "object" && !seen.has(cause)) {
-    seen.add(cause);
-    const error = cause as { code?: number; cause?: unknown };
-    if (error.code === 4001) return true;
-    cause = error.cause;
-  }
-  return false;
 }
 
 async function verifyDirectResult(
@@ -259,7 +249,11 @@ async function verifyDirectResult(
 export function useMultichainBatch() {
   const config = useConfig();
   const [isPending, setIsPending] = useState(false);
-  const direct = useRef<{ batch: MultichainBatch; index: number } | null>(null);
+  const direct = useRef<{
+    batch: MultichainBatch;
+    index: number;
+    submission?: MultichainBatch;
+  } | null>(null);
   const { getRelayrTxQuote } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
   const writeOptions: NonNullable<Parameters<typeof useWriteContract>[0]> = {
@@ -321,6 +315,14 @@ export function useMultichainBatch() {
         );
       active.batch.calls[active.index].state = "submitting";
       saveMultichainBatch(active.batch);
+      active.submission = structuredClone(active.batch);
+    },
+    onBeforeSubmissionAborted: async () => {
+      const active = direct.current;
+      if (!active?.submission) throw new Error("The saved submission is unavailable.");
+      resetUnsubmittedBatchCall(active.submission, active.index);
+      active.batch.calls[active.index].state = "ready";
+      delete active.submission;
     },
   };
   // A resumed batch was reviewed in an earlier run, so each call is reviewed as it is sent.
@@ -803,7 +805,7 @@ export function useMultichainBatch() {
                   ? await writeReviewedAsync(variables)
                   : await writeContractAsync(variables);
               } catch (cause) {
-                if (explicitRejection(cause)) {
+                if (isDefiniteWalletRejection(cause)) {
                   call.state = "ready";
                   saveMultichainBatch(batch);
                 }

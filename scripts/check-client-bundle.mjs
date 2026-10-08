@@ -101,7 +101,14 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Official SDK 2.24.5 plus the reviewed copy, permission and payment changes
 // measure 2,734,565 B versus 2,730,720 B on the same physical dependency layout.
 // Module copies and route references are unchanged; round only aggregate by 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2671);
+// Shared SDK 2.25.0 boundaries, final wallet/recovery guards and sibling runtime
+// alignment measure 2683.0 KiB in CI37724379135 at 92e58f79. Prior main CI37713095651
+// measured 2670.4 KiB on Node 26.5; this candidate uses 26.7, wagmi 3.7.6 and viem
+// 2.55.19, so this is a release-size comparison, not an exact causal allocation.
+// Independent import review found no avoidable eager wallet or barrel load; all
+// lazy checks pass. Round the measured aggregate to 2684 KiB; keep the 900 KiB
+// route and 1100 KiB route-referenced ceilings and every lazy constraint unchanged.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2684);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

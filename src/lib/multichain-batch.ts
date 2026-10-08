@@ -213,6 +213,22 @@ export function saveMultichainBatch(batch: MultichainBatch) {
   const previous = readMultichainBatches();
   writeMultichainBatches([batch, ...previous.filter((item) => item.id !== batch.id)]);
 }
+/** Only the reviewed boundary may release an intent it refused before invoking the wallet. */
+export function resetUnsubmittedBatchCall(expected: MultichainBatch, index: number) {
+  const batches = readMultichainBatches();
+  const current = batches.find((batch) => batch.id === expected.id);
+  const call = current?.calls[index];
+  if (
+    !current ||
+    serialize(current) !== serialize(expected) ||
+    call?.state !== "submitting" ||
+    call.hash
+  ) {
+    throw new Error("The saved submission changed. Preserve its recovery record.");
+  }
+  call.state = "ready";
+  writeMultichainBatches(batches);
+}
 /** Only callers that prove no signature/publication/submission occurred may remove a draft. */
 export function removeUnsubmittedBatch(id: string) {
   if (typeof window === "undefined") throw new Error("Browser recovery storage is required.");

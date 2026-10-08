@@ -35,7 +35,10 @@ describe("Juicebox Center RPC transport", () => {
         }),
     );
     vi.stubGlobal("window", { fetch: fetchMock });
-    const chains = [mainnet, optimism, base, arbitrum];
+    const chains = Array.from(
+      { length: 12 },
+      (_, index) => [mainnet, optimism, base, arbitrum][index % 4]!,
+    );
     const requests = chains.map((chain) =>
       createPublicClient({
         chain,
@@ -48,6 +51,8 @@ describe("Juicebox Center RPC transport", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchMock).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetchMock).toHaveBeenCalledTimes(12);
     finish.forEach((resolve) => resolve());
     await expect(Promise.all(requests)).resolves.toEqual(chains.map(({ id }) => id));
   });
@@ -126,4 +131,41 @@ describe("Juicebox Center RPC transport", () => {
       expect(new Headers(init.headers).get("origin")).toBe(siteUrl);
     },
   );
+});
+
+it("waits through a 60-second browser cooldown before starting request timeouts", async () => {
+  vi.useFakeTimers();
+  vi.resetModules();
+  const { jbCenterRpcTransport: transport } = await import("@/lib/jbcenter-rpc");
+  const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.signal?.aborted) throw init.signal.reason;
+    if (fetchMock.mock.calls.length === 1) {
+      return Response.json({}, { status: 429, headers: { "Retry-After": "60" } });
+    }
+    const { id } = JSON.parse(String(init?.body)) as { id: number };
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id, result: "0x1" }), {
+      headers: { "content-type": "application/json" },
+    });
+  });
+  vi.stubGlobal("window", { fetch: fetchMock });
+  const outcomes: unknown[] = [];
+  const requests = [1, 1].map(() =>
+    createPublicClient({ transport: transport(1) })
+      .getChainId()
+      .then(
+        (result) => {
+          outcomes.push(result);
+        },
+        (error) => {
+          outcomes.push(error);
+        },
+      ),
+  );
+  await vi.advanceTimersByTimeAsync(59_999);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(outcomes).toEqual([]);
+  await vi.advanceTimersByTimeAsync(1_001);
+  await Promise.all(requests);
+  expect(outcomes).toEqual([1, 1]);
+  expect(fetchMock).toHaveBeenCalledTimes(3);
 });

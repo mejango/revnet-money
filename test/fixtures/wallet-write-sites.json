@@ -59,7 +59,7 @@
         [
           "raw-wallet-call",
           "src/hooks/useReviewedWriteContract.ts",
-          "submitReviewedCall",
+          "write",
           "writeContractAsync",
           1
         ],

@@ -1,8 +1,8 @@
 "use client";
 
 import { permit2TypedData, type Permit2SignatureAuthorization } from "@/lib/directPaySwap";
+import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { requireTransactionReview } from "@/lib/transaction-review";
-import { requireNoViewAs } from "@/lib/view-as";
 import { getAccount } from "@wagmi/core";
 import { useCallback } from "react";
 import type { Address } from "viem";
@@ -21,7 +21,12 @@ export function useReviewedPermit2Signature(options?: { reviewedInParent?: boole
       authorization: Permit2SignatureAuthorization;
       expectedAccount: Address;
     }) => {
-      requireNoViewAs();
+      const assertWalletContext = captureReviewedWalletContext(
+        config,
+        expectedAccount,
+        "Connected account changed. Review the payment again.",
+        "Wallet account or network changed. Review the payment again.",
+      );
       const typedData = permit2TypedData(authorization);
       if (!options?.reviewedInParent) {
         await requireTransactionReview({
@@ -31,21 +36,11 @@ export function useReviewedPermit2Signature(options?: { reviewedInParent?: boole
           authorization: typedData,
         });
       }
-      let current = getAccount(config);
-      if (!current.address || current.address.toLowerCase() !== expectedAccount.toLowerCase()) {
-        throw new Error("Connected account changed. Review the payment again.");
-      }
-      if (current.chainId !== authorization.chainId) {
+      assertWalletContext();
+      if (getAccount(config).chainId !== authorization.chainId) {
         await switchChainAsync({ chainId: authorization.chainId });
       }
-      current = getAccount(config);
-      if (
-        !current.address ||
-        current.address.toLowerCase() !== expectedAccount.toLowerCase() ||
-        current.chainId !== authorization.chainId
-      ) {
-        throw new Error("Wallet account or network changed. Review the payment again.");
-      }
+      assertWalletContext(authorization.chainId);
       const signature = await signTypedDataAsync({
         account: expectedAccount,
         ...typedData,
@@ -58,6 +53,7 @@ export function useReviewedPermit2Signature(options?: { reviewedInParent?: boole
       ) {
         throw new Error("Wallet account or network changed after signing. Nothing was sent.");
       }
+      assertWalletContext(authorization.chainId);
       return signature;
     },
     [config, options?.reviewedInParent, signTypedDataAsync, switchChainAsync],

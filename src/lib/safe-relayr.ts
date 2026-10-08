@@ -3,6 +3,7 @@ import { verifyActionReceipt, verifyCallPreconditions } from "@/lib/multichain-g
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { verifyMetadataSource } from "@/lib/project-metadata-write";
 import { relayrRecoveryScopeKey, relayrSavedQuote } from "@/lib/relayr-activity";
+import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
 import {
@@ -20,6 +21,8 @@ import {
   RELAYR_NATIVE_TOKEN,
   RELAYR_PAYMENT_GAS,
   relayrPaymentDetails,
+  RelayrPaymentNotSentError,
+  relayrWalletPaymentError,
   requireRelayrPaymentRuntime,
   sentRelayrPayment,
   simulateRelayrPayment,
@@ -544,13 +547,19 @@ export function safeRelayrController(
     },
     async sendPayment({ session, payment, beforeSend, onSending, onSent }) {
       if (!wallet) throw new Error("A wallet payment must be explicitly requested.");
+      requireAccount(session.account);
+      const requirePaymentAccount = captureReviewedWalletContext(
+        config,
+        session.account,
+        "Connected account or chain changed. Review the payment again.",
+      );
       const chainId = payment.chain as JBChainId;
       const details = relayrPaymentDetails(payment, {
         bundleUuid: session.bundleUuid!,
         destinationChainIds: session.executions.map((execution) => execution.entry.chain),
       });
       await wallet.switchChain(chainId);
-      requireAccount(session.account, chainId);
+      requirePaymentAccount(chainId);
       await requireTransactionReview({
         kind: "transaction",
         title: "Review payment",
@@ -569,27 +578,41 @@ export function safeRelayrController(
           },
         ],
       });
-      requireAccount(session.account, chainId);
+      requirePaymentAccount(chainId);
       const client = clientFor(chainId);
       if (!client) throw new Error("Payment network is unavailable.");
       await requireRelayrPaymentRuntime(client);
       await simulateRelayrPayment(client, { from: session.account, payment: details });
       await beforeSend();
-      requireAccount(session.account, chainId);
+      requirePaymentAccount(chainId);
       relayrPaymentDetails(payment, {
         bundleUuid: session.bundleUuid!,
         destinationChainIds: session.executions.map((execution) => execution.entry.chain),
       });
       await onSending();
-      requireAccount(session.account, chainId);
-      const hash = await wallet.sendTransaction({
-        account: session.account,
-        chainId,
-        to: details.target,
-        value: details.amount,
-        data: details.calldata,
-        gas: RELAYR_PAYMENT_GAS,
-      });
+      try {
+        requirePaymentAccount(chainId);
+        relayrPaymentDetails(payment, {
+          bundleUuid: session.bundleUuid!,
+          destinationChainIds: session.executions.map((execution) => execution.entry.chain),
+        });
+      } catch (error) {
+        // Only this synchronous gate proves that the wallet has not been invoked.
+        throw new RelayrPaymentNotSentError(error);
+      }
+      let hash: Hex;
+      try {
+        hash = await wallet.sendTransaction({
+          account: session.account,
+          chainId,
+          to: details.target,
+          value: details.amount,
+          data: details.calldata,
+          gas: RELAYR_PAYMENT_GAS,
+        });
+      } catch (error) {
+        throw relayrWalletPaymentError(error);
+      }
       const sentAs = (hash: Hex): RelayrSentPayment[] => [
         ...session.payments,
         sentRelayrPayment(details, hash),

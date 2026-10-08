@@ -55,6 +55,7 @@ import {
   registerTransactionReviewHandler,
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
+import { clearViewAs, setViewAs } from "@/lib/view-as";
 
 const ACCOUNT = "0x000000000000000000000000000000000000dEaD" as Address;
 const TOKEN = "0x0000000000000000000000000000000000001000" as Address;
@@ -116,7 +117,13 @@ describe("one Safe proposal for a whole flow", () => {
   beforeEach(() => {
     seen = null;
     approve = true;
+    clearViewAs();
+    mocks.account.address = ACCOUNT;
+    mocks.account.chainId = 8453;
     mocks.account.connector = { id: "safe", name: "Safe" };
+    mocks.switchChain.mockImplementation(async (_config, { chainId }) => {
+      mocks.account.chainId = chainId;
+    });
     mocks.getAccount.mockImplementation(() => mocks.account);
     mocks.sendCalls.mockReset().mockResolvedValue({ id: SAFE_TX_HASH });
     mocks.simulateContract.mockReset().mockResolvedValue({ request: {} });
@@ -128,6 +135,52 @@ describe("one Safe proposal for a whole flow", () => {
       return approve;
     });
   });
+
+  for (const stage of ["review", "switch"] as const) {
+    it.each(["account", "disconnected", "connector", "wallet mode", "view-as", "chain"])(
+      `refuses a changed %s after the deferred Safe batch ${stage}`,
+      async (change) => {
+        let release!: () => void;
+        let entered = false;
+        const wait = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const pause = async () => {
+          entered = true;
+          await wait;
+        };
+        if (stage === "review")
+          registerTransactionReviewHandler(async () => {
+            await pause();
+            return true;
+          });
+        else {
+          mocks.account.chainId = 1;
+          mocks.switchChain.mockImplementation(async (_config, { chainId }) => {
+            mocks.account.chainId = chainId;
+            await pause();
+          });
+        }
+        const pending = proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls());
+        const refused = expect(pending).rejects.toThrow();
+        await vi.waitFor(() => expect(entered).toBe(true));
+        if (change === "account") mocks.account.address = TOKEN;
+        else if (change === "disconnected") mocks.account.address = undefined;
+        else if (change === "connector") mocks.account.connector = { id: "safe", name: "Safe" };
+        else if (change === "wallet mode") mocks.account.connector!.id = "injected";
+        else if (change === "view-as") setViewAs(TOKEN);
+        else {
+          mocks.account.chainId = 10;
+          // A chain change during review may be corrected by the requested switch.
+          // Refuse a wallet that acknowledges that switch without applying it.
+          mocks.switchChain.mockResolvedValue(undefined);
+        }
+        release();
+        await refused;
+        expect(mocks.sendCalls).not.toHaveBeenCalled();
+      },
+    );
+  }
 
   it("wallet-action:safe-batch reviews every call in order, sends them as one batch, and tracks the proposal", async () => {
     const CALLS = calls();

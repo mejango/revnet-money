@@ -1,7 +1,7 @@
 "use client";
 
+import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { requireTransactionReview, type TransactionReviewCall } from "@/lib/transaction-review";
-import { requireNoViewAs } from "@/lib/view-as";
 import {
   canonicalSafeTxHash,
   SAFE_TX_TYPES,
@@ -32,9 +32,14 @@ export function useReviewedSafeSignature() {
 
   const signSafeTransactionAsync = useCallback(
     async ({ chainId, safe, tx, reverify, review }: ReviewedSafeSignatureRequest): Promise<Hex> => {
-      requireNoViewAs();
       const before = getAccount(config);
       if (!before.address) throw new Error("Connect a wallet first.");
+      const account = before.address;
+      const assertWalletContext = captureReviewedWalletContext(
+        config,
+        account,
+        "Connected account or network changed. Review the Safe transaction again.",
+      );
 
       // The hash of the exact fields, refusing a record for another Safe or advertising another hash.
       const digest = canonicalSafeTxHash(chainId, safe, tx);
@@ -56,7 +61,7 @@ export function useReviewedSafeSignature() {
         calls: [
           {
             chainId,
-            from: before.address,
+            from: account,
             to: message.to,
             value: message.value,
             // The signature commits to this call's Safe gas.
@@ -68,31 +73,16 @@ export function useReviewedSafeSignature() {
         ],
       });
 
+      assertWalletContext();
       await switchChainAsync({ chainId });
-      const after = getAccount(config);
-      if (
-        !after.address ||
-        after.address.toLowerCase() !== before.address.toLowerCase() ||
-        after.chainId !== chainId
-      ) {
-        throw new Error("Connected account or network changed. Review the Safe transaction again.");
-      }
-      await reverify?.(after.address);
-      const reverified = getAccount(config);
-      if (
-        !reverified.address ||
-        reverified.address.toLowerCase() !== after.address.toLowerCase() ||
-        reverified.chainId !== chainId
-      ) {
-        throw new Error("Connected account or network changed. Review the Safe transaction again.");
-      }
-      const wallet = await getWalletClient(config, { chainId, account: after.address });
-      if (
-        !wallet.account ||
-        wallet.account.address.toLowerCase() !== before.address.toLowerCase()
-      ) {
+      assertWalletContext(chainId);
+      await reverify?.(account);
+      assertWalletContext(chainId);
+      const wallet = await getWalletClient(config, { chainId, account });
+      if (!wallet.account || wallet.account.address.toLowerCase() !== account.toLowerCase()) {
         throw new Error("Connected account changed. Review the Safe transaction again.");
       }
+      assertWalletContext(chainId);
       const signature = await wallet.signTypedData({
         account: wallet.account,
         domain: { chainId, verifyingContract: safe },
@@ -100,27 +90,13 @@ export function useReviewedSafeSignature() {
         primaryType: "SafeTx",
         message,
       });
-      const signedAccount = getAccount(config);
-      if (
-        !signedAccount.address ||
-        signedAccount.address.toLowerCase() !== before.address.toLowerCase() ||
-        signedAccount.chainId !== chainId
-      ) {
-        throw new Error("Connected account or network changed. Review the Safe transaction again.");
-      }
+      assertWalletContext(chainId);
       // A wallet prompt has no time bound. Re-authenticate the live project
       // Safe after it closes, before the caller can POST this signature to the
       // transaction service, and prove the signed payload stayed exact.
-      await reverify?.(signedAccount.address);
+      await reverify?.(account);
       canonicalSafeTxHash(chainId, safe, tx, digest);
-      const postverified = getAccount(config);
-      if (
-        !postverified.address ||
-        postverified.address.toLowerCase() !== signedAccount.address.toLowerCase() ||
-        postverified.chainId !== chainId
-      ) {
-        throw new Error("Connected account or network changed. Review the Safe transaction again.");
-      }
+      assertWalletContext(chainId);
       return signature;
     },
     [config, switchChainAsync],
