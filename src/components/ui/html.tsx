@@ -8,7 +8,7 @@ import {
 } from "@/lib/responsive-image";
 import createDOMPurify from "dompurify";
 import { marked } from "marked";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const PROJECT_RICH_TEXT_TAGS = [
   "a",
@@ -164,7 +164,7 @@ function sanitizeProjectRichText(source: string): string {
     if (delivery.sizes) image.setAttribute("sizes", delivery.sizes);
     if (delivery["data-original-src"]) {
       image.dataset.originalSrc = delivery["data-original-src"];
-      image.style.visibility = "hidden";
+      image.style.objectFit = "contain";
     }
     image.setAttribute("loading", "lazy");
     image.setAttribute("referrerpolicy", "no-referrer");
@@ -196,12 +196,12 @@ export const ProjectRichText = ({ className, source }: { className?: string; sou
     });
   }, [source]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const cleanups = [...(contentRef.current?.querySelectorAll("img") ?? [])].map((image) =>
       observeResponsiveImage(image),
     );
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [sanitizedHtml]);
+  }, [sanitizedHtml, className]);
 
   if (sanitizedHtml === null) {
     return (

@@ -1,9 +1,9 @@
 import { TierMediaPreview } from "@/app/[slug]/components/v6/shop/TierMediaPreview";
 import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
 import { ResponsiveImage } from "@/components/ResponsiveImage";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const CID = "bafkreihz5xk2crdko5mllpxbfa443m2o6pmzcmbg5b3uvif6ho4x45z674";
 
@@ -12,16 +12,28 @@ describe("IPFS image failure handling", () => {
     {},
     { loading: "eager" as const },
     { loading: "lazy" as const, fetchPriority: "high" as const },
-  ])("renders critical images as visible originals before hydration: %j", (hints) => {
+  ])("sizes critical images in visible contained server markup: %j", (hints) => {
     const src = `https://juicebox.center/ipfs/${CID}/logo.png`;
     const html = renderToStaticMarkup(
-      <ResponsiveImage src={src} sizes="144px" alt="Critical logo" {...hints} />,
+      <ResponsiveImage
+        src={src}
+        sizes="144px"
+        alt="Critical logo"
+        style={{ objectFit: "cover" }}
+        {...hints}
+      />,
     );
-    expect(html).toContain(`src="${src}"`);
-    expect(html).not.toContain("srcSet");
-    expect(html).not.toContain("visibility:hidden");
-    expect(html).not.toContain("data-original-src");
-    expect(html).not.toContain("/_next/image");
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    const image = container.querySelector("img")!;
+    expect(image.getAttribute("src")).toContain("/_next/image?url=");
+    expect(image.getAttribute("srcset")).toContain("w=384&q=90 384w");
+    expect(image).toHaveAttribute("sizes", "144px");
+    expect(image).toHaveAttribute("data-original-src", src);
+    expect(image.style.objectFit).toBe("contain");
+    expect(image.style.visibility).not.toBe("hidden");
+    expect(image.getAttribute("loading")).toBe(hints.loading ?? null);
+    expect(image.getAttribute("fetchpriority")).toBe(hints.fetchPriority ?? null);
   });
 
   it("requests a responsive derivative and retries the accepted original before fallback", () => {
@@ -57,7 +69,7 @@ describe("IPFS image failure handling", () => {
     expect(screen.queryByRole("img", { name: "Project logo" })).not.toBeInTheDocument();
   });
 
-  it("starts a newly selected source hidden with its own original retry", () => {
+  it("starts a newly selected source contained with its own original retry", () => {
     const { rerender } = render(
       <IpfsImage
         loading="lazy"
@@ -82,7 +94,8 @@ describe("IPFS image failure handling", () => {
     const second = screen.getByAltText("Changing logo");
     expect(second).not.toBe(first);
     expect(second).not.toHaveAttribute("data-original-fallback");
-    expect(second).toHaveStyle({ visibility: "hidden" });
+    expect(second).toHaveStyle({ objectFit: "contain" });
+    expect(second).not.toHaveStyle({ visibility: "hidden" });
     expect(second.getAttribute("src")).toContain("second.png");
     fireEvent.error(second);
     expect(second).toHaveAttribute("src", `https://juicebox.center/ipfs/${CID}/second.png`);
@@ -120,6 +133,112 @@ describe("IPFS image failure handling", () => {
     expect(image).toHaveAttribute("data-original-fallback", "true");
     fireEvent.error(image);
     expect(screen.getByText("Unavailable")).toBeInTheDocument();
+  });
+
+  it("retains the smallest adequate upgrade across parent updates and later grows again", () => {
+    vi.stubGlobal("devicePixelRatio", 1);
+    const src = `https://juicebox.center/ipfs/${CID}/panorama.png`;
+    const { rerender } = render(
+      <ResponsiveImage
+        src={src}
+        sizes="144px"
+        alt="Cropped image"
+        width={144}
+        height={144}
+        style={{ objectFit: "cover" }}
+      />,
+    );
+    const image = screen.getByAltText("Cropped image") as HTMLImageElement;
+    const candidates = image.srcset.split(", ");
+    const candidate = (width: number) =>
+      new URL(
+        candidates.find((entry) => entry.endsWith(` ${width}w`))!.split(" ")[0],
+        window.location.href,
+      ).href;
+    let current = candidate(384);
+    let size = 144;
+    Object.defineProperties(image, {
+      complete: { configurable: true, value: true },
+      currentSrc: { configurable: true, get: () => current },
+      naturalWidth: { configurable: true, value: 400 },
+      naturalHeight: { configurable: true, value: 100 },
+    });
+    vi.spyOn(image, "getBoundingClientRect").mockImplementation(
+      () => ({ width: size, height: size }) as DOMRect,
+    );
+    fireEvent.load(image);
+    expect(image.src).toBe(candidate(640));
+    expect(image).not.toHaveAttribute("data-original-fallback");
+    expect(image.style.objectFit).toBe("contain");
+    expect(image.style.visibility).not.toBe("hidden");
+
+    rerender(
+      <ResponsiveImage
+        src={src}
+        sizes="200px"
+        className="parent-refresh"
+        alt="Cropped image"
+        width={144}
+        height={144}
+        style={{ objectFit: "cover" }}
+      />,
+    );
+    expect(image.src).toBe(candidate(640));
+    expect(image).not.toHaveAttribute("srcset");
+    current = candidate(640);
+    fireEvent.load(image);
+    expect(image.style.objectFit).toBe("cover");
+    size = 350;
+    act(() => window.dispatchEvent(new Event("resize")));
+    expect(image.src).toBe(candidate(1920));
+    expect(image).not.toHaveAttribute("data-original-fallback");
+  });
+
+  it("requalifies changed fit at the same size and recovers from a failed pending upgrade", () => {
+    vi.stubGlobal("devicePixelRatio", 1);
+    const src = `https://juicebox.center/ipfs/${CID}/panorama.png`;
+    const view = (objectFit: "contain" | "cover") => (
+      <ImageWithFallback
+        src={src}
+        sizes="144px"
+        alt="Changing fit"
+        style={{ objectFit }}
+        fallback={<span>Image unavailable</span>}
+      />
+    );
+    const { rerender } = render(view("contain"));
+    const image = screen.getByAltText("Changing fit") as HTMLImageElement;
+    const current = new URL(
+      image.srcset
+        .split(", ")
+        .find((entry) => entry.endsWith(" 384w"))!
+        .split(" ")[0],
+      window.location.href,
+    ).href;
+    Object.defineProperties(image, {
+      complete: { configurable: true, value: true },
+      currentSrc: { configurable: true, value: current },
+      naturalWidth: { configurable: true, value: 384 },
+      naturalHeight: { configurable: true, value: 96 },
+    });
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+      width: 144,
+      height: 144,
+    } as DOMRect);
+    fireEvent.load(image);
+    expect(image.style.objectFit).toBe("contain");
+    expect(image).toHaveAttribute("srcset");
+    rerender(view("cover"));
+    expect(new URL(image.src).searchParams.get("w")).toBe("640");
+    expect(image.style.objectFit).toBe("contain");
+    expect(image.style.visibility).toBe("");
+    // A failed replacement can retain the previous decoded currentSrc.
+    fireEvent.error(image);
+    expect(image.src).toBe(src);
+    expect(image).toHaveAttribute("data-original-fallback", "true");
+    expect(screen.queryByText("Image unavailable")).not.toBeInTheDocument();
+    fireEvent.error(image);
+    expect(screen.getByText("Image unavailable")).toBeInTheDocument();
   });
 
   it("never renders an arbitrary metadata URL", () => {

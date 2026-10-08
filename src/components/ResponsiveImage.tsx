@@ -5,7 +5,7 @@ import {
   responsiveImageProps,
   retryOriginalImage,
 } from "@/lib/responsive-image";
-import { useEffect, useRef, useState, type ImgHTMLAttributes } from "react";
+import { useLayoutEffect, useRef, useState, type ImgHTMLAttributes } from "react";
 
 type ResponsiveImageProps = Omit<
   ImgHTMLAttributes<HTMLImageElement>,
@@ -16,7 +16,7 @@ type ResponsiveImageProps = Omit<
   alt: string;
 };
 
-/** Native layout, responsive delivery, and a single original-source retry. */
+/** Native priority/layout, sized delivery, and terminal original-source recovery. */
 export function ResponsiveImage({
   src,
   sizes,
@@ -26,15 +26,20 @@ export function ResponsiveImage({
   ...props
 }: ResponsiveImageProps) {
   const ref = useRef<HTMLImageElement>(null);
-  const [originalSrc, setOriginalSrc] = useState<string | null>(null);
-  // Critical/default-eager images must paint from SSR before hydration. Their
-  // unknown source dimensions cannot safely qualify a cropped derivative yet.
-  const optimize = props.loading === "lazy" && props.fetchPriority !== "high";
-  const delivery = optimize ? responsiveImageProps(src, sizes, originalSrc === src) : { src };
-  useEffect(
+  const [selection, setSelection] = useState<{ source: string; selected: string } | null>(null);
+  const delivery = responsiveImageProps(
+    src,
+    sizes,
+    selection?.source === src ? selection.selected : undefined,
+    style?.objectFit,
+  );
+  // Requalify a changed CSS/inline fit before paint, even when its box is unchanged.
+  useLayoutEffect(
     () =>
-      ref.current ? observeResponsiveImage(ref.current, () => setOriginalSrc(src)) : undefined,
-    [src, optimize],
+      ref.current
+        ? observeResponsiveImage(ref.current, (selected) => setSelection({ source: src, selected }))
+        : undefined,
+    [src, sizes, style?.objectFit, props.className],
   );
   return (
     // Delivery uses Next's supported getImageProps API; layout stays with callers.
@@ -47,7 +52,7 @@ export function ResponsiveImage({
       ref={ref}
       style={{ ...style, ...delivery.style }}
       onError={(event) => {
-        if (retryOriginalImage(event.currentTarget)) setOriginalSrc(src);
+        if (retryOriginalImage(event.currentTarget)) setSelection({ source: src, selected: src });
         else onError?.(event);
       }}
     />

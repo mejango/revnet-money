@@ -4,7 +4,7 @@ import { getProjectLinks } from "@/lib/projectLinks";
 import type { JBProjectMetadata } from "@bananapus/nana-sdk-core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 describe("untrusted project content", () => {
   it("removes script elements, event handlers, and executable links from generic HTML", () => {
@@ -89,20 +89,55 @@ describe("untrusted project content", () => {
     const cid = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
     render(
       <ProjectRichText
-        source={`<img alt="Pinned art" src="ipfs://${cid}" srcset="https://attacker.example/track.png 1w" sizes="1px" data-original-src="https://attacker.example/track.png" data-original-fallback="true" style="position:fixed" onerror="alert(1)">`}
+        source={`<img alt="Pinned art" src="ipfs://${cid}" srcset="https://attacker.example/track.png 1w" sizes="1px" data-original-src="https://attacker.example/track.png" data-original-fallback="true" data-image-fit="cover" style="position:fixed" onerror="alert(1)">`}
       />,
     );
     const image = screen.getByAltText("Pinned art");
     expect(image.outerHTML).not.toContain("attacker.example");
     expect(image).not.toHaveAttribute("onerror");
     expect(image).not.toHaveAttribute("data-original-fallback");
-    expect(image).toHaveStyle({ visibility: "hidden" });
+    expect(image).not.toHaveAttribute("data-image-fit");
+    expect(image).toHaveStyle({ objectFit: "contain" });
+    expect(image).not.toHaveStyle({ visibility: "hidden" });
     fireEvent.error(image);
     expect(image).toHaveAttribute("src", `https://juicebox.center/ipfs/${cid}`);
     expect(image).not.toHaveAttribute("srcset");
     fireEvent.error(image);
     expect(image).toHaveAttribute("src", `https://juicebox.center/ipfs/${cid}`);
     expect(image).not.toHaveStyle({ visibility: "hidden" });
+  });
+
+  it("uses the shared candidate progression for sanitized description images", () => {
+    vi.stubGlobal("devicePixelRatio", 1);
+    const cid = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
+    render(<ProjectRichText source={`![Description panorama](ipfs://${cid})`} />);
+    const image = screen.getByAltText("Description panorama") as HTMLImageElement;
+    const candidates = image.srcset.split(", ");
+    const initial = candidates.find((entry) => entry.endsWith(" 640w"))!.split(" ")[0];
+    Object.defineProperties(image, {
+      complete: { configurable: true, value: true },
+      currentSrc: { configurable: true, value: new URL(initial, window.location.href).href },
+      naturalWidth: { configurable: true, value: 640 },
+      naturalHeight: { configurable: true, value: 160 },
+    });
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+      width: 300,
+      height: 300,
+    } as DOMRect);
+    fireEvent.load(image);
+    expect(new URL(image.src).searchParams.get("w")).toBe("1200");
+    expect(image).not.toHaveAttribute("data-original-fallback");
+    expect(image.style.objectFit).toBe("contain");
+    expect(image.style.visibility).toBe("");
+    // Native errors may retain the previously decoded currentSrc while the
+    // selected replacement is pending. The ancestor capture still recovers.
+    fireEvent.error(image);
+    expect(image.src).toBe(`https://juicebox.center/ipfs/${cid}`);
+    expect(image).toHaveAttribute("data-original-fallback", "true");
+    fireEvent.error(image);
+    expect(image.src).toBe(`https://juicebox.center/ipfs/${cid}`);
+    expect(image.style.visibility).toBe("");
+    expect(image.style.objectFit).toBe("");
   });
 
   it("caps project-controlled input before parsing", () => {

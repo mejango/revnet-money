@@ -37,3 +37,9 @@
 
 - Finding: replacing the entire installed SDK directory with a preview tarball also removed its nested bs58/base-x packages, causing fallback to different root major versions while every manifest hash stayed unchanged.
 - Rule: retain nested node_modules when replacing only a package's own files, then verify the whole installed package-path/content graph and actual dependency resolution. Package metadata and compiled-file equality alone do not qualify the installation or bundle measurement. Invalidate measurements from an incorrect graph; require final clean-install CI before release.
+
+## 2026-10-08 — Request priority must not bypass appropriate image sizing
+
+- Correction: the user asked that critical images not download oversized originals either.
+- Rule: let loading hints control timing independently from the shared image-size policy. Use a visible contained derivative before unknown crop geometry is available, then select the smallest adequate existing derivative before resorting to an original. Preserve source/format/error exceptions and state their actual limits rather than claiming a universal byte cap.
+- Owning checks: responsive-image observer, native SSR and source/rerender regressions enforce sizing for default/eager/high-priority images and sufficient physical pixels before intended fit restoration.
