@@ -917,7 +917,7 @@ The aggregate threshold is2671 KiB with a three-line measured comment. An exact 
 - [x] Read required resources, installed Next docs and inventory existing consumers.
 - [x] Apply reviewed shared delivery policy and exact consumer sizes.
 - [x] Verify focused boundary, quality and fallback regressions.
-- [ ] Hand source and evidence to root for full gates and review.
+- [x] Hand source and evidence to root for full gates and review.
 
 
 ### Responsive-image implementation review
@@ -960,7 +960,7 @@ Observer ownership review: reproduced both pre-fix failures (incomplete original
 
 - [x] Make optimizer preparation and standalone verification explicit under ignore-scripts.
 - [x] Prove the actual npm entrypoints and retained policy with focused regressions.
-- [ ] Hand the scoped commit and OCI commands to root; run containers only after its build slot opens.
+- [x] Hand the scoped commit and OCI commands to root; run containers only after its build slot opens.
 
 
 Lifecycle review: explicit dev/build commands and the browser wrapper now prepare both pinned framework files and check the standalone CJS output without enabling npm lifecycle scripts. The five actual npm subprocess cases plus three existing compatibility cases pass (8 tests), including deliberately unpatched standalone output rejected by both build paths. Scoped ESLint, Prettier and diff checks pass. The initial restricted run failed only because the sandbox denied localhost fixture listeners; the test now rejects listen errors immediately and the permitted-loopback rerun passed in2.52s. Evidence is `/private/tmp/jb-image-oci-20261008/rnm-lifecycle-tests-loopback.log`; root started the actual browser build with these unchanged entrypoints and owns its result. Juicebox resolves ignore-scripts=false and retains its functioning hooks.
@@ -1005,3 +1005,11 @@ Root completed the queryless-fixture rebuild while this read-only analysis ran. 
 - **Resource budget:** Only shared helper, owning unit test and task notes; coordinate identical formula with Juicebox worker. No build or browser run here. Root serializes final rebuild and rechecks aggregate headroom after this measured correctness change.
 
 Pinch review result: the new native-event unit failed before the change because the128px derivative remained selected at scale2. The shared observer now includes visual viewport scale and adds/removes its resize listener; native scale2 selects the original once, scale3 retains it, and post-cleanup events do nothing. All41 focused image tests and scoped ESLint/Prettier pass. The matching Juicebox worker uses the same formula and event ownership. Root owns the already-required final rebuild, actual browser pinch proof and new aggregate byte measurement; no speculative cap adjustment was made here.
+
+### Coordinator final verification — 2026-10-08
+
+Responsive lazy images retain canonical metadata and use the original when crop, screen density or pinch zoom needs more detail. Critical eager images remain visible before hydration. Complete coverage passes 2,484 tests with one existing skip; the full browser suite passes 144 cases without retries, with 26 skips (twenty avoid repeating the internal image matrix, six predate this change). Five dedicated image-quality checks and the supplementary real-photo comparison pass. Type, lint, formatting, dead-code, source, dependency, advisory, deployment, protocol, production build, standalone and bundle gates also pass.
+
+The clean Linux ARM64 OCI build at `dfdbb271238843cdae468cf5bc5a10831db282de` passed non-root/read-only health and exact revision checks, actual quality-75/90 decoding, proof-route exclusion and the pinned runtime optimizer hash. Image ID: `sha256:cc93a3c0a3eaeb943b78066cc8caf395abb9770ae384a83b10789bdef5d09620`. The fresh build confirms explicit optimizer preparation works under the existing ignore-scripts policy. Final application source is unchanged by this task-note commit. No push, merge or deployment was performed.
+
+The representative photo transfers 86,904 rather than 1,179,829 bytes at mobile 3× while retaining 1024 decoded pixels for 960 required; inspected screenshot pairs show no added grain. This is a local sample, not a sitewide estimate. Full evidence and retained diagnostic failures are in the workspace root at `docs/performance/2026-10-08-website-images/` and the owning implementation plan. Local ARM64 container checks do not claim AMD64 or live production verification.
