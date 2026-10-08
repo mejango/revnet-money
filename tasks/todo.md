@@ -863,3 +863,42 @@ The official tarball matches the registry SHA1/SHA512 and root's SHA256, version
 The whole installed graph before adoption exactly matches the restored113,086-path inventory. Its after inventory retains every path, file and symlink, with differences confined to core package.json and the installed hidden lock. All754 official package files match the tarball. Direct Node resolution and deep npm traversal confirm the retained SDK-local bs58 5.0.0/base-x4.0.1. Dependency integrity, deep SDK dependency traversal, typecheck, formatting ratchet, refinement and diff checks pass with pinned Node26.5.0/npm12.0.1; application, test, script and budget source remain identical to reviewed54d47ca2.
 
 Immutable evidence is `/private/tmp/jb-performance-checks/revnet-sdk-official-adoption-integrity.json` with before/after full graph inventories, original metadata snapshots, official file hashes and explicit structural metadata diffs. Gate logs, actual resolved paths and the final commit manifest use the same prefix, ending in `-verification.json` for the handoff manifest. Independent review and root-owned PR74 promotion follow. The invalid preview build and former staged-graph tests are preserved with their correction; this adoption ran no repeated suite, local build, browser, remote quote or wallet action. Final hosted clean-install full tests/build/budget/browser gates still qualify release behavior and size.
+
+## 2026-10-08 official-graph aggregate budget investigation
+
+## Plan refinement
+
+- **Objective:** Explain the final hosted aggregate bundle failure at2670.4 KiB against2670 and propose the smallest measured correction while preserving the payment and performance fixes.
+- **System fit:** Hosted CI37710473620 passed all preceding source, unit, audit, production build and standalone checks, plus the separate OCI job; route budgets and lazy wallet boundaries pass. Reuse the exact33b66876 application with verified official core2.24.5 and the restored physical dependency graph. Root owns any approved correction and final hosted release qualification.
+- **Reuse and simplicity:** Use one existing build:browser invocation, bundle/standalone gates, artifact hashing, bundle measurement and Acorn module inspector. Verify the current preview has its immutable matching archive before overwrite; compare the new artifact to the qualified activity baseline with matching physical package layout. Add no bundler instrumentation, dependency, source refactor or cap change before the causal evidence is reviewed.
+- **Evidence and unknowns:** The failed hosted log is revnet-payment-progress-ci-37710473620-failed.log. The earlier preview omitted nested dependencies and remains invalid for attribution. Qualified activity aggregate is2,730,720 bytes with210 chunks; the complete subsequent copy, permission, guard, progress and SDK changes may affect module placement, so per-chunk evidence must bound claims about individual causes. Local and hosted environment differences must remain explicit.
+- **Verification:** Verify preserved artifacts and the complete official package graph; run one pinned Node26.5.0/npm12.0.1 production fixture build and unchanged standalone/budget gates. Archive/hash the result, compare route/chunk/module totals and import placement against the qualified baseline, and send independent review evidence before proposing a minimal reduction or narrowly rounded aggregate limit. Final hosted full CI must pass after any accepted correction.
+- **Resource budget:** Root grants this sole sequential local build slot; no browser, repeated full unit suite, resolver, remote quote or wallet action. Keep the invalid preview and every qualified archive untouched. Stop and replan if the measured difference exceeds known source/dependency scope or changes lazy boundaries; release the build slot as soon as the single build ends.
+
+- [x] Verify official graph and archive identity before the single build.
+- [x] Build once and compare exact artifact/chunk/module measurements.
+- [x] Hand measured correction proposal to root and independent reviewer.
+
+### Official-graph measurement
+
+The single authorized production build and standalone check pass. The unchanged aggregate gate reproduces the failure at2,734,565 bytes (2670.5 KiB),485 bytes over2670 KiB; all route budgets and wallet vendor lazy-loading boundaries pass. The qualified matching-fixture activity artifact is2,730,720 bytes, so the complete reviewed app/SDK change adds3,845 bytes (0.14%). Hosted CI reports2670.4 KiB with additional deterministic public RPC/subgraph/Dwellir inputs; local and hosted artifacts are not claimed byte-identical.
+
+Acorn extraction pairs every1,872 unique module across31 generated ID renames. All2,365 emitted copies, every210 chunk's mapped module set and all33 shipped client-reference manifests remain equivalent; the two browser-only proof routes stay excluded by the existing budget. The ten existing chunks containing utils collectively grow3,162 bytes, shared review chunk9203 grows551 bytes, and all other chunks net132 bytes. The shared review was already initially referenced in both artifacts; its proof and lifecycle retain one copy each. Whole-chunk deltas include app copy/permission and generated hash/minifier differences, so standalone module gzip diagnostics are not additive feature savings.
+
+The original invalid preview/archive and qualified baseline retain all verified hashes. The new official3,035-file artifact is preserved at `/private/tmp/jb-performance-tools-20261007/revnet-safe-payment-official-33b66876-preserved/.next`. `/private/tmp/jb-performance-checks/revnet-official-budget-analysis.json` links inputs, graph, artifact, chunk/module/route evidence and original failure logs. Root and the independent reviewer received the proposal to round only2670→2671 KiB, leaving539 bytes of measured headroom and every route/lazy boundary unchanged. No cap or source change has been applied; a speculative formatter split would require another build without a demonstrated loading benefit. The build slot has been returned, and final hosted full CI remains required after an accepted correction.
+
+## Plan refinement
+
+- **Objective:** Apply the independently approved minimum aggregate budget adjustment2670→2671 KiB and hand off a clean correction for hosted CI.
+- **System fit:** Only the existing bundle gate's aggregate threshold and evidence comment change; runtime, payment authority/recovery, route limits and lazy-wallet checks remain unchanged. Root owns final hosted qualification and release.
+- **Reuse and simplicity:** Reuse the already-built verified official artifact and current gate; no rebuild, dependency change, source refactor or new test.
+- **Evidence and unknowns:** Root and the independent reviewer approve analysis1166147c88206f7e3c14599f29144443616609d7ab045630ada410fd65ea1eb6 after independent artifact/module/route verification. Measured excess is485 bytes and the one-KiB rounding leaves539 bytes; final hosted evidence remains required.
+- **Verification:** Run the owning bundle gate on the same official artifact, preserving the original failed log; run formatting and diff checks, assert all non-aggregate checks unchanged, then commit only the budget script and task notes for exact-head review.
+- **Resource budget:** One threshold/comment edit and bounded existing artifact/static checks. No second build, browser, full unit suite or production action; send the clean head immediately for root's hosted CI.
+
+- [x] Apply the approved aggregate threshold/comment and qualify the unchanged artifact.
+- [x] Commit the scoped correction and report its exact source/evidence to root.
+
+### Approved correction result
+
+The aggregate threshold is2671 KiB with a three-line measured comment. An exact text comparison proves these are the bundle script's only changes:900 KiB per-route and1100 KiB route-referenced limits, asset counting/exclusions and all lazy-wallet assertions are unchanged. The owning bundle check now passes on the same official artifact at2,734,565 bytes; formatting and diff checks pass. No rebuild or repeated unit suite occurred. The original failed gate and invalid preview evidence remain intact. `/private/tmp/jb-performance-checks/revnet-official-budget-correction-verification.json` pins the scoped commit, approved analysis, artifact and successful gate/scope logs for independent exact-head review and root's final hosted CI.

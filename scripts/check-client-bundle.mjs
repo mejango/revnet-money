@@ -98,7 +98,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // identical physical dependencies. Duplicate server React imports and project
 // contexts were removed before measuring. Round up only the aggregate ceiling;
 // route-referenced JavaScript is 960,296 B versus 956,388 B; other limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2670);
+// Official SDK 2.24.5 plus the reviewed copy, permission and payment changes
+// measure 2,734,565 B versus 2,730,720 B on the same physical dependency layout.
+// Module copies and route references are unchanged; round only aggregate by 1 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2671);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
