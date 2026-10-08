@@ -1,14 +1,33 @@
 import { TierMediaPreview } from "@/app/[slug]/components/v6/shop/TierMediaPreview";
 import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
+import { ResponsiveImage } from "@/components/ResponsiveImage";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 const CID = "bafkreihz5xk2crdko5mllpxbfa443m2o6pmzcmbg5b3uvif6ho4x45z674";
 
 describe("IPFS image failure handling", () => {
+  it.each([
+    {},
+    { loading: "eager" as const },
+    { loading: "lazy" as const, fetchPriority: "high" as const },
+  ])("renders critical images as visible originals before hydration: %j", (hints) => {
+    const src = `https://juicebox.center/ipfs/${CID}/logo.png`;
+    const html = renderToStaticMarkup(
+      <ResponsiveImage src={src} sizes="144px" alt="Critical logo" {...hints} />,
+    );
+    expect(html).toContain(`src="${src}"`);
+    expect(html).not.toContain("srcSet");
+    expect(html).not.toContain("visibility:hidden");
+    expect(html).not.toContain("data-original-src");
+    expect(html).not.toContain("/_next/image");
+  });
+
   it("requests a responsive derivative and retries the accepted original before fallback", () => {
     render(
       <IpfsImage
+        loading="lazy"
         src={`ipfs://${CID}/logo.png`}
         alt="Project logo"
         width={48}
@@ -41,6 +60,7 @@ describe("IPFS image failure handling", () => {
   it("starts a newly selected source hidden with its own original retry", () => {
     const { rerender } = render(
       <IpfsImage
+        loading="lazy"
         src={`ipfs://${CID}/first.png`}
         sizes="48px"
         alt="Changing logo"
@@ -52,6 +72,7 @@ describe("IPFS image failure handling", () => {
     expect(first).toHaveAttribute("data-original-fallback", "true");
     rerender(
       <IpfsImage
+        loading="lazy"
         src={`ipfs://${CID}/second.png`}
         sizes="48px"
         alt="Changing logo"
@@ -72,12 +93,19 @@ describe("IPFS image failure handling", () => {
   it("retains the original across same-source layout and parent updates", () => {
     const src = `ipfs://${CID}/logo.png`;
     const { rerender } = render(
-      <IpfsImage src={src} sizes="48px" alt="Resized logo" fallback={<span>Unavailable</span>} />,
+      <IpfsImage
+        loading="lazy"
+        src={src}
+        sizes="48px"
+        alt="Resized logo"
+        fallback={<span>Unavailable</span>}
+      />,
     );
     const image = screen.getByAltText("Resized logo");
     fireEvent.error(image);
     rerender(
       <IpfsImage
+        loading="lazy"
         src={src}
         sizes="144px"
         className="large"
@@ -97,6 +125,7 @@ describe("IPFS image failure handling", () => {
   it("never renders an arbitrary metadata URL", () => {
     render(
       <IpfsImage
+        loading="lazy"
         src="https://attacker.example/tracker.png"
         alt="Project logo"
         fallback={<span>Safe fallback</span>}
@@ -110,7 +139,14 @@ describe("IPFS image failure handling", () => {
   it("renders a bounded inert inline SVG from project metadata", () => {
     const svg =
       "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2010%2010%22%3E%3Crect%20width%3D%2210%22%20height%3D%2210%22%2F%3E%3C%2Fsvg%3E";
-    render(<IpfsImage src={svg} alt="Inline project logo" fallback={<span>Safe fallback</span>} />);
+    render(
+      <IpfsImage
+        loading="lazy"
+        src={svg}
+        alt="Inline project logo"
+        fallback={<span>Safe fallback</span>}
+      />,
+    );
 
     expect(screen.getByRole("img", { name: "Inline project logo" })).toHaveAttribute("src", svg);
   });
@@ -118,6 +154,7 @@ describe("IPFS image failure handling", () => {
   it("rejects active inline SVG metadata", () => {
     render(
       <IpfsImage
+        loading="lazy"
         src="data:image/svg+xml,%3Csvg%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E%3C%2Fsvg%3E"
         alt="Unsafe project logo"
         fallback={<span>Safe fallback</span>}

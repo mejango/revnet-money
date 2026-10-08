@@ -27,11 +27,14 @@ export function ResponsiveImage({
 }: ResponsiveImageProps) {
   const ref = useRef<HTMLImageElement>(null);
   const [originalSrc, setOriginalSrc] = useState<string | null>(null);
-  const delivery = responsiveImageProps(src, sizes, originalSrc === src);
+  // Critical/default-eager images must paint from SSR before hydration. Their
+  // unknown source dimensions cannot safely qualify a cropped derivative yet.
+  const optimize = props.loading === "lazy" && props.fetchPriority !== "high";
+  const delivery = optimize ? responsiveImageProps(src, sizes, originalSrc === src) : { src };
   useEffect(
     () =>
       ref.current ? observeResponsiveImage(ref.current, () => setOriginalSrc(src)) : undefined,
-    [src],
+    [src, optimize],
   );
   return (
     // Delivery uses Next's supported getImageProps API; layout stays with callers.
