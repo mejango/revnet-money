@@ -1,5 +1,7 @@
 "use client";
 
+import { relayrPaymentReview } from "@/lib/relayr-payment-review";
+
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { formatShortDateTime } from "@/lib/date";
 import {
@@ -2230,6 +2232,7 @@ export function useSendRelayrTx() {
               gas: RELAYR_PAYMENT_GAS,
               data: payment.calldata,
               label: "Pay network fee",
+              ...relayrPaymentReview(payment.calldata),
             },
           ],
         });

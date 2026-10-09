@@ -220,7 +220,7 @@ export function describeSavedRoutingCall(saved: FrozenBatchCall) {
     sourceProjectId: call.sourceProjectId.toString(),
     amountLabel: isAddressEqual(call.token, NATIVE_TOKEN)
       ? `${formatUnits(call.amount, 18)} ETH`
-      : `${call.amount} base units of ${call.token}`,
+      : "Amount unavailable",
     beneficiary: call.beneficiary,
     pendingCallId,
     hash: saved.hash,
@@ -424,7 +424,7 @@ export async function readPendingRouterPayment(
     throw new Error("The chain's executable transaction gas limit is unavailable.");
   }
   const gasCap = block.gasLimit < 16_777_216n ? block.gasLimit : 16_777_216n;
-  let amountLabel = `${call.amount} base units of ${call.token}`;
+  let amountLabel = "Amount unavailable";
   if (isAddressEqual(call.token, NATIVE_TOKEN)) amountLabel = `${formatUnits(call.amount, 18)} ETH`;
   else {
     try {
@@ -434,7 +434,7 @@ export async function readPendingRouterPayment(
       ]);
       amountLabel = `${formatUnits(call.amount, decimals)} ${symbol}`;
     } catch {
-      /* Raw base units remain exact if token metadata is unavailable. */
+      /* Keep unreadable token metadata separate from a displayable amount. */
     }
   }
   return {

@@ -12,9 +12,13 @@ const mocks = vi.hoisted(() => ({
   saved: vi.fn(),
   recheck: vi.fn(),
   describe: vi.fn(),
+  names: vi.fn(),
   address: "0x0000000000000000000000000000000000000001",
 }));
 vi.mock("wagmi", () => ({ useAccount: () => ({ address: mocks.address, chainId: 1 }) }));
+vi.mock("@/lib/bendystraw/client", () => ({
+  queryBendystrawFromBrowser: mocks.names,
+}));
 vi.mock("@/lib/wagmiTransports", () => ({ getViemPublicClient: () => ({}) }));
 vi.mock("@/hooks/useMultichainBatch", () => ({
   useMultichainBatch: () => ({
@@ -35,13 +39,15 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     onClick,
     disabled,
     loading,
+    "aria-label": ariaLabel,
   }: {
     children: ReactNode;
     onClick: () => void;
     disabled?: boolean;
     loading?: boolean;
+    "aria-label"?: string;
   }) => (
-    <button onClick={onClick} disabled={disabled || loading}>
+    <button aria-label={ariaLabel} onClick={onClick} disabled={disabled || loading}>
       {children}
     </button>
   ),
@@ -70,15 +76,19 @@ const row = (id: string, ready = true) => ({
     pendingCallId: id,
   },
 });
-function setup() {
+function setup(expanded = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={client}>
       <PendingRoutingPayments projects={projects} />
     </QueryClientProvider>,
   );
+  const details = rendered.container.querySelector("details");
+  if (details && expanded) details.open = true;
+  return rendered;
 }
 beforeEach(() => {
+  mocks.names.mockResolvedValue({ project: null });
   mocks.address = "0x0000000000000000000000000000000000000001";
   mocks.saved.mockReturnValue(undefined);
   mocks.recheck.mockImplementation(async () => mocks.saved());
@@ -98,6 +108,53 @@ afterEach(() => {
 });
 
 describe("payment recovery", () => {
+  it("starts collapsed and hides raw amounts until payment details are verified", async () => {
+    let resolve!: (value: ReturnType<typeof row>) => void;
+    mocks.payment.mockReturnValue(
+      new Promise((finish) => {
+        resolve = finish;
+      }),
+    );
+    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
+      project.chainId === 1
+        ? [{ ...row("one").indexed, amount: "42500018", token: mocks.address }]
+        : [],
+    );
+    const rendered = setup(false);
+    const summary = await screen.findByText("1 payment awaiting processing.");
+    const details = rendered.container.querySelector("details")!;
+    expect(details.open).toBe(false);
+    fireEvent.click(summary);
+    expect(details.open).toBe(true);
+    expect(rendered.container.textContent).not.toContain("42500018");
+    expect(rendered.container.textContent).not.toContain("base units");
+    expect(rendered.container.textContent).toContain("Checking payment amount");
+    expect(screen.getByRole("button", { name: "Checking payment" })).toBeDisabled();
+    await act(async () => resolve(row("one")));
+    expect(await screen.findByText("0.1 ETH")).toBeTruthy();
+  });
+
+  it("resolves source and destination names using their exact chain and project", async () => {
+    mocks.names.mockImplementation(async (_operation, ref) => ({
+      project: {
+        projectId: ref.projectId,
+        version: 6,
+        name: ref.projectId === 7 ? "Source business" : "Destination business",
+      },
+    }));
+    setup();
+    await screen.findByText("To Destination business on Ethereum");
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
+    const dialog = await screen.findByRole("dialog", { name: "Retry payments" });
+    expect(within(dialog).getByText("Source business")).toBeTruthy();
+    expect(within(dialog).getByText("Destination business")).toBeTruthy();
+    expect(mocks.names).toHaveBeenCalledWith(
+      expect.anything(),
+      { chainId: 1, projectId: 7, version: 6 },
+      1,
+    );
+  });
+
   it.each(["uncertain", "pending"])(
     "continues the saved submission after a %s result without fresh routing confirmation",
     async (outcome) => {
@@ -117,11 +174,11 @@ describe("payment recovery", () => {
         return { status: "pending", hashes: [] };
       });
       setup();
-      fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
       const dialog = await screen.findByRole("dialog");
-      fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
       const resume = await within(dialog).findByRole("button", { name: "Continue" });
-      expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
+      expect(within(dialog).queryByRole("button", { name: "Retry" })).toBeNull();
       expect(within(dialog).queryByRole("button", { name: "Done" })).toBeNull();
       if (outcome === "uncertain") {
         expect(within(dialog).getByRole("alert")).toHaveTextContent(message);
@@ -142,17 +199,17 @@ describe("payment recovery", () => {
     mocks.indexed.mockResolvedValue([]);
     setup();
     await waitFor(() => expect(mocks.indexed).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByText("Payments awaiting routing")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("payments awaiting processing.")).toBeNull());
   });
 
   it("offers a per-payment review with the original beneficiary and no settlement claim", async () => {
     setup();
-    expect(await screen.findByText("1 payment ready to route.")).toBeTruthy();
-    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+    expect(await screen.findByText("1 payment ready to retry.")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
-    expect(screen.getByText(/A retry can remain pending/)).toBeTruthy();
+    expect(screen.getByText(/may stay pending/)).toBeTruthy();
     expect(screen.getByText("Beneficiary")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByText(/Routing review complete/);
     expect(mocks.batch).toHaveBeenCalledWith(expect.objectContaining({ calls: [{ id: "one" }] }));
   });
@@ -172,12 +229,12 @@ describe("payment recovery", () => {
       row(indexed.pendingCallId, indexed.pendingCallId !== "waiting"),
     );
     setup();
-    expect(await screen.findByText("2 of 3 payments ready to route.")).toBeTruthy();
-    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
+    expect(await screen.findByText("2 of 3 payments ready to retry.")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry all payments" }));
     expect(screen.getByText("Payments in cooldown must wait.")).toBeTruthy();
-    expect(await screen.findByRole("button", { name: "Confirm routing" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeEnabled();
     expect(screen.queryByRole("checkbox")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() =>
       expect(mocks.batch).toHaveBeenCalledWith(
         expect.objectContaining({ calls: [{ id: "one" }, { id: "base" }] }),
@@ -199,16 +256,16 @@ describe("payment recovery", () => {
       project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
     );
     const rendered = setup();
-    await screen.findByText("14 payments ready to route.");
+    await screen.findByText("14 payments ready to retry.");
     expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Re-check saved status" })).toBeNull();
     expect(screen.queryByText(/Saved batch:/)).toBeNull();
     expect(screen.queryByText(/A wallet submission has an unknown result/)).toBeNull();
     expect(mocks.recheck).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Batch all pending" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry all payments" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getAllByRole("listitem")).toHaveLength(14);
-    const confirm = within(dialog).getByRole("button", { name: "Confirm routing" });
+    const confirm = within(dialog).getByRole("button", { name: "Retry" });
     expect(within(dialog).queryByRole("checkbox")).toBeNull();
     expect(confirm).toBeEnabled();
     expect(mocks.batch).not.toHaveBeenCalled();
@@ -251,17 +308,17 @@ describe("payment recovery", () => {
       project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
     );
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
-    expect(await screen.findByRole("button", { name: "Confirm routing" })).toBeEnabled();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry all payments" }));
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(mocks.batch).not.toHaveBeenCalled();
     expect(mocks.saved()).toMatchObject({ id: "unknown", refreshable: true });
-    fireEvent.click(screen.getByRole("button", { name: "Batch all pending" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry all payments" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getAllByRole("listitem")).toHaveLength(14);
     expect(within(dialog).queryByRole("checkbox")).toBeNull();
-    expect(within(dialog).getByRole("button", { name: "Confirm routing" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Retry" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
     expect(mocks.prepare).toHaveBeenCalledTimes(28);
     expect(mocks.batch).not.toHaveBeenCalled();
@@ -289,10 +346,10 @@ describe("payment recovery", () => {
       throw new Error("The saved batch changed. Review again.");
     });
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry all payments" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
     fireEvent.click(await screen.findByRole("button", { name: "Review again" }));
-    const confirm = await screen.findByRole("button", { name: "Confirm routing" });
+    const confirm = await screen.findByRole("button", { name: "Retry" });
     expect(confirm).toBeEnabled();
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(within(screen.getByRole("dialog")).getAllByRole("listitem")).toHaveLength(14);
@@ -316,15 +373,15 @@ describe("payment recovery", () => {
       refreshable: true,
     });
     const rendered = setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
-    expect(await screen.findByRole("button", { name: "Confirm routing" })).toBeEnabled();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeEnabled();
     mocks.address = "0x0000000000000000000000000000000000000002";
     rendered.rerender(
       <QueryClientProvider client={new QueryClient()}>
         <PendingRoutingPayments projects={projects} />
       </QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByText(/connected account changed/);
     expect(mocks.batch).not.toHaveBeenCalled();
   });
@@ -341,11 +398,11 @@ describe("payment recovery", () => {
       project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
     );
     setup();
-    await screen.findByText("14 payments ready to route.");
-    expect(screen.queryByRole("button", { name: "Batch all pending" })).toBeNull();
+    await screen.findByText("14 payments ready to retry.");
+    expect(screen.queryByRole("button", { name: "Retry all payments" })).toBeNull();
     expect(
       screen
-        .getAllByRole("button", { name: "Review routing" })
+        .getAllByRole("button", { name: "Retry payment" })
         .every((button) => button.hasAttribute("disabled")),
     ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Resume saved batch" }));
@@ -358,8 +415,8 @@ describe("payment recovery", () => {
       project.chainId === 1 ? [row("one").indexed, row("two").indexed] : [],
     );
     setup();
-    const batch = await screen.findByRole("button", { name: "Batch all pending" });
-    const firstRetry = screen.getAllByRole("button", { name: "Review routing" })[0];
+    const batch = await screen.findByRole("button", { name: "Retry all payments" });
+    const firstRetry = screen.getAllByRole("button", { name: "Retry payment" })[0];
     expect(
       batch.compareDocumentPosition(firstRetry) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -408,17 +465,17 @@ describe("payment recovery", () => {
       return row(indexed.pendingCallId);
     });
     setup();
-    expect(await screen.findByText("Found 7 payments. Checking current status…")).toBeTruthy();
-    expect(screen.getAllByText("Checking payment status…")).toHaveLength(7);
+    expect(await screen.findByText("7 payments awaiting processing.")).toBeTruthy();
+    expect(screen.getAllByText("Checking payment amount")).toHaveLength(7);
     expect(screen.getByRole("button", { name: "Resume saved batch" })).toBeEnabled();
     expect(screen.getByText(/Saved batch: 0 of 3 attempts handled/)).toBeTruthy();
     expect(mocks.prepare).not.toHaveBeenCalled();
     finish();
-    await screen.findByText("7 payments ready to route.");
+    await screen.findByText("7 payments ready to retry.");
     expect(screen.getAllByText("0.1 ETH")).toHaveLength(7);
     expect(
       screen
-        .getAllByRole("button", { name: "Review routing" })
+        .getAllByRole("button", { name: "Retry payment" })
         .every((button) => button.hasAttribute("disabled")),
     ).toBe(true);
   });
@@ -435,9 +492,9 @@ describe("payment recovery", () => {
     });
     setup();
     await screen.findByText("Could not verify payment: RPC unavailable");
-    expect(screen.getAllByText("To project 1 on Ethereum")).toHaveLength(2);
+    expect(screen.getAllByText("To Project 1 on Ethereum")).toHaveLength(2);
     expect(screen.getByText("0.1 ETH")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Batch all pending" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retry all payments" })).toBeDisabled();
     expect(mocks.prepare).not.toHaveBeenCalled();
   });
 
@@ -453,10 +510,10 @@ describe("payment recovery", () => {
       project.chainId === 1 ? Array.from({ length: 8 }, (_, i) => row(`item-${i}`).indexed) : [],
     );
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry all payments" }));
     expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
     expect(screen.queryByText(/Saved batch:/)).toBeNull();
-    await screen.findByRole("button", { name: "Confirm routing" });
+    await screen.findByRole("button", { name: "Retry" });
     // A later journal update must not silently change the selection being confirmed.
     mocks.saved.mockReturnValue({
       id: "different",
@@ -465,7 +522,7 @@ describe("payment recovery", () => {
       total: 1,
       replaceableDraft: false,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() =>
       expect(mocks.batch).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -491,10 +548,10 @@ describe("payment recovery", () => {
       throw new Error("Quote unavailable");
     });
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
     fireEvent.click(await screen.findByRole("button", { name: "Review again" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
     await waitFor(() => expect(mocks.batch).toHaveBeenCalledTimes(2));
     expect(mocks.batch.mock.calls[0][0].replaceDraftId).toBe("old-draft");
     expect(mocks.batch.mock.calls[1][0].replaceDraftId).toBeUndefined();
@@ -550,7 +607,7 @@ describe("payment recovery", () => {
       project.chainId === 1 ? [row("a").indexed, row("b").indexed] : [],
     );
     setup();
-    expect(await screen.findByRole("button", { name: "Batch all pending" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Retry all payments" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
     expect(mocks.recheck).toHaveBeenCalledTimes(1);
     expect(mocks.batch).not.toHaveBeenCalled();
@@ -593,9 +650,9 @@ describe("payment recovery", () => {
       return saved;
     });
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
-    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
+    const dialog = await screen.findByRole("dialog", { name: "Retry payments" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
     act(() => {
       mocks.saved.mockReturnValue(saved);
       mocks.batch.mock.calls[0][0].onBeforePayment();
@@ -618,7 +675,7 @@ describe("payment recovery", () => {
 
   it("blocks submit if the wallet changed after review", async () => {
     const rendered = setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
     await screen.findByRole("dialog");
     mocks.address = "0x0000000000000000000000000000000000000002";
     rendered.rerender(
@@ -626,7 +683,7 @@ describe("payment recovery", () => {
         <PendingRoutingPayments projects={projects} />
       </QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByText(/connected account changed/);
     expect(mocks.batch).not.toHaveBeenCalled();
   });
@@ -639,8 +696,8 @@ describe("payment recovery", () => {
       obsoleteSafeProposals: [{ chainId: 1, safe: mocks.address, hash, nonce: 7, callIndex: 0 }],
     });
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
     const link = await screen.findByRole("link", { name: `Safe proposal ${hash}` });
     expect(link.getAttribute("href")).toContain(`safe=eth:${mocks.address}`);
     expect(screen.getByText(/Cancel or replace nonce 7/)).toBeTruthy();
@@ -649,25 +706,25 @@ describe("payment recovery", () => {
 
   it("goes back with Cancel before anything is sent", async () => {
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
-    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
+    const dialog = await screen.findByRole("dialog", { name: "Retry payments" });
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(mocks.batch).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Review routing" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Retry payment" })).toBeEnabled();
   });
 
   it("refuses every way out after preparation reaches the payment boundary", async () => {
     let finish!: (result: unknown) => void;
     mocks.batch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
     const dialog = (await screen.findByRole("dialog", {
-      name: "Route pending payments",
+      name: "Retry payments",
     })) as HTMLDialogElement;
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(mocks.batch).toHaveBeenCalledTimes(1));
     const close = within(dialog).getByRole("button", { name: "Close" });
     const cancel = within(dialog).getByRole("button", { name: "Cancel" });
@@ -682,11 +739,11 @@ describe("payment recovery", () => {
     expect(close).toBeDisabled();
     expect(within(dialog).getByRole("status")).toHaveTextContent("Preparing routing…");
     expect(within(dialog).queryByRole("button", { name: "Cancel" })).toBeNull();
-    expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Retry" })).toBeNull();
     fireEvent.click(close);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(dialog);
-    expect(screen.getByRole("dialog", { name: "Route pending payments" })).toBe(dialog);
+    expect(screen.getByRole("dialog", { name: "Retry payments" })).toBe(dialog);
     expect(mocks.batch.mock.calls[0][0].signal.aborted).toBe(false);
 
     finish({ status: "success", hashes: [] });
@@ -701,13 +758,13 @@ describe("payment recovery", () => {
     );
     mocks.batch.mockReturnValueOnce(new Promise((_resolve, reject) => (fail = reject)));
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
-    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry all payments" }));
+    const dialog = await screen.findByRole("dialog", { name: "Retry payments" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
 
     expect(within(dialog).getByRole("status")).toHaveTextContent("Preparing routing…");
     expect(within(dialog).getAllByRole("listitem")).toHaveLength(14);
-    expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Retry" })).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(within(dialog).getByRole("button", { name: "Close" })).toBeEnabled();
     expect(mocks.batch.mock.calls[0][0].calls).toHaveLength(14);
@@ -721,7 +778,7 @@ describe("payment recovery", () => {
     expect(within(dialog).queryByRole("status")).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(within(dialog).getByRole("button", { name: "Close" })).toBeEnabled();
-    const confirm = within(dialog).getByRole("button", { name: "Confirm routing" });
+    const confirm = within(dialog).getByRole("button", { name: "Retry" });
     expect(confirm).toBeEnabled();
     expect(mocks.batch).toHaveBeenCalledTimes(1);
 
@@ -742,9 +799,9 @@ describe("payment recovery", () => {
         }),
       );
       setup();
-      fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
-      const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
-      fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
+      const dialog = await screen.findByRole("dialog", { name: "Retry payments" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
       const options = mocks.batch.mock.calls[0][0];
       expect(options.signal.aborted).toBe(false);
       fireEvent.click(
@@ -752,7 +809,7 @@ describe("payment recovery", () => {
       );
       expect(options.signal.aborted).toBe(true);
       expect(screen.queryByRole("dialog")).toBeNull();
-      expect(screen.getByRole("button", { name: "Review routing" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Retry payment" })).toBeDisabled();
 
       await act(async () => {
         options.onProgress("Late quote progress");
@@ -764,11 +821,11 @@ describe("payment recovery", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(screen.queryByText(/Late quote/)).toBeNull();
       expect(screen.queryByText(/Routing review complete/)).toBeNull();
-      expect(screen.getByRole("button", { name: "Review routing" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Retry payment" })).toBeEnabled();
       expect(mocks.batch).toHaveBeenCalledTimes(1);
 
-      fireEvent.click(screen.getByRole("button", { name: "Review routing" }));
-      const nextDialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+      fireEvent.click(screen.getByRole("button", { name: "Retry payment" }));
+      const nextDialog = await screen.findByRole("dialog", { name: "Retry payments" });
       act(() => {
         options.onProgress("Late quote progress");
         options.onCallProgress([{ status: "confirmed" }]);
@@ -776,7 +833,7 @@ describe("payment recovery", () => {
       expect(within(nextDialog).queryByRole("status")).toBeNull();
       expect(within(nextDialog).queryByText("Confirmed")).toBeNull();
       expect(within(nextDialog).queryByRole("button", { name: "Done" })).toBeNull();
-      expect(within(nextDialog).getByRole("button", { name: "Confirm routing" })).toBeEnabled();
+      expect(within(nextDialog).getByRole("button", { name: "Retry" })).toBeEnabled();
     },
   );
 
@@ -786,9 +843,9 @@ describe("payment recovery", () => {
       let finish!: (result: unknown) => void;
       mocks.batch.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
       const rendered = setup();
-      fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
-      const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
-      fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
+      const dialog = await screen.findByRole("dialog", { name: "Retry payments" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
       const options = mocks.batch.mock.calls[0][0];
       if (phase === "payment") act(() => options.onBeforePayment());
       expect(options.signal.aborted).toBe(false);
@@ -824,10 +881,10 @@ describe("payment recovery", () => {
     }));
     mocks.batch.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
-    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+    fireEvent.click(await screen.findByRole("button", { name: "Retry all payments" }));
+    const dialog = await screen.findByRole("dialog", { name: "Retry payments" });
     expect(within(dialog).queryByText("Waiting")).toBeNull();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
     const options = mocks.batch.mock.calls[0][0];
     expect(options.calls).toEqual(Array.from({ length: 14 }, (_, i) => ({ id: `item-${i}` })));
 
@@ -847,7 +904,7 @@ describe("payment recovery", () => {
     expect(items[0]).toHaveAttribute("data-state", "pending");
     expect(items[1]).toHaveAttribute("data-state", "active");
     expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled();
-    expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Retry" })).toBeNull();
 
     act(() => {
       options.onProgress("13 of 14 results checked. 12 confirmed; 1 reverted; 1 waiting.");
@@ -862,9 +919,9 @@ describe("payment recovery", () => {
     expect(within(dialog).getByText("Waiting")).toBeTruthy();
     expect(items[0]).toHaveAttribute("data-state", "pending");
     expect(items[13]).toHaveAttribute("data-state", "complete");
-    expect(items[13]).toHaveTextContent("14 ETH to project 1");
+    expect(items[13]).toHaveTextContent("14 ETH to Project 1");
     expect(items[4]).toHaveAttribute("data-state", "failed");
-    expect(items[4]).toHaveTextContent("5 ETH to project 1");
+    expect(items[4]).toHaveTextContent("5 ETH to Project 1");
     expect(items[4]).toHaveTextContent("Reverted");
     expect(items[4]).toHaveTextContent("×");
     expect(items[4]).not.toHaveTextContent("✓");
@@ -885,8 +942,8 @@ describe("payment recovery", () => {
     expect(mocks.batch).toHaveBeenCalledTimes(1);
 
     fireEvent.click(done);
-    fireEvent.click(await screen.findByRole("button", { name: "Batch all pending" }));
-    const nextDialog = await screen.findByRole("dialog", { name: "Route pending payments" });
+    fireEvent.click(await screen.findByRole("button", { name: "Retry all payments" }));
+    const nextDialog = await screen.findByRole("dialog", { name: "Retry payments" });
     act(() => options.onCallProgress(Array.from({ length: 14 }, () => ({ status: "confirmed" }))));
     expect(within(nextDialog).queryByText("Confirmed")).toBeNull();
     expect(within(nextDialog).queryByText("Already handled")).toBeNull();
@@ -899,18 +956,18 @@ describe("payment recovery", () => {
 
   it("ends the round on Done, still listing what it routed", async () => {
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
-    const dialog = await screen.findByRole("dialog", { name: "Route pending payments" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry payment" }));
+    const dialog = await screen.findByRole("dialog", { name: "Retry payments" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
 
     const done = await within(dialog).findByRole("button", { name: "Done" });
     expect(dialog).toHaveTextContent(/Routing review complete/);
-    expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Retry" })).toBeNull();
     expect(within(dialog).queryByRole("button", { name: "Cancel" })).toBeNull();
     const routed = within(dialog).getAllByRole("listitem");
     expect(routed).toHaveLength(1);
     expect(routed[0]).toHaveAttribute("data-state", "complete");
-    expect(routed[0]).toHaveTextContent("0.1 ETH to project 1");
+    expect(routed[0]).toHaveTextContent("0.1 ETH to Project 1");
 
     fireEvent.click(done);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

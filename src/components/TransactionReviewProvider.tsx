@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingText } from "@/components/ui/LoadingText";
+
 import {
   ReviewScopeContext,
   type TransactionReviewScope,
@@ -214,7 +216,7 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
           >
             <div className="w-full max-w-lg border border-melon-700 bg-melon-25 p-5 shadow-2xl">
               <p id={`transaction-review-loading-${active.id}`} role="status">
-                Loading transaction review…
+                <LoadingText text="Loading transaction review…" />
               </p>
               <button
                 type="button"

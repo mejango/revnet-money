@@ -1906,6 +1906,10 @@ describe("reviewed selected-call orchestration", () => {
           })),
         });
       });
+      expect(mocks.review).toHaveBeenCalledWith(expect.objectContaining({
+        title: "Retry payments",
+        description: "Pay network fees once for this batch. Each payment has its own result.",
+      }));
       expect(mocks.quote).toHaveBeenCalledOnce();
       expect(mocks.quote.mock.calls[0][0].map((row: { chainId: number }) => row.chainId)).toEqual([
         1, 1, 10,

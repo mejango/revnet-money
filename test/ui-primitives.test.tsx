@@ -6,6 +6,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { LoadingText } from "@/components/ui/LoadingText";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,16 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 describe("dependency-free UI primitives", () => {
+  it("animates loading dots without changing the accessible progress text", () => {
+    const { container, rerender } = render(<LoadingText text="Checking payment…" />);
+    expect(container.textContent).toBe("Checking payment…");
+    expect(container.querySelector(".loading-dots")).toHaveAttribute("aria-hidden", "true");
+    rerender(<LoadingText text="Requesting the network-fee quote." active />);
+    expect(container.textContent).toBe("Requesting the network-fee quote.");
+    expect(container.querySelector(".loading-dots")).toBeTruthy();
+    rerender(<LoadingText text="Payment confirmed." />);
+    expect(container.querySelector(".loading-dots")).toBeNull();
+  });
   it("moves and restores dialog focus and supports Escape and backdrop dismissal", async () => {
     const onOpenChange = vi.fn();
     render(

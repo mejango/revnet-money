@@ -638,9 +638,11 @@ export function useMultichainBatch() {
             const safe = isSafeConnection(config);
             progress("Review the selected transactions.");
             await requireTransactionReview({
-              title: `Review ${input.label}`,
+              title: input.calls.every((call) => call.expectedRouterPending)
+                ? "Retry payments"
+                : `Review ${input.label}`,
               description: relayr
-                ? `All ${batch.calls.length} selected calls are retained in ${batch.rounds.length} round(s). Each round uses one funding payment for its independent destinations. Confirmed rounds are skipped when resuming.`
+                ? `Pay network fees ${batch.rounds.length === 1 ? "once for this batch" : `in ${batch.rounds.length} separate payments`}. Each ${input.calls.every((call) => call.expectedRouterPending) ? "payment" : "transaction"} has its own result.`
                 : `Calls are submitted in order on their selected chains. A Safe proposal must execute before the next call. Confirmed calls are skipped when resuming.${safe ? `\n\n${SAFE_NONCE_GUIDANCE}` : ""}`,
               confirmLabel: safe ? "Agree & propose to Safe" : "Agree & prepare batch",
               calls: batch.calls.map((call) => ({

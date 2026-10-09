@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingText } from "@/components/ui/LoadingText";
+
 import { chainDisplayName, isSupportedChainId } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
@@ -631,7 +633,11 @@ function ReviewModal({
 
         <footer className="shrink-0 border-t border-melon-300 bg-melon-50 px-4 py-4 sm:px-6">
           <FeeBuybackNotice review={feeReview} />
-          {projectCheckPending ? <p role="status">Checking project identity…</p> : null}
+          {projectCheckPending ? (
+            <p role="status">
+              <LoadingText text="Checking project identity…" />
+            </p>
+          ) : null}
           <label className="flex cursor-pointer items-start gap-3 border border-melon-300 bg-melon-25 p-3 text-sm leading-relaxed text-zinc-900">
             <input
               type="checkbox"
@@ -730,7 +736,11 @@ function FundingChainSelectionModal({
           >
             Cancel
           </button>
-          {projectCheckPending ? <p role="status">Checking project identity…</p> : null}
+          {projectCheckPending ? (
+            <p role="status">
+              <LoadingText text="Checking project identity…" />
+            </p>
+          ) : null}
           <button
             type="button"
             disabled={!selectedOption || projectCheckPending}

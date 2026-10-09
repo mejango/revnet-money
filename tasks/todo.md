@@ -1006,3 +1006,9 @@ Independent review confirmed the2684KiB aggregate ceiling with unchanged900KiB r
 - Final verification: 432 tests passed across pending-routing-payments, ui-primitives, multichain-batch and reviewed-relayr-hooks; typecheck, changed-file ESLint, wallet-writes:check (142 sites), and git diff whitespace check passed.
 - Regression proves immediate proof-read failure followed by verified funding/destination completion with exactly one wallet payment and duplicate submission blocked.
 - Local changes only; no deployment or transactions. The particular failing RPC read in the screenshot remains unverified without its full transaction hash/provider logs.
+
+## Compact pending-payment retry UI — 2026-10-09
+- Implemented collapsed inventory, verified readable amounts, exact source/destination project names, concise Retry review/actions and canonical network-fee payment ABI decoding.
+- Shared loading text uses fixed-width CSS dots with original accessible text and reduced-motion support.
+- Verified: 470 tests in9 focused files, full types, changed-file lint, source invariants, transaction-boundary checks and whitespace checks. Chromium native-disclosure/loading-motion check also passes; canonical payment/recovery tests remain green.
+- Refinement and cross-client evidence: ../../tasks/todo.md, latest Both-client pending payment experience record. No contracts or real transactions changed.

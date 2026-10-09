@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingText } from "@/components/ui/LoadingText";
 import {
   ModalCloseButton,
   ModalDialog,
@@ -115,7 +116,11 @@ export function TxConfirmDialog({
       <div className="space-y-4 px-5 py-5">
         {preparing ? (
           <p className="py-2 text-sm text-amber-900" role="status">
-            {statusText ?? "Preparing…"}
+            {typeof statusText === "string" ? (
+              <LoadingText text={statusText} active />
+            ) : (
+              (statusText ?? <LoadingText text="Preparing…" />)
+            )}
           </p>
         ) : (
           <>
@@ -135,7 +140,11 @@ export function TxConfirmDialog({
             />
             {status ? (
               <p className="text-sm text-amber-900" role="status">
-                {statusText}
+                {typeof statusText === "string" ? (
+                  <LoadingText text={statusText} active={busy || action === null || undefined} />
+                ) : (
+                  statusText
+                )}
               </p>
             ) : null}
           </>
@@ -219,7 +228,7 @@ export function SummaryRow({ label, children }: { label: string; children: React
   return (
     <div className="flex items-baseline justify-between gap-4">
       <span className="shrink-0 text-sm text-zinc-500">{label}</span>
-      <span className="text-right text-sm text-zinc-900">{children}</span>
+      <span className="min-w-0 wrap-anywhere text-right text-sm text-zinc-900">{children}</span>
     </div>
   );
 }

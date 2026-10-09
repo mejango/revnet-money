@@ -3,6 +3,7 @@ import { verifyActionReceipt, verifyCallPreconditions } from "@/lib/multichain-g
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { verifyMetadataSource } from "@/lib/project-metadata-write";
 import { relayrRecoveryScopeKey, relayrSavedQuote } from "@/lib/relayr-activity";
+import { relayrPaymentReview } from "@/lib/relayr-payment-review";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
@@ -575,6 +576,7 @@ export function safeRelayrController(
             gas: RELAYR_PAYMENT_GAS,
             data: details.calldata,
             label: "Pay network fee",
+            ...relayrPaymentReview(details.calldata),
           },
         ],
       });

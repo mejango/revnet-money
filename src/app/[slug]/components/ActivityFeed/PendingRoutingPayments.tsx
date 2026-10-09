@@ -1,6 +1,7 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { LoadingText } from "@/components/ui/LoadingText";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
 import { useHydrated } from "@/hooks/useHydrated";
@@ -9,6 +10,8 @@ import {
   type BatchCallProgress,
   type BatchResult,
 } from "@/hooks/useMultichainBatch";
+import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
+import { ProjectOperation } from "@/lib/bendystraw/operations";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import {
   describeSavedRoutingCall,
@@ -181,6 +184,52 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       };
     }
   });
+  const nameRefs = [
+    ...new Map(
+      [
+        ...(inventory.data ?? []).flatMap((payment) => [
+          [payment.chainId, Number(payment.projectId)],
+          [payment.chainId, Number(payment.sourceProjectId)],
+        ]),
+        ...savedDetails.flatMap((payment) => [
+          [payment.chainId, Number(payment.projectId)],
+          [payment.chainId, Number(payment.sourceProjectId)],
+        ]),
+      ]
+        .filter(([, id]) => Number.isSafeInteger(id) && id > 0)
+        .map(([chain, id]) => [`${chain}:${id}`, { chainId: chain, projectId: id }]),
+    ).values(),
+  ];
+  const names = useQuery({
+    queryKey: ["pending-routing-project-names", nameRefs],
+    enabled: hydrated && nameRefs.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: async () =>
+      Object.fromEntries(
+        await mapConcurrentChecks(nameRefs, async (ref) => {
+          const result = await queryBendystrawFromBrowser(
+            ProjectOperation,
+            { ...ref, version: 6 },
+            ref.chainId,
+          ).catch(() => null);
+          const project = result?.project;
+          let name =
+            project?.projectId === ref.projectId && project.version === 6 ? project.name : null;
+          if (project && !name) {
+            // The existing server owner also fills names missed by indexed metadata.
+            const response = await fetch(
+              `/api/project-name?chainId=${ref.chainId}&projectId=${ref.projectId}&kind=project`,
+              { signal: AbortSignal.timeout(10_000) },
+            ).catch(() => null);
+            const resolved = response?.ok ? await response.json().catch(() => null) : null;
+            if (resolved?.found && typeof resolved.name === "string") name = resolved.name;
+          }
+          return [`${ref.chainId}:${ref.projectId}`, name];
+        }),
+      ),
+  });
+  const projectName = (chain: number, id: string | number) =>
+    names.data?.[`${chain}:${id}`] || `Project ${id}`;
 
   async function review(selected: PendingRouterPayment[]) {
     setError(null);
@@ -257,7 +306,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         );
       }
       const result = await runBatch({
-        label: "Route pending payments",
+        label: "Retry payments",
         scope: savedSelection?.scope ?? scope,
         expectedBatchId: savedSelection?.id,
         replaceDraftId: savedSelection ? undefined : replacementId,
@@ -328,147 +377,156 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   }
 
   return (
-    <section aria-labelledby="pending-routing-heading" className="mb-6 border border-teal-200 p-3">
-      <h3 id="pending-routing-heading" className="text-base font-medium">
-        Payments awaiting routing
-      </h3>
-      <p className="mt-1 text-sm text-zinc-600">
-        These payments are held by the router gateway. Anyone can retry them; they are not part of
-        this project's spendable balance.
-      </p>
-      {unavailable ? (
-        <p role="status" className="mt-2 text-sm text-red-600">
-          Pending payments could not be refreshed. Review is paused until the current state is
-          available.{" "}
-          <button className="underline" onClick={() => void refresh()}>
-            Retry
-          </button>
+    <section className="mb-6">
+      <details className="border border-teal-200 p-3">
+        <summary className="cursor-pointer text-sm font-medium">
+          {rows.length
+            ? `${rows.length} ${rows.length === 1 ? "payment" : "payments"} awaiting processing.`
+            : resume
+              ? "Saved payment batch"
+              : "Checking pending payments…"}
+        </summary>
+        <p className="mt-1 text-sm text-zinc-600">
+          These payments did not have sufficient gas to process automatically.
         </p>
-      ) : null}
-      {checking ? (
-        <p role="status" className="mt-2 text-sm text-zinc-600">
-          {inventory.isPending
-            ? "Loading payments awaiting routing…"
-            : `Found ${inventory.data?.length ?? 0} payments. Checking current status…`}
-        </p>
-      ) : !unavailable ? (
-        <p role="status" className="mt-2 text-sm text-zinc-600">
-          {ready.length === payments.length
-            ? `${ready.length} ${ready.length === 1 ? "payment" : "payments"} ready to route.`
-            : `${ready.length} of ${payments.length} ${payments.length === 1 ? "payment" : "payments"} ready to route.`}
-        </p>
-      ) : null}
-      {rows.length > 1 || resume ? (
-        <div className="mt-3">
-          <ButtonWithWallet
-            targetChainId={chainId as JBChainId | undefined}
-            variant="outline"
-            loading={busy}
-            disabled={!resume && (!ready.length || checking || unavailable)}
-            onClick={() => void review(ready)}
-          >
-            {resume
-              ? "Resume saved batch"
-              : checking
-                ? "Checking pending payments…"
-                : "Batch all pending"}
-          </ButtonWithWallet>
-          {resume ? (
-            <p className="mt-1 text-xs text-zinc-500">
-              Saved batch: {resume.completed} of {resume.total} attempts handled.{" "}
-              {savedReason && formatTransactionMessage(savedReason)}
-            </p>
-          ) : null}
-          {resume ? (
-            <button
-              type="button"
-              className="mt-2 text-sm underline"
-              disabled={checkingSaved || busy}
-              onClick={() => void checkSaved()}
-            >
-              {checkingSaved ? "Checking saved status…" : "Re-check saved status"}
+        {unavailable ? (
+          <p role="status" className="mt-2 text-sm text-red-600">
+            Pending payments could not be refreshed. Review is paused until the current state is
+            available.{" "}
+            <button className="underline" onClick={() => void refresh()}>
+              Retry
             </button>
-          ) : null}
-          {ready.length < payments.length && !resume ? (
-            <p className="mt-1 text-xs text-zinc-500">Payments in cooldown must wait.</p>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="mt-3 space-y-3">
-        {rows.map(({ indexed, result }) => {
-          const payment = result?.payment;
-          return (
-            <div
-              key={`${indexed.chainId}:${indexed.gateway}:${indexed.pendingCallId}`}
-              className="border-t border-teal-100 pt-3"
+          </p>
+        ) : null}
+        {checking ? (
+          <p role="status" className="mt-2 text-sm text-zinc-600">
+            <LoadingText
+              text={inventory.isPending ? "Checking pending payments…" : "Checking payment status…"}
+            />
+          </p>
+        ) : !unavailable ? (
+          <p role="status" className="mt-2 text-sm text-zinc-600">
+            {ready.length === payments.length
+              ? `${ready.length} ${ready.length === 1 ? "payment" : "payments"} ready to retry.`
+              : `${ready.length} of ${payments.length} ${payments.length === 1 ? "payment" : "payments"} ready to retry.`}
+          </p>
+        ) : null}
+        {rows.length > 1 || resume ? (
+          <div className="mt-3">
+            <ButtonWithWallet
+              targetChainId={chainId as JBChainId | undefined}
+              variant="outline"
+              aria-label={
+                resume
+                  ? "Resume saved batch"
+                  : checking
+                    ? "Checking pending payments"
+                    : "Retry all payments"
+              }
+              loading={busy}
+              disabled={!resume && (!ready.length || checking || unavailable)}
+              onClick={() => void review(ready)}
             >
-              <p className="break-all text-sm font-medium">
-                {payment?.amountLabel ?? `${indexed.amount} base units of ${indexed.token}`}
+              {resume ? "Resume saved batch" : checking ? "Checking pending payments…" : "Retry"}
+            </ButtonWithWallet>
+            {resume ? (
+              <p className="mt-1 text-xs text-zinc-500">
+                Saved batch: {resume.completed} of {resume.total} attempts handled.{" "}
+                {savedReason && formatTransactionMessage(savedReason)}
               </p>
-              <p className="text-xs text-zinc-600">
-                To project {indexed.projectId} on{" "}
-                {JB_CHAINS[indexed.chainId as JBChainId]?.name ?? indexed.chainId}
-              </p>
-              {!result ? (
-                <p className="mt-1 text-xs text-zinc-500">Checking payment status…</p>
-              ) : result.error ? (
-                <p className="mt-1 text-xs text-red-600">
-                  Could not verify payment: {result.error}
+            ) : null}
+            {resume ? (
+              <button
+                type="button"
+                className="mt-2 text-sm underline"
+                disabled={checkingSaved || busy}
+                onClick={() => void checkSaved()}
+              >
+                {checkingSaved ? "Checking saved status…" : "Re-check saved status"}
+              </button>
+            ) : null}
+            {ready.length < payments.length && !resume ? (
+              <p className="mt-1 text-xs text-zinc-500">Payments in cooldown must wait.</p>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="mt-3 space-y-3">
+          {rows.map(({ indexed, result }) => {
+            const payment = result?.payment;
+            return (
+              <div
+                key={`${indexed.chainId}:${indexed.gateway}:${indexed.pendingCallId}`}
+                className="border-t border-teal-100 pt-3"
+              >
+                <p className="break-all text-sm font-medium">
+                  {payment?.amountLabel ??
+                    (result?.error ? (
+                      "Amount unavailable"
+                    ) : (
+                      <LoadingText text="Checking payment amount…" />
+                    ))}
                 </p>
-              ) : payment && !payment.ready ? (
-                <p className="mt-1 text-xs text-zinc-500">
-                  Available after {new Date(Number(payment.nextAttemptAt) * 1000).toLocaleString()}.
+                <p className="text-xs text-zinc-600">
+                  To {projectName(indexed.chainId, indexed.projectId)} on{" "}
+                  {JB_CHAINS[indexed.chainId as JBChainId]?.name ?? indexed.chainId}
                 </p>
-              ) : null}
-              <div className="mt-2">
-                <ButtonWithWallet
-                  targetChainId={indexed.chainId as JBChainId}
-                  variant="outline"
-                  loading={busy}
-                  disabled={!payment?.ready || Boolean(resume) || checking || unavailable}
-                  onClick={() => payment && void review([payment])}
-                >
-                  {!result
-                    ? "Checking payment…"
-                    : payment?.action === "finalizePendingCall"
-                      ? "Review final attempt"
-                      : "Review routing"}
-                </ButtonWithWallet>
+                {!result ? (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    <LoadingText text="Checking payment status…" />
+                  </p>
+                ) : result.error ? (
+                  <p className="mt-1 text-xs text-red-600">
+                    Could not verify payment: {result.error}
+                  </p>
+                ) : payment && !payment.ready ? (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Available after{" "}
+                    {new Date(Number(payment.nextAttemptAt) * 1000).toLocaleString()}.
+                  </p>
+                ) : null}
+                <div className="mt-2">
+                  <ButtonWithWallet
+                    targetChainId={indexed.chainId as JBChainId}
+                    variant="outline"
+                    aria-label={!result ? "Checking payment" : "Retry payment"}
+                    loading={busy}
+                    disabled={!payment?.ready || Boolean(resume) || checking || unavailable}
+                    onClick={() => payment && void review([payment])}
+                  >
+                    {!result
+                      ? "Checking payment…"
+                      : payment?.action === "finalizePendingCall"
+                        ? "Retry"
+                        : "Retry"}
+                  </ButtonWithWallet>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </details>
       <TxError error={open ? null : error} />
       <TxConfirmDialog
         open={open}
         onClose={closeReview}
-        title="Route pending payments"
+        title="Retry payments"
         steps={(savedSelection
           ? savedDetails.map((payment) => ({
               key: payment.id,
-              title: `${payment.amountLabel} to project ${payment.projectId}`,
+              title: `${payment.amountLabel} to ${projectName(payment.chainId, payment.projectId)}`,
             }))
           : (reviewed ?? []).map(({ payment }) => ({
               key: payment.id,
-              title: `${payment.amountLabel} to project ${payment.indexed.projectId}`,
+              title: `${payment.amountLabel} to ${projectName(payment.indexed.chainId, payment.indexed.projectId)}`,
             }))
         ).map((step, index) => ({
           ...step,
           ...(callProgress?.[index] ? routingCallSteps[callProgress[index].status] : {}),
         }))}
         activeIndex={busy ? 0 : -1}
-        stepsIntro="Eligible wallet batches use one network-fee payment for all selected attempts. Each attempt keeps its own result."
+        stepsIntro="Pay network fees only. Each payment has its own result."
         onConfirm={() => (needsReview ? void review(ready) : void submit())}
-        action={
-          busy
-            ? null
-            : needsReview
-              ? "Review again"
-              : savedSelection
-                ? "Continue"
-                : "Confirm routing"
-        }
+        action={busy ? null : needsReview ? "Review again" : savedSelection ? "Continue" : "Retry"}
         busy={busy && !cancellable}
         footerContent={
           busy && cancellable ? (
@@ -510,11 +568,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
             </p>
           ))}
           <p className="text-sm text-zinc-600">
-            Routing uses the original amount, destination and beneficiary. A retry can remain
-            pending. A final attempt may return the payment to its source project's balance if the
-            route still fails with the same error. You pay network fees only. Eligible wallet
-            batches are submitted together; Safe proposals and unsupported networks use direct
-            submission. Progress is saved so you can resume.
+            Retry the original payment. If it fails again, it may stay pending or return to its
+            source project.
           </p>
           {savedSelection ? (
             <SummaryRow label="Saved selection">
@@ -535,8 +590,10 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               <SummaryRow label="On">
                 {JB_CHAINS[payment.chainId as JBChainId]?.name ?? payment.chainId}
               </SummaryRow>
-              <SummaryRow label="To">Project {payment.projectId}</SummaryRow>
-              <SummaryRow label="Source">Project {payment.sourceProjectId}</SummaryRow>
+              <SummaryRow label="To">{projectName(payment.chainId, payment.projectId)}</SummaryRow>
+              <SummaryRow label="Source">
+                {projectName(payment.chainId, payment.sourceProjectId)}
+              </SummaryRow>
               <SummaryRow label="Saved state">{payment.state}</SummaryRow>
               <SummaryRow label="Payment ID">
                 <span className="break-all">{payment.pendingCallId}</span>
@@ -559,13 +616,13 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               <SummaryRow label="On">
                 {JB_CHAINS[payment.indexed.chainId as JBChainId]?.name}
               </SummaryRow>
-              <SummaryRow label="To">Project {payment.indexed.projectId}</SummaryRow>
-              <SummaryRow label="Source">Project {payment.indexed.sourceProjectId}</SummaryRow>
-              <SummaryRow label="Action">
-                {payment.action === "finalizePendingCall"
-                  ? "Final attempt; may refund"
-                  : "Retry routing"}
+              <SummaryRow label="To">
+                {projectName(payment.indexed.chainId, payment.indexed.projectId)}
               </SummaryRow>
+              <SummaryRow label="Source">
+                {projectName(payment.indexed.chainId, payment.indexed.sourceProjectId)}
+              </SummaryRow>
+              <SummaryRow label="Action">Retry payments</SummaryRow>
               <SummaryRow label="Beneficiary">
                 <span className="break-all">{payment.indexed.beneficiary}</span>
               </SummaryRow>

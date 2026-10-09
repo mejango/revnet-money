@@ -1,6 +1,7 @@
 import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { pendingRouterCommitment } from "@/lib/pending-router-calls";
+import { relayrPaymentReview } from "@/lib/relayr-payment-review";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import type { TransactionActivity } from "@/lib/transaction-activity";
 import type { TransactionReviewRequest } from "@/lib/transaction-review";
@@ -1212,6 +1213,16 @@ describe("raw pending-payment publication and funding", () => {
       "Checking the submitted network-fee payment.",
     ]);
     expect(reviewPayment).toHaveBeenCalledOnce();
+    expect(reviewPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calls: [
+          expect.objectContaining({
+            data: payment().calldata,
+            ...relayrPaymentReview(payment().calldata),
+          }),
+        ],
+      }),
+    );
     expect(mocks.sendTransaction).toHaveBeenCalledOnce();
     await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
       /already has a submitted payment/,
