@@ -321,7 +321,7 @@ function HeroColumn() {
         // drop toward the wordmark.
         className="mb-3 h-auto max-h-[260px] min-w-0 max-w-full translate-y-2 object-contain sm:translate-y-12"
       />
-      <div className="w-full min-w-0 max-w-full">
+      <div className="@container w-full min-w-0 max-w-full">
         <Image
           src="/assets/img/revnet-full-bw.svg"
           alt="Revnet"
@@ -329,7 +329,7 @@ function HeroColumn() {
           height={140}
           className="mx-auto h-auto min-w-0 max-w-full object-contain"
         />
-        <p className="mt-7 max-w-full break-words text-xl font-medium">
+        <p className="mt-7 max-w-full break-words text-[min(1.25rem,8cqi)] font-medium">
           A <RotatingTagline />
           <span className="block whitespace-nowrap">for the open web.</span>
         </p>

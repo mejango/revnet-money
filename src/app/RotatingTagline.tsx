@@ -35,7 +35,7 @@ export function RotatingTagline() {
   // width slides the centered line as phrases of different lengths come up.
   return (
     <span
-      className="inline-block overflow-hidden whitespace-nowrap text-left align-bottom transition-[width] duration-500 ease-out motion-reduce:transition-none"
+      className="inline-block whitespace-nowrap text-left align-bottom transition-[width] duration-500 ease-out motion-reduce:transition-none"
       style={{ width: `${phrase.length}ch` }}
     >
       <span
