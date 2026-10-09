@@ -2511,7 +2511,7 @@ describe("Safe execution bundles", () => {
     ) {
       save.call(this, key, value);
       if (
-        key === "revnet:transaction-activities:v1" &&
+        key.startsWith("revnet:transaction-activities:v1:record:") &&
         JSON.parse(value).some(
           (row: { relayrSafeState?: string }) => row.relayrSafeState === "publishing",
         )

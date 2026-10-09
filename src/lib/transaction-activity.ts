@@ -2,11 +2,15 @@
 
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import type { MetadataSourceGuard } from "@/lib/project-metadata-write";
+import {
+  parseReviewedWriteRecoveryRecord,
+  type ReviewedWriteRecoveryRecord,
+} from "@bananapus/nana-sdk-core/review";
 import type { RelayrDiscardReason } from "@bananapus/nana-sdk-core/review/relayr";
 import type { SafeRelayrSession } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import { useSyncExternalStore } from "react";
-import type { Address, Hex } from "viem";
+import { isHash, type Address, type Hex } from "viem";
 import type {
   CallPrecondition,
   ExpectedPayerDeployment,
@@ -14,6 +18,7 @@ import type {
   RejectedReceiptEvent,
 } from "./multichain-guards";
 import type { RouterPendingReceiptGuard } from "./pending-router-calls";
+import { createRecordStorage, type RecordVersion } from "./record-storage";
 import type { ReviewedSafeProposal } from "./safe-transactions";
 
 export type TransactionActivityStatus =
@@ -103,6 +108,12 @@ export type TransactionActivity = {
     hash?: Hex;
   }>;
   callKey?: string;
+  /** Account/chain/target/selector locks survive changed amounts and refreshed quotes. */
+  writeScopes?: string[];
+  /** Exact ordinary wallet call and returned identity used for canonical receipt recovery. */
+  reviewedWrite?: ReviewedWriteRecoveryRecord;
+  /** A returned wallet identity belongs to this exact pre-journaled batch call. */
+  writeOwner?: { batchId: string; callIndex: number };
   createdAt: number;
   updatedAt: number;
 };
@@ -112,7 +123,12 @@ const MAX_TERMINAL_ACTIVITIES = 20;
 const EMPTY: TransactionActivity[] = [];
 let snapshot: TransactionActivity[] = EMPTY;
 let hydrated = false;
-let persistedValue: string | null | undefined;
+let versions = new Map<string, RecordVersion>();
+const pendingWrites = new Map<
+  string,
+  { rows: Array<TransactionActivity | null>; expected: RecordVersion }
+>();
+const unsentReservations = new Map<string, TransactionActivity>();
 let storageWriteFailed = false;
 let storageReadFailed = false;
 const listeners = new Set<() => void>();
@@ -124,6 +140,14 @@ export function contractTransactionKey(
   call: { address: Address; value?: bigint; data: Hex },
 ): string {
   return `${account.toLowerCase()}:${chainId}:${call.address.toLowerCase()}:${call.value ?? 0n}:${call.data}`;
+}
+
+export function contractTransactionScope(
+  account: Address,
+  chainId: number,
+  call: { address: Address; data: Hex },
+): string {
+  return `${account.toLowerCase()}:${chainId}:${call.address.toLowerCase()}:${call.data.slice(0, 10).toLowerCase()}`;
 }
 
 function parseActivities(raw: string | null): TransactionActivity[] {
@@ -140,6 +164,44 @@ function parseActivities(raw: string | null): TransactionActivity[] {
     )
   ) {
     throw new Error("Transaction recovery storage is malformed.");
+  }
+  for (const row of parsed as TransactionActivity[]) {
+    if (row.reviewedWrite !== undefined || row.writeScopes !== undefined) {
+      const record = parseReviewedWriteRecoveryRecord(row.reviewedWrite);
+      const calls = record.safe && row.safeProposal ? row.safeProposal.calls : [record.call];
+      const scopes = calls.map((call) => {
+        const validated = parseReviewedWriteRecoveryRecord({ ...record, call });
+        return contractTransactionScope(record.account, record.chainId, {
+          address: validated.call.to,
+          data: validated.call.data,
+        });
+      });
+      if (
+        !scopes.length ||
+        !Array.isArray(row.writeScopes) ||
+        JSON.stringify([...new Set(row.writeScopes)].sort()) !==
+          JSON.stringify([...new Set(scopes)].sort()) ||
+        row.account?.toLowerCase() !== record.account ||
+        row.chainId !== record.chainId ||
+        row.hash?.toLowerCase() !== record.hash ||
+        (row.kind === "safe") !== record.safe ||
+        (row.safeProposal && row.safeProposal.safe.toLowerCase() !== record.account) ||
+        (!row.hash && (row.status === "success" || row.status === "failed"))
+      ) {
+        throw new Error("Saved wallet write evidence is inconsistent. Keep it pending.");
+      }
+    }
+    if (
+      row.writeOwner &&
+      (!row.writeOwner.batchId ||
+        !Number.isSafeInteger(row.writeOwner.callIndex) ||
+        row.writeOwner.callIndex < 0 ||
+        !row.hash ||
+        !isHash(row.hash) ||
+        !row.callKey)
+    ) {
+      throw new Error("Saved batch wallet identity is incomplete. Keep it pending.");
+    }
   }
   return retainActivities(parsed);
 }
@@ -167,53 +229,117 @@ function retainActivities(activities: TransactionActivity[]): TransactionActivit
   });
 }
 
+const physicalId = (row: TransactionActivity) => row.reviewedWrite?.id ?? row.id;
+const activityStorage = createRecordStorage<TransactionActivity>({
+  key: STORAGE_KEY,
+  parse: parseActivities,
+  serialize: JSON.stringify,
+  id: physicalId,
+});
+const orderActivities = (rows: TransactionActivity[]) => {
+  const order = new Map(snapshot.map((row, index) => [physicalId(row), index]));
+  return retainActivities(
+    rows.sort(
+      (a, b) =>
+        b.updatedAt - a.updatedAt ||
+        b.createdAt - a.createdAt ||
+        (order.get(physicalId(a)) ?? -1) - (order.get(physicalId(b)) ?? -1),
+    ),
+  );
+};
+
 function hydrate(): void {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    snapshot = parseActivities(raw);
-    persistedValue = raw;
+    const read = activityStorage.read();
+    snapshot = orderActivities(read.records);
+    versions = read.versions;
     storageReadFailed = false;
   } catch {
     storageReadFailed = true;
   }
 }
 
-function emit(next: TransactionActivity[]): void {
-  snapshot = retainActivities(next);
-  if (typeof window !== "undefined" && !storageReadFailed) {
+function flushPendingWrites(): void {
+  if (typeof window === "undefined") return;
+  // beforeWrite failed, so these exact attempts provably never reached a wallet.
+  // Keep this ownership until storage can distinguish our marker from newer evidence.
+  for (const [id, saved] of unsentReservations) {
     try {
-      const serialized = JSON.stringify(snapshot);
-      window.localStorage.setItem(STORAGE_KEY, serialized);
-      persistedValue = serialized;
-      storageWriteFailed = false;
+      const latest = activityStorage.read();
+      const current = latest.records.find((row) => physicalId(row) === id);
+      if (current && JSON.stringify(current) === JSON.stringify(saved)) {
+        versions.set(id, activityStorage.write(id, null, latest.versions.get(id)!));
+      }
+      pendingWrites.delete(id);
+      unsentReservations.delete(id);
+      snapshot = snapshot.filter((row) => physicalId(row) !== id);
     } catch {
-      // Status remains available for this session when storage is unavailable.
-      storageWriteFailed = true;
+      /* Retry only this proven-unsent attempt when storage recovers. */
     }
   }
+  for (const [id, pending] of pendingWrites) {
+    if (unsentReservations.has(id)) continue;
+    try {
+      while (pending.rows.length) {
+        pending.expected = activityStorage.write(id, pending.rows[0], pending.expected);
+        versions.set(id, pending.expected);
+        pending.rows.shift();
+      }
+      pendingWrites.delete(id);
+    } catch {
+      /* Retain the exact write and returned hash in memory. */
+    }
+  }
+  storageWriteFailed = pendingWrites.size > 0 || unsentReservations.size > 0;
+}
+
+function emit(next: TransactionActivity[]): void {
+  const previous = new Map(snapshot.map((row) => [physicalId(row), row]));
+  snapshot = retainActivities(next);
+  const following = new Map(snapshot.map((row) => [physicalId(row), row]));
+  const queue = (id: string, row: TransactionActivity | null) => {
+    const pending = pendingWrites.get(id);
+    if (pending) {
+      // Preserve the attempted head until readback acknowledges it. Only the
+      // never-attempted tail may coalesce while storage is unavailable.
+      pending.rows.splice(1, pending.rows.length, row);
+    } else {
+      pendingWrites.set(id, {
+        rows: [row],
+        expected: versions.get(id) ?? { raw: null, legacy: null },
+      });
+    }
+  };
+  for (const [id, row] of following)
+    if (JSON.stringify(previous.get(id)) !== JSON.stringify(row)) queue(id, row);
+  for (const id of previous.keys()) if (!following.has(id)) queue(id, null);
+  flushPendingWrites();
   listeners.forEach((listener) => listener());
 }
 
-/**
- * Re-read the persisted lock set before a write. Storage events are not sent
- * to the tab which made a change, and an already-open sibling tab may have
- * hydrated before another tab proposed a Safe transaction.
- */
+/** Refresh every identity without discarding this tab's uncommitted wallet evidence. */
 export function refreshTransactionActivities(): TransactionActivity[] {
   hydrate();
-  if (typeof window === "undefined" || storageWriteFailed) return snapshot;
+  if (typeof window === "undefined") return snapshot;
+  flushPendingWrites();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === persistedValue && !storageReadFailed) return snapshot;
-    const parsed = parseActivities(raw);
-    persistedValue = raw;
-    snapshot = parsed;
+    const latest = activityStorage.read();
+    const merged = new Map(latest.records.map((row) => [physicalId(row), row]));
+    for (const [id, pending] of pendingWrites) {
+      const desired = pending.rows.at(-1);
+      if (desired) merged.set(id, desired);
+      else merged.delete(id);
+    }
+    versions = latest.versions;
+    const next = orderActivities([...merged.values()]);
     storageReadFailed = false;
-    listeners.forEach((listener) => listener());
+    if (JSON.stringify(snapshot) !== JSON.stringify(next)) {
+      snapshot = next;
+      listeners.forEach((listener) => listener());
+    }
   } catch {
-    // A malformed or inaccessible sibling-tab value is not trusted.
     storageReadFailed = true;
   }
   return snapshot;
@@ -264,13 +390,98 @@ export function recordTransactionActivity(
   return next;
 }
 
+/** A wallet may open only after this marker and its exact call are durably retained. */
+export function reserveTransactionActivity(
+  activity: Omit<TransactionActivity, "createdAt" | "updatedAt">,
+): TransactionActivity {
+  requireTransactionActivityPersistence();
+  if (!activity.writeScopes?.length || !activity.reviewedWrite || activity.hash) {
+    throw new Error("The reviewed write has no complete recovery evidence.");
+  }
+  if (
+    snapshot.some(
+      (row) =>
+        isInFlight(row) && row.writeScopes?.some((scope) => activity.writeScopes!.includes(scope)),
+    )
+  ) {
+    throw new Error("An earlier wallet write is unresolved. Keep this action pending.");
+  }
+  const saved = recordTransactionActivity(activity);
+  try {
+    requireTransactionActivityPersistence();
+  } catch (cause) {
+    unsentReservations.set(physicalId(saved), saved);
+    flushPendingWrites();
+    throw cause;
+  }
+  return structuredClone(saved);
+}
+
+/** Commit a returned wallet identity without discarding a newer attempt's evidence. */
+export function submitTransactionActivity(
+  expected: TransactionActivity,
+  hash: Hex,
+): TransactionActivity {
+  if (!isHash(hash)) throw new Error("The wallet returned an invalid transaction identity.");
+  // A wallet reply must survive even when storage stopped answering while its
+  // prompt was open. Refresh keeps the last known snapshot on a read failure.
+  refreshTransactionActivities();
+  const current = snapshot.find((row) => row.id === expected.id);
+  if (
+    !current ||
+    current.hash ||
+    !current.reviewedWrite ||
+    JSON.stringify(current) !== JSON.stringify(expected)
+  ) {
+    throw new Error(`The saved submission changed. Preserve transaction ${hash} for recovery.`);
+  }
+  const submitted: TransactionActivity = {
+    ...current,
+    id: `tx:${current.chainId}:${hash.toLowerCase()}`,
+    hash,
+    safeProposalHash: current.kind === "safe" ? hash : undefined,
+    reviewedWrite: { ...current.reviewedWrite, hash },
+    status: current.kind === "safe" ? "safe-proposed" : "submitted",
+    message: "Wallet submission accepted. Waiting for its verified result.",
+    updatedAt: Date.now(),
+  };
+  emit([submitted, ...snapshot.filter((row) => row.id !== expected.id && row.id !== submitted.id)]);
+  // emit retains the hash in memory even if browser persistence fails.
+  try {
+    requireTransactionActivityPersistence();
+  } catch (cause) {
+    throw new Error(
+      `Transaction ${hash} was submitted, but recovery storage failed. Do not send it again.`,
+      { cause },
+    );
+  }
+  return structuredClone(submitted);
+}
+
+/** Only a proven pre-wallet abort or definite wallet rejection may remove this exact marker. */
+export function removeUnsentTransactionActivity(expected: TransactionActivity): void {
+  requireTransactionActivityPersistence();
+  const current = snapshot.find((row) => row.id === expected.id);
+  if (
+    !current ||
+    current.hash ||
+    !current.writeScopes?.length ||
+    JSON.stringify(current) !== JSON.stringify(expected)
+  ) {
+    throw new Error("The saved submission changed. Preserve its recovery record.");
+  }
+  emit(snapshot.filter((row) => row.id !== expected.id));
+  requireTransactionActivityPersistence();
+}
+
 export function updateTransactionActivity(
   id: string,
   patch: Partial<Omit<TransactionActivity, "id" | "createdAt">>,
+  expected?: TransactionActivity,
 ): void {
   refreshTransactionActivities();
   const current = snapshot.find((row) => row.id === id);
-  if (!current) return;
+  if (!current || (expected && JSON.stringify(current) !== JSON.stringify(expected))) return;
   const guardedPatch =
     current.manualVerificationRequired &&
     patch.status === "success" &&
@@ -278,7 +489,11 @@ export function updateTransactionActivity(
       ? { ...patch, status: current.status, message: current.message }
       : patch;
   emit([
-    { ...current, ...guardedPatch, updatedAt: Date.now() },
+    {
+      ...current,
+      ...guardedPatch,
+      updatedAt: Date.now(),
+    },
     ...snapshot.filter((row) => row.id !== id),
   ]);
 }
@@ -350,6 +565,7 @@ export function releaseTransactionActivityVerification(hash: Hex, message: strin
 export function dismissTransactionActivity(id: string): void {
   refreshTransactionActivities();
   const row = snapshot.find((activity) => activity.id === id);
+  if (row && (row.writeScopes?.length || row.writeOwner) && isInFlight(row)) return;
   // A held entry stays until it is verified, unless the app can never confirm it, or a Relayr
   // session none of whose requests can run again is discarded.
   if (row?.manualVerificationRequired && !row.safeResultUnconfirmed && !row.relayrDiscardable)

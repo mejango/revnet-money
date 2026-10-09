@@ -4,8 +4,15 @@ import {
   JBCoreContracts,
   jbMultiTerminalAbi,
 } from "@bananapus/nana-sdk-core";
-import { buildBridgePrepareTx, cashOutProtocolFee } from "@bananapus/nana-sdk-core/v6";
-import { Address, getAddress, isAddressEqual, PublicClient } from "viem";
+import {
+  buildBridgePrepareTx,
+  cashOutProtocolFee,
+  getV6SuckerPairs,
+  jbSuckerV6ViewAbi,
+  suckerBytes32ToAddress,
+  verifySuckerDestinationMint,
+} from "@bananapus/nana-sdk-core/v6";
+import { Address, getAddress, Hex, isAddressEqual, PublicClient } from "viem";
 
 const BASIS_POINTS = 10_000n;
 
@@ -28,6 +35,65 @@ export interface BridgePrepareQuote {
   netReclaimAmount: bigint;
   minTokensReclaimed: bigint;
   tokenDecimals: number;
+}
+
+interface BridgePrepareRoute {
+  chainId: JBChainId;
+  projectId: bigint;
+  sucker: Address;
+  projectTokenCount: bigint;
+  beneficiary: Address;
+  destinationClient: PublicClient;
+  destinationChainId: JBChainId;
+  destinationProjectId: bigint;
+  destinationSucker: Hex;
+}
+
+/** Verify the selected registered peer can mint this exact transfer now. */
+export async function verifyBridgePrepareDestination(
+  client: PublicClient,
+  args: BridgePrepareRoute,
+) {
+  if ((await client.getChainId()) !== args.chainId) {
+    throw new Error("The source RPC is connected to a different network. Nothing was submitted.");
+  }
+  const pair = (await getV6SuckerPairs(client, args)).find(
+    (candidate) =>
+      isAddressEqual(candidate.local, args.sucker) &&
+      candidate.remoteChainId === BigInt(args.destinationChainId) &&
+      isAddressEqual(candidate.remote, suckerBytes32ToAddress(args.destinationSucker)),
+  );
+  if (!pair) throw new Error("The bridge route changed. Review the transfer again.");
+
+  const projectId = await args.destinationClient.readContract({
+    address: pair.remote,
+    abi: jbSuckerV6ViewAbi,
+    functionName: "projectId",
+  });
+  if (projectId !== args.destinationProjectId) {
+    throw new Error("The destination project changed. Review the transfer again.");
+  }
+  const destinationPairs = await getV6SuckerPairs(args.destinationClient, {
+    chainId: args.destinationChainId,
+    projectId,
+  });
+  if (
+    !destinationPairs.some(
+      (candidate) =>
+        isAddressEqual(candidate.local, pair.remote) &&
+        isAddressEqual(candidate.remote, args.sucker) &&
+        candidate.remoteChainId === BigInt(args.chainId),
+    )
+  ) {
+    throw new Error("The destination bridge no longer matches this transfer.");
+  }
+  await verifySuckerDestinationMint(args.destinationClient, {
+    chainId: args.destinationChainId,
+    projectId,
+    sucker: pair.remote,
+    beneficiary: args.beneficiary,
+    tokenCount: args.projectTokenCount,
+  });
 }
 
 /**
@@ -67,23 +133,14 @@ export function slippagePercentToBps(percent: string) {
  */
 export async function quoteBridgePrepare(
   client: PublicClient,
-  {
-    chainId,
-    projectId,
-    sucker,
-    projectTokenCount,
-    terminalToken,
-    slippageBps,
-  }: {
-    chainId: JBChainId;
-    projectId: bigint;
-    sucker: Address;
-    projectTokenCount: bigint;
+  args: BridgePrepareRoute & {
     terminalToken: Address;
     slippageBps: bigint;
   },
 ): Promise<BridgePrepareQuote> {
+  const { chainId, projectId, sucker, projectTokenCount, terminalToken, slippageBps } = args;
   if (projectTokenCount <= 0n) throw new Error("Enter project tokens to move.");
+  await verifyBridgePrepareDestination(client, args);
 
   const terminal = getJBContractAddress(JBCoreContracts.JBMultiTerminal, 6, chainId);
   const [preview, feeFreeSurplus, feelessAddresses, accountingContext] = await Promise.all([

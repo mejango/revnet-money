@@ -485,7 +485,7 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
 
     const done = await within(confirm).findByRole("button", { name: "Done" });
     expect(confirm).toHaveTextContent(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+      "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.",
     );
     expect(confirm).not.toHaveTextContent("awaits approvals");
     expect(within(confirm).queryByRole("button", { name: "Remove the position" })).toBeNull();
@@ -496,7 +496,7 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
     expect(
       screen.getByText(
-        "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+        "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Removal proposed to Safe/)).toBeNull();
@@ -544,7 +544,7 @@ describe("liquidity removal left open over its own Safe proposal the app can't c
     );
 
     await screen.findByText(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+      "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.",
     );
   });
 });

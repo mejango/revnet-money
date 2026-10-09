@@ -7,6 +7,7 @@ import {
   isReplaceableRoutingDraft,
   makeBatchRounds,
   readMultichainBatches,
+  removeUnsubmittedBatch,
   replaceRoutingDraft,
   resetUnsubmittedBatchCall,
   saveMultichainBatch,
@@ -21,6 +22,7 @@ import {
   refreshTransactionActivities,
   updateTransactionActivity,
 } from "@/lib/transaction-activity";
+import { isDefiniteWalletRejection } from "@bananapus/nana-sdk-core/review";
 import {
   SAFE_EXEC_ABI,
   SAFE_NONCE_GUIDANCE,
@@ -111,7 +113,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
 vi.mock("wagmi/actions", () => ({
   getAccount: () => ({ address: mocks.account, chainId: mocks.chainId }),
-  getPublicClient: () => ({
+  getPublicClient: (_config: unknown, { chainId }: { chainId: number }) => ({
+    getChainId: async () => chainId,
     estimateContractGas: mocks.estimate,
     simulateContract: mocks.simulate,
     request: mocks.rawCall,
@@ -136,8 +139,11 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
   useWriteContract: (options: {
     reviewedInParent?: boolean;
     reverify?: () => Promise<void>;
-    beforeSubmission?: () => Promise<void>;
-    onBeforeSubmissionAborted?: () => Promise<void>;
+    durableRecovery?: {
+      reserve: () => Promise<void>;
+      releaseUnsent: () => Promise<void>;
+      submitted: (hash: Hash) => Promise<void>;
+    };
     preflightSimulation?: (variables: unknown, account: Address) => Promise<{ gas: bigint } | void>;
   }) => {
     return {
@@ -149,14 +155,22 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
         mocks.chainId = variables.chainId;
         await options.reverify?.();
         await options.preflightSimulation?.(variables, mocks.account as Address);
-        await options.beforeSubmission?.();
+        await options.durableRecovery?.reserve();
         try {
           mocks.finalGuard();
         } catch (error) {
-          await options.onBeforeSubmissionAborted?.();
+          await options.durableRecovery?.releaseUnsent();
           throw error;
         }
-        return mocks.write(variables);
+        let hash: Hash;
+        try {
+          hash = await mocks.write(variables);
+        } catch (error) {
+          if (isDefiniteWalletRejection(error)) await options.durableRecovery?.releaseUnsent();
+          throw error;
+        }
+        await options.durableRecovery?.submitted(hash);
+        return hash;
       },
     };
   },
@@ -194,6 +208,7 @@ beforeEach(() => {
     value: 0n,
     blockHash: HASH,
     blockNumber: 1n,
+    transactionIndex: 0,
   });
   mocks.receipt.mockResolvedValue({
     transactionHash: HASH,
@@ -202,7 +217,12 @@ beforeEach(() => {
     blockNumber: 1n,
     logs: [],
   });
-  mocks.block.mockResolvedValue({ hash: HASH, gasLimit: 36_000_000n });
+  mocks.block.mockResolvedValue({
+    hash: HASH,
+    number: 1n,
+    timestamp: 1_000n,
+    gasLimit: 36_000_000n,
+  });
   mocks.quote.mockImplementation(async (requests: MultichainCall[]) => ({
     bundle_uuid: `bundle-${mocks.quote.mock.calls.length}`,
     payment_info: [{ chain: requests[0].chainId }],
@@ -221,6 +241,82 @@ beforeEach(() => {
 });
 
 describe("durable multichain batch journal", () => {
+  it("does not roll back a later tab's identical call after an earlier unsent cleanup was deferred", async () => {
+    vi.resetModules();
+    const first = await import("@/lib/multichain-batch");
+    const batch = first.createMultichainBatch(
+      ACCOUNT,
+      "same-call",
+      "Same call",
+      [call(1)],
+      "direct",
+    );
+    first.saveMultichainBatch(batch);
+    const key = `revnet:multichain-batches:v1:record:${encodeURIComponent(batch.id)}`;
+    const originalGet = Storage.prototype.getItem;
+    let attempted = false;
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (
+      this: Storage,
+      name,
+    ) {
+      if (attempted && name === key) throw new Error("Readback unavailable");
+      return originalGet.call(this, name);
+    });
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      attempted = true; // The first reservation was not retained and never opened a wallet.
+    });
+    expect(() => first.reserveMultichainBatchCall(batch, 0)).toThrow(/saved/);
+    read.mockRestore();
+    write.mockRestore();
+    vi.resetModules();
+    const second = await import("@/lib/multichain-batch");
+    second.reserveMultichainBatchCall(second.readMultichainBatches()[0], 0);
+    const later = second.readMultichainBatches()[0];
+    expect(later.calls[0].state).toBe("submitting");
+    expect(first.readMultichainBatches()[0]).toEqual(later);
+    expect(second.readMultichainBatches()[0]).toEqual(later);
+  });
+
+  it("retains legacy pending batches while overrides and tombstones suppress old versions", () => {
+    const legacy = createMultichainBatch(ACCOUNT, "legacy", "Legacy", [call(1)], "direct");
+    const pending = createMultichainBatch(TARGET, "pending", "Pending", [call(1)], "direct");
+    pending.calls[0].state = "submitting";
+    const raw = JSON.stringify([legacy, pending], (_key, value: unknown) =>
+      typeof value === "bigint" ? { $batchBigInt: value.toString() } : value,
+    );
+    window.localStorage.setItem("revnet:multichain-batches:v1", raw);
+    saveMultichainBatch({ ...legacy, label: "Updated" }, legacy);
+    expect(readMultichainBatches().find((row) => row.id === legacy.id)?.label).toBe("Updated");
+    removeUnsubmittedBatch(legacy.id, { ...legacy, label: "Updated" });
+    expect(readMultichainBatches()).toEqual([pending]);
+    expect(window.localStorage.getItem("revnet:multichain-batches:v1")).toBe(raw);
+    expect(
+      window.localStorage.getItem(
+        `revnet:multichain-batches:v1:record:${encodeURIComponent(legacy.id)}`,
+      ),
+    ).toBe("[]");
+  });
+  it("retains independent accounts when their durable writes interleave", () => {
+    const first = createMultichainBatch(ACCOUNT, "first", "First", [call(1)], "direct");
+    const second = createMultichainBatch(TARGET, "second", "Second", [call(1)], "direct");
+    first.calls[0].state = "submitting";
+    second.calls[0].state = "submitting";
+    const original = Storage.prototype.setItem;
+    let interleaved = false;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (key.startsWith("revnet:multichain-batches:v1") && !interleaved) {
+        interleaved = true;
+        saveMultichainBatch(second);
+      }
+      original.call(this, key, value);
+    });
+    saveMultichainBatch(first);
+    expect(
+      readMultichainBatches()
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([first.id, second.id].sort());
+  });
   it("preserves all allocations in explicit rounds with one call per chain", () => {
     expect(
       makeBatchRounds([call(1, 1n), call(10, 1n), call(1, 2n), call(10, 2n), call(1, 3n)]).map(
@@ -1098,13 +1194,16 @@ describe("reviewed selected-call orchestration", () => {
       chainId: 1,
       account: ACCOUNT,
     });
-    mocks.receipt.mockResolvedValueOnce({
+    mocks.receipt.mockImplementation(async () => ({
       transactionHash: HASH,
-      status: "reverted",
+      status: mocks.write.mock.calls.length ? "success" : "reverted",
       blockHash: HASH,
       blockNumber: 1n,
+      transactionIndex: 0,
+      from: ACCOUNT,
+      to: TARGET,
       logs: [],
-    });
+    }));
     const { result } = renderHook(() => useMultichainBatch());
     await act(async () => {
       await expect(
@@ -1130,6 +1229,33 @@ describe("reviewed selected-call orchestration", () => {
     ).not.toThrow();
   });
 
+  it("keeps an exact reverted routing attempt locked until its block is finalized", async () => {
+    const batch = createMultichainBatch(ACCOUNT, "finality", "Route fee", [retryCall(1)], "direct");
+    batch.calls[0].hash = HASH;
+    batch.calls[0].state = "submitted";
+    saveMultichainBatch(batch);
+    mocks.receipt.mockResolvedValue({
+      transactionHash: HASH,
+      status: "reverted",
+      blockHash: HASH,
+      blockNumber: 1n,
+      transactionIndex: 0,
+      from: ACCOUNT,
+      to: TARGET,
+      logs: [],
+    });
+    mocks.block.mockImplementation(async ({ blockTag }) => ({
+      hash: HASH,
+      number: blockTag === "finalized" ? 0n : 1n,
+    }));
+    const { result } = renderHook(() => useMultichainBatch());
+    await expect(
+      result.current.runBatch({ scope: "finality", label: "Route fee", calls: [] }),
+    ).rejects.toThrow();
+    expect(readMultichainBatches()[0].calls[0].state).toBe("submitted");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
   it.each(["call", "block"])(
     "keeps a reverted routing receipt locked when its %s identity differs",
     async (mismatch) => {
@@ -1148,6 +1274,9 @@ describe("reviewed selected-call orchestration", () => {
         status: "reverted",
         blockHash: HASH,
         blockNumber: 1n,
+        transactionIndex: 0,
+        from: ACCOUNT,
+        to: TARGET,
         logs: [],
       });
       mocks.transaction.mockResolvedValue({
@@ -1498,6 +1627,9 @@ describe("reviewed selected-call orchestration", () => {
         status: "reverted",
         blockHash: HASH,
         blockNumber: 1n,
+        transactionIndex: 0,
+        from: ACCOUNT,
+        to: TARGET,
         logs: [],
       });
       const { result } = renderHook(() => useMultichainBatch());
@@ -2228,6 +2360,170 @@ describe("reviewed selected-call orchestration", () => {
     });
     expect(mocks.write).toHaveBeenCalledOnce();
   });
+
+  it("commits the returned hash before any destination receipt read", async () => {
+    mocks.receipt.mockImplementation(async () => {
+      expect(readMultichainBatches()[0].calls[0]).toMatchObject({ hash: HASH, state: "submitted" });
+      throw new Error("Receipt unavailable");
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await expect(
+      result.current.runBatch({ scope: "one", label: "Distribute", calls: [call(1)] }),
+    ).rejects.toThrow(/Receipt unavailable/);
+    expect(readMultichainBatches()[0].calls[0]).toMatchObject({ hash: HASH, state: "submitted" });
+  });
+
+  it("retries a batch after its pre-wallet save succeeded but readback failed", async () => {
+    const batch = createMultichainBatch(ACCOUNT, "one", "Distribute", [call(1)], "direct");
+    saveMultichainBatch(batch);
+    const key = `revnet:multichain-batches:v1:record:${encodeURIComponent(batch.id)}`;
+    const originalGet = Storage.prototype.getItem;
+    const originalSet = Storage.prototype.setItem;
+    let submitting = false;
+    const reads = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (
+      this: Storage,
+      readKey,
+    ) {
+      if (submitting && readKey === key) throw new Error("Readback unavailable");
+      return originalGet.call(this, readKey);
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      writeKey,
+      value,
+    ) {
+      originalSet.call(this, writeKey, value);
+      if (writeKey === key && value.includes('"submitting"')) submitting = true;
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await expect(
+      result.current.runBatch({ scope: "one", label: "Distribute", calls: [] }),
+    ).rejects.toThrow(/saved/);
+    expect(mocks.write).not.toHaveBeenCalled();
+    reads.mockRestore();
+    await expect(
+      result.current.runBatch({ scope: "one", label: "Distribute", calls: [] }),
+    ).resolves.toMatchObject({ status: "success" });
+    expect(mocks.write).toHaveBeenCalledOnce();
+  });
+
+  it.each(["exact owner", "missing owner", "other batch", "other index", "other call"])(
+    "reattaches a retained wallet hash only to its exact submitted batch call: %s",
+    async (identity) => {
+      const batch = createMultichainBatch(ACCOUNT, "one", "Distribute", [call(1)], "direct");
+      batch.calls[0].state = "submitting";
+      saveMultichainBatch(batch);
+      refreshTransactionActivities();
+      recordTransactionActivity({
+        id: `tx:1:${HASH}`,
+        kind: "direct",
+        title: "Distribute",
+        status: "pending",
+        message: "Wallet reply retained",
+        chainId: 1,
+        account: ACCOUNT,
+        hash: HASH,
+        manualVerificationRequired: true,
+        callKey: contractTransactionKey(
+          ACCOUNT,
+          1,
+          identity === "other call" ? { ...batch.calls[0], data: "0x12345678" } : batch.calls[0],
+        ),
+        ...(identity === "missing owner"
+          ? {}
+          : {
+              writeOwner: {
+                batchId: identity === "other batch" ? "another-batch" : batch.id,
+                callIndex: identity === "other index" ? 1 : 0,
+              },
+            }),
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      const running = result.current.runBatch({ scope: "one", label: "Distribute", calls: [] });
+      if (identity === "exact owner") {
+        await expect(running).resolves.toMatchObject({ status: "success" });
+        expect(readMultichainBatches()[0].calls[0]).toMatchObject({ hash: HASH, state: "success" });
+      } else {
+        await expect(running).rejects.toThrow(/unknown result/);
+        expect(readMultichainBatches()[0].calls[0].hash).toBeUndefined();
+      }
+      expect(mocks.write).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not settle or overwrite a batch changed while receipt proof is pending", async () => {
+    const batch = createMultichainBatch(
+      ACCOUNT,
+      "one",
+      "Distribute",
+      [call(1), call(1, 2n)],
+      "direct",
+    );
+    batch.calls[0].state = "submitted";
+    batch.calls[0].hash = HASH;
+    saveMultichainBatch(batch);
+    mocks.block.mockImplementationOnce(async () => {
+      const changed = readMultichainBatches()[0];
+      changed.calls[1].state = "submitting";
+      saveMultichainBatch(changed);
+      return { hash: HASH };
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await expect(
+      result.current.runBatch({ scope: "one", label: "Distribute", calls: [] }),
+    ).rejects.toThrow(/submission changed/);
+    expect(readMultichainBatches()[0].calls.map((call) => call.state)).toEqual([
+      "submitted",
+      "submitting",
+    ]);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it.each(["returned hash", "wallet rejection"])(
+    "preserves newer sibling evidence at %s",
+    async (outcome) => {
+      const original = createMultichainBatch(
+        ACCOUNT,
+        "one",
+        "Distribute",
+        [call(1), call(1, 2n)],
+        "direct",
+      );
+      saveMultichainBatch(original);
+      mocks.write.mockImplementation(async () => {
+        const changed = readMultichainBatches()[0];
+        changed.calls[1].state = "submitting";
+        saveMultichainBatch(changed);
+        if (outcome === "wallet rejection") throw { code: 4001 };
+        return HASH;
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await expect(
+        result.current.runBatch({ scope: "one", label: "Distribute", calls: [] }),
+      ).rejects.toThrow(/submission changed/);
+      expect(readMultichainBatches()[0].calls[1].state).toBe("submitting");
+      expect(mocks.write).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("preserves a new sibling submission discovered while checking whether a rejected draft can be removed", async () => {
+    saveMultichainBatch(
+      createMultichainBatch(ACCOUNT, "one", "Distribute", [call(1), call(1, 2n)], "direct"),
+    );
+    mocks.write.mockRejectedValue({ code: 4001 });
+    mocks.scopeAvailable.mockImplementation(async () => {
+      const batch = readMultichainBatches()[0];
+      if (mocks.write.mock.calls.length && batch?.calls.every((call) => call.state === "ready")) {
+        batch.calls[1].state = "submitting";
+        saveMultichainBatch(batch);
+      }
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    await expect(
+      result.current.runBatch({ scope: "one", label: "Distribute", calls: [] }),
+    ).rejects.toMatchObject({ code: 4001 });
+    expect(readMultichainBatches()[0].calls[1].state).toBe("submitting");
+  });
   it.each([
     { code: 4001 },
     { name: "UserRejectedRequestError" },
@@ -2320,6 +2616,9 @@ describe("reviewed selected-call orchestration", () => {
       status: "reverted",
       blockHash: HASH,
       blockNumber: 1n,
+      transactionIndex: 0,
+      from: ACCOUNT,
+      to: TARGET,
       logs: [],
     });
     const { result } = renderHook(() => useMultichainBatch());

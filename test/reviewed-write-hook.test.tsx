@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   waitForTransactionReceipt: vi.fn(),
   getTransactionReceipt: vi.fn(),
   getTransaction: vi.fn(),
+  getChainId: vi.fn(),
+  getBlock: vi.fn(),
   submit: vi.fn(),
   wagmiReceipt: vi.fn(),
   // The connected Safe's own reads: its owners and threshold.
@@ -55,6 +57,8 @@ vi.mock("wagmi/actions", () => ({
           waitForTransactionReceipt: mocks.waitForTransactionReceipt,
           getTransactionReceipt: mocks.getTransactionReceipt,
           getTransaction: mocks.getTransaction,
+          getChainId: mocks.getChainId,
+          getBlock: mocks.getBlock,
           getCode: (args: never) => mocks.safeReads.getCode(args),
           getStorageAt: (args: never) => mocks.safeReads.getStorageAt(args),
           request: (args: never) => mocks.safeReads.request(args),
@@ -91,6 +95,7 @@ const OTHER_ACCOUNT = "0x000000000000000000000000000000000000bEEF" as Address;
 const TARGET = "0x0000000000000000000000000000000000001000" as Address;
 const RECIPIENT = "0x0000000000000000000000000000000000002000" as Address;
 const HASH = `0x${"12".repeat(32)}` as Hex;
+const BLOCK_HASH = `0x${"45".repeat(32)}` as Hex;
 const ABI = parseAbi(["function transfer(address recipient, uint256 amount)"]);
 const CALL = {
   chainId: 11155111,
@@ -162,6 +167,33 @@ const TRANSFER_7 = {
   data: encodeFunctionData({ abi: ABI, functionName: "transfer", args: [RECIPIENT, 7n] }),
 };
 
+function canonicalReceipt(status: "success" | "reverted" = "success") {
+  return {
+    transactionHash: HASH,
+    blockHash: BLOCK_HASH,
+    blockNumber: 1n,
+    transactionIndex: 0,
+    from: ACCOUNT,
+    to: TARGET,
+    status,
+    logs: [],
+  };
+}
+
+function directReceipt(status: "success" | "reverted" = "success") {
+  const receipt = canonicalReceipt(status);
+  mocks.getTransaction.mockResolvedValue({
+    ...receipt,
+    hash: HASH,
+    chainId: 11155111,
+    input: TRANSFER_7.data,
+    value: 0n,
+  });
+  mocks.getTransactionReceipt.mockResolvedValue(receipt);
+  mocks.waitForTransactionReceipt.mockResolvedValue(receipt);
+  return receipt;
+}
+
 async function freshHarness() {
   vi.resetModules();
   const [review, activity, hooks] = await Promise.all([
@@ -174,7 +206,10 @@ async function freshHarness() {
 
 beforeEach(() => {
   window.localStorage.clear();
-  Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value: { request: async (_key: string, work: () => Promise<unknown>) => work() },
+  });
   mocks.account = {
     address: ACCOUNT,
     chainId: 11155111,
@@ -191,6 +226,8 @@ beforeEach(() => {
   mocks.getTransactionReceipt.mockRejectedValue(new Error("Receipt not found"));
   // A Safe proposal hash is never a transaction the chain knows.
   mocks.getTransaction.mockRejectedValue(new TransactionNotFoundError({ hash: HASH }));
+  mocks.getChainId.mockResolvedValue(11155111);
+  mocks.getBlock.mockResolvedValue({ hash: BLOCK_HASH, number: 1n, timestamp: 1_000n });
   mocks.safeReads = safeChain(ACCOUNT);
   mocks.noClient = false;
   mocks.wagmiReceipt.mockReturnValue({
@@ -203,6 +240,282 @@ beforeEach(() => {
 });
 
 describe("reviewed write hook", () => {
+  it("can retry after storage recovers from a proven pre-wallet reservation failure", async () => {
+    const { hooks } = await freshHarness();
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => undefined);
+    const { result } = renderHook(() => hooks.useWriteContract({ reviewedInParent: true }));
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(/storage/);
+    expect(mocks.submit).not.toHaveBeenCalled();
+    set.mockRestore();
+    await expect(result.current.writeContractAsync(CALL as never)).resolves.toBe(HASH);
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+  it("retains a lost wallet reply across reset, remount and reload even when the quote changes", async () => {
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    mocks.submit.mockRejectedValue(new Error("Wallet reply lost after broadcast"));
+    const first = renderHook(() => hooks.useWriteContract());
+    await expect(first.result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      /reply lost/,
+    );
+    first.result.current.reset();
+    const changed = { ...CALL, args: [RECIPIENT, 8n] };
+    await expect(first.result.current.writeContractAsync(changed as never)).rejects.toThrow(
+      /unresolved|unknown/i,
+    );
+    first.unmount();
+    const resumed = renderHook(() => hooks.useWriteContract());
+    await expect(resumed.result.current.writeContractAsync(changed as never)).rejects.toThrow(
+      /unresolved|unknown/i,
+    );
+    resumed.unmount();
+    const row = activity.transactionActivitySnapshot()[0];
+    expect(row).toMatchObject({ account: ACCOUNT, chainId: CALL.chainId });
+    expect(row.hash).toBeUndefined();
+    activity.dismissTransactionActivity(row.id);
+    expect(activity.transactionActivitySnapshot()).toHaveLength(1);
+    const reloaded = await freshHarness();
+    reloaded.review.registerTransactionReviewHandler(async () => true);
+    const restored = renderHook(() => reloaded.hooks.useWriteContract());
+    await expect(restored.result.current.writeContractAsync(changed as never)).rejects.toThrow(
+      /unresolved|unknown/i,
+    );
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it.each(["reset", "unmount"])(
+    "refuses a %s view after an awaited readiness check",
+    async (change) => {
+      const { review, activity, hooks } = await freshHarness();
+      review.registerTransactionReviewHandler(async () => true);
+      let resume!: () => void;
+      const reverify = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resume = resolve;
+          }),
+      );
+      const view = renderHook(() => hooks.useWriteContract({ reverify }));
+      const sending = view.result.current.writeContractAsync(CALL as never);
+      const refused = expect(sending).rejects.toThrow(/view changed/);
+      await waitFor(() => expect(reverify).toHaveBeenCalledOnce());
+      if (change === "reset") view.result.current.reset();
+      else view.unmount();
+      resume();
+      await refused;
+      expect(mocks.submit).not.toHaveBeenCalled();
+      expect(activity.transactionActivitySnapshot()).toEqual([]);
+    },
+  );
+
+  it("refuses a silent persistence failure before opening the wallet", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => undefined);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      /storage is unavailable/,
+    );
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it("releases only an explicit wallet rejection, allowing a fresh reviewed retry", async () => {
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    mocks.submit.mockRejectedValue({ code: 4001, message: "Rejected" });
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toMatchObject({
+      code: 4001,
+    });
+    expect(activity.transactionActivitySnapshot()).toEqual([]);
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toMatchObject({
+      code: 4001,
+    });
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+  });
+
+  it("blocks an ordinary action held by an unresolved domain batch", async () => {
+    const { review, hooks } = await freshHarness();
+    const batches = await import("@/lib/multichain-batch");
+    const batch = batches.createMultichainBatch(ACCOUNT, "test", "Transfer", [CALL], "direct");
+    batch.calls[0].state = "submitting";
+    batches.saveMultichainBatch(batch);
+    review.registerTransactionReviewHandler(async () => true);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await expect(
+      result.current.writeContractAsync({ ...CALL, args: [RECIPIENT, 8n] } as never),
+    ).rejects.toThrow(/saved batch.*unresolved/i);
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    "awaits the exact domain hash commit and retains its identity on failure: %s",
+    async (fails) => {
+      const { activity, hooks } = await freshHarness();
+      const batches = await import("@/lib/multichain-batch");
+      const batch = batches.createMultichainBatch(ACCOUNT, "test", "Transfer", [CALL], "direct");
+      batches.saveMultichainBatch(batch);
+      let release!: () => void;
+      const submitted = vi.fn(async (hash: Hex) => {
+        expect(hash).toBe(HASH);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        if (fails) throw new Error("Batch storage failed");
+      });
+      const owner = { batchId: batch.id, callIndex: 0 };
+      const { result } = renderHook(() =>
+        hooks.useWriteContract({
+          reviewedInParent: true,
+          manualReceiptVerification: () => true,
+          durableRecovery: {
+            owner: () => owner,
+            reserve: async () => {
+              batch.calls[0].state = "submitting";
+              batches.saveMultichainBatch(batch);
+            },
+            submitted,
+            releaseUnsent: vi.fn(),
+          },
+        }),
+      );
+      let finished = false;
+      const sending = result.current
+        .writeContractAsync(CALL as never)
+        .then(
+          (hash) => ({ hash }),
+          (error: unknown) => ({ error }),
+        )
+        .finally(() => {
+          finished = true;
+        });
+      await waitFor(() => expect(submitted).toHaveBeenCalledOnce());
+      expect(finished).toBe(false);
+      release();
+      const outcome = await sending;
+      if (fails) expect(outcome).toMatchObject({ error: { hash: HASH } });
+      else expect(outcome).toEqual({ hash: HASH });
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+        writeOwner: owner,
+        callKey: activity.contractTransactionKey(ACCOUNT, CALL.chainId, {
+          address: TARGET,
+          data: TRANSFER_7.data,
+        }),
+        manualVerificationRequired: true,
+        status: "pending",
+      });
+    },
+  );
+
+  it.each(["success", "reverted"] as const)(
+    "withholds raw %s UI outcomes for a batch-owned receipt",
+    async (status) => {
+      const { activity, hooks } = await freshHarness();
+      activity.recordTransactionActivity({
+        id: `tx:11155111:${HASH}`,
+        kind: "direct",
+        title: "Transfer",
+        status: "pending",
+        message: "Pending exact batch verification",
+        chainId: 11155111,
+        account: ACCOUNT,
+        hash: HASH,
+        callKey: "exact-call",
+        writeOwner: { batchId: "batch", callIndex: 0 },
+        manualVerificationRequired: true,
+      });
+      mocks.wagmiReceipt.mockReturnValue({
+        data: canonicalReceipt(status),
+        isSuccess: true,
+        isError: false,
+        isLoading: false,
+      });
+      const { result } = renderHook(() => hooks.useWaitForTransactionReceipt({ hash: HASH }));
+      expect(result.current.isSuccess).toBe(false);
+      expect(result.current.isError).toBe(false);
+    },
+  );
+
+  it("resumes a saved returned hash after reload without another wallet write", async () => {
+    const first = await freshHarness();
+    first.review.registerTransactionReviewHandler(async () => true);
+    const view = renderHook(() => first.hooks.useWriteContract());
+    await view.result.current.writeContractAsync(CALL as never);
+    view.unmount();
+    const reloaded = await freshHarness();
+    directReceipt();
+    reloaded.hooks.resumeSafeProposalTracking(mocks.config as never);
+    await waitFor(() =>
+      expect(reloaded.activity.transactionActivityForHash(HASH)?.status).toBe("success"),
+    );
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an unfinalized failed receipt locked until canonical finality is available", async () => {
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    directReceipt("reverted");
+    mocks.getBlock.mockImplementation(async (request) => ({
+      hash: BLOCK_HASH,
+      number: request.blockTag === "finalized" ? 0n : 1n,
+      timestamp: 1_000n,
+    }));
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await result.current.writeContractAsync(CALL as never);
+    await waitFor(() =>
+      expect(activity.transactionActivityForHash(HASH)?.message).toBe(RECEIPT_UNCONFIRMED),
+    );
+    expect(activity.transactionActivityForHash(HASH)?.status).toBe("pending");
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      /already pending/,
+    );
+    mocks.getBlock.mockResolvedValue({ hash: BLOCK_HASH, number: 1n, timestamp: 1_000n });
+    hooks.resumeSafeProposalTracking(mocks.config as never);
+    await waitFor(() => expect(activity.transactionActivityForHash(HASH)?.status).toBe("failed"));
+  });
+
+  it.each(["success", "failure"])(
+    "cannot settle changed sibling-tab recovery evidence from an earlier %s proof",
+    async (outcome) => {
+      const { review, activity, hooks } = await freshHarness();
+      review.registerTransactionReviewHandler(async () => true);
+      directReceipt();
+      let release!: () => void;
+      mocks.getBlock.mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        if (outcome === "failure") throw new Error("Stale proof failed");
+        return { hash: BLOCK_HASH, number: 1n };
+      });
+      const { result } = renderHook(() => hooks.useWriteContract());
+      await result.current.writeContractAsync(CALL as never);
+      await waitFor(() => expect(release).toBeTypeOf("function"));
+      const saved = activity.transactionActivityForHash(HASH)!;
+      const changed = {
+        ...saved,
+        message: "New recovery request",
+        reviewedWrite: {
+          ...saved.reviewedWrite!,
+          call: {
+            ...saved.reviewedWrite!.call,
+            data: encodeFunctionData({ abi: ABI, functionName: "transfer", args: [RECIPIENT, 8n] }),
+          },
+        },
+      };
+      window.localStorage.setItem(
+        `revnet:transaction-activities:v1:record:${encodeURIComponent(saved.reviewedWrite!.id)}`,
+        JSON.stringify([changed]),
+      );
+      release();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(activity.transactionActivityForHash(HASH)?.status).toBe("pending");
+      expect(activity.transactionActivityForHash(HASH)?.message).toBe("New recovery request");
+    },
+  );
+
   it("reviews, rechecks the account, simulates, submits the simulated request, and tracks success", async () => {
     const order: string[] = [];
     const { review, activity, hooks } = await freshHarness();
@@ -230,7 +543,7 @@ describe("reviewed write hook", () => {
       });
       return HASH;
     });
-    mocks.waitForTransactionReceipt.mockResolvedValue({ status: "success" });
+    directReceipt();
 
     const reverify = vi.fn(async (variables, account) => {
       order.push("reverify");
@@ -896,8 +1209,8 @@ describe("reviewed write hook", () => {
   it("tracks success through a direct receipt read when the watcher rejects", async () => {
     const { review, activity, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
+    directReceipt();
     mocks.waitForTransactionReceipt.mockRejectedValue(new Error("Invalid RPC parameters"));
-    mocks.getTransactionReceipt.mockResolvedValue({ status: "success" });
     const { result } = renderHook(() => hooks.useWriteContract());
 
     await act(async () => {
@@ -998,7 +1311,7 @@ describe("reviewed write hook", () => {
     expect(mocks.waitForTransactionReceipt).not.toHaveBeenCalled();
   });
 
-  it("refuses the identical call while its proposal's result can't be confirmed, saying to check it in Safe and dismiss it", async () => {
+  it("keeps the identical call locked while its proposal's result cannot be confirmed", async () => {
     mocks.account = {
       address: ACCOUNT,
       chainId: 11155111,
@@ -1026,7 +1339,7 @@ describe("reviewed write hook", () => {
 
     expect(refused).toBeInstanceOf(hooks.SafeProposalPendingError);
     expect((refused as Error).message).toBe(
-      `transfer was proposed to Safe as ${HASH}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
+      `transfer was proposed to Safe as ${HASH}, and its result can't be confirmed here. Check it in Safe. This action stays locked until its execution is verified.`,
     );
     expect(mocks.submit).toHaveBeenCalledTimes(1);
   });
@@ -1087,7 +1400,11 @@ describe("reviewed write hook", () => {
     };
     mocks.submit.mockResolvedValue(SAFEPAL_HASH);
     await act(async () => {
-      await result.current.writeContractAsync({ ...CALL, args: [RECIPIENT, 8n] } as never);
+      await result.current.writeContractAsync({
+        ...CALL,
+        address: "0x0000000000000000000000000000000000003000",
+        args: [RECIPIENT, 8n],
+      } as never);
     });
     expect(mocks.submit).toHaveBeenLastCalledWith(expect.objectContaining({ gas: 100_000n }));
     expect(activity.transactionActivityForHash(SAFEPAL_HASH)).toMatchObject({ kind: "direct" });
@@ -1112,12 +1429,26 @@ describe("reviewed write hook", () => {
       vi.stubGlobal("fetch", service);
       // Safe{Wallet} replied with the execution's own hash: the chain knows it,
       // and it runs exactly the reviewed call from this Safe.
-      mocks.getTransaction.mockResolvedValue(executionOf(TRANSFER_7));
-      mocks.waitForTransactionReceipt.mockResolvedValue({
-        status: "success",
-        transactionHash: HASH,
-        logs,
+      const receipt = {
+        ...canonicalReceipt(),
+        from: SAFE_OWNER_A,
+        to: ACCOUNT,
+        logs: logs.map((log) => ({
+          ...log,
+          removed: false,
+          transactionHash: HASH,
+          blockHash: BLOCK_HASH,
+          blockNumber: 1n,
+          transactionIndex: 0,
+        })),
+      };
+      mocks.getTransaction.mockResolvedValue({
+        ...receipt,
+        ...executionOf(TRANSFER_7),
+        chainId: 11155111,
       });
+      mocks.waitForTransactionReceipt.mockResolvedValue(receipt);
+      mocks.getTransactionReceipt.mockResolvedValue(receipt);
       const { review, activity, hooks } = await freshHarness();
       review.registerTransactionReviewHandler(async () => true);
       const { result } = renderHook(() => hooks.useWriteContract());
@@ -1135,6 +1466,19 @@ describe("reviewed write hook", () => {
       );
       expect(mocks.getTransaction).toHaveBeenCalledWith({ hash: HASH });
       expect(service).not.toHaveBeenCalled();
+      // A bounded earlier watch may have ended before the canonical receipt
+      // became available. New nondismissible records must resume on reload.
+      activity.updateTransactionActivity(`tx:11155111:${HASH}`, {
+        status: "safe-proposed",
+        safeResultUnconfirmed: true,
+      });
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await waitFor(() =>
+        expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+          status,
+          safeResultUnconfirmed: false,
+        }),
+      );
     },
   );
 

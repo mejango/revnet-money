@@ -55,7 +55,7 @@
           "wagmi:useWriteContract",
           1
         ],
-        ["raw-wallet-call", "src/hooks/useReviewedWriteContract.ts", "submit", "sendCalls", 1],
+        ["raw-wallet-call", "src/hooks/useReviewedWriteContract.ts", "write", "sendCalls", 1],
         [
           "raw-wallet-call",
           "src/hooks/useReviewedWriteContract.ts",

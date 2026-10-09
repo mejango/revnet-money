@@ -9,8 +9,12 @@ import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState, type ReactNode } from "react";
-import type { Hex } from "viem";
+import { pad, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+type ReviewedWriteContractOptions = NonNullable<
+  Parameters<typeof import("@/hooks/useReviewedWriteContract").useWriteContract>[0]
+>;
 
 // Cash out, bridge, borrow, refinance and repay each host their confirm in
 // their own dialog, whose owner resets and closes it on any request. While a
@@ -26,6 +30,8 @@ const mocks = vi.hoisted(() => ({
   ensureAllowance: vi.fn(),
   hasPermissions: vi.fn(),
   toast: vi.fn(),
+  verifyDestinationMint: vi.fn(),
+  beforeReverify: vi.fn(),
   /**
    * The hash each of a flow's write hooks sent last, as the hook reports it, in
    * the order the flow mounts its hooks (cash out: its sale, then its approval).
@@ -62,12 +68,33 @@ vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
   useAccount: () => ({ address: "0x1111111111111111111111111111111111111111" }),
   usePublicClient: (parameters?: { chainId?: number }) => ({
-    readContract: async ({ functionName }: { functionName?: string }) =>
-      mocks.directSell && functionName === "balanceOf"
+    getChainId: async () => parameters?.chainId ?? 1,
+    readContract: async ({ functionName }: { functionName?: string }) => {
+      if (functionName === "suckerPairsOf") {
+        if (parameters?.chainId === 10) {
+          return [
+            {
+              local: "0x4444444444444444444444444444444444444444",
+              remote: pad("0x3333333333333333333333333333333333333333"),
+              remoteChainId: 1n,
+            },
+          ];
+        }
+        return [
+          {
+            local: "0x3333333333333333333333333333333333333333",
+            remote: pad("0x4444444444444444444444444444444444444444"),
+            remoteChainId: 10n,
+          },
+        ];
+      }
+      if (functionName === "projectId") return 8n;
+      return mocks.directSell && functionName === "balanceOf"
         ? 5n * 10n ** 18n
         : mocks.allowanceOnLoanChainOnly && parameters?.chainId === 1
           ? 10n ** 30n
-          : 0n,
+          : 0n;
+    },
   }),
   useWalletClient: () => ({ data: {} }),
   useSimulateContract: () => ({ isLoading: false, error: null }),
@@ -109,7 +136,13 @@ vi.mock("wagmi", async (importOriginal) => ({
     const loan = { amount: 10n ** 18n, collateral: 2n * 10n ** 18n };
     const answers: Record<string, unknown> = {
       PERMISSIONS: "0x4444444444444444444444444444444444444444",
-      suckerPairsOf: [{ local: "0x3333333333333333333333333333333333333333", remoteChainId: 10n }],
+      suckerPairsOf: [
+        {
+          local: "0x3333333333333333333333333333333333333333",
+          remote: pad("0x4444444444444444444444444444444444444444"),
+          remoteChainId: 10n,
+        },
+      ],
       loanOf: loan,
       determineSourceFeeAmount: 1_000n,
       borrowableAmountFrom: [0n, 5n * 10n ** 17n],
@@ -160,10 +193,14 @@ vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
     // Like wagmi's mutation, `data` is the hash the last write returned. Like the
     // reviewed write, a send is tracked on the chain it names, as a Safe proposal
     // when one is made.
-    useWriteContract: () => {
+    useWriteContract: (options?: ReviewedWriteContractOptions) => {
       const [data, setData] = useState<string | undefined>(() => mocks.sent[mocks.writeHooks++]);
       return {
-        writeContractAsync: async (variables: { chainId?: number }) => {
+        writeContractAsync: async (
+          variables: Parameters<NonNullable<ReviewedWriteContractOptions["reverify"]>>[0],
+        ) => {
+          await mocks.beforeReverify(variables);
+          await options?.reverify?.(variables, "0x1111111111111111111111111111111111111111");
           const hash = await mocks.write(variables);
           // As the reviewed write does, read the stored activity before recording.
           activity.refreshTransactionActivities();
@@ -270,6 +307,7 @@ vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   getTokenAddress: async () => "0x2222222222222222222222222222222222222222",
   hasPermissions: mocks.hasPermissions,
   prepareHookAwareCashOut: mocks.prepareCashOut,
+  verifySuckerDestinationMint: mocks.verifyDestinationMint,
 }));
 
 /** A read or wallet prompt that has not answered yet. */
@@ -316,6 +354,8 @@ beforeEach(() => {
   mocks.freshBorrowable.mockReset().mockImplementation(never);
   mocks.ensureAllowance.mockReset().mockResolvedValue(null);
   mocks.hasPermissions.mockReset().mockResolvedValue(true);
+  mocks.verifyDestinationMint.mockReset().mockResolvedValue(undefined);
+  mocks.beforeReverify.mockReset().mockResolvedValue(undefined);
 });
 
 /** Each flow, opened as the app opens it, run up to its confirm's action. */
@@ -359,6 +399,50 @@ async function confirmBridge() {
   );
   fireEvent.click(within(confirm).getByRole("button", { name: "Move REV" }));
 }
+
+describe("bridge destination mint readiness at the wallet boundary", () => {
+  it("refuses source submission when mint authority is lost during transaction review", async () => {
+    mocks.beforeReverify.mockImplementation(async () => {
+      mocks.verifyDestinationMint.mockRejectedValue(new Error("Destination mint denied"));
+    });
+
+    await confirmBridge();
+
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Destination mint denied",
+        }),
+      ),
+    );
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("probes the exact destination peer, project, beneficiary and submitted count before writing", async () => {
+    // Deliberately distinguish the submitted request from the form's one-token
+    // selection so the callback cannot accidentally verify component state.
+    mocks.beforeReverify.mockImplementation(async (variables) => {
+      variables.args = [
+        2n * 10n ** 18n,
+        pad("0x6666666666666666666666666666666666666666"),
+        ...variables.args.slice(2),
+      ];
+    });
+    await confirmBridge();
+
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    expect(mocks.verifyDestinationMint).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      chainId: 10,
+      projectId: 8n,
+      sucker: "0x4444444444444444444444444444444444444444",
+      beneficiary: "0x6666666666666666666666666666666666666666",
+      tokenCount: 2n * 10n ** 18n,
+    });
+    expect(mocks.verifyDestinationMint.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.write.mock.invocationCallOrder[0],
+    );
+  });
+});
 
 async function confirmBorrow() {
   renderWithQueries(
@@ -548,7 +632,7 @@ describe("cash out's sale approval", () => {
     );
 
     const line =
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.";
+      "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.";
     await waitFor(() => expect(confirm).toHaveTextContent(line));
     expect(confirm).not.toHaveTextContent("The approval was proposed to Safe.");
     expect(within(confirm).queryByRole("button", { name: /Approv|Sell/ })).toBeNull();
@@ -641,7 +725,7 @@ describe("loan flows refused by a Safe proposal the app can't confirm", () => {
 
     const confirm = await confirmPanel();
     await within(confirm).findByText(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+      "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.",
     );
     expect(confirm.textContent).not.toMatch(/denied|failed|not granted|could not/i);
     expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
@@ -700,7 +784,7 @@ describe("value flows open over their own Safe proposal the app can't confirm", 
 
     expect(
       await screen.findByText(
-        "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+        "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.",
       ),
     ).toBeVisible();
   });
@@ -725,7 +809,7 @@ describe("cash out refused by a Safe proposal the app can't confirm", () => {
 
     const confirm = await confirmPanel();
     await within(confirm).findByText(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+      "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.",
     );
     expect(confirm.textContent).not.toMatch(/failed|could not/i);
     expect(within(confirm).queryByRole("alert")).toBeNull();
@@ -758,7 +842,7 @@ describe("a repayment left open over its own Safe proposal the app can't confirm
     expect(
       (
         await screen.findAllByText(
-          "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+          "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.",
         )
       ).length,
     ).toBeGreaterThan(0);

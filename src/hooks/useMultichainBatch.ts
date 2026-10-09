@@ -8,11 +8,7 @@ import {
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
-import {
-  isSafeConnection,
-  submittedViaSafe,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+import { isSafeConnection, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import {
   batchCallKey,
@@ -26,6 +22,7 @@ import {
   readMultichainBatches,
   removeUnsubmittedBatch,
   replaceRoutingDraft,
+  reserveMultichainBatchCall,
   resetUnpaidRoutingDraft,
   resetUnsubmittedBatchCall,
   routingBatchRecoveryReason,
@@ -57,7 +54,7 @@ import {
 } from "@/lib/transaction-activity";
 import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
-import { gasWithHeadroom, isDefiniteWalletRejection } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom, verifyReviewedWriteReceipt } from "@bananapus/nana-sdk-core/review";
 import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
 import {
   readSafeTransaction,
@@ -170,6 +167,14 @@ async function verifyDirectResult(
       safeNonce: number;
     }
 > {
+  const expectedBatch = structuredClone(batch);
+  const expectedActivity = refreshTransactionActivities().find(
+    (row) => row.id === `tx:${call.chainId}:${call.hash!.toLowerCase()}`,
+  );
+  const commit = (result: Partial<FrozenBatchCall>) => {
+    Object.assign(call, result);
+    saveMultichainBatch(batch, expectedBatch);
+  };
   let hash = call.hash!;
   const safe = call.state === "safe";
   if (safe) {
@@ -207,12 +212,17 @@ async function verifyDirectResult(
             "The payment is pending again. Keep the original Safe proposal for reconciliation.",
           );
         const safeNonce = Number(proposal.nonce);
-        updateTransactionActivity(activity.id, {
-          status: "failed",
-          manualVerificationRequired: false,
-          obsoleteSafeNonce: safeNonce,
-          message: `Payment resolved elsewhere. Safe proposal ${call.hash} is obsolete, not verified executed. Cancel or replace nonce ${safeNonce} in Safe if it blocks the queue.`,
-        });
+        commit({ hash, state: "skipped", skipReason: "obsolete-safe", safeNonce });
+        updateTransactionActivity(
+          activity.id,
+          {
+            status: "failed",
+            manualVerificationRequired: false,
+            obsoleteSafeNonce: safeNonce,
+            message: `Payment resolved elsewhere. Safe proposal ${call.hash} is obsolete, not verified executed. Cancel or replace nonce ${safeNonce} in Safe if it blocks the queue.`,
+          },
+          expectedActivity,
+        );
         return { hash, state: "skipped", skipReason: "obsolete-safe", safeNonce };
       }
       throw new Error(
@@ -269,12 +279,30 @@ async function verifyDirectResult(
     throw new Error("The saved transaction does not match the exact reviewed call.");
   if (receipt.status !== "success") {
     if (!safe && call.expectedRouterPending && receipt.status === "reverted") {
-      updateTransactionActivity(`tx:${call.chainId}:${call.hash!.toLowerCase()}`, {
-        status: "failed",
-        manualVerificationRequired: false,
-        message:
-          "The exact routing transaction reverted. No routing changes from this attempt took effect. Refresh the payment and prepare a new review to try again.",
-      });
+      await verifyReviewedWriteReceipt(
+        client,
+        {
+          version: 1,
+          id: batch.id,
+          chainId: call.chainId,
+          account: batch.account,
+          safe: false,
+          call: { to: call.address, data: call.data, value: String(call.value ?? 0n) },
+          hash: call.hash,
+        },
+        receipt,
+      );
+      commit({ hash, state: "reverted" });
+      updateTransactionActivity(
+        `tx:${call.chainId}:${call.hash!.toLowerCase()}`,
+        {
+          status: "failed",
+          manualVerificationRequired: false,
+          message:
+            "The exact routing transaction reverted. No routing changes from this attempt took effect. Refresh the payment and prepare a new review to try again.",
+        },
+        expectedActivity,
+      );
       return { hash, state: "reverted" };
     }
     throw new Error(
@@ -291,15 +319,21 @@ async function verifyDirectResult(
     call.expectedPayout,
     call.expectedRouterPending,
   );
-  updateTransactionActivity(`tx:${call.chainId}:${call.hash!.toLowerCase()}`, {
-    status: "success",
-    manualVerificationRequired: false,
-    executionHash: safe ? hash : undefined,
-    message:
-      routerResult === "pending"
-        ? "The routing attempt was verified. The payment remains in gateway custody awaiting another attempt."
-        : "The exact transaction and every required recipient result were verified.",
-  });
+  const activityId = `tx:${call.chainId}:${call.hash!.toLowerCase()}`;
+  commit({ hash, state: "success" });
+  updateTransactionActivity(
+    activityId,
+    {
+      status: "success",
+      manualVerificationRequired: false,
+      executionHash: safe ? hash : undefined,
+      message:
+        routerResult === "pending"
+          ? "The routing attempt was verified. The payment remains in gateway custody awaiting another attempt."
+          : "The exact transaction and every required recipient result were verified.",
+    },
+    expectedActivity,
+  );
   return { hash, state: "success" };
 }
 
@@ -311,6 +345,7 @@ export function useMultichainBatch() {
     batch: MultichainBatch;
     index: number;
     submission?: MultichainBatch;
+    safe?: boolean;
   } | null>(null);
   const { getRelayrTxQuote } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
@@ -356,31 +391,49 @@ export function useMultichainBatch() {
       if (!client) throw new Error("Destination RPC unavailable.");
       await verifyCallPreconditions(client, call.preconditions);
     },
-    beforeSubmission: async () => {
-      const active = direct.current;
-      if (!active) throw new Error("The saved batch call is unavailable.");
-      const call = active.batch.calls[active.index];
-      const client = getPublicClient(config, { chainId: call.chainId });
-      if (!client) throw new Error("Destination RPC unavailable.");
-      await verifyCallPreconditions(client, call.preconditions);
-      const live = getAccount(config);
-      if (
-        live.address?.toLowerCase() !== active.batch.account.toLowerCase() ||
-        live.chainId !== active.batch.calls[active.index].chainId
-      )
-        throw new Error(
-          "The account or chain changed before submission. Resume with the reviewed account.",
-        );
-      active.batch.calls[active.index].state = "submitting";
-      saveMultichainBatch(active.batch);
-      active.submission = structuredClone(active.batch);
-    },
-    onBeforeSubmissionAborted: async () => {
-      const active = direct.current;
-      if (!active?.submission) throw new Error("The saved submission is unavailable.");
-      resetUnsubmittedBatchCall(active.submission, active.index);
-      active.batch.calls[active.index].state = "ready";
-      delete active.submission;
+    durableRecovery: {
+      owner: () => {
+        const active = direct.current;
+        if (!active) throw new Error("The saved batch call is unavailable.");
+        return { batchId: active.batch.id, callIndex: active.index };
+      },
+      reserve: async () => {
+        const active = direct.current;
+        if (!active) throw new Error("The saved batch call is unavailable.");
+        const call = active.batch.calls[active.index];
+        const client = getPublicClient(config, { chainId: call.chainId });
+        if (!client) throw new Error("Destination RPC unavailable.");
+        await verifyCallPreconditions(client, call.preconditions);
+        const live = getAccount(config);
+        if (
+          live.address?.toLowerCase() !== active.batch.account.toLowerCase() ||
+          live.chainId !== active.batch.calls[active.index].chainId
+        )
+          throw new Error(
+            "The account or chain changed before submission. Resume with the reviewed account.",
+          );
+        active.safe = isSafeConnection(config);
+        Object.assign(call, reserveMultichainBatchCall(active.batch, active.index));
+        active.submission = structuredClone(active.batch);
+      },
+      releaseUnsent: async () => {
+        const active = direct.current;
+        if (!active?.submission) throw new Error("The saved submission is unavailable.");
+        resetUnsubmittedBatchCall(active.submission, active.index);
+        active.batch.calls[active.index].state = "ready";
+        delete active.batch.calls[active.index].writeAttempt;
+        delete active.submission;
+      },
+      submitted: async (hash) => {
+        const active = direct.current;
+        if (!active?.submission) throw new Error("The saved submission is unavailable.");
+        const call = active.batch.calls[active.index];
+        // Keep returned identity in memory even if persisting it fails.
+        call.hash = hash;
+        call.state = active.safe ? "safe" : "submitted";
+        saveMultichainBatch(active.batch, active.submission);
+        delete active.submission;
+      },
     },
   };
   // A resumed batch was reviewed in an earlier run, so each call is reviewed as it is sent.
@@ -898,9 +951,25 @@ export function useMultichainBatch() {
               const client = getPublicClient(config, { chainId: call.chainId }) as
                 PublicClient | undefined;
               if (!client) throw new Error("Destination RPC unavailable.");
+              if (!call.hash && call.state === "submitting") {
+                const retained = refreshTransactionActivities().find(
+                  (activity) =>
+                    activity.writeOwner?.batchId === batch!.id &&
+                    activity.writeOwner.callIndex === index &&
+                    activity.chainId === call.chainId &&
+                    activity.account?.toLowerCase() === account.toLowerCase() &&
+                    activity.callKey === contractTransactionKey(account, call.chainId, call) &&
+                    activity.hash,
+                );
+                if (retained?.hash) {
+                  const previous = structuredClone(batch);
+                  call.hash = retained.hash;
+                  call.state = retained.kind === "safe" ? "safe" : "submitted";
+                  saveMultichainBatch(batch, previous);
+                }
+              }
               if (call.hash) {
-                Object.assign(call, await verifyDirectResult(client, batch, call));
-                saveMultichainBatch(batch);
+                await verifyDirectResult(client, batch, call);
                 displayedCalls[index] = callProgress(call);
                 reportCalls();
                 continue;
@@ -929,19 +998,14 @@ export function useMultichainBatch() {
                 value: call.value,
                 gas: call.gas,
               };
-              try {
-                call.hash = reviewedHere
-                  ? await writeReviewedAsync(variables)
-                  : await writeContractAsync(variables);
-              } catch (cause) {
-                if (isDefiniteWalletRejection(cause)) {
-                  call.state = "ready";
-                  saveMultichainBatch(batch);
-                }
-                throw cause;
+              const hash = reviewedHere
+                ? await writeReviewedAsync(variables)
+                : await writeContractAsync(variables);
+              if (call.hash !== hash) {
+                throw new Error(
+                  "The wallet result was not saved. Preserve this batch for recovery.",
+                );
               }
-              call.state = submittedViaSafe(call.hash) ? "safe" : "submitted";
-              saveMultichainBatch(batch);
               displayedCalls[index] = callProgress(call);
               reportCalls();
               if (call.state === "safe") {
@@ -951,14 +1015,14 @@ export function useMultichainBatch() {
                 return result("pending");
               }
               await client.waitForTransactionReceipt({ hash: call.hash });
-              Object.assign(call, await verifyDirectResult(client, batch, call));
-              saveMultichainBatch(batch);
+              await verifyDirectResult(client, batch, call);
               displayedCalls[index] = callProgress(call);
               reportCalls();
             }
           }
+          const completedSnapshot = structuredClone(batch);
           batch.status = "success";
-          saveMultichainBatch(batch);
+          saveMultichainBatch(batch, completedSnapshot);
           reportCalls();
           updateTransactionActivity(batch.id, {
             status: batch.calls.some((call) => call.state === "reverted") ? "failed" : "success",
@@ -984,7 +1048,7 @@ export function useMultichainBatch() {
                     account,
                     batchCallScope(batch, call, index),
                   );
-                removeUnsubmittedBatch(batch.id);
+                removeUnsubmittedBatch(batch.id, batch);
                 discarded = true;
               } catch {
                 /* A published authorization or inaccessible journal must remain locked. */
