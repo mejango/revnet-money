@@ -37,3 +37,8 @@
 
 - Finding: replacing the entire installed SDK directory with a preview tarball also removed its nested bs58/base-x packages, causing fallback to different root major versions while every manifest hash stayed unchanged.
 - Rule: retain nested node_modules when replacing only a package's own files, then verify the whole installed package-path/content graph and actual dependency resolution. Package metadata and compiled-file equality alone do not qualify the installation or bundle measurement. Invalidate measurements from an incorrect graph; require final clean-install CI before release.
+
+## 2026-10-09 — Preserve Markdown structure when deleting the final list item
+
+- Correction: removing a stale final follow-up also removed the blank separator, so the next paragraph rendered as part of the preceding bullet; its narrowed test suite kept an obsolete describe label.
+- Rule: after deleting Markdown list content, inspect the adjoining rendered hierarchy and keep the separating blank line. Rename suite headings when their covered behavior narrows so test output continues to identify the actual boundary.
