@@ -1985,6 +1985,77 @@ describe("reviewed Relayr payment hook", () => {
     expect(mocks.sendTransaction).toHaveBeenCalledOnce();
   });
 
+  it("reconciles a submitted payment after its immediate funding proof is temporarily unavailable", async () => {
+    const { activity, result } = await quotedPayment();
+    const expected = activity.transactionActivitySnapshot()[0].relayrExpectedTransactions![0];
+    const destinationHash = `0x${"5e".repeat(32)}` as Hex;
+    const destination = {
+      ...onchain(expected.target, expected.data, BigInt(expected.value)),
+      hash: destinationHash,
+      transactionHash: destinationHash,
+    };
+    let confirmFunding!: () => void;
+    mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) =>
+      hash === destinationHash ? destination : onchain(PAYMENT_TARGET, payment().calldata),
+    );
+    mocks.getTransactionReceipt
+      .mockRejectedValueOnce(new Error("RPC temporarily unavailable"))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            confirmFunding = () => resolve(onchain(PAYMENT_TARGET, payment().calldata));
+          }),
+      )
+      .mockImplementation(async ({ hash }: { hash: Hex }) =>
+        hash === destinationHash ? destination : onchain(PAYMENT_TARGET, payment().calldata),
+      );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              bundle_uuid: BUNDLE_UUID,
+              payment_received: true,
+              transactions: [
+                {
+                  tx_uuid: expected.transactionUuid,
+                  request: {
+                    chain: expected.chainId,
+                    target: expected.target,
+                    data: expected.data,
+                    value: expected.value,
+                  },
+                  status: { state: "Success", data: { hash: destinationHash } },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
+      /confirmation is uncertain/,
+    );
+    await vi.waitFor(() => expect(confirmFunding).toBeTypeOf("function"));
+    expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+      status: "pending",
+      relayrPaymentStatus: "submitted",
+    });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
+      /already has a submitted payment/,
+    );
+    confirmFunding();
+    await vi.waitFor(() =>
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+        status: "success",
+        relayrPaymentStatus: "confirmed",
+      }),
+    );
+    expect(mocks.waitForTransactionReceipt).toHaveBeenCalledOnce();
+    expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
+
   it("blocks a second funding option after the first has been paid", async () => {
     const harness = await freshHarness();
     harness.review.registerTransactionReviewHandler(async () => true);

@@ -98,6 +98,46 @@ afterEach(() => {
 });
 
 describe("payment recovery", () => {
+  it.each(["uncertain", "pending"])(
+    "continues the saved submission after a %s result without fresh routing confirmation",
+    async (outcome) => {
+      const hash = `0x${"a".repeat(64)}`;
+      const message = `Payment ${hash} was submitted, but confirmation is uncertain. Do not pay again.`;
+      const saved = {
+        id: "submitted-batch",
+        scope: "pending-routing:destination:1:1,8453:1",
+        completed: 0,
+        total: 1,
+        calls: [],
+        recoveryReason: "Checking the submitted payment.",
+      };
+      mocks.batch.mockImplementationOnce(async () => {
+        mocks.saved.mockReturnValue(saved);
+        if (outcome === "uncertain") throw new Error(message);
+        return { status: "pending", hashes: [] };
+      });
+      setup();
+      fireEvent.click(await screen.findByRole("button", { name: "Review routing" }));
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Confirm routing" }));
+      const resume = await within(dialog).findByRole("button", { name: "Continue" });
+      expect(within(dialog).queryByRole("button", { name: "Confirm routing" })).toBeNull();
+      expect(within(dialog).queryByRole("button", { name: "Done" })).toBeNull();
+      if (outcome === "uncertain") {
+        expect(within(dialog).getByRole("alert")).toHaveTextContent(message);
+        expect(within(dialog).getByRole("alert")).toHaveClass("wrap-anywhere");
+      }
+      fireEvent.click(resume);
+      await waitFor(() => expect(mocks.batch).toHaveBeenCalledTimes(2));
+      expect(mocks.batch.mock.calls[1][0]).toMatchObject({
+        scope: saved.scope,
+        expectedBatchId: saved.id,
+        calls: [],
+      });
+      expect(mocks.prepare).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("renders nothing when all indexed destination projects have no pending calls", async () => {
     mocks.indexed.mockResolvedValue([]);
     setup();

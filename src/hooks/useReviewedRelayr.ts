@@ -2379,12 +2379,15 @@ export function useSendRelayrTx() {
           }
           await provePayment(remembered.bundleUuid);
         } catch (error) {
-          if (!(error instanceof RelayrVerificationError))
+          if (!(error instanceof RelayrVerificationError)) {
             updateTransactionActivity(activityId, {
               status: "pending",
               message:
                 "Payment was submitted, but confirmation is uncertain. Do not pay again; check this hash and bundle.",
             });
+            // Keep proving this saved payment even if an immediate RPC read failed.
+            void waitForRelayrBundle(remembered.bundleUuid).catch(() => undefined);
+          }
           throw new Error(
             `Payment ${mined} was submitted, but confirmation is uncertain. Do not pay again.`,
             { cause: error },

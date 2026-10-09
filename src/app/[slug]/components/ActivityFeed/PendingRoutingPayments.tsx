@@ -225,6 +225,23 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
 
   async function submit() {
     if (!savedSelection && !reviewed) return;
+    const recoverSavedSubmission = () => {
+      const pending = getPendingBatch(savedSelection?.scope ?? scope, identities);
+      if (
+        !pending ||
+        pending.replaceableDraft ||
+        pending.refreshable ||
+        pending.scope !== (savedSelection?.scope ?? scope) ||
+        (savedSelection && pending.id !== savedSelection.id)
+      )
+        return false;
+      setSavedSelection(pending);
+      setReviewed(null);
+      setReplacementId(undefined);
+      setRefreshBatchId(undefined);
+      setNeedsReview(false);
+      return true;
+    };
     const submission = { controller: new AbortController(), cancellable: true };
     activeSubmission.current = submission;
     const current = () =>
@@ -261,7 +278,10 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       });
       if (!current()) return;
       setObsoleteProposals(result.obsoleteSafeProposals ?? []);
-      if (result.status === "pending") return;
+      if (result.status === "pending") {
+        recoverSavedSubmission();
+        return;
+      }
       setProgress(
         result.revertedHashes?.length
           ? `${result.revertedHashes.length} routing attempt(s) reverted. Review the refreshed pending payments before trying again.`
@@ -273,7 +293,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       if (!current()) return;
       setProgress(null);
       setError(formatWalletError(cause));
-      if (replacementId || refreshBatchId) setNeedsReview(true);
+      if (!recoverSavedSubmission() && (replacementId || refreshBatchId)) setNeedsReview(true);
     } finally {
       if (activeSubmission.current === submission) {
         activeSubmission.current = null;

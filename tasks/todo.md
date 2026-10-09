@@ -976,3 +976,33 @@ Official adoption complete: exact registry SDK2.25.0 is pinned in the manifest a
 - **Resource budget:** Reuse completed hosted measurements and source review; do not run another build pair solely to overattribute a13KiB ceiling change. One budget owner and existing documentation record suffice; replan only if new CI identifies another cost or functional failure.
 
 Independent review confirmed the2684KiB aggregate ceiling with unchanged900KiB route,1100KiB referenced and lazy-wallet assertions. Source invariants, formatting ratchet, scoped ESLint and whitespace checks pass. First hosted failure and baseline logs remain /private/tmp/revnet-pr75-92e58f79-hosted-ci.log and /private/tmp/revnet-main-37713095651-hosted-ci.log. No application source changed; the next PR revision must complete the formerly blocked browser gate.
+
+## Pending routing confirmation recovery — 2026-10-09
+
+## Plan refinement
+- **Objective:** A successfully submitted routing fee whose immediate confirmation is unavailable must retain recovery of the existing batch, display its full error/hash, and avoid offering fresh confirmation.
+- **System fit:** PendingRoutingPayments owns foreground review; useMultichainBatch owns durable identity and recovery; useReviewedRelayr/SDK retain canonical payment and destination proof. User reports the submission succeeded; no live hash is available to prove the specific timing failure.
+- **Reuse and simplicity:** Reuse getPendingBatch and savedSelection for recovery and TxError's existing wrap-anywhere presentation rule; preserve shared execution locks and payment verification.
+- **Evidence and unknowns:** Screenshot proves clipped hash and stale Confirm routing action; source shows rejected/pending runBatch leaves reviewed fresh selection active. Exact confirmation failure is unknown without transaction/provider evidence.
+- **Verification:** Regression-test rejected and pending submissions transitioning to the exact saved batch, preserving errors and resumed expectedBatchId; check confirm hash wrapping, routing and Relayr suites, typecheck and targeted lint.
+- **Resource budget:** One read-only delegated investigation of payment proof; bounded UI changes and existing focused tests, no new polling or weakened proof, no deployment/transactions.
+
+- [x] Trace submission, saved-batch recovery and shared error rendering.
+- [x] Switch unresolved foreground submissions to existing saved recovery.
+- [x] Wrap long confirmation messages and add regression checks.
+- [x] Run checks and record verified results and limits.
+
+## Plan refinement
+- **Objective:** Also continue canonical reconciliation when the immediate post-broadcast confirmation check is temporarily unavailable.
+- **System fit:** useReviewedRelayr already owns waitForRelayrBundle, including bounded retry and exact payment/destination proof; start that observer on transient confirmation failures while preserving the saved submission and existing error/recovery lock.
+- **Reuse and simplicity:** Reuse the existing observer; no new polling logic, payment submission or proof bypass. Permanent RelayrVerificationError remains a held verification failure.
+- **Evidence and unknowns:** Source starts the watcher only after immediate proof success, so a temporary failed read bypasses its retry path. User confirms a later button click registered success; exact failed RPC read remains unknown.
+- **Verification:** Add a funding-hook regression that fails the immediate proof read and later verifies through the existing watcher without a second wallet send; rerun focused recovery/confirmation tests and typecheck/lint.
+- **Resource budget:** Delegate only the funding-hook/test change; main agent retains foreground recovery and message wrapping. Reuse current test mocks and bounded observer.
+
+### Confirmation recovery review
+- Transient post-broadcast confirmation failures now start the existing canonical bundle observer; hard verification errors retain their previous held state.
+- Foreground unresolved routing adopts saved-batch continuation, passing its exact expectedBatchId without preparing fresh calls; confirmation errors expose an accessible alert and wrap full hashes.
+- Final verification: 432 tests passed across pending-routing-payments, ui-primitives, multichain-batch and reviewed-relayr-hooks; typecheck, changed-file ESLint, wallet-writes:check (142 sites), and git diff whitespace check passed.
+- Regression proves immediate proof-read failure followed by verified funding/destination completion with exactly one wallet payment and duplicate submission blocked.
+- Local changes only; no deployment or transactions. The particular failing RPC read in the screenshot remains unverified without its full transaction hash/provider logs.

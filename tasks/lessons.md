@@ -37,3 +37,8 @@
 
 - Finding: replacing the entire installed SDK directory with a preview tarball also removed its nested bs58/base-x packages, causing fallback to different root major versions while every manifest hash stayed unchanged.
 - Rule: retain nested node_modules when replacing only a package's own files, then verify the whole installed package-path/content graph and actual dependency resolution. Package metadata and compiled-file equality alone do not qualify the installation or bundle measurement. Invalidate measurements from an incorrect graph; require final clean-install CI before release.
+
+## 2026-10-09 — Continue confirmation after a submitted payment
+- User evidence: pending-payment batch funding showed confirmation uncertainty, but succeeded and registered when the existing action was clicked again.
+- Rule: a temporary post-broadcast receipt/proof read failure must keep the existing canonical reconciliation observer running; preserve submitted-payment exclusion and show saved-batch continuation rather than a fresh confirmation. A submitted hash is not proof of failed execution.
+- Gate: raw Relayr funding regression must recover from a transient proof-read failure with one wallet send; pending-routing regressions must resume the saved batch ID and wrap the complete hash/error.

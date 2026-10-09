@@ -140,7 +140,11 @@ export function TxConfirmDialog({
             ) : null}
           </>
         )}
-        {error ? <p className="text-sm text-red-600">{errorText}</p> : null}
+        {error ? (
+          <p role="alert" className="wrap-anywhere text-sm text-red-600">
+            {errorText}
+          </p>
+        ) : null}
       </div>
       {complete || action || footerContent ? (
         <footer className="flex flex-wrap items-end justify-end gap-2 border-t border-melon-300 bg-melon-25 px-5 py-4">
