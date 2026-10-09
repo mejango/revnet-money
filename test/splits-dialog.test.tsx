@@ -126,7 +126,7 @@ describe("ChangeSplitRecipientsDialog over its own Safe proposal the app can't c
 
     expect(
       within(dialog).getByText(
-        "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+        "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.",
       ),
     ).toBeInTheDocument();
   });
@@ -313,7 +313,7 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
     const done = await within(dialog).findByRole("button", { name: "Done" });
     const line =
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.";
+      "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.";
     expect(dialog).toHaveTextContent(line);
     expect(dialog).not.toHaveTextContent("Proposed to Safe.");
     fireEvent.click(done);

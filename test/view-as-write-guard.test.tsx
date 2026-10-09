@@ -85,6 +85,10 @@ async function freshHarness() {
 
 beforeEach(() => {
   window.localStorage.clear();
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value: { request: async (_key: string, work: () => Promise<unknown>) => work() },
+  });
   mocks.getAccount.mockReturnValue({
     address: ACCOUNT,
     chainId: 11155111,

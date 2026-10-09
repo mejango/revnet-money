@@ -113,7 +113,18 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Node 26.7.0 dependency tree. Raise only the aggregate ceiling by 1 KiB.
 // Per-attempt routing progress measures 2685.2 KiB versus 29803a68's 2684.5 KiB
 // with the same locked toolchain/dependencies. Keep route and lazy-load limits.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2686);
+// The shared Sticky home-chain SDK update measures 2,770,714 B versus a88a0450's
+// 2,749,570 B on the same Node 26.7.0 dependency graph (+21,144 B). Its route
+// verifier is tree-shaken; existing module repartitioning accounts for most of
+// the growth. Round only the aggregate ceiling to 2706 KiB; keep route,
+// route-referenced and lazy-wallet limits unchanged.
+// Durable ordinary-write recovery and destination mint readiness measure
+// 2,775,788 B versus original 3d2d02a8's 2,770,709 B (+5,079 B, 0.18%) on
+// Node 26.7.0/npm 12.0.1 with 112,119 identical non-SDK dependency files; only
+// the SDK moves from authenticated official 2.26.0 to preview 4006a0bca708.
+// Independent module review found no newly eager family or duplicated owner.
+// Round only the aggregate ceiling to 2711 KiB; route and lazy limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2711);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

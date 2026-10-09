@@ -167,7 +167,7 @@ describe("a burn left open over its own Safe proposal the app can't confirm", ()
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     await screen.findByText(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
+      "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.",
     );
   });
 });

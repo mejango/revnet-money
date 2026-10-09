@@ -48,6 +48,7 @@ vi.mock("wagmi", () => ({
 import { proposeSafeBatch, SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import {
   dismissTransactionActivity,
+  refreshTransactionActivities,
   transactionActivityForHash,
   transactionActivitySnapshot,
 } from "@/lib/transaction-activity";
@@ -115,6 +116,12 @@ describe("one Safe proposal for a whole flow", () => {
   let seen: TransactionReviewRequest | null;
   let approve: boolean;
   beforeEach(() => {
+    window.localStorage.clear();
+    refreshTransactionActivities();
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: { request: async (_key: string, work: () => Promise<unknown>) => work() },
+    });
     seen = null;
     approve = true;
     clearViewAs();
@@ -220,7 +227,7 @@ describe("one Safe proposal for a whole flow", () => {
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses the same batch while a proposal it can't confirm is listed, and takes it once dismissed", async () => {
+  it("keeps an unconfirmed Safe batch locked after an attempted dismissal", async () => {
     const CALLS = calls();
     const proposal = listBatchThrough(CALLS, UNLISTED_MULTI_SEND);
 
@@ -242,14 +249,29 @@ describe("one Safe proposal for a whole flow", () => {
     ).catch((cause: unknown) => cause);
     expect(refused).toBeInstanceOf(SafeProposalPendingError);
     expect((refused as Error).message).toContain(
-      "Check it in Safe, then dismiss it in your account activity.",
+      "This action stays locked until its execution is verified.",
     );
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
 
     dismissTransactionActivity(transactionActivityForHash(proposal)!.id);
     mocks.sendCalls.mockResolvedValue({ id: SAFE_TX_HASH });
-    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
-    expect(mocks.sendCalls).toHaveBeenCalledTimes(2);
+    await expect(
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
+    ).rejects.toBeInstanceOf(SafeProposalPendingError);
+    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a changed Safe bundle after losing the wallet reply", async () => {
+    mocks.sendCalls.mockRejectedValue(new Error("Wallet reply lost"));
+    await expect(
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
+    ).rejects.toThrow(/reply lost/);
+    await expect(
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
+    ).rejects.toThrow(/unknown/);
+    expect(mocks.sendCalls).toHaveBeenCalledOnce();
+    expect(transactionActivitySnapshot()).toHaveLength(1);
+    expect(transactionActivitySnapshot()[0].writeScopes).toHaveLength(2);
   });
 
   it("follows a proposal that runs the batch through Safe 1.4.1's MultiSendCallOnly", async () => {
@@ -295,9 +317,11 @@ describe("one Safe proposal for a whole flow", () => {
     });
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
 
+    // Use an independent action: the prior proposal still locks both targets.
+    const independentCalls = calls().map((call) => ({ ...call, address: ACCOUNT }));
     mocks.request.mockRejectedValueOnce(new Error("allowance"));
     await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", independentCalls),
     ).rejects.toThrow("step 1");
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });

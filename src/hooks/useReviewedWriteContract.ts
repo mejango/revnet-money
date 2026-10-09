@@ -1,16 +1,23 @@
 "use client";
 
+import { readMultichainBatches } from "@/lib/multichain-batch";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
+  contractTransactionScope,
   recordTransactionActivity,
   refreshTransactionActivities,
+  removeUnsentTransactionActivity,
+  requireTransactionActivityPersistence,
+  reserveTransactionActivity,
+  submitTransactionActivity,
   transactionActivityForHash,
   transactionActivitySnapshot,
   updateTransactionActivity,
   useTransactionActivities,
+  type TransactionActivity,
 } from "@/lib/transaction-activity";
 import {
   requireContractTransactionReview,
@@ -27,6 +34,7 @@ import {
   gasWithHeadroom,
   simulateCallSequence,
   submitReviewedContractWrite,
+  verifyReviewedWriteReceipt,
 } from "@bananapus/nana-sdk-core/review";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
@@ -41,7 +49,7 @@ import {
 } from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   encodeFunctionData,
   isHash,
@@ -84,6 +92,80 @@ function requirePlannedAccount(planned: unknown, connected: Address): void {
 }
 
 const safeInflight = new Map<string, Promise<void>>();
+const UNKNOWN_WRITE =
+  "The wallet result is unknown. This action remains locked; do not submit it again. Keep this browser's recovery data.";
+
+function reserveWalletWrite(
+  chainId: number,
+  account: Address,
+  title: string,
+  callKey: string,
+  calls: readonly { to: Address; data: Hex; value?: bigint | string }[],
+  safe: ReviewedSafeProposal | false,
+): TransactionActivity {
+  const id = `write:${crypto.randomUUID()}`;
+  const call = calls[0];
+  if (!call) throw new Error("The reviewed write contains no calls.");
+  return reserveTransactionActivity({
+    id,
+    kind: safe ? "safe" : "direct",
+    title,
+    status: "pending",
+    message: UNKNOWN_WRITE,
+    chainId,
+    account,
+    callKey,
+    safeProposal: safe || undefined,
+    writeScopes: calls.map((call) =>
+      contractTransactionScope(account, chainId, { address: call.to, data: call.data }),
+    ),
+    reviewedWrite: {
+      version: 1,
+      id,
+      chainId,
+      account,
+      safe: !!safe,
+      call: { ...call, value: String(call.value ?? 0n) },
+    },
+  });
+}
+
+/** Sorted constituent scopes serialize ordinary calls and overlapping Safe bundles together. */
+function withWriteLocks<T>(scopes: readonly string[], work: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (!locks)
+    return Promise.reject(new Error("This browser cannot safely coordinate wallet writes."));
+  const keys = [...new Set(scopes)].sort();
+  const acquire = (index: number): Promise<T> =>
+    index === keys.length
+      ? work()
+      : locks.request(`revnet:transaction:${keccak256(stringToHex(keys[index]))}`, () =>
+          acquire(index + 1),
+        );
+  return acquire(0);
+}
+
+function requireNoPendingBatchWrite(
+  account: Address,
+  scopes: readonly string[],
+  owner?: TransactionActivity["writeOwner"],
+): void {
+  const pending = readMultichainBatches().find(
+    (batch) =>
+      batch.account.toLowerCase() === account.toLowerCase() &&
+      batch.status === "pending" &&
+      batch.calls.some(
+        (call, index) =>
+          !(batch.id === owner?.batchId && index === owner.callIndex) &&
+          ["submitting", "submitted", "safe"].includes(call.state) &&
+          scopes.includes(contractTransactionScope(account, call.chainId, call)),
+      ),
+  );
+  if (pending)
+    throw new Error(
+      "A saved batch has an unresolved wallet write for this action. Resume that batch; do not submit it again.",
+    );
+}
 /** A watch looks for its proposal's result this often. */
 const SAFE_LOOK_MS = 5_000;
 /**
@@ -180,17 +262,26 @@ async function watchSafeProposal(
   const liveNonce = rereadEveryMinute(async (safe) =>
     client ? await readBoundedSafeNonce(client, safe).catch(() => null) : null,
   );
-  const executed = (isSuccessful: boolean, transactionHash: Hex | undefined) => {
+  const executed = (
+    isSuccessful: boolean,
+    transactionHash: Hex | undefined,
+    expected?: TransactionActivity,
+  ) => {
     const needsReceiptVerification = tracked()?.manualVerificationRequired === true;
-    updateTransactionActivity(id, {
-      status: needsReceiptVerification ? "pending" : isSuccessful ? "success" : "failed",
-      executionHash: transactionHash,
-      message: needsReceiptVerification
-        ? "Safe execution was reported. Its exact transaction and recipient results still require verification; resume the saved batch."
-        : !isSuccessful
-          ? "Safe executed this proposal, but the onchain transaction failed."
-          : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
-    });
+    updateTransactionActivity(
+      id,
+      {
+        status: needsReceiptVerification ? "pending" : isSuccessful ? "success" : "failed",
+        ...(expected ? { safeResultUnconfirmed: false } : {}),
+        executionHash: transactionHash,
+        message: needsReceiptVerification
+          ? "Safe execution was reported. Its exact transaction and recipient results still require verification; resume the saved batch."
+          : !isSuccessful
+            ? "Safe executed this proposal, but the onchain transaction failed."
+            : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
+      },
+      expected,
+    );
   };
   /** The service's latest record reports the proposal executed without its transaction. */
   let reportedExecuted = false;
@@ -254,6 +345,23 @@ async function watchSafeProposal(
         executionSeenAt: seenAt,
         message: RECEIPT_UNCONFIRMED,
       });
+      return;
+    }
+    const recovery = tracked();
+    if (recovery?.reviewedWrite) {
+      try {
+        const outcome = await verifyReviewedWriteReceipt(
+          client!,
+          recovery.reviewedWrite,
+          receipt,
+          recovery.safeProposal
+            ? { calls: recovery.safeProposal.calls, batch: recovery.safeProposal.batch }
+            : undefined,
+        );
+        executed(outcome === "success", executionHash, recovery);
+      } catch {
+        updateTransactionActivity(id, { executionHash, message: RECEIPT_UNCONFIRMED }, recovery);
+      }
       return;
     }
     const result = safeExecutionResult(receipt, safe, hash);
@@ -464,17 +572,24 @@ export async function proposeSafeBatch(
     value: call.value,
     data: encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args }),
   }));
+  const writeScopes = encoded.map((call) =>
+    contractTransactionScope(account, chainId, { address: call.to, data: call.data }),
+  );
   const callKey = `batch:${account.toLowerCase()}:${chainId}:${keccak256(
     stringToHex(encoded.map((call) => `${call.to}:${call.value ?? 0n}:${call.data}`).join("|")),
   )}`;
   const submit = async () => {
+    requireTransactionActivityPersistence();
+    requireNoPendingBatchWrite(account, writeScopes);
     const duplicate = refreshTransactionActivities().find(
       (activity) =>
-        activity.callKey === callKey &&
+        (activity.callKey === callKey ||
+          activity.writeScopes?.some((scope) => writeScopes.includes(scope))) &&
         (activity.status === "submitted" ||
           activity.status === "pending" ||
           activity.status === "safe-proposed"),
     );
+    if (duplicate && !duplicate.hash) throw new Error(UNKNOWN_WRITE);
     if (duplicate?.hash) {
       throw new SafeProposalPendingError(duplicate.hash, title, duplicate.safeResultUnconfirmed);
     }
@@ -512,33 +627,41 @@ export async function proposeSafeBatch(
       confirmLabel: "Agree & propose to Safe",
       description: `These ${calls.length} calls go to Safe as one batch that executes together, in this order, once the Safe's approvals are in.\n\n${SAFE_NONCE_GUIDANCE}`,
     });
-    requireWalletContext();
-    if (getAccount(config).chainId !== chainId) {
-      await switchChain(config, { chainId } as Parameters<typeof switchChain>[1]);
-    }
-    requireWalletContext(chainId);
-    const { id } = await sendCalls(config, { chainId, calls: encoded });
-    const hash = id as Hex;
-    followSubmission(
-      config,
-      hash,
-      chainId,
-      title,
-      account,
-      callKey,
-      {
-        safe: account,
-        calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
-        batch: true,
+    const safe: ReviewedSafeProposal = {
+      safe: account,
+      calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
+      batch: true,
+    };
+    let reservation: TransactionActivity | undefined;
+    const releaseUnsent = () => {
+      if (reservation) removeUnsentTransactionActivity(reservation);
+    };
+    return submitReviewedContractWrite({
+      request: { chainId },
+      expectedAccount: account,
+      currentAccount: () => getAccount(config).address,
+      review: async () => undefined,
+      switchChain: async () => {
+        requireWalletContext();
+        if (getAccount(config).chainId !== chainId)
+          await switchChain(config, { chainId } as Parameters<typeof switchChain>[1]);
+        requireWalletContext(chainId);
       },
-      false,
-    );
-    return hash;
+      simulate: async () => encoded,
+      beforeWrite: () => {
+        reservation = reserveWalletWrite(chainId, account, title, callKey, encoded, safe);
+      },
+      beforeSend: () => requireWalletContext(chainId),
+      onBeforeWriteAborted: releaseUnsent,
+      onWriteRejected: releaseUnsent,
+      onWriteSubmitted: (hash: Hex) => {
+        reservation = submitTransactionActivity(reservation!, hash);
+        followSubmission(config, hash, chainId, title, account, callKey, safe, false);
+      },
+      write: async (calls) => (await sendCalls(config, { chainId, calls })).id as Hex,
+    });
   };
-  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-  return locks
-    ? locks.request(`revnet:transaction:${keccak256(stringToHex(callKey))}`, submit)
-    : submit();
+  return withWriteLocks(writeScopes, submit);
 }
 
 export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
@@ -546,7 +669,7 @@ export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>)
     .filter(
       (activity) =>
         activity.status === "safe-proposed" &&
-        !activity.safeResultUnconfirmed &&
+        (!activity.safeResultUnconfirmed || activity.reviewedWrite || activity.writeOwner) &&
         activity.hash &&
         activity.chainId,
     )
@@ -559,7 +682,31 @@ export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>)
           getPublicClient(config, { chainId: activity.chainId! }),
         ),
     );
+  transactionActivitySnapshot()
+    .filter(
+      (activity) =>
+        activity.kind === "direct" &&
+        activity.reviewedWrite &&
+        (activity.status === "submitted" || activity.status === "pending") &&
+        activity.hash &&
+        activity.chainId &&
+        activity.account,
+    )
+    .forEach((activity) =>
+      followSubmission(
+        config,
+        activity.hash!,
+        activity.chainId!,
+        activity.title,
+        activity.account!,
+        activity.callKey!,
+        false,
+        activity.manualVerificationRequired === true,
+      ),
+    );
 }
+
+const directInflight = new Map<string, Promise<void>>();
 
 /**
  * Journal a submitted write and follow it to its result. `safe` is what a Safe proposal was
@@ -574,6 +721,7 @@ export function followSubmission(
   callKey: string,
   safe: ReviewedSafeProposal | false,
   manualReceiptVerification: boolean,
+  writeOwner?: TransactionActivity["writeOwner"],
 ): void {
   const id = `tx:${chainId}:${hash.toLowerCase()}`;
   recordTransactionActivity({
@@ -591,6 +739,7 @@ export function followSubmission(
     safeProposal: safe || undefined,
     callKey,
     manualVerificationRequired: manualReceiptVerification || undefined,
+    writeOwner,
   });
   if (manualReceiptVerification && !safe) {
     updateTransactionActivity(id, {
@@ -606,22 +755,39 @@ export function followSubmission(
   }
   updateTransactionActivity(id, { status: "pending", message: "Pending onchain confirmation." });
   if (!publicClient) return;
-  void waitForReceiptWithRetry(publicClient, hash)
-    .then((receipt) => {
-      updateTransactionActivity(id, {
-        status: receipt.status === "success" ? "success" : "failed",
-        message:
-          receipt.status === "success"
-            ? "Confirmed onchain."
-            : "The transaction was mined but reverted. Its intended state changes did not occur.",
-      });
+  if (directInflight.has(id)) return;
+  const expected = transactionActivityForHash(hash);
+  const following = waitForReceiptWithRetry(publicClient, hash)
+    .then(async (receipt) => {
+      const outcome = expected?.reviewedWrite
+        ? await verifyReviewedWriteReceipt(publicClient, expected.reviewedWrite, receipt)
+        : receipt.status === "success"
+          ? "success"
+          : "failed";
+      updateTransactionActivity(
+        id,
+        {
+          status: outcome,
+          message:
+            outcome === "success"
+              ? "Confirmed onchain."
+              : "The transaction was mined but reverted. Its intended state changes did not occur.",
+        },
+        expected?.reviewedWrite ? expected : undefined,
+      );
     })
     .catch(() => {
-      updateTransactionActivity(id, {
-        status: "pending",
-        message: RECEIPT_UNCONFIRMED,
-      });
-    });
+      updateTransactionActivity(
+        id,
+        {
+          status: "pending",
+          message: RECEIPT_UNCONFIRMED,
+        },
+        expected?.reviewedWrite ? expected : undefined,
+      );
+    })
+    .finally(() => directInflight.delete(id));
+  directInflight.set(id, following);
 }
 
 type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] & {
@@ -637,6 +803,13 @@ type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] 
   beforeSubmission?: () => Promise<void>;
   /** The shared final gate refused after persistence, before the wallet writer was invoked. */
   onBeforeSubmissionAborted?: () => Promise<void>;
+  /** A domain journal explicitly owns every durable transition for this write. */
+  durableRecovery?: {
+    owner: () => NonNullable<TransactionActivity["writeOwner"]>;
+    reserve: () => Promise<void>;
+    submitted: (hash: Hex) => Promise<void>;
+    releaseUnsent: () => Promise<void>;
+  };
   /** A batch verifier reconstructs the exact Safe execution before releasing child activity. */
   allowSafeManualReceiptVerification?: boolean;
   reverify?: (
@@ -662,11 +835,21 @@ export function useWriteContract(
 ): ReturnType<typeof useWagmiWriteContract> {
   const config = useConfig();
   const queryClient = useQueryClient();
+  const scope = useRef({ mounted: true, generation: 0 });
+  useEffect(() => {
+    const active = scope.current;
+    active.mounted = true;
+    return () => {
+      active.mounted = false;
+      active.generation += 1;
+    };
+  }, []);
   const {
     transactionReview,
     reviewedInParent,
     beforeSubmission,
     onBeforeSubmissionAborted,
+    durableRecovery,
     allowSafeManualReceiptVerification,
     reverify,
     preflightSimulation,
@@ -678,6 +861,13 @@ export function useWriteContract(
   const writeContractAsync = useCallback(
     async (variables: Parameters<typeof mutation.writeContractAsync>[0]) => {
       requireNoViewAs();
+      const generation = scope.current.generation;
+      const requireActive = () => {
+        if (!scope.current.mounted || scope.current.generation !== generation) {
+          throw new Error("The transaction view changed. Review the action again.");
+        }
+      };
+      requireActive();
       // Every call names its chain. The wallet is switched to that chain after
       // review; a call without one would go to whichever chain the wallet is on.
       const chainId = Number(variables.chainId);
@@ -701,15 +891,41 @@ export function useWriteContract(
         args: variables.args,
       });
       const callKey = contractTransactionKey(initialAddress, chainId, { ...variables, data });
+      const writeScope = contractTransactionScope(initialAddress, chainId, { ...variables, data });
+      const writeOwner = durableRecovery?.owner();
       const submitReviewedCall = async () => {
+        requireActive();
+        requireTransactionActivityPersistence();
+        if (writeOwner) {
+          const batch = readMultichainBatches().find((entry) => entry.id === writeOwner.batchId);
+          const call = batch?.calls[writeOwner.callIndex];
+          if (
+            !batch ||
+            batch.status !== "pending" ||
+            batch.route !== "direct" ||
+            batch.account.toLowerCase() !== initialAddress.toLowerCase() ||
+            !call ||
+            call.state !== "ready" ||
+            !!call.hash ||
+            contractTransactionKey(initialAddress, call.chainId, call) !== callKey
+          ) {
+            throw new Error("The durable recovery owner does not match the reviewed call.");
+          }
+        }
+        requireNoPendingBatchWrite(initialAddress, [writeScope], writeOwner);
         const duplicate = refreshTransactionActivities().find(
           (activity) =>
-            activity.callKey === callKey &&
+            (activity.callKey === callKey || activity.writeScopes?.includes(writeScope)) &&
             (activity.manualVerificationRequired === true ||
               activity.status === "submitted" ||
               activity.status === "pending" ||
               activity.status === "safe-proposed"),
         );
+        if (duplicate && !duplicate.hash) {
+          throw new Error(
+            "An earlier wallet write has an unknown result. This action remains locked; do not submit it again.",
+          );
+        }
         if (duplicate?.hash) {
           if (duplicate.status === "safe-proposed") {
             throw new SafeProposalPendingError(
@@ -797,7 +1013,15 @@ export function useWriteContract(
         };
         // Connector identity matters even when both wallets are ordinary EOAs.
         // Refuse known context drift before journaling, and at the shared final gate.
-        const assertWalletContext = () => requireWalletContext(chainId);
+        const assertWalletContext = () => {
+          requireActive();
+          requireWalletContext(chainId);
+        };
+        let reservation: TransactionActivity | undefined;
+        const releaseUnsent = async () => {
+          if (durableRecovery) await durableRecovery.releaseUnsent();
+          else if (reservation) removeUnsentTransactionActivity(reservation);
+        };
         const hash = await submitReviewedContractWrite({
           request: variables as typeof variables & { chainId: number },
           expectedAccount: initialAddress,
@@ -806,6 +1030,7 @@ export function useWriteContract(
           review,
           switchChain: async () => {
             // Refuse changed review identity before even opening a switch prompt.
+            requireActive();
             requireWalletContext();
             if (getAccount(config).address?.toLowerCase() !== initialAddress.toLowerCase()) {
               throw new Error(ACCOUNT_CHANGED);
@@ -832,28 +1057,57 @@ export function useWriteContract(
             assertWalletContext();
             return prepared;
           },
-          beforeWrite: beforeSubmission,
-          onBeforeWriteAborted: onBeforeSubmissionAborted,
+          beforeWrite: async () => {
+            await beforeSubmission?.();
+            if (durableRecovery) await durableRecovery.reserve();
+            else {
+              const calls = [{ to: variables.address, data, value: String(variables.value ?? 0n) }];
+              reservation = reserveWalletWrite(
+                chainId,
+                initialAddress,
+                functionName,
+                callKey,
+                calls,
+                safe ? { safe: initialAddress, calls, batch: false } : false,
+              );
+            }
+          },
+          onBeforeWriteAborted: async () => {
+            await releaseUnsent();
+            await onBeforeSubmissionAborted?.();
+          },
+          onWriteRejected: releaseUnsent,
+          onWriteSubmitted: async (hash: Hex) => {
+            try {
+              if (durableRecovery) await durableRecovery.submitted(hash);
+              else if (reservation) reservation = submitTransactionActivity(reservation, hash);
+            } finally {
+              // The wallet's reply belongs to this exact attempt even when the
+              // owning batch journal became unwritable while its prompt was open.
+              if (durableRecovery || reservation?.hash === hash)
+                followSubmission(
+                  config,
+                  hash,
+                  chainId,
+                  functionName,
+                  initialAddress,
+                  callKey,
+                  safe && {
+                    safe: initialAddress,
+                    calls: [{ to: variables.address, value: String(variables.value ?? 0n), data }],
+                    batch: false,
+                  },
+                  ownsReceiptLifecycle,
+                  writeOwner,
+                );
+            }
+          },
           beforeSend: assertWalletContext,
           write: (prepared) =>
             mutation.writeContractAsync(
               prepared as Parameters<typeof mutation.writeContractAsync>[0],
             ),
         });
-        followSubmission(
-          config,
-          hash,
-          chainId,
-          functionName,
-          initialAddress,
-          callKey,
-          safe && {
-            safe: initialAddress,
-            calls: [{ to: variables.address, value: String(variables.value ?? 0n), data }],
-            batch: false,
-          },
-          ownsReceiptLifecycle,
-        );
         return hash;
       };
 
@@ -861,10 +1115,7 @@ export function useWriteContract(
       // check runs after the lock is acquired and refreshes persisted activity,
       // so a second tab cannot open another wallet prompt while the first is in
       // review or waiting for its Safe proposal hash.
-      const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-      return locks
-        ? locks.request(`revnet:transaction:${keccak256(stringToHex(callKey))}`, submitReviewedCall)
-        : submitReviewedCall();
+      return withWriteLocks([writeScope], submitReviewedCall);
     },
     [
       config,
@@ -875,6 +1126,7 @@ export function useWriteContract(
       reverify,
       beforeSubmission,
       onBeforeSubmissionAborted,
+      durableRecovery,
       allowSafeManualReceiptVerification,
       transactionReview,
     ],
@@ -904,7 +1156,11 @@ export function useWriteContract(
     [mutation, queryClient, wagmiOptions.mutation?.meta, writeContractAsync],
   );
 
-  return { ...mutation, writeContractAsync, writeContract } as ReturnType<
+  const reset = useCallback(() => {
+    scope.current.generation += 1;
+    mutation.reset();
+  }, [mutation]);
+  return { ...mutation, reset, writeContractAsync, writeContract } as ReturnType<
     typeof useWagmiWriteContract
   >;
 }
@@ -941,12 +1197,14 @@ export function useWaitForTransactionReceipt(
   });
   const receipt = query.data as TransactionReceipt | undefined;
   const reverted = receipt?.status === "reverted";
+  const requiresVerifiedOutcome = !!(tracked?.reviewedWrite || tracked?.writeOwner);
   const isSuccess = isSafeSubmission
     ? tracked?.status === "success"
-    : trackedDirectSuccess || (query.isSuccess && receipt?.status === "success");
+    : trackedDirectSuccess ||
+      (!requiresVerifiedOutcome && query.isSuccess && receipt?.status === "success");
   const isError = isSafeSubmission
     ? tracked?.status === "failed"
-    : trackedDirectFailure || reverted || (!tracked && query.isError);
+    : trackedDirectFailure || (!requiresVerifiedOutcome && reverted) || (!tracked && query.isError);
   return {
     ...query,
     isLoading: isSafeSubmission ? isSafeProposal && !isSafeResultUnconfirmed : query.isLoading,
@@ -964,7 +1222,7 @@ export function useWaitForTransactionReceipt(
         ? new Error(tracked.message)
         : trackedDirectFailure
           ? new Error(tracked.message)
-          : reverted
+          : reverted && !requiresVerifiedOutcome
             ? new Error(`Transaction ${hash} reverted onchain.`)
             : !tracked
               ? query.error
@@ -986,7 +1244,8 @@ const CHECK_IN_SAFE = "Check it in Safe, then dismiss it in your account activit
 export const SAFE_PROPOSAL_UNCONFIRMED_TITLE = "Safe proposal unconfirmed";
 
 /** The status line a flow shows for that step. */
-export const SAFE_PROPOSAL_UNCONFIRMED_LINE = `This step's Safe proposal can't be confirmed here. ${CHECK_IN_SAFE}`;
+export const SAFE_PROPOSAL_UNCONFIRMED_LINE =
+  "This step's Safe proposal can't be confirmed here. Check it in Safe. Keep this action locked until its execution is verified.";
 
 /** Refuses a call while its Safe proposal is journaled and not yet settled. */
 export class SafeProposalPendingError extends Error {
@@ -998,9 +1257,11 @@ export class SafeProposalPendingError extends Error {
     action: string,
     readonly unconfirmed = false,
   ) {
+    const activity = transactionActivityForHash(hash);
+    const recovery = activity?.writeScopes?.length || activity?.writeOwner;
     super(
       unconfirmed
-        ? `${action} was proposed to Safe as ${hash}, and its result can't be confirmed here. ${CHECK_IN_SAFE}`
+        ? `${action} was proposed to Safe as ${hash}, and its result can't be confirmed here. ${recovery ? "Check it in Safe. This action stays locked until its execution is verified." : CHECK_IN_SAFE}`
         : `${action} was proposed to Safe as ${hash}, but it has not executed. Complete its approvals and execution in Safe, then resume; do not submit it again.`,
     );
   }

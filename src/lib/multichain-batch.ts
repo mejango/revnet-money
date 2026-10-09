@@ -14,6 +14,7 @@ import type {
   RejectedReceiptEvent,
 } from "./multichain-guards";
 import type { RouterPendingReceiptGuard } from "./pending-router-calls";
+import { createRecordStorage } from "./record-storage";
 
 export type MultichainCall = {
   chainId: number;
@@ -40,6 +41,8 @@ export type FrozenBatchCall = Omit<MultichainCall, "validate"> & {
   state: "ready" | "submitting" | "submitted" | "safe" | "success" | "skipped" | "reverted";
   skipReason?: "resolved-externally" | "retried-externally" | "obsolete-safe";
   safeNonce?: number;
+  /** Unique pre-wallet attempt; legacy unknown submissions remain held without one. */
+  writeAttempt?: string;
   hash?: Hash;
 };
 /** A handled attempt must never be sent again, including canonical failed attempts. */
@@ -162,10 +165,11 @@ export function resetUnpaidRoutingDraft(
           }
         : batch,
     ),
+    batches,
   );
 }
 
-/** Atomic replacement after review; a stale snapshot must never erase newer recovery evidence. */
+/** Save the replacement before retiring its reviewed predecessor; refuse stale evidence. */
 export function replaceRoutingDraft(
   expected: MultichainBatch,
   replacement: MultichainBatch,
@@ -179,23 +183,26 @@ export function replaceRoutingDraft(
     !(refreshUnconfirmed ? isUnconfirmedRoutingBatch(current) : isReplaceableRoutingDraft(current))
   )
     throw new Error("The saved batch changed. Refresh and resume its existing progress.");
-  writeMultichainBatches([
-    replacement,
-    ...(refreshUnconfirmed
-      ? [
-          {
-            ...current,
-            status: "superseded" as const,
-            supersession: {
-              reason: "fresh-routing-review" as const,
-              at: Date.now(),
-              replacementId: replacement.id,
+  writeMultichainBatches(
+    [
+      replacement,
+      ...(refreshUnconfirmed
+        ? [
+            {
+              ...current,
+              status: "superseded" as const,
+              supersession: {
+                reason: "fresh-routing-review" as const,
+                at: Date.now(),
+                replacementId: replacement.id,
+              },
             },
-          },
-        ]
-      : []),
-    ...batches.filter((batch) => batch.id !== expected.id && batch.id !== replacement.id),
-  ]);
+          ]
+        : []),
+      ...batches.filter((batch) => batch.id !== expected.id && batch.id !== replacement.id),
+    ],
+    batches,
+  );
 }
 
 const STORAGE_KEY = "revnet:multichain-batches:v1";
@@ -205,53 +212,117 @@ function serialize(value: unknown) {
     typeof item === "bigint" ? { $batchBigInt: item.toString() } : item,
   );
 }
+function parseBatches(raw: string | null): MultichainBatch[] {
+  const parsed: unknown = JSON.parse(raw ?? "[]", (_key, item: unknown) =>
+    item && typeof item === "object" && Object.keys(item).length === 1 && "$batchBigInt" in item
+      ? BigInt(String(item.$batchBigInt))
+      : item,
+  );
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some(
+      (batch) =>
+        !batch ||
+        typeof batch.id !== "string" ||
+        typeof batch.scope !== "string" ||
+        typeof batch.account !== "string" ||
+        !Array.isArray(batch.calls) ||
+        !Array.isArray(batch.rounds),
+    )
+  )
+    throw new Error("Invalid batch journal");
+  return parsed;
+}
+const batchStorage = createRecordStorage<MultichainBatch>({
+  key: STORAGE_KEY,
+  parse: parseBatches,
+  serialize,
+  id: (batch) => batch.id,
+});
+const unsentReservations = new Map<
+  string,
+  { previous: MultichainBatch; attempted: MultichainBatch }
+>();
+function restoreUnsentReservations() {
+  for (const [id, saved] of unsentReservations) {
+    const latest = batchStorage.read();
+    const current = latest.records.find((batch) => batch.id === id);
+    if (serialize(current) === serialize(saved.attempted)) {
+      batchStorage.write(id, saved.previous, latest.versions.get(id)!);
+    }
+    // Absent/unchanged or newer evidence belongs to no failed wallet invocation.
+    unsentReservations.delete(id);
+  }
+}
 export function readMultichainBatches(): MultichainBatch[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw, (_key, item: unknown) =>
-      item && typeof item === "object" && Object.keys(item).length === 1 && "$batchBigInt" in item
-        ? BigInt(String(item.$batchBigInt))
-        : item,
-    );
-    if (
-      !Array.isArray(parsed) ||
-      parsed.some(
-        (batch) =>
-          !batch ||
-          typeof batch.scope !== "string" ||
-          typeof batch.account !== "string" ||
-          !Array.isArray(batch.calls) ||
-          !Array.isArray(batch.rounds),
-      )
-    )
-      throw new Error("Invalid batch journal");
-    return parsed;
+    restoreUnsentReservations();
+    return batchStorage.read().records.sort((a, b) => b.createdAt - a.createdAt);
   } catch {
     throw new Error(
       "Saved multichain recovery data is unavailable. Restore it before creating another batch.",
     );
   }
 }
-/** Save the whole journal, and read it back to prove it was saved. */
-function writeMultichainBatches(batches: MultichainBatch[]) {
+/** Write only changed identities; independent accounts never rewrite each other's batches. */
+function writeMultichainBatches(batches: MultichainBatch[], previous: MultichainBatch[]) {
   if (typeof window === "undefined") throw new Error("Browser recovery storage is required.");
-  const encoded = serialize(batches);
-  try {
-    window.localStorage.setItem(STORAGE_KEY, encoded);
-    if (window.localStorage.getItem(STORAGE_KEY) !== encoded)
-      throw new Error("Storage write missing");
-  } catch {
-    throw new Error(
-      "The batch could not be saved for recovery. Nothing further will be submitted.",
-    );
+  const prior = new Map(previous.map((batch) => [batch.id, batch]));
+  const changes: [string, MultichainBatch | null][] = batches
+    .filter((batch) => serialize(prior.get(batch.id)) !== serialize(batch))
+    .map((batch) => [batch.id, batch]);
+  for (const batch of previous)
+    if (!batches.some((next) => next.id === batch.id)) changes.push([batch.id, null]);
+  for (const [id, next] of changes) {
+    const latest = batchStorage.read();
+    if (serialize(latest.records.find((batch) => batch.id === id)) !== serialize(prior.get(id)))
+      throw new Error("The saved submission changed. Preserve its recovery record.");
+    try {
+      batchStorage.write(id, next, latest.versions.get(id) ?? { raw: null, legacy: null });
+    } catch (cause) {
+      throw new Error(
+        "The batch could not be saved for recovery. Nothing further will be submitted.",
+        { cause },
+      );
+    }
   }
 }
-export function saveMultichainBatch(batch: MultichainBatch) {
+export function saveMultichainBatch(batch: MultichainBatch, expected?: MultichainBatch) {
   if (typeof window === "undefined") throw new Error("Browser recovery storage is required.");
   const previous = readMultichainBatches();
-  writeMultichainBatches([batch, ...previous.filter((item) => item.id !== batch.id)]);
+  if (
+    expected &&
+    (batch.id !== expected.id ||
+      serialize(previous.find((item) => item.id === expected.id)) !== serialize(expected))
+  ) {
+    throw new Error("The saved submission changed. Preserve its recovery record.");
+  }
+  writeMultichainBatches([batch, ...previous.filter((item) => item.id !== batch.id)], previous);
+}
+/** Reserve only this ready call, retaining exact cleanup ownership if readback fails. */
+export function reserveMultichainBatchCall(
+  previous: MultichainBatch,
+  index: number,
+): FrozenBatchCall {
+  const attempted = structuredClone(previous);
+  const call = attempted.calls[index];
+  if (!call || call.state !== "ready" || call.hash)
+    throw new Error("The saved submission changed. Preserve its recovery record.");
+  call.state = "submitting";
+  call.writeAttempt = crypto.randomUUID();
+  try {
+    saveMultichainBatch(attempted, previous);
+    return call;
+  } catch (cause) {
+    unsentReservations.set(previous.id, { previous: structuredClone(previous), attempted });
+    try {
+      restoreUnsentReservations();
+    } catch {
+      /* Retry exact pre-wallet cleanup after storage recovers. */
+    }
+    throw cause;
+  }
 }
 /** Only the reviewed boundary may release an intent it refused before invoking the wallet. */
 export function resetUnsubmittedBatchCall(expected: MultichainBatch, index: number) {
@@ -266,15 +337,25 @@ export function resetUnsubmittedBatchCall(expected: MultichainBatch, index: numb
   ) {
     throw new Error("The saved submission changed. Preserve its recovery record.");
   }
+  const previous = structuredClone(batches);
   call.state = "ready";
-  writeMultichainBatches(batches);
+  delete call.writeAttempt;
+  writeMultichainBatches(batches, previous);
 }
 /** Only callers that prove no signature/publication/submission occurred may remove a draft. */
-export function removeUnsubmittedBatch(id: string) {
+export function removeUnsubmittedBatch(id: string, expected?: MultichainBatch) {
   if (typeof window === "undefined") throw new Error("Browser recovery storage is required.");
-  window.localStorage.setItem(
-    STORAGE_KEY,
-    serialize(readMultichainBatches().filter((batch) => batch.id !== id)),
+  const batches = readMultichainBatches();
+  if (
+    expected &&
+    (id !== expected.id ||
+      serialize(batches.find((batch) => batch.id === id)) !== serialize(expected))
+  ) {
+    throw new Error("The saved submission changed. Preserve its recovery record.");
+  }
+  writeMultichainBatches(
+    batches.filter((batch) => batch.id !== id),
+    batches,
   );
 }
 /** The recovery scope a batch call is quoted and checked under: its own, or its place in the batch. */
@@ -317,6 +398,7 @@ export function releaseBatchRound(
               }
             : batch,
         ),
+    batches,
   );
   return abandon ? held.map((batch) => batch.id) : [];
 }

@@ -99,7 +99,10 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
             Discard
           </button>
         ) : null}
-        {isSelf && activity.safeResultUnconfirmed ? (
+        {isSelf &&
+        activity.safeResultUnconfirmed &&
+        !activity.writeScopes?.length &&
+        !activity.writeOwner ? (
           <button
             type="button"
             className="text-xs font-medium text-teal-700 underline"

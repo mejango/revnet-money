@@ -227,6 +227,20 @@ describe("account Relayr recovery controls", () => {
 });
 
 describe("a Safe proposal whose result can't be confirmed here", () => {
+  it.each(["ordinary", "batch"])("keeps %s recovery locks nondismissible", (owner) => {
+    mocks.activities = [
+      activity({
+        kind: "safe",
+        status: "safe-proposed",
+        safeResultUnconfirmed: true,
+        ...(owner === "ordinary"
+          ? { writeScopes: ["scope"] }
+          : { writeOwner: { batchId: "batch", callIndex: 0 } }),
+      }),
+    ];
+    render(<AccountActivity address={ACCOUNT} />);
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+  });
   it("offers its account a Dismiss, and no other proposal one", () => {
     const proposal = {
       kind: "safe" as const,
