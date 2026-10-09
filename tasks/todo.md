@@ -976,3 +976,32 @@ Official adoption complete: exact registry SDK2.25.0 is pinned in the manifest a
 - **Resource budget:** Reuse completed hosted measurements and source review; do not run another build pair solely to overattribute a13KiB ceiling change. One budget owner and existing documentation record suffice; replan only if new CI identifies another cost or functional failure.
 
 Independent review confirmed the2684KiB aggregate ceiling with unchanged900KiB route,1100KiB referenced and lazy-wallet assertions. Source invariants, formatting ratchet, scoped ESLint and whitespace checks pass. First hosted failure and baseline logs remain /private/tmp/revnet-pr75-92e58f79-hosted-ci.log and /private/tmp/revnet-main-37713095651-hosted-ci.log. No application source changed; the next PR revision must complete the formerly blocked browser gate.
+
+
+## 2026-10-09 — Adopt authenticated SDK 2.27.0
+
+## Plan refinement
+
+- **Objective:** After root authenticates the official registry release, pin `@bananapus/nana-sdk-core@2.27.0`, prove a clean locked install and the complete Revnet release gates, then push the existing `codex/sticky-home-sdk-20261009` branch to PR #76 without merging, deploying or touching contracts.
+- **System fit:** Juice SDK owns the reviewed-write and destination-readiness fixes; Revnet consumes the exact package through its existing lockfile while retaining product journals and UI adapters. Revnet CI owns final application, browser and OCI evidence, and the existing pull request remains the review and recovery boundary.
+- **Reuse and simplicity:** Use the existing Node 26.7.0/npm 12.0.1 lockfile workflow and repository-native `check`, audit and OCI jobs. Change only the core package pin, its lock entry and current-version documentation, and delete the test-only local cash-out arithmetic already owned by the SDK; add no preview overlay, dependency alias, local helper or package-policy exception.
+- **Evidence and unknowns:** Current local head is `ddb213732bd91367b5ba5a77053521de7c4e4ff6`, one commit ahead of PR #76, with official core 2.26.0 in the manifest and lock. Root authenticated 2.27.0 and proved 769 compiled/public payload files equivalent to the reviewed preview; repository search also proves the duplicate local cash-out quote/display helpers have no production caller while the actual price-history path already calls SDK `getTokenCashOutQuoteEth`.
+- **Verification:** Install exact 2.27.0 with npm 12.0.1, run a clean physical `npm ci --ignore-scripts`, verify resolved version/integrity and dependency scope, and require the remaining cash-out adapter regressions to pass after deleting the unused duplicate. Then run `audit:production`, the complete repository `check` gate and an OCI image smoke test; inspect diff and hygiene, commit and push the exact branch, and require both hosted PR jobs green on the pushed SHA.
+- **Resource budget:** Wait for root's single publication proof, perform one dependency mutation and clean install, then reuse the existing sequential gate rather than duplicating its subcommands. Coordinate heavy build/browser/container capacity with root; preserve the first failure and replan instead of raising limits or weakening checks.
+
+- [x] Receive root confirmation that authenticated core 2.27.0 is available and equivalent to the reviewed SDK candidate.
+- [x] Update the core pin, lock entry and current-version documentation; verify no unrelated dependency movement.
+- [x] Remove the unused local cash-out arithmetic duplicate and its stale current-state documentation while retaining product-specific cash-out adapters.
+- [x] Clean-install and run dependency, production-audit, static, coverage, production-build, standalone, bundle and browser gates.
+- [x] Build and smoke-test the production OCI image using the existing least-privilege policy.
+- [ ] Commit and push the exact existing branch, then require hosted PR #76 checks on that SHA; do not merge or deploy.
+
+### SDK 2.27 adoption review
+
+Core 2.27.0 is locked to the authenticated npm archive with integrity `sha512-fVGeoj2OE1iVIIZmvFY6aQUtZKlydnJkxulreKM3wIYLm7I+rXnSdsIwqRXf5VnRUyLOCWc7NuIyKGxk8jp+wA==` and tarball SHA-256 `e2f6c0f992a9e788e0752f1589fe7471543192d485a95837d52b34e5778f6812`. A physical clean install with Node 26.7.0/npm 12.0.1 reified 1,015 packages; the installed core files match the official tarball, its hidden lock identity matches, and the manifest and lock graph outside the core entry are unchanged. Connect and React SDK packages are absent as intended.
+
+Repository search proved `contractCashOutQuote`, `cashOutDisplayUnit` and `exitFloorQuote` had no production caller; only their own tests retained them. They and the false follow-up claiming the locked SDK predated the correction were removed. The real price-history path already uses SDK `getTokenCashOutQuoteEth`; product-specific error, pool-buffer and chain-selection adapters remain, with their focused 4-case regression passing.
+
+Production audit passes with the existing fail-closed Para exceptions. The complete release gate passes: dependency/dead-code/environment/deployment/types/lint/format/source checks; 44 independently pinned protocol artifacts; 142 wallet boundaries; 257 unit files and 2,760 tests with one pre-existing optional skip; 67.51% statements, 61.86% branches, 65.21% functions and 69.62% lines; production build and standalone artifact; bundle measurements of 706.1 KiB largest route, 979.1 KiB route-referenced and 2,710.8 KiB all client JavaScript against unchanged 900/1,100/2,711 KiB limits; and 139 browser cases with six existing skips across five viewports. The first attempt stopped at one formatting blank left by the deletion; after removing it, the complete gate passed from the beginning.
+
+The workflow-equivalent OCI image built from the digest-pinned Node 26.7.0 base with npm 12.0.1, then ran read-only with all capabilities dropped and `no-new-privileges`. Health returned `status=ok` and the exact local revision, and image optimization responded successfully. The temporary container was removed. No merge, tag, deployment, wallet transaction or contract change occurred.
