@@ -1,0 +1,646 @@
+import { useMarkee } from "@/hooks/useMarkee";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { zeroAddress, type Address, type Hex } from "viem";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  account: "0x823b92d6a4b2AED4b15675c7917c9f922ea8ADAD" as Address,
+  options: undefined as
+    | undefined
+    | {
+        beforeSubmission: () => Promise<void>;
+        reverify: () => Promise<void>;
+        onSubmissionRejected: () => Promise<void>;
+      },
+  write: vi.fn(),
+  receipt: vi.fn(),
+  readBoard: vi.fn(),
+  readWallet: vi.fn(),
+  readMessage: vi.fn(),
+  decodeMessage: vi.fn(),
+  decodeBoard: vi.fn(),
+  activity: vi.fn(),
+  readContract: vi.fn(),
+  getTransaction: vi.fn(),
+  getEnsAddress: vi.fn(),
+  getCode: vi.fn(),
+  getChainId: vi.fn(),
+}));
+const boardAddress = "0x1111111111111111111111111111111111111111" as Address;
+const messageAddress = "0x2222222222222222222222222222222222222222" as Address;
+const pool = "0x3333333333333333333333333333333333333333" as Address;
+const hash = `0x${"a".repeat(64)}` as Hex;
+vi.mock("wagmi", () => ({
+  useAccount: () => ({ address: mocks.account }),
+  usePublicClient: () => client,
+}));
+const client = {
+  readContract: mocks.readContract,
+  getTransaction: mocks.getTransaction,
+  getEnsAddress: mocks.getEnsAddress,
+  getCode: mocks.getCode,
+  getChainId: mocks.getChainId,
+};
+vi.mock("@/hooks/useReviewedWriteContract", () => ({
+  useWriteContract: (options: typeof mocks.options) => {
+    mocks.options = options;
+    return { writeContractAsync: mocks.write };
+  },
+  requireOnchainExecution: () => {
+    throw new Error("Safe proposal pending");
+  },
+}));
+vi.mock("@/lib/markee", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/markee")>();
+  return {
+    ...original,
+    readMarkeeBoard: mocks.readBoard,
+    readMarkeeExitBoard: vi.fn(async (_client: unknown, address: Address) => ({ address })),
+    readMarkeeWallet: mocks.readWallet,
+    readMarkeeMessage: mocks.readMessage,
+    decodeMarkeeCreated: mocks.decodeMessage,
+    decodeBoardCreated: mocks.decodeBoard,
+    readMarkeeFactory: vi.fn(async () => ({ minimumMonthlyRate: 1n })),
+  };
+});
+vi.mock("@/lib/waitForReceipt", () => ({ waitForReceiptWithRetry: mocks.receipt }));
+vi.mock("@/lib/transaction-activity", () => ({
+  contractTransactionKey: (_account: string, _chain: number, call: { data: string }) => call.data,
+  recordTransactionActivity: vi.fn(),
+  updateTransactionActivity: vi.fn(),
+  refreshTransactionActivities: vi.fn(() => []),
+  requireTransactionActivityPersistence: vi.fn(),
+  releaseTransactionActivityVerification: vi.fn(),
+  transactionActivityForHash: mocks.activity,
+}));
+const walletState = {
+  ethBalance: 10n ** 18n,
+  ethxBalance: 0n,
+  flowRate: 0n,
+  backerMarkee: zeroAddress,
+  deposit: 0n,
+  allowance: 10n ** 18n,
+  pool,
+  cfaAgreement: pool,
+  gdaAgreement: pool,
+};
+const boardState = {
+  address: boardAddress,
+  message: "Live",
+  minimumMonthlyRate: 1n,
+  maxMessageLength: 280n,
+  beneficiaryBps: 6200n,
+  effectiveTopRate: 0n,
+};
+
+beforeEach(() => {
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value: {
+      request: async (
+        _name: string,
+        _options: unknown,
+        callback: (lock: object | null) => Promise<void>,
+      ) => callback({}),
+    },
+  });
+  localStorage.clear();
+  mocks.getEnsAddress.mockResolvedValue("0x6b92c73682f0e1fac35A18ab17efa5e77DDE9fE1");
+  mocks.getCode.mockResolvedValue("0x1234");
+  mocks.getChainId.mockResolvedValue(8453);
+  mocks.account = "0x823b92d6a4b2AED4b15675c7917c9f922ea8ADAD";
+  mocks.readBoard.mockResolvedValue(boardState);
+  mocks.readWallet.mockResolvedValue(walletState);
+  mocks.readContract.mockResolvedValue(pool);
+  mocks.readMessage.mockImplementation(async () => {
+    const saved = JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!);
+    return { owner: saved.account, message: saved.message, name: "" };
+  });
+  mocks.decodeMessage.mockReturnValue(messageAddress);
+  mocks.decodeBoard.mockReturnValue({ board: boardAddress });
+  mocks.getTransaction.mockImplementation(async () => {
+    const saved = JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!);
+    return {
+      hash,
+      from: saved.account,
+      to: saved.pending.target,
+      input: saved.pending.data,
+      value: BigInt(saved.pending.value),
+    };
+  });
+  mocks.activity.mockReturnValue(undefined);
+  mocks.receipt.mockResolvedValue({ transactionHash: hash, status: "success", logs: [] });
+  mocks.write.mockImplementation(async () => {
+    await mocks.options!.reverify();
+    await mocks.options!.beforeSubmission();
+    return hash;
+  });
+});
+
+describe("wallet-action:markee-rent reviewed Markee execution", () => {
+  it("does not create a board from another admin", async () => {
+    mocks.account = messageAddress;
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(result.current.error).toContain("selected Markee admin");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("creates a board only from its real decoded receipt", async () => {
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(result.current.boardAddress).toBe(boardAddress);
+    expect(mocks.decodeBoard).toHaveBeenCalled();
+    expect(localStorage.getItem("revnet:markee-rent:board:v1")).toBe(boardAddress);
+  });
+  it("keeps the created message on a later submission failure, and holds unknown wallet outcomes", async () => {
+    mocks.write.mockImplementationOnce(async () => {
+      await mocks.options!.beforeSubmission();
+      return hash;
+    });
+    mocks.write.mockImplementationOnce(async () => {
+      await mocks.options!.beforeSubmission();
+      throw new Error("Wallet transport lost");
+    });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.board).toBeDefined());
+    await act(() => result.current.takeover("Real message", "0.001"));
+    expect(result.current.error).toBe("Wallet transport lost");
+    const saved = JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!);
+    expect(saved.messageAddress).toBe(messageAddress);
+    expect(saved.pending.kind).toBe("start");
+    expect(saved.pending.hash).toBeUndefined();
+    await act(() => result.current.takeover("Real message", "0.001"));
+    expect(mocks.write).toHaveBeenCalledTimes(2);
+    await act(() => result.current.recover());
+    expect(result.current.error).toContain("submission result is unknown");
+  });
+  it("rechecks a saved creation receipt without broadcasting again", async () => {
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        message: "Saved",
+        pending: {
+          kind: "message",
+          id: "saved",
+          target: boardAddress,
+          data: "0x1234",
+          value: "0",
+          hash,
+        },
+      }),
+    );
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    await act(() => result.current.recover());
+    expect(result.current.pending).toBe(false);
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).messageAddress).toBe(
+      messageAddress,
+    );
+  });
+  it("does not treat an unexecuted Safe proposal as a creation receipt", async () => {
+    mocks.activity.mockReturnValue({ kind: "safe", status: "safe-proposed" });
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(result.current.error).toContain("Safe proposal pending");
+    expect(result.current.boardAddress).toBeUndefined();
+    expect(mocks.receipt).not.toHaveBeenCalled();
+  });
+  it("does not permit new backing while an earlier stream is active", async () => {
+    mocks.readWallet.mockResolvedValue({ ...walletState, flowRate: 1n });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    await act(() => result.current.takeover("New", "0.001"));
+    expect(result.current.error).toContain("Stop your current backing");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("holds a saved receipt whose sender differs from the reviewed account", async () => {
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        message: "Saved",
+        pending: {
+          kind: "message",
+          id: "saved",
+          target: boardAddress,
+          data: "0x1234",
+          value: "0",
+          hash,
+        },
+      }),
+    );
+    mocks.getTransaction.mockResolvedValue({
+      hash,
+      from: messageAddress,
+      to: boardAddress,
+      input: "0x1234",
+      value: 0n,
+    });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    await act(() => result.current.recover());
+    expect(result.current.error).toContain("does not match");
+    expect(
+      JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending,
+    ).toBeDefined();
+    expect(mocks.decodeMessage).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("does not release another submission when recovery changes during a late receipt", async () => {
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        pending: {
+          kind: "board",
+          id: "saved",
+          target: boardAddress,
+          data: "0x1234",
+          value: "0",
+          hash,
+        },
+      }),
+    );
+    mocks.decodeBoard.mockImplementation(() => {
+      localStorage.setItem(
+        "revnet:markee-rent:recovery:v1",
+        JSON.stringify({
+          account: mocks.account,
+          pending: {
+            kind: "board",
+            id: "other",
+            target: boardAddress,
+            data: "0x1234",
+            value: "0",
+            hash,
+          },
+        }),
+      );
+      return { board: boardAddress };
+    });
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    await act(() => result.current.recover());
+    expect(result.current.error).toContain("changed during verification");
+    expect(localStorage.getItem("revnet:markee-rent:board:v1")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending.id).toBe(
+      "other",
+    );
+  });
+  it("refuses setup when ENS beneficiary changes", async () => {
+    mocks.getEnsAddress.mockResolvedValue(messageAddress);
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(result.current.error).toContain("no longer resolves");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("requires a stopped stream before deposit withdrawal", async () => {
+    mocks.readWallet.mockResolvedValue({ ...walletState, flowRate: 1n, deposit: 10n });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    await act(() => result.current.withdraw());
+    expect(result.current.error).toContain("Stop backing");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("clears stale board and wallet data when a refresh fails", async () => {
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    mocks.readBoard.mockRejectedValue(new Error("Base RPC failed"));
+    mocks.readWallet.mockRejectedValue(new Error("Base RPC failed"));
+    await act(() => result.current.refresh());
+    expect(result.current.board).toBeUndefined();
+    expect(result.current.wallet).toBeUndefined();
+    expect(result.current.error).toBe("Base RPC failed");
+  });
+  it("keeps the frozen initiating account in every takeover call", async () => {
+    const initial = mocks.account;
+    mocks.write.mockImplementation(async (request: { account: string; functionName: string }) => {
+      expect(request.account).toBe(initial);
+      await mocks.options!.beforeSubmission();
+      if (request.functionName === "createMarkee") mocks.account = messageAddress;
+      return hash;
+    });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    await act(() => result.current.takeover("Frozen account", "0.001"));
+    expect(mocks.write).toHaveBeenCalledTimes(2);
+    for (const [request] of mocks.write.mock.calls) expect(request.account).toBe(initial);
+  });
+  it("wallet-action:markee-rent executes a real new takeover with tagged host operations and exact funding", async () => {
+    mocks.write.mockImplementation(async (request: { functionName: string }) => {
+      await mocks.options!.reverify();
+      await mocks.options!.beforeSubmission();
+      if (request.functionName === "batchCall") {
+        const saved = JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!);
+        mocks.readWallet.mockResolvedValue({
+          ...walletState,
+          flowRate: BigInt(saved.pending.rate),
+          backerMarkee: messageAddress,
+        });
+      }
+      return hash;
+    });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    const funding = result.current.quoteFunding("0.001")!;
+    await act(() => result.current.takeover("Live advertisement", "0.001"));
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.pending).toBe(false);
+    expect(mocks.write).toHaveBeenCalledTimes(2);
+    const batch = mocks.write.mock.calls[1][0];
+    expect(batch.account).toBe(mocks.account);
+    expect(batch.chainId).toBe(8453);
+    expect(batch.value).toBe(funding.wrapValue);
+    expect(batch.args[0].map((op: { operationType: number }) => op.operationType)).toEqual([
+      301, 301, 201, 201,
+    ]);
+  });
+  it("stops active backing and verifies zero stream rate", async () => {
+    mocks.readWallet.mockResolvedValue({ ...walletState, flowRate: 10n });
+    mocks.write.mockImplementation(async () => {
+      await mocks.options!.beforeSubmission();
+      mocks.readWallet.mockResolvedValue(walletState);
+      return hash;
+    });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    await act(() => result.current.stop());
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.wallet?.flowRate).toBe(0n);
+    expect(mocks.write.mock.calls[0][0].functionName).toBe("batchCall");
+  });
+  it("withdraws a stopped backing buffer and verifies zero deposit", async () => {
+    mocks.readWallet.mockResolvedValue({ ...walletState, deposit: 10n });
+    mocks.write.mockImplementation(async () => {
+      await mocks.options!.beforeSubmission();
+      mocks.readWallet.mockResolvedValue(walletState);
+      return hash;
+    });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    await act(() => result.current.withdraw());
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.wallet?.deposit).toBe(0n);
+    expect(mocks.write.mock.calls[0][0].functionName).toBe("withdrawDeposit");
+  });
+  it("holds malformed recovery instead of authorizing another wallet write", async () => {
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        pending: { kind: "message", id: "bad", hash: "0xnotahash" },
+      }),
+    );
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(result.current.error).toContain("storage is invalid");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("refuses beneficiary drift during final review before submission", async () => {
+    mocks.getEnsAddress
+      .mockResolvedValueOnce("0x6b92c73682f0e1fac35A18ab17efa5e77DDE9fE1")
+      .mockResolvedValue(messageAddress);
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(result.current.error).toContain("no longer resolves");
+    expect(localStorage.getItem("revnet:markee-rent:recovery:v1")).toBeNull();
+  });
+  it("refuses fee drift before authorizing message creation", async () => {
+    mocks.write.mockImplementation(async () => {
+      mocks.readBoard.mockResolvedValue({
+        ...boardState,
+        factoryConfig: { beneficiaryBps: 5000n },
+      });
+      await mocks.options!.reverify();
+      await mocks.options!.beforeSubmission();
+      return hash;
+    });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    await act(() => result.current.takeover("Review fee", "0.001"));
+    expect(result.current.error).toContain("split changed");
+    expect(localStorage.getItem("revnet:markee-rent:recovery:v1")).toBeNull();
+  });
+  it("requires a rate above the current leading advertisement", async () => {
+    mocks.readBoard.mockResolvedValue({ ...boardState, effectiveTopRate: 10n ** 18n });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    await act(() => result.current.takeover("Too low", "0.001"));
+    expect(result.current.error).toContain("higher than");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("updates existing backing with the same message and verifies the new rate", async () => {
+    mocks.readWallet.mockResolvedValue({
+      ...walletState,
+      flowRate: 10n,
+      backerMarkee: messageAddress,
+      deposit: 100n,
+    });
+    mocks.write.mockImplementation(async () => {
+      await mocks.options!.reverify();
+      await mocks.options!.beforeSubmission();
+      const saved = JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!);
+      mocks.readWallet.mockResolvedValue({
+        ...walletState,
+        flowRate: BigInt(saved.pending.rate),
+        backerMarkee: messageAddress,
+      });
+      return hash;
+    });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    await act(() => result.current.updateStream("0.001"));
+    expect(result.current.error).toBeUndefined();
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+    expect(mocks.decodeMessage).not.toHaveBeenCalled();
+    expect(result.current.wallet?.backerMarkee).toBe(messageAddress);
+  });
+  it("associates an exact missing wallet hash before resuming verification", async () => {
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        message: "Saved",
+        pending: { kind: "message", id: "saved", target: boardAddress, data: "0x1234", value: "0" },
+      }),
+    );
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    await act(() => result.current.recover(hash));
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.pending).toBe(false);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("refuses a mismatched supplied transaction hash without releasing the hold", async () => {
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        pending: { kind: "stop", id: "saved", target: boardAddress, data: "0x1234", value: "0" },
+      }),
+    );
+    mocks.getTransaction.mockResolvedValue({
+      hash,
+      from: messageAddress,
+      to: boardAddress,
+      input: "0x1234",
+      value: 0n,
+    });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    await act(() => result.current.recover(hash));
+    expect(result.current.error).toContain("does not match");
+    expect(
+      JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending.hash,
+    ).toBeUndefined();
+    expect(mocks.receipt).not.toHaveBeenCalled();
+  });
+  it("allows stopping after mutable board payment policy changes", async () => {
+    mocks.readWallet.mockResolvedValue({ ...walletState, flowRate: 10n });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    mocks.readBoard.mockRejectedValue(new Error("Beneficiary changed"));
+    mocks.write.mockImplementation(async () => {
+      await mocks.options!.reverify();
+      await mocks.options!.beforeSubmission();
+      mocks.readWallet.mockResolvedValue(walletState);
+      return hash;
+    });
+    await act(() => result.current.stop());
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending,
+    ).toBeUndefined();
+  });
+  it("releases only the matching hashless intent on an authoritative wallet rejection", async () => {
+    mocks.write.mockImplementation(async () => {
+      await mocks.options!.beforeSubmission();
+      await mocks.options!.onSubmissionRejected!();
+      throw new Error("Wallet rejected");
+    });
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(result.current.error).toBe("Wallet rejected");
+    expect(result.current.pending).toBe(false);
+    expect(
+      JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending,
+    ).toBeUndefined();
+  });
+  it("refuses actions without cross-tab lock support", async () => {
+    Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(result.current.error).toContain("Web Locks support");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("refuses a lifecycle already owned by another tab", async () => {
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: async (
+          _name: string,
+          _options: unknown,
+          callback: (lock: null) => Promise<void>,
+        ) => callback(null),
+      },
+    });
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(result.current.error).toContain("Another tab");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("rechecks a board created in another tab before preparing creation", async () => {
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    localStorage.setItem("revnet:markee-rent:board:v1", boardAddress);
+    await act(() => result.current.createBoard());
+    expect(result.current.error).toContain("already configured");
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+  it("refuses payment when a saved advertisement owner changes", async () => {
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        message: "Saved",
+        messageAddress,
+      }),
+    );
+    mocks.readMessage.mockResolvedValue({ owner: pool, message: "Saved", name: "" });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.wallet).toBeDefined());
+    await act(() => result.current.takeover("Saved", "0.001"));
+    expect(result.current.error).toContain("ownership or text changed");
+    expect(mocks.decodeMessage).not.toHaveBeenCalled();
+    expect(localStorage.getItem("revnet:markee-rent:recovery:v1")).not.toContain("pending");
+  });
+  it.each([
+    { remaining: 10n ** 18n - 1000n, sufficient: true },
+    { remaining: 0n, sufficient: false },
+  ])(
+    "checks real buffer coverage after deferred review with remaining ETHx $remaining",
+    async ({ remaining, sufficient }) => {
+      const initial = {
+        ...walletState,
+        ethxBalance: 10n ** 18n,
+        flowRate: 10n,
+        backerMarkee: messageAddress,
+        deposit: 100n,
+      };
+      mocks.readWallet.mockResolvedValue(initial);
+      let releaseReview: (() => void) | undefined;
+      mocks.write.mockImplementation(async (request: { value: bigint }) => {
+        expect(request.value).toBe(0n);
+        await new Promise<void>((resolve) => {
+          releaseReview = resolve;
+        });
+        await mocks.options!.reverify();
+        await mocks.options!.beforeSubmission();
+        const saved = JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!);
+        mocks.readWallet.mockResolvedValue({
+          ...initial,
+          ethxBalance: remaining,
+          flowRate: BigInt(saved.pending.rate),
+        });
+        return hash;
+      });
+      const { result } = renderHook(() => useMarkee(boardAddress));
+      await waitFor(() => expect(result.current.wallet).toBeDefined());
+      let action: Promise<void>;
+      act(() => {
+        action = result.current.updateStream("0.001");
+      });
+      await waitFor(() => expect(releaseReview).toBeDefined());
+      mocks.readWallet.mockResolvedValue({ ...initial, ethxBalance: remaining });
+      await act(async () => {
+        releaseReview!();
+        await action;
+      });
+      if (sufficient) {
+        expect(result.current.error).toBeUndefined();
+        expect(result.current.wallet?.ethxBalance).toBe(remaining);
+        expect(result.current.pending).toBe(false);
+      } else {
+        expect(result.current.error).toContain("Stream funding changed");
+        expect(localStorage.getItem("revnet:markee-rent:recovery:v1")).toBeNull();
+        expect(mocks.receipt).not.toHaveBeenCalled();
+      }
+    },
+  );
+});

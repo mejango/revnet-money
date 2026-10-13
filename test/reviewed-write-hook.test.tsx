@@ -733,6 +733,7 @@ describe("reviewed write hook", () => {
     const { review, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
     let persisted = false;
+    const onSubmissionRejected = vi.fn();
     const onBeforeSubmissionAborted = vi.fn(async () => {
       persisted = false;
     });
@@ -743,12 +744,36 @@ describe("reviewed write hook", () => {
           persisted = true;
         },
         onBeforeSubmissionAborted,
+        onSubmissionRejected,
       }),
     );
     await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow("timed out");
     expect(persisted).toBe(true);
     expect(onBeforeSubmissionAborted).not.toHaveBeenCalled();
+    expect(onSubmissionRejected).not.toHaveBeenCalled();
     expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("releases caller recovery only for definite rejection from the actual wallet writer", async () => {
+    const { review, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    let persisted = false;
+    const onSubmissionRejected = vi.fn(async () => {
+      persisted = false;
+    });
+    mocks.submit.mockRejectedValue(Object.assign(new Error("User rejected"), { code: 4001 }));
+    const { result } = renderHook(() =>
+      hooks.useWriteContract({
+        beforeSubmission: async () => {
+          persisted = true;
+        },
+        onSubmissionRejected,
+      }),
+    );
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow("User rejected");
+    expect(mocks.submit).toHaveBeenCalledOnce();
+    expect(onSubmissionRejected).toHaveBeenCalledOnce();
+    expect(persisted).toBe(false);
   });
 
   it("releases the saved intent only when the final shared gate refuses before the wallet", async () => {

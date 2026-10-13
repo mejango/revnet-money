@@ -42,7 +42,12 @@ describe("project-scoped global reviews", () => {
     expect(scope.verify).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "Continue to payment review" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
-    expect(screen.getByText("Checking project identity…")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" && element.textContent === "Checking project identity…",
+      ),
+    ).toBeInTheDocument();
     await act(async () => {
       proof.resolve(true);
     });

@@ -875,6 +875,14 @@
           2
         ]
       ]
+    },
+    {
+      "id": "markee-rent",
+      "label": "Homepage Markee board setup and streaming writes",
+      "sites": [
+        ["reviewed-write", "src/hooks/useMarkee.ts", "send", "writeContractAsync", 1],
+        ["reviewed-write-hook", "src/hooks/useMarkee.ts", "useMarkee", "useWriteContract", 1]
+      ]
     }
   ],
   "actions": [
@@ -1097,6 +1105,12 @@
         "test/payouts-card.test.tsx",
         "test/payout-receipts.test.ts"
       ]
+    },
+    {
+      "id": "markee-rent",
+      "risk": "money",
+      "files": ["src/hooks/useMarkee.ts"],
+      "tests": ["test/use-markee.test.tsx"]
     }
   ]
 }

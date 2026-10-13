@@ -81,6 +81,72 @@ describe("dependency-free UI primitives", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  it("restores opener focus when portal removal prevents native close restoration", async () => {
+    const nativeClose = HTMLDialogElement.prototype.close;
+    const close = vi.spyOn(HTMLDialogElement.prototype, "close").mockImplementation(function (
+      this: HTMLDialogElement,
+    ) {
+      // A removed native dialog does not restore its previously focused element in Chromium.
+      const previous = document.activeElement;
+      nativeClose.call(this);
+      if (previous instanceof HTMLElement) previous.blur();
+      (document.activeElement as HTMLElement)?.blur();
+    });
+    try {
+      render(
+        <Dialog>
+          <DialogTrigger>Open focus check</DialogTrigger>
+          <DialogContent>
+            <DialogTitle>Focus check</DialogTitle>
+          </DialogContent>
+        </Dialog>,
+      );
+      const trigger = screen.getByRole("button", { name: "Open focus check" });
+      trigger.focus();
+      fireEvent.click(trigger);
+      await screen.findByRole("dialog", { name: "Focus check" });
+      fireEvent.keyDown(document, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(trigger).toHaveFocus();
+    } finally {
+      close.mockRestore();
+    }
+  });
+
+  it("restores a nested dialog to its opener inside the remaining top layer", async () => {
+    render(
+      <Dialog>
+        <DialogTrigger>Open outer focus check</DialogTrigger>
+        <DialogContent>
+          <DialogTitle>Outer focus check</DialogTitle>
+          <Dialog>
+            <DialogTrigger>Open inner focus check</DialogTrigger>
+            <DialogContent>
+              <DialogTitle>Inner focus check</DialogTitle>
+            </DialogContent>
+          </Dialog>
+        </DialogContent>
+      </Dialog>,
+    );
+    const outerTrigger = screen.getByRole("button", { name: "Open outer focus check" });
+    outerTrigger.focus();
+    fireEvent.click(outerTrigger);
+    const outer = await screen.findByRole("dialog", { name: "Outer focus check" });
+    const innerTrigger = within(outer).getByRole("button", { name: "Open inner focus check" });
+    innerTrigger.focus();
+    fireEvent.click(innerTrigger);
+    await screen.findByRole("dialog", { name: "Inner focus check" });
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Inner focus check" })).not.toBeInTheDocument(),
+    );
+    expect(innerTrigger).toHaveFocus();
+    expect(outer).toHaveAttribute("open");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(outerTrigger).toHaveFocus();
+  });
+
   it("supports controlled select value, arrow keys, disabled options, and typeahead", async () => {
     function Example() {
       const [value, setValue] = useState("");

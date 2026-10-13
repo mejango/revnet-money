@@ -977,6 +977,68 @@ Official adoption complete: exact registry SDK2.25.0 is pinned in the manifest a
 
 Independent review confirmed the2684KiB aggregate ceiling with unchanged900KiB route,1100KiB referenced and lazy-wallet assertions. Source invariants, formatting ratchet, scoped ESLint and whitespace checks pass. First hosted failure and baseline logs remain /private/tmp/revnet-pr75-92e58f79-hosted-ci.log and /private/tmp/revnet-main-37713095651-hosted-ci.log. No application source changed; the next PR revision must complete the formerly blocked browser gate.
 
+## Markee homepage integration plan — current direction 2026-10-12
+
+Confirmed scope: Rent / For Rent, homepage only, first rollout on https://dev.revnet.money, beneficiary streams directly to team.rev.eth; board admin remains 0x823b92d6a4b2AED4b15675c7917c9f922ea8ADAD. This supersedes Buy-first and the REV addToBalance/forwarder route. User originally limited work to planning; this turn prepares the changed Rent setup without public deployment, signing or payments.
+
+## Plan refinement
+
+- **Objective:** Prepare one homepage Rent board/dialog on the existing dev site before production with beneficiary ETHx streaming directly to team.rev.eth on Base and the selected independent admin; make the exact resolved recipient and setup call reviewable.
+- **System fit:** Markee StreamingLeaderboard owns streams/ranking/refunds/buffers and retained Markee settlement; the existing app wallet/review/activity owners govern preparation, signatures and recovery. Resolve ENS on Ethereum mainnet, inspect the same address on Base, freeze it in setup review, create the board through the existing streaming factory, then verify admin/beneficiary/SuperApp registration and real stream receipts. Team Safe receives ETHx directly; funding the REV protocol balance is not an automatic effect of this route.
+- **Reuse and simplicity:** Use the existing streaming factory, ETHx/host and team Safe. No payer clone, ETHx forwarding contract or new keeper service is required for receiving the beneficiary stream. Reuse existing dialogs, wagmi/Base transports and reviewed writes; adapt pinned Markee streaming builders rather than introducing another wallet stack or generic incorrect flow calls.
+- **Evidence and unknowns:** team.rev.eth resolved on Ethereum mainnet to 0x6b92c73682f0e1fac35A18ab17efa5e77DDE9fE1 on 2026-10-12. Base VERSION()=1.4.1 and getThreshold()=3 identify its Safe implementation/threshold; reads do not prove signer access. Rent factory 0x37f420fdE5c98e611EB7cb9b74ef579D84697039 points to streaming-1.0.0 implementation 0xd2038c21efCf5245547a66f85229Cd654C7664B7, with observed beneficiary share 6200 bps and minimumMonthlyRate 999999997884000 wei/month. Exact wizard-matching create call succeeds in eth_call. Re-resolve and recheck live config immediately before execution; simulated addresses are not deployments.
+- **Verification:** Run refinement gate and decode prepared calldata against recipient/admin/strategy. Implementation acceptance requires start/update/switch/stop/refund/buffer recovery, low balance/runway, account/chain drift, ambiguous receipt and partial setup recovery, UTF-8 limits, moderation/read errors and mobile/keyboard checks plus npm run check. Fork and eventual separately authorized real stream tests must prove ETHx accrues at the team Safe and refunds/cancellation work; the old Buy accounting proof is historical only.
+- **Resource budget:** Bound this update to ENS/Base recipient verification, current existing Rent factory/create interface, revised plan and prepared-call artifact. Preserve unrelated shared todo work. Reuse the existing dev service; no new staging service. No Buy UI or custom receiver/automation implementation, no new contract source and no public transactions in this planning task. Replan if ENS changes, deployed source differs or final stream simulation fails.
+
+### Exact setup
+
+- Beneficiary ENS: team.rev.eth. Frozen observed address: 0x6b92c73682f0e1fac35A18ab17efa5e77DDE9fE1. On Base this is a three-signature Safe v1.4.1; receiving an ETHx stream does not require that Safe to sign each accrual.
+- Board admin: 0x823b92d6a4b2AED4b15675c7917c9f922ea8ADAD. Direct creation from it makes it the board admin and seed owner; preserve this separately from beneficiary custody. If a different sender is necessary, prepare and verify explicit admin handoff.
+- Call: Base chain 8453, target 0x37f420fdE5c98e611EB7cb9b74ef579D84697039, from selected admin, value zero, createLeaderboard(teamResolvedAddress, "revnet.money", "website", "revnet.money"). Platform tags match Markee's create-a-markee wizard/toPlatformTag behavior. Gas and actual wallet authority are required for live execution.
+- [Prepared Rent call](markee-rent-setup.json) includes exact calldata and observed configuration. Canonical creation receipt plus factory event/code/admin/beneficiary checks supply the actual board/seed addresses; never configure from eth_call's predicted addresses.
+- Rent pays ETHx, not unwrapped native ETH. It automatically accrues to the team Safe; it does not enter REV terminal accounting or mint REV tokens. Team unwrap/spending remains under its Safe authority if later desired, outside this direct-receipt integration.
+- The factory's observed 62% beneficiary share is mutable by cooperative authority. Read material live settings in reviews and explain that the remainder belongs to Markee's per-backer settlement route. That separate settlement is not forwarding to team.rev.eth.
+
+### Homepage behavior and owning rules
+
+- One card below HomepageDiscovery, native lazy Rent dialog and server-visible data-markee-address. Show paid community content, Markee attribution, ETH/month and the current enforced topMarkee; project pages/footer do not get the board.
+- Support create-message, back-existing, owner-edit, change-rate, switch-message and stop-stream actions. Each wallet backs at most one message per board. Include ETHx wrapping, required buffer deposits, approvals, refund-pool connection and withdrawal of unused buffer as distinct reviewed steps.
+- Use the exact streaming source/builders for tagged Superfluid host batches and live agreement lookup. Preserve the created message across later-stage cancellation/failure. Stop remains accessible after homepage rollback through the external board fallback.
+- Non-leading backing is refunded through the deployed GDA mechanism; gas/buffer/liquidation conditions still matter. Read effectiveRate(topMarkee()) for winning threshold, validate monthly/second conversion and byte limits from the contract. Do not promise permanent first place, zero total cost or fabricated historic earnings.
+- Reuse existing review/activity/recovery owners and Safe proposal-versus-execution distinctions. Reread before writes and after confirmed execution; keep read failure distinct from empty content, display moderation placeholders when unavailable and render messages as plain text.
+- Track actual visible-message views directly from the browser to canonical www.markee.xyz with session deduplication. Marketplace absence does not mean the configured board is empty. Verify Embed checks the server-rendered marker independently of transaction correctness.
+
+### Dev-first rollout
+
+- User requested first rollout on the Revnet dev/staging site. Existing https://dev.revnet.money/api/healthz returns status ok and revision 8c0d2cd0ac3f59665ac069b7ab105a607fddb9c2 at read time. Repository DEPLOYMENT.md documents dev branch → Railway dev → dev.revnet.money, with production main separate; verify actual service source branch before pushing because the current local CI push filter lists main/staging rather than dev.
+- Build and qualify locally using deterministic browser fixtures and an isolated Base fork first, then publish the candidate to the existing dev service and verify its exact revision and homepage. Keep the production homepage/configuration unchanged until dev acceptance and subsequent production promotion.
+- Dev is a website deployment environment, not a separate blockchain. The prepared Markee factory/ETHx setup is Base mainnet (8453); a connected-wallet stream from dev can use real funds. Do not substitute Base Sepolia without verified Markee test deployments. Use local fork/fixtures for no-value testing; any real board creation or test stream still requires applicable signing/funding authority.
+- Enable board/config only on dev initially; verify start/update/switch/stop, deposit recovery, moderation, mobile/keyboard and team Safe ETHx accrual. An environment-scoped configured board address can later be promoted with the same verified board, avoiding duplicate creation merely for production hosting.
+- Register/verify the dev URL only after dev deployment if needed for testing. Production URL verification and public production rollout remain separate later steps. Removing the dev UI does not cancel a mainnet stream; retain external stop/recovery access.
+
+### Checkable work
+
+- [x] Resolve current choice: Rent, direct team.rev.eth beneficiary, selected admin, homepage only.
+- [x] Resolve ENS and verify Base Safe version/threshold and existing factory implementation/defaults.
+- [x] Simulate exact wizard-matching creation, prepare calldata and retire Buy setup from current execution intent.
+- [x] Run refinement gate and prepared-call decoding checks.
+- [ ] Recheck ENS/current factory/recipient/account configuration and inventory before live creation; verify exact canonical creation receipt/code/admin/beneficiary/SuperApp state when execution is authorized.
+- [ ] Implement homepage Rent UI through existing wallet/review owners after implementation authority; actual verified board address remains setup dependency.
+- [ ] Prove stream start/update/switch/stop, deposits/refunds, partial setup/unknown outcomes and team Safe ETHx accrual on a Base fork; run app release gates and deterministic browser checks.
+- [ ] Deploy to the existing dev service first; verify exact revision, server marker, browser/stream management and beneficiary accrual. Promote to production and verify its URL/marketplace only after dev acceptance and applicable promotion authority.
+- [ ] With applicable test-funding/execution authority, verify real stream/accrual/cancellation evidence; record operations and rollback without leaving visitors unable to stop streams.
+
+### Review and superseded artifacts
+
+Prepared Rent setup passes read-only creation simulation; no board was deployed and no funds sent. The prior markee-buy-setup.json is explicitly superseded and must not be executed for current intent. markee-buy-fork-evidence.json remains a historical local-fork proof only. No Markee-provided receiver is needed for direct team Safe receipt.
+
+Source references at inspected revision bbf678d17323d7f82fc31d0174635422de389988:
+
+- [Streaming factory](https://github.com/1Hive/markee/blob/bbf678d17323d7f82fc31d0174635422de389988/contracts/streaming/StreamingLeaderboardFactory.sol)
+- [Streaming leaderboard](https://github.com/1Hive/markee/blob/bbf678d17323d7f82fc31d0174635422de389988/contracts/v1.3/streaming/StreamingLeaderboard.sol)
+- [Canonical create wizard](https://github.com/1Hive/markee/blob/bbf678d17323d7f82fc31d0174635422de389988/frontend/app/create-a-markee/page.tsx)
+- [Streaming call builders](https://github.com/1Hive/markee/blob/bbf678d17323d7f82fc31d0174635422de389988/frontend/lib/superfluid/streaming.ts)
+
 ## Pending routing confirmation recovery — 2026-10-09
 
 ## Plan refinement
@@ -1012,3 +1074,125 @@ Independent review confirmed the2684KiB aggregate ceiling with unchanged900KiB r
 - Shared loading text uses fixed-width CSS dots with original accessible text and reduced-motion support.
 - Verified: 470 tests in9 focused files, full types, changed-file lint, source invariants, transaction-boundary checks and whitespace checks. Chromium native-disclosure/loading-motion check also passes; canonical payment/recovery tests remain green.
 - Refinement and cross-client evidence: ../../tasks/todo.md, latest Both-client pending payment experience record. No contracts or real transactions changed.
+
+
+## Markee homepage visual prototype — 2026-10-12
+
+## Plan refinement
+- **Objective:** Place the compact Markee message above Top with smaller text and the small bottom-left Takeover this advertisement action; preserve the preview dialog and previously raised hero.
+- **System fit:** HomepageDiscovery owns placement above the Top column; a small client component owns local preview state and reuses the existing accessible dialog. This visual prototype does not create a board, connect a wallet, submit a stream or change recipient/admin authority.
+- **Reuse and simplicity:** Reuse existing Melon/teal colors, mono font, buttons and dialog; one new component and one hero insertion, no dependencies or new contract logic. Show on dev/loopback only so production remains unchanged.
+- **Evidence and unknowns:** User explicitly requested implementation of a view prototype under the pictured audit line. Rent, team.rev.eth beneficiary and selected admin remain settled; no live board address exists. Clearly label preview content and rate so sample UI is not mistaken for live funding.
+- **Verification:** Typecheck and touched-file lint/format; desktop/tablet/mobile browser checks prove the message is above Top, uses smaller text, only message/Takeover action in the card, full card visibility where space permits, wrapping, preview update, keyboard dismissal and screenshots. No wallet writes or deployed claims.
+- **Resource budget:** Two app files and the existing plan; reuse installed Node and Playwright. No full streaming integration or live setup/deployment; replan only if hero layout clips the card or the existing dialog cannot support the preview.
+
+- [x] Add the local/dev prototype card and message-preview dialog.
+- [x] Verify layout and interactions; capture screenshots and document results.
+
+Review: added MarkeePrototype.tsx and one insertion beneath HeroColumn's audit line, gated to dev/loopback hostnames. Reused existing button/dialog styling and local state only. Node 26.7 typecheck, touched-file ESLint, Prettier and diff whitespace checks pass. Chromium desktop 2048px, mobile 390px and narrow 320px checks prove placement, no horizontal overflow, editable preview, Escape dismissal, restored focus and no page errors. Evidence: /private/tmp/markee-prototype-review.json; screenshots /private/tmp/markee-prototype-desktop.png, /private/tmp/markee-prototype-mobile.png and /private/tmp/markee-prototype-dialog.png. Loopback preview runs at http://127.0.0.1:3102 using deterministic fixtures. No public deployment, wallet calls or streaming integration. Removed only the unrequested AGENTS.md/CLAUDE.md files generated by next dev during this check.
+
+User refinement: move the illustrated hero higher and remove the Markee header, labels, supporting copy and green action bar. Keep only message text and the exact bottom-right Takeover this message text action. Reuse the existing dialog and dev/loopback gating.
+
+Refinement review: dev/local hero content moved upward by 72px, with the smaller card starting 80px higher including the reduced gap. Removed card header, labels, supporting copy and green action bar; exact Takeover this message text button sits bottom right. Typecheck and touched-file ESLint pass; Chromium checks at 2048, 768, 390 and 320px pass placement, wrapping, preview editing, Escape and focus restoration. Desktop card height is now 123px instead of 243.5px, with full visibility. Updated screenshots and review JSON remain at the same /private/tmp/markee-prototype-* paths. No public deployment or wallet writes.
+
+Latest placement refinement: move the message above Top and reduce the message font to 16px. Keep one card, existing dialog and dev/local gating; preserve the previously raised hero.
+
+Latest disclosure refinement: add a subtle 10px Ad label in the card’s top-left inset while preserving the new above-Top placement, 16px message and small takeover action. Verify label geometry and the final updated preview.
+
+Disclosure spacing refinement: increased message top padding from 24px to 40px, leaving a clear gap below the absolutely positioned Ad label. Final browser check verifies the label/message gap together with above-Top placement and preview interaction.
+
+Final action refinement: shorten to Takeover, use 10px subdued text with hover-only underline, and preserve the accessible 44px tap area. Keep the explicit Ad/message gap and above-Top location.
+
+Latest final disclosure: remove the top-left Ad label and use the exact action Takeover advertisement; retain quiet 10px typography and restore compact message padding now that the label is absent.
+
+Exact action wording corrected to Takeover this advertisement. No top-left Ad label, smaller 16px message above Top, quiet 10px action at bottom right.
+
+Final placement/disclosure review: one dev/local card above Top, 16px message, no Ad label, quiet 10px Takeover this advertisement action. Typecheck, touched-file lint/format and Chromium desktop/tablet/390px/320px placement, no-overflow, editing, Escape/focus and no-page-error checks pass. Updated local preview and screenshots at the existing paths. No public deployment or wallet calls.
+
+Action alignment refinement: change only the action row to justify-start for bottom-left placement, preserving message, wording, styling, tap target and dialog behavior.
+
+Takeover spacing refinement: reduce message bottom padding from 12px to 4px and action-row bottom padding from 8px to 4px; retain bottom-left alignment and the 44px hit area.
+
+
+## Real Markee Rent integration — 2026-10-12
+
+## Plan refinement
+- **Objective:** Replace the local advertisement demo with a real dev-first Rent view, live board data and reviewed wallet actions; retain a small secondary Preview and primary Takeover in the site’s existing modal style. User confirms no board exists yet.
+- **System fit:** Markee’s existing streaming contracts own ranking/refunds/deposits and beneficiary routing. One app module owns verified ABI/config/rate math/call builders, one hook owns reviewed multi-step execution and durable recovery, and the existing dialog displays those results. Board creation from the chosen admin is a real setup prerequisite; exact receipts/config must establish the board before any stream action. Team Safe receives ETHx directly.
+- **Reuse and simplicity:** Adapt pinned upstream streaming builders and reuse wagmi/Base, dialog, wallet button, reviewed-write engine and activity journal. No custom contract, wallet stack or fake success. Keep local message Preview inside the dialog; homepage reads only verified board content. Keep dev/loopback gating and production unchanged.
+- **Evidence and unknowns:** User authorized implementation of the real view and confirmed board not created. Existing prepared factory call/beneficiary/admin are known; live board address and signed setup execution remain missing. Verify factory/ENS current config and use canonical creation logs; never install a simulated address.
+- **Verification:** Meaningful rate/buffer/tagged-flow/UTF-8/receipt/authority/recovery regressions, rendered modal/read-unavailable/setup cases, source wallet inventory, type/lint/format, deterministic browser layout and actual Base-fork stream/refund/stop proof. Run npm run check before release; do not claim real payments or a deployed board until canonical evidence exists.
+- **Resource budget:** Delegate source/math, reviewed execution and read-only setup discovery to separate owners while root owns UI/integration. Bound setup to existing factory and team beneficiary; continue independent implementation while awaiting wallet setup. Replan on deployed-source mismatch or any inability to verify stream recovery. No public signing/deployment without applicable wallet authority.
+
+- [x] Implement owning Markee streaming ABI/builders/reads and focused regressions.
+- [x] Implement reviewed board creation and stream execution/recovery through existing wallet owners.
+- [x] Replace demo modal/card with real data, setup state, Preview secondary and Takeover primary.
+- [x] Verify module/UI/fork behavior and required release checks; prepare dev rollout.
+
+Verification refinement: the full suite found four exact-text assertions that still assume unsplit loading text in three unchanged payment test files. HEAD already uses the shared animated LoadingText owner. Preserve the full expected paragraph/span text and payment-state assertions while matching the rendered owner’s textContent; no production payment behavior changes. Fix one pre-existing formatting hunk required by the format ratchet. Repeat full coverage and release checks after these bounded corrections.
+
+Bundle verification refinement: the complete Rent lifecycle adds client code; current build measures 2700.9 KiB aggregate, 706.2 KiB largest route and 972.2 KiB route-referenced, with all wallet SDKs still lazy. Compare isolated HEAD on the same installed dependencies and inspect imports before changing any ceiling. Preserve the existing 900 KiB per-route, 1100 KiB route-referenced and lazy-SDK gates; adjust only the aggregate budget by the minimum measured feature delta if no avoidable duplication is found.
+
+Browser verification refinement: full Playwright exposed stale pending-payment fixtures after the existing compact disclosure/source-name change. Keep production unchanged; explicitly model only the known source project 6 in the deterministic Project handler, and update the pending-routing browser test to expand the current disclosure before asserting its exact protocol/gateway-bound review actions. Preserve all unexpected-request rejection and exact network/transaction fixtures. The new advertisement action uses teal-700 to meet small-text contrast while retaining 10px quiet styling.
+
+### Real Rent integration review
+- Replaced the visual demo with verified Base board/message reads, selected-admin board creation, reviewed message/approval/stream writes, updates, stop and deposit withdrawal. Durable exact-call recovery supports direct and Safe executions; full lifecycle Web Locks prevent cross-tab journal overwrite. Definite wallet refusal clears only the matching hashless submission; configuration drift cannot block immutable exit checks.
+- The compact card remains above Top with 16px message, quiet 10px bottom-left Takeover this advertisement action and accessible contrast. The existing modal now has secondary Preview and primary Takeover. Preview stays inside the modal and never replaces canonical homepage content. Uncreated setup has no fake board or sample price.
+- Independent review regressions cover ETHx decay during deferred rate review and recovered Safe execution evidence. Fixed shared native-dialog focus restoration with nested-dialog regressions. Corrected pre-existing split-loading-text test assertions, exact source-project routing fixture and collapsed-disclosure browser assertions; isolated HEAD reproduced the four original unit failures.
+- Release checks passed across the final runs: dependencies, dead code, environment/deployment configuration, TypeScript, full ESLint, format ratchet, source/protocol invariants, 144 wallet boundaries, coverage (2,775 tests), optimized standalone build, package/bundle gates and 144 responsive browser tests (6 existing intentional skips). 20 deterministic fixture unit tests also pass after the bounded fixture update.
+- Same-lock Node 26.7 baseline HEAD 3ad4255a measured 2686.3 KiB aggregate client JavaScript; final Rent build measures 2700.7 KiB. The minimum aggregate ceiling is 2701 KiB, with 900 KiB route, 1100 KiB referenced and lazy-wallet gates unchanged. No dependencies added.
+- Actual Base-fork proof creates the canonical board/message, starts tagged stream and pool connections, proves team Safe ETHx accrual, updates rate, promotes a competing message with exact losing refund, stops both and withdraws deposits. tasks/markee-rent-fork-evidence.json is explicitly private-fork-only; no public transactions were sent.
+- Browser artifacts: /private/tmp/markee-real-review.json and /private/tmp/markee-real-{desktop,tablet,mobile,narrow,dialog,card}.png. Final full suite log: /private/tmp/revnet-markee-browser-final.log; coverage: /private/tmp/revnet-markee-coverage.log.
+- Live rollout remains a separate wallet/hosting step: connect selected admin and sign Create advertisement, then put its verified receipt-derived address in dev NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS and rebuild. No live board, hosted deployment or production promotion is claimed.
+- Local handoff restored at http://localhost:3002 with real configured providers, deterministic mode off and no board address. HTTP 200 proves Markee advertisement/action markup and no demo copy; Para public application key is configured. Removed only Next-generated AGENTS.md/CLAUDE.md after reading their instructions.
+
+## Restore homepage hero and action wording — 2026-10-12
+
+## Plan refinement
+- **Objective:** Restore the original hero spacing now that the advertisement sits above Top; spell every visible Markee action Take over.
+- **System fit:** HomepageDiscovery owns hero layout; MarkeeAdvertisement and its reviewed-status text own labels. Board reads, payments and recovery remain unchanged.
+- **Reuse and simplicity:** Remove the obsolete compact hero prop and conditional offsets; reuse the original static classes and existing modal buttons.
+- **Evidence and unknowns:** The user screenshot and explicit correction supersede the earlier raised-hero and Takeover spelling requests. Original classes are available in HEAD.
+- **Verification:** Focused rendered UI tests, touched-file lint/format, typecheck and local Chromium geometry/copy check; no financial behavior changed.
+- **Resource budget:** Small layout/copy edit, no new abstractions, tests or dependencies; reuse existing tests and running local server.
+
+- [x] Restore hero classes and visible action spelling, update existing expectations.
+- [x] Verify local view and document results.
+
+## Trending project chain membership — 2026-10-12
+
+## Plan refinement
+- **Objective:** Show every supported member chain beside each composite Trending project, preserving the existing ranking and volume/payment display.
+- **System fit:** HomepageDiscovery owns ranked row presentation; the existing cached getSuckerGroup display reader owns cross-chain membership. Wallet authority, financial actions, and New project presentation are unchanged.
+- **Reuse and simplicity:** Reuse getSuckerGroup and ChainLogo, enrich only eight Trending rows, and deduplicate known chain IDs without introducing a new data or icon owner.
+- **Evidence and unknowns:** Indexed activity rows contain only a representative chain and bounded ranking pages cannot prove all memberships; sucker-group member identities supply complete indexed chain evidence. An unavailable group leaves the verified representative icon.
+- **Verification:** Rendered regression checks cover multi-chain membership, duplicate/unsupported chains, unchanged ranking details and unavailable-group fallback; run touched-file lint/format and repository typecheck.
+- **Resource budget:** One bounded parallel membership read per visible Trending group, shared successful-read cache, no new dependencies or public-chain actions.
+
+- [x] Enrich Trending members and render accessible chain icons.
+- [x] Run focused regression/type/lint checks and record results.
+
+### Trending chain review
+- Trending rows now reuse the cached indexed sucker-group reader to show every supported member chain, once, with accessible names. Eight row lookups run in parallel with the existing fingerprint reads; failed membership reads retain the known representative chain. Existing ranking order, payment counts, volume units, links and New launch-chain behavior remain unchanged.
+- Three rendered regressions pass: four-chain composite membership despite Base activity, duplicate/unsupported/wrong-group/version exclusion and unavailable-membership fallback. Repository typecheck, touched-file ESLint with zero warnings and Prettier pass. No public transactions or deployment were performed.
+
+Hero/action review: restored original sm:pt-6 and zero car margin, removed the compact prop, and changed visible labels/status to Take over. Desktop 2048px and mobile390px Chromium checks prove original hero spacing, ad above Top, local Preview, exact primary Take over and no horizontal overflow. Existing Markee UI/hook regressions and type/lint checks pass; no stream behavior changed. Screenshots /private/tmp/markee-refinement-2048.png and /private/tmp/markee-refinement-390.png. Live Trending read also proves four icons for Juicebox/REV/Markee and one Base icon for the bot, preserving ranking details.
+
+Trending responsive refinement: live 768px measurements found a 219px row with only 15px left for detail beside the 76px four-icon cluster. Stack existing marks vertically below 2xl to preserve detail width in tablet and narrow mobile columns; retain the horizontal cluster on wide screens. Verify live row/detail bounds and rerun the same rendered regression/lint gates.
+
+Responsive verification passes after the icon-only change: at 768px the row/detail widths are 219px/75px with equal detail scrollWidth; at 320px they are 270px/126px, also without horizontal detail overflow. Four accessible icons remain visible in both; detail bottoms stay within each row. Screenshots: /tmp/trending-geometry-768.png and /tmp/trending-geometry-320.png. Three rendered regressions and touched-file ESLint still pass.
+
+## Markee creation transaction preflight — 2026-10-13
+
+## Plan refinement
+- **Objective:** Answer whether the current site creation action is ready to sign, using fresh live evidence for the exact selected-admin call and explicit wallet matching fields.
+- **System fit:** useMarkee owns the prepared creation call and final ENS/factory rechecks; reviewed-write owner controls wallet consent and account identity; canonical factory logs and board reads control acceptance. This verification adds no execution authority.
+- **Reuse and simplicity:** Reuse factory ABI, constants and readMarkeeFactory from the app, prior private-fork lifecycle evidence and focused creation/recovery tests; only read-only simulation and a small evidence record.
+- **Evidence and unknowns:** The board was not created at the last handoff. Verify latest Base implementation/settings and Ethereum team.rev.eth resolution; do not equate a successful simulation with an audit or claim to have inspected an unseen wallet payload.
+- **Verification:** Simulate exact createLeaderboard call with value zero from selected admin on Base, compare calldata to prepared artifact, inspect factory/code/version and beneficiary, run focused creation tests. Present chain, sender, target, amount and arguments for final wallet comparison.
+- **Resource budget:** Bounded public RPC reads and simulation, no signing/broadcast/deployment; replan if factory or beneficiary changed or simulation fails.
+
+- [x] Fresh live identity/ENS/factory reads and exact creation simulation.
+- [x] Verify current creation guards and report confidence plus wallet matching fields.
+
+Creation preflight review: fresh Base block52559580 (2026-10-13T16:21:47Z) verified the same streaming implementation, host/token and zero-value exact creation calldata. Ethereum team.rev.eth still resolves to the reviewed Base Safe; selected admin has no contract code. eth_call succeeds and gas estimation succeeds (1,000,437 gas units, not a total fee quote). Factory split currently62% beneficiary/38% platform and remains a mutable factory setting. Current app final-send guard repeats ENS/recipient and factory identity/settings checks, reviewed wallet owner binds account, and canonical creation receipt validates resulting admin/beneficiary. 52 focused core/hook/recovery tests pass. Evidence tasks/markee-creation-preflight.json; publicBroadcast=false and walletPayloadObserved=false. This is scoped transaction qualification, not a whole-protocol security audit or an unseen-wallet guarantee.

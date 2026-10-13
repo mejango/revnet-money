@@ -195,6 +195,7 @@ const addresses = {
 };
 
 const routingTimestamp = 1_789_200_000;
+const routingSourceProjectId = 6;
 const routingCallParameter = routerGatewayAbi.find(
   (entry) => entry.type === "function" && entry.name === "processPendingCall",
 ).inputs[1];
@@ -215,7 +216,7 @@ const pendingRoutingRows = [
     beneficiary: fixtureOwner,
     projectId: 1n,
     refundTo: addresses.terminal,
-    sourceProjectId: 6n,
+    sourceProjectId: BigInt(routingSourceProjectId),
     token,
   };
   const memo = "Fixture retained routing payment";
@@ -225,7 +226,7 @@ const pendingRoutingRows = [
       ...call,
       amount: amount.toString(),
       projectId,
-      sourceProjectId: 6,
+      sourceProjectId: routingSourceProjectId,
       chainId,
       version: 6,
       gateway: addresses.routerGateway,
@@ -457,6 +458,22 @@ const graphqlHandlers = {
     return { suckerGroup: { projects: { items: [fixtureProject] } } };
   },
   Project(variables) {
+    // Pending routing displays the source project's name; its identity stays an exact fixture tuple.
+    if (variables.projectId === routingSourceProjectId) {
+      requireExactVariables("Project", variables, {
+        chainId,
+        projectId: routingSourceProjectId,
+        version: 6,
+      });
+      return {
+        project: {
+          ...fixtureProject,
+          projectId: routingSourceProjectId,
+          name: "Fixture Source Revnet",
+          handle: "fixture-source-revnet",
+        },
+      };
+    }
     requireExactVariables("Project", variables, { chainId, projectId, version: 6 });
     return { project: fixtureProject };
   },

@@ -137,6 +137,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
+            NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS=${{ vars.NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS }}
             NEXT_PUBLIC_SITE_URL=${{ vars.NEXT_PUBLIC_SITE_URL }}
             NEXT_PUBLIC_BENDYSTRAW_URL=${{ vars.NEXT_PUBLIC_BENDYSTRAW_URL }}
             NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL=${{ vars.NEXT_PUBLIC_TESTNET_BENDYSTRAW_URL }}

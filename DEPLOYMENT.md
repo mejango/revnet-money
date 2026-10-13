@@ -28,6 +28,15 @@ reviewed work by merging `dev` into `main`, never by pointing production at `dev
 
 ## Configuration model
 
+The dev homepage's Markee Rent integration uses optional build-time
+`NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS`. Leave it empty before setup. The selected
+admin can create the board through the reviewed wallet flow; copy the verified
+receipt-derived board address into the dev environment and rebuild so every
+visitor reads the same board. The UI validates the board's factory, recipient and
+administrator before enabling streams. Do not use a simulated address. Rent
+streams ETHx on Base mainnet to team.rev.eth; hosting on dev does not make wallet
+transactions testnet transactions. Production promotion remains separate.
+
 Copy `.env.example` when developing locally. `npm run env:check:build` and
 `npm run env:check:runtime` fail before an invalid configuration can start.
 Non-loopback service URLs must use HTTPS.
