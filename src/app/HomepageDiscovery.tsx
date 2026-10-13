@@ -23,6 +23,7 @@ import { getHomepageReserves } from "./getHomepageReserves";
 import { HomepageActivityFeed } from "./HomepageActivityFeed";
 import { HomepageDiscoveryLayout } from "./HomepageDiscoveryLayout";
 import { MarkeeAdvertisement } from "./MarkeeAdvertisement";
+import { MarkeePlaceholder } from "./MarkeePlaceholder";
 import { RotatingTagline } from "./RotatingTagline";
 import { SecuredReserves } from "./SecuredReserves";
 import { TopProjectsTable } from "./TopProjectsTable";
@@ -136,7 +137,11 @@ export function HomepageDiscovery() {
       }
       top={
         <div className="flex min-h-0 flex-1 flex-col gap-5">
-          {showMarkee && <MarkeeAdvertisement initialBoardAddress={boardAddress} />}
+          {showMarkee ? (
+            <MarkeeAdvertisement initialBoardAddress={boardAddress} />
+          ) : (
+            <MarkeePlaceholder />
+          )}
           <DashboardColumn
             title="Top"
             headingClassName="hidden xl:flex"
