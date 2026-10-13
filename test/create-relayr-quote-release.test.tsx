@@ -105,8 +105,8 @@ vi.mock("@/lib/forms", () => ({
 
 const FIRST_DEADLINE = NOW + 3_600;
 const firstPayment = payment({ chain: sepolia.id }, { deadline: FIRST_DEADLINE });
-// A launch signed at NOW stays executable for 47 hours.
-const PAST_DEADLINE = NOW + 48 * 3_600;
+// A launch signed at NOW stays executable for 2 hours.
+const PAST_DEADLINE = NOW + 3 * 3_600;
 const FINAL_HASH = `0x${"fe".repeat(32)}` as Hex;
 
 /** The finalized block, still canonical, at `timestamp`. */

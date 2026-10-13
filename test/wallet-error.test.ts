@@ -66,11 +66,11 @@ describe("formatWalletError", () => {
     ],
     [
       "Relayr reported a failed destination transaction. Do not pay again.",
-      "The execution service reported a failed destination transaction. Do not pay again.",
+      "The network reported a failed destination transaction. Do not pay again.",
     ],
     [
       "Relayr's response does not match the signed bundle. Do not pay again.",
-      "The execution service's response does not match the signed bundle. Do not pay again.",
+      "The response does not match the signed bundle. Do not pay again.",
     ],
     [
       "Relayr funding is being submitted. Do not pay again while the wallet result is uncertain.",

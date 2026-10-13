@@ -665,9 +665,9 @@ describe("reviewed Relayr authorization hook", () => {
     await expect(
       result.current.getRelayrTxQuote([{ ...REQUEST, data: { ...REQUEST.data, data: "0x5678" } }]),
     ).rejects.toThrow(/already has published authorizations/);
-    // A signed forward request stays executable for 47 hours. Past that deadline by
+    // A signed forward request stays executable for 2 hours. Past that deadline by
     // the device clock but not at a finalized block, it still holds.
-    vi.setSystemTime(new Date((NOW + 48 * 3600) * 1_000));
+    vi.setSystemTime(new Date((NOW + 3 * 3600) * 1_000));
     await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
       /earlier signature (can|may) still run/,
     );
@@ -3985,9 +3985,9 @@ describe("unpaid Relayr quotes", () => {
 });
 
 describe("Relayr sessions decided from the chain", () => {
-  // A forward request signed at NOW stays executable for 47 hours.
-  const SIGNED_DEADLINE = NOW + 47 * 3600;
-  const PAST_DEADLINE = NOW + 48 * 3600;
+  // A forward request signed at NOW stays executable for 2 hours.
+  const SIGNED_DEADLINE = NOW + 2 * 3600;
+  const PAST_DEADLINE = NOW + 3 * 3600;
   const GUARD = "0x0000000000000000000000000000000000004444" as Address;
   const GUARD_DATA = "0xabcdef01" as Hex;
   const GUARD_VALUE = `0x${"00".repeat(31)}01` as Hex;
