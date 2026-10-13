@@ -3,6 +3,7 @@
 import { confirmHeldWriteExit } from "@/lib/flow-choice";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
+import { findSafeExecutionTransaction } from "@/lib/safe-execution-log";
 import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
@@ -391,13 +392,26 @@ async function watchSafeProposal(
           return "done";
         }
         if (look === "executed") {
-          // The evidence itself is saved: its receipt decides once the service lists the
-          // execution, and until then it stays held through gaps, dismissal and reloads.
+          // The evidence itself is saved, with the execution's own transaction from the Safe's
+          // event, so its receipt settles it without the Safe service: ExecutionSuccess as
+          // success, ExecutionFailure as failed, which ends the hold. Until then it stays held
+          // through gaps, dismissal and reloads.
+          const executionHash =
+            tracked()?.safeExecutionProven?.executionHash ??
+            (client
+              ? ((await findSafeExecutionTransaction(client, safe, hash, message.nonce)) ??
+                undefined)
+              : undefined);
           updateTransactionActivity(id, {
             message: SAFE_PROPOSAL_EXECUTED_LINE,
-            safeExecutionProven: { safe, nonce: message.nonce.toString() },
+            safeExecutionProven: { safe, nonce: message.nonce.toString(), executionHash },
             safeResultUnconfirmed: undefined,
           });
+          if (executionHash) {
+            await settle(executionHash, false);
+            const status = tracked()?.status;
+            if (status === "success" || status === "failed") return "done";
+          }
           return "live";
         }
       }
@@ -435,6 +449,13 @@ async function watchSafeProposal(
     const stuckFor = service ? SAFE_STUCK_LOOKS : SAFE_EXECUTION_CHECKS;
     for (let attempt = 0; attempt < SAFE_RESULT_HORIZON_MS / SAFE_LOOK_MS; attempt += 1) {
       if (tracked()?.obsoleteSafeNonce !== undefined) return;
+      // A saved proven execution settles from its own receipt, whatever the service says.
+      const provenHash = tracked()?.safeExecutionProven?.executionHash;
+      if (provenHash) {
+        await settle(provenHash, false);
+        const status = tracked()?.status;
+        if (status === "success" || status === "failed") return;
+      }
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
       // when the owner executes at once. A safeTxHash is never a transaction.
       // The SDK then reads the Safe's one execution event in that receipt,

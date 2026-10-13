@@ -44,6 +44,12 @@ const mocks = vi.hoisted(() => ({
   noClient: false,
   // The SDK's chain look at a proposal whose nonce the Safe has passed.
   lookAtSafeProposal: vi.fn(),
+  // The execution transaction a proven proposal's Safe event names.
+  findSafeExecutionTransaction: vi.fn(),
+}));
+
+vi.mock("@/lib/safe-execution-log", () => ({
+  findSafeExecutionTransaction: mocks.findSafeExecutionTransaction,
 }));
 
 vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
@@ -203,6 +209,7 @@ beforeEach(() => {
   mocks.safeReads = safeChain(ACCOUNT);
   mocks.noClient = false;
   mocks.lookAtSafeProposal.mockReset().mockResolvedValue("live");
+  mocks.findSafeExecutionTransaction.mockReset().mockResolvedValue(null);
   mocks.wagmiReceipt.mockReturnValue({
     data: undefined,
     error: null,
@@ -1723,6 +1730,54 @@ describe("reviewed write hook", () => {
       });
       expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });
+
+    it.each([
+      ["ExecutionSuccess", "success"],
+      ["ExecutionFailure", "failed"],
+    ] as const)(
+      "settles a proven execution from its own receipt while the Safe service stays stale (%s)",
+      async (eventName, status) => {
+        vi.useFakeTimers();
+        const EXECUTION = `0x${"ab".repeat(32)}` as Hex;
+        const { activity, hooks } = await freshHarness();
+        mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
+        mocks.lookAtSafeProposal.mockResolvedValue("executed");
+        mocks.findSafeExecutionTransaction.mockResolvedValue(EXECUTION);
+        mocks.waitForTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) =>
+          hash === EXECUTION
+            ? {
+                status: "success",
+                transactionHash: EXECUTION,
+                logs: [executionLog(ACCOUNT, PROPOSAL, eventName)],
+              }
+            : new Promise(() => undefined),
+        );
+        savedProposal(activity, PROPOSAL, 11155111);
+        // The service never lists the execution.
+        serviceAnswering(
+          () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false })),
+        );
+
+        hooks.resumeSafeProposalTracking(mocks.config as never);
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        expect(mocks.findSafeExecutionTransaction).toHaveBeenCalledWith(
+          expect.anything(),
+          ACCOUNT,
+          PROPOSAL,
+          7n,
+        );
+        const row = activity.transactionActivityForHash(PROPOSAL)!;
+        expect(row).toMatchObject({
+          status,
+          executionHash: EXECUTION,
+          safeExecutionProven: { safe: ACCOUNT, nonce: "7", executionHash: EXECUTION },
+        });
+        // A failed execution ran nothing: the hold ends and its row can go.
+        activity.dismissTransactionActivity(row.id);
+        expect(activity.transactionActivityForHash(PROPOSAL)).toBeUndefined();
+      },
+    );
 
     it("keeps a proposal the chain proved executed held through a service gap, dismissal and reload", async () => {
       vi.useFakeTimers();

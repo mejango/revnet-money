@@ -60,10 +60,10 @@ export type TransactionActivity = {
   safeResultUnconfirmed?: boolean;
   /**
    * The chain proved this proposal executed: the Safe's execution event for its safeTxHash at
-   * the block that used `nonce` (decimal). Its receipt alone settles it; until then it stays held, and
-   * nothing dismisses it.
+   * the block that used `nonce` (decimal), in transaction `executionHash`. That receipt alone
+   * settles it, with no Safe service; until then it stays held, and nothing dismisses it.
    */
-  safeExecutionProven?: { safe: Address; nonce: string };
+  safeExecutionProven?: { safe: Address; nonce: string; executionHash?: Hex };
   executionHash?: Hex;
   /** When the chain first answered that it holds no receipt for a Safe proposal's `executionHash`. */
   executionSeenAt?: number;
