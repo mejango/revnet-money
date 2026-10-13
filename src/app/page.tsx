@@ -67,8 +67,8 @@ export default function Page() {
           </p>
           <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 sm:ml-10">
             <li>
-              Payments from fundraising, sales, and other sources create new tokens. If set up to do
-              so, they can buy existing tokens when that returns more.
+              Payments from fundraising, sales, and other sources create new tokens. They can buy
+              existing tokens when that returns more.
             </li>
             <li>The payer receives tokens. A set share can also go to builders and others.</li>
             <li>The revnet keeps money used to create tokens in its balance.</li>
@@ -81,8 +81,8 @@ export default function Page() {
               loan expires.
             </li>
             <li>
-              The launch plan can set different terms for later periods, called stages. A schedule
-              can give earlier payments more tokens for the same amount of money.
+              The launch plan can set different terms for later stages. A schedule can give earlier
+              payments more tokens for the same amount of money.
             </li>
           </ol>
           <p className="mt-4">
