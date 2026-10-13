@@ -1724,6 +1724,45 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });
 
+    it("keeps a proposal the chain proved executed held through a service gap, dismissal and reload", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
+      mocks.lookAtSafeProposal.mockResolvedValue("executed");
+      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
+      let listed = true;
+      serviceAnswering(() =>
+        listed
+          ? new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false }))
+          : new Response("Not found", { status: 404 }),
+      );
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        safeExecutionProven: { safe: ACCOUNT, nonce: "7" },
+      });
+      // The service loses the record for well past the hour.
+      listed = false;
+      await vi.advanceTimersByTimeAsync(2 * HOUR);
+      const row = activity.transactionActivityForHash(PROPOSAL)!;
+      expect(row).toMatchObject({ status: "safe-proposed" });
+      expect(row.safeResultUnconfirmed).toBeUndefined();
+      activity.dismissTransactionActivity(row.id);
+      expect(activity.transactionActivityForHash(PROPOSAL)).toBeDefined();
+
+      // After a reload it is still followed.
+      const reloaded = await freshHarness();
+      mocks.lookAtSafeProposal.mockClear();
+      listed = true;
+      reloaded.hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(reloaded.activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "safe-proposed",
+        safeExecutionProven: { safe: ACCOUNT, nonce: "7" },
+      });
+    });
+
     it("ends unconfirmed after ten minutes of looks that can't follow it, whatever service outages fall between them", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();

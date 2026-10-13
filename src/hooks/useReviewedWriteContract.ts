@@ -226,11 +226,19 @@ async function watchSafeProposal(
    * executed, which the line keeps for its account.
    */
   const unconfirmed = (executionHash?: Hex, reported = reportedExecuted) =>
-    updateTransactionActivity(id, {
-      ...(executionHash ? { executionHash } : {}),
-      message: reported ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
-      safeResultUnconfirmed: true,
-    });
+    // A proposal the chain proved executed never becomes dismissable: only its receipt ends it.
+    tracked()?.safeExecutionProven
+      ? updateTransactionActivity(id, {
+          ...(executionHash ? { executionHash } : {}),
+          message: SAFE_PROPOSAL_EXECUTED_LINE,
+        })
+      : updateTransactionActivity(id, {
+          ...(executionHash ? { executionHash } : {}),
+          message: reported ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
+          safeResultUnconfirmed: true,
+        });
+  /** The chain proved the proposal executed: it is followed until its receipt settles it. */
+  const proven = () => tracked()?.safeExecutionProven !== undefined;
   /** Whether the hour after the proposal was made has passed. */
   const pastHorizon = () =>
     Date.now() - (tracked()?.createdAt ?? Date.now()) >= SAFE_RESULT_HORIZON_MS;
@@ -367,7 +375,9 @@ async function watchSafeProposal(
         : "";
       updateTransactionActivity(id, {
         status: "safe-proposed",
-        message: `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
+        message: proven()
+          ? SAFE_PROPOSAL_EXECUTED_LINE
+          : `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
       });
       // A nonce the Safe has moved past was taken by another transaction, or by this proposal's
       // own execution that the service has yet to list. The chain's execution events decide
@@ -381,8 +391,13 @@ async function watchSafeProposal(
           return "done";
         }
         if (look === "executed") {
-          // Its receipt decides once the service lists the execution.
-          updateTransactionActivity(id, { message: SAFE_PROPOSAL_EXECUTED_LINE });
+          // The evidence itself is saved: its receipt decides once the service lists the
+          // execution, and until then it stays held through gaps, dismissal and reloads.
+          updateTransactionActivity(id, {
+            message: SAFE_PROPOSAL_EXECUTED_LINE,
+            safeExecutionProven: { safe, nonce: message.nonce.toString() },
+            safeResultUnconfirmed: undefined,
+          });
           return "live";
         }
       }
@@ -396,8 +411,9 @@ async function watchSafeProposal(
       }
       updateTransactionActivity(id, {
         status: "safe-proposed",
-        message:
-          "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
+        message: proven()
+          ? SAFE_PROPOSAL_EXECUTED_LINE
+          : "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
       });
       return "unknown";
     }
@@ -449,7 +465,8 @@ async function watchSafeProposal(
       // can't follow an hour after the proposal was made, it never will. It ends on this look's
       // check of the chain, or one more, and while the node can't answer, only the next chain
       // check asks again.
-      const due = unfollowable || (stuckLooks >= stuckFor && (!service || pastHorizon()));
+      const due =
+        !proven() && (unfollowable || (stuckLooks >= stuckFor && (!service || pastHorizon())));
       if (due && (execution !== "unchecked" || !awaitingChain)) {
         if (await endUnconfirmed(execution)) return;
         awaitingChain = true;
