@@ -392,7 +392,11 @@ describe("the Safe queue's execute-all confirm", () => {
     const confirm = await openBatch();
     await waitFor(() => expect(mocks.quote).toHaveBeenCalledOnce());
     expect(
-      within(confirm).getByText("Review the executions to get payment options…"),
+      within(confirm).getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          element.textContent === "Review the executions to get payment options…",
+      ),
     ).toBeVisible();
     expect(within(confirm).getAllByRole("button")).toHaveLength(1);
     expect(within(confirm).getByRole("button", { name: "Close" })).toBeEnabled();
@@ -402,7 +406,13 @@ describe("the Safe queue's execute-all confirm", () => {
     await act(async () => acceptReview());
 
     expect(within(confirm).getAllByRole("button")).toHaveLength(1);
-    expect(within(confirm).getByText("Getting payment options…", { selector: "p" })).toBeVisible();
+    expect(
+      within(confirm).getByText(
+        (_, element) =>
+          element?.tagName === "P" && element.textContent === "Getting payment options…",
+        { selector: "p" },
+      ),
+    ).toBeVisible();
     expect(confirm).not.toHaveTextContent(/Relayr/i);
     expect(within(confirm).queryByText(/Review the executions/)).toBeNull();
     expect(within(confirm).queryByRole("button", { name: /^Pay$/ })).toBeNull();
@@ -670,19 +680,34 @@ describe("the Safe queue's execute-all confirm", () => {
     await act(async () =>
       paymentProgress({ type: "phase", phase: "payment-review", session: unpaid }),
     );
-    expect(within(confirm).getByText("Preparing payment…", { selector: "p" })).toBeVisible();
+    expect(
+      within(confirm).getByText(
+        (_, element) => element?.tagName === "P" && element.textContent === "Preparing payment…",
+        { selector: "p" },
+      ),
+    ).toBeVisible();
     expect(within(confirm).getByRole("button", { name: "Preparing payment…" })).toBeDisabled();
     await act(async () =>
       paymentProgress({ type: "phase", phase: "payment-checking", session: unpaid }),
     );
-    expect(within(confirm).getByText("Checking before payment…")).toBeVisible();
+    expect(
+      within(confirm).getByText(
+        (_, element) =>
+          element?.tagName === "P" && element.textContent === "Checking before payment…",
+      ),
+    ).toBeVisible();
     expect(within(confirm).getByRole("button", { name: "Checking…" })).toBeDisabled();
     expect(within(confirm).queryByText("Review the network fee…")).toBeNull();
     expect(within(confirm).queryByRole("button", { name: "Pay" })).toBeNull();
 
     await act(async () => paymentProgress({ type: "phase", phase: "payment-confirming", session }));
 
-    expect(within(confirm).getByText("Waiting for the payment to confirm…")).toBeVisible();
+    expect(
+      within(confirm).getByText(
+        (_, element) =>
+          element?.tagName === "P" && element.textContent === "Waiting for the payment to confirm…",
+      ),
+    ).toBeVisible();
     expect(within(confirm).getAllByText("Checking payment status…")).toHaveLength(2);
     expect(within(confirm).getByRole("button", { name: "Confirming payment…" })).toBeDisabled();
     expect(within(confirm).queryByText("Ready", { exact: true })).toBeNull();

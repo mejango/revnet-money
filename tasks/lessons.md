@@ -42,3 +42,7 @@
 - User evidence: pending-payment batch funding showed confirmation uncertainty, but succeeded and registered when the existing action was clicked again.
 - Rule: a temporary post-broadcast receipt/proof read failure must keep the existing canonical reconciliation observer running; preserve submitted-payment exclusion and show saved-batch continuation rather than a fresh confirmation. A submitted hash is not proof of failed execution.
 - Gate: raw Relayr funding regression must recover from a transient proof-read failure with one wallet send; pending-routing regressions must resume the saved batch ID and wrap the complete hash/error.
+
+## 2026-10-12 — Composite rankings display project chain membership
+- User correction: Trending chain icons showed only the representative activity unit's chain.
+- Rule: composite project rows use the indexed sucker group's member chains for their icons, deduplicated and supported; do not infer membership from a truncated ranking page or change rank/payment/volume values while fixing presentation. A rendered multi-chain regression enforces the distinction.

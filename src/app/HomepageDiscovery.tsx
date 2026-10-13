@@ -16,16 +16,21 @@ import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
-import { formatUnits } from "viem";
+import { formatUnits, isAddress, type Address } from "viem";
+import { getSuckerGroup } from "./[slug]/getSuckerGroup";
 import { getHomepageActivityPage } from "./getHomepageActivity";
 import { getHomepageReserves } from "./getHomepageReserves";
 import { HomepageActivityFeed } from "./HomepageActivityFeed";
 import { HomepageDiscoveryLayout } from "./HomepageDiscoveryLayout";
+import { MarkeeAdvertisement } from "./MarkeeAdvertisement";
 import { RotatingTagline } from "./RotatingTagline";
 import { SecuredReserves } from "./SecuredReserves";
 import { TopProjectsTable } from "./TopProjectsTable";
 
-type HomepageProject = IndexedProjectSummary & { issuanceFingerprint: number[] };
+type HomepageProject = IndexedProjectSummary & {
+  issuanceFingerprint: number[];
+  chainIds?: JBChainId[];
+};
 
 async function getHomepageProjects(
   orderBy: "trendingScore" | "createdAt",
@@ -49,13 +54,35 @@ async function getHomepageProjects(
         .slice(0, 8),
     );
     return Promise.all(
-      projects.map(async (project) => ({
-        ...project,
-        issuanceFingerprint: await getIssuanceFingerprint(
-          project.projectId,
-          project.chainId as JBChainId,
-        ),
-      })),
+      projects.map(async (project) => {
+        const [issuanceFingerprint, group] = await Promise.all([
+          getIssuanceFingerprint(project.projectId, project.chainId as JBChainId),
+          orderBy === "trendingScore"
+            ? getSuckerGroup(project.suckerGroupId, project.chainId, project.projectId)
+            : undefined,
+        ]);
+        return {
+          ...project,
+          issuanceFingerprint,
+          chainIds:
+            orderBy === "trendingScore"
+              ? [
+                  ...new Set([
+                    project.chainId,
+                    ...(group?.projects?.items ?? [])
+                      .filter(
+                        (member) =>
+                          member.version === project.version &&
+                          member.suckerGroupId === project.suckerGroupId,
+                      )
+                      .map((member) => member.chainId),
+                  ]),
+                ]
+                  .filter((chainId): chainId is JBChainId => chainId in JB_CHAINS)
+                  .sort((a, b) => a - b)
+              : undefined,
+        };
+      }),
     );
   } catch {
     return [];
@@ -68,6 +95,12 @@ async function getHomepageProjects(
  * slow feed never blanks the page or holds the others back.
  */
 export function HomepageDiscovery() {
+  const siteHostname = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002")
+    .hostname;
+  const showMarkee = ["dev.revnet.money", "localhost", "127.0.0.1"].includes(siteHostname);
+  const configuredBoard = process.env.NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS?.trim();
+  const boardAddress =
+    configuredBoard && isAddress(configuredBoard) ? (configuredBoard as Address) : undefined;
   return (
     <HomepageDiscoveryLayout
       hero={<HeroColumn />}
@@ -102,15 +135,18 @@ export function HomepageDiscovery() {
         </DashboardColumn>
       }
       top={
-        <DashboardColumn
-          title="Top"
-          headingClassName="hidden xl:flex"
-          panelClassName="xl:h-auto xl:min-h-0 xl:flex-1"
-        >
-          <Suspense fallback={<ProjectRowsSkeleton rows={9} />}>
-            <TopProjectsTable />
-          </Suspense>
-        </DashboardColumn>
+        <div className="flex min-h-0 flex-1 flex-col gap-5">
+          {showMarkee && <MarkeeAdvertisement initialBoardAddress={boardAddress} />}
+          <DashboardColumn
+            title="Top"
+            headingClassName="hidden xl:flex"
+            panelClassName="xl:h-auto xl:min-h-0 xl:flex-1"
+          >
+            <Suspense fallback={<ProjectRowsSkeleton rows={9} />}>
+              <TopProjectsTable />
+            </Suspense>
+          </DashboardColumn>
+        </div>
       }
       newProjects={
         <DashboardColumn
@@ -284,7 +320,17 @@ function ProjectRows({
                   {detail(project)}
                 </span>
               </span>
-              <ChainLogo chainId={chainId} width={16} height={16} />
+              <span className="flex shrink-0 flex-col items-center gap-1 2xl:flex-row">
+                {(project.chainIds ?? [chainId]).map((memberChainId) => (
+                  <ChainLogo
+                    key={memberChainId}
+                    chainId={memberChainId}
+                    width={16}
+                    height={16}
+                    standalone
+                  />
+                ))}
+              </span>
             </ProjectLink>
           </li>
         );

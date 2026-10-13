@@ -52,6 +52,10 @@ if (phase === "build" && process.env.NEXT_PUBLIC_DETERMINISTIC_BROWSER === "true
   errors.push("NEXT_PUBLIC_DETERMINISTIC_BROWSER cannot be enabled in a deployment build");
 }
 if (phase === "build") {
+  const markeeBoard = process.env.NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS?.trim();
+  if (markeeBoard && (!/^0x[0-9a-fA-F]{40}$/.test(markeeBoard) || /^0x0{40}$/i.test(markeeBoard))) {
+    errors.push("NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS must be a nonzero Base contract address");
+  }
   try {
     const siteOrigin = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "").origin;
     if (siteOrigin === PRODUCTION_SITE_ORIGIN && process.env.NEXT_PUBLIC_PARA_ENV !== "PROD") {

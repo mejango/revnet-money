@@ -74,5 +74,24 @@ expectStatus(
   1,
 );
 expectStatus("runtime has no app-owned secrets", run("runtime"), 0);
+expectStatus(
+  "no Markee board before setup",
+  run("build", { NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS: "" }),
+  0,
+);
+expectStatus(
+  "configured Markee address",
+  run("build", {
+    NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS: "0x1111111111111111111111111111111111111111",
+  }),
+  0,
+);
+for (const address of ["0x", "team.rev.eth", "0x0000000000000000000000000000000000000000"]) {
+  expectStatus(
+    "invalid Markee address",
+    run("build", { NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS: address }),
+    1,
+  );
+}
 
 console.log("Environment validation fixtures passed (HTTPS, Para, and no runtime secrets).");

@@ -447,7 +447,10 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     mocks.receipt.pending = true;
     const { seen, confirm } = await removePosition();
 
-    await within(confirm).findByText("Waiting for confirmation…");
+    await within(confirm).findByText(
+      (_, element) =>
+        element?.tagName === "P" && element.textContent === "Waiting for confirmation…",
+    );
     // The sent removal cannot be sent again while it confirms.
     expect(within(confirm).getByRole("button", { name: "Remove the position" })).toBeDisabled();
     expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled();

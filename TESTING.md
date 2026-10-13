@@ -113,3 +113,22 @@ Safe queue preparation starts when Execute all opens. `prepareAll` owns the revi
 Safe Relayr preparation, recovery, funding decisions and destination monitoring share the SDK's `review/safe-relayr` controller with Juicebox. `src/lib/safe-relayr.ts` adapts the existing activity journal, exact-call review and guarded wallet submission. `safe-relayr-adapter.test.ts` preserves legacy UUID bindings, unresolved reservations and hashless funding attempts, and gates the shared ownership boundary. Hook tests exercise that controller against canonical Safe hash fixtures; wallet inventory includes both the hook's wallet callback and the adapter's reviewed payment invocation. Closing a preparation aborts further review/publication, and SDK progress maps back to the execution's chain rather than its selection index.
 
 SDK `@bananapus/nana-sdk-core@2.25.0` owns RPC admission pacing, the reviewed-write sequence and final synchronous `beforeSend` gate, exact Safe call/execution proofs, transaction wording and Relayr payment outcome classification, shared with Juicebox, Sticky and Homerun. `src/lib/reviewed-wallet-context.ts` supplies the framework account, chain, connector and View-as checks; product journals remain app-owned. Revnet's Safe adapter explicitly retains strict single-call matching unless the caller requests a batch. Proven local pre-wallet refusals clear only their original hashless intent; uncertain errors after wallet invocation retain the submission, including errors falsely branded as an unsent payment. Source and wallet-inventory gates enforce these owners.
+
+
+## Homepage Markee Rent
+
+<!-- wallet-inventory:markee-rent -->
+
+`src/hooks/useMarkee.ts` sends board creation, message creation, approval, stream
+start/stop and unused-deposit withdrawal through the existing reviewed writer.
+Core source/rate/tagging and exact receipt tests live in `test/markee.test.ts`;
+`test/use-markee.test.tsx` owns durable submission and recovery qualification;
+`test/markee-advertisement.test.tsx` proves Preview is local to the dialog and
+Takeover is blocked until verified setup. An unconfirmed transaction or Safe
+proposal must never become a successful board/stream or allow a duplicate send.
+
+Set optional `NEXT_PUBLIC_MARKEE_RENT_BOARD_ADDRESS` on dev only after canonical
+creation receipt and board configuration verification. Empty configuration is
+the real setup state, not a demo or simulated board. Initial no-spend browser
+checks use fixtures/forks; actual ETHx beneficiary accrual still requires the
+Base fork proof and separately authorized live creation/stream qualification.

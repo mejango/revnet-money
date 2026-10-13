@@ -113,7 +113,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Node 26.7.0 dependency tree. Raise only the aggregate ceiling by 1 KiB.
 // Per-attempt routing progress measures 2685.2 KiB versus 29803a68's 2684.5 KiB
 // with the same locked toolchain/dependencies. Keep route and lazy-load limits.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2686);
+// Homepage Markee Rent adds verified reads, reviewed streams and durable recovery.
+// Same-lock Node 26.7 builds measure 2686.3 KiB on HEAD 3ad4255a and 2700.9 KiB
+// with Rent (+14.6 KiB), without new dependencies or eager wallet SDKs. Round
+// only the aggregate ceiling to 2701 KiB; route and lazy-load limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2701);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

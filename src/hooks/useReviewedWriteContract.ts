@@ -637,6 +637,8 @@ type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] 
   beforeSubmission?: () => Promise<void>;
   /** The shared final gate refused after persistence, before the wallet writer was invoked. */
   onBeforeSubmissionAborted?: () => Promise<void>;
+  /** The wallet writer definitively rejected before broadcasting; ambiguous errors do not enter here. */
+  onSubmissionRejected?: () => Promise<void>;
   /** A batch verifier reconstructs the exact Safe execution before releasing child activity. */
   allowSafeManualReceiptVerification?: boolean;
   reverify?: (
@@ -667,6 +669,7 @@ export function useWriteContract(
     reviewedInParent,
     beforeSubmission,
     onBeforeSubmissionAborted,
+    onSubmissionRejected,
     allowSafeManualReceiptVerification,
     reverify,
     preflightSimulation,
@@ -834,6 +837,7 @@ export function useWriteContract(
           },
           beforeWrite: beforeSubmission,
           onBeforeWriteAborted: onBeforeSubmissionAborted,
+          onWriteRejected: onSubmissionRejected,
           beforeSend: assertWalletContext,
           write: (prepared) =>
             mutation.writeContractAsync(
@@ -875,6 +879,7 @@ export function useWriteContract(
       reverify,
       beforeSubmission,
       onBeforeSubmissionAborted,
+      onSubmissionRejected,
       allowSafeManualReceiptVerification,
       transactionReview,
     ],

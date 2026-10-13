@@ -6,7 +6,7 @@ import { X } from "@/components/ui/icons";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
-import { registerOpenDialog } from "@/lib/topLayer";
+import { registerOpenDialog, topLayerHost } from "@/lib/topLayer";
 import { cn } from "@/lib/utils";
 import { composeRefs, Slot } from "./slot";
 
@@ -294,6 +294,7 @@ export function useNativeModalDialog({
     const dialog = dialogRef.current;
     if (!dialog) return;
 
+    const focusBeforeOpen = document.activeElement;
     // `showModal()` throws on a dialog that is already open.
     if (!dialog.open) dialog.showModal();
     // `showModal()` hands focus to the first focusable descendant, the close button, and its focus
@@ -340,6 +341,16 @@ export function useNativeModalDialog({
       unlockBody();
       closingForReact = true;
       dialog.close();
+      // React may remove the portal before cleanup, skipping the browser's native focus restore.
+      // Only restore into the remaining top layer, so closing an underlying dialog cannot steal focus.
+      const host = topLayerHost();
+      if (
+        focusBeforeOpen instanceof HTMLElement &&
+        focusBeforeOpen.isConnected &&
+        host.contains(focusBeforeOpen)
+      ) {
+        focusBeforeOpen.focus({ preventScroll: true });
+      }
     };
   }, [dialogRef, enabled, open]);
 }
