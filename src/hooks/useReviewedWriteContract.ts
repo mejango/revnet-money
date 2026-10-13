@@ -240,6 +240,22 @@ async function watchSafeProposal(
         });
   /** The chain proved the proposal executed: it is followed until its receipt settles it. */
   const proven = () => tracked()?.safeExecutionProven !== undefined;
+  /**
+   * The execution transaction of a proof saved without it, looked up from the proof's own Safe
+   * and nonce and saved with it. Undefined while it can't be found.
+   */
+  const lookUpExecution = rereadEveryMinute(async (safe) => {
+    const proof = tracked()?.safeExecutionProven;
+    if (!client || !proof || proof.executionHash || !/^\d+$/.test(proof.nonce)) return undefined;
+    const found = await findSafeExecutionTransaction(client, safe, hash, BigInt(proof.nonce));
+    if (!found) return undefined;
+    updateTransactionActivity(id, { safeExecutionProven: { ...proof, executionHash: found } });
+    return found;
+  });
+  const provenExecution = async () => {
+    const proof = tracked()?.safeExecutionProven;
+    return proof && !proof.executionHash ? lookUpExecution(proof.safe) : undefined;
+  };
   /** Whether the hour after the proposal was made has passed. */
   const pastHorizon = () =>
     Date.now() - (tracked()?.createdAt ?? Date.now()) >= SAFE_RESULT_HORIZON_MS;
@@ -449,8 +465,9 @@ async function watchSafeProposal(
     const stuckFor = service ? SAFE_STUCK_LOOKS : SAFE_EXECUTION_CHECKS;
     for (let attempt = 0; attempt < SAFE_RESULT_HORIZON_MS / SAFE_LOOK_MS; attempt += 1) {
       if (tracked()?.obsoleteSafeNonce !== undefined) return;
-      // A saved proven execution settles from its own receipt, whatever the service says.
-      const provenHash = tracked()?.safeExecutionProven?.executionHash;
+      // A saved proven execution settles from its own receipt, whatever the service says. A
+      // proof saved without its transaction looks it up again, at most once a minute.
+      const provenHash = tracked()?.safeExecutionProven?.executionHash ?? (await provenExecution());
       if (provenHash) {
         await settle(provenHash, false);
         const status = tracked()?.status;

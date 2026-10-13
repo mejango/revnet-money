@@ -1779,6 +1779,51 @@ describe("reviewed write hook", () => {
       },
     );
 
+    it("finds the execution of a proof saved without its transaction, through hours of service 404s", async () => {
+      vi.useFakeTimers();
+      const EXECUTION = `0x${"ab".repeat(32)}` as Hex;
+      const { activity, hooks } = await freshHarness();
+      mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
+      const start = Date.now();
+      // The log lookup fails for two hours, then the healthy RPC answers it.
+      mocks.findSafeExecutionTransaction.mockImplementation(async () =>
+        Date.now() - start >= 2 * HOUR ? EXECUTION : null,
+      );
+      mocks.waitForTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) =>
+        hash === EXECUTION
+          ? {
+              status: "success",
+              transactionHash: EXECUTION,
+              logs: [executionLog(ACCOUNT, PROPOSAL)],
+            }
+          : new Promise(() => undefined),
+      );
+      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
+      activity.updateTransactionActivity(`tx:11155111:${PROPOSAL}`, {
+        safeExecutionProven: { safe: ACCOUNT, nonce: "7" },
+      });
+      serviceAnswering(() => new Response("Not found", { status: 404 }));
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(HOUR + 5 * 60_000);
+      // The watch ends after its hour; the next load follows it again.
+      const reloaded = await freshHarness();
+      reloaded.hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(HOUR);
+
+      expect(mocks.findSafeExecutionTransaction).toHaveBeenCalledWith(
+        expect.anything(),
+        ACCOUNT,
+        PROPOSAL,
+        7n,
+      );
+      expect(reloaded.activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "success",
+        executionHash: EXECUTION,
+        safeExecutionProven: { executionHash: EXECUTION },
+      });
+    });
+
     it("keeps a proposal the chain proved executed held through a service gap, dismissal and reload", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();

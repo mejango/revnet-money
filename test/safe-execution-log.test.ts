@@ -9,12 +9,18 @@ const OTHER = `0x${"56".repeat(32)}` as Hex;
 const EXECUTION = `0x${"ab".repeat(32)}` as Hex;
 const nonceAbi = parseAbi(["function nonce() view returns (uint256)"]);
 
+/** The canonical hash of block `number` on this chain. */
+const blockHash = (number: bigint) => `0x${number.toString(16).padStart(64, "0")}` as Hex;
+const AT_120 = { blockNumber: "0x78", blockHash: blockHash(120n) };
+
 /** A Safe whose nonce moved from 7 to 8 at block 120, with `logs` in that block. */
 function chain(logs: unknown[], usedAt = 120n) {
   return {
     request: async ({ method, params }: { method: string; params: unknown[] }) => {
       if (method === "eth_getBlockByNumber")
-        return { number: "0xc8", hash: `0x${"cd".repeat(32)}` };
+        return params[0] === "finalized"
+          ? { number: "0xc8", hash: `0x${"cd".repeat(32)}` }
+          : { number: params[0], hash: blockHash(BigInt(params[0] as string)) };
       if (method === "eth_call") {
         const block = BigInt(params[1] as string);
         return encodeFunctionResult({
@@ -38,8 +44,8 @@ describe("finding a proven Safe execution's transaction", () => {
     "returns the transaction of the %s event for the proposal in the block that used its nonce",
     async (eventName) => {
       const logs = [
-        { ...executionLog(SAFE, OTHER), transactionHash: `0x${"99".repeat(32)}` },
-        { ...executionLog(SAFE, PROPOSAL, eventName), transactionHash: EXECUTION },
+        { ...executionLog(SAFE, OTHER), ...AT_120, transactionHash: `0x${"99".repeat(32)}` },
+        { ...executionLog(SAFE, PROPOSAL, eventName), ...AT_120, transactionHash: EXECUTION },
       ];
       await expect(
         findSafeExecutionTransaction(chain(logs) as never, SAFE, PROPOSAL, 7n),
@@ -52,6 +58,7 @@ describe("finding a proven Safe execution's transaction", () => {
       address: SAFE,
       topics: [executionLog(SAFE, PROPOSAL).topics[0]],
       data: encodeAbiParameters([{ type: "bytes32" }, { type: "uint256" }], [PROPOSAL, 0n]),
+      ...AT_120,
       transactionHash: EXECUTION,
     };
     await expect(
@@ -59,10 +66,22 @@ describe("finding a proven Safe execution's transaction", () => {
     ).resolves.toBe(EXECUTION);
   });
 
+  it("finds nothing when the log's block is no longer canonical", async () => {
+    const log = {
+      ...executionLog(SAFE, PROPOSAL),
+      blockNumber: "0x78",
+      blockHash: `0x${"ee".repeat(32)}`,
+      transactionHash: EXECUTION,
+    };
+    await expect(
+      findSafeExecutionTransaction(chain([log]) as never, SAFE, PROPOSAL, 7n),
+    ).resolves.toBeNull();
+  });
+
   it("finds nothing when only other proposals executed there, or the node can't answer", async () => {
     await expect(
       findSafeExecutionTransaction(
-        chain([{ ...executionLog(SAFE, OTHER), transactionHash: EXECUTION }]) as never,
+        chain([{ ...executionLog(SAFE, OTHER), ...AT_120, transactionHash: EXECUTION }]) as never,
         SAFE,
         PROPOSAL,
         7n,

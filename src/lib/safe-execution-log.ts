@@ -14,7 +14,8 @@ type RequestClient = Pick<PublicClient, "request">;
  * The transaction that executed Safe proposal `safeTxHash` at `nonce`: the
  * block where the Safe's nonce first passed it, at or below a finalized block,
  * holds its ExecutionSuccess or ExecutionFailure event, in the Safe 1.4 layout
- * (safeTxHash indexed) or the 1.3 layout (its first data word). The SDK's
+ * (safeTxHash indexed) or the 1.3 layout (its first data word), from that
+ * block's canonical hash. The SDK's
  * `lookAtSafeProposal` proves the proposal executed but does not return this
  * transaction, which its receipt needs. Null when it can't be found or read.
  */
@@ -69,11 +70,19 @@ export async function findSafeExecutionTransaction(
     });
     if (!Array.isArray(logs)) return null;
     const wanted = safeTxHash.toLowerCase();
+    // The log counts only from the canonical block it names.
+    const canonical = (await request({
+      method: "eth_getBlockByNumber",
+      params: [block, false],
+    })) as { hash?: unknown } | null;
+    if (typeof canonical?.hash !== "string") return null;
     for (const log of logs as {
       address?: unknown;
       topics?: unknown;
       data?: unknown;
       transactionHash?: unknown;
+      blockNumber?: unknown;
+      blockHash?: unknown;
     }[]) {
       if (typeof log?.address !== "string" || log.address.toLowerCase() !== safe.toLowerCase())
         continue;
@@ -85,7 +94,15 @@ export async function findSafeExecutionTransaction(
         topics.length === 2
           ? typeof topics[1] === "string" && topics[1].toLowerCase() === wanted
           : topics.length === 1 && `0x${data.slice(2, 66)}` === wanted;
-      if (named && typeof log.transactionHash === "string" && isHash(log.transactionHash))
+      if (
+        named &&
+        typeof log.blockNumber === "string" &&
+        BigInt(log.blockNumber) === high &&
+        typeof log.blockHash === "string" &&
+        log.blockHash.toLowerCase() === canonical.hash.toLowerCase() &&
+        typeof log.transactionHash === "string" &&
+        isHash(log.transactionHash)
+      )
         return log.transactionHash;
     }
     return null;
