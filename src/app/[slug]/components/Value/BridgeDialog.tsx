@@ -37,6 +37,7 @@ import {
   buildProtectedBridgePrepareTx,
   quoteBridgePrepare,
   slippagePercentToBps,
+  verifyBridgePrepareDestination,
 } from "@/lib/bridgePrepare";
 import { revalidateCacheTag } from "@/lib/cache";
 import { useJBTokenContext } from "@/lib/nana/project";
@@ -45,10 +46,11 @@ import { getTokenAddress } from "@/lib/token";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
+import { suckerBytes32ToAddress } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
-import { erc20Abi, formatUnits, getAddress, parseUnits } from "viem";
+import { erc20Abi, formatUnits, getAddress, Hex, isAddressEqual, parseUnits } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 
 interface Props {
@@ -74,7 +76,38 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const { address } = useAccount();
   const router = useRouter();
   const publicClient = usePublicClient({ chainId: sourceChainId });
-  const { writeContractAsync, data: hash, reset } = useWriteContract();
+  const destinationClient = usePublicClient({ chainId: targetChainId });
+  const {
+    writeContractAsync,
+    data: hash,
+    reset,
+  } = useWriteContract({
+    reverify: async (variables) => {
+      if (
+        !publicClient ||
+        !destinationClient ||
+        !targetChainId ||
+        !targetProject ||
+        !suckerPair ||
+        variables.chainId !== sourceChainId ||
+        !isAddressEqual(variables.address, suckerPair.local)
+      ) {
+        throw new Error("The bridge route changed. Review the transfer again.");
+      }
+      const [projectTokenCount, beneficiary] = variables.args as readonly [bigint, Hex];
+      await verifyBridgePrepareDestination(publicClient, {
+        chainId: sourceChainId,
+        projectId: BigInt(project.projectId),
+        sucker: variables.address,
+        projectTokenCount,
+        beneficiary: suckerBytes32ToAddress(beneficiary),
+        destinationClient,
+        destinationChainId: targetChainId,
+        destinationProjectId: BigInt(targetProject.projectId),
+        destinationSucker: suckerPair.remote,
+      });
+    },
+  });
   const { isSuccess, isLoading, isSafeResultUnconfirmed } = useWaitForTransactionReceipt({
     hash,
     chainId: sourceChainId,
@@ -88,6 +121,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const maxAmount = balance ? formatUnits(balance.value, tokenDecimals) : "0";
 
   const project = projects.find((p) => p.chainId === sourceChainId)!;
+  const targetProjects = projects.filter((candidate) => candidate.chainId === targetChainId);
+  const targetProject = targetProjects.length === 1 ? targetProjects[0] : undefined;
   const { suckerPairs } = useSuckerPairs(project.projectId, sourceChainId);
   const suckerPair = suckerPairs.find(
     (candidate) => Number(candidate.remoteChainId) === targetChainId,
@@ -126,18 +161,35 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       sourceChainId,
       project.projectId,
       suckerPair?.local,
+      targetChainId,
+      targetProject?.projectId,
+      suckerPair?.remote,
+      address,
       amountValue?.toString(),
       terminalToken,
       slippageBps?.toString(),
     ],
     enabled:
       !!publicClient &&
+      !!destinationClient &&
+      !!targetChainId &&
+      !!targetProject &&
+      !!address &&
       !!suckerPair &&
       amountValue !== undefined &&
       !!terminalToken &&
       slippageBps !== undefined,
     queryFn: async () => {
-      if (!publicClient || !suckerPair || amountValue === undefined || !terminalToken) {
+      if (
+        !publicClient ||
+        !destinationClient ||
+        !targetChainId ||
+        !targetProject ||
+        !address ||
+        !suckerPair ||
+        amountValue === undefined ||
+        !terminalToken
+      ) {
         throw new Error("The bridge quote is incomplete.");
       }
       if (slippageBps === undefined) throw new Error("Enter a valid maximum quote change.");
@@ -149,6 +201,11 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         projectTokenCount: amountValue,
         terminalToken,
         slippageBps,
+        beneficiary: address,
+        destinationClient,
+        destinationChainId: targetChainId,
+        destinationProjectId: BigInt(targetProject.projectId),
+        destinationSucker: suckerPair.remote,
       });
     },
     staleTime: 10_000,
