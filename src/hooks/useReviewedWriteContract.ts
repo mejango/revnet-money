@@ -3,7 +3,7 @@
 import { confirmHeldWriteExit } from "@/lib/flow-choice";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
-import { findSafeExecutionTransaction } from "@/lib/safe-execution-log";
+import { findSafeExecution } from "@/lib/safe-execution-log";
 import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
@@ -240,21 +240,46 @@ async function watchSafeProposal(
         });
   /** The chain proved the proposal executed: it is followed until its receipt settles it. */
   const proven = () => tracked()?.safeExecutionProven !== undefined;
+  /** The proposal's nonce once a look saw the Safe pass it, for chain checks the service can't block. */
+  let passedNonce: bigint | undefined;
   /**
-   * The execution transaction of a proof saved without it, looked up from the proof's own Safe
-   * and nonce and saved with it. Undefined while it can't be found.
+   * What the canonical chain shows at the nonce the Safe passed, read without the Safe service
+   * (from a saved proof, or from this watch's own look). Only the canonical execution log is a
+   * proof: it is saved with its transaction, whose receipt then settles the proposal. Another
+   * proposal's execution there releases it as replaced, and drops any older proof saved
+   * without a hash. "done" once released; the execution's hash to settle from; otherwise
+   * undefined.
    */
-  const lookUpExecution = rereadEveryMinute(async (safe) => {
+  const canonicalEnd = rereadEveryMinute(async (safe): Promise<Hex | "done" | undefined> => {
     const proof = tracked()?.safeExecutionProven;
-    if (!client || !proof || proof.executionHash || !/^\d+$/.test(proof.nonce)) return undefined;
-    const found = await findSafeExecutionTransaction(client, safe, hash, BigInt(proof.nonce));
+    if (proof?.executionHash) return proof.executionHash;
+    const nonce = proof && /^\d+$/.test(proof.nonce) ? BigInt(proof.nonce) : passedNonce;
+    if (!client || nonce === undefined) return undefined;
+    const found = await findSafeExecution(client, safe, hash, nonce);
     if (!found) return undefined;
-    updateTransactionActivity(id, { safeExecutionProven: { ...proof, executionHash: found } });
-    return found;
+    if (found.kind === "replaced") {
+      updateTransactionActivity(id, {
+        status: "failed",
+        message: SAFE_PROPOSAL_REPLACED_LINE,
+        safeExecutionProven: undefined,
+      });
+      return "done";
+    }
+    updateTransactionActivity(id, {
+      message: SAFE_PROPOSAL_EXECUTED_LINE,
+      safeExecutionProven: { safe, nonce: nonce.toString(), executionHash: found.hash },
+      safeResultUnconfirmed: undefined,
+    });
+    return found.hash;
   });
-  const provenExecution = async () => {
-    const proof = tracked()?.safeExecutionProven;
-    return proof && !proof.executionHash ? lookUpExecution(proof.safe) : undefined;
+  /** Settles from the canonical chain: true once the proposal ended. */
+  const settledFromChain = async (safe: Address): Promise<boolean> => {
+    const end = await canonicalEnd(safe);
+    if (end === "done") return true;
+    if (!end) return false;
+    await settle(end, false);
+    const status = tracked()?.status;
+    return status === "success" || status === "failed";
   };
   /** Whether the hour after the proposal was made has passed. */
   const pastHorizon = () =>
@@ -408,27 +433,13 @@ async function watchSafeProposal(
           return "done";
         }
         if (look === "executed") {
-          // The evidence itself is saved, with the execution's own transaction from the Safe's
-          // event, so its receipt settles it without the Safe service: ExecutionSuccess as
-          // success, ExecutionFailure as failed, which ends the hold. Until then it stays held
-          // through gaps, dismissal and reloads.
-          const executionHash =
-            tracked()?.safeExecutionProven?.executionHash ??
-            (client
-              ? ((await findSafeExecutionTransaction(client, safe, hash, message.nonce)) ??
-                undefined)
-              : undefined);
-          updateTransactionActivity(id, {
-            message: SAFE_PROPOSAL_EXECUTED_LINE,
-            safeExecutionProven: { safe, nonce: message.nonce.toString(), executionHash },
-            safeResultUnconfirmed: undefined,
-          });
-          if (executionHash) {
-            await settle(executionHash, false);
-            const status = tracked()?.status;
-            if (status === "success" || status === "failed") return "done";
-          }
-          return "live";
+          // The SDK's "executed" may come from a log the canonical chain no longer holds, so
+          // only the canonical log is saved as proof, with its transaction: its receipt settles
+          // it without the Safe service (ExecutionSuccess as success, ExecutionFailure as
+          // failed, which ends the hold), and until then it stays held through gaps, dismissal
+          // and reloads. A canonical replacement releases it.
+          passedNonce = message.nonce;
+          return (await settledFromChain(safe)) ? "done" : "live";
         }
       }
       if (!pastHorizon()) return "live";
@@ -465,14 +476,15 @@ async function watchSafeProposal(
     const stuckFor = service ? SAFE_STUCK_LOOKS : SAFE_EXECUTION_CHECKS;
     for (let attempt = 0; attempt < SAFE_RESULT_HORIZON_MS / SAFE_LOOK_MS; attempt += 1) {
       if (tracked()?.obsoleteSafeNonce !== undefined) return;
-      // A saved proven execution settles from its own receipt, whatever the service says. A
-      // proof saved without its transaction looks it up again, at most once a minute.
-      const provenHash = tracked()?.safeExecutionProven?.executionHash ?? (await provenExecution());
-      if (provenHash) {
-        await settle(provenHash, false);
-        const status = tracked()?.status;
-        if (status === "success" || status === "failed") return;
-      }
+      // A proven execution, or a nonce this watch saw the Safe pass, is settled from the
+      // canonical chain whatever the service says, at most once a minute.
+      const chainSafe = tracked()?.safeExecutionProven?.safe ?? safeOf();
+      if (
+        chainSafe &&
+        (tracked()?.safeExecutionProven || passedNonce !== undefined) &&
+        (await settledFromChain(chainSafe))
+      )
+        return;
       // Over WalletConnect, Safe{Wallet} replies with the execution's own hash
       // when the owner executes at once. A safeTxHash is never a transaction.
       // The SDK then reads the Safe's one execution event in that receipt,

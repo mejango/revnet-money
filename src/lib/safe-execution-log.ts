@@ -11,20 +11,27 @@ const MAX_NONCE_READS = 64;
 type RequestClient = Pick<PublicClient, "request">;
 
 /**
- * The transaction that executed Safe proposal `safeTxHash` at `nonce`: the
- * block where the Safe's nonce first passed it, at or below a finalized block,
- * holds its ExecutionSuccess or ExecutionFailure event, in the Safe 1.4 layout
- * (safeTxHash indexed) or the 1.3 layout (its first data word), from that
- * block's canonical hash. The SDK's
- * `lookAtSafeProposal` proves the proposal executed but does not return this
- * transaction, which its receipt needs. Null when it can't be found or read.
+ * What the canonical block that used a proposal's nonce shows: its own execution, in
+ * transaction `hash` ("executed"), or only other proposals' executions ("replaced").
  */
-export async function findSafeExecutionTransaction(
+export type SafeExecutionAtNonce = { kind: "executed"; hash: Hex } | { kind: "replaced" };
+
+/**
+ * What ran at Safe proposal `safeTxHash`'s `nonce`: the block where the Safe's
+ * nonce first passed it, at or below a finalized block, holds the
+ * ExecutionSuccess or ExecutionFailure event that used it, in the Safe 1.4
+ * layout (safeTxHash indexed) or the 1.3 layout (its first data word). Only
+ * logs of that block's canonical hash count, so an orphaned log proves
+ * nothing. The SDK's `lookAtSafeProposal` proves an execution but returns no
+ * transaction, which the receipt needs, and may read an orphaned log. Null when
+ * nothing canonical can be found or read.
+ */
+export async function findSafeExecution(
   client: RequestClient,
   safe: Address,
   safeTxHash: Hex,
   nonce: bigint,
-): Promise<Hex | null> {
+): Promise<SafeExecutionAtNonce | null> {
   const request = client.request as (args: {
     method: string;
     params: unknown[];
@@ -76,6 +83,7 @@ export async function findSafeExecutionTransaction(
       params: [block, false],
     })) as { hash?: unknown } | null;
     if (typeof canonical?.hash !== "string") return null;
+    let others = false;
     for (const log of logs as {
       address?: unknown;
       topics?: unknown;
@@ -92,20 +100,28 @@ export async function findSafeExecutionTransaction(
       const data = typeof log.data === "string" ? log.data.toLowerCase() : "";
       const named =
         topics.length === 2
-          ? typeof topics[1] === "string" && topics[1].toLowerCase() === wanted
-          : topics.length === 1 && `0x${data.slice(2, 66)}` === wanted;
+          ? typeof topics[1] === "string"
+            ? topics[1].toLowerCase()
+            : ""
+          : topics.length === 1
+            ? `0x${data.slice(2, 66)}`
+            : "";
       if (
-        named &&
-        typeof log.blockNumber === "string" &&
-        BigInt(log.blockNumber) === high &&
-        typeof log.blockHash === "string" &&
-        log.blockHash.toLowerCase() === canonical.hash.toLowerCase() &&
-        typeof log.transactionHash === "string" &&
-        isHash(log.transactionHash)
+        !isHash(named) ||
+        typeof log.blockNumber !== "string" ||
+        BigInt(log.blockNumber) !== high ||
+        typeof log.blockHash !== "string" ||
+        log.blockHash.toLowerCase() !== canonical.hash.toLowerCase()
       )
-        return log.transactionHash;
+        continue;
+      if (named !== wanted) {
+        others = true;
+        continue;
+      }
+      if (typeof log.transactionHash === "string" && isHash(log.transactionHash))
+        return { kind: "executed", hash: log.transactionHash };
     }
-    return null;
+    return others ? { kind: "replaced" } : null;
   } catch {
     return null;
   }

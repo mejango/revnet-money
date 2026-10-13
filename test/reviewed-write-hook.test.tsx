@@ -45,11 +45,11 @@ const mocks = vi.hoisted(() => ({
   // The SDK's chain look at a proposal whose nonce the Safe has passed.
   lookAtSafeProposal: vi.fn(),
   // The execution transaction a proven proposal's Safe event names.
-  findSafeExecutionTransaction: vi.fn(),
+  findSafeExecution: vi.fn(),
 }));
 
 vi.mock("@/lib/safe-execution-log", () => ({
-  findSafeExecutionTransaction: mocks.findSafeExecutionTransaction,
+  findSafeExecution: mocks.findSafeExecution,
 }));
 
 vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
@@ -209,7 +209,7 @@ beforeEach(() => {
   mocks.safeReads = safeChain(ACCOUNT);
   mocks.noClient = false;
   mocks.lookAtSafeProposal.mockReset().mockResolvedValue("live");
-  mocks.findSafeExecutionTransaction.mockReset().mockResolvedValue(null);
+  mocks.findSafeExecution.mockReset().mockResolvedValue(null);
   mocks.wagmiReceipt.mockReturnValue({
     data: undefined,
     error: null,
@@ -1716,6 +1716,11 @@ describe("reviewed write hook", () => {
       const { activity, hooks } = await freshHarness();
       mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
       mocks.lookAtSafeProposal.mockResolvedValue("executed");
+      // A canonical execution whose receipt the node never returns.
+      mocks.findSafeExecution.mockResolvedValue({
+        kind: "executed",
+        hash: `0x${"ab".repeat(32)}`,
+      });
       savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
       serviceAnswering(
         () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false })),
@@ -1742,7 +1747,7 @@ describe("reviewed write hook", () => {
         const { activity, hooks } = await freshHarness();
         mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
         mocks.lookAtSafeProposal.mockResolvedValue("executed");
-        mocks.findSafeExecutionTransaction.mockResolvedValue(EXECUTION);
+        mocks.findSafeExecution.mockResolvedValue({ kind: "executed", hash: EXECUTION });
         mocks.waitForTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) =>
           hash === EXECUTION
             ? {
@@ -1761,7 +1766,7 @@ describe("reviewed write hook", () => {
         hooks.resumeSafeProposalTracking(mocks.config as never);
         await vi.advanceTimersByTimeAsync(60_000);
 
-        expect(mocks.findSafeExecutionTransaction).toHaveBeenCalledWith(
+        expect(mocks.findSafeExecution).toHaveBeenCalledWith(
           expect.anything(),
           ACCOUNT,
           PROPOSAL,
@@ -1786,8 +1791,8 @@ describe("reviewed write hook", () => {
       mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
       const start = Date.now();
       // The log lookup fails for two hours, then the healthy RPC answers it.
-      mocks.findSafeExecutionTransaction.mockImplementation(async () =>
-        Date.now() - start >= 2 * HOUR ? EXECUTION : null,
+      mocks.findSafeExecution.mockImplementation(async () =>
+        Date.now() - start >= 2 * HOUR ? { kind: "executed", hash: EXECUTION } : null,
       );
       mocks.waitForTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) =>
         hash === EXECUTION
@@ -1811,7 +1816,7 @@ describe("reviewed write hook", () => {
       reloaded.hooks.resumeSafeProposalTracking(mocks.config as never);
       await vi.advanceTimersByTimeAsync(HOUR);
 
-      expect(mocks.findSafeExecutionTransaction).toHaveBeenCalledWith(
+      expect(mocks.findSafeExecution).toHaveBeenCalledWith(
         expect.anything(),
         ACCOUNT,
         PROPOSAL,
@@ -1824,11 +1829,76 @@ describe("reviewed write hook", () => {
       });
     });
 
+    it("saves no proof from an orphaned execution log, and releases on the canonical replacement while the service 404s", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
+      // The SDK reads "executed" from a log the canonical chain no longer holds.
+      mocks.lookAtSafeProposal.mockResolvedValue("executed");
+      mocks.findSafeExecution.mockResolvedValue(null);
+      savedProposal(activity, PROPOSAL, 11155111);
+      let listed = true;
+      serviceAnswering(() =>
+        listed
+          ? new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false }))
+          : new Response("Not found", { status: 404 }),
+      );
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(activity.transactionActivityForHash(PROPOSAL)?.safeExecutionProven).toBeUndefined();
+
+      // The canonical chain shows another transaction at its nonce; the service 404s.
+      mocks.findSafeExecution.mockResolvedValue({ kind: "replaced" });
+      listed = false;
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      const row = activity.transactionActivityForHash(PROPOSAL)!;
+      expect(row).toMatchObject({
+        status: "failed",
+        message: "Another Safe transaction used this nonce. Propose it again to run it.",
+      });
+      expect(row.safeExecutionProven).toBeUndefined();
+      activity.dismissTransactionActivity(row.id);
+      expect(activity.transactionActivityForHash(PROPOSAL)).toBeUndefined();
+    });
+
+    it("releases an older proof saved without a hash when the canonical chain shows a replacement", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
+      mocks.findSafeExecution.mockResolvedValue({ kind: "replaced" });
+      savedProposal(activity, PROPOSAL, 11155111);
+      activity.updateTransactionActivity(`tx:11155111:${PROPOSAL}`, {
+        safeExecutionProven: { safe: ACCOUNT, nonce: "7" },
+      });
+      serviceAnswering(() => new Response("Not found", { status: 404 }));
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(mocks.findSafeExecution).toHaveBeenCalledWith(
+        expect.anything(),
+        ACCOUNT,
+        PROPOSAL,
+        7n,
+      );
+      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "failed",
+        message: "Another Safe transaction used this nonce. Propose it again to run it.",
+      });
+      expect(activity.transactionActivityForHash(PROPOSAL)?.safeExecutionProven).toBeUndefined();
+    });
+
     it("keeps a proposal the chain proved executed held through a service gap, dismissal and reload", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
       mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
       mocks.lookAtSafeProposal.mockResolvedValue("executed");
+      // A canonical execution whose receipt the node never returns.
+      mocks.findSafeExecution.mockResolvedValue({
+        kind: "executed",
+        hash: `0x${"ab".repeat(32)}`,
+      });
       savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
       let listed = true;
       serviceAnswering(() =>

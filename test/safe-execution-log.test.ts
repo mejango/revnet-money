@@ -1,4 +1,4 @@
-import { findSafeExecutionTransaction } from "@/lib/safe-execution-log";
+import { findSafeExecution } from "@/lib/safe-execution-log";
 import { encodeAbiParameters, encodeFunctionResult, parseAbi, type Address, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
 import { executionLog } from "./fixtures/safe-chain";
@@ -47,9 +47,10 @@ describe("finding a proven Safe execution's transaction", () => {
         { ...executionLog(SAFE, OTHER), ...AT_120, transactionHash: `0x${"99".repeat(32)}` },
         { ...executionLog(SAFE, PROPOSAL, eventName), ...AT_120, transactionHash: EXECUTION },
       ];
-      await expect(
-        findSafeExecutionTransaction(chain(logs) as never, SAFE, PROPOSAL, 7n),
-      ).resolves.toBe(EXECUTION);
+      await expect(findSafeExecution(chain(logs) as never, SAFE, PROPOSAL, 7n)).resolves.toEqual({
+        kind: "executed",
+        hash: EXECUTION,
+      });
     },
   );
 
@@ -61,9 +62,10 @@ describe("finding a proven Safe execution's transaction", () => {
       ...AT_120,
       transactionHash: EXECUTION,
     };
-    await expect(
-      findSafeExecutionTransaction(chain([log]) as never, SAFE, PROPOSAL, 7n),
-    ).resolves.toBe(EXECUTION);
+    await expect(findSafeExecution(chain([log]) as never, SAFE, PROPOSAL, 7n)).resolves.toEqual({
+      kind: "executed",
+      hash: EXECUTION,
+    });
   });
 
   it("finds nothing when the log's block is no longer canonical", async () => {
@@ -73,22 +75,40 @@ describe("finding a proven Safe execution's transaction", () => {
       blockHash: `0x${"ee".repeat(32)}`,
       transactionHash: EXECUTION,
     };
-    await expect(
-      findSafeExecutionTransaction(chain([log]) as never, SAFE, PROPOSAL, 7n),
-    ).resolves.toBeNull();
+    await expect(findSafeExecution(chain([log]) as never, SAFE, PROPOSAL, 7n)).resolves.toBeNull();
   });
 
-  it("finds nothing when only other proposals executed there, or the node can't answer", async () => {
+  it("says replaced when only other proposals executed in the canonical block", async () => {
     await expect(
-      findSafeExecutionTransaction(
+      findSafeExecution(
         chain([{ ...executionLog(SAFE, OTHER), ...AT_120, transactionHash: EXECUTION }]) as never,
         SAFE,
         PROPOSAL,
         7n,
       ),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({ kind: "replaced" });
+  });
+
+  it("says replaced over an orphaned log of the proposal when the canonical block ran another", async () => {
+    const orphan = {
+      ...executionLog(SAFE, PROPOSAL),
+      blockNumber: "0x78",
+      blockHash: `0x${"ee".repeat(32)}`,
+      transactionHash: EXECUTION,
+    };
+    const replacement = {
+      ...executionLog(SAFE, OTHER),
+      ...AT_120,
+      transactionHash: `0x${"99".repeat(32)}`,
+    };
     await expect(
-      findSafeExecutionTransaction(
+      findSafeExecution(chain([orphan, replacement]) as never, SAFE, PROPOSAL, 7n),
+    ).resolves.toEqual({ kind: "replaced" });
+  });
+
+  it("finds nothing when the node can't answer", async () => {
+    await expect(
+      findSafeExecution(
         { request: async () => Promise.reject(new Error("down")) } as never,
         SAFE,
         PROPOSAL,
