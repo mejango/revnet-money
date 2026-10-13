@@ -97,13 +97,7 @@
           "wagmi:useSignTypedData",
           1
         ],
-        [
-          "raw-wallet-call",
-          "src/hooks/useReviewedRelayr.ts",
-          "getRelayrTxQuote",
-          "signTypedDataAsync",
-          1
-        ],
+        ["raw-wallet-call", "src/hooks/useReviewedRelayr.ts", "quoteOnce", "signTypedDataAsync", 1],
         ["raw-wallet-call", "src/hooks/useReviewedRelayr.ts", "submit", "sendTransactionAsync", 1],
         [
           "raw-wallet-hook",

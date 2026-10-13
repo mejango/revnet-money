@@ -4,6 +4,7 @@ import { relayrPaymentReview } from "@/lib/relayr-payment-review";
 
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { formatShortDateTime } from "@/lib/date";
+import { confirmRelayrDiscard } from "@/lib/flow-choice";
 import {
   batchCallScope,
   releaseBatchRound,
@@ -1153,6 +1154,26 @@ export function discardRelayrSession(id: string): void {
   dismissTransactionActivity(id);
 }
 
+/** After an in-flow Discard of a session that may have run, the action is reviewed again. */
+const DISCARDED = "Discarded. Review it again.";
+
+/**
+ * A flow offers Discard itself (C13), not only account activity. A session
+ * none of whose requests ran ("changed", "expired") is discarded at once, and
+ * its line stays. One that may have run asks first: Discard ends it and the
+ * action stops for a fresh review, never sending the same calls on its own.
+ */
+async function discardInFlow(cause: unknown): Promise<unknown> {
+  if (!(cause instanceof RelayrDiscardError)) return cause;
+  if (cause.reason === "ran" && !(await confirmRelayrDiscard())) return cause;
+  try {
+    discardRelayrSession(cause.activityId);
+  } catch (error) {
+    return cause.reason === "ran" ? error : cause;
+  }
+  return cause.reason === "ran" ? new Error(DISCARDED) : cause;
+}
+
 /**
  * Ruling R114 for a paid bundle whose calls are not proven (as jbm's
  * holdUnprovenSession, relayr.ts:1470-1480): it keeps reserving them while a
@@ -1659,7 +1680,7 @@ export function useGetRelayrTxQuote() {
     setIsPending(false);
   }, []);
 
-  const getRelayrTxQuote = useCallback(
+  const quoteOnce = useCallback(
     async (
       requests: ReviewedRelayrRequest[],
       options?: {
@@ -2155,6 +2176,19 @@ export function useGetRelayrTxQuote() {
       });
     },
     [address, config, signTypedDataAsync, switchChainAsync],
+  );
+
+  const getRelayrTxQuote = useCallback(
+    async (...args: Parameters<typeof quoteOnce>) => {
+      try {
+        return await quoteOnce(...args);
+      } catch (cause) {
+        const next = await discardInFlow(cause);
+        if (next !== cause) setError(next instanceof Error ? next : null);
+        throw next;
+      }
+    },
+    [quoteOnce],
   );
 
   return { getRelayrTxQuote, data, reset, error, isPending, isSuccess: !!data };

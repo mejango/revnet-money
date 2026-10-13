@@ -132,12 +132,13 @@ function quote(row = payment()): RelayrPostBundleResponse {
 
 async function freshHarness() {
   vi.resetModules();
-  const [review, activity, hooks] = await Promise.all([
+  const [review, activity, hooks, choice] = await Promise.all([
     import("@/lib/transaction-review"),
     import("@/lib/transaction-activity"),
     import("@/hooks/useReviewedRelayr"),
+    import("@/lib/flow-choice"),
   ]);
-  return { review, activity, hooks };
+  return { review, activity, hooks, choice };
 }
 
 describe("saved unpaid quote release evidence", () => {
@@ -4186,7 +4187,37 @@ describe("Relayr sessions decided from the chain", () => {
       "The revnet changed since this review.",
     );
     expect(mocks.signTypedData).toHaveBeenCalledOnce();
-    expect(session()).toMatchObject({ relayrDiscardable: "changed" });
+    // Nothing ran and nothing can: the flow discards it, with no trip to account activity.
+    expect(session()).toBeUndefined();
+  });
+
+  it("offers Discard inside the flow for a request that may have run, and stops for a fresh review", async () => {
+    const { choice, result, session } = await signedSession();
+    const prompt = vi.fn().mockResolvedValue(false);
+    choice.registerFlowChoiceHandler(prompt);
+    vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+    chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 5n });
+    vi.stubGlobal("fetch", nextQuote());
+    // Kept: the line stays, as before.
+    await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
+      /may already have run/,
+    );
+    expect(prompt).toHaveBeenCalledExactlyOnceWith({
+      title: "Check the revnet",
+      lines: [
+        "This action's earlier signature may already have run. Check the revnet, then discard it to review it again.",
+      ],
+      confirmLabel: "Discard",
+    });
+    expect(session()).toMatchObject({ relayrDiscardable: "ran" });
+    // Discarded: the session goes, and nothing is signed until the user reviews again.
+    prompt.mockResolvedValue(true);
+    await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
+      "Discarded. Review it again.",
+    );
+    expect(session()).toBeUndefined();
+    expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("refuses another call in the recovery scope of a session that may have run, but not one that shares only its forwarder nonce", async () => {

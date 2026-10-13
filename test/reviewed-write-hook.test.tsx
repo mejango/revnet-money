@@ -168,7 +168,7 @@ async function freshHarness() {
     import("@/lib/transaction-review"),
     import("@/lib/transaction-activity"),
     import("@/hooks/useReviewedWriteContract"),
-    import("@/lib/held-write"),
+    import("@/lib/flow-choice"),
   ]);
   return { review, activity, hooks, held };
 }
@@ -806,7 +806,7 @@ describe("reviewed write hook", () => {
     const reviewer = vi.fn().mockResolvedValue(true);
     review.registerTransactionReviewHandler(reviewer);
     const prompt = vi.fn().mockResolvedValue(false);
-    held.registerHeldWriteHandler(prompt);
+    held.registerFlowChoiceHandler(prompt);
     const { result } = renderHook(() => hooks.useWriteContract());
 
     await act(async () => {
@@ -816,8 +816,11 @@ describe("reviewed write hook", () => {
       "Your earlier transaction hasn't confirmed yet. Check your wallet.",
     );
     expect(prompt).toHaveBeenCalledExactlyOnceWith({
-      held: "Your earlier transaction hasn't confirmed yet. Check your wallet.",
-      exit: "If your earlier transaction went through, sending again runs it twice.",
+      title: "Check your wallet",
+      lines: [
+        "Your earlier transaction hasn't confirmed yet. Check your wallet.",
+        "If your earlier transaction went through, sending again runs it twice.",
+      ],
       confirmLabel: "I checked my wallet. Send again",
     });
     expect(reviewer).toHaveBeenCalledOnce();
@@ -2133,7 +2136,7 @@ describe("held wallet writes", () => {
     const reviewer = vi.fn().mockResolvedValue(true);
     review.registerTransactionReviewHandler(reviewer);
     const prompt = vi.fn().mockResolvedValue(false);
-    held.registerHeldWriteHandler(prompt);
+    held.registerFlowChoiceHandler(prompt);
     mocks.submit.mockRejectedValueOnce(new Error("Wallet transport timed out"));
     const { result } = renderHook(() => hooks.useWriteContract());
 
@@ -2141,7 +2144,7 @@ describe("held wallet writes", () => {
     // A reload keeps the hold: the record lives in browser storage.
     const reloaded = await freshHarness();
     reloaded.review.registerTransactionReviewHandler(reviewer);
-    reloaded.held.registerHeldWriteHandler(prompt);
+    reloaded.held.registerFlowChoiceHandler(prompt);
     const next = renderHook(() => reloaded.hooks.useWriteContract()).result;
     await expect(next.current.writeContractAsync(CALL as never)).rejects.toThrow(
       "Your earlier transaction hasn't confirmed yet. Check your wallet.",
@@ -2162,7 +2165,7 @@ describe("held wallet writes", () => {
     const { review, hooks, held } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
     const prompt = vi.fn().mockResolvedValue(false);
-    held.registerHeldWriteHandler(prompt);
+    held.registerFlowChoiceHandler(prompt);
     mocks.submit.mockRejectedValueOnce(new Error("Wallet transport timed out"));
     const { result } = renderHook(() => hooks.useWriteContract());
 
@@ -2172,7 +2175,10 @@ describe("held wallet writes", () => {
     );
     expect(prompt).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        exit: "If your earlier transaction went through, sending again pays twice.",
+        lines: [
+          "Your earlier transaction hasn't confirmed yet. Check your wallet.",
+          "If your earlier transaction went through, sending again pays twice.",
+        ],
       }),
     );
   });
@@ -2182,7 +2188,7 @@ describe("held wallet writes", () => {
     const reviewer = vi.fn().mockResolvedValue(true);
     review.registerTransactionReviewHandler(reviewer);
     const prompt = vi.fn().mockResolvedValue(false);
-    held.registerHeldWriteHandler(prompt);
+    held.registerFlowChoiceHandler(prompt);
     mocks.submit.mockRejectedValueOnce(new Error("Wallet transport timed out"));
     const { result } = renderHook(() => hooks.useWriteContract());
 
@@ -2198,7 +2204,7 @@ describe("held wallet writes", () => {
     const { review, hooks, held } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
     const prompt = vi.fn().mockResolvedValue(false);
-    held.registerHeldWriteHandler(prompt);
+    held.registerFlowChoiceHandler(prompt);
     mocks.submit.mockRejectedValueOnce(Object.assign(new Error("User rejected"), { code: 4001 }));
     const { result } = renderHook(() => hooks.useWriteContract());
 
@@ -2214,7 +2220,7 @@ describe("held wallet writes", () => {
     const { review, activity, hooks, held } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
     const prompt = vi.fn().mockResolvedValue(false);
-    held.registerHeldWriteHandler(prompt);
+    held.registerFlowChoiceHandler(prompt);
     mocks.waitForTransactionReceipt.mockResolvedValue({ status: "success" });
     const { result } = renderHook(() => hooks.useWriteContract());
 
@@ -2240,7 +2246,7 @@ describe("held wallet writes", () => {
     const { review, hooks, held } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
     const prompt = vi.fn().mockResolvedValue(false);
-    held.registerHeldWriteHandler(prompt);
+    held.registerFlowChoiceHandler(prompt);
     mocks.submit.mockRejectedValueOnce(new Error("Wallet transport timed out"));
     const { result } = renderHook(() =>
       hooks.useWriteContract({ recovery: "caller", beforeSubmission: async () => undefined }),

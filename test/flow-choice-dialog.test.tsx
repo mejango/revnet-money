@@ -1,5 +1,5 @@
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
-import { confirmHeldWriteExit } from "@/lib/held-write";
+import { confirmHeldWriteExit } from "@/lib/flow-choice";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,7 +7,7 @@ vi.mock("wagmi", () => ({
   useAccount: () => ({ address: "0x1111111111111111111111111111111111111111" }),
 }));
 
-describe("held wallet write dialog", () => {
+describe("flow choice dialog", () => {
   it("shows the held and exit lines, and sends again only on the exit button", async () => {
     render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
     const answer = confirmHeldWriteExit({ value: 5n });

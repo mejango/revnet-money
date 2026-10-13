@@ -1,6 +1,6 @@
 "use client";
 
-import { HeldWriteDialog } from "@/components/HeldWriteDialog";
+import { FlowChoiceDialog } from "@/components/FlowChoiceDialog";
 import { LoadingText } from "@/components/ui/LoadingText";
 
 import {
@@ -8,7 +8,7 @@ import {
   type TransactionReviewScope,
 } from "@/components/TransactionReviewScope";
 import { ModalDialog } from "@/components/ui/ModalShell";
-import { registerHeldWriteHandler, type HeldWritePrompt } from "@/lib/held-write";
+import { registerFlowChoiceHandler, type FlowChoice } from "@/lib/flow-choice";
 import {
   registerFundingChainSelectionHandler,
   registerTransactionReviewHandler,
@@ -43,19 +43,19 @@ export type PendingFundingChainSelection = {
   resolve: (chainId: number | null) => void;
 };
 
-/** An earlier write of the same call has no confirmed result: send again, or not. */
-export type PendingHeldWrite = {
+/** A choice a flow asks for mid-action, such as sending a held write again. */
+type PendingFlowChoice = {
   scope?: TransactionReviewScope | null;
-  kind: "held";
+  kind: "choice";
   id: number;
-  prompt: HeldWritePrompt;
-  resolve: (sendAgain: boolean) => void;
+  choice: FlowChoice;
+  resolve: (confirmed: boolean) => void;
 };
 
-export type PendingDialog = PendingReview | PendingFundingChainSelection | PendingHeldWrite;
+export type PendingDialog = PendingReview | PendingFundingChainSelection | PendingFlowChoice;
 
 /** The dialogs the lazily loaded review module draws. */
-export type PendingReviewDialog = PendingReview | PendingFundingChainSelection;
+type PendingReviewDialog = PendingReview | PendingFundingChainSelection;
 
 export type TransactionReviewDialogProps = {
   pending: PendingReviewDialog;
@@ -135,14 +135,14 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     [enqueueDialog],
   );
 
-  const enqueueHeldWrite = useCallback(
-    (prompt: HeldWritePrompt) =>
+  const enqueueFlowChoice = useCallback(
+    (choice: FlowChoice) =>
       new Promise<boolean>((resolve) => {
         enqueueDialog({
-          kind: "held",
+          kind: "choice",
           scope: scopeRef.current,
           id: nextId.current++,
-          prompt: { ...prompt },
+          choice: { ...choice, lines: [...choice.lines] },
           resolve,
         });
       }),
@@ -150,7 +150,7 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => registerTransactionReviewHandler(enqueue), [enqueue]);
-  useEffect(() => registerHeldWriteHandler(enqueueHeldWrite), [enqueueHeldWrite]);
+  useEffect(() => registerFlowChoiceHandler(enqueueFlowChoice), [enqueueFlowChoice]);
   useEffect(
     () => registerFundingChainSelectionHandler(enqueueFundingChainSelection),
     [enqueueFundingChainSelection],
@@ -210,7 +210,7 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   // review UI only when a request arrives. Loading never authorizes a call;
   // cancellation, unmount, or a failed download resolves it as declined.
   useEffect(() => {
-    if (!active || active.kind === "held" || Dialog) return;
+    if (!active || active.kind === "choice" || Dialog) return;
     let cancelled = false;
     void import("./TransactionReviewDialog").then(
       (module) => {
@@ -228,12 +228,12 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   return (
     <ReviewScopeContext.Provider value={registerScope}>
       {children}
-      {active?.kind === "held" ? (
-        <HeldWriteDialog
+      {active?.kind === "choice" ? (
+        <FlowChoiceDialog
           key={active.id}
           id={active.id}
-          prompt={active.prompt}
-          onFinish={(sendAgain) => finish(active.id, sendAgain)}
+          choice={active.choice}
+          onFinish={(confirmed) => finish(active.id, confirmed)}
         />
       ) : active ? (
         Dialog ? (

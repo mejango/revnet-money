@@ -1,6 +1,6 @@
 "use client";
 
-import { confirmHeldWriteExit } from "@/lib/held-write";
+import { confirmHeldWriteExit } from "@/lib/flow-choice";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
