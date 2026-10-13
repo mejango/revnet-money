@@ -58,6 +58,7 @@ vi.mock("wagmi/actions", () => ({
       ? undefined
       : {
           chain: { id: 11155111 },
+          getChainId: async () => 11155111,
           estimateContractGas: mocks.estimateContractGas,
           waitForTransactionReceipt: mocks.waitForTransactionReceipt,
           getTransactionReceipt: mocks.getTransactionReceipt,
@@ -823,14 +824,17 @@ describe("reviewed write hook", () => {
     await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
       "Your earlier transaction hasn't confirmed yet. Check your wallet.",
     );
-    expect(prompt).toHaveBeenCalledExactlyOnceWith({
-      title: "Check your wallet",
-      lines: [
-        "Your earlier transaction hasn't confirmed yet. Check your wallet.",
-        "If your earlier transaction went through, sending again runs it twice.",
-      ],
-      confirmLabel: "I checked my wallet. Send again",
-    });
+    expect(prompt).toHaveBeenCalledExactlyOnceWith(
+      {
+        title: "Check your wallet",
+        lines: [
+          "Your earlier transaction hasn't confirmed yet. Check your wallet.",
+          "If your earlier transaction went through, sending again runs it twice.",
+        ],
+        confirmLabel: "I checked my wallet. Send again",
+      },
+      expect.any(AbortSignal),
+    );
     expect(reviewer).toHaveBeenCalledOnce();
     expect(mocks.simulateContract).toHaveBeenCalledOnce();
     expect(mocks.submit).toHaveBeenCalledOnce();
@@ -2234,6 +2238,7 @@ describe("held wallet writes", () => {
           "If your earlier transaction went through, sending again pays twice.",
         ],
       }),
+      expect.any(AbortSignal),
     );
   });
 
@@ -2313,4 +2318,103 @@ describe("held wallet writes", () => {
     expect(prompt).not.toHaveBeenCalled();
     expect(mocks.submit).toHaveBeenCalledTimes(2);
   });
+});
+
+describe("held wallet writes: fix round 1", () => {
+  const MINED = {
+    hash: HASH,
+    from: ACCOUNT,
+    to: TARGET,
+    input: TRANSFER_7.data,
+    value: 0n,
+    nonce: 3,
+    blockNumber: 9n,
+  };
+
+  it("holds in this tab's memory and says so in the review when the browser refuses storage", async () => {
+    const { review, hooks, held } = await freshHarness();
+    const reviews: string[] = [];
+    review.registerTransactionReviewHandler(async (request) => {
+      reviews.push(String(request.description ?? ""));
+      return true;
+    });
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Refused", "SecurityError");
+    });
+    mocks.submit.mockRejectedValueOnce(new Error("Wallet transport timed out"));
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow("timed out");
+    expect(reviews[0]).toContain(
+      "This browser can't remember pending transactions. Check your wallet before repeating one.",
+    );
+    expect(mocks.submit).toHaveBeenCalledOnce();
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      /hasn't confirmed yet/,
+    );
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("offers no resend while the earlier transaction is known to be pending", async () => {
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(true);
+    held.registerFlowChoiceHandler(prompt);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    mocks.getTransaction.mockResolvedValue({ ...MINED, blockNumber: null });
+
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      "Still pending in your wallet. Speed it up or cancel it there.",
+    );
+    expect(prompt).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("does not send again when the earlier transaction confirms as the user accepts the exit", async () => {
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    // The node does not know the hash when the exit is offered, then shows it mined.
+    held.registerFlowChoiceHandler(async () => {
+      mocks.getTransaction.mockResolvedValue(MINED);
+      return true;
+    });
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      "Your earlier transaction went through.",
+    );
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("closes the exit when the earlier transaction confirms while it is open", async () => {
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    let opened = false;
+    held.registerFlowChoiceHandler(
+      (_choice, signal) =>
+        new Promise<boolean>((resolve) => {
+          opened = true;
+          signal?.addEventListener("abort", () => resolve(false));
+        }),
+    );
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    const second = result.current.writeContractAsync(CALL as never);
+    await waitFor(() => expect(opened).toBe(true));
+    mocks.getTransaction.mockResolvedValue(MINED);
+    await expect(second).rejects.toThrow("Your earlier transaction went through.");
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  }, 15_000);
 });

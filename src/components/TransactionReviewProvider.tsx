@@ -136,15 +136,30 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   );
 
   const enqueueFlowChoice = useCallback(
-    (choice: FlowChoice) =>
+    (choice: FlowChoice, signal?: AbortSignal) =>
       new Promise<boolean>((resolve) => {
-        enqueueDialog({
+        const pending: PendingFlowChoice = {
           kind: "choice",
           scope: scopeRef.current,
           id: nextId.current++,
           choice: { ...choice, lines: [...choice.lines] },
           resolve,
-        });
+        };
+        // Closed unanswered when its caller no longer needs the answer.
+        signal?.addEventListener(
+          "abort",
+          () => {
+            if (activeRef.current === pending) {
+              activeRef.current = queueRef.current.shift() ?? null;
+              setActive(activeRef.current);
+            } else {
+              queueRef.current = queueRef.current.filter((dialog) => dialog !== pending);
+            }
+            resolve(false);
+          },
+          { once: true },
+        );
+        enqueueDialog(pending);
       }),
     [enqueueDialog],
   );

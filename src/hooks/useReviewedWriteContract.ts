@@ -25,6 +25,11 @@ import {
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
 import {
+  browserRemembersHolds,
+  FORGETFUL_BROWSER_LINE,
+  writeHoldStorage,
+} from "@/lib/write-hold-storage";
+import {
   browserLocks,
   createBrowserWriteRecovery,
   gasWithHeadroom,
@@ -666,38 +671,110 @@ export function followSubmission(
 
 type WriteJournal = ReturnType<typeof createBrowserWriteRecovery>;
 
+/** A held write whose saved hash the node shows waiting in the mempool: no resend. */
+const STILL_PENDING = "Still pending in your wallet. Speed it up or cancel it there.";
+/** The held write confirmed while the user was deciding: nothing is sent again. */
+const WENT_THROUGH = "Your earlier transaction went through.";
+/** How often an open exit asks the chain again, so a confirmation closes it. */
+const HELD_RECHECK_MS = 3_000;
+
+type HeldStatus = "pending" | "sent" | "released";
+
+/** What the chain shows of the held write now; a node that can't answer proves nothing. */
+async function heldStatus(
+  journal: WriteJournal,
+  client: PublicClient | undefined,
+): Promise<HeldStatus> {
+  if (!client) return journal.read() ? "pending" : "released";
+  try {
+    const check = await journal.resolve(client);
+    return !check || check.status === "ran" ? "released" : check.status;
+  } catch {
+    return "pending";
+  }
+}
+
+/** Whether the node shows the record's own hash from its account, still unmined. */
+async function knownPending(
+  client: PublicClient | undefined,
+  record: ReviewedWriteRecoveryRecord,
+): Promise<boolean> {
+  if (!client || !record.hash) return false;
+  const sent = await client.getTransaction({ hash: record.hash }).catch(() => null);
+  return (
+    !!sent &&
+    sent.from?.toLowerCase() === record.account.toLowerCase() &&
+    (sent.blockNumber === null || sent.blockNumber === undefined)
+  );
+}
+
+function clearMined(journal: WriteJournal): void {
+  const mined = journal.read();
+  if (mined) journal.clear(mined);
+}
+
 /**
  * Ends an earlier write of this exact call before a new one, inside the
- * journal's lock. A write the chain shows mined, or one the wallet never sent,
- * is released. One still unproven asks the user: they check their wallet, then
- * send again or stop with the held line.
+ * journal's lock. A write the chain shows mined before this send, or one the
+ * wallet never sent, is released. A saved hash the node shows still pending
+ * stays held with no resend. Otherwise the user may check their wallet and send
+ * again: the chain is asked again while the choice is open, which a
+ * confirmation closes, and once more when it is accepted.
  */
 async function releaseHeldWrite(journal: WriteJournal, client: PublicClient | undefined) {
-  const earlier = journal.read();
-  if (!earlier) return;
-  let status: "pending" | "sent" | "ran" | undefined;
+  if (!journal.read()) return;
+  const first = await heldStatus(journal, client);
+  if (first === "released") return;
+  if (first === "sent") return clearMined(journal);
+  const record = journal.read();
+  if (!record) return;
+  if (await knownPending(client, record)) throw new Error(STILL_PENDING);
+
+  const open = new AbortController();
+  let confirmed = false;
+  const recheck = (async () => {
+    while (!open.signal.aborted) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, HELD_RECHECK_MS);
+        open.signal.addEventListener("abort", () => (clearTimeout(timer), resolve()), {
+          once: true,
+        });
+      });
+      if (open.signal.aborted) return;
+      if ((await heldStatus(journal, client)) === "sent") {
+        confirmed = true;
+        open.abort();
+      }
+    }
+  })();
+  let accepted = false;
   try {
-    status = client ? (await journal.resolve(client))?.status : "pending";
-  } catch {
-    // A node that can't answer proves nothing; the user's exit stays open.
-    status = "pending";
+    accepted = await confirmHeldWriteExit(record.call, open.signal);
+  } finally {
+    open.abort();
+    await recheck;
   }
-  if (status === "sent") {
-    // Mined: a new send is a new write.
-    const mined = journal.read();
-    if (mined) journal.clear(mined);
-    return;
+  if (confirmed) {
+    clearMined(journal);
+    throw new Error(WENT_THROUGH);
   }
-  if (status !== "pending") return;
-  const record = journal.read() ?? earlier;
-  if (!(await confirmHeldWriteExit(record.call))) throw new Error(writeHeldMessage());
-  journal.abandon(record, { checkedWallet: true });
+  if (!accepted) throw new Error(writeHeldMessage());
+  const last = await heldStatus(journal, client);
+  if (last === "sent") {
+    clearMined(journal);
+    throw new Error(WENT_THROUGH);
+  }
+  if (last === "released") return;
+  const current = journal.read() ?? record;
+  if (await knownPending(client, current)) throw new Error(STILL_PENDING);
+  journal.abandon(current, { checkedWallet: true });
 }
 
 /**
  * Saves the attempt before the wallet opens, with the account's next nonce so
- * the chain can later prove what happened. Without storage it goes unheld, as
- * before this hold existed.
+ * the chain can later prove what happened. Storage the browser refuses keeps
+ * the hold in this tab's memory (writeHoldStorage), so this never opens the
+ * wallet unheld.
  */
 async function reserveWrite(
   journal: WriteJournal,
@@ -707,11 +784,7 @@ async function reserveWrite(
   const evidence = client
     ? await readReviewedWriteNonce(client, account).catch(() => undefined)
     : undefined;
-  try {
-    return journal.reserve(undefined, evidence);
-  } catch {
-    return undefined;
-  }
+  return journal.reserve(undefined, evidence);
 }
 
 /** The sent write's receipt landed: its hold ends. */
@@ -817,12 +890,15 @@ export function useWriteContract(
       const journal =
         safe || recovery === "caller"
           ? undefined
-          : createBrowserWriteRecovery({
-              chainId,
-              account: initialAddress,
-              safe: false,
-              call: { to: variables.address, data, value: variables.value ?? 0n },
-            });
+          : createBrowserWriteRecovery(
+              {
+                chainId,
+                account: initialAddress,
+                safe: false,
+                call: { to: variables.address, data, value: variables.value ?? 0n },
+              },
+              { storage: writeHoldStorage },
+            );
       const submitReviewedCall = async () => {
         const duplicate = refreshTransactionActivities().find(
           (activity) =>
@@ -873,7 +949,11 @@ export function useWriteContract(
                   ? "Agree & propose to Safe"
                   : (transactionReview?.confirmLabel ?? "Agree & continue"),
                 description:
-                  [transactionReview?.description, safe ? SAFE_NONCE_GUIDANCE : undefined]
+                  [
+                    transactionReview?.description,
+                    safe ? SAFE_NONCE_GUIDANCE : undefined,
+                    journal && !browserRemembersHolds() ? FORGETFUL_BROWSER_LINE : undefined,
+                  ]
                     .filter(Boolean)
                     .join("\n\n") || undefined,
               },

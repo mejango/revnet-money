@@ -14,7 +14,8 @@ export type FlowChoice = {
   confirmLabel: string;
 };
 
-type FlowChoiceHandler = (choice: FlowChoice) => Promise<boolean>;
+/** `signal` closes the choice unanswered, as when the chain answers it first. */
+type FlowChoiceHandler = (choice: FlowChoice, signal?: AbortSignal) => Promise<boolean>;
 
 let handler: FlowChoiceHandler | null = null;
 
@@ -27,20 +28,28 @@ export function registerFlowChoiceHandler(next: FlowChoiceHandler): () => void {
 }
 
 /** True only when the user took the way on; false without a dialog provider. */
-async function chooseInFlow(choice: FlowChoice): Promise<boolean> {
-  return handler ? handler(choice) : false;
+async function chooseInFlow(choice: FlowChoice, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return false;
+  if (!handler) return false;
+  return signal ? handler(choice, signal) : handler(choice);
 }
 
 /**
  * An earlier write of this exact call has no confirmed result. True only when
  * the user checked their wallet and chose to send again.
  */
-export function confirmHeldWriteExit(call: { value?: bigint | string }): Promise<boolean> {
-  return chooseInFlow({
-    title: "Check your wallet",
-    lines: [writeHeldMessage(), writeExitMessage(call)],
-    confirmLabel: WRITE_EXIT_LABEL,
-  });
+export function confirmHeldWriteExit(
+  call: { value?: bigint | string },
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return chooseInFlow(
+    {
+      title: "Check your wallet",
+      lines: [writeHeldMessage(), writeExitMessage(call)],
+      confirmLabel: WRITE_EXIT_LABEL,
+    },
+    signal,
+  );
 }
 
 /**
