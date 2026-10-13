@@ -124,7 +124,11 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // against 2700.9 KiB on main (+15.2 KiB, not split between SDK and app), with the
 // largest route 709.6 KiB and route-referenced JavaScript 986.2 KiB, both in budget,
 // and every lazy wallet check passing. Raise only the aggregate ceiling to 2717 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2717);
+// Holding writes the browser can't store in the tab, no resend over a known pending hash,
+// the confirmation that closes an open exit, and settling a proven Safe execution from its
+// own transaction (the nonce search and execution-log read) measure 2717.4 KiB. Raise the
+// aggregate ceiling to 2720 KiB for a small margin; route and lazy-load limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2720);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
