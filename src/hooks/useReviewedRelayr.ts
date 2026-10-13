@@ -61,7 +61,12 @@ import {
 import { requireTransactionReview, type TransactionReviewCall } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
-import { browserLocks, gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import {
+  browserLocks,
+  gasWithHeadroom,
+  relayrDiscardLine,
+  relayrHeldMessage as sharedHeldMessage,
+} from "@bananapus/nana-sdk-core/review";
 import {
   bindRelayrQuote,
   FORWARD_REQUEST_TYPES,
@@ -69,12 +74,13 @@ import {
   MAX_RELAYR_SENT_PAYMENTS,
   proveSavedRelayrPayment,
   RELAYR_API,
-  RELAYR_FORWARDER_DEADLINE_SECONDS,
   RELAYR_PAYMENT_CODE_HASH,
   RELAYR_PAYMENT_GAS,
+  RELAYR_REQUEST_RUN_MARGIN_SECONDS,
   relayrBundleRequest,
   relayrDeadlinePassed,
   relayrDestinationHash,
+  relayrForwarderDeadline,
   relayrForwardRequest,
   relayrPaymentAttemptOutcome,
   relayrPaymentDetails,
@@ -356,21 +362,23 @@ const PAYMENT_REVERTED = {
     "The original funding transaction reverted onchain. Its destination authorizations remain reserved; retry only the exact saved quote.",
 } as const;
 
-/**
- * The line a session shows while one of its old requests can still run: until
- * `until` (seconds), or, once the clock is past it, until a finalized block is.
- */
-function relayrHeldMessage(until: number, nowMs = Date.now()): string {
-  return until * 1_000 > nowMs
-    ? `This action's earlier signature can still run until ${formatShortDateTime(until * 1_000)}. Try again after that.`
-    : "This action's earlier signature may still run. Try again in a few minutes.";
+/** The SDK's line for a session one of whose old requests can still run, in this app's time format. */
+function relayrHeldMessage(until: number): string {
+  return sharedHeldMessage(until, { formatTime: formatShortDateTime });
 }
 
-const RELAYR_DISCARD_LINES: Record<RelayrDiscardReason, string> = {
-  ran: "This action's earlier signature may already have run. Check the revnet, then discard it in account activity.",
-  changed: "The revnet changed since this review.",
-  expired: "This action's earlier signatures expired without running.",
-};
+/** The SDK's line for a session none of whose requests can run again. */
+function discardLine(reason: RelayrDiscardReason): string {
+  return relayrDiscardLine(reason, { subject: "revnet" });
+}
+
+/**
+ * Saved signatures are quoted again only while a quote's payment window (about
+ * 10 minutes, with slack) and the SDK's run margin both fit before they expire:
+ * otherwise the quote offers no payable option. Past that, they are signed
+ * again at their saved nonces.
+ */
+const REQUOTE_MIN_SECONDS = RELAYR_REQUEST_RUN_MARGIN_SECONDS + 15 * 60;
 
 /** A saved session none of whose requests can run again: Discard ends it. `cause` is why its calls were not proven. */
 class RelayrDiscardError extends Error {
@@ -379,7 +387,7 @@ class RelayrDiscardError extends Error {
     readonly reason: RelayrDiscardReason,
     cause?: unknown,
   ) {
-    super(RELAYR_DISCARD_LINES[reason], cause === undefined ? undefined : { cause });
+    super(discardLine(reason), cause === undefined ? undefined : { cause });
     this.name = "RelayrDiscardError";
   }
 }
@@ -412,7 +420,7 @@ function discardableSession(
     status: "failed",
     manualVerificationRequired: true,
     relayrDiscardable: reason,
-    message: RELAYR_DISCARD_LINES[reason],
+    message: discardLine(reason),
   });
   return new RelayrDiscardError(activity.id, reason, cause);
 }
@@ -834,18 +842,21 @@ async function recheck(
 }
 
 /**
- * A live session's saved signatures can be quoted again (jbm
- * verifyForwardedEntries, relayr.ts:837-857): each is this account's forward
- * request for its value, its deadline is more than two minutes away, the
- * action's recheck passes, and the exact signed outer call runs.
+ * A live session's saved signatures still apply (jbm verifyForwardedEntries,
+ * relayr.ts:837-857): each is this account's forward request for its value,
+ * the action's recheck passes, and the exact signed outer call runs. Resolves
+ * whether they can be quoted again: true while more than REQUOTE_MIN_SECONDS
+ * is left before each expires, and false when they must be signed again at
+ * their saved nonces instead (R114 (a)).
  */
 async function requireSavedSignaturesRun(
   config: Config,
   account: Address,
   saved: TransactionActivity,
   requests: ReviewedRelayrRequest[],
-): Promise<void> {
+): Promise<boolean> {
   const now = Math.floor(Date.now() / 1_000);
+  let quotable = true;
   for (const transaction of saved.relayrExpectedTransactions ?? []) {
     const request = relayrForwardRequest({
       chain: transaction.chainId,
@@ -855,13 +866,15 @@ async function requireSavedSignaturesRun(
     if (
       !request ||
       request.from.toLowerCase() !== account.toLowerCase() ||
-      request.value !== BigInt(transaction.value) ||
-      request.deadline <= now + 120
+      request.value !== BigInt(transaction.value)
     )
       throw new Error("The saved authorization can't be quoted again.");
+    if (request.deadline <= now + REQUOTE_MIN_SECONDS) quotable = false;
   }
   await recheck(forwardedTargets(config, requests), account);
+  if (!quotable) return false;
   await revalidateSignedCalls(config, account, saved.relayrExpectedTransactions ?? []);
+  return true;
 }
 
 /**
@@ -890,8 +903,11 @@ type Continuation =
   | { kind: "quote"; quote: RelayrPostBundleResponse }
   /** Quote the saved signatures again. */
   | { kind: "requote" }
-  /** Sign the calls again at the saved nonces. */
-  | { kind: "sign" }
+  /**
+   * Sign the calls again at the saved nonces: once every request is dead, or,
+   * with `until`, while they are live but too close to expiry to quote.
+   */
+  | { kind: "sign"; until?: number }
   /** A raw or Safe bundle whose quote can no longer be paid: quote the calls anew. */
   | { kind: "fresh" };
 
@@ -957,12 +973,15 @@ async function continueSession(
   if (verdict.live) {
     if (verdict.mayHaveRun) throw new Error(relayrHeldMessage(verdict.until));
     if (quote) return { kind: "quote", quote };
+    let quotable: boolean;
     try {
-      await requireSavedSignaturesRun(config, account, saved, requests);
+      quotable = await requireSavedSignaturesRun(config, account, saved, requests);
     } catch (error) {
       throw new Error(relayrHeldMessage(verdict.until), { cause: error });
     }
-    return { kind: "requote" };
+    // None ran, and the forwarder runs one request per nonce: a new signature at the
+    // saved nonce and the old one can never both run.
+    return quotable ? { kind: "requote" } : { kind: "sign", until: verdict.until };
   }
   // Every request is dead, so none can run again whatever Relayr reports.
   const targets = forwardedTargets(config, requests);
@@ -1915,7 +1934,9 @@ export function useGetRelayrTxQuote() {
               const savedNonce = signAt.get(request.chainId);
               if (savedNonce !== undefined && nonce !== savedNonce)
                 throw new Error(
-                  "The previous relay authorization may have executed. Check its original bundle before signing again.",
+                  continuation?.kind === "sign" && continuation.until !== undefined
+                    ? relayrHeldMessage(continuation.until)
+                    : "The previous relay authorization may have executed. Check its original bundle before signing again.",
                 );
               const fields = await client.readContract({
                 address: forwarder,
@@ -1929,7 +1950,7 @@ export function useGetRelayrTxQuote() {
                 fields[6].length
               )
                 throw new Error("The forwarder domain does not match this chain and deployment.");
-              const deadline = Math.floor(Date.now() / 1_000) + RELAYR_FORWARDER_DEADLINE_SECONDS;
+              const deadline = relayrForwarderDeadline();
               const domain = {
                 name: fields[1],
                 version: fields[2],

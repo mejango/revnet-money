@@ -638,7 +638,7 @@ describe("reviewed Relayr authorization hook", () => {
     expect(mocks.signTypedData).not.toHaveBeenCalled();
   });
 
-  it("quotes the published signatures again when POST may have reached Relayr but its response is lost, and never signs a new copy while they can run", async () => {
+  it("quotes the published signatures again when POST may have reached Relayr but its response is lost, and signs a new copy only at their saved nonce", async () => {
     const { review, activity, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
     const posts: string[] = [];
@@ -666,13 +666,15 @@ describe("reviewed Relayr authorization hook", () => {
       result.current.getRelayrTxQuote([{ ...REQUEST, data: { ...REQUEST.data, data: "0x5678" } }]),
     ).rejects.toThrow(/already has published authorizations/);
     // A signed forward request stays executable for 2 hours. Past that deadline by
-    // the device clock but not at a finalized block, it still holds.
+    // the device clock but not at a finalized block, the same call is signed again
+    // only at its saved nonce, so the old and new requests can never both run.
     vi.setSystemTime(new Date((NOW + 3 * 3600) * 1_000));
-    await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
-      /earlier signature (can|may) still run/,
+    await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(/connection reset/);
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+    expect(mocks.signTypedData.mock.calls[1][0].message.nonce).toBe(
+      mocks.signTypedData.mock.calls[0][0].message.nonce,
     );
-    expect(mocks.signTypedData).toHaveBeenCalledOnce();
-    expect(posts).toHaveLength(2);
+    expect(posts).toHaveLength(3);
   });
 
   it("blocks a newly selected subset of calls from an unresolved bundle", async () => {
@@ -3939,6 +3941,32 @@ describe("unpaid Relayr quotes", () => {
       relayrPaymentStatus: "unfunded",
       relayrNonces: ["4"],
     });
+  });
+
+  it("sign each forward request for 2 hours", async () => {
+    await unpaidQuote();
+    expect(Number(mocks.signTypedData.mock.calls[0][0].message.deadline)).toBe(NOW + 2 * 3600);
+  });
+
+  it("sign the same calls again at their saved nonces once too little time is left to pay and run them", async () => {
+    const { activity, result } = await unpaidQuote();
+    // 44 minutes before the signatures expire: a 10-minute payment window and the
+    // 30-minute run margin no longer fit, so quoting them again offers no option.
+    const late = NOW + 2 * 3600 - 44 * 60;
+    vi.setSystemTime(new Date(late * 1_000));
+    chainAt({ timestamp: late, finalizedNonce: 4n });
+    vi.stubGlobal("fetch", nextQuote(late + 600));
+    await act(async () => {
+      await expect(result.current.getRelayrTxQuote([REQUEST])).resolves.toMatchObject({
+        bundle_uuid: OTHER_BUNDLE_UUID,
+      });
+    });
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+    const resigned = mocks.signTypedData.mock.calls[1][0].message;
+    expect(resigned.nonce).toBe(4n);
+    expect(Number(resigned.deadline)).toBe(late + 2 * 3600);
+    expect(row(activity, BUNDLE_UUID)).toMatchObject({ relayrPaymentStatus: "expired" });
+    expect(row(activity, OTHER_BUNDLE_UUID)).toMatchObject({ relayrNonces: ["4"] });
   });
 
   it("stay pending when the app resumes past their quote's deadline", async () => {
