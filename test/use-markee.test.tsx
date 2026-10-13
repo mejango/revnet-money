@@ -539,13 +539,13 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
       JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending,
     ).toBeUndefined();
   });
-  it("refuses actions without cross-tab lock support", async () => {
+  it("runs actions in a browser without Web Locks", async () => {
     Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
     const { result } = renderHook(() => useMarkee());
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(() => result.current.createBoard());
-    expect(result.current.error).toContain("Web Locks support");
-    expect(mocks.write).not.toHaveBeenCalled();
+    expect(result.current.error ?? "").not.toContain("Web Locks");
+    expect(mocks.write).toHaveBeenCalledOnce();
   });
   it("refuses a lifecycle already owned by another tab", async () => {
     Object.defineProperty(navigator, "locks", {

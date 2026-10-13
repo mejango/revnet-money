@@ -17,7 +17,11 @@ import {
 } from "@/lib/transaction-activity";
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
-import { gasWithHeadroom, simulateStateChangingTransaction } from "@bananapus/nana-sdk-core/review";
+import {
+  browserLocks,
+  gasWithHeadroom,
+  simulateStateChangingTransaction,
+} from "@bananapus/nana-sdk-core/review";
 import {
   RELAYR_NATIVE_TOKEN,
   RELAYR_PAYMENT_GAS,
@@ -430,29 +434,26 @@ export function safeRelayrController(
         if (authorizing.has(key)) throw new Error("Another Safe action is already in progress.");
         authorizing.add(key);
         try {
-          return await (typeof navigator !== "undefined" && navigator.locks
-            ? navigator.locks.request(
-                `revnet:safe-relayr-lifecycle`,
+          const locks = browserLocks();
+          return (await locks.request(
+            `revnet:safe-relayr-lifecycle`,
+            { ifAvailable: true },
+            (lock) => {
+              if (!lock)
+                throw new Error(
+                  "Another browser tab is preparing authorizations for this account.",
+                );
+              return locks.request(
+                `revnet:relayr-authorizations:${account.toLowerCase()}`,
                 { ifAvailable: true },
-                (lock) => {
-                  if (!lock)
-                    throw new Error(
-                      "Another browser tab is preparing authorizations for this account.",
-                    );
-                  return navigator.locks.request(
-                    `revnet:relayr-authorizations:${account.toLowerCase()}`,
-                    { ifAvailable: true },
-                    (accountLock) => {
-                      if (!accountLock)
-                        throw new Error(
-                          "Another authorization is being prepared for this account.",
-                        );
-                      return run();
-                    },
-                  );
+                (accountLock) => {
+                  if (!accountLock)
+                    throw new Error("Another authorization is being prepared for this account.");
+                  return run();
                 },
-              )
-            : run());
+              );
+            },
+          )) as Awaited<ReturnType<typeof run>>;
         } finally {
           authorizing.delete(key);
         }

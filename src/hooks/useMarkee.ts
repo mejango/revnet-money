@@ -13,6 +13,7 @@ import {
   updateTransactionActivity,
 } from "@/lib/transaction-activity";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { browserLocks } from "@bananapus/nana-sdk-core/review";
 import { safeExecutionResult, safeExecutionRunsCalls } from "@bananapus/nana-sdk-core/safe-service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -172,6 +173,8 @@ export function useMarkee(initialBoardAddress?: Address) {
   }, [refresh]);
 
   const { writeContractAsync } = useWriteContract({
+    // Markee's own journal holds its unknown results.
+    recovery: "caller",
     manualReceiptVerification: () => true,
     allowSafeManualReceiptVerification: true,
     reverify: async () => {
@@ -398,11 +401,7 @@ export function useMarkee(initialBoardAddress?: Address) {
     setBusy(true);
     setError(undefined);
     try {
-      if (!navigator.locks)
-        throw new Error(
-          "This browser cannot safely coordinate Markee wallet actions across tabs. Use a browser with Web Locks support.",
-        );
-      await navigator.locks.request(RECOVERY_KEY, { ifAvailable: true }, async (lock) => {
+      await browserLocks().request(RECOVERY_KEY, { ifAvailable: true }, async (lock) => {
         if (!lock)
           throw new Error(
             "Another tab is handling a Markee action. Finish or check that action first.",

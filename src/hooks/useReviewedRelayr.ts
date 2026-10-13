@@ -61,7 +61,7 @@ import {
 import { requireTransactionReview, type TransactionReviewCall } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { browserLocks, gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import {
   bindRelayrQuote,
   FORWARD_REQUEST_TYPES,
@@ -258,17 +258,15 @@ async function withAuthorizationLock<T>(account: Address, action: () => Promise<
     throw new Error("Another authorization is being prepared for this account.");
   authorizingAccounts.add(key);
   try {
-    return await (typeof navigator !== "undefined" && navigator.locks
-      ? navigator.locks.request(
-          `revnet:relayr-authorizations:${key}`,
-          { ifAvailable: true },
-          (lock) => {
-            if (!lock)
-              throw new Error("Another browser tab is preparing authorizations for this account.");
-            return action();
-          },
-        )
-      : action());
+    return (await browserLocks().request(
+      `revnet:relayr-authorizations:${key}`,
+      { ifAvailable: true },
+      (lock) => {
+        if (!lock)
+          throw new Error("Another browser tab is preparing authorizations for this account.");
+        return action();
+      },
+    )) as T;
   } finally {
     authorizingAccounts.delete(key);
   }
@@ -2407,10 +2405,11 @@ export function useSendRelayrTx() {
         throw new Error("This payment is already in progress. Do not pay again.");
       paymentInflight.add(remembered.callKey);
       try {
-        const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-        return await (locks
-          ? locks.request(`revnet:relayr:${remembered.callKey}`, submit)
-          : submit());
+        return (await browserLocks().request(
+          `revnet:relayr:${remembered.callKey}`,
+          { mode: "exclusive" },
+          submit,
+        )) as Awaited<ReturnType<typeof submit>>;
       } finally {
         paymentInflight.delete(remembered.callKey);
       }

@@ -1,5 +1,6 @@
 "use client";
 
+import { HeldWriteDialog } from "@/components/HeldWriteDialog";
 import { LoadingText } from "@/components/ui/LoadingText";
 
 import {
@@ -7,6 +8,7 @@ import {
   type TransactionReviewScope,
 } from "@/components/TransactionReviewScope";
 import { ModalDialog } from "@/components/ui/ModalShell";
+import { registerHeldWriteHandler, type HeldWritePrompt } from "@/lib/held-write";
 import {
   registerFundingChainSelectionHandler,
   registerTransactionReviewHandler,
@@ -41,17 +43,29 @@ export type PendingFundingChainSelection = {
   resolve: (chainId: number | null) => void;
 };
 
-export type PendingDialog = PendingReview | PendingFundingChainSelection;
+/** An earlier write of the same call has no confirmed result: send again, or not. */
+export type PendingHeldWrite = {
+  scope?: TransactionReviewScope | null;
+  kind: "held";
+  id: number;
+  prompt: HeldWritePrompt;
+  resolve: (sendAgain: boolean) => void;
+};
+
+export type PendingDialog = PendingReview | PendingFundingChainSelection | PendingHeldWrite;
+
+/** The dialogs the lazily loaded review module draws. */
+export type PendingReviewDialog = PendingReview | PendingFundingChainSelection;
 
 export type TransactionReviewDialogProps = {
-  pending: PendingDialog;
+  pending: PendingReviewDialog;
   onFinish: (result: boolean | number | null) => void;
   projectCheckPending?: boolean;
 };
 
 function cancelPendingDialog(pending: PendingDialog) {
-  if (pending.kind === "review") pending.resolve(false);
-  else pending.resolve(null);
+  if (pending.kind === "funding") pending.resolve(null);
+  else pending.resolve(false);
 }
 
 /**
@@ -121,7 +135,22 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     [enqueueDialog],
   );
 
+  const enqueueHeldWrite = useCallback(
+    (prompt: HeldWritePrompt) =>
+      new Promise<boolean>((resolve) => {
+        enqueueDialog({
+          kind: "held",
+          scope: scopeRef.current,
+          id: nextId.current++,
+          prompt: { ...prompt },
+          resolve,
+        });
+      }),
+    [enqueueDialog],
+  );
+
   useEffect(() => registerTransactionReviewHandler(enqueue), [enqueue]);
+  useEffect(() => registerHeldWriteHandler(enqueueHeldWrite), [enqueueHeldWrite]);
   useEffect(
     () => registerFundingChainSelectionHandler(enqueueFundingChainSelection),
     [enqueueFundingChainSelection],
@@ -173,15 +202,15 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     const next = queueRef.current.shift() ?? null;
     activeRef.current = next;
     setActive(next);
-    if (current.kind === "review") current.resolve(result === true);
-    else current.resolve(typeof result === "number" ? result : null);
+    if (current.kind === "funding") current.resolve(typeof result === "number" ? result : null);
+    else current.resolve(result === true);
   }, []);
 
   // Keep the global queue ready immediately, but fetch the full decoder and
   // review UI only when a request arrives. Loading never authorizes a call;
   // cancellation, unmount, or a failed download resolves it as declined.
   useEffect(() => {
-    if (!active || Dialog) return;
+    if (!active || active.kind === "held" || Dialog) return;
     let cancelled = false;
     void import("./TransactionReviewDialog").then(
       (module) => {
@@ -199,7 +228,14 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   return (
     <ReviewScopeContext.Provider value={registerScope}>
       {children}
-      {active ? (
+      {active?.kind === "held" ? (
+        <HeldWriteDialog
+          key={active.id}
+          id={active.id}
+          prompt={active.prompt}
+          onFinish={(sendAgain) => finish(active.id, sendAgain)}
+        />
+      ) : active ? (
         Dialog ? (
           <Dialog
             key={active.id}

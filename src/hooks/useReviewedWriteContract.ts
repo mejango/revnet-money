@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmHeldWriteExit } from "@/lib/held-write";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
@@ -24,9 +25,15 @@ import {
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
 import {
+  browserLocks,
+  createBrowserWriteRecovery,
   gasWithHeadroom,
+  readReviewedWriteNonce,
   simulateCallSequence,
   submitReviewedContractWrite,
+  SubmittedWritePersistenceError,
+  writeHeldMessage,
+  type ReviewedWriteRecoveryRecord,
 } from "@bananapus/nana-sdk-core/review";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
@@ -535,10 +542,11 @@ export async function proposeSafeBatch(
     );
     return hash;
   };
-  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-  return locks
-    ? locks.request(`revnet:transaction:${keccak256(stringToHex(callKey))}`, submit)
-    : submit();
+  return browserLocks().request(
+    `revnet:transaction:${keccak256(stringToHex(callKey))}`,
+    { mode: "exclusive" },
+    submit,
+  );
 }
 
 export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
@@ -574,6 +582,11 @@ export function followSubmission(
   callKey: string,
   safe: ReviewedSafeProposal | false,
   manualReceiptVerification: boolean,
+  /**
+   * A sent write's receipt landed, whatever its status. A write whose caller verifies its own
+   * receipt is released on its next send instead, once the chain shows it mined.
+   */
+  onReceipt?: () => void,
 ): void {
   const id = `tx:${chainId}:${hash.toLowerCase()}`;
   recordTransactionActivity({
@@ -608,6 +621,7 @@ export function followSubmission(
   if (!publicClient) return;
   void waitForReceiptWithRetry(publicClient, hash)
     .then((receipt) => {
+      onReceipt?.();
       updateTransactionActivity(id, {
         status: receipt.status === "success" ? "success" : "failed",
         message:
@@ -624,6 +638,66 @@ export function followSubmission(
     });
 }
 
+type WriteJournal = ReturnType<typeof createBrowserWriteRecovery>;
+
+/**
+ * Ends an earlier write of this exact call before a new one, inside the
+ * journal's lock. A write the chain shows mined, or one the wallet never sent,
+ * is released. One still unproven asks the user: they check their wallet, then
+ * send again or stop with the held line.
+ */
+async function releaseHeldWrite(journal: WriteJournal, client: PublicClient | undefined) {
+  const earlier = journal.read();
+  if (!earlier) return;
+  let status: "pending" | "sent" | "ran" | undefined;
+  try {
+    status = client ? (await journal.resolve(client))?.status : "pending";
+  } catch {
+    // A node that can't answer proves nothing; the user's exit stays open.
+    status = "pending";
+  }
+  if (status === "sent") {
+    // Mined: a new send is a new write.
+    const mined = journal.read();
+    if (mined) journal.clear(mined);
+    return;
+  }
+  if (status !== "pending") return;
+  const record = journal.read() ?? earlier;
+  if (!(await confirmHeldWriteExit(record.call))) throw new Error(writeHeldMessage());
+  journal.abandon(record, { checkedWallet: true });
+}
+
+/**
+ * Saves the attempt before the wallet opens, with the account's next nonce so
+ * the chain can later prove what happened. Without storage it goes unheld, as
+ * before this hold existed.
+ */
+async function reserveWrite(
+  journal: WriteJournal,
+  client: PublicClient | undefined,
+  account: Address,
+): Promise<ReviewedWriteRecoveryRecord | undefined> {
+  const evidence = client
+    ? await readReviewedWriteNonce(client, account).catch(() => undefined)
+    : undefined;
+  try {
+    return journal.reserve(undefined, evidence);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The sent write's receipt landed: its hold ends. */
+async function clearOnReceipt(journal: WriteJournal, hash: Hex): Promise<void> {
+  await journal
+    .withLock(async () => {
+      const record = journal.read();
+      if (record?.hash?.toLowerCase() === hash.toLowerCase()) journal.clear(record);
+    }, true)
+    .catch(() => undefined);
+}
+
 type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] & {
   transactionReview?: TransactionReviewOptions;
   /**
@@ -633,6 +707,11 @@ type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] 
    * mandatory.
    */
   reviewedInParent?: boolean;
+  /**
+   * "caller": the caller's own journal holds this write's unknown results (a
+   * batch or Markee), so the SDK's ordinary write hold is not added.
+   */
+  recovery?: "caller";
   /** Persist caller-specific recovery immediately before the wallet broadcast boundary. */
   beforeSubmission?: () => Promise<void>;
   /** The shared final gate refused after persistence, before the wallet writer was invoked. */
@@ -667,6 +746,7 @@ export function useWriteContract(
   const {
     transactionReview,
     reviewedInParent,
+    recovery,
     beforeSubmission,
     onBeforeSubmissionAborted,
     onSubmissionRejected,
@@ -704,14 +784,24 @@ export function useWriteContract(
         args: variables.args,
       });
       const callKey = contractTransactionKey(initialAddress, chainId, { ...variables, data });
+      const safe = isSafeConnection(config);
+      // An ordinary wallet write holds its exact call in the SDK's journal until the chain
+      // shows what happened to it, or the user says they checked their wallet. A Safe
+      // proposal is held by its own watch, and a caller with its own journal holds its own.
+      const journal =
+        safe || recovery === "caller"
+          ? undefined
+          : createBrowserWriteRecovery({
+              chainId,
+              account: initialAddress,
+              safe: false,
+              call: { to: variables.address, data, value: variables.value ?? 0n },
+            });
       const submitReviewedCall = async () => {
         const duplicate = refreshTransactionActivities().find(
           (activity) =>
             activity.callKey === callKey &&
-            (activity.manualVerificationRequired === true ||
-              activity.status === "submitted" ||
-              activity.status === "pending" ||
-              activity.status === "safe-proposed"),
+            (activity.manualVerificationRequired === true || activity.status === "safe-proposed"),
         );
         if (duplicate?.hash) {
           if (duplicate.status === "safe-proposed") {
@@ -725,8 +815,8 @@ export function useWriteContract(
             `An identical ${functionName} transaction is already pending as ${duplicate.hash}. Check it before submitting again.`,
           );
         }
+        if (journal) await releaseHeldWrite(journal, getPublicClient(config, { chainId }));
 
-        const safe = isSafeConnection(config);
         const ownsReceiptLifecycle = manualReceiptVerification?.(variables) === true;
         if (safe && ownsReceiptLifecycle && !allowSafeManualReceiptVerification) {
           throw new Error(
@@ -801,6 +891,12 @@ export function useWriteContract(
         // Connector identity matters even when both wallets are ordinary EOAs.
         // Refuse known context drift before journaling, and at the shared final gate.
         const assertWalletContext = () => requireWalletContext(chainId);
+        /** This attempt's saved record, once the wallet is about to open. */
+        let held: ReviewedWriteRecoveryRecord | undefined;
+        const releaseUnsent = () => {
+          if (journal && held) journal.rejected();
+          held = undefined;
+        };
         const hash = await submitReviewedContractWrite({
           request: variables as typeof variables & { chainId: number },
           expectedAccount: initialAddress,
@@ -835,9 +931,38 @@ export function useWriteContract(
             assertWalletContext();
             return prepared;
           },
-          beforeWrite: beforeSubmission,
-          onBeforeWriteAborted: onBeforeSubmissionAborted,
-          onWriteRejected: onSubmissionRejected,
+          beforeWrite: async () => {
+            if (journal)
+              held = await reserveWrite(
+                journal,
+                getPublicClient(config, { chainId }),
+                initialAddress,
+              );
+            try {
+              await beforeSubmission?.();
+            } catch (error) {
+              releaseUnsent();
+              throw error;
+            }
+          },
+          onBeforeWriteAborted: async () => {
+            releaseUnsent();
+            await onBeforeSubmissionAborted?.();
+          },
+          onWriteRejected: async () => {
+            releaseUnsent();
+            await onSubmissionRejected?.();
+          },
+          onWriteSubmitted: async (sent: Hex) => {
+            if (!journal || !held) return;
+            try {
+              held = journal.submitted(sent, held);
+            } catch (error) {
+              // The send went out either way: the activity row tracks its hash, and the saved
+              // hold resolves from its nonce. A failed save keeps the hash in this tab's memory.
+              if (error instanceof SubmittedWritePersistenceError) held = error.record;
+            }
+          },
           beforeSend: assertWalletContext,
           write: (prepared) =>
             mutation.writeContractAsync(
@@ -857,6 +982,7 @@ export function useWriteContract(
             batch: false,
           },
           ownsReceiptLifecycle,
+          journal && held ? () => void clearOnReceipt(journal, hash) : undefined,
         );
         return hash;
       };
@@ -865,13 +991,16 @@ export function useWriteContract(
       // check runs after the lock is acquired and refreshes persisted activity,
       // so a second tab cannot open another wallet prompt while the first is in
       // review or waiting for its Safe proposal hash.
-      const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-      return locks
-        ? locks.request(`revnet:transaction:${keccak256(stringToHex(callKey))}`, submitReviewedCall)
-        : submitReviewedCall();
+      if (journal) return journal.withLock(submitReviewedCall, true);
+      return browserLocks().request(
+        `revnet:transaction:${keccak256(stringToHex(callKey))}`,
+        { mode: "exclusive" },
+        submitReviewedCall,
+      ) as Promise<Hex>;
     },
     [
       config,
+      recovery,
       manualReceiptVerification,
       mutation,
       preflightSimulation,
