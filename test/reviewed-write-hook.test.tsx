@@ -42,6 +42,13 @@ const mocks = vi.hoisted(() => ({
   safeReads: undefined as unknown as ReturnType<typeof import("./fixtures/safe-chain").safeChain>,
   // When set, no chain has a client.
   noClient: false,
+  // The SDK's chain look at a proposal whose nonce the Safe has passed.
+  lookAtSafeProposal: vi.fn(),
+}));
+
+vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe-service")>()),
+  lookAtSafeProposal: mocks.lookAtSafeProposal,
 }));
 
 vi.mock("wagmi/actions", () => ({
@@ -194,6 +201,7 @@ beforeEach(() => {
   mocks.getTransaction.mockRejectedValue(new TransactionNotFoundError({ hash: HASH }));
   mocks.safeReads = safeChain(ACCOUNT);
   mocks.noClient = false;
+  mocks.lookAtSafeProposal.mockReset().mockResolvedValue("live");
   mocks.wagmiReceipt.mockReturnValue({
     data: undefined,
     error: null,
@@ -1664,6 +1672,52 @@ describe("reviewed write hook", () => {
           activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed,
         ).toBeUndefined();
       }
+    });
+
+    it("releases a proposal at once when the chain proves another transaction took its nonce", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
+      mocks.lookAtSafeProposal.mockResolvedValue("replaced");
+      savedProposal(activity, PROPOSAL, 11155111);
+      serviceAnswering(
+        () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false })),
+      );
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(mocks.lookAtSafeProposal).toHaveBeenCalledWith(
+        expect.anything(),
+        11155111,
+        ACCOUNT,
+        PROPOSAL,
+      );
+      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "failed",
+        message: "Another Safe transaction used this nonce. Propose it again to run it.",
+      });
+      expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
+    });
+
+    it("says the Safe ran a proposal the chain shows executed, and keeps following it for its result", async () => {
+      vi.useFakeTimers();
+      const { activity, hooks } = await freshHarness();
+      mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
+      mocks.lookAtSafeProposal.mockResolvedValue("executed");
+      savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
+      serviceAnswering(
+        () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: false })),
+      );
+
+      hooks.resumeSafeProposalTracking(mocks.config as never);
+      await vi.advanceTimersByTimeAsync(11 * 60_000);
+
+      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "safe-proposed",
+        message: "Your Safe ran this transaction.",
+      });
+      expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });
 
     it("ends unconfirmed after ten minutes of looks that can't follow it, whatever service outages fall between them", async () => {

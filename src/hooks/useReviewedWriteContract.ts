@@ -29,6 +29,8 @@ import {
   createBrowserWriteRecovery,
   gasWithHeadroom,
   readReviewedWriteNonce,
+  SAFE_PROPOSAL_EXECUTED_LINE,
+  SAFE_PROPOSAL_REPLACED_LINE,
   simulateCallSequence,
   submitReviewedContractWrite,
   SubmittedWritePersistenceError,
@@ -38,6 +40,7 @@ import {
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   hasSafeService,
+  lookAtSafeProposal,
   readSafeTransaction,
   SAFE_NONCE_GUIDANCE,
   safeExecutionResult,
@@ -186,6 +189,16 @@ async function watchSafeProposal(
   /** The Safe's live nonce, or null when it can't be read. */
   const liveNonce = rereadEveryMinute(async (safe) =>
     client ? await readBoundedSafeNonce(client, safe).catch(() => null) : null,
+  );
+  /**
+   * The SDK's look at a proposal whose nonce the Safe has passed: the Safe's execution events
+   * at a finalized block say whether this proposal ran ("executed") or another took its nonce
+   * ("replaced"). Anything it can't prove reads "live".
+   */
+  const chainLook = rereadEveryMinute(async (safe) =>
+    client
+      ? await lookAtSafeProposal(client, chainId, safe, hash).catch(() => "live" as const)
+      : ("live" as const),
   );
   const executed = (isSuccessful: boolean, transactionHash: Hex | undefined) => {
     const needsReceiptVerification = tracked()?.manualVerificationRequired === true;
@@ -352,10 +365,23 @@ async function watchSafeProposal(
         message: `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
       });
       // A nonce the Safe has moved past was taken by another transaction, or by this proposal's
-      // own execution that the service has yet to list, which the watch's run of looks waits out.
-      // It is read only after the hour, when the watch may end the proposal.
-      if (!pastHorizon()) return "live";
+      // own execution that the service has yet to list. The chain's execution events decide
+      // as soon as a finalized block shows which; until then the watch's run of looks waits it
+      // out, and only after the hour may it end the proposal.
       const nonce = await liveNonce(safe);
+      if (nonce !== null && nonce > message.nonce) {
+        const look = await chainLook(safe);
+        if (look === "replaced") {
+          updateTransactionActivity(id, { status: "failed", message: SAFE_PROPOSAL_REPLACED_LINE });
+          return "done";
+        }
+        if (look === "executed") {
+          // Its receipt decides once the service lists the execution.
+          updateTransactionActivity(id, { message: SAFE_PROPOSAL_EXECUTED_LINE });
+          return "live";
+        }
+      }
+      if (!pastHorizon()) return "live";
       if (nonce === null) return "unknown";
       return nonce > message.nonce ? "stuck" : "live";
     } catch {
