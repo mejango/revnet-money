@@ -24,6 +24,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-intent";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
@@ -465,7 +466,11 @@ export function RepayDialog({
       const baseTokenAddress = chainTokenConfig.token;
       const revLoansContractAddress = getRevnetLoanContract(6, chainId);
 
-      const approveHash = await repayLoanAsync({
+      // Held by the loan it repays: the accrued amount grows between attempts.
+      const approveHash = await withWriteIntent(repayLoanAsync, "repay-approve", {
+        loanId,
+        token: baseTokenAddress,
+      })({
         chainId,
         address: baseTokenAddress,
         abi: erc20ApproveAbi,
@@ -553,7 +558,10 @@ export function RepayDialog({
             throw new Error("Wallet client not available");
           }
 
-          const approveHash = await repayLoanAsync({
+          const approveHash = await withWriteIntent(repayLoanAsync, "repay-approve", {
+            loanId,
+            token: baseTokenAddress,
+          })({
             chainId,
             address: baseTokenAddress,
             abi: erc20ApproveAbi,
@@ -570,7 +578,11 @@ export function RepayDialog({
         }
       }
 
-      const txHash = await repayLoanAsync({
+      // Held by the loan and the collateral the user returns: the repay ceiling accrues.
+      const txHash = await withWriteIntent(repayLoanAsync, "repay", {
+        loanId,
+        collateralCountToReturn,
+      })({
         abi: revLoansAbi,
         functionName: "repayLoan",
         address: getRevnetLoanContract(6, chainId),

@@ -35,6 +35,8 @@ export type ReviewedSafeProposal = {
   batch: boolean;
   /** The safeTxGas the proposal was made with, in decimal, when it is not zero. */
   safeTxGas?: string;
+  /** The write-hold namespace of the user's intent, when the proposal is held by it. */
+  holdNamespace?: string;
 };
 
 /**

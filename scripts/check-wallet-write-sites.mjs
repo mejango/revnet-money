@@ -279,8 +279,17 @@ for (const path of sourceFiles(sourceRoot).sort()) {
   function collectCalls(node) {
     if (ts.isCallExpression(node)) {
       let site;
-      if (ts.isIdentifier(node.expression)) {
-        const local = node.expression.text;
+      // withWriteIntent(write, action, params)(variables) is a call of `write`.
+      const intended =
+        ts.isCallExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === "withWriteIntent" &&
+        node.expression.arguments[0] &&
+        ts.isIdentifier(node.expression.arguments[0])
+          ? node.expression.arguments[0]
+          : undefined;
+      if (intended || ts.isIdentifier(node.expression)) {
+        const local = (intended ?? node.expression).text;
         const hook = hookImports.get(local);
         const binding = callableBindings.get(local);
         if (hook) {

@@ -3,7 +3,7 @@
 import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { confirmHeldWriteExit } from "@/lib/flow-choice";
 import * as markee from "@/lib/markee";
-import { recoverMarkeeSubmission } from "@/lib/markee-recovery";
+import { markeeSettlementIsSaved, recoverMarkeeSubmission } from "@/lib/markee-recovery";
 import {
   contractTransactionKey,
   recordTransactionActivity,
@@ -15,7 +15,7 @@ import {
   updateTransactionActivity,
 } from "@/lib/transaction-activity";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { adoptIntoHold, safeHoldOf, writeHolds } from "@/lib/write-hold";
+import { adoptIntoHold, holdsHash, safeHoldOf, writeHolds } from "@/lib/write-hold";
 import {
   browserLocks,
   WRITE_HOLD_HASHED_EXIT_LINE,
@@ -56,6 +56,9 @@ type Recovery = {
   pending?: Pending;
 };
 const RECOVERY_KEY = "revnet:markee-rent:recovery:v1";
+/** A supplied hash the hold can't tell apart from an earlier identical call. */
+const RECOVERED_UNMATCHED =
+  "That transaction can't be confirmed as this submission, so it wasn't saved. Check your wallet.";
 /** A saved submission the user released after checking their wallet. */
 const RELEASED = "Released after you checked your wallet.";
 /** A saved submission that went through, whose Markee result still can't be verified. */
@@ -849,9 +852,7 @@ export function useMarkee(initialBoardAddress?: Address) {
     } else if (!step.hash) {
       shown = { line: writeHeldMessage(), record: { call } };
     } else if (
-      state.settled &&
-      "hash" in state.settled &&
-      state.settled.hash.toLowerCase() === step.hash.toLowerCase()
+      markeeSettlementIsSaved(state.settled, step.hash, transactionActivityForHash(step.hash))
     ) {
       shown = { line: SETTLED_UNVERIFIED, warning: WRITE_HOLD_HASHED_EXIT_LINE, record: { call } };
     } else return false;
@@ -899,14 +900,17 @@ export function useMarkee(initialBoardAddress?: Address) {
           current.account.toLowerCase() !== saved.account.toLowerCase()
         )
           throw new Error("The saved submission changed during hash verification.");
+        // The hold takes the hash first, once the chain shows it is this attempt: a pending one
+        // keeps no exit. One it can't tell from an earlier identical call is never saved, and
+        // the hashless recovery keeps its exit.
+        const hold = holdOfStep(saved.account, original, associated.kind === "safe");
+        await adoptIntoHold(hold, client, providedHash);
+        if (!holdsHash(hold, providedHash)) {
+          if (await exitSaved(saved)) return "Released. Check your wallet before sending again.";
+          throw new Error(RECOVERED_UNMATCHED);
+        }
         saved.pending.hash = providedHash;
         saveRecovery(saved);
-        // The authenticated hash replaces the hold's hashless reservation: a pending one keeps no exit.
-        await adoptIntoHold(
-          holdOfStep(saved.account, original, associated.kind === "safe"),
-          client,
-          providedHash,
-        );
         updateTransactionActivity(original.id, {
           ...associated,
           hash: providedHash,

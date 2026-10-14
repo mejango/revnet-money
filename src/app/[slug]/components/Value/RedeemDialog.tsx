@@ -50,6 +50,7 @@ import { formatDecimals } from "@/lib/number";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-intent";
 import {
   formatUnits,
   getJBContractAddress,
@@ -736,7 +737,12 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     );
                   }
                   // The sale pays `address`: only `address` may send it.
-                  await writeContractAsync({
+                  // Held by what the user asked for: the quote and deadline are stamped again.
+                  await withWriteIntent(writeContractAsync, "sell", {
+                    projectId: effectiveProjectId,
+                    token: tokenToReceive,
+                    amount: redeemAmountBN,
+                  })({
                     ...buildDirectSellSwapTx({
                       chainId: selectedChainId,
                       quote: fresh,
@@ -765,7 +771,12 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   );
                 }
 
-                await writeContractAsync({ ...prepared.transaction, account: address });
+                // Held by what the user asked for: the quoted minimum is read again on a retry.
+                await withWriteIntent(writeContractAsync, "cash-out", {
+                  projectId: effectiveProjectId,
+                  token: tokenToReceive,
+                  amount: redeemAmountBN,
+                })({ ...prepared.transaction, account: address });
               } catch (err) {
                 setIsApproving(false);
                 if (isSafeProposalUnconfirmedError(err)) {

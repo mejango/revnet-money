@@ -3137,11 +3137,13 @@ describe("Safe proposals under the write hold", () => {
     });
     await hooks.proposeSafeBatch(mocks.config as never, 11155111, "Two", calls as never);
     const { safeHoldOf } = await import("@/lib/write-hold");
+    const { batchIntentOf } = await import("@/lib/write-intent");
     expect(
       safeHoldOf(11155111, {
         safe: ACCOUNT,
         calls: encoded.map((call) => ({ ...call, value: "0" })),
         batch: true,
+        holdNamespace: batchIntentOf(calls as never),
       }).peek(),
     ).toMatchObject({ record: { safeNonce: "7" } });
   });
@@ -3205,5 +3207,143 @@ describe("Safe proposals under the write hold", () => {
     mocks.sendCalls.mockResolvedValue({ id: OTHER_HASH });
     await expect(propose()).resolves.toBe(OTHER_HASH);
     expect(mocks.sendCalls).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("holds keyed by the user's intent", () => {
+  const LP_ABI = parseAbi([
+    "function modifyLiquidities(bytes unlockData, uint256 deadline) payable",
+    "function approve(address token, address spender, uint160 amount, uint48 expiration)",
+  ]);
+  const lpWrite = (deadline: bigint) => ({
+    chainId: 11155111,
+    address: TARGET,
+    abi: LP_ABI,
+    functionName: "modifyLiquidities",
+    args: ["0x1234", deadline] as const,
+  });
+
+  it("refuses a retry whose deadline was stamped again while the first attempt is held, until the exit", async () => {
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    mocks.submit.mockRejectedValueOnce(new Error("Wallet transport timed out"));
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await expect(result.current.writeContractAsync(lpWrite(1_000n) as never)).rejects.toThrow(
+      "timed out",
+    );
+    await expect(result.current.writeContractAsync(lpWrite(2_000n) as never)).rejects.toThrow(
+      "Your earlier transaction hasn't confirmed yet. Check your wallet.",
+    );
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+
+    prompt.mockResolvedValue(true);
+    await act(async () => {
+      await result.current.writeContractAsync(lpWrite(3_000n) as never);
+    });
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a retry whose quoted minimum changed, for a write its caller names by intent", async () => {
+    const { review, hooks, held } = await freshHarness();
+    const { withWriteIntent } = await import("@/lib/write-intent");
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    mocks.submit.mockRejectedValueOnce(new Error("Wallet transport timed out"));
+    const { result } = renderHook(() => hooks.useWriteContract());
+    const pay = (minimum: bigint) =>
+      withWriteIntent(result.current.writeContractAsync, "pay", { projectId: 7n })({
+        ...CALL,
+        args: [RECIPIENT, minimum] as const,
+      } as never);
+
+    await expect(pay(7n)).rejects.toThrow();
+    await expect(pay(8n)).rejects.toThrow(/hasn't confirmed yet/);
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a Safe batch retry whose expiration and deadline were stamped again, until the exit", async () => {
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: { id: "safe", name: "Safe" },
+    };
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    mocks.sendCalls.mockRejectedValueOnce(new Error("Safe app transport timed out"));
+    const batch = (at: bigint) => [
+      {
+        address: RECIPIENT,
+        abi: LP_ABI,
+        functionName: "approve",
+        args: [TARGET, TARGET, 5n, Number(at)],
+      },
+      { ...lpWrite(at), dependsOnPrior: true },
+    ];
+    const propose = (at: bigint) =>
+      hooks.proposeSafeBatch(mocks.config as never, 11155111, "Add liquidity", batch(at) as never);
+
+    await expect(propose(1_000n)).rejects.toThrow("timed out");
+    await expect(propose(2_000n)).rejects.toThrow(/hasn't confirmed yet/);
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.sendCalls).toHaveBeenCalledOnce();
+  });
+});
+
+describe("an execution the Safe service reports", () => {
+  it("is given to the hold, so its pending transaction keeps the exit closed", async () => {
+    vi.useFakeTimers();
+    const EXECUTION = `0x${"34".repeat(32)}` as Hex;
+    const { activity, hooks } = await freshHarness();
+    savedProposal(activity, PROPOSAL, 11155111);
+    // An earlier load saw the reported execution with no receipt an hour ago.
+    activity.updateTransactionActivity(`tx:11155111:${PROPOSAL}`, {
+      executionHash: EXECUTION,
+      executionSeenAt: Date.now() - HOUR,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith(`/multisig-transactions/${PROPOSAL}/`)
+          ? new Response(
+              JSON.stringify({
+                ...PROPOSED,
+                safe: ACCOUNT,
+                isExecuted: true,
+                transactionHash: EXECUTION,
+              }),
+            )
+          : new Response("Not found", { status: 404 }),
+      ),
+    );
+    // The execution is still in the mempool.
+    mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => {
+      if (hash !== EXECUTION) throw new TransactionNotFoundError({ hash });
+      return { ...executionOf({ to: TARGET, data: "0x1234" }), hash: EXECUTION, blockNumber: null };
+    });
+    mocks.waitForTransactionReceipt.mockRejectedValue(new Error("Timed out"));
+    mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) => {
+      throw new TransactionReceiptNotFoundError({ hash });
+    });
+
+    hooks.resumeSafeProposalTracking(mocks.config as never);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    const { safeHoldOf } = await import("@/lib/write-hold");
+    const { getPublicClient } = await import("wagmi/actions");
+    const chain = getPublicClient(mocks.config as never, { chainId: 11155111 } as never);
+    const hold = safeHoldOf(11155111, {
+      safe: ACCOUNT,
+      calls: [{ to: TARGET, data: "0x1234", value: "0" }],
+      batch: false,
+    });
+    expect(await hold.state(chain as never)).toMatchObject({ exit: false });
   });
 });

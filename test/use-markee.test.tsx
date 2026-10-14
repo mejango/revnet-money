@@ -834,6 +834,38 @@ describe("a saved Markee submission the chain can't settle", () => {
     expect(stopHold().peek()).toMatchObject({ status: "pending-known-hash", hash });
   });
 
+  it("keeps the hashless recovery and its exit when the hold refuses a supplied hash as an earlier attempt's", async () => {
+    await stopHold()
+      .send(client as never, async (gate) => {
+        await gate.beforeSend();
+        throw new Error("Wallet transport lost");
+      })
+      .catch(() => undefined);
+    saveHashless();
+    // An earlier identical transaction: below the reserved nonce, mined before the reservation.
+    mocks.getTransaction.mockResolvedValue({
+      hash,
+      from: mocks.account,
+      to: boardAddress,
+      input: "0x1234",
+      value: 0n,
+      nonce: 2,
+      blockNumber: 90n,
+    });
+    const prompt = vi.fn().mockResolvedValue(false);
+    registerFlowChoiceHandler(prompt);
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+
+    await act(() => result.current.recover(hash));
+    expect(
+      JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending.hash,
+    ).toBeUndefined();
+    expect(mocks.receipt).not.toHaveBeenCalled();
+    expect(stopHold().peek()).toMatchObject({ status: "held-no-hash" });
+    expect(result.current.pending).toBe(true);
+  });
+
   it("moves a hash saved before the hold held it into the hold, which offers its exit once it goes unseen", async () => {
     const prompt = vi.fn().mockResolvedValue(true);
     registerFlowChoiceHandler(prompt);

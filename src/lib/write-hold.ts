@@ -29,9 +29,11 @@ export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): Wri
     chainId,
     account: proposal.safe,
     safe: true,
-    ...(proposal.batch
-      ? { namespace: `batch:${keccak256(stringToHex(batch.join("|"))).slice(2)}` }
-      : {}),
+    ...(proposal.holdNamespace
+      ? { namespace: proposal.holdNamespace }
+      : proposal.batch
+        ? { namespace: `batch:${keccak256(stringToHex(batch.join("|"))).slice(2)}` }
+        : {}),
     call: { to: first.to, data: first.data, value: BigInt(first.value) },
   });
 }
@@ -69,6 +71,13 @@ export async function adoptIntoHold(
   } catch {
     return hold.peek().status !== "clear";
   }
+}
+
+/** Whether the hold holds `hash` for its call, or settled it. */
+export function holdsHash(hold: WriteHoldHandle, hash: Hex): boolean {
+  const now = hold.peek();
+  const named = now.status === "clear" ? now.settled : now.record;
+  return !!named && "hash" in named && named.hash?.toLowerCase() === hash.toLowerCase();
 }
 
 /**

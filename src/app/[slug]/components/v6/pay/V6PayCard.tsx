@@ -44,6 +44,7 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-intent";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
   JB_CHAINS,
@@ -1006,7 +1007,15 @@ export function V6PayCard() {
         blockNumber: approvalBlock,
       } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
       setPhase("signing");
-      const hash = await writeContractAsync({
+      // Held by what the user asked for: the quote's minimum, a swap's deadline and a Permit2
+      // signature are stamped again on a retry.
+      const hash = await withWriteIntent(writeContractAsync, prepared.mode, {
+        projectId,
+        token: prepared.token.token,
+        amount: prepared.amount,
+        memo: prepared.memo,
+        items: prepared.cartRows,
+      })({
         chainId: prepared.chainId,
         address: paymentRequest.address,
         abi: paymentRequest.abi,

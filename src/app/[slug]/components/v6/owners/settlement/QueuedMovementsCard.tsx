@@ -17,6 +17,7 @@ import {
   V6BridgeRow,
 } from "@/lib/v6/suckerProofs";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-intent";
 import { jbSuckerV6Abi } from "@bananapus/nana-sdk-core/v6";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -243,7 +244,11 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
                 args: [row.token],
                 value,
               });
-              const hash = await writeContractAsync({
+              // Held by the sucker and token it sends: its fee is quoted again on a retry.
+              const hash = await withWriteIntent(writeContractAsync, "to-remote", {
+                sucker: row.sourceSucker,
+                token: row.token,
+              })({
                 chainId: row.chainId,
                 address: row.sourceSucker,
                 abi: jbSuckerV6Abi,

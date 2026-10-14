@@ -38,6 +38,7 @@ import {
   sendUnderHold,
   writeHolds,
 } from "@/lib/write-hold";
+import { batchIntentOf, writeIntentOf } from "@/lib/write-intent";
 import {
   browserLocks,
   gasWithHeadroom,
@@ -198,8 +199,6 @@ async function watchSafeProposal(
     if (!proposal || !client) return;
     void report(safeHoldOf(chainId, proposal), client).catch(() => undefined);
   };
-  /** The reply is the Safe's execution of the reviewed calls: the hold keeps it until it settles. */
-  const ranAtOnce = () => tellHold((hold, chain) => hold.onExecuted(chain, hash));
   /**
    * Whether a Safe transaction runs exactly what this proposal was reviewed to run. A proposal
    * journaled without reviewed calls is held to its authenticated hash and the Safe's own event
@@ -372,6 +371,9 @@ async function watchSafeProposal(
    * reported this execution.
    */
   const settle = async (executionHash: Hex, reported: boolean) => {
+    // The hold keeps every execution this watch follows as a candidate, before any receipt read
+    // or unproven end: its exit stays closed while that transaction is pending.
+    tellHold((hold, chain) => hold.onExecuted(chain, executionHash));
     let receipt: TransactionReceipt | undefined;
     // Whether the chain answered that it holds no receipt for the execution (a read that found
     // none, or a receipt of another transaction), or there is no client to ask. A node that
@@ -447,7 +449,6 @@ async function watchSafeProposal(
       answer === "unchecked" ? (client ? await findExecution(client) : null) : answer;
     if (execution === undefined) return false;
     if (execution && executesReviewed(execution)) {
-      ranAtOnce();
       await settle(hash, false);
     } else unconfirmed();
     return true;
@@ -568,6 +569,9 @@ async function watchSafeProposal(
     unconfirmed();
     return;
   }
+  // An execution saved by an earlier load is the hold's candidate again before anything else.
+  const savedExecution = tracked()?.safeExecutionProven?.executionHash ?? tracked()?.executionHash;
+  if (savedExecution) tellHold((hold, chain) => hold.onExecuted(chain, savedExecution));
   const request = (async () => {
     // Looks that found the proposal where the app can't follow it since a look last showed it
     // live. A look that learns nothing leaves the count as it is.
@@ -609,7 +613,6 @@ async function watchSafeProposal(
           : "unchecked";
       if (execution && execution !== "unchecked") {
         if (executesReviewed(execution)) {
-          ranAtOnce();
           await settle(hash, false);
         } else unconfirmed();
         return;
@@ -781,6 +784,7 @@ export async function proposeSafeBatch(
     safe: account,
     calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
     batch: true,
+    holdNamespace: batchIntentOf(calls),
   };
   const publicClient = getPublicClient(config, { chainId });
   if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
@@ -1047,10 +1051,13 @@ export function useWriteContract(
       });
       const callKey = contractTransactionKey(initialAddress, chainId, { ...variables, data });
       const safe = isSafeConnection(config);
+      // Held by the user's intent where a retry stamps its calldata again, else by its exact call.
+      const namespace = writeIntentOf(variables as Parameters<typeof writeIntentOf>[0]);
       const safeProposal: ReviewedSafeProposal | false = safe && {
         safe: initialAddress,
         calls: [{ to: variables.address, value: String(variables.value ?? 0n), data }],
         batch: false,
+        ...(namespace ? { holdNamespace: namespace } : {}),
       };
       // A wallet write holds its exact call in the SDK's write hold until the chain shows what
       // happened to it, or the user says they checked their wallet; a Safe proposal is held by
@@ -1065,6 +1072,7 @@ export function useWriteContract(
                 chainId,
                 account: initialAddress,
                 safe: false,
+                ...(namespace ? { namespace } : {}),
                 call: { to: variables.address, data, value: variables.value ?? 0n },
               });
       const holdClient = hold ? getPublicClient(config, { chainId }) : undefined;
@@ -1376,14 +1384,25 @@ export function useWaitForTransactionReceipt(
     "hash" in state.settled &&
     state.settled.hash.toLowerCase() === hash?.toLowerCase();
   const watchedHold = sentUnder?.hold;
-  const [shown, setShown] = useState<{ hold: WriteHoldHandle; state: WriteHoldState }>();
+  const [shown, setShown] = useState<{
+    hold: WriteHoldHandle;
+    state: WriteHoldState;
+    gated: boolean;
+  }>();
   const heldState = watchedHold && shown?.hold === watchedHold ? shown.state : undefined;
   useWriteHoldWatch(
     watchedHold,
     sentUnder?.client,
-    (state) => {
+    (state, gated) => {
       if (!watchedHold) return;
-      setShown({ hold: watchedHold, state });
+      // An exit is offered only from the hold's gate, its own state(); a replay of the same state
+      // keeps what the gate said.
+      setShown((prev) => ({
+        hold: watchedHold,
+        state,
+        gated:
+          gated || (prev?.hold === watchedHold && prev.gated && prev.state.status === state.status),
+      }));
       if (settlesThis(state) && tracked) {
         updateTransactionActivity(tracked.id, {
           status: state.settled.result === "success" ? "success" : "failed",
@@ -1408,7 +1427,7 @@ export function useWaitForTransactionReceipt(
      * so its action stays locked, until its hold offers the exit or ends. (A Safe proposal whose
      * result can't be confirmed is `isSafeResultUnconfirmed`.)
      */
-    isUnconfirmed: watchGaveUp && heldState?.status !== "clear" && !held?.exit,
+    isUnconfirmed: watchGaveUp && heldState?.status !== "clear" && !(held?.exit && shown?.gated),
     /** The line of the hold that send is held by, while its watch has given up. */
     heldLine: held?.line,
     error:

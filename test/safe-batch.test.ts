@@ -222,6 +222,8 @@ describe("one Safe proposal for a whole flow", () => {
       safe: ACCOUNT,
       calls: expected.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
       batch: true,
+      // The hold it is kept in: the batch's intent.
+      holdNamespace: expect.stringMatching(/^intent:batch:[0-9a-f]{40}$/),
     });
 
     // The same batch again is the pending proposal, not a second one.

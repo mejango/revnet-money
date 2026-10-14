@@ -24,6 +24,7 @@ import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUt
 import { TransactionReviewCancelledError } from "@/lib/transaction-review";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-intent";
 import {
   getRevnetLoanContract,
   JB_TOKEN_DECIMALS,
@@ -643,7 +644,13 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
         setBorrowStatus("waiting-signature");
 
-        await reallocateCollateralAsync({
+        // Held by what the user asked for: the borrowable amount is quoted again on a retry.
+        await withWriteIntent(reallocateCollateralAsync, "reallocate", {
+          loanId: internalSelectedLoan.id,
+          collateralCountToTransfer,
+          collateralCountToAdd,
+          prepaidFeePercent: feePercent,
+        })({
           ...buildProtectedReallocateCollateralTx({
             chainId: Number(cashOutChainId) as JBChainId,
             loanId: BigInt(internalSelectedLoan.id),
@@ -702,7 +709,13 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           });
 
           setBorrowStatus("waiting-signature");
-          await writeContractAsync({
+          // Held by what the user asked for: the borrowable amount is quoted again on a retry.
+          await withWriteIntent(writeContractAsync, "borrow", {
+            revnetId: effectiveProjectId,
+            token: selectedChainTokenConfig.token,
+            collateral: collateralBigInt,
+            prepaidFeePercent: feeBasisPoints,
+          })({
             ...buildProtectedBorrowTx({
               chainId: Number(cashOutChainId) as JBChainId,
               revnetId: effectiveProjectId,
