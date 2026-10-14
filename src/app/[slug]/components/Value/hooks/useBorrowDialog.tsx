@@ -528,7 +528,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             },
           ],
         });
-        requireOnchainExecution(txHash, "Borrow permission grant");
+        requireOnchainExecution(txHash);
         const permissionReceipt = await waitForReceiptWithRetry(publicClient, txHash);
         if (permissionReceipt.status !== "success") {
           throw new Error(`Permission grant ${txHash} reverted onchain.`);

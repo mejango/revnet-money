@@ -402,7 +402,7 @@ export function useSafeBatchSubmit() {
         functionName: write.functionName,
         args: write.args,
       } as Parameters<typeof writeReviewedAsync>[0]);
-      requireOnchainExecution(hash, `${write.functionName} on ${name}`);
+      requireOnchainExecution(hash);
       onProgress(`Waiting for confirmation on ${name}…`);
       if (next.kind === "execute") {
         await confirmSafeExecution({ client, hash, safe, safeTxHash });

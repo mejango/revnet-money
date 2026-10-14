@@ -631,8 +631,7 @@ describe("cash out's sale approval", () => {
       updateTransactionActivity(`tx:1:0x${"cd".repeat(32)}`, { safeResultUnconfirmed: true }),
     );
 
-    const line =
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.";
+    const line = "Check this proposal in your Safe before sending it again.";
     await waitFor(() => expect(confirm).toHaveTextContent(line));
     expect(confirm).not.toHaveTextContent("The approval was proposed to Safe.");
     expect(within(confirm).queryByRole("button", { name: /Approv|Sell/ })).toBeNull();
@@ -719,18 +718,16 @@ describe("loan flows refused by a Safe proposal the app can't confirm", () => {
   ])("%s", async (_flow, confirmFlow, permitted) => {
     mocks.hasPermissions.mockResolvedValue(permitted);
     mocks.freshBorrowable.mockResolvedValue(10n ** 18n);
-    mocks.write.mockRejectedValue(new SafeProposalPendingError(PROPOSAL, "The step", true));
+    mocks.write.mockRejectedValue(new SafeProposalPendingError(PROPOSAL, true));
 
     await confirmFlow();
 
     const confirm = await confirmPanel();
-    await within(confirm).findByText(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
-    );
+    await within(confirm).findByText("Check this proposal in your Safe before sending it again.");
     expect(confirm.textContent).not.toMatch(/denied|failed|not granted|could not/i);
     expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
       title: "Safe proposal unconfirmed",
-      description: `The step was proposed to Safe as ${PROPOSAL}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
+      description: "Check this proposal in your Safe before sending it again.",
     });
   });
 });
@@ -783,9 +780,7 @@ describe("value flows open over their own Safe proposal the app can't confirm", 
     await open();
 
     expect(
-      await screen.findByText(
-        "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
-      ),
+      await screen.findByText("Check this proposal in your Safe before sending it again."),
     ).toBeVisible();
   });
 });
@@ -803,19 +798,17 @@ describe("cash out refused by a Safe proposal the app can't confirm", () => {
         args: [],
       },
     });
-    mocks.write.mockRejectedValue(new SafeProposalPendingError(proposal, "The step", true));
+    mocks.write.mockRejectedValue(new SafeProposalPendingError(proposal, true));
 
     await confirmCashOut();
 
     const confirm = await confirmPanel();
-    await within(confirm).findByText(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
-    );
+    await within(confirm).findByText("Check this proposal in your Safe before sending it again.");
     expect(confirm.textContent).not.toMatch(/failed|could not/i);
     expect(within(confirm).queryByRole("alert")).toBeNull();
     expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
       title: "Safe proposal unconfirmed",
-      description: `The step was proposed to Safe as ${proposal}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
+      description: "Check this proposal in your Safe before sending it again.",
     });
   });
 });
@@ -840,11 +833,8 @@ describe("a repayment left open over its own Safe proposal the app can't confirm
     await confirmRepay();
 
     expect(
-      (
-        await screen.findAllByText(
-          "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
-        )
-      ).length,
+      (await screen.findAllByText("Check this proposal in your Safe before sending it again."))
+        .length,
     ).toBeGreaterThan(0);
     expect(screen.queryByText("Repayment pending...")).toBeNull();
   });

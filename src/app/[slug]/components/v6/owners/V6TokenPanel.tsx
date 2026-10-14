@@ -411,10 +411,7 @@ function TokenEditDialog({
             });
             return true;
           }
-          requireOnchainExecution(
-            hash,
-            `${state.token ? "Token metadata update" : "Token deployment"} on ${chainDisplayName(state.chainId)}`,
-          );
+          requireOnchainExecution(hash);
           const receipt = await waitForReceiptWithRetry(clientFor(state.chainId), hash);
           if (receipt.status !== "success") {
             throw new Error(

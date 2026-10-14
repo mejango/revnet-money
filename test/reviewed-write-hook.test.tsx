@@ -153,7 +153,7 @@ const PROPOSED = safeProposalFor({ to: TARGET, data: "0x1234" }, 7);
 const PROPOSAL = safeTransactionHash(11155111, ACCOUNT, PROPOSED);
 const OTHER_PROPOSAL = `0x${"56".repeat(32)}` as Hex;
 /** What a proposal shows while its hold checks its result and no exit is due. */
-const CONFIRMING = "Confirming your Safe transaction.";
+const CONFIRMING = "Executed by your Safe. Confirming it onchain.";
 /** What a proposal its follower couldn't confirm shows: the hold's own line, with its exit. */
 const UNCONFIRMED = WRITE_HOLD_SAFE_UNPROVEN_LINE;
 const SIGNATURE = `0x${"12".repeat(64)}1b` as Hex;
@@ -1606,7 +1606,7 @@ describe("reviewed write hook", () => {
     expect(activity.transactionActivityForHash(proposal)).toMatchObject(
       chainId === 11155420
         ? { status: "safe-proposed", message: UNCONFIRMED, safeResultUnconfirmed: true }
-        : { status: "safe-proposed", message: expect.stringContaining("| 1/2 approvals.") },
+        : { status: "safe-proposed", message: expect.stringContaining(": 1 of 2.") },
     );
     if (chainId === 11155111) {
       expect(activity.transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();
@@ -1764,7 +1764,7 @@ describe("reviewed write hook", () => {
       await vi.advanceTimersByTimeAsync(9 * 60_000);
       expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
         message: ended
-          ? "Your Safe used this transaction's nonce. Checking what ran."
+          ? "Your Safe moved past this proposal. Checking what ran."
           : expect.stringContaining("approvals"),
       });
       expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
@@ -1774,7 +1774,7 @@ describe("reviewed write hook", () => {
         ended
           ? {
               status: "safe-proposed",
-              message: "Your Safe used this transaction's nonce. Checking what ran.",
+              message: "Your Safe moved past this proposal. Checking what ran.",
             }
           : { message: expect.stringContaining("approvals") },
       );
@@ -2221,7 +2221,7 @@ describe("reviewed write hook", () => {
       // Its saved nonce was used: it stays held until the canonical chain says what ran.
       expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
         status: "safe-proposed",
-        message: "Your Safe used this transaction's nonce. Checking what ran.",
+        message: "Your Safe moved past this proposal. Checking what ran.",
       });
       expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });

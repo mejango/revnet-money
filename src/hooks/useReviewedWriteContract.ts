@@ -65,6 +65,7 @@ import {
   provenSafeProposalEnd,
   readSafeTransaction,
   SAFE_NONCE_GUIDANCE,
+  SAFE_PROPOSAL_AWAITING,
   safeExecutionResult,
   safeExecutionRunsCalls,
   safeTransactionMessage,
@@ -124,13 +125,11 @@ const SAFE_LOOK_MS = 5_000;
  * find nothing end a proposal unconfirmed.
  */
 const SAFE_EXECUTION_CHECKS = 12;
-const RECEIPT_UNCONFIRMED =
-  "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
+const RECEIPT_UNCONFIRMED = "Couldn't confirm this yet. Check your wallet before sending again.";
 /** The Safe used a proposal's nonce, and the canonical chain has not yet said what ran there. */
-const SAFE_NONCE_USED_LINE = "Your Safe used this transaction's nonce. Checking what ran.";
+const SAFE_NONCE_USED_LINE = "Your Safe moved past this proposal. Checking what ran.";
 /** The transaction reported for a proposal holds no event for it. */
-const SAFE_OTHER_RECEIPT_LINE =
-  "The reported Safe transaction doesn't show this proposal. Checking what ran.";
+const SAFE_OTHER_RECEIPT_LINE = "Checking what your Safe ran.";
 /** How far around the Safe's nonce a proposal's own nonce is looked for by its hash. */
 const NONCE_SEARCH_BEHIND = 64;
 const NONCE_SEARCH_AHEAD = 16;
@@ -186,15 +185,16 @@ function safeExecuted(id: string, isSuccessful: boolean, transactionHash: Hex | 
     holdFollows: undefined,
     safeResultUnconfirmed: undefined,
     message: needsReceiptVerification
-      ? "Safe execution was reported. Its exact transaction and recipient results still require verification; resume the saved batch."
+      ? "Your Safe ran this. Resume the saved batch to finish checking it."
       : !isSuccessful
-        ? "Safe executed this proposal, but the onchain transaction failed."
-        : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
+        ? WRITE_HOLD_REVERTED_LINE
+        : SAFE_PROPOSAL_EXECUTED_LINE,
   });
 }
 
 /** What a proposal shows while its hold checks its result and no exit is due. */
-const SAFE_CONFIRMING_LINE = "Confirming your Safe transaction.";
+// TODO(SDK 2.39): use the SDK's shared confirming line; this matches jbm's until then.
+const SAFE_CONFIRMING_LINE = "Executed by your Safe. Confirming it onchain.";
 /** What a proposal the hold proved expired before it ran shows. */
 const SAFE_EXPIRED_LINE = "This Safe transaction expired before it ran.";
 /** Looks a hold loop takes a few seconds apart, before it asks once a minute. */
@@ -645,15 +645,14 @@ async function watchSafeProposal(
         }
         updateTransactionActivity(id, {
           status: "safe-proposed",
-          message:
-            "Safe reports this proposal as executed, but its transaction is not available yet. Do not submit it again while confirmation is unresolved.",
+          message: SAFE_CONFIRMING_LINE,
         });
         return "stuck";
       }
       // Only the Safe's current owners' well-formed confirmations count.
       const live = await livePolicy(safe);
       const approvals = live
-        ? ` | ${usableSafeConfirmations(proposal, live.owners).length}/${live.threshold} approvals`
+        ? `: ${usableSafeConfirmations(proposal, live.owners).length} of ${live.threshold}`
         : "";
       updateTransactionActivity(id, {
         status: "safe-proposed",
@@ -661,7 +660,7 @@ async function watchSafeProposal(
           ? SAFE_PROPOSAL_EXECUTED_LINE
           : nonceUsed
             ? SAFE_NONCE_USED_LINE
-            : `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
+            : `Waiting for your Safe's approvals${approvals}.`,
       });
       // A nonce the Safe has moved past was taken by another transaction, or by this proposal's
       // own execution that the service has yet to list. The chain's execution events decide
@@ -695,7 +694,7 @@ async function watchSafeProposal(
         status: "safe-proposed",
         message: proven()
           ? SAFE_PROPOSAL_EXECUTED_LINE
-          : "Safe proposal submitted, but its service is temporarily unavailable. It is not confirmed executed; check Safe before retrying.",
+          : "Couldn't check your Safe right now. Trying again.",
       });
       return "unknown";
     }
@@ -858,7 +857,7 @@ function releaseJournaledProposal(duplicate: TransactionActivity) {
   else
     updateTransactionActivity(duplicate.id, {
       status: "failed",
-      message: "Released when you checked your Safe and sent this again.",
+      message: "Released. You sent this again.",
     });
 }
 
@@ -873,7 +872,6 @@ async function refuseUnheldSafeDuplicate(
   duplicateOf: () => ReturnType<typeof transactionActivityForHash>,
   hold: WriteHoldHandle,
   client: WriteHoldClient,
-  action: string,
 ): Promise<boolean> {
   for (const row of refreshTransactionActivities().filter((row) => row.callKey === callKey))
     await holdLegacySafeProposal(row, client);
@@ -900,7 +898,7 @@ async function refuseUnheldSafeDuplicate(
       })
       .catch(() => undefined);
   if (!holdDecides(duplicate, held)) {
-    throw new SafeProposalPendingError(duplicate.hash, action, duplicate.safeResultUnconfirmed);
+    throw new SafeProposalPendingError(duplicate.hash, duplicate.safeResultUnconfirmed);
   }
   // A proposal its watch ended unproven: the hold offers the exit at once.
   if (duplicate.safeResultUnconfirmed)
@@ -966,19 +964,13 @@ export async function proposeSafeBatch(
           activity.status === "pending" ||
           activity.status === "safe-proposed"),
     );
-  const heldBefore = await refuseUnheldSafeDuplicate(
-    callKey,
-    duplicateOf,
-    hold,
-    publicClient,
-    title,
-  );
+  const heldBefore = await refuseUnheldSafeDuplicate(callKey, duplicateOf, hold, publicClient);
   const submit = async (gate: WriteHoldGate) => {
     const duplicate = duplicateOf();
     if (duplicate?.hash && holdDecides(duplicate, heldBefore)) {
       releaseJournaledProposal(duplicate);
     } else if (duplicate?.hash) {
-      throw new SafeProposalPendingError(duplicate.hash, title, duplicate.safeResultUnconfirmed);
+      throw new SafeProposalPendingError(duplicate.hash, duplicate.safeResultUnconfirmed);
     }
 
     // The calls depend on each other (an allowance, then the spend), so the
@@ -1089,7 +1081,7 @@ export function followSubmission(
     title,
     status: safe ? "safe-proposed" : "submitted",
     message: safe
-      ? "Submitted to Safe. It is not executed yet; it still needs the Safe's approvals and asynchronous execution."
+      ? SAFE_PROPOSAL_AWAITING
       : "Wallet submission accepted. Waiting for an onchain receipt.",
     chainId,
     account,
@@ -1275,11 +1267,7 @@ export function useWriteContract(
           releaseJournaledProposal(duplicate);
         } else if (duplicate?.hash) {
           if (duplicate.status === "safe-proposed") {
-            throw new SafeProposalPendingError(
-              duplicate.hash,
-              functionName,
-              duplicate.safeResultUnconfirmed,
-            );
+            throw new SafeProposalPendingError(duplicate.hash, duplicate.safeResultUnconfirmed);
           }
           throw new Error(
             `An identical ${functionName} transaction is already pending as ${duplicate.hash}. Check it before submitting again.`,
@@ -1453,13 +1441,7 @@ export function useWriteContract(
       // review or waiting for its Safe proposal hash.
       // Without a client for the chain the simulation refuses before any wallet opens.
       if (hold && holdClient) {
-        heldBefore = await refuseUnheldSafeDuplicate(
-          callKey,
-          duplicateOf,
-          hold,
-          holdClient,
-          functionName,
-        );
+        heldBefore = await refuseUnheldSafeDuplicate(callKey, duplicateOf, hold, holdClient);
         return sendUnderHold(hold, holdClient, submitReviewedCall);
       }
       return browserLocks().request(
@@ -1629,14 +1611,12 @@ export function submittedViaSafe(hash?: Hex): boolean {
   return transactionActivityForHash(hash)?.status === "safe-proposed";
 }
 
-/** What an account does about its Safe proposal whose result can't be confirmed. */
-const CHECK_IN_SAFE = "Check it in Safe, then dismiss it in your account activity.";
-
 /** The title a flow gives a step refused by a Safe proposal whose result can't be confirmed. */
 export const SAFE_PROPOSAL_UNCONFIRMED_TITLE = "Safe proposal unconfirmed";
 
 /** The status line a flow shows for that step. */
-export const SAFE_PROPOSAL_UNCONFIRMED_LINE = `This step's Safe proposal can't be confirmed here. ${CHECK_IN_SAFE}`;
+export const SAFE_PROPOSAL_UNCONFIRMED_LINE =
+  "Check this proposal in your Safe before sending it again.";
 
 /** Refuses a call while its Safe proposal is journaled and not yet settled. */
 export class SafeProposalPendingError extends Error {
@@ -1645,13 +1625,12 @@ export class SafeProposalPendingError extends Error {
   /** `unconfirmed`: the app can't confirm the proposal's result, so its account dismisses it. */
   constructor(
     readonly hash: Hex,
-    action: string,
     readonly unconfirmed = false,
   ) {
     super(
       unconfirmed
-        ? `${action} was proposed to Safe as ${hash}, and its result can't be confirmed here. ${CHECK_IN_SAFE}`
-        : `${action} was proposed to Safe as ${hash}, but it has not executed. Complete its approvals and execution in Safe, then resume; do not submit it again.`,
+        ? SAFE_PROPOSAL_UNCONFIRMED_LINE
+        : "This proposal is waiting in your Safe. Finish it there first.",
     );
   }
 }
@@ -1671,11 +1650,7 @@ export function isSafeProposalUnconfirmedError(error: unknown): error is SafePro
 }
 
 /** Stop dependent steps after a Safe connector returns an asynchronous proposal hash. */
-export function requireOnchainExecution(hash: Hex, action: string): void {
+export function requireOnchainExecution(hash: Hex): void {
   if (!submittedViaSafe(hash)) return;
-  throw new SafeProposalPendingError(
-    hash,
-    action,
-    transactionActivityForHash(hash)?.safeResultUnconfirmed,
-  );
+  throw new SafeProposalPendingError(hash, transactionActivityForHash(hash)?.safeResultUnconfirmed);
 }

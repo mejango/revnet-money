@@ -982,7 +982,7 @@ export function V6PayCard() {
           ...routerApproval.request,
           account: prepared.account,
         });
-        requireOnchainExecution(approvalHash, "Swap authorization");
+        requireOnchainExecution(approvalHash);
         const approvalReceipt = await waitForReceiptWithRetry(
           publicClient as PublicClient,
           approvalHash,
@@ -1047,7 +1047,7 @@ export function V6PayCard() {
         setPhase("safe-proposed");
         return;
       }
-      requireOnchainExecution(hash, prepared.mode === "pay" ? "Payment" : "Balance addition");
+      requireOnchainExecution(hash);
       const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
       if (receipt.status !== "success") {
         throw new Error(`Transaction ${hash} reverted onchain.`);

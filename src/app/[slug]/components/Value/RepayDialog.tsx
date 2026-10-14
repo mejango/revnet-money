@@ -484,7 +484,7 @@ export function RepayDialog({
         args: [revLoansContractAddress as Address, finalRepayAmount],
       });
 
-      requireOnchainExecution(approveHash, "Token approval");
+      requireOnchainExecution(approveHash);
       const approvalReceipt = await waitForReceiptWithRetry(publicClient, approveHash);
       if (approvalReceipt.status !== "success") {
         throw new Error(`Token approval ${approveHash} reverted onchain.`);
@@ -578,7 +578,7 @@ export function RepayDialog({
             args: [revLoansContractAddress as Address, maxRepayBorrowAmount],
           });
 
-          requireOnchainExecution(approveHash, "Token approval");
+          requireOnchainExecution(approveHash);
           const approvalReceipt = await waitForReceiptWithRetry(publicClient, approveHash);
           if (approvalReceipt.status !== "success") {
             throw new Error(`Token approval ${approveHash} reverted onchain.`);

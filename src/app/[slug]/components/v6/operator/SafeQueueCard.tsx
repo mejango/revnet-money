@@ -1014,7 +1014,7 @@ export function SafeQueueCard({
           functionName: "execTransaction",
           args,
         });
-        requireOnchainExecution(hash, `Execute Safe transaction #${tx.nonce}`);
+        requireOnchainExecution(hash);
         await confirmSafeExecution({
           client: publicClientFor(row.chainId),
           hash,

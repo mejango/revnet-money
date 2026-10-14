@@ -49,7 +49,7 @@ export function useAllowance(chainId: number, options?: { reviewedInParent?: boo
           functionName: "approve",
           args: [spender, value],
         });
-        requireOnchainExecution(hash, "Token approval");
+        requireOnchainExecution(hash);
         const receipt = await waitForReceiptWithRetry(publicClient, hash);
         if (!receipt) {
           throw new Error(`Token approval ${hash} was submitted, but confirmation is unavailable.`);
