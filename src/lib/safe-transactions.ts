@@ -29,6 +29,8 @@ export type ReviewedSafeProposal = {
   safe: Address;
   calls: readonly ReviewedSafeCall[];
   batch: boolean;
+  /** The safeTxGas the proposal was made with, in decimal, when it is not zero. */
+  safeTxGas?: string;
 };
 
 /**

@@ -117,6 +117,9 @@ const SAFE_RESULT_UNCONFIRMED =
   "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
 /** The Safe used a proposal's nonce, and the canonical chain has not yet said what ran there. */
 const SAFE_NONCE_USED_LINE = "Your Safe used this transaction's nonce. Checking what ran.";
+/** The transaction reported for a proposal holds no event for it. */
+const SAFE_OTHER_RECEIPT_LINE =
+  "The reported Safe transaction doesn't show this proposal. Checking what ran.";
 /** How far around the Safe's nonce a proposal's own nonce is looked for by its hash. */
 const NONCE_SEARCH_BEHIND = 64;
 const NONCE_SEARCH_AHEAD = 16;
@@ -283,7 +286,15 @@ async function watchSafeProposal(
         const tx = proposal.batch
           ? safeBatchProposalFor(calls, Number(nonce))
           : safeProposalFor(calls[0]!, Number(nonce));
-        if (safeTransactionHash(chainId, safe, tx).toLowerCase() === hash.toLowerCase()) {
+        const candidates = proposal.safeTxGas
+          ? [tx, { ...tx, safeTxGas: proposal.safeTxGas }]
+          : [tx];
+        if (
+          candidates.some(
+            (candidate) =>
+              safeTransactionHash(chainId, safe, candidate).toLowerCase() === hash.toLowerCase(),
+          )
+        ) {
           saveNonce(nonce);
           return;
         }
@@ -384,7 +395,9 @@ async function watchSafeProposal(
     }
     const result = safeExecutionResult(receipt, safe, hash);
     if (result.status === "unproven") {
-      unconfirmed(executionHash, reported);
+      // A receipt without this proposal's own event says nothing about it: it stays followed,
+      // and only a canonical execution or replacement of this exact proposal ends it.
+      updateTransactionActivity(id, { executionHash, message: SAFE_OTHER_RECEIPT_LINE });
       return;
     }
     executed(result.status === "success", executionHash);
@@ -439,8 +452,14 @@ async function watchSafeProposal(
         fetch: observed,
       })) as SafeQueuedTransaction & { transactionHash?: unknown };
       if (tracked()?.obsoleteSafeNonce !== undefined) return "done";
-      if (runsReviewed(safeTransactionMessage(proposal)))
+      if (runsReviewed(safeTransactionMessage(proposal))) {
+        // The nonce hold comes first: once the Safe has used it, only the canonical chain may
+        // end this proposal, whatever settles below.
         saveNonce(safeTransactionMessage(proposal).nonce);
+        const saved = savedNonce();
+        const current = saved === undefined ? null : await liveNonce(safe);
+        if (saved !== undefined && current !== null && current > saved) nonceUsed = true;
+      }
       const executionHash =
         typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)
           ? proposal.transactionHash
@@ -453,6 +472,8 @@ async function watchSafeProposal(
       }
       if (proposal.isExecuted) {
         if (executionHash) {
+          // The watch ends here either way; a proposal its receipt didn't settle stays held and
+          // is followed again on the next load.
           await settle(executionHash, true);
           return "done";
         }
