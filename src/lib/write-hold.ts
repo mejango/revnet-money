@@ -12,7 +12,7 @@ import {
   type WriteHoldHandle,
 } from "@bananapus/nana-sdk-core/review";
 import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
-import { keccak256, stringToHex, type Hex } from "viem";
+import { keccak256, stringToHex, type Address, type Hex } from "viem";
 
 /** The one write hold for every ordinary wallet write in this app. */
 export const writeHolds = createWriteHold();
@@ -71,6 +71,46 @@ export async function adoptIntoHold(
   } catch {
     return hold.peek().status !== "clear";
   }
+}
+
+/**
+ * The holds this account saved by exact calldata, before writes were held by intent, for a call
+ * of `selector` on `to`: an earlier attempt of an action now held by intent, with calldata a
+ * retry no longer repeats. The SDK can't move a hold to another key without releasing it, so a
+ * send under an intent asks each of these first, and only their own exits release them.
+ */
+export function exactCalldataHoldsOf(
+  chainId: number,
+  account: Address,
+  to: Address,
+  selector: Hex,
+): WriteHoldHandle[] {
+  // The SDK's key for a write held by its exact call: v2:chain:account:to:value:calldata hash.
+  const prefix = `nana-sdk:reviewed-write:v2:${chainId}:${account}:${to}:`.toLowerCase();
+  const holds: WriteHoldHandle[] = [];
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key || !key.toLowerCase().startsWith(prefix) || key.split(":").length !== 8) continue;
+      const record = JSON.parse(localStorage.getItem(key) ?? "null") as {
+        safe?: boolean;
+        call?: { to: Address; data: Hex; value?: string };
+      } | null;
+      const call = record?.call;
+      if (!call || call.data.slice(0, 10).toLowerCase() !== selector.toLowerCase()) continue;
+      holds.push(
+        writeHolds.open({
+          chainId,
+          account,
+          safe: record.safe === true,
+          call: { to: call.to, data: call.data, value: BigInt(call.value ?? 0) },
+        }),
+      );
+    }
+  } catch {
+    // Storage refused: holds then live in this tab's memory, keyed as they were sent.
+  }
+  return holds;
 }
 
 /** Whether the hold holds `hash` for its call, or settled it. */

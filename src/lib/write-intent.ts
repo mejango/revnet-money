@@ -1,4 +1,57 @@
-import { encodeFunctionData, keccak256, stringToHex, type Abi, type Address } from "viem";
+import {
+  decodeAbiParameters,
+  encodeFunctionData,
+  keccak256,
+  stringToHex,
+  type Abi,
+  type Address,
+  type Hex,
+} from "viem";
+
+/** Uniswap v4 position actions whose params lead with the position's tokenId. */
+const ON_TOKEN = new Set([0x00, 0x01, 0x03, 0x04]);
+/** Uniswap v4 mints, whose params lead with the pool key and the range. */
+const MINTS = new Set([0x02, 0x05]);
+const POOL_KEY_AND_RANGE = [
+  {
+    type: "tuple",
+    components: [
+      { type: "address" },
+      { type: "address" },
+      { type: "uint24" },
+      { type: "int24" },
+      { type: "address" },
+    ],
+  },
+  { type: "int24" },
+  { type: "int24" },
+] as const;
+
+/**
+ * A `modifyLiquidities` unlockData's actions and the positions they act on: each action's code
+ * with its tokenId, or a mint's pool key and range. The amounts and limits are left out, since a
+ * retry re-quotes them; the currency actions (settle, take, close, sweep) keep their params. An
+ * unlockData that can't be read is one action on the whole position manager.
+ */
+function liquidityActions(unlockData: unknown): unknown {
+  try {
+    const [actions, params] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      unlockData as Hex,
+    );
+    const codes = actions.slice(2).match(/../g) ?? [];
+    if (codes.length !== params.length) return "unread";
+    return codes.map((hex, index) => {
+      const code = parseInt(hex, 16);
+      const param = params[index]!;
+      if (ON_TOKEN.has(code)) return [code, decodeAbiParameters([{ type: "uint256" }], param)[0]];
+      if (MINTS.has(code)) return [code, decodeAbiParameters(POOL_KEY_AND_RANGE, param)];
+      return [code, param];
+    });
+  } catch {
+    return "unread";
+  }
+}
 
 /**
  * A write's intent: what the user asked for, without the fields a retry stamps again (a deadline,
@@ -12,7 +65,8 @@ const INTENT = Symbol.for("revnet:write-intent");
 function stable(value: unknown): string {
   return JSON.stringify(value, (_key, item: unknown) => {
     if (typeof item === "bigint") return item.toString();
-    if (typeof item === "string" && /^0x[0-9a-fA-F]*$/.test(item)) return item.toLowerCase();
+    // Only an address is case-insensitive; free text such as a memo keeps its case.
+    if (typeof item === "string" && /^0x[0-9a-fA-F]{40}$/.test(item)) return item.toLowerCase();
     if (item && typeof item === "object" && !Array.isArray(item))
       return Object.fromEntries(
         Object.entries(item as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)),
@@ -67,7 +121,8 @@ export function writeIntentOf(write: Write): string | undefined {
       spender: args[1],
       amount: args[2],
     });
-  if (write.functionName === "modifyLiquidities") return writeIntentNamespace("lp", { to });
+  if (write.functionName === "modifyLiquidities")
+    return writeIntentNamespace("lp", { to, actions: liquidityActions(args[0]) });
   if (write.functionName === "execTransaction" && args.length === 10)
     return writeIntentNamespace("safe-exec", { to, transaction: args.slice(0, 9) });
   return undefined;

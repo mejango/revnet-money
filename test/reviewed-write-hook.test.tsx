@@ -15,6 +15,7 @@ import {
 } from "@bananapus/nana-sdk-core/safe-service";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import {
+  encodeAbiParameters,
   encodeFunctionData,
   HttpRequestError,
   parseAbi,
@@ -3245,6 +3246,93 @@ describe("holds keyed by the user's intent", () => {
       await result.current.writeContractAsync(lpWrite(3_000n) as never);
     });
     expect(mocks.submit).toHaveBeenCalledTimes(2);
+  });
+
+  /** unlockData for `actions` on position `tokenId` (each action's params lead with it). */
+  const onPosition = (actions: Hex, tokenId: bigint, extra: bigint) =>
+    encodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      [
+        actions,
+        [
+          encodeAbiParameters(
+            [{ type: "uint256" }, { type: "uint256" }, { type: "uint128" }],
+            [tokenId, extra, extra],
+          ),
+        ],
+      ],
+    );
+  const lpCall = (unlockData: Hex, deadline: bigint) => ({
+    ...lpWrite(deadline),
+    args: [unlockData, deadline] as const,
+  });
+
+  it("keys each liquidity write by its actions and positions: another position's pending add holds nothing here", async () => {
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    mocks.submit.mockRejectedValueOnce(new Error("Wallet transport timed out"));
+    const { result } = renderHook(() => hooks.useWriteContract());
+    // An add to position B, held with no answer from the wallet.
+    await expect(
+      result.current.writeContractAsync(lpCall(onPosition("0x00", 2n, 5n), 1_000n) as never),
+    ).rejects.toThrow("timed out");
+
+    // Claiming position A's fees goes straight to the wallet.
+    await act(async () => {
+      await result.current.writeContractAsync(lpCall(onPosition("0x01", 1n, 0n), 1_000n) as never);
+    });
+    expect(prompt).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+
+    // The add to B, retried with a new deadline and re-quoted limits, asks for the exit.
+    await expect(
+      result.current.writeContractAsync(lpCall(onPosition("0x00", 2n, 6n), 2_000n) as never),
+    ).rejects.toThrow(/hasn't confirmed yet/);
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a named retry while an exact-calldata hold from before intent keys holds an earlier attempt, until the exit", async () => {
+    const { review, hooks, held } = await freshHarness();
+    const { withWriteIntent } = await import("@/lib/write-intent");
+    const { writeHolds } = await import("@/lib/write-hold");
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    // A cash out sent before intent keys: held by its exact calldata, with no wallet answer.
+    const { getPublicClient } = await import("wagmi/actions");
+    const chain = getPublicClient(mocks.config as never, { chainId: 11155111 } as never);
+    await writeHolds
+      .open({
+        chainId: 11155111,
+        account: ACCOUNT,
+        safe: false,
+        call: { to: TARGET, data: TRANSFER_7.data, value: 0n },
+      })
+      .send(chain as never, async (gate) => {
+        await gate.beforeSend();
+        throw new Error("Wallet transport timed out");
+      })
+      .catch(() => undefined);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    const cashOut = () =>
+      withWriteIntent(result.current.writeContractAsync, "cash-out", { projectId: 7n })({
+        ...CALL,
+        // Its quoted minimum, read again.
+        args: [RECIPIENT, 8n] as const,
+      } as never);
+
+    await expect(cashOut()).rejects.toThrow(/hasn't confirmed yet/);
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.submit).not.toHaveBeenCalled();
+
+    prompt.mockResolvedValue(true);
+    await act(async () => {
+      await cashOut();
+    });
+    expect(mocks.submit).toHaveBeenCalledOnce();
   });
 
   it("refuses a retry whose quoted minimum changed, for a write its caller names by intent", async () => {

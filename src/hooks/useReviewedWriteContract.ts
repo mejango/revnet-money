@@ -32,6 +32,7 @@ import {
 } from "@/lib/waitForReceipt";
 import {
   adoptIntoHold,
+  exactCalldataHoldsOf,
   holdOfHash,
   rememberHold,
   safeHoldOf,
@@ -1278,7 +1279,21 @@ export function useWriteContract(
           holdClient,
           functionName,
         );
-        return sendUnderHold(hold, holdClient, submitReviewedCall);
+        const send = () => sendUnderHold(hold, holdClient, submitReviewedCall);
+        // A write held by intent first asks every hold an earlier attempt left under its exact
+        // calldata: each one's own exit releases it, and nothing is reserved there.
+        const earlier = namespace
+          ? exactCalldataHoldsOf(
+              chainId,
+              initialAddress,
+              variables.address,
+              data.slice(0, 10) as Hex,
+            )
+          : [];
+        return earlier.reduceRight<() => Promise<Hex>>(
+          (next, old) => () => sendUnderHold(old, holdClient, () => next()),
+          send,
+        )();
       }
       return browserLocks().request(
         `revnet:transaction:${keccak256(stringToHex(callKey))}`,
