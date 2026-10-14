@@ -370,41 +370,20 @@ export function batchIntentOf(calls: readonly (Write & { abi: Abi; value?: bigin
 }
 
 /**
- * A payment's intent. A checkout is its project and collection alone: its amount follows prices
- * and credits, its currency may be the app's fallback, and inventory may clamp or drop tiers. An
- * ordinary payment is its project, beneficiary, memo, the token the user picked (`"auto"` while
- * the app picks it) and the amount as typed, canonically. The route the app picks (a direct pay or
- * a swap) and the token amount it computes are never in it.
+ * A payment's intent: the project and the beneficiary alone. Every payment to a project, a checkout
+ * or an ordinary pay, shares it: inventory can empty a cart into a pay, the app picks the route,
+ * the token may fall back, and the amount and memo follow what the form shows. While one payment
+ * to a project is unresolved, another to it from the same account asks for that one's exit.
  */
 export function payIntent(payment: {
-  mode: string;
   projectId: number | bigint;
-  /** The pay token the user picked, or `"auto"` while the app picks it. */
-  token: string;
-  /** The amount as the user typed it. */
-  amount: string;
-  memo: string;
   beneficiary: string;
-  hook?: string;
-  items: readonly { tierId: number; quantity: number; name?: string }[];
+  /** Not part of the intent; a checkout's cart, accepted so callers needn't strip it. */
+  items?: readonly unknown[];
 }): [string, { [name: string]: IntentValue }] {
-  const project = BigInt(payment.projectId);
-  if (payment.items.length)
-    return [
-      `${payment.mode}-checkout`,
-      { projectId: project, collection: payment.hook ? intent.address(payment.hook) : null },
-    ];
   return [
-    payment.mode,
-    {
-      projectId: project,
-      beneficiary: intent.address(payment.beneficiary),
-      memo: payment.memo,
-      token: /^0x[0-9a-fA-F]{40}$/.test(payment.token)
-        ? intent.address(payment.token)
-        : payment.token,
-      amount: decimalKey(payment.amount),
-    },
+    "pay",
+    { projectId: BigInt(payment.projectId), beneficiary: intent.address(payment.beneficiary) },
   ];
 }
 

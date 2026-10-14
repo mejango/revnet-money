@@ -162,12 +162,6 @@ export function V6PayCard() {
   // auto-defaults to the project's accounting token (list[0]) so an ETH/USDC
   // router option never shadows a USDC/ETH project's real token.
   const [tokenTouched, setTokenTouched] = useState(false);
-  /**
-   * The pay token the user picked, for the payment's intent: kept through the app's fallback when
-   * that token drops out of the list, so a retry is still the same payment. Unset while the app
-   * picks it, and "dollars" for "$".
-   */
-  const pickedToken = useRef<string | null>(null);
   /** "$" is picked in the token menu: the payer has dollars, not the token this project takes.
    *  Nothing is bought until they press Pay — the amount is theirs to type first. */
   const [payWithDollars, setPayWithDollars] = useState(false);
@@ -1013,22 +1007,11 @@ export function V6PayCard() {
         blockNumber: approvalBlock,
       } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
       setPhase("signing");
-      // Held by what the user asked for: the quote's minimum, a swap's deadline and a Permit2
-      // signature are stamped again on a retry, and a checkout's amount follows its prices.
+      // Held by the project and beneficiary alone: one payment to a project at a time, whatever
+      // the cart, token, route, amount or memo.
       const hash = await withWriteIntent(
         writeContractAsync,
-        ...payIntent({
-          mode: prepared.mode,
-          projectId,
-          // The token the user picked, or "auto"; the amount as typed, never the token amount
-          // computed from it.
-          token: pickedToken.current ?? "auto",
-          amount,
-          memo: prepared.memo,
-          beneficiary: prepared.account,
-          hook: shop?.hook,
-          items: prepared.cartRows,
-        }),
+        ...payIntent({ projectId, beneficiary: prepared.account }),
       )({
         chainId: prepared.chainId,
         address: paymentRequest.address,
@@ -1262,7 +1245,6 @@ export function V6PayCard() {
                   onChange={(value) => {
                     setTokenTouched(true);
                     if (value === BUY_OPTION) {
-                      pickedToken.current = "dollars";
                       // Selecting dollars buys nothing yet. The payer types what they want to
                       // spend first, and Pay explains the swap they are about to make.
                       setPayWithDollars(true);
@@ -1273,7 +1255,6 @@ export function V6PayCard() {
                     setTokenIndex(i);
                     const picked = tokens[i];
                     if (picked) selectedKeyRef.current = payTokenKey(picked);
-                    if (picked) pickedToken.current = picked.token;
                     setTokenTouched(true);
                   }}
                   disabled={busy}

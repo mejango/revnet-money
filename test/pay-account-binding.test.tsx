@@ -329,3 +329,35 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 });
+
+describe("the payment's intent", () => {
+  it("is the project and beneficiary alone, so a checkout an emptied cart turned into a pay is the same intent", async () => {
+    const { payIntent, writeIntentOf } = await import("@/lib/write-hold");
+    const { writeIntentKey } = await import("@bananapus/nana-sdk-core/review");
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    // The cart is empty (inventory emptied it): this is a pay.
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("You get");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+
+    // The checkout it was, with a lost reply, had the same intent.
+    expect(writeIntentOf(mocks.write.mock.calls[0]![0])).toBe(
+      writeIntentKey(
+        ...payIntent({
+          projectId: 7n,
+          beneficiary: A,
+          items: [{ tierId: 1, quantity: 2 }],
+        }),
+      ),
+    );
+  });
+});

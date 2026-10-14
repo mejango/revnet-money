@@ -33,45 +33,14 @@ const HOOK = "0x0000000000000000000000000000000000001000";
 const key = ([action, params]: ReturnType<typeof payIntent>) => writeIntentKey(action, params);
 
 describe("a payment's intent", () => {
-  const pay = (overrides: Partial<Parameters<typeof payIntent>[0]> = {}) =>
-    payIntent({
-      mode: "pay",
-      projectId: 7,
-      token: TOKEN,
-      amount: "10",
-      memo: "Hi",
-      beneficiary: TOKEN,
-      hook: HOOK,
-      items: [],
-      ...overrides,
-    });
-
-  it("keys a pay token the app defaulted to as auto, whatever token it resolved to", () => {
-    expect(key(pay({ token: "auto" }))).toBe(key(pay({ token: "auto" })));
-    expect(key(pay({ token: "auto" }))).not.toBe(key(pay()));
-  });
-
-  it("keys an ordinary payment by its typed decimal, written any way", () => {
-    expect(key(pay({ amount: "10" }))).toBe(key(pay({ amount: "010.00" })));
-    expect(key(pay())).not.toBe(key(pay({ amount: "11" })));
-  });
-
-  it("holds a checkout by its project and collection alone, whatever tiers inventory leaves", () => {
+  it("is one per project and beneficiary: a checkout, a pay, any token, amount or memo", () => {
     const checkout = key(
-      pay({
-        items: [
-          { tierId: 1, quantity: 3, name: "A" },
-          { tierId: 2, quantity: 1, name: "B" },
-        ],
-      }),
+      payIntent({ projectId: 7, beneficiary: TOKEN, items: [{ tierId: 1, quantity: 3 }] }),
     );
-    // Tier 1 sold out and left the cart.
-    expect(key(pay({ items: [{ tierId: 2, quantity: 1, name: "B" }], amount: "4" }))).toBe(
-      checkout,
-    );
-    expect(key(pay({ items: [{ tierId: 2, quantity: 1, name: "B" }], hook: TOKEN }))).not.toBe(
-      checkout,
-    );
+    // Inventory emptied the cart: the retry is a pay.
+    expect(key(payIntent({ projectId: 7, beneficiary: TOKEN, items: [] }))).toBe(checkout);
+    expect(key(payIntent({ projectId: 8, beneficiary: TOKEN, items: [] }))).not.toBe(checkout);
+    expect(key(payIntent({ projectId: 7, beneficiary: HOOK, items: [] }))).not.toBe(checkout);
   });
 });
 

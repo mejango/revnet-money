@@ -3419,15 +3419,7 @@ describe("holds keyed by the user's intent", () => {
       const { holds, prompt, write } = await lostOnce();
       const pay = holds.withWriteIntent(
         write,
-        ...holds.payIntent({
-          mode: "pay",
-          projectId: 7,
-          token: TARGET,
-          amount: "10",
-          memo: "",
-          beneficiary: ACCOUNT,
-          items: [],
-        }),
+        ...holds.payIntent({ projectId: 7, beneficiary: ACCOUNT, items: [] }),
       );
       await expect(pay({ ...CALL } as never)).rejects.toThrow("timed out");
       await expect(pay({ ...CALL, address: OTHER_TARGET } as never)).rejects.toThrow(
@@ -3463,27 +3455,17 @@ describe("holds keyed by the user's intent", () => {
       expect(mocks.submit).toHaveBeenCalledOnce();
     });
 
-    it("a checkout whose currency the app switched, or whose quantities inventory clamped", async () => {
+    it("a checkout retried as a pay after inventory emptied its cart", async () => {
       const { holds, prompt, write } = await lostOnce();
-      const checkout = (token: Address, quantity: number) =>
+      const send = (items: { tierId: number; quantity: number }[]) =>
         holds.withWriteIntent(
           write,
-          ...holds.payIntent({
-            mode: "pay",
-            projectId: 7,
-            token,
-            amount: "10",
-            memo: "",
-            beneficiary: ACCOUNT,
-            hook: TARGET,
-            items: [{ tierId: 1, quantity }],
-          }),
-        )({ ...CALL, args: [RECIPIENT, BigInt(quantity)] } as never);
-      await expect(checkout(TARGET, 3)).rejects.toThrow("timed out");
-      await expect(checkout(RECIPIENT, 3)).rejects.toThrow(/hasn't confirmed yet/);
-      await expect(checkout(TARGET, 2)).rejects.toThrow(/hasn't confirmed yet/);
+          ...holds.payIntent({ projectId: 7, beneficiary: ACCOUNT, items }),
+        )({ ...CALL, args: [RECIPIENT, BigInt(items.length + 1)] } as never);
+      await expect(send([{ tierId: 1, quantity: 3 }])).rejects.toThrow("timed out");
+      await expect(send([])).rejects.toThrow(/hasn't confirmed yet/);
+      expect(prompt).toHaveBeenCalledOnce();
       expect(mocks.submit).toHaveBeenCalledOnce();
-      expect(prompt).toHaveBeenCalledTimes(2);
     });
 
     it("a single-chain launch retried with a fresh salt and stage start", async () => {
