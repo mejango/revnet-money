@@ -117,7 +117,18 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // Same-lock Node 26.7 builds measure 2686.3 KiB on HEAD 3ad4255a and 2700.9 KiB
 // with Rent (+14.6 KiB), without new dependencies or eager wallet SDKs. Round
 // only the aggregate ceiling to 2701 KiB; route and lazy-load limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2701);
+// SDK 2.31.0 makes the SDK the one home for write recovery (R119): its write journal
+// with nonce proof, cross-tab locks with an IndexedDB fallback, the Safe proposal
+// chain look, bridge destination-mint readiness and shared held/discard copy, plus
+// the app's in-flow choice dialog. The same locked Node 26.7 tree measures 2716.1 KiB
+// against 2700.9 KiB on main (+15.2 KiB, not split between SDK and app), with the
+// largest route 709.6 KiB and route-referenced JavaScript 986.2 KiB, both in budget,
+// and every lazy wallet check passing. Raise only the aggregate ceiling to 2717 KiB.
+// Holding writes the browser can't store in the tab, no resend over a known pending hash,
+// the confirmation that closes an open exit, and settling a proven Safe execution from its
+// own transaction (the nonce search and execution-log read) measure 2717.4 KiB. Raise the
+// aggregate ceiling to 2720 KiB for a small margin; route and lazy-load limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2720);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

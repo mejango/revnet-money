@@ -58,6 +58,17 @@ export type TransactionActivity = {
    * identical call until its account dismisses it.
    */
   safeResultUnconfirmed?: boolean;
+  /**
+   * The chain proved this proposal executed: the Safe's execution event for its safeTxHash at
+   * the block that used `nonce` (decimal), in transaction `executionHash`. That receipt alone
+   * settles it, with no Safe service; until then it stays held, and nothing dismisses it.
+   */
+  safeExecutionProven?: { safe: Address; nonce: string; executionHash?: Hex };
+  /**
+   * The proposal's own Safe nonce, in decimal: from its authenticated service record, or found
+   * from its hash. Once the Safe uses it, only the canonical chain may release the proposal.
+   */
+  safeProposalNonce?: string;
   executionHash?: Hex;
   /** When the chain first answered that it holds no receipt for a Safe proposal's `executionHash`. */
   executionSeenAt?: number;
@@ -354,6 +365,10 @@ export function dismissTransactionActivity(id: string): void {
   // session none of whose requests can run again is discarded.
   if (row?.manualVerificationRequired && !row.safeResultUnconfirmed && !row.relayrDiscardable)
     return;
+  // A proven execution is the only evidence of what ran; its receipt settles it first.
+  if (row?.safeExecutionProven && row.status !== "success" && row.status !== "failed") return;
+  // A Safe proposal still followed is held; only one the app can't confirm may be dismissed.
+  if (row?.status === "safe-proposed" && !row.safeResultUnconfirmed) return;
   emit(snapshot.filter((activity) => activity.id !== id));
 }
 

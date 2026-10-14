@@ -57,7 +57,11 @@ import {
 } from "@/lib/transaction-activity";
 import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
-import { gasWithHeadroom, isDefiniteWalletRejection } from "@bananapus/nana-sdk-core/review";
+import {
+  browserLocks,
+  gasWithHeadroom,
+  isDefiniteWalletRejection,
+} from "@bananapus/nana-sdk-core/review";
 import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
 import {
   readSafeTransaction,
@@ -315,6 +319,8 @@ export function useMultichainBatch() {
   const { getRelayrTxQuote } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
   const writeOptions: NonNullable<Parameters<typeof useWriteContract>[0]> = {
+    // The batch's own journal holds each call's unknown result.
+    recovery: "caller",
     manualReceiptVerification: () => true,
     allowSafeManualReceiptVerification: true,
     preflightSimulation: async (_variables, account) => {
@@ -460,13 +466,11 @@ export function useMultichainBatch() {
       };
       running.add(lock);
       try {
-        return await (typeof navigator !== "undefined" && navigator.locks
-          ? navigator.locks.request(lock, { ifAvailable: true }, (acquired) => {
-              if (!acquired)
-                throw new Error("Another browser tab is already processing a multichain batch.");
-              return check();
-            })
-          : check());
+        return (await browserLocks().request(lock, { ifAvailable: true }, (acquired) => {
+          if (!acquired)
+            throw new Error("Another browser tab is already processing a multichain batch.");
+          return check();
+        })) as Awaited<ReturnType<typeof check>>;
       } finally {
         running.delete(lock);
       }
@@ -1007,13 +1011,11 @@ export function useMultichainBatch() {
       };
       running.add(lock);
       try {
-        return await (typeof navigator !== "undefined" && navigator.locks
-          ? navigator.locks.request(lock, { ifAvailable: true }, (acquired) => {
-              if (!acquired)
-                throw new Error("Another browser tab is already processing a multichain batch.");
-              return execute();
-            })
-          : execute());
+        return (await browserLocks().request(lock, { ifAvailable: true }, (acquired) => {
+          if (!acquired)
+            throw new Error("Another browser tab is already processing a multichain batch.");
+          return execute();
+        })) as Awaited<ReturnType<typeof execute>>;
       } finally {
         running.delete(lock);
       }

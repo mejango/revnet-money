@@ -132,12 +132,13 @@ function quote(row = payment()): RelayrPostBundleResponse {
 
 async function freshHarness() {
   vi.resetModules();
-  const [review, activity, hooks] = await Promise.all([
+  const [review, activity, hooks, choice] = await Promise.all([
     import("@/lib/transaction-review"),
     import("@/lib/transaction-activity"),
     import("@/hooks/useReviewedRelayr"),
+    import("@/lib/flow-choice"),
   ]);
-  return { review, activity, hooks };
+  return { review, activity, hooks, choice };
 }
 
 describe("saved unpaid quote release evidence", () => {
@@ -638,7 +639,7 @@ describe("reviewed Relayr authorization hook", () => {
     expect(mocks.signTypedData).not.toHaveBeenCalled();
   });
 
-  it("quotes the published signatures again when POST may have reached Relayr but its response is lost, and never signs a new copy while they can run", async () => {
+  it("quotes the published signatures again when POST may have reached Relayr but its response is lost, and signs a new copy only at their saved nonce", async () => {
     const { review, activity, hooks } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
     const posts: string[] = [];
@@ -665,14 +666,16 @@ describe("reviewed Relayr authorization hook", () => {
     await expect(
       result.current.getRelayrTxQuote([{ ...REQUEST, data: { ...REQUEST.data, data: "0x5678" } }]),
     ).rejects.toThrow(/already has published authorizations/);
-    // A signed forward request stays executable for 47 hours. Past that deadline by
-    // the device clock but not at a finalized block, it still holds.
-    vi.setSystemTime(new Date((NOW + 48 * 3600) * 1_000));
-    await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
-      /earlier signature (can|may) still run/,
+    // A signed forward request stays executable for 2 hours. Past that deadline by
+    // the device clock but not at a finalized block, the same call is signed again
+    // only at its saved nonce, so the old and new requests can never both run.
+    vi.setSystemTime(new Date((NOW + 3 * 3600) * 1_000));
+    await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(/connection reset/);
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+    expect(mocks.signTypedData.mock.calls[1][0].message.nonce).toBe(
+      mocks.signTypedData.mock.calls[0][0].message.nonce,
     );
-    expect(mocks.signTypedData).toHaveBeenCalledOnce();
-    expect(posts).toHaveLength(2);
+    expect(posts).toHaveLength(3);
   });
 
   it("blocks a newly selected subset of calls from an unresolved bundle", async () => {
@@ -3941,6 +3944,32 @@ describe("unpaid Relayr quotes", () => {
     });
   });
 
+  it("sign each forward request for 2 hours", async () => {
+    await unpaidQuote();
+    expect(Number(mocks.signTypedData.mock.calls[0][0].message.deadline)).toBe(NOW + 2 * 3600);
+  });
+
+  it("sign the same calls again at their saved nonces once too little time is left to pay and run them", async () => {
+    const { activity, result } = await unpaidQuote();
+    // 44 minutes before the signatures expire: a 10-minute payment window and the
+    // 30-minute run margin no longer fit, so quoting them again offers no option.
+    const late = NOW + 2 * 3600 - 44 * 60;
+    vi.setSystemTime(new Date(late * 1_000));
+    chainAt({ timestamp: late, finalizedNonce: 4n });
+    vi.stubGlobal("fetch", nextQuote(late + 600));
+    await act(async () => {
+      await expect(result.current.getRelayrTxQuote([REQUEST])).resolves.toMatchObject({
+        bundle_uuid: OTHER_BUNDLE_UUID,
+      });
+    });
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(2);
+    const resigned = mocks.signTypedData.mock.calls[1][0].message;
+    expect(resigned.nonce).toBe(4n);
+    expect(Number(resigned.deadline)).toBe(late + 2 * 3600);
+    expect(row(activity, BUNDLE_UUID)).toMatchObject({ relayrPaymentStatus: "expired" });
+    expect(row(activity, OTHER_BUNDLE_UUID)).toMatchObject({ relayrNonces: ["4"] });
+  });
+
   it("stay pending when the app resumes past their quote's deadline", async () => {
     const { activity, hooks } = await unpaidQuote();
     vi.setSystemTime(EXPIRED);
@@ -3985,9 +4014,9 @@ describe("unpaid Relayr quotes", () => {
 });
 
 describe("Relayr sessions decided from the chain", () => {
-  // A forward request signed at NOW stays executable for 47 hours.
-  const SIGNED_DEADLINE = NOW + 47 * 3600;
-  const PAST_DEADLINE = NOW + 48 * 3600;
+  // A forward request signed at NOW stays executable for 2 hours.
+  const SIGNED_DEADLINE = NOW + 2 * 3600;
+  const PAST_DEADLINE = NOW + 3 * 3600;
   const GUARD = "0x0000000000000000000000000000000000004444" as Address;
   const GUARD_DATA = "0xabcdef01" as Hex;
   const GUARD_VALUE = `0x${"00".repeat(31)}01` as Hex;
@@ -4158,7 +4187,37 @@ describe("Relayr sessions decided from the chain", () => {
       "The revnet changed since this review.",
     );
     expect(mocks.signTypedData).toHaveBeenCalledOnce();
-    expect(session()).toMatchObject({ relayrDiscardable: "changed" });
+    // Nothing ran and nothing can: the flow discards it, with no trip to account activity.
+    expect(session()).toBeUndefined();
+  });
+
+  it("offers Discard inside the flow for a request that may have run, and stops for a fresh review", async () => {
+    const { choice, result, session } = await signedSession();
+    const prompt = vi.fn().mockResolvedValue(false);
+    choice.registerFlowChoiceHandler(prompt);
+    vi.setSystemTime(new Date(PAST_DEADLINE * 1_000));
+    chainAt({ timestamp: PAST_DEADLINE, finalizedNonce: 5n });
+    vi.stubGlobal("fetch", nextQuote());
+    // Kept: the line stays, as before.
+    await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
+      /may already have run/,
+    );
+    expect(prompt).toHaveBeenCalledExactlyOnceWith({
+      title: "Check the revnet",
+      lines: [
+        "This action's earlier signature may already have run. Check the revnet, then discard it to review it again.",
+      ],
+      confirmLabel: "Discard",
+    });
+    expect(session()).toMatchObject({ relayrDiscardable: "ran" });
+    // Discarded: the session goes, and nothing is signed until the user reviews again.
+    prompt.mockResolvedValue(true);
+    await expect(result.current.getRelayrTxQuote([GUARDED])).rejects.toThrow(
+      "Discarded. Review it again.",
+    );
+    expect(session()).toBeUndefined();
+    expect(mocks.signTypedData).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("refuses another call in the recovery scope of a session that may have run, but not one that shares only its forwarder nonce", async () => {

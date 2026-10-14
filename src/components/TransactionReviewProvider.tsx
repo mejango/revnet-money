@@ -1,5 +1,6 @@
 "use client";
 
+import { FlowChoiceDialog } from "@/components/FlowChoiceDialog";
 import { LoadingText } from "@/components/ui/LoadingText";
 
 import {
@@ -7,6 +8,7 @@ import {
   type TransactionReviewScope,
 } from "@/components/TransactionReviewScope";
 import { ModalDialog } from "@/components/ui/ModalShell";
+import { registerFlowChoiceHandler, type FlowChoice } from "@/lib/flow-choice";
 import {
   registerFundingChainSelectionHandler,
   registerTransactionReviewHandler,
@@ -41,17 +43,29 @@ export type PendingFundingChainSelection = {
   resolve: (chainId: number | null) => void;
 };
 
-export type PendingDialog = PendingReview | PendingFundingChainSelection;
+/** A choice a flow asks for mid-action, such as sending a held write again. */
+type PendingFlowChoice = {
+  scope?: TransactionReviewScope | null;
+  kind: "choice";
+  id: number;
+  choice: FlowChoice;
+  resolve: (confirmed: boolean) => void;
+};
+
+export type PendingDialog = PendingReview | PendingFundingChainSelection | PendingFlowChoice;
+
+/** The dialogs the lazily loaded review module draws. */
+type PendingReviewDialog = PendingReview | PendingFundingChainSelection;
 
 export type TransactionReviewDialogProps = {
-  pending: PendingDialog;
+  pending: PendingReviewDialog;
   onFinish: (result: boolean | number | null) => void;
   projectCheckPending?: boolean;
 };
 
 function cancelPendingDialog(pending: PendingDialog) {
-  if (pending.kind === "review") pending.resolve(false);
-  else pending.resolve(null);
+  if (pending.kind === "funding") pending.resolve(null);
+  else pending.resolve(false);
 }
 
 /**
@@ -121,7 +135,37 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     [enqueueDialog],
   );
 
+  const enqueueFlowChoice = useCallback(
+    (choice: FlowChoice, signal?: AbortSignal) =>
+      new Promise<boolean>((resolve) => {
+        const pending: PendingFlowChoice = {
+          kind: "choice",
+          scope: scopeRef.current,
+          id: nextId.current++,
+          choice: { ...choice, lines: [...choice.lines] },
+          resolve,
+        };
+        // Closed unanswered when its caller no longer needs the answer.
+        signal?.addEventListener(
+          "abort",
+          () => {
+            if (activeRef.current === pending) {
+              activeRef.current = queueRef.current.shift() ?? null;
+              setActive(activeRef.current);
+            } else {
+              queueRef.current = queueRef.current.filter((dialog) => dialog !== pending);
+            }
+            resolve(false);
+          },
+          { once: true },
+        );
+        enqueueDialog(pending);
+      }),
+    [enqueueDialog],
+  );
+
   useEffect(() => registerTransactionReviewHandler(enqueue), [enqueue]);
+  useEffect(() => registerFlowChoiceHandler(enqueueFlowChoice), [enqueueFlowChoice]);
   useEffect(
     () => registerFundingChainSelectionHandler(enqueueFundingChainSelection),
     [enqueueFundingChainSelection],
@@ -173,15 +217,15 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     const next = queueRef.current.shift() ?? null;
     activeRef.current = next;
     setActive(next);
-    if (current.kind === "review") current.resolve(result === true);
-    else current.resolve(typeof result === "number" ? result : null);
+    if (current.kind === "funding") current.resolve(typeof result === "number" ? result : null);
+    else current.resolve(result === true);
   }, []);
 
   // Keep the global queue ready immediately, but fetch the full decoder and
   // review UI only when a request arrives. Loading never authorizes a call;
   // cancellation, unmount, or a failed download resolves it as declined.
   useEffect(() => {
-    if (!active || Dialog) return;
+    if (!active || active.kind === "choice" || Dialog) return;
     let cancelled = false;
     void import("./TransactionReviewDialog").then(
       (module) => {
@@ -199,7 +243,14 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   return (
     <ReviewScopeContext.Provider value={registerScope}>
       {children}
-      {active ? (
+      {active?.kind === "choice" ? (
+        <FlowChoiceDialog
+          key={active.id}
+          id={active.id}
+          choice={active.choice}
+          onFinish={(confirmed) => finish(active.id, confirmed)}
+        />
+      ) : active ? (
         Dialog ? (
           <Dialog
             key={active.id}
