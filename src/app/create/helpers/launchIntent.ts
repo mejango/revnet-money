@@ -129,9 +129,16 @@ const discarded = new Set<string>();
  * The user's warned continue over a journal that won't read (JOURNAL_DISCARD_ACTION): the record
  * goes, and the launch reopens with a fresh salt. Called only after a check just failed on it.
  */
-export function discardUnreadableLaunch(key: string): void {
-  discarded.add(key);
-  retireLaunch(key);
+export function discardUnreadableLaunch(key: string): boolean {
+  try {
+    // It reads now: it is recovered again, never discarded unread.
+    savedLaunchAt(key);
+    return false;
+  } catch {
+    discarded.add(key);
+    removeLaunch(key);
+    return true;
+  }
 }
 
 function persist(key: string, saved: SavedLaunch): void {
@@ -155,11 +162,7 @@ export function saveLaunchAttempt(
   });
 }
 
-/**
- * The journaled launch is over: its settlement was shown, the hold proved it reverted or never
- * reached the wallet, or the user took its exit or checked it. The next launch is a new one.
- */
-export function retireLaunch(key: string): void {
+function removeLaunch(key: string): void {
   try {
     window.localStorage.removeItem(key);
   } catch {
@@ -168,14 +171,30 @@ export function retireLaunch(key: string): void {
 }
 
 /**
- * The user's check or exit releases the journaled launch, read again right here: a success any tab
- * journaled for it is never released (false), and is followed instead. A journal that can't be
- * read throws JOURNAL_UNREADABLE_LINE and is kept.
+ * Every retirement of a journaled launch goes through here: its settlement was shown, the hold
+ * proved it reverted or never reached the wallet, or the user took its exit or checked it. The
+ * journal is read again right here, strictly: it is kept (false) when it is now another attempt
+ * than `snapshot`, the one the caller decided on (another tab relaunched it with a new salt), or
+ * holds a success other than the `snapshot`'s, which is followed instead. One that can't be read
+ * throws JOURNAL_UNREADABLE_LINE and is kept. The next launch is a new one.
  */
-export function releaseLaunch(key: string): boolean {
-  if (savedLaunchAt(key)?.settled) return false;
-  retireLaunch(key);
+export function releaseLaunch(key: string, snapshot?: { salt: Hex; settled?: Hex }): boolean {
+  const now = savedLaunchAt(key);
+  if (!now) return true;
+  if (snapshot && now.salt.toLowerCase() !== snapshot.salt.toLowerCase()) return false;
+  if (now.settled && now.settled.hash.toLowerCase() !== snapshot?.settled?.toLowerCase())
+    return false;
+  removeLaunch(key);
   return true;
+}
+
+/** Retires the journal recovery decided on, guarded; one another tab changed meanwhile is kept. */
+function settleLaunch(key: string, snapshot: { salt: Hex; settled?: Hex }): void {
+  try {
+    releaseLaunch(key, snapshot);
+  } catch {
+    // Unreadable: kept, and recovered as a check next time.
+  }
 }
 
 /** The keys of every launch `account` has journaled, on any chain. */
@@ -266,13 +285,13 @@ export type LaunchRecovery =
   /** No launch is journaled: a new one may be prepared. */
   | { status: "none" }
   /** Its hold holds it: nothing is counted; `state` is what the hold's exit is offered on. */
-  | { status: "held"; hold: WriteHoldHandle; state: WriteHeldState }
+  | { status: "held"; hold: WriteHoldHandle; state: WriteHeldState; salt: Hex }
   /** The chain shows it launched this revnet: nothing is sent again. */
   | { status: "launched"; revnetId: bigint }
   /** It went through (`hash`), but its revnet can't be read yet: looked at again, never resent. */
   | { status: "confirming"; hash: Hex }
-  /** What became of it can't be shown: the user checks it before anything is sent. */
-  | { status: "check" }
+  /** What became of it can't be shown: the user checks it (`salt`, when it reads) before anything. */
+  | { status: "check"; salt?: Hex }
   /** The hold proved it reverted at a final block: retired, a new one may be prepared. */
   | { status: "clear" };
 
@@ -311,9 +330,10 @@ export async function recoverLaunch(
       () => undefined,
     );
     if (revnetId === undefined) return { status: "confirming", hash };
-    retireLaunch(key);
+    settleLaunch(key, { salt: saved.salt, settled: hash });
     return { status: "launched", revnetId };
   };
+  const check = { status: "check", salt: saved.salt } as const;
   if (saved.settled) return follow(saved.settled.hash);
   try {
     const namespaces = saved.namespaces ?? legacyIntents.launch(configHash as Hex);
@@ -323,7 +343,7 @@ export async function recoverLaunch(
     for (const hold of open(chainId, account, namespaces)) {
       let now = hold.peek();
       if (now.status !== "clear") now = await hold.state(client).catch(() => now);
-      if (now.status !== "clear") return { status: "held", hold, state: now };
+      if (now.status !== "clear") return { status: "held", hold, state: now, salt: saved.salt };
       const settled = now.settled;
       if (!settled || !("hash" in settled) || before.has(settled.hash.toLowerCase())) continue;
       if (settled.result === "success") success ??= settled.hash;
@@ -335,19 +355,20 @@ export async function recoverLaunch(
       return follow(success);
     }
     if (reverted) {
-      retireLaunch(key);
+      // Kept when another tab's newer attempt took the key meanwhile: that one is recovered next.
+      if (!releaseLaunch(key, { salt: saved.salt })) return check;
       return { status: "clear" };
     }
-    if (!saved.fromBlock || !/^\d+$/.test(saved.fromBlock)) return { status: "check" };
+    if (!saved.fromBlock || !/^\d+$/.test(saved.fromBlock)) return check;
     const revnetId = await scanForLaunch(client, chainId, account, {
       ...saved,
       fromBlock: saved.fromBlock,
     });
-    if (revnetId === undefined) return { status: "check" };
-    retireLaunch(key);
+    if (revnetId === undefined) return check;
+    settleLaunch(key, { salt: saved.salt });
     return { status: "launched", revnetId };
   } catch {
-    return { status: "check" };
+    return check;
   }
 }
 

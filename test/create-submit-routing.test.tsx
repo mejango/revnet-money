@@ -412,6 +412,22 @@ describe("a saved single-chain launch", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
+  it("never lets a stale check delete a newer attempt another tab journaled", async () => {
+    await savedEarlierLaunch();
+    const { launchKeyOf, launchInputOf, savedLaunchAt } =
+      await import("@/app/create/helpers/launchIntent");
+    const key = launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form));
+    render(<Page />);
+    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    // Another tab checked it too, relaunched with a fresh salt, and its wallet has it now.
+    const newer = { salt: `0x${"08".repeat(32)}`, fromBlock: "2000", namespaces: [], before: [] };
+    window.localStorage.setItem(key, JSON.stringify(newer));
+    fireEvent.click(check);
+
+    await waitFor(() => expect(savedLaunchAt(key)).toMatchObject({ salt: newer.salt }));
+    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+  });
+
   it("shows the check when the mount scan can't read the chain", async () => {
     await savedEarlierLaunch();
     render(<Page />);

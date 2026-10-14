@@ -12,7 +12,6 @@ import {
   launchNamespacesOf,
   recoverLaunch,
   releaseLaunch,
-  retireLaunch,
   saveLaunchAttempt,
   savedLaunchAt,
   savedLaunchKeys,
@@ -181,7 +180,7 @@ describe("recovering a saved launch: held, settled, no record, check required", 
     save({ before: [EARLIER] });
     await expect(
       recover(open(clear({ result: "success", hash: EARLIER })), chain()),
-    ).resolves.toEqual({ status: "check" });
+    ).resolves.toMatchObject({ status: "check" });
   });
 
   it.each([
@@ -189,12 +188,16 @@ describe("recovering a saved launch: held, settled, no record, check required", 
     ["the scan finds nothing", []],
   ])("requires a check when the hold has no record and %s", async (_case, scan) => {
     save();
-    await expect(recover(open(clear()), chain({ scan }))).resolves.toEqual({ status: "check" });
+    await expect(recover(open(clear()), chain({ scan }))).resolves.toMatchObject({
+      status: "check",
+    });
   });
 
   it("requires a check when the hold has no record and no sent block was saved", async () => {
     save({ fromBlock: undefined });
-    await expect(recover(open(clear()), chain({ scan: [] }))).resolves.toEqual({ status: "check" });
+    await expect(recover(open(clear()), chain({ scan: [] }))).resolves.toMatchObject({
+      status: "check",
+    });
   });
 
   it("finds a launch with no hold record by its exact salt", async () => {
@@ -224,12 +227,62 @@ describe("recovering a saved launch: held, settled, no record, check required", 
     expect(savedLaunchAt(key())).toBeUndefined();
   });
 
+  describe("a retirement another tab's newer attempt outran", () => {
+    /** Tab B journals its own deliberate relaunch (salt2), settled, while tab A awaits the chain. */
+    const newerAttempt = () =>
+      window.localStorage.setItem(
+        key(),
+        JSON.stringify({
+          salt: salt(8),
+          namespaces: [],
+          before: [],
+          settled: { result: "success", hash: EARLIER },
+        }),
+      );
+    /** A hold tab A reads as held, whose chain answer arrives after tab B wrote. */
+    const answersAfterB = (asked: object) =>
+      holdOf({ status: "pending-known-hash" }, asked) as unknown as ReturnType<typeof holdOf>;
+
+    it("never deletes it when A's attempt is proved reverted", async () => {
+      save();
+      const hold = answersAfterB({ status: "clear", settled: { result: "failed", hash: SENT } });
+      hold.state.mockImplementation(async () => {
+        newerAttempt();
+        return { status: "clear", settled: { result: "failed", hash: SENT } };
+      });
+      await recover(open(hold), chain());
+      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(8), settled: { hash: EARLIER } });
+    });
+
+    it("never deletes it when A's attempt is found by its salt", async () => {
+      save();
+      const client = chain({ scan: [deployedBy(salt(7), EARLIER)] });
+      client.getBlockNumber.mockImplementation(async () => {
+        newerAttempt();
+        return 1_200n;
+      });
+      await recover(open(clear()), client);
+      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(8) });
+    });
+
+    it("never deletes an unsettled one on a check or exit taken for the earlier attempt", () => {
+      save();
+      window.localStorage.setItem(
+        key(),
+        JSON.stringify({ salt: salt(8), namespaces: [], before: [] }),
+      );
+      expect(releaseLaunch(key(), { salt: salt(7) })).toBe(false);
+      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(8) });
+      expect(releaseLaunch(key(), { salt: salt(8) })).toBe(true);
+    });
+  });
+
   it("requires a check, never a throw, when recovery itself fails", async () => {
     save();
     const broken = vi.fn(() => {
       throw new Error("storage");
     });
-    await expect(recover(broken as never, chain())).resolves.toEqual({ status: "check" });
+    await expect(recover(broken as never, chain())).resolves.toMatchObject({ status: "check" });
   });
 
   it("reads at most 500 blocks per request and caps the range", async () => {
@@ -243,7 +296,7 @@ describe("recovering a saved launch: held, settled, no record, check required", 
         return [];
       }),
     };
-    await expect(recover(open(clear()), client)).resolves.toEqual({ status: "check" });
+    await expect(recover(open(clear()), client)).resolves.toMatchObject({ status: "check" });
     expect(ranges.every(([from, to]) => to - from + 1n <= 500n)).toBe(true);
     expect(ranges.reduce((sum, [from, to]) => sum + (to - from + 1n), 0n)).toBeLessThanOrEqual(
       50_000n,
@@ -292,7 +345,7 @@ describe("a main-era saved launch", () => {
 
   it("requires a check when that build left no hold and the chain can't be scanned", async () => {
     window.localStorage.setItem(key(), JSON.stringify({ salt: salt(7), fromBlock: "1000" }));
-    await expect(recoverLaunch(key(), ACCOUNT, node as never)).resolves.toEqual({
+    await expect(recoverLaunch(key(), ACCOUNT, node as never)).resolves.toMatchObject({
       status: "check",
     });
   });
@@ -399,16 +452,16 @@ describe("the launch notices", () => {
     it("is recovered as check, never as nothing to recover", async () => {
       save();
       const read = unreadable();
-      await expect(recover(open(clear()), chain())).resolves.toEqual({ status: "check" });
+      await expect(recover(open(clear()), chain())).resolves.toMatchObject({ status: "check" });
       read.mockRestore();
       window.localStorage.setItem(key(), JSON.stringify({ salt: "0x12" }));
-      await expect(recover(open(clear()), chain())).resolves.toEqual({ status: "check" });
+      await expect(recover(open(clear()), chain())).resolves.toMatchObject({ status: "check" });
     });
   });
 
   it("retires the saved attempt only on the user's check", () => {
     save();
-    const onChecked = vi.fn(() => retireLaunch(key()));
+    const onChecked = vi.fn(() => releaseLaunch(key()));
     render(<LaunchCheckNotice onChecked={onChecked} />);
     expect(savedLaunchAt(key())).toMatchObject({ salt: salt(7) });
     screen.getByRole("button", { name: "I checked it. Launch again" }).click();

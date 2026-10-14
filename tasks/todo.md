@@ -1250,3 +1250,11 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 
 ### Review
 `npm run check` green: 2933 unit tests, 144 browser tests, bundle 2744.6 of 2746 KiB.
+
+## Final joint round, item 2: a stale retirement never deletes a newer attempt (2026-10-14)
+
+- [x] Red first (4 tests): tab A's reverted retirement, salt-scan retirement, and stale check all keep tab B's newer salt2 journal.
+- [x] `releaseLaunch(key, snapshot)` is the one guard: a strict re-read, kept when the journal is now another salt or holds a success other than the snapshot's. Every retirement (recovery's reverted/launched, receipt success, check, exit, dropped reservation) goes through it; the warned discard re-reads and recovers instead when the record reads again.
+
+### Review
+`npm run check` green: 2937 unit tests, 144 browser tests, bundle 2744.8 of 2746 KiB.

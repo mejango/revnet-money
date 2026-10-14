@@ -24,7 +24,7 @@ import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core"
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { useEffect, useRef, useState } from "react";
-import { encodeFunctionData, PublicClient } from "viem";
+import { encodeFunctionData, PublicClient, type Hex } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { DEFAULT_FORM_DATA } from "./constants";
@@ -41,7 +41,6 @@ import {
   launchNamespacesOf,
   recoverLaunch,
   releaseLaunch,
-  retireLaunch,
   savedLaunchAt,
   savedLaunchKeys,
   saveLaunchAttempt,
@@ -59,7 +58,7 @@ export default function Page() {
   const { address, chainId: connectedChainId, isConnected, connector } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   /** The launch the hold is about to hand the wallet: journaled only once it is reserved. */
-  const reserving = useRef<{ key: string; save: () => void }>(undefined);
+  const reserving = useRef<{ key: string; salt: Hex; save: () => void }>(undefined);
   const { writeContractAsync } = useWriteContract({
     beforeSubmission: async () => reserving.current?.save(),
     // Nothing reached the wallet: the hold drops its reservation, and the journal goes with it.
@@ -68,7 +67,7 @@ export default function Page() {
   });
   const unreserve = () => {
     try {
-      if (reserving.current) releaseLaunch(reserving.current.key);
+      if (reserving.current) releaseLaunch(reserving.current.key, { salt: reserving.current.salt });
     } catch {
       // Unreadable: kept, and recovered as a check later.
     }
@@ -79,7 +78,7 @@ export default function Page() {
   /** A saved launch the chain shows already happened: shown, and never sent again. */
   const [launched, setLaunched] = useState<{ chainId: number; revnetId: bigint }>();
   /** The saved launch whose result the chain can't show: nothing is sent until the user checks. */
-  const [mustCheck, setMustCheck] = useState<string>();
+  const [mustCheck, setMustCheck] = useState<{ key: string; salt?: Hex }>();
   /** The check's release was refused: the journal couldn't be read. */
   const [checkRefused, setCheckRefused] = useState<string>();
   /** The saved launch that went through but whose revnet can't be read yet: only looked at again. */
@@ -98,11 +97,17 @@ export default function Page() {
     }
     return Promise.resolve(found);
   };
+  /** Recovers the journal at `key` again and shows it. */
+  const recoverShown = (key: string) => {
+    if (!address) return;
+    const chainId = Number(key.split(":").at(-2));
+    void recover(key, address, chainId).then((found) => shown(found, key, chainId, address));
+  };
   /** Shows what recovery found; true when it ends the launch here. */
   const shown = (found: LaunchRecovery, key: string, chainId: number, account: string) => {
     setConfirming(found.status === "confirming" ? { key, account, chainId } : undefined);
     if (found.status === "launched") setLaunched({ chainId, revnetId: found.revnetId });
-    if (found.status === "check") setMustCheck(key);
+    if (found.status === "check") setMustCheck({ key, salt: found.salt });
     setCheckRefused(undefined);
     return ["launched", "check", "confirming"].includes(found.status);
   };
@@ -164,7 +169,7 @@ export default function Page() {
         }
         // The user took the exit: that attempt is retired, and this launch is a new one, unless
         // another tab journaled its success meanwhile, which is followed instead.
-        if (!releaseLaunch(launchKey)) {
+        if (!releaseLaunch(launchKey, { salt: found.salt })) {
           shown(
             await recover(launchKey, address, singleChainId),
             launchKey,
@@ -326,6 +331,7 @@ export default function Page() {
       const before = settlementsOf(launchHoldsOf(chainId, address, namespaces));
       reserving.current = {
         key,
+        salt,
         save: () => saveLaunchAttempt(key, { salt, fromBlock, namespaces, before }),
       };
       // Held by the user's launch config: the salt, stage start and pin are the page's own.
@@ -363,7 +369,12 @@ export default function Page() {
         void waitForReceiptWithRetry(client as PublicClient, hash)
           .then((receipt) => {
             // Launched: the next launch of this config is a new revnet, with a new salt.
-            if (receipt.status === "success") retireLaunch(key);
+            if (receipt.status === "success")
+              try {
+                releaseLaunch(key, { salt, settled: hash });
+              } catch {
+                // Unreadable: kept, and recovered as a check next time.
+              }
           })
           .catch(() => undefined);
       toast({
@@ -437,30 +448,29 @@ export default function Page() {
           <LaunchCheckNotice
             refused={checkRefused}
             onDiscard={() => {
-              // The user's warned continue: the record that won't read goes, the flow reopens.
-              discardUnreadableLaunch(mustCheck);
+              const { key } = mustCheck;
               setCheckRefused(undefined);
               setMustCheck(undefined);
+              // The user's warned continue: the record that won't read goes, the flow reopens. One
+              // that reads again meanwhile is recovered instead.
+              if (!discardUnreadableLaunch(key)) recoverShown(key);
             }}
             onChecked={() => {
-              const key = mustCheck;
-              // The user checked it: that saved launch is retired, and the next one is new, unless
-              // another tab journaled its success meanwhile, which is followed instead. A journal
-              // that can't be read is kept, with the check, until it reads.
-              let released: boolean;
+              const { key, salt } = mustCheck;
+              // The user checked that attempt: it is retired, and the next one is new, unless the
+              // journal is now another tab's newer attempt or its success, which is recovered
+              // instead. A journal that can't be read is kept, with the check, until it reads.
+              let released = false;
               try {
-                released = releaseLaunch(key);
+                if (salt) released = releaseLaunch(key, { salt });
+                else savedLaunchAt(key);
               } catch (error) {
                 setCheckRefused(error instanceof Error ? error.message : String(error));
                 return;
               }
               setCheckRefused(undefined);
               setMustCheck(undefined);
-              if (released || !address) return;
-              const chainId = Number(key.split(":").at(-2));
-              void recover(key, address, chainId).then((found) =>
-                shown(found, key, chainId, address),
-              );
+              if (!released) recoverShown(key);
             }}
           />
         ) : confirming ? (
