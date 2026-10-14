@@ -1178,6 +1178,8 @@ function relayrAttemptOf(activity: TransactionActivity, reason: string): SavedAt
     saved: { started: true },
     authenticate: async () => ({ result: "unknown", reason }),
     confirmRetirable: async () => {
+      // A strict, fresh read: storage that can't be read throws, and refuses.
+      requireTransactionActivityPersistence();
       const now = refreshTransactionActivities().find((row) => row.id === activity.id);
       return !!now && now.status !== "success";
     },
