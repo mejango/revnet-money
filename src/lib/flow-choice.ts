@@ -4,7 +4,6 @@ import {
   relayrDiscardLine,
   WRITE_EXIT_LABEL,
   writeExitMessage,
-  writeHeldMessage,
 } from "@bananapus/nana-sdk-core/review";
 
 /** A choice a flow asks for mid-action: a short title, its lines, and the one way on. */
@@ -35,17 +34,22 @@ async function chooseInFlow(choice: FlowChoice, signal?: AbortSignal): Promise<b
 }
 
 /**
- * An earlier write of this exact call has no confirmed result. True only when
- * the user checked their wallet and chose to send again.
+ * An earlier write of this exact call has no confirmed result: the hold's own
+ * line, then what sending again does. True only when the user checked their
+ * wallet and chose to send again.
  */
 export function confirmHeldWriteExit(
-  call: { value?: bigint | string },
+  held: { line: string; warning?: string; record: { call: { value?: bigint | string } } },
   signal?: AbortSignal,
 ): Promise<boolean> {
   return chooseInFlow(
     {
       title: "Check your wallet",
-      lines: [writeHeldMessage(), writeExitMessage(call)],
+      lines: [
+        held.line,
+        writeExitMessage(held.record.call),
+        ...(held.warning ? [held.warning] : []),
+      ],
       confirmLabel: WRITE_EXIT_LABEL,
     },
     signal,
