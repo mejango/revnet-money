@@ -36,6 +36,7 @@ import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
 import {
   checkSavedLaunch,
   checkSavedLaunches,
+  launchInputOf,
   launchIntent,
   launchSalt,
   noteLaunchSent,
@@ -93,6 +94,9 @@ export default function Page() {
     // A launch waits while an earlier one's signature can still run, saying until when.
     await requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
     setDirectDeployment(null);
+    // The one copy of what the user submitted: the launch's intent, salt, saved-launch lookup and
+    // settlement are all built from it, never from refreshed metadata.
+    const launchInput = launchInputOf(formData);
 
     let deploymentFormData = formData;
     if (formData.reserveAsset === "CUSTOM") {
@@ -141,7 +145,7 @@ export default function Page() {
     // launch has its own recovery through Relayr.
     const singleChain = deploymentFormData.chainIds.length === 1 && address;
     const salt = singleChain
-      ? launchSalt(address, deploymentFormData.chainIds[0]!, deploymentFormData, createSalt)
+      ? launchSalt(address, deploymentFormData.chainIds[0]!, launchInput, createSalt)
       : createSalt();
     const timestamp = Math.floor(Date.now() / 1000);
 
@@ -237,12 +241,12 @@ export default function Page() {
       const chainId = deploymentFormData.chainIds[0];
       const client = getPublicClient(wagmiConfig, { chainId }) as PublicClient | undefined;
       // A saved attempt of this launch the chain shows already happened: nothing is sent.
-      if (client && savedLaunchOf(address, chainId, deploymentFormData)?.fromBlock) {
+      if (client && savedLaunchOf(address, chainId, launchInput)?.fromBlock) {
         const { launched: revnetId } = await checkSavedLaunch(
           client,
           chainId,
           address,
-          deploymentFormData,
+          launchInput,
         );
         if (revnetId !== "unknown") {
           setLaunched({ chainId, revnetId });
@@ -253,12 +257,12 @@ export default function Page() {
       const fromBlock = await Promise.resolve()
         .then(() => client?.getBlockNumber())
         .catch(() => undefined);
-      if (fromBlock !== undefined) noteLaunchSent(address, chainId, deploymentFormData, fromBlock);
+      if (fromBlock !== undefined) noteLaunchSent(address, chainId, launchInput, fromBlock);
       if (connectedChainId !== chainId) await switchChainAsync({ chainId });
       // Held by the user's launch config: the salt, stage start and pin are the page's own.
       const hash = await withWriteIntent(
         writeContractAsync,
-        ...launchIntent(deploymentFormData),
+        ...launchIntent(launchInput),
       )({
         chainId,
         address: directRequest.address,
@@ -280,8 +284,7 @@ export default function Page() {
         void waitForReceiptWithRetry(client as PublicClient, hash)
           .then((receipt) => {
             // Launched: the next launch of this config is a new revnet, with a new salt.
-            if (receipt.status === "success")
-              settleLaunchSalt(address, chainId, deploymentFormData);
+            if (receipt.status === "success") settleLaunchSalt(address, chainId, launchInput);
           })
           .catch(() => undefined);
       toast({

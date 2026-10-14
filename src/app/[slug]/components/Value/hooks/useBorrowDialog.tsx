@@ -665,12 +665,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         // the loan's current capacity.
         await withWriteIntent(
           reallocateCollateralAsync,
-          ...reallocateIntent({
-            loanId: internalSelectedLoan.id,
-            token: selectedChainTokenConfig.token,
-            collateralCountToAdd: chosenCollateral.key(collateralCountToAdd),
-            prepaidFeePercent: feePercent,
-          }),
+          ...reallocateIntent({ loanId: internalSelectedLoan.id }),
         )({
           ...buildProtectedReallocateCollateralTx({
             chainId: Number(cashOutChainId) as JBChainId,

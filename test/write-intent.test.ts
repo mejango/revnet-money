@@ -3,6 +3,7 @@ import {
   cashOutIntent,
   payIntent,
   reallocateIntent,
+  syncIntent,
   withWriteIntent,
   writeIntentOf,
 } from "@/lib/write-hold";
@@ -37,7 +38,7 @@ describe("a payment's intent", () => {
       mode: "pay",
       projectId: 7,
       token: TOKEN,
-      amount: 10n,
+      amount: "10",
       memo: "Hi",
       beneficiary: TOKEN,
       hook: HOOK,
@@ -45,51 +46,50 @@ describe("a payment's intent", () => {
       ...overrides,
     });
 
-  it("keys a pay token the app defaulted to as that default, whatever token it resolved to", () => {
-    expect(key(pay({ token: "auto:token" }))).toBe(key(pay({ token: "auto:token" })));
-    expect(key(pay({ token: "auto:token" }))).not.toBe(key(pay()));
+  it("keys a pay token the app defaulted to as auto, whatever token it resolved to", () => {
+    expect(key(pay({ token: "auto" }))).toBe(key(pay({ token: "auto" })));
+    expect(key(pay({ token: "auto" }))).not.toBe(key(pay()));
   });
 
-  it("keys an ordinary payment by its typed amount", () => {
-    expect(key(pay())).not.toBe(key(pay({ amount: 11n })));
+  it("keys an ordinary payment by its typed decimal, written any way", () => {
+    expect(key(pay({ amount: "10" }))).toBe(key(pay({ amount: "010.00" })));
+    expect(key(pay())).not.toBe(key(pay({ amount: "11" })));
   });
 
-  it("keys a checkout by its set of tiers, never by quantities, a price-derived amount or a name", () => {
-    const cart = [
-      { tierId: 2, quantity: 1, name: "B" },
-      { tierId: 1, quantity: 3, name: "A" },
-    ];
-    const checkout = key(pay({ items: cart }));
-    expect(
-      key(
-        pay({
-          amount: 99n,
-          items: [
-            { tierId: 1, quantity: 3, name: "Renamed" },
-            { tierId: 2, quantity: 1, name: "B" },
-          ],
-        }),
-      ),
-    ).toBe(checkout);
-    // Inventory may clamp quantities: the same tiers are the same checkout (merge-gate ruling).
-    expect(key(pay({ items: [{ tierId: 1, quantity: 2, name: "A" }, cart[0]!] }))).toBe(checkout);
-    expect(key(pay({ items: [{ tierId: 3, quantity: 1, name: "C" }] }))).not.toBe(checkout);
+  it("holds a checkout by its project and collection alone, whatever tiers inventory leaves", () => {
+    const checkout = key(
+      pay({
+        items: [
+          { tierId: 1, quantity: 3, name: "A" },
+          { tierId: 2, quantity: 1, name: "B" },
+        ],
+      }),
+    );
+    // Tier 1 sold out and left the cart.
+    expect(key(pay({ items: [{ tierId: 2, quantity: 1, name: "B" }], amount: "4" }))).toBe(
+      checkout,
+    );
+    expect(key(pay({ items: [{ tierId: 2, quantity: 1, name: "B" }], hook: TOKEN }))).not.toBe(
+      checkout,
+    );
   });
 });
 
 describe("a collateral reallocation's intent", () => {
-  it("leaves out the collateral moved, which follows the loan's current capacity", () => {
-    const at = (moved: bigint) =>
-      key(
-        reallocateIntent({
-          loanId: "5",
-          token: TOKEN,
-          collateralCountToTransfer: moved,
-          collateralCountToAdd: 4n,
-          prepaidFeePercent: 25n,
-        }),
-      );
-    expect(at(10n)).toBe(at(12n));
+  it("is its loan alone, whatever collateral or fee a reseed gives it", () => {
+    // A reseed's collateral and fee can't reach it: its only input is the loan.
+    expect(key(reallocateIntent({ loanId: "5" }))).toBe(key(reallocateIntent({ loanId: 5n })));
+    expect(key(reallocateIntent({ loanId: "5" }))).not.toBe(key(reallocateIntent({ loanId: "6" })));
+  });
+});
+
+describe("a sucker sync's intent", () => {
+  it("is its sucker alone, not the bridge fee recalculated on reopen", () => {
+    expect(writeIntentOf({ address: HOOK, functionName: "syncAccountingData", args: [] })).toBe(
+      writeIntentOf({ address: HOOK, functionName: "syncAccountingData", args: [] }),
+    );
+    expect(key(syncIntent(HOOK))).toBe(key(syncIntent(HOOK)));
+    expect(key(syncIntent(HOOK))).not.toBe(key(syncIntent(TOKEN)));
   });
 });
 

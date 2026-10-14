@@ -20,6 +20,24 @@ function canonical(config: unknown): string {
 }
 
 /**
+ * The launch input every launch key is built from: the form exactly as the user submitted it,
+ * copied, so metadata the page refreshes later (a token's symbol) never changes the intent, the
+ * salt or the saved-launch lookup.
+ */
+export function launchInputOf<T>(form: T): T {
+  try {
+    return structuredClone(form);
+  } catch {
+    // A value structuredClone can't copy: a plain copy of its data, which is all a key reads.
+    return JSON.parse(
+      JSON.stringify(form, (_key, item: unknown) =>
+        typeof item === "bigint" ? item.toString() : item,
+      ),
+    ) as T;
+  }
+}
+
+/**
  * A single-chain launch's intent: a hash of the launch config the user filled in. What the page
  * generates for each attempt (the salt, the default stage start, the metadata pin) is left out;
  * the chain and account are the hold's own scope.

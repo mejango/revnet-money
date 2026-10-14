@@ -162,6 +162,12 @@ export function V6PayCard() {
   // auto-defaults to the project's accounting token (list[0]) so an ETH/USDC
   // router option never shadows a USDC/ETH project's real token.
   const [tokenTouched, setTokenTouched] = useState(false);
+  /**
+   * The pay token the user picked, for the payment's intent: kept through the app's fallback when
+   * that token drops out of the list, so a retry is still the same payment. Unset while the app
+   * picks it, and "dollars" for "$".
+   */
+  const pickedToken = useRef<string | null>(null);
   /** "$" is picked in the token menu: the payer has dollars, not the token this project takes.
    *  Nothing is bought until they press Pay — the amount is theirs to type first. */
   const [payWithDollars, setPayWithDollars] = useState(false);
@@ -1014,9 +1020,10 @@ export function V6PayCard() {
         ...payIntent({
           mode: prepared.mode,
           projectId,
-          // A token the app defaulted to is keyed as that default, not the token it resolved to.
-          token: tokenTouched ? prepared.token.token : "auto:token",
-          amount: prepared.amount,
+          // The token the user picked, or "auto"; the amount as typed, never the token amount
+          // computed from it.
+          token: pickedToken.current ?? "auto",
+          amount,
           memo: prepared.memo,
           beneficiary: prepared.account,
           hook: shop?.hook,
@@ -1255,6 +1262,7 @@ export function V6PayCard() {
                   onChange={(value) => {
                     setTokenTouched(true);
                     if (value === BUY_OPTION) {
+                      pickedToken.current = "dollars";
                       // Selecting dollars buys nothing yet. The payer types what they want to
                       // spend first, and Pay explains the swap they are about to make.
                       setPayWithDollars(true);
@@ -1265,6 +1273,7 @@ export function V6PayCard() {
                     setTokenIndex(i);
                     const picked = tokens[i];
                     if (picked) selectedKeyRef.current = payTokenKey(picked);
+                    if (picked) pickedToken.current = picked.token;
                     setTokenTouched(true);
                   }}
                   disabled={busy}

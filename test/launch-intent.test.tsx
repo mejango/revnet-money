@@ -2,6 +2,7 @@ import { LaunchedNotice } from "@/app/create/form/LaunchedNotice";
 import {
   checkSavedLaunch,
   checkSavedLaunches,
+  launchInputOf,
   launchIntent,
   launchSalt,
   noteLaunchSent,
@@ -135,5 +136,17 @@ describe("the launched notice", () => {
     render(<LaunchedNotice chainId={11155111} revnetId={42n} />);
     expect(screen.getByText(/This revnet is already launched/)).toBeInTheDocument();
     expect(screen.getByRole("link")).toHaveAttribute("href", "/sep:42");
+  });
+});
+
+describe("a launch's frozen input", () => {
+  it("keeps the intent and salt of the form as submitted, whatever metadata refreshes later", () => {
+    const form = { name: "Rev", customReserveAsset: { symbol: "USDC" } };
+    const frozen = launchInputOf(form);
+    const before = launchIntent(frozen);
+    launchSalt(ACCOUNT, 1, frozen, () => salt(7));
+    form.customReserveAsset.symbol = "USDC.e";
+    expect(launchIntent(frozen)).toEqual(before);
+    expect(savedLaunchOf(ACCOUNT, 1, frozen)).toMatchObject({ salt: salt(7) });
   });
 });

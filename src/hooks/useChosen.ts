@@ -1,5 +1,6 @@
 "use client";
 
+import { decimalKey } from "@/lib/write-hold";
 import { useCallback, useMemo, useState } from "react";
 
 /**
@@ -72,19 +73,9 @@ export function useChosen<T>(initial: T, field: string) {
   );
 }
 
-/** A decimal number's canonical text: no leading or trailing zeros ("01.50" is "1.5"). */
-function canonicalDecimal(text: string): string | undefined {
-  const match = /^\s*(\d*)(?:\.(\d*))?\s*$/.exec(text);
-  if (!match || (!match[1] && !match[2])) return undefined;
-  const whole = match[1]!.replace(/^0+(?=\d)/, "") || "0";
-  const fraction = (match[2] ?? "").replace(/0+$/, "");
-  return fraction ? `${whole}.${fraction}` : whole;
-}
-
 /** Whether two form values are the same: equal, or the same decimal number written another way. */
 function sameValue(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
   if (typeof a !== "string" || typeof b !== "string") return false;
-  const left = canonicalDecimal(a);
-  return left !== undefined && left === canonicalDecimal(b);
+  return /\d/.test(a) && decimalKey(a) === decimalKey(b);
 }

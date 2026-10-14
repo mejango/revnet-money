@@ -370,68 +370,66 @@ export function batchIntentOf(calls: readonly (Write & { abi: Abi; value?: bigin
 }
 
 /**
- * A payment's intent. A checkout is its project, collection, memo, beneficiary and the set of
- * tiers bought: its amount follows the price feed, discounts and credits, its currency may be the
- * app's fallback, inventory may clamp its quantities, and tier names are display text. An ordinary
- * payment is its project, token, memo, beneficiary and typed amount. The route the app picks (a
- * direct pay or a swap) is never in it.
+ * A payment's intent. A checkout is its project and collection alone: its amount follows prices
+ * and credits, its currency may be the app's fallback, and inventory may clamp or drop tiers. An
+ * ordinary payment is its project, beneficiary, memo, the token the user picked (`"auto"` while
+ * the app picks it) and the amount as typed, canonically. The route the app picks (a direct pay or
+ * a swap) and the token amount it computes are never in it.
  */
 export function payIntent(payment: {
   mode: string;
   projectId: number | bigint;
-  /** The pay token, or a marker when the app picked it (`auto:token`). */
+  /** The pay token the user picked, or `"auto"` while the app picks it. */
   token: string;
-  amount: bigint;
+  /** The amount as the user typed it. */
+  amount: string;
   memo: string;
   beneficiary: string;
   hook?: string;
   items: readonly { tierId: number; quantity: number; name?: string }[];
 }): [string, { [name: string]: IntentValue }] {
-  const common = {
-    projectId: BigInt(payment.projectId),
-    memo: payment.memo,
-    beneficiary: intent.address(payment.beneficiary),
-  };
-  if (!payment.items.length)
+  const project = BigInt(payment.projectId);
+  if (payment.items.length)
     return [
-      payment.mode,
-      {
-        ...common,
-        token: payment.token.startsWith("auto:") ? payment.token : intent.address(payment.token),
-        amount: payment.amount,
-      },
+      `${payment.mode}-checkout`,
+      { projectId: project, collection: payment.hook ? intent.address(payment.hook) : null },
     ];
   return [
-    `${payment.mode}-checkout`,
+    payment.mode,
     {
-      ...common,
-      collection: payment.hook ? intent.address(payment.hook) : null,
-      tiers: [...new Set(payment.items.map((item) => item.tierId))].sort((a, b) => a - b),
+      projectId: project,
+      beneficiary: intent.address(payment.beneficiary),
+      memo: payment.memo,
+      token: /^0x[0-9a-fA-F]{40}$/.test(payment.token)
+        ? intent.address(payment.token)
+        : payment.token,
+      amount: decimalKey(payment.amount),
     },
   ];
 }
 
-/**
- * A collateral reallocation's intent: its loan, destination token, the collateral the user adds
- * and the fee chosen. The collateral moved follows the loan's current capacity, so it is left out.
- */
+/** A collateral reallocation's intent: its loan alone, as a repay's is. */
 export function reallocateIntent(reallocation: {
   loanId: string | number | bigint;
-  token: string;
-  collateralCountToTransfer?: bigint;
-  /** As the user chose it: its parsed value if typed, else its option or seed (useChosen). */
-  collateralCountToAdd: IntentValue;
-  prepaidFeePercent: bigint;
 }): [string, { [name: string]: IntentValue }] {
-  return [
-    "reallocate",
-    {
-      loanId: BigInt(reallocation.loanId),
-      token: intent.address(reallocation.token),
-      collateralCountToAdd: reallocation.collateralCountToAdd,
-      prepaidFeePercent: reallocation.prepaidFeePercent,
-    },
-  ];
+  return ["reallocate", { loanId: BigInt(reallocation.loanId) }];
+}
+
+/** A sucker sync's intent: the sucker alone, never the bridge fee it pays. */
+export function syncIntent(sucker: string): [string, { [name: string]: IntentValue }] {
+  return ["sucker-sync", { sucker: intent.address(sucker) }];
+}
+
+/**
+ * Typed decimal text as one canonical key: no leading or trailing zeros ("010.50" is "10.5").
+ * Text that isn't a decimal is kept as typed.
+ */
+export function decimalKey(text: string): string {
+  const match = /^\s*(\d*)(?:\.(\d*))?\s*$/.exec(text);
+  if (!match || (!match[1] && !match[2])) return text;
+  const whole = match[1]!.replace(/^0+(?=\d)/, "") || "0";
+  const fraction = (match[2] ?? "").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole;
 }
 
 /**
