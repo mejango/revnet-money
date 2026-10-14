@@ -4,41 +4,53 @@ import {
   LaunchedNotice,
 } from "@/app/create/form/LaunchedNotice";
 import {
-  discardUnreadableLaunch,
+  discardLaunch,
+  launchAttemptOf,
   launchConfigHash,
   launchConfigOf,
   launchInputOf,
   launchKeyOf,
   launchNamespacesOf,
-  recoverLaunch,
-  releaseLaunch,
   saveLaunchAttempt,
   savedLaunchAt,
   savedLaunchKeys,
 } from "@/app/create/helpers/launchIntent";
+import { recoverLaunchAt } from "@/app/create/helpers/launchRecovery";
 import { legacyIntents } from "@/lib/legacy-intents";
+import { savedAttempts, writeHolds } from "@/lib/write-hold";
 import {
-  JOURNAL_DISCARD_ACTION,
-  JOURNAL_UNREADABLE_LINE,
-  JOURNAL_UNREADABLE_WARNING,
-} from "@/lib/write-hold";
-import { launchIntent as sdkLaunchIntent } from "@bananapus/nana-sdk-core/review";
+  SAVED_ATTEMPT_CHECK_LINE,
+  SAVED_ATTEMPT_CHECK_WARNING,
+  SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
+  SAVED_ATTEMPT_UNREADABLE_LINE,
+  checkedItLabel,
+  launchIntent as sdkLaunchIntent,
+  type SavedAttemptCheck,
+} from "@bananapus/nana-sdk-core/review";
+import { resetWriteHoldsForTests } from "@bananapus/nana-sdk-core/testing";
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** The launch's SDK intent, from the form as the page builds it. */
 const launchIntent = (form: unknown) =>
   sdkLaunchIntent({ chainId: 1, account: ACCOUNT, config: launchConfigOf(form) });
 
 const ACCOUNT = "0x000000000000000000000000000000000000dEaD";
+const DEPLOYER = "0x0000000000000000000000000000000000001000";
 const salt = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as const;
 const SENT = `0x${"12".repeat(32)}` as const;
-const EARLIER = `0x${"34".repeat(32)}` as const;
 const BLOCK = `0x${"bb".repeat(32)}` as const;
 const config = { name: "Rev" };
 const key = () => launchKeyOf(ACCOUNT, 1, config);
+const namespaces = () => launchNamespacesOf(1, ACCOUNT, config);
+/** The launch call as the hold recorded it. */
+const CALL = { to: DEPLOYER, data: "0x1234", value: 0n } as const;
 
 beforeEach(() => window.localStorage.clear());
+afterEach(() => {
+  resetWriteHoldsForTests();
+  vi.restoreAllMocks();
+});
 
 describe("a launch's intent", () => {
   it("is the user's config alone, whatever order its fields are in", () => {
@@ -49,240 +61,230 @@ describe("a launch's intent", () => {
   });
 
   it("is held by its SDK intent and the namespace the main-era build held it by", () => {
-    expect(launchNamespacesOf(1, ACCOUNT, config)).toEqual([
+    expect(namespaces()).toEqual([
       launchIntent(config),
       ...legacyIntents.launch(launchConfigHash(config)),
     ]);
   });
 });
 
-/** A hold that reads `state`; `asked` is what the chain says once asked. */
-const holdOf = (state: object, asked: object = state) => ({
-  peek: () => state,
-  state: vi.fn(async () => asked),
-});
-const clear = (settled?: { result: "success" | "failed"; hash: `0x${string}` }) =>
-  holdOf({ status: "clear", ...(settled ? { settled } : {}) });
-const held = holdOf({ status: "pending-known-hash", exit: false, line: "Held." });
-const open = (...holds: object[]) => vi.fn(() => holds as never);
-
-/** A chain with the settled hash's receipt and block logs, whose event scan fails by default. */
-const chain = ({
-  receipt = { status: "success", blockHash: BLOCK, transactionHash: SENT } as unknown,
-  blockLogs = [] as unknown[],
-  scan = new Error("RPC down") as unknown[] | Error,
-} = {}) => ({
-  getBlockNumber: vi.fn(async () => 1_200n),
-  getTransactionReceipt: vi.fn(async () => {
-    if (receipt instanceof Error) throw receipt;
-    return receipt;
-  }),
-  getLogs: vi.fn(async (args: { blockHash?: string }) => {
-    if (args.blockHash) return blockLogs;
-    if (scan instanceof Error) throw scan;
-    return scan;
-  }),
-});
 const deployedBy = (deploySalt: string, transactionHash: string = SENT, caller = ACCOUNT) => ({
   removed: false,
   transactionHash,
   args: { revnetId: 42n, configuration: { description: { salt: deploySalt } }, caller },
 });
+
+/**
+ * A chain that holds `SENT` as the launch (`mined`), with its receipt and block logs; anything else
+ * is unknown. Its event scan fails unless `scan` names what it returns.
+ */
+function chain({
+  mined = false,
+  status = "success" as "success" | "reverted",
+  blockLogs = [] as unknown[],
+  scan = new Error("RPC down") as unknown[] | Error,
+} = {}) {
+  const transaction = {
+    hash: SENT,
+    from: ACCOUNT,
+    to: DEPLOYER,
+    input: CALL.data,
+    value: 0n,
+    nonce: 3,
+    blockNumber: 9n,
+    blockHash: BLOCK,
+    transactionIndex: 0,
+    chainId: 1,
+  };
+  const receipt = {
+    status,
+    transactionHash: SENT,
+    from: ACCOUNT,
+    to: DEPLOYER,
+    blockNumber: 9n,
+    blockHash: BLOCK,
+    transactionIndex: 0,
+    logs: [],
+  };
+  return {
+    getChainId: vi.fn(async () => 1),
+    getBlockNumber: vi.fn(async () => 1_200n),
+    getBlock: vi.fn(async ({ blockNumber }: { blockNumber?: bigint } = {}) => ({
+      number: blockNumber ?? 1_200n,
+      hash: BLOCK,
+    })),
+    getTransactionCount: vi.fn(async () => (mined ? 4 : 3)),
+    getTransaction: vi.fn(async ({ hash }: { hash: string }) => {
+      if (!mined || hash !== SENT) throw new Error("not found");
+      return transaction;
+    }),
+    getTransactionReceipt: vi.fn(async ({ hash }: { hash: string }) => {
+      if (!mined || hash !== SENT) throw new Error("not found");
+      return receipt;
+    }),
+    getLogs: vi.fn(async (args: { blockHash?: string }) => {
+      if (args.blockHash) return blockLogs;
+      if (scan instanceof Error) throw scan;
+      return scan;
+    }),
+    request: vi.fn(async () => null),
+  };
+}
+
 /** The journal the page writes once the hold reserved the wallet. */
 const save = (attempt: { fromBlock?: bigint; before?: `0x${string}`[] } = { fromBlock: 1_000n }) =>
-  saveLaunchAttempt(key(), {
-    salt: salt(7),
-    namespaces: launchNamespacesOf(1, ACCOUNT, config),
-    before: [],
-    ...attempt,
-  });
-const recover = (holds: ReturnType<typeof open>, client: object) =>
-  recoverLaunch(key(), ACCOUNT, client as never, holds);
+  saveLaunchAttempt(key(), { salt: salt(7), namespaces: namespaces(), before: [], ...attempt });
 
-describe("recovering a saved launch: held, settled, no record, check required", () => {
+/** The hold of the launch under `namespace`, sent once: its wallet returned SENT, or no reply. */
+async function sentUnder(
+  namespace: string,
+  client: ReturnType<typeof chain>,
+  reply: "hash" | "lost" = "hash",
+) {
+  const hold = writeHolds.open({
+    chainId: 1,
+    account: ACCOUNT,
+    safe: false,
+    namespace,
+    call: CALL,
+  });
+  await hold
+    .send(client as never, async (gate) => {
+      await gate.beforeSend();
+      if (reply === "lost") throw new Error("Wallet transport timed out");
+      gate.afterSubmit(SENT);
+    })
+    .catch(() => undefined);
+  return hold;
+}
+
+const recover = (client: object, forcing?: () => boolean) =>
+  recoverLaunchAt(key(), ACCOUNT, client as never, namespaces(), forcing);
+
+describe("recovering a saved launch through the SDK: held, done, check or none", () => {
   it("has nothing to recover with no saved launch", async () => {
-    await expect(recover(open(clear()), chain())).resolves.toEqual({ status: "none" });
+    await expect(recover(chain())).resolves.toBeUndefined();
   });
 
-  it("consumes a settlement the hold saved while the page was closed: the revnet, never a second send", async () => {
+  it("leaves a launch the hold still holds to its hold, with its line", async () => {
     save();
-    await expect(
-      recover(
-        open(clear({ result: "success", hash: SENT })),
-        chain({ blockLogs: [deployedBy(salt(7))] }),
-      ),
-    ).resolves.toEqual({ status: "launched", revnetId: 42n });
+    const client = chain();
+    await sentUnder(namespaces()[0]!, client);
+    await expect(recover(client)).resolves.toMatchObject({ kind: "held" });
+    expect(savedLaunchAt(key())).toMatchObject({ salt: salt(7) });
+  });
+
+  it("follows a success the hold settled while the page was closed: the revnet, never a second send", async () => {
+    save();
+    const sending = chain();
+    await sentUnder(namespaces()[0]!, sending);
+    const settled = chain({ mined: true, blockLogs: [deployedBy(salt(7))] });
+    await expect(recover(settled)).resolves.toEqual({
+      kind: "launched",
+      chainId: 1,
+      revnetId: 42n,
+    });
+    // Followed and retired: the next launch of this config is a new one.
     expect(savedLaunchAt(key())).toBeUndefined();
   });
 
-  it("asks the chain about an attempt whose hash only the SDK saved: one that went through is the revnet", async () => {
-    save();
-    const settles = holdOf(
-      { status: "pending-known-hash" },
-      { status: "clear", settled: { result: "success", hash: SENT } },
-    );
-    await expect(
-      recover(open(settles), chain({ blockLogs: [deployedBy(salt(7))] })),
-    ).resolves.toEqual({ status: "launched", revnetId: 42n });
-  });
-
   it.each([
-    ["its receipt can't be read", { receipt: new Error("RPC down") }],
-    ["its block's logs come back empty", { blockLogs: [] }],
-    ["its event names another salt", { blockLogs: [deployedBy(salt(3))] }],
-    ["its event is another transaction's", { blockLogs: [deployedBy(salt(7), EARLIER)] }],
+    ["its event can't be found in its block", { blockLogs: [] }],
+    ["its event has another salt", { blockLogs: [deployedBy(salt(8))] }],
+    [
+      "its event is another transaction's",
+      { blockLogs: [deployedBy(salt(7), `0x${"56".repeat(32)}`)] },
+    ],
   ])(
-    "journals a settled success before reading it, and keeps following it when %s: never a discard or resend",
-    async (_case, reads) => {
-      for (const fromBlock of [1_000n, undefined]) {
-        window.localStorage.clear();
-        save({ fromBlock });
-        await expect(
-          recover(open(clear({ result: "success", hash: SENT })), chain({ ...reads, scan: [] })),
-        ).resolves.toEqual({ status: "confirming", hash: SENT });
-        expect(savedLaunchAt(key())).toMatchObject({
-          salt: salt(7),
-          settled: { result: "success", hash: SENT },
-        });
-        // The hold forgets it (a later reservation, another browser's storage): still followed.
-        await expect(recover(open(clear()), chain({ ...reads, scan: [] }))).resolves.toEqual({
-          status: "confirming",
-          hash: SENT,
-        });
-      }
+    "journals a settled success whose revnet can't be read (%s) and only follows it",
+    async (_case, logs) => {
+      save();
+      await sentUnder(namespaces()[0]!, chain());
+      const shown = await recover(chain({ mined: true, ...logs }));
+      expect(shown).toMatchObject({ kind: "confirming" });
+      expect(savedLaunchAt(key())).toMatchObject({ settled: { result: "success", hash: SENT } });
+      // Rule E: no check or exit retires a success the journal recorded.
+      if (shown?.kind !== "confirming") throw new Error("unreachable");
+      await expect(shown.attempt.confirmRetirable()).resolves.toBe(false);
+      expect(discardLaunch(shown.attempt)).toBe(false);
     },
   );
 
-  it("names the revnet once the journaled success's event can be read", async () => {
+  it("finds a launch with no hold record by its exact salt", async () => {
     save();
-    await recover(open(clear({ result: "success", hash: SENT })), chain({ blockLogs: [] }));
-    await expect(
-      recover(open(clear()), chain({ blockLogs: [deployedBy(salt(7))] })),
-    ).resolves.toEqual({ status: "launched", revnetId: 42n });
+    await expect(recover(chain({ scan: [deployedBy(salt(7), SENT)] }))).resolves.toEqual({
+      kind: "launched",
+      chainId: 1,
+      revnetId: 42n,
+    });
     expect(savedLaunchAt(key())).toBeUndefined();
-  });
-
-  it("never lets a later failed read downgrade a settled success", async () => {
-    save();
-    await expect(
-      recover(
-        open(clear({ result: "success", hash: SENT }), clear({ result: "failed", hash: EARLIER })),
-        chain({ blockLogs: [] }),
-      ),
-    ).resolves.toEqual({ status: "confirming", hash: SENT });
-    await expect(
-      recover(open(clear({ result: "failed", hash: EARLIER })), chain()),
-    ).resolves.toEqual({ status: "confirming", hash: SENT });
-    expect(savedLaunchAt(key())).toBeDefined();
-  });
-
-  it("ignores a settlement older than the attempt, then requires a check with no other evidence", async () => {
-    save({ before: [EARLIER] });
-    await expect(
-      recover(open(clear({ result: "success", hash: EARLIER })), chain()),
-    ).resolves.toMatchObject({ status: "check" });
   });
 
   it.each([
-    ["the scan fails", new Error("RPC down")],
-    ["the scan finds nothing", []],
-  ])("requires a check when the hold has no record and %s", async (_case, scan) => {
+    ["the scan fails", { scan: new Error("RPC down") }],
+    ["the scan finds nothing", { scan: [] }],
+    ["the scan finds another salt", { scan: [deployedBy(salt(8))] }],
+  ])("requires a check when %s, keeping the journal", async (_case, scanned) => {
     save();
-    await expect(recover(open(clear()), chain({ scan }))).resolves.toMatchObject({
-      status: "check",
+    await expect(recover(chain(scanned))).resolves.toMatchObject({
+      kind: "check",
+      outcome: { line: SAVED_ATTEMPT_CHECK_LINE, warning: SAVED_ATTEMPT_CHECK_WARNING },
+    });
+    expect(savedLaunchAt(key())).toMatchObject({ salt: salt(7) });
+  });
+
+  it("requires a check when no sent block was saved", async () => {
+    save({});
+    await expect(recover(chain({ scan: [deployedBy(salt(7))] }))).resolves.toMatchObject({
+      kind: "check",
     });
   });
 
-  it("requires a check when the hold has no record and no sent block was saved", async () => {
-    save({ fromBlock: undefined });
-    await expect(recover(open(clear()), chain({ scan: [] }))).resolves.toMatchObject({
-      status: "check",
-    });
-  });
-
-  it("finds a launch with no hold record by its exact salt", async () => {
+  it("retires the attempt only on the user's check, which the journal re-reads first", async () => {
     save();
+    const shown = await recover(chain({ scan: [] }));
+    if (shown?.kind !== "check") throw new Error("expected a check");
+    await expect(shown.attempt.confirmRetirable()).resolves.toBe(true);
     await expect(
-      recover(open(clear()), chain({ scan: [deployedBy(salt(7), EARLIER)] })),
-    ).resolves.toEqual({ status: "launched", revnetId: 42n });
+      savedAttempts.retire(shown.attempt, { by: "check", outcome: shown.outcome }),
+    ).resolves.toMatchObject({ retired: true });
+    // Retired for every reload: nothing more to recover, and the journal goes.
+    await expect(recover(chain({ scan: [] }))).resolves.toBeUndefined();
     expect(savedLaunchAt(key())).toBeUndefined();
   });
 
-  it("leaves a held launch to its hold, with the state its exit is offered on", async () => {
+  it("refuses a stale check once another tab's newer attempt took the journal", async () => {
+    save();
+    const shown = await recover(chain({ scan: [] }));
+    if (shown?.kind !== "check") throw new Error("expected a check");
+    saveLaunchAttempt(key(), { salt: salt(8), namespaces: namespaces(), before: [] });
+    await expect(shown.attempt.confirmRetirable()).resolves.toBe(false);
+    await expect(
+      savedAttempts.retire(shown.attempt, { by: "check", outcome: shown.outcome }),
+    ).resolves.toMatchObject({ retired: false });
+    expect(discardLaunch(shown.attempt)).toBe(false);
+    expect(savedLaunchAt(key())).toMatchObject({ salt: salt(8) });
+  });
+
+  it("retires an attempt the SDK dropped on a definite wallet rejection, with no check", async () => {
     save();
     const client = chain();
-    const holds = open(clear(), held);
-    await expect(recover(holds, client)).resolves.toMatchObject({
-      status: "held",
-      state: { status: "pending-known-hash" },
+    const hold = writeHolds.open({
+      chainId: 1,
+      account: ACCOUNT,
+      safe: false,
+      namespace: namespaces()[0]!,
+      call: CALL,
     });
-    expect(client.getLogs).not.toHaveBeenCalled();
-  });
-
-  it("retires an attempt the hold proved reverted at a final block", async () => {
-    save();
-    await expect(recover(open(clear({ result: "failed", hash: SENT })), chain())).resolves.toEqual({
-      status: "clear",
-    });
+    await hold
+      .send(client as never, async (gate) => {
+        await gate.beforeSend();
+        gate.onRejected();
+        throw new Error("User rejected");
+      })
+      .catch(() => undefined);
+    await expect(recover(client)).resolves.toBeUndefined();
     expect(savedLaunchAt(key())).toBeUndefined();
-  });
-
-  describe("a retirement another tab's newer attempt outran", () => {
-    /** Tab B journals its own deliberate relaunch (salt2), settled, while tab A awaits the chain. */
-    const newerAttempt = () =>
-      window.localStorage.setItem(
-        key(),
-        JSON.stringify({
-          salt: salt(8),
-          namespaces: [],
-          before: [],
-          settled: { result: "success", hash: EARLIER },
-        }),
-      );
-    /** A hold tab A reads as held, whose chain answer arrives after tab B wrote. */
-    const answersAfterB = (asked: object) =>
-      holdOf({ status: "pending-known-hash" }, asked) as unknown as ReturnType<typeof holdOf>;
-
-    it("never deletes it when A's attempt is proved reverted", async () => {
-      save();
-      const hold = answersAfterB({ status: "clear", settled: { result: "failed", hash: SENT } });
-      hold.state.mockImplementation(async () => {
-        newerAttempt();
-        return { status: "clear", settled: { result: "failed", hash: SENT } };
-      });
-      await recover(open(hold), chain());
-      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(8), settled: { hash: EARLIER } });
-    });
-
-    it("never deletes it when A's attempt is found by its salt", async () => {
-      save();
-      const client = chain({ scan: [deployedBy(salt(7), EARLIER)] });
-      client.getBlockNumber.mockImplementation(async () => {
-        newerAttempt();
-        return 1_200n;
-      });
-      await recover(open(clear()), client);
-      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(8) });
-    });
-
-    it("never deletes an unsettled one on a check or exit taken for the earlier attempt", () => {
-      save();
-      window.localStorage.setItem(
-        key(),
-        JSON.stringify({ salt: salt(8), namespaces: [], before: [] }),
-      );
-      expect(releaseLaunch(key(), { salt: salt(7) })).toBe(false);
-      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(8) });
-      expect(releaseLaunch(key(), { salt: salt(8) })).toBe(true);
-    });
-  });
-
-  it("requires a check, never a throw, when recovery itself fails", async () => {
-    save();
-    const broken = vi.fn(() => {
-      throw new Error("storage");
-    });
-    await expect(recover(broken as never, chain())).resolves.toMatchObject({ status: "check" });
   });
 
   it("reads at most 500 blocks per request and caps the range", async () => {
@@ -296,7 +298,7 @@ describe("recovering a saved launch: held, settled, no record, check required", 
         return [];
       }),
     };
-    await expect(recover(open(clear()), client)).resolves.toMatchObject({ status: "check" });
+    await expect(recover(client)).resolves.toMatchObject({ kind: "check" });
     expect(ranges.every(([from, to]) => to - from + 1n <= 500n)).toBe(true);
     expect(ranges.reduce((sum, [from, to]) => sum + (to - from + 1n), 0n)).toBeLessThanOrEqual(
       50_000n,
@@ -305,49 +307,64 @@ describe("recovering a saved launch: held, settled, no record, check required", 
 });
 
 describe("a main-era saved launch", () => {
-  const node = {
-    getChainId: async () => 1,
-    getBlockNumber: async () => 100n,
-    getBlock: async () => ({ number: 100n, hash: BLOCK }),
-    getTransactionCount: async () => 3,
-    getTransaction: async () => {
-      throw new Error("not found");
-    },
-    getTransactionReceipt: async () => {
-      throw new Error("not found");
-    },
-    getLogs: async () => {
-      throw new Error("RPC down");
-    },
-    request: async () => null,
-  };
-
   it("is held by the attempt that build left under its launch namespace", async () => {
     // That build saved only the salt and the block; the wallet returned a hash, then the page closed.
     window.localStorage.setItem(key(), JSON.stringify({ salt: salt(7), fromBlock: "1000" }));
-    const { writeHolds } = await import("@/lib/write-hold");
-    await writeHolds
-      .open({
-        chainId: 1,
-        account: ACCOUNT,
-        safe: false,
-        namespace: legacyIntents.launch(launchConfigHash(config))[0]!,
-        call: { to: "0x0000000000000000000000000000000000001000", data: "0x1234", value: 0n },
-      })
-      .send(node as never, async (gate) => {
-        await gate.beforeSend();
-        gate.afterSubmit(SENT);
-      });
-    await expect(recoverLaunch(key(), ACCOUNT, node as never)).resolves.toMatchObject({
-      status: "held",
+    const client = chain();
+    await sentUnder(legacyIntents.launch(launchConfigHash(config))[0]!, client);
+    await expect(recoverLaunchAt(key(), ACCOUNT, client as never)).resolves.toMatchObject({
+      kind: "held",
     });
   });
 
   it("requires a check when that build left no hold and the chain can't be scanned", async () => {
     window.localStorage.setItem(key(), JSON.stringify({ salt: salt(7), fromBlock: "1000" }));
-    await expect(recoverLaunch(key(), ACCOUNT, node as never)).resolves.toMatchObject({
-      status: "check",
+    await expect(recoverLaunchAt(key(), ACCOUNT, chain() as never)).resolves.toMatchObject({
+      kind: "check",
     });
+  });
+});
+
+describe("a journal that can't be read", () => {
+  const unreadable = () =>
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, name) {
+      if (name === key()) throw new Error("SecurityError");
+      return Object.getPrototypeOf(this) && null;
+    });
+
+  it("throws the SDK's unreadable line, never reading as absent", () => {
+    window.localStorage.setItem(key(), "{not json");
+    expect(() => savedLaunchAt(key())).toThrow(SAVED_ATTEMPT_UNREADABLE_LINE);
+  });
+
+  it("is recovered as a check, and its check is refused until the warned exit", async () => {
+    window.localStorage.setItem(key(), "{not json");
+    let forcing = false;
+    const shown = await recover(chain({ scan: [] }), () => forcing);
+    if (shown?.kind !== "check") throw new Error("expected a check");
+    await expect(
+      savedAttempts.retire(shown.attempt, { by: "check", outcome: shown.outcome }),
+    ).resolves.toMatchObject({ retired: false });
+    expect(window.localStorage.getItem(key())).toBe("{not json");
+    // The warned "I checked my wallet. Continue anyway" alone retires it.
+    forcing = true;
+    await expect(
+      savedAttempts.retire(shown.attempt, {
+        by: "check",
+        outcome: shown.outcome,
+        force: "unreadable",
+      }),
+    ).resolves.toMatchObject({ retired: true });
+    expect(discardLaunch(shown.attempt)).toBe(true);
+    expect(savedLaunchAt(key())).toBeUndefined();
+  });
+
+  it("never counts storage that throws as released", async () => {
+    save();
+    const read = unreadable();
+    const attempt = launchAttemptOf(key(), ACCOUNT, chain() as never, namespaces());
+    await expect(attempt.confirmRetirable()).resolves.toBe(false);
+    read.mockRestore();
   });
 });
 
@@ -367,6 +384,14 @@ describe("the saved launches of an account", () => {
 });
 
 describe("the launch notices", () => {
+  const check = {
+    status: "check",
+    reason: "",
+    line: SAVED_ATTEMPT_CHECK_LINE,
+    warning: SAVED_ATTEMPT_CHECK_WARNING,
+    evidence: "",
+  } satisfies SavedAttemptCheck;
+
   it("says the revnet is already launched and links to it", () => {
     render(<LaunchedNotice chainId={11155111} revnetId={42n} />);
     expect(screen.getByText(/This revnet is already launched/)).toBeInTheDocument();
@@ -381,92 +406,34 @@ describe("the launch notices", () => {
     expect(onCheckAgain).toHaveBeenCalledOnce();
   });
 
-  it("never releases a journaled success on a check or an exit", async () => {
-    save();
-    await recover(open(clear({ result: "success", hash: SENT })), chain({ blockLogs: [] }));
-    expect(releaseLaunch(key())).toBe(false);
-    expect(savedLaunchAt(key())).toMatchObject({ settled: { result: "success", hash: SENT } });
-    window.localStorage.clear();
-    save();
-    expect(releaseLaunch(key())).toBe(true);
-    expect(savedLaunchAt(key())).toBeUndefined();
-  });
-
-  describe("a journal that can't be read", () => {
-    const unreadable = () =>
-      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-        throw new Error("SecurityError");
-      });
-
-    it("is never released: the check is refused with its line, and nothing is deleted", () => {
-      save();
-      const read = unreadable();
-      const removed = vi.spyOn(Storage.prototype, "removeItem");
-      expect(() => releaseLaunch(key())).toThrow(JOURNAL_UNREADABLE_LINE);
-      expect(removed).not.toHaveBeenCalled();
-      read.mockRestore();
-      removed.mockRestore();
-      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(7) });
-    });
-
-    it("is never released when its record is malformed", () => {
-      window.localStorage.setItem(key(), "{not json");
-      expect(() => releaseLaunch(key())).toThrow(JOURNAL_UNREADABLE_LINE);
-      expect(window.localStorage.getItem(key())).toBe("{not json");
-    });
-
-    it("is discarded only by the explicit continue, and reads as absent after it", () => {
-      window.localStorage.setItem(key(), "{not json");
-      discardUnreadableLaunch(key());
-      expect(savedLaunchAt(key())).toBeUndefined();
-      save();
-      const read = unreadable();
-      const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
-        throw new Error("SecurityError");
-      });
-      expect(() => savedLaunchAt(key())).toThrow(JOURNAL_UNREADABLE_LINE);
-      // Storage won't read or delete: the continue holds for this key until it reads again.
-      discardUnreadableLaunch(key());
-      expect(savedLaunchAt(key())).toBeUndefined();
-      read.mockRestore();
-      remove.mockRestore();
-      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(7) });
-    });
-
-    it("offers the warned continue only after a check failed on it", () => {
-      const onDiscard = vi.fn();
-      const view = render(<LaunchCheckNotice onChecked={vi.fn()} onDiscard={onDiscard} />);
-      expect(screen.queryByRole("button", { name: JOURNAL_DISCARD_ACTION })).toBeNull();
-      view.rerender(
-        <LaunchCheckNotice
-          onChecked={vi.fn()}
-          refused={JOURNAL_UNREADABLE_LINE}
-          onDiscard={onDiscard}
-        />,
-      );
-      expect(screen.getByText(JOURNAL_UNREADABLE_WARNING)).toBeVisible();
-      screen.getByRole("button", { name: JOURNAL_DISCARD_ACTION }).click();
-      expect(onDiscard).toHaveBeenCalledOnce();
-    });
-
-    it("is recovered as check, never as nothing to recover", async () => {
-      save();
-      const read = unreadable();
-      await expect(recover(open(clear()), chain())).resolves.toMatchObject({ status: "check" });
-      read.mockRestore();
-      window.localStorage.setItem(key(), JSON.stringify({ salt: "0x12" }));
-      await expect(recover(open(clear()), chain())).resolves.toMatchObject({ status: "check" });
-    });
-  });
-
-  it("retires the saved attempt only on the user's check", () => {
-    save();
-    const onChecked = vi.fn(() => releaseLaunch(key()));
-    render(<LaunchCheckNotice onChecked={onChecked} />);
-    expect(savedLaunchAt(key())).toMatchObject({ salt: salt(7) });
-    screen.getByRole("button", { name: "I checked it. Launch again" }).click();
+  it("shows the SDK's check with its one action, and the warned continue only once refused", () => {
+    const onChecked = vi.fn();
+    const onContinueAnyway = vi.fn();
+    const view = render(
+      <LaunchCheckNotice
+        outcome={check}
+        unreadable={false}
+        onChecked={onChecked}
+        onContinueAnyway={onContinueAnyway}
+      />,
+    );
+    expect(screen.getByText(SAVED_ATTEMPT_CHECK_LINE)).toBeVisible();
+    expect(screen.getByText(SAVED_ATTEMPT_CHECK_WARNING)).toBeVisible();
+    expect(screen.queryByRole("button", { name: SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL })).toBeNull();
+    screen.getByRole("button", { name: checkedItLabel("Launch again") }).click();
     expect(onChecked).toHaveBeenCalledOnce();
-    expect(savedLaunchAt(key())).toBeUndefined();
+
+    view.rerender(
+      <LaunchCheckNotice
+        outcome={check}
+        unreadable
+        onChecked={onChecked}
+        onContinueAnyway={onContinueAnyway}
+      />,
+    );
+    expect(screen.getByText(SAVED_ATTEMPT_UNREADABLE_LINE)).toBeVisible();
+    screen.getByRole("button", { name: SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL }).click();
+    expect(onContinueAnyway).toHaveBeenCalledOnce();
   });
 });
 

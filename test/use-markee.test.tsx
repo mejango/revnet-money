@@ -2,9 +2,11 @@ import { useMarkee } from "@/hooks/useMarkee";
 import { registerFlowChoiceHandler } from "@/lib/flow-choice";
 import { writeHolds } from "@/lib/write-hold";
 import {
+  checkedItLabel,
+  SAVED_ATTEMPT_CHECK_LINE,
+  SAVED_ATTEMPT_CHECK_WARNING,
   WRITE_HOLD_HASHED_EXIT_LINE,
   WRITE_HOLD_UNCHECKED_LINE,
-  writeHeldMessage,
 } from "@bananapus/nana-sdk-core/review";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { TransactionNotFoundError, zeroAddress, type Address, type Hex } from "viem";
@@ -157,6 +159,36 @@ beforeEach(() => {
   });
 });
 
+/** The chain shows the saved submission mined at `hash`, its receipt a success. */
+function chainMined() {
+  const receipt = {
+    status: "success",
+    transactionHash: hash,
+    from: mocks.account,
+    to: boardAddress,
+    blockNumber: 9n,
+    blockHash: `0x${"bb".repeat(32)}`,
+    transactionIndex: 0,
+    logs: [],
+  };
+  mocks.getTransaction.mockImplementation(async () => {
+    const saved = JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!);
+    return {
+      hash,
+      from: saved.account,
+      to: saved.pending.target,
+      input: saved.pending.data,
+      value: BigInt(saved.pending.value),
+      nonce: 3,
+      blockNumber: 9n,
+      blockHash: receipt.blockHash,
+      transactionIndex: 0,
+    };
+  });
+  mocks.chainReceipt.mockResolvedValue(receipt);
+  mocks.receipt.mockResolvedValue(receipt);
+}
+
 describe("wallet-action:markee-rent reviewed Markee execution", () => {
   it("does not create a board from another admin", async () => {
     mocks.account = messageAddress;
@@ -193,8 +225,9 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
     expect(saved.pending.hash).toBeUndefined();
     await act(() => result.current.takeover("Real message", "0.001"));
     expect(mocks.write).toHaveBeenCalledTimes(2);
+    // Nothing shows what became of the lost reply: the SDK's check, never a resend.
     await act(() => result.current.recover());
-    expect(result.current.error).toContain("submission result is unknown");
+    expect(result.current.error).toBe(SAVED_ATTEMPT_CHECK_LINE);
   });
   it("rechecks a saved creation receipt without broadcasting again", async () => {
     localStorage.setItem(
@@ -213,6 +246,7 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
         },
       }),
     );
+    chainMined();
     const { result } = renderHook(() => useMarkee(boardAddress));
     await waitFor(() => expect(result.current.pending).toBe(true));
     await act(() => result.current.recover());
@@ -266,7 +300,8 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
     const { result } = renderHook(() => useMarkee(boardAddress));
     await waitFor(() => expect(result.current.pending).toBe(true));
     await act(() => result.current.recover());
-    expect(result.current.error).toContain("does not match");
+    // It can't be shown as this submission: the SDK's check, and the submission kept.
+    expect(result.current.error).toBe(SAVED_ATTEMPT_CHECK_LINE);
     expect(
       JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending,
     ).toBeDefined();
@@ -305,6 +340,7 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
       );
       return { board: boardAddress };
     });
+    chainMined();
     const { result } = renderHook(() => useMarkee());
     await waitFor(() => expect(result.current.pending).toBe(true));
     await act(() => result.current.recover());
@@ -495,6 +531,7 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
         pending: { kind: "message", id: "saved", target: boardAddress, data: "0x1234", value: "0" },
       }),
     );
+    chainMined();
     const { result } = renderHook(() => useMarkee(boardAddress));
     await waitFor(() => expect(result.current.pending).toBe(true));
     await act(() => result.current.recover(hash));
@@ -521,7 +558,7 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
     const { result } = renderHook(() => useMarkee(boardAddress));
     await waitFor(() => expect(result.current.pending).toBe(true));
     await act(() => result.current.recover(hash));
-    expect(result.current.error).toContain("does not match");
+    expect(result.current.error).toBe(SAVED_ATTEMPT_CHECK_LINE);
     expect(
       JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending.hash,
     ).toBeUndefined();
@@ -676,7 +713,7 @@ describe("a saved Markee submission the chain can't settle", () => {
       }),
     );
 
-  it("offers the warned exit for a submission the wallet gave no hash for, and frees the board only on it", async () => {
+  it("offers the SDK's one check for a submission the wallet gave no hash for, and frees the board only on it", async () => {
     const prompt = vi.fn().mockResolvedValue(false);
     registerFlowChoiceHandler(prompt);
     saveHashless();
@@ -685,9 +722,12 @@ describe("a saved Markee submission the chain can't settle", () => {
 
     await act(() => result.current.recover());
     expect(prompt).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ lines: expect.arrayContaining([writeHeldMessage()]) }),
+      expect.objectContaining({
+        lines: [SAVED_ATTEMPT_CHECK_LINE, SAVED_ATTEMPT_CHECK_WARNING],
+        confirmLabel: checkedItLabel(),
+      }),
     );
-    expect(result.current.error).toContain("submission result is unknown");
+    expect(result.current.error).toBe(SAVED_ATTEMPT_CHECK_LINE);
     expect(result.current.pending).toBe(true);
 
     prompt.mockResolvedValue(true);
@@ -888,7 +928,7 @@ describe("a saved Markee submission the chain can't settle", () => {
     expect(result.current.pending).toBe(false);
   });
 
-  it("offers a warned exit when the transaction settled but its Markee result can't be verified", async () => {
+  it("never retires a transaction that settled when its Markee result can't be verified", async () => {
     const prompt = vi.fn().mockResolvedValue(false);
     registerFlowChoiceHandler(prompt);
     saveHashed();
@@ -922,11 +962,14 @@ describe("a saved Markee submission the chain can't settle", () => {
     await waitFor(() => expect(result.current.pending).toBe(true));
 
     await act(() => result.current.recover());
-    expect(prompt).toHaveBeenCalledOnce();
+    // A settled success always wins: followed with its hash, never an exit or a resend.
+    expect(prompt).not.toHaveBeenCalled();
+    expect(result.current.error).toContain("went through");
     expect(result.current.pending).toBe(true);
 
     prompt.mockResolvedValue(true);
     await act(() => result.current.recover());
-    expect(result.current.pending).toBe(false);
+    expect(prompt).not.toHaveBeenCalled();
+    expect(result.current.pending).toBe(true);
   });
 });

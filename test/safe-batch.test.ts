@@ -67,10 +67,6 @@ import {
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
-import {
-  WRITE_HOLD_HASHED_EXIT_LINE,
-  WRITE_HOLD_SAFE_UNPROVEN_LINE,
-} from "@bananapus/nana-sdk-core/review";
 
 const ACCOUNT = "0x000000000000000000000000000000000000dEaD" as Address;
 const TOKEN = "0x0000000000000000000000000000000000001000" as Address;
@@ -239,43 +235,27 @@ describe("one Safe proposal for a whole flow", () => {
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 
-  it("holds the same batch while a proposal it can't confirm is listed, and proposes it again only on the hold's warned exit", async () => {
+  it("holds the same batch while Safe lists a proposal it can't confirm, offering no resend", async () => {
     const CALLS = calls();
     const proposal = listBatchThrough(CALLS, UNLISTED_MULTI_SEND);
 
     await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
     await waitFor(() =>
-      expect(transactionActivityForHash(proposal)).toMatchObject({
-        status: "safe-proposed",
-        message: WRITE_HOLD_SAFE_UNPROVEN_LINE,
-        safeResultUnconfirmed: true,
-      }),
+      expect(transactionActivityForHash(proposal)).toMatchObject({ status: "safe-proposed" }),
     );
 
-    const prompt = vi.fn().mockResolvedValue(false);
+    // Safe still lists it unexecuted: the hold keeps it, and nothing is proposed twice.
+    const prompt = vi.fn().mockResolvedValue(true);
     registerFlowChoiceHandler(prompt);
     await expect(
       proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
-    ).rejects.toThrow(WRITE_HOLD_SAFE_UNPROVEN_LINE);
-    expect(prompt).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        lines: expect.arrayContaining([WRITE_HOLD_SAFE_UNPROVEN_LINE, WRITE_HOLD_HASHED_EXIT_LINE]),
-      }),
-      expect.any(AbortSignal),
-    );
-    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
-
-    // Dismissing the listed proposal alone proposes nothing: only the exit does.
+    ).rejects.toThrow();
+    // Dismissing the listed proposal alone proposes nothing either.
     dismissTransactionActivity(transactionActivityForHash(proposal)!.id);
     await expect(
       proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
-    ).rejects.toThrow(WRITE_HOLD_SAFE_UNPROVEN_LINE);
+    ).rejects.toThrow();
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
-
-    prompt.mockResolvedValue(true);
-    mocks.sendCalls.mockResolvedValue({ id: SAFE_TX_HASH });
-    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
-    expect(mocks.sendCalls).toHaveBeenCalledTimes(2);
   });
 
   it("follows a proposal that runs the batch through Safe 1.4.1's MultiSendCallOnly", async () => {
@@ -286,7 +266,7 @@ describe("one Safe proposal for a whole flow", () => {
     await waitFor(() =>
       expect(transactionActivityForHash(proposal)).toMatchObject({
         status: "safe-proposed",
-        message: "Waiting for your Safe's approvals.",
+        message: SAFE_PROPOSAL_AWAITING,
       }),
     );
     expect(transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();

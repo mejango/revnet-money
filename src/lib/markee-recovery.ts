@@ -39,20 +39,3 @@ export async function recoverMarkeeSubmission(
     throw new Error("The exact recovered Safe execution could not be verified.");
   return { kind: "safe", executionHash: hash, safeProposal };
 }
-
-/**
- * Whether a settlement the write hold saw is the saved submission's: its own transaction, or, for
- * a Safe proposal, the execution the journal bound to that exact proposal.
- */
-export function markeeSettlementIsSaved(
-  settled: { result: string; hash?: Hex } | undefined,
-  hash: Hex,
-  row?: Pick<TransactionActivity, "kind" | "executionHash">,
-): boolean {
-  const seen = settled?.hash?.toLowerCase();
-  if (!seen) return false;
-  return (
-    seen === hash.toLowerCase() ||
-    (row?.kind === "safe" && seen === row.executionHash?.toLowerCase())
-  );
-}

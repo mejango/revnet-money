@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { extname, join } from "node:path";
+import { APP_HOLD_LOGIC } from "./app-hold-logic.mjs";
 
 const failures = [];
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -75,12 +76,11 @@ if (
     "Reviewed contract writes must delegate their wallet boundary to the shared SDK owner",
   );
 }
-if (
-  !reviewedWrite.includes(
-    "safeExecutionRunsCalls(transaction, safe, proposal.calls, proposal.batch)",
-  )
-) {
-  failures.push("Reviewed Safe execution must pass the explicit batch policy to the SDK owner");
+
+for (const path of sourceFiles("src")) {
+  const source = read(path);
+  for (const [pattern, what] of APP_HOLD_LOGIC)
+    if (pattern.test(source)) failures.push(`${path}: ${what}`);
 }
 const utils = read("src/lib/utils.ts");
 if (

@@ -1,7 +1,12 @@
 "use client";
 
 import {
+  checkedItLabel,
+  HELD_AWAY_SUCCESS_LINE,
+  HELD_SEND_AGAIN_LABEL,
   relayrDiscardLine,
+  SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
+  SAVED_ATTEMPT_UNREADABLE_LINE,
   WRITE_EXIT_LABEL,
   writeExitMessage,
 } from "@bananapus/nana-sdk-core/review";
@@ -60,6 +65,45 @@ export function confirmHeldWriteExit(
     },
     signal,
   );
+}
+
+/**
+ * This action's last write succeeded while the user was away. True only when the user chose to
+ * send it again anyway.
+ */
+export function confirmSendAgain(): Promise<boolean> {
+  return chooseInFlow({
+    title: "Already done",
+    lines: [HELD_AWAY_SUCCESS_LINE],
+    confirmLabel: HELD_SEND_AGAIN_LABEL,
+  });
+}
+
+/**
+ * A saved attempt the SDK can't show the result of: its line and warning, and the one "I checked
+ * it" action. True only when the user took it.
+ */
+export function confirmCheckedIt(
+  check: { line: string; warning: string },
+  next?: string,
+): Promise<boolean> {
+  return chooseInFlow({
+    title: "Check your wallet",
+    lines: [check.line, check.warning],
+    confirmLabel: checkedItLabel(next),
+  });
+}
+
+/**
+ * Offered only after a check was refused because this browser can't read its saved transactions:
+ * the warned way on, for this tab. True only when the user took it.
+ */
+export function confirmUnreadableExit(): Promise<boolean> {
+  return chooseInFlow({
+    title: "Check your wallet",
+    lines: [SAVED_ATTEMPT_UNREADABLE_LINE],
+    confirmLabel: SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
+  });
 }
 
 /**

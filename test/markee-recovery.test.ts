@@ -1,4 +1,4 @@
-import { markeeSettlementIsSaved, recoverMarkeeSubmission } from "@/lib/markee-recovery";
+import { recoverMarkeeSubmission } from "@/lib/markee-recovery";
 import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import {
   encodeAbiParameters,
@@ -132,28 +132,5 @@ describe("Markee lost wallet reply recovery", () => {
         hash,
       ),
     ).rejects.toThrow("hash does not match");
-  });
-});
-
-describe("a settlement the hold saw for a saved Markee submission", () => {
-  const PROPOSAL = `0x${"11".repeat(32)}` as const;
-  const EXECUTION = `0x${"22".repeat(32)}` as const;
-  const OTHER = `0x${"33".repeat(32)}` as const;
-
-  it("is the saved transaction's own, or the execution bound to its saved Safe proposal", () => {
-    expect(markeeSettlementIsSaved({ result: "success", hash: PROPOSAL }, PROPOSAL)).toBe(true);
-    expect(
-      markeeSettlementIsSaved({ result: "success", hash: EXECUTION }, PROPOSAL, {
-        kind: "safe",
-        executionHash: EXECUTION,
-      }),
-    ).toBe(true);
-    expect(
-      markeeSettlementIsSaved({ result: "success", hash: OTHER }, PROPOSAL, {
-        kind: "safe",
-        executionHash: EXECUTION,
-      }),
-    ).toBe(false);
-    expect(markeeSettlementIsSaved(undefined, PROPOSAL)).toBe(false);
   });
 });

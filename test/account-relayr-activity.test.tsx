@@ -1,7 +1,13 @@
 import { AccountActivity } from "@/app/account/[id]/components/AccountActivity";
 import type { TransactionActivity } from "@/lib/transaction-activity";
 import { erc2771ForwarderAbi, jbContractAddress } from "@bananapus/nana-sdk-core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  checkedItLabel,
+  SAVED_ATTEMPT_CHECK_LINE,
+  SAVED_ATTEMPT_CHECK_WARNING,
+  SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
+} from "@bananapus/nana-sdk-core/review";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { encodeFunctionData } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   waitForRelayrBundle: vi.fn(async () => undefined),
   checkRelayrSession: vi.fn(async () => undefined),
   discardRelayrSession: vi.fn(),
+  relayrSessionCheck: vi.fn(),
+  retireCheckedRelayrSession: vi.fn(),
   dismiss: vi.fn(),
 }));
 
@@ -21,6 +29,8 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   waitForRelayrBundle: mocks.waitForRelayrBundle,
   checkRelayrSession: mocks.checkRelayrSession,
   discardRelayrSession: mocks.discardRelayrSession,
+  relayrSessionCheck: mocks.relayrSessionCheck,
+  retireCheckedRelayrSession: mocks.retireCheckedRelayrSession,
 }));
 vi.mock("@/hooks/useViewedAccount", () => ({ useViewedAccount: () => ({ address: ACCOUNT }) }));
 vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
@@ -194,6 +204,50 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
     ];
     render(<AccountActivity address={ACCOUNT} />);
     expect(screen.queryByRole("button", { name: "Check signatures" })).not.toBeInTheDocument();
+  });
+});
+
+describe("a saved session its check can't show", () => {
+  const CHECK = {
+    status: "check" as const,
+    reason: "malformed recovery history",
+    line: SAVED_ATTEMPT_CHECK_LINE,
+    warning: SAVED_ATTEMPT_CHECK_WARNING,
+    evidence: "{}",
+  };
+
+  it("offers the SDK's one check instead of a dead end, and the warned continue only once refused", async () => {
+    mocks.activities = [
+      activity({ relayrPaymentStatus: "unfunded", hash: undefined, ...signedRequest() }),
+    ];
+    mocks.checkRelayrSession.mockRejectedValueOnce(new Error("malformed recovery history"));
+    mocks.relayrSessionCheck.mockResolvedValue(CHECK);
+    mocks.retireCheckedRelayrSession
+      .mockResolvedValue({ retired: true, durable: true })
+      .mockResolvedValueOnce({ retired: false, reason: "unreadable" });
+    render(<AccountActivity address={ACCOUNT} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Check signatures" }));
+    expect(await screen.findByText(SAVED_ATTEMPT_CHECK_LINE)).toBeVisible();
+    expect(screen.getByText(SAVED_ATTEMPT_CHECK_WARNING)).toBeVisible();
+    expect(screen.queryByRole("button", { name: SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: checkedItLabel() }));
+    await waitFor(() =>
+      expect(mocks.retireCheckedRelayrSession).toHaveBeenCalledWith(
+        "relayr:bundle",
+        CHECK,
+        undefined,
+      ),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL }),
+    );
+    expect(mocks.retireCheckedRelayrSession).toHaveBeenLastCalledWith(
+      "relayr:bundle",
+      CHECK,
+      "unreadable",
+    );
   });
 });
 
