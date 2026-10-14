@@ -1226,3 +1226,11 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 
 ### Review
 `npm run check` green: 2914 unit tests, 144 browser tests, bundle 2744.1 of 2746 KiB.
+
+## Joint round 5, findings 2 and 3 (2026-10-14)
+
+- [x] Red first: main-era cash outs and bridges keyed by the 10%, 25% and 50% buttons (`policy:10%` etc., origin/main 71c24286 BridgeDialog/RedeemDialog) are rebuilt; a cash out retried on the other venue is refused while the 25% one is unresolved. `AMOUNT_OPTIONS` is the one list for cash out, bridge and borrow.
+- [x] Red first: a stale "I checked it" in one tab after another tab journaled the success keeps it and follows it ("Check again"). `releaseLaunch` re-reads the journal and refuses a saved success; the check, the SDK exit and a dropped reservation all release through it.
+
+### Review
+`npm run check`: 2921 unit tests and every step green except one unrelated browser timing flake (project-shape alias tab, tablet-768); `npm run test:browser` rerun alone passed 144/144. Bundle 2744.2 of 2746 KiB.

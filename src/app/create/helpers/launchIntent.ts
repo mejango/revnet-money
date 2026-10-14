@@ -142,6 +142,16 @@ export function retireLaunch(key: string): void {
   }
 }
 
+/**
+ * The user's check or exit releases the journaled launch, read again right here: a success any tab
+ * journaled for it is never released (false), and is followed instead.
+ */
+export function releaseLaunch(key: string): boolean {
+  if (savedLaunchAt(key)?.settled) return false;
+  retireLaunch(key);
+  return true;
+}
+
 /** The keys of every launch `account` has journaled, on any chain. */
 export function savedLaunchKeys(account: string): string[] {
   try {

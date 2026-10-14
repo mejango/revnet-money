@@ -3632,6 +3632,37 @@ describe("attempts held under the previous build's intent namespaces", () => {
     expect(mocks.submit).toHaveBeenCalledOnce();
   });
 
+  it("refuses a cash out retried on the other venue while a 25% cash out that build left is unresolved", async () => {
+    const { review, hooks, held } = await freshHarness();
+    const { legacyIntents } = await import("@/lib/legacy-intents");
+    const { withWriteIntent } = await import("@/lib/write-hold");
+    const { intent, writeIntentKey } = await import("@bananapus/nana-sdk-core/review");
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    // The terminal cash out, keyed by the 25% button, with no wallet answer.
+    await heldByMain(
+      writeIntentKey("cash-out", {
+        projectId: 7n,
+        token: intent.address(TARGET),
+        amount: "policy:25%",
+        beneficiary: intent.address(ACCOUNT),
+      }),
+      TRANSFER_7,
+    );
+    const { result } = renderHook(() => hooks.useWriteContract());
+    // The retry sells on the AMM: another target, so no call-shaped hold matches it.
+    const sell = () =>
+      withWriteIntent(
+        result.current.writeContractAsync,
+        cashOutIntent({ chainId: 11155111, project: 7n, holder: ACCOUNT, beneficiary: ACCOUNT }),
+        legacyIntents.cashOut({ projectId: 7n, token: TARGET, amount: 9n, beneficiary: ACCOUNT }),
+      )({ ...CALL, address: RECIPIENT, args: [TARGET, 9n] as const } as never);
+
+    await expect(sell()).rejects.toThrow(/hasn't confirmed yet/);
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
   it("does not hold an approval by its call's old namespace: a new amount goes through", async () => {
     const { review, hooks, held } = await freshHarness();
     const { legacyCallNamespace } = await import("@/lib/legacy-intents");

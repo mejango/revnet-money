@@ -10,6 +10,7 @@ import {
   launchKeyOf,
   launchNamespacesOf,
   recoverLaunch,
+  releaseLaunch,
   retireLaunch,
   saveLaunchAttempt,
   savedLaunchAt,
@@ -319,6 +320,17 @@ describe("the launch notices", () => {
     expect(screen.queryByRole("button", { name: /I checked it/ })).toBeNull();
     screen.getByRole("button", { name: "Check again" }).click();
     expect(onCheckAgain).toHaveBeenCalledOnce();
+  });
+
+  it("never releases a journaled success on a check or an exit", async () => {
+    save();
+    await recover(open(clear({ result: "success", hash: SENT })), chain({ blockLogs: [] }));
+    expect(releaseLaunch(key())).toBe(false);
+    expect(savedLaunchAt(key())).toMatchObject({ settled: { result: "success", hash: SENT } });
+    window.localStorage.clear();
+    save();
+    expect(releaseLaunch(key())).toBe(true);
+    expect(savedLaunchAt(key())).toBeUndefined();
   });
 
   it("retires the saved attempt only on the user's check", () => {

@@ -331,6 +331,29 @@ describe("a saved single-chain launch", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
+  it("never lets a stale check retire a success another tab saved meanwhile", async () => {
+    await savedEarlierLaunch();
+    const { launchKeyOf, launchInputOf, savedLaunchAt } =
+      await import("@/app/create/helpers/launchIntent");
+    const key = launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form));
+    render(<Page />);
+    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    // Another tab's recovery journals the earlier attempt's success while this check is shown.
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({
+        ...savedLaunchAt(key),
+        settled: { result: "success", hash: DEPLOYMENT_HASH },
+      }),
+    );
+    fireEvent.click(check);
+
+    expect(await screen.findByRole("button", { name: "Check again" })).toBeVisible();
+    expect(savedLaunchAt(key)).toMatchObject({
+      settled: { result: "success", hash: DEPLOYMENT_HASH },
+    });
+  });
+
   it("shows the check when the mount scan can't read the chain", async () => {
     await savedEarlierLaunch();
     render(<Page />);

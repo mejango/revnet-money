@@ -39,6 +39,7 @@ import {
   launchKeyOf,
   launchNamespacesOf,
   recoverLaunch,
+  releaseLaunch,
   retireLaunch,
   savedLaunchAt,
   savedLaunchKeys,
@@ -65,7 +66,7 @@ export default function Page() {
     onSubmissionRejected: async () => unreserve(),
   });
   const unreserve = () => {
-    if (reserving.current) retireLaunch(reserving.current.key);
+    if (reserving.current) releaseLaunch(reserving.current.key);
   };
 
   const { getRelayrTxQuote, data, reset } = useGetRelayrTxQuote();
@@ -149,8 +150,17 @@ export default function Page() {
           if (shown(after, launchKey, singleChainId, address)) return;
           throw error;
         }
-        // The user took the exit: that attempt is retired, and this launch is a new one.
-        retireLaunch(launchKey);
+        // The user took the exit: that attempt is retired, and this launch is a new one, unless
+        // another tab journaled its success meanwhile, which is followed instead.
+        if (!releaseLaunch(launchKey)) {
+          shown(
+            await recover(launchKey, address, singleChainId),
+            launchKey,
+            singleChainId,
+            address,
+          );
+          return;
+        }
       }
     }
     // A launch waits while an earlier one's signature can still run, saying until when.
@@ -418,9 +428,15 @@ export default function Page() {
         ) : mustCheck ? (
           <LaunchCheckNotice
             onChecked={() => {
-              // The user checked it: that saved launch is retired, and the next one is new.
-              retireLaunch(mustCheck);
+              const key = mustCheck;
               setMustCheck(undefined);
+              // The user checked it: that saved launch is retired, and the next one is new, unless
+              // another tab journaled its success meanwhile, which is followed instead.
+              if (releaseLaunch(key) || !address) return;
+              const chainId = Number(key.split(":").at(-2));
+              void recover(key, address, chainId).then((found) =>
+                shown(found, key, chainId, address),
+              );
             }}
           />
         ) : confirming ? (

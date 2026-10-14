@@ -46,6 +46,29 @@ describe("the frozen namespaces of the build before SDK 2.38's builders", () => 
     expect(built).toContain(main);
   });
 
+  // That build keyed an amount picked from the 10%, 25%, 50% or Max buttons by the button
+  // (useChosen's `policy:<name>`), in cashOutIntent's and the bridge's params.
+  it.each(["10%", "25%", "50%", "max"])(
+    "rebuilds a cash out and a bridge of the %s option",
+    async (option) => {
+      const { intent, writeIntentKey } = await import("@bananapus/nana-sdk-core/review");
+      const amount = `policy:${option}`;
+      expect(
+        legacyIntents.cashOut({ projectId: 7n, token: T, amount: 5n, beneficiary: A }),
+      ).toContain(
+        writeIntentKey("cash-out", {
+          projectId: 7n,
+          token: intent.address(T),
+          amount,
+          beneficiary: intent.address(A),
+        }),
+      );
+      expect(legacyIntents.bridge({ sucker: S, token: T, amount: 1n })).toContain(
+        writeIntentKey("bridge", { sucker: intent.address(S), token: intent.address(T), amount }),
+      );
+    },
+  );
+
   const approve = {
     address: T,
     abi: parseAbi(["function approve(address,uint256)"]),

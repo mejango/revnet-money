@@ -119,6 +119,9 @@ function chosen(value: IntentValue, field: string, policies: readonly string[]):
   return [value, `auto:${field}`, ...policies.map((policy) => `policy:${policy}`)];
 }
 
+/** The amount buttons that build offered (10%, 25%, 50% and Max), by the names it keyed them by. */
+const AMOUNT_OPTIONS = ["max", "10%", "25%", "50%"];
+
 const key = (action: string, params: Params) => writeIntentKey(action, params);
 
 export const legacyIntents = {
@@ -131,7 +134,7 @@ export const legacyIntents = {
     amount: bigint;
     beneficiary: string;
   }) =>
-    chosen(c.amount, "amount", ["max"]).map((amount) =>
+    chosen(c.amount, "amount", AMOUNT_OPTIONS).map((amount) =>
       key("cash-out", {
         projectId: BigInt(c.projectId),
         token: intent.address(c.token),
@@ -140,7 +143,7 @@ export const legacyIntents = {
       }),
     ),
   bridge: (b: { sucker: string; token: string; amount: bigint }) =>
-    chosen(b.amount, "amount", ["max"]).map((amount) =>
+    chosen(b.amount, "amount", AMOUNT_OPTIONS).map((amount) =>
       key("bridge", { sucker: intent.address(b.sucker), token: intent.address(b.token), amount }),
     ),
   toRemote: (sucker: string, token: string) => [
@@ -155,7 +158,7 @@ export const legacyIntents = {
     collateral: bigint;
     prepaidFeePercent: number;
   }) =>
-    chosen(b.collateral, "collateral", ["max", "10%", "25%", "50%"]).map((collateral) =>
+    chosen(b.collateral, "collateral", AMOUNT_OPTIONS).map((collateral) =>
       key("borrow", {
         revnetId: b.revnetId as IntentValue,
         token: intent.address(b.token),
