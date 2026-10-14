@@ -29,8 +29,18 @@ export function useChosen<T>(initial: T, field: string) {
       }),
     [],
   );
-  /** The user edited it. */
-  const set = useCallback((value: T) => update(() => ({ value, from: "typed" })), [update]);
+  /**
+   * The user edited it. Typing what it already holds (the same number written another way, "1"
+   * for "1.0") keeps where it came from, and its key: only a different value is typed.
+   */
+  const set = useCallback(
+    (value: T) =>
+      update((current) => ({
+        value,
+        from: sameValue(value, current.value) ? current.from : "typed",
+      })),
+    [update],
+  );
   /** The user picked an option that fills it. */
   const choose = useCallback(
     (policy: string, value: T) => update(() => ({ value, from: `policy:${policy}` })),
@@ -54,4 +64,21 @@ export function useChosen<T>(initial: T, field: string) {
     () => ({ value, from, set, choose, fill, seed, key }),
     [value, from, set, choose, fill, seed, key],
   );
+}
+
+/** A decimal number's canonical text: no leading or trailing zeros ("01.50" is "1.5"). */
+function canonicalDecimal(text: string): string | undefined {
+  const match = /^\s*(\d*)(?:\.(\d*))?\s*$/.exec(text);
+  if (!match || (!match[1] && !match[2])) return undefined;
+  const whole = match[1]!.replace(/^0+(?=\d)/, "") || "0";
+  const fraction = (match[2] ?? "").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+
+/** Whether two form values are the same: equal, or the same decimal number written another way. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const left = canonicalDecimal(a);
+  return left !== undefined && left === canonicalDecimal(b);
 }

@@ -38,3 +38,24 @@ describe("useChosen in an effect", () => {
     expect(renders).toBeLessThan(5);
   });
 });
+
+describe("useChosen when the user types what the app filled", () => {
+  it("keeps the seed's key for the same number written another way, so a retry is the same intent", () => {
+    const { result } = renderHook(() => useChosen("", "amount"));
+    act(() => result.current.seed("100"));
+    const seeded = result.current.key(100n);
+    act(() => result.current.set("100.0"));
+    expect(result.current.key(100n)).toBe(seeded);
+    act(() => result.current.set("099.00"));
+    expect(result.current.key(99n)).toBe(99n);
+  });
+
+  it("keeps an option's key when the user retypes its amount", () => {
+    const { result } = renderHook(() => useChosen("", "amount"));
+    act(() => result.current.choose("max", "4.20"));
+    act(() => result.current.set("4.2"));
+    expect(result.current.key(4n)).toBe("policy:max");
+    act(() => result.current.set("4.3"));
+    expect(result.current.key(4n)).toBe(4n);
+  });
+});
