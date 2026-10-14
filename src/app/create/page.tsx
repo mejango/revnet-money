@@ -66,7 +66,11 @@ export default function Page() {
     onSubmissionRejected: async () => unreserve(),
   });
   const unreserve = () => {
-    if (reserving.current) releaseLaunch(reserving.current.key);
+    try {
+      if (reserving.current) releaseLaunch(reserving.current.key);
+    } catch {
+      // Unreadable: kept, and recovered as a check later.
+    }
   };
 
   const { getRelayrTxQuote, data, reset } = useGetRelayrTxQuote();
@@ -75,23 +79,30 @@ export default function Page() {
   const [launched, setLaunched] = useState<{ chainId: number; revnetId: bigint }>();
   /** The saved launch whose result the chain can't show: nothing is sent until the user checks. */
   const [mustCheck, setMustCheck] = useState<string>();
+  /** The check's release was refused: the journal couldn't be read. */
+  const [checkRefused, setCheckRefused] = useState<string>();
   /** The saved launch that went through but whose revnet can't be read yet: only looked at again. */
   const [confirming, setConfirming] = useState<{ key: string; account: string; chainId: number }>();
   /** Recovers the launch journaled at `key`, before anything else. */
   const recover = (key: string, account: string, chainId: number) => {
     const client = getPublicClient(wagmiConfig, { chainId: chainId as JBChainId });
-    const settled = savedLaunchAt(key)?.settled;
-    return client
-      ? recoverLaunch(key, account, client as PublicClient)
-      : Promise.resolve<LaunchRecovery>(
-          settled ? { status: "confirming", hash: settled.hash } : { status: "check" },
-        );
+    if (client) return recoverLaunch(key, account, client as PublicClient);
+    let found: LaunchRecovery = { status: "check" };
+    try {
+      const saved = savedLaunchAt(key);
+      if (!saved) found = { status: "none" };
+      else if (saved.settled) found = { status: "confirming", hash: saved.settled.hash };
+    } catch {
+      // Unreadable: the user checks it.
+    }
+    return Promise.resolve(found);
   };
   /** Shows what recovery found; true when it ends the launch here. */
   const shown = (found: LaunchRecovery, key: string, chainId: number, account: string) => {
     setConfirming(found.status === "confirming" ? { key, account, chainId } : undefined);
     if (found.status === "launched") setLaunched({ chainId, revnetId: found.revnetId });
     if (found.status === "check") setMustCheck(key);
+    setCheckRefused(undefined);
     return ["launched", "check", "confirming"].includes(found.status);
   };
   // Every launch this account journaled is recovered on load: found, or checked by the user.
@@ -134,7 +145,7 @@ export default function Page() {
     const launchKey =
       singleChainId === undefined ? undefined : launchKeyOf(address, singleChainId, launchInput);
     // A journaled attempt of this launch is recovered first, before anything is prepared.
-    if (launchKey && singleChainId !== undefined && savedLaunchAt(launchKey)) {
+    if (launchKey && singleChainId !== undefined) {
       const found = await recover(launchKey, address, singleChainId);
       if (shown(found, launchKey, singleChainId, address)) return;
       if (found.status === "held") {
@@ -333,11 +344,7 @@ export default function Page() {
         } as unknown as Parameters<typeof writeContractAsync>[0]);
       } catch (error) {
         // A settlement the send or its exit found is this launch's result.
-        if (
-          savedLaunchAt(key) &&
-          shown(await recover(key, address, chainId), key, chainId, address)
-        )
-          return;
+        if (shown(await recover(key, address, chainId), key, chainId, address)) return;
         throw error;
       } finally {
         reserving.current = undefined;
@@ -427,12 +434,22 @@ export default function Page() {
           <LaunchedNotice chainId={launched.chainId} revnetId={launched.revnetId} />
         ) : mustCheck ? (
           <LaunchCheckNotice
+            refused={checkRefused}
             onChecked={() => {
               const key = mustCheck;
-              setMustCheck(undefined);
               // The user checked it: that saved launch is retired, and the next one is new, unless
-              // another tab journaled its success meanwhile, which is followed instead.
-              if (releaseLaunch(key) || !address) return;
+              // another tab journaled its success meanwhile, which is followed instead. A journal
+              // that can't be read is kept, with the check, until it reads.
+              let released: boolean;
+              try {
+                released = releaseLaunch(key);
+              } catch (error) {
+                setCheckRefused(error instanceof Error ? error.message : String(error));
+                return;
+              }
+              setCheckRefused(undefined);
+              setMustCheck(undefined);
+              if (released || !address) return;
               const chainId = Number(key.split(":").at(-2));
               void recover(key, address, chainId).then((found) =>
                 shown(found, key, chainId, address),

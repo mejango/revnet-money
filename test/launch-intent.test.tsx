@@ -17,6 +17,7 @@ import {
   savedLaunchKeys,
 } from "@/app/create/helpers/launchIntent";
 import { legacyIntents } from "@/lib/legacy-intents";
+import { JOURNAL_UNREADABLE_LINE } from "@/lib/write-hold";
 import { launchIntent as sdkLaunchIntent } from "@bananapus/nana-sdk-core/review";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -331,6 +332,39 @@ describe("the launch notices", () => {
     save();
     expect(releaseLaunch(key())).toBe(true);
     expect(savedLaunchAt(key())).toBeUndefined();
+  });
+
+  describe("a journal that can't be read", () => {
+    const unreadable = () =>
+      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+        throw new Error("SecurityError");
+      });
+
+    it("is never released: the check is refused with its line, and nothing is deleted", () => {
+      save();
+      const read = unreadable();
+      const removed = vi.spyOn(Storage.prototype, "removeItem");
+      expect(() => releaseLaunch(key())).toThrow(JOURNAL_UNREADABLE_LINE);
+      expect(removed).not.toHaveBeenCalled();
+      read.mockRestore();
+      removed.mockRestore();
+      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(7) });
+    });
+
+    it("is never released when its record is malformed", () => {
+      window.localStorage.setItem(key(), "{not json");
+      expect(() => releaseLaunch(key())).toThrow(JOURNAL_UNREADABLE_LINE);
+      expect(window.localStorage.getItem(key())).toBe("{not json");
+    });
+
+    it("is recovered as check, never as nothing to recover", async () => {
+      save();
+      const read = unreadable();
+      await expect(recover(open(clear()), chain())).resolves.toEqual({ status: "check" });
+      read.mockRestore();
+      window.localStorage.setItem(key(), JSON.stringify({ salt: "0x12" }));
+      await expect(recover(open(clear()), chain())).resolves.toEqual({ status: "check" });
+    });
   });
 
   it("retires the saved attempt only on the user's check", () => {

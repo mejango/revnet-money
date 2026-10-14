@@ -19,7 +19,14 @@ export function LaunchedNotice({ chainId, revnetId }: { chainId: number; revnetI
  * A saved launch the chain can't show the result of: nothing is sent until the user checks it.
  * Its one action, and only it, retires that launch and reopens the form.
  */
-export function LaunchCheckNotice({ onChecked }: { onChecked: () => void }) {
+export function LaunchCheckNotice({
+  onChecked,
+  refused,
+}: {
+  onChecked: () => void;
+  /** Why the last check couldn't release it: shown, and the action stays. */
+  refused?: string;
+}) {
   return (
     <div
       role="status"
@@ -32,6 +39,7 @@ export function LaunchCheckNotice({ onChecked }: { onChecked: () => void }) {
       <button type="button" className="w-fit underline" onClick={onChecked}>
         I checked it. Launch again
       </button>
+      {refused ? <p>{refused}</p> : null}
     </div>
   );
 }

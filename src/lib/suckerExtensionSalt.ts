@@ -1,3 +1,4 @@
+import { JOURNAL_UNREADABLE_LINE } from "@/lib/write-hold";
 import { createSalt } from "@bananapus/nana-sdk-core";
 import type { Address } from "viem";
 
@@ -28,14 +29,21 @@ function attemptKey(sender: Address, projectId: bigint | number, targetChainId: 
   return `${sender.toLowerCase()}:${projectId.toString()}:${targetChainId}`;
 }
 
+/**
+ * The saved salts. A store that can't be read or parsed throws JOURNAL_UNREADABLE_LINE: never
+ * taken for an empty one, since a write over it would drop salts already-deployed peers need.
+ */
 function read(): SaltStore {
   if (typeof window === "undefined") return {};
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as SaltStore;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}");
   } catch {
-    return {};
+    throw new Error(JOURNAL_UNREADABLE_LINE);
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error(JOURNAL_UNREADABLE_LINE);
+  return parsed as SaltStore;
 }
 
 function write(store: SaltStore): void {
@@ -69,7 +77,13 @@ export function clearExtensionSalt(
   targetChainId: number,
 ): void {
   const key = attemptKey(sender, projectId, targetChainId);
-  const store = read();
+  let store: SaltStore;
+  try {
+    store = read();
+  } catch {
+    // Unreadable: kept as it is; nothing is cleared over it.
+    return;
+  }
   if (!(key in store)) return;
   delete store[key];
   write(store);

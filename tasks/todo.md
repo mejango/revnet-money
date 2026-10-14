@@ -1234,3 +1234,11 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 
 ### Review
 `npm run check`: 2921 unit tests and every step green except one unrelated browser timing flake (project-shape alias tab, tablet-768); `npm run test:browser` rerun alone passed 144/144. Bundle 2744.2 of 2746 KiB.
+
+## Joint round 6, finding 2: an unreadable journal is never released (2026-10-14)
+
+- [x] Red first (6 tests): a launch journal storage won't read, or a malformed record, throws `JOURNAL_UNREADABLE_LINE` ("Couldn't check this transaction. Try again.") instead of reading as absent; release refuses and deletes nothing; recovery returns check, never none; the page keeps the check and its button with the line, and a submit prepares and sends nothing.
+- [x] Audit of writes/deletes after forgiving reads: the sucker-extension salt store read a malformed store as `{}` and the next write replaced it, dropping salts deployed peers need; it now refuses and never writes or clears over it. Multichain batch journal already throws; transaction activity already stops writing after a failed read; the Safe batch tray is a convenience queue (no recovery); Markee is queued for the SDK engine migration.
+
+### Review
+`npm run check` green in one pass: 2928 unit tests, 144 browser tests, bundle 2744.3 of 2746 KiB.

@@ -133,6 +133,9 @@ export function holdOfHash(
   return hash ? holdsByHash.get(hash.toLowerCase()) : undefined;
 }
 
+/** A recovery journal that can't be read: nothing it holds is released, cleared or replaced. */
+export const JOURNAL_UNREADABLE_LINE = "Couldn't check this transaction. Try again.";
+
 /** The held write confirmed while the user was deciding: nothing is sent again. */
 export const WENT_THROUGH = "Your earlier transaction went through.";
 /** How often an open exit asks the chain again, so a confirmation closes it. */

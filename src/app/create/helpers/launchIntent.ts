@@ -1,5 +1,5 @@
 import { legacyIntents } from "@/lib/legacy-intents";
-import { writeHolds } from "@/lib/write-hold";
+import { JOURNAL_UNREADABLE_LINE, writeHolds } from "@/lib/write-hold";
 import {
   getJBContractAddress,
   revDeployerAbi,
@@ -97,16 +97,21 @@ type SavedLaunch = {
   settled?: { result: "success"; hash: Hex };
 };
 
-/** The launch journaled at `key`, if one is kept. */
+/**
+ * The launch journaled at `key`: undefined only when none is kept. A journal storage won't read,
+ * or a malformed record, throws JOURNAL_UNREADABLE_LINE: it is never taken for an absent one.
+ */
 export function savedLaunchAt(key: string): SavedLaunch | undefined {
+  let saved: SavedLaunch | undefined;
   try {
     const raw = window.localStorage.getItem(key);
-    if (!raw) return undefined;
-    const saved = JSON.parse(raw) as SavedLaunch;
-    return /^0x[0-9a-f]{64}$/i.test(saved?.salt ?? "") ? saved : undefined;
+    if (raw === null) return undefined;
+    saved = JSON.parse(raw) as SavedLaunch;
   } catch {
-    return undefined;
+    throw new Error(JOURNAL_UNREADABLE_LINE);
   }
+  if (!/^0x[0-9a-f]{64}$/i.test(saved?.salt ?? "")) throw new Error(JOURNAL_UNREADABLE_LINE);
+  return saved;
 }
 
 function persist(key: string, saved: SavedLaunch): void {
@@ -144,7 +149,8 @@ export function retireLaunch(key: string): void {
 
 /**
  * The user's check or exit releases the journaled launch, read again right here: a success any tab
- * journaled for it is never released (false), and is followed instead.
+ * journaled for it is never released (false), and is followed instead. A journal that can't be
+ * read throws JOURNAL_UNREADABLE_LINE and is kept.
  */
 export function releaseLaunch(key: string): boolean {
   if (savedLaunchAt(key)?.settled) return false;
@@ -268,8 +274,15 @@ export async function recoverLaunch(
   client: LaunchClient,
   open: typeof launchHoldsOf = launchHoldsOf,
 ): Promise<LaunchRecovery> {
-  const saved = savedLaunchAt(key);
-  if (!saved) return { status: "none" };
+  let read: SavedLaunch | undefined;
+  try {
+    read = savedLaunchAt(key);
+  } catch {
+    // Unreadable is not absent: the user checks it, and its release is refused until it reads.
+    return { status: "check" };
+  }
+  if (!read) return { status: "none" };
+  const saved = read;
   const [chainText, configHash] = key.slice(accountPrefix(account).length).split(":");
   const chainId = Number(chainText);
   /** Follows a success that went through: the revnet, or still confirming. */

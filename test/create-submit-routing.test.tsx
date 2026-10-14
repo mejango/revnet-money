@@ -354,6 +354,39 @@ describe("a saved single-chain launch", () => {
     });
   });
 
+  it("keeps the check and its button when the journal can't be read at the check", async () => {
+    await savedEarlierLaunch();
+    render(<Page />);
+    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("SecurityError");
+    });
+    const removed = vi.spyOn(Storage.prototype, "removeItem");
+    fireEvent.click(check);
+
+    expect(await screen.findByText("Couldn't check this transaction. Try again.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(removed).not.toHaveBeenCalled();
+    read.mockRestore();
+    removed.mockRestore();
+  });
+
+  it("sends nothing and prepares nothing when the journal can't be read on submit", async () => {
+    window.localStorage.setItem(
+      (await import("@/app/create/helpers/launchIntent")).launchKeyOf(
+        TEST_ACCOUNT,
+        11155111,
+        (await import("@/app/create/helpers/launchIntent")).launchInputOf(mocks.form),
+      ),
+      "{not json",
+    );
+    await submitFixture();
+
+    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(mocks.pinMetadata).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
   it("shows the check when the mount scan can't read the chain", async () => {
     await savedEarlierLaunch();
     render(<Page />);
