@@ -29,7 +29,7 @@ import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { DEFAULT_FORM_DATA } from "./constants";
 import { DeployRevnetForm, type DirectDeployment } from "./form/DeployRevnetForm";
-import { LaunchCheckNotice, LaunchedNotice } from "./form/LaunchedNotice";
+import { LaunchCheckNotice, LaunchConfirmingNotice, LaunchedNotice } from "./form/LaunchedNotice";
 import { createSchema } from "./helpers/createSchema";
 import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
 import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
@@ -74,18 +74,24 @@ export default function Page() {
   const [launched, setLaunched] = useState<{ chainId: number; revnetId: bigint }>();
   /** The saved launch whose result the chain can't show: nothing is sent until the user checks. */
   const [mustCheck, setMustCheck] = useState<string>();
-  /** Recovers the launch journaled at `key`, before anything else; undefined with no client. */
+  /** The saved launch that went through but whose revnet can't be read yet: only looked at again. */
+  const [confirming, setConfirming] = useState<{ key: string; account: string; chainId: number }>();
+  /** Recovers the launch journaled at `key`, before anything else. */
   const recover = (key: string, account: string, chainId: number) => {
     const client = getPublicClient(wagmiConfig, { chainId: chainId as JBChainId });
+    const settled = savedLaunchAt(key)?.settled;
     return client
       ? recoverLaunch(key, account, client as PublicClient)
-      : Promise.resolve<LaunchRecovery>({ status: "check" });
+      : Promise.resolve<LaunchRecovery>(
+          settled ? { status: "confirming", hash: settled.hash } : { status: "check" },
+        );
   };
   /** Shows what recovery found; true when it ends the launch here. */
-  const shown = (found: LaunchRecovery, key: string, chainId: number) => {
+  const shown = (found: LaunchRecovery, key: string, chainId: number, account: string) => {
+    setConfirming(found.status === "confirming" ? { key, account, chainId } : undefined);
     if (found.status === "launched") setLaunched({ chainId, revnetId: found.revnetId });
     if (found.status === "check") setMustCheck(key);
-    return found.status === "launched" || found.status === "check";
+    return ["launched", "check", "confirming"].includes(found.status);
   };
   // Every launch this account journaled is recovered on load: found, or checked by the user.
   useEffect(() => {
@@ -95,7 +101,7 @@ export default function Page() {
       for (const key of savedLaunchKeys(address)) {
         const chainId = Number(key.split(":").at(-2));
         const found = await recover(key, address, chainId);
-        if (live && shown(found, key, chainId)) return;
+        if (live && shown(found, key, chainId, address)) return;
       }
     })();
     return () => {
@@ -129,7 +135,7 @@ export default function Page() {
     // A journaled attempt of this launch is recovered first, before anything is prepared.
     if (launchKey && singleChainId !== undefined && savedLaunchAt(launchKey)) {
       const found = await recover(launchKey, address, singleChainId);
-      if (shown(found, launchKey, singleChainId)) return;
+      if (shown(found, launchKey, singleChainId, address)) return;
       if (found.status === "held") {
         try {
           await takeHeldExit(
@@ -139,8 +145,8 @@ export default function Page() {
           );
         } catch (error) {
           // A settlement that landed while the exit was open is the launch's result.
-          if (shown(await recover(launchKey, address, singleChainId), launchKey, singleChainId))
-            return;
+          const after = await recover(launchKey, address, singleChainId);
+          if (shown(after, launchKey, singleChainId, address)) return;
           throw error;
         }
         // The user took the exit: that attempt is retired, and this launch is a new one.
@@ -317,7 +323,11 @@ export default function Page() {
         } as unknown as Parameters<typeof writeContractAsync>[0]);
       } catch (error) {
         // A settlement the send or its exit found is this launch's result.
-        if (savedLaunchAt(key) && shown(await recover(key, address, chainId), key, chainId)) return;
+        if (
+          savedLaunchAt(key) &&
+          shown(await recover(key, address, chainId), key, chainId, address)
+        )
+          return;
         throw error;
       } finally {
         reserving.current = undefined;
@@ -412,6 +422,14 @@ export default function Page() {
               retireLaunch(mustCheck);
               setMustCheck(undefined);
             }}
+          />
+        ) : confirming ? (
+          <LaunchConfirmingNotice
+            onCheckAgain={() =>
+              void recover(confirming.key, confirming.account, confirming.chainId).then((found) =>
+                shown(found, confirming.key, confirming.chainId, confirming.account),
+              )
+            }
           />
         ) : null}
         <DeployRevnetForm

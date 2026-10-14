@@ -88,7 +88,14 @@ export function launchKeyOf(account: string, chainId: number, config: unknown): 
  * it), the block it was sent after, the holds it is held by and the settlements they already showed
  * before it. The main-era build saved only the salt and the block.
  */
-type SavedLaunch = { salt: Hex; fromBlock?: string; namespaces?: string[]; before?: string[] };
+type SavedLaunch = {
+  salt: Hex;
+  fromBlock?: string;
+  namespaces?: string[];
+  before?: string[];
+  /** The success a hold settled for it, journaled before anything about it was read. */
+  settled?: { result: "success"; hash: Hex };
+};
 
 /** The launch journaled at `key`, if one is kept. */
 export function savedLaunchAt(key: string): SavedLaunch | undefined {
@@ -102,22 +109,25 @@ export function savedLaunchAt(key: string): SavedLaunch | undefined {
   }
 }
 
+function persist(key: string, saved: SavedLaunch): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(saved));
+  } catch {
+    // Storage refused: the hold still carries the settlement this pass followed.
+  }
+}
+
 /** Journal the attempt the hold just reserved for the wallet. */
 export function saveLaunchAttempt(
   key: string,
   attempt: { salt: Hex; fromBlock?: bigint; namespaces: string[]; before: Hex[] },
 ): void {
-  const saved: SavedLaunch = {
+  persist(key, {
     salt: attempt.salt,
     namespaces: attempt.namespaces,
     before: attempt.before,
     ...(attempt.fromBlock !== undefined ? { fromBlock: attempt.fromBlock.toString() } : {}),
-  };
-  try {
-    window.localStorage.setItem(key, JSON.stringify(saved));
-  } catch {
-    // Storage refused: the write hold, in this tab's memory, still holds the attempt.
-  }
+  });
 }
 
 /**
@@ -223,6 +233,8 @@ export type LaunchRecovery =
   | { status: "held"; hold: WriteHoldHandle; state: WriteHeldState }
   /** The chain shows it launched this revnet: nothing is sent again. */
   | { status: "launched"; revnetId: bigint }
+  /** It went through (`hash`), but its revnet can't be read yet: looked at again, never resent. */
+  | { status: "confirming"; hash: Hex }
   /** What became of it can't be shown: the user checks it before anything is sent. */
   | { status: "check" }
   /** The hold proved it reverted at a final block: retired, a new one may be prepared. */
@@ -234,8 +246,9 @@ type LaunchClient = Pick<PublicClient, "getBlockNumber" | "getLogs" | "getTransa
 /**
  * The one recovery rule for the launch journaled at `key`, run before anything else is prepared:
  * a hold that still holds it decides (asked of the chain first). A success a hold settled after it
- * was journaled always wins: its own DeployRevnet event with the saved salt names the revnet, and
- * anything less (a read that fails, empty logs, another salt) is `check`, never a send. With no
+ * was journaled always wins: it is journaled before anything about it is read, and from then on is
+ * followed: its own DeployRevnet event with the saved salt names the revnet, and anything less (a
+ * read that fails, empty logs, another salt) is `confirming`, never a check, discard or send. With no
  * hold record, the saved salt is scanned for; nothing found, no sent block, or any failure is
  * `check`. Only a shown settlement or a final revert retires it here; never throws.
  */
@@ -247,9 +260,19 @@ export async function recoverLaunch(
 ): Promise<LaunchRecovery> {
   const saved = savedLaunchAt(key);
   if (!saved) return { status: "none" };
+  const [chainText, configHash] = key.slice(accountPrefix(account).length).split(":");
+  const chainId = Number(chainText);
+  /** Follows a success that went through: the revnet, or still confirming. */
+  const follow = async (hash: Hex): Promise<LaunchRecovery> => {
+    const revnetId = await launchOfTransaction(client, chainId, account, saved.salt, hash).catch(
+      () => undefined,
+    );
+    if (revnetId === undefined) return { status: "confirming", hash };
+    retireLaunch(key);
+    return { status: "launched", revnetId };
+  };
+  if (saved.settled) return follow(saved.settled.hash);
   try {
-    const [chainText, configHash] = key.slice(accountPrefix(account).length).split(":");
-    const chainId = Number(chainText);
     const namespaces = saved.namespaces ?? legacyIntents.launch(configHash as Hex);
     const before = new Set((saved.before ?? []).map((hash) => hash.toLowerCase()));
     let success: Hex | undefined;
@@ -264,10 +287,9 @@ export async function recoverLaunch(
       else reverted = true;
     }
     if (success) {
-      const revnetId = await launchOfTransaction(client, chainId, account, saved.salt, success);
-      if (revnetId === undefined) return { status: "check" };
-      retireLaunch(key);
-      return { status: "launched", revnetId };
+      // Journaled first: whatever the reads below say, this success is never discarded.
+      persist(key, { ...saved, settled: { result: "success", hash: success } });
+      return follow(success);
     }
     if (reverted) {
       retireLaunch(key);

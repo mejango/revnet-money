@@ -1,4 +1,8 @@
-import { LaunchCheckNotice, LaunchedNotice } from "@/app/create/form/LaunchedNotice";
+import {
+  LaunchCheckNotice,
+  LaunchConfirmingNotice,
+  LaunchedNotice,
+} from "@/app/create/form/LaunchedNotice";
 import {
   launchConfigHash,
   launchConfigOf,
@@ -122,18 +126,35 @@ describe("recovering a saved launch: held, settled, no record, check required", 
     ["its event names another salt", { blockLogs: [deployedBy(salt(3))] }],
     ["its event is another transaction's", { blockLogs: [deployedBy(salt(7), EARLIER)] }],
   ])(
-    "keeps a settled success when %s, with or without the sent block: check, never a send",
+    "journals a settled success before reading it, and keeps following it when %s: never a discard or resend",
     async (_case, reads) => {
       for (const fromBlock of [1_000n, undefined]) {
         window.localStorage.clear();
         save({ fromBlock });
         await expect(
           recover(open(clear({ result: "success", hash: SENT })), chain({ ...reads, scan: [] })),
-        ).resolves.toEqual({ status: "check" });
-        expect(savedLaunchAt(key())).toMatchObject({ salt: salt(7) });
+        ).resolves.toEqual({ status: "confirming", hash: SENT });
+        expect(savedLaunchAt(key())).toMatchObject({
+          salt: salt(7),
+          settled: { result: "success", hash: SENT },
+        });
+        // The hold forgets it (a later reservation, another browser's storage): still followed.
+        await expect(recover(open(clear()), chain({ ...reads, scan: [] }))).resolves.toEqual({
+          status: "confirming",
+          hash: SENT,
+        });
       }
     },
   );
+
+  it("names the revnet once the journaled success's event can be read", async () => {
+    save();
+    await recover(open(clear({ result: "success", hash: SENT })), chain({ blockLogs: [] }));
+    await expect(
+      recover(open(clear()), chain({ blockLogs: [deployedBy(salt(7))] })),
+    ).resolves.toEqual({ status: "launched", revnetId: 42n });
+    expect(savedLaunchAt(key())).toBeUndefined();
+  });
 
   it("never lets a later failed read downgrade a settled success", async () => {
     save();
@@ -142,7 +163,11 @@ describe("recovering a saved launch: held, settled, no record, check required", 
         open(clear({ result: "success", hash: SENT }), clear({ result: "failed", hash: EARLIER })),
         chain({ blockLogs: [] }),
       ),
-    ).resolves.toEqual({ status: "check" });
+    ).resolves.toEqual({ status: "confirming", hash: SENT });
+    await expect(
+      recover(open(clear({ result: "failed", hash: EARLIER })), chain()),
+    ).resolves.toEqual({ status: "confirming", hash: SENT });
+    expect(savedLaunchAt(key())).toBeDefined();
   });
 
   it("ignores a settlement older than the attempt, then requires a check with no other evidence", async () => {
@@ -286,6 +311,14 @@ describe("the launch notices", () => {
     render(<LaunchedNotice chainId={11155111} revnetId={42n} />);
     expect(screen.getByText(/This revnet is already launched/)).toBeInTheDocument();
     expect(screen.getByRole("link")).toHaveAttribute("href", "/sep:42");
+  });
+
+  it("offers a launch that went through only a fresh look, never a discard", () => {
+    const onCheckAgain = vi.fn();
+    render(<LaunchConfirmingNotice onCheckAgain={onCheckAgain} />);
+    expect(screen.queryByRole("button", { name: /I checked it/ })).toBeNull();
+    screen.getByRole("button", { name: "Check again" }).click();
+    expect(onCheckAgain).toHaveBeenCalledOnce();
   });
 
   it("retires the saved attempt only on the user's check", () => {

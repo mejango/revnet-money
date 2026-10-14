@@ -311,6 +311,26 @@ describe("a saved single-chain launch", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
+  it("keeps following a launch that went through: only a fresh look, never a discard or a resend", async () => {
+    const { launchKeyOf, launchInputOf } = await import("@/app/create/helpers/launchIntent");
+    window.localStorage.setItem(
+      launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form)),
+      JSON.stringify({
+        salt: `0x${"07".repeat(32)}`,
+        fromBlock: "1000",
+        namespaces: [],
+        before: [],
+        settled: { result: "success", hash: DEPLOYMENT_HASH },
+      }),
+    );
+    await submitFixture();
+
+    expect(await screen.findByRole("button", { name: "Check again" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /I checked it/ })).toBeNull();
+    expect(mocks.pinMetadata).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
   it("shows the check when the mount scan can't read the chain", async () => {
     await savedEarlierLaunch();
     render(<Page />);

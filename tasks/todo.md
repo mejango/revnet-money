@@ -1218,3 +1218,11 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 
 ### Review
 `npm run check` green: 2911 unit tests, 144 browser tests, bundle 2743.9 of 2746 KiB (no budget change). Audited: Relayr multichain launch keeps its own signature-window gate (unchanged); legacy Safe proposal adoption refusal keeps the journal refusing, never permits a send.
+
+## Joint round 4, finding 1: a known success is never discarded (2026-10-14)
+
+- [x] Red first (8 tests): a settled success with an unreadable receipt, empty logs, another salt or another transaction's event is journaled (`settled`) before any read and stays `confirming`; it is still followed once the hold forgets it; a later failed settlement never downgrades it; the page offers only "Check again", never "I checked it" or a resend.
+- [x] `recoverLaunch` follows a journaled settlement first; `LaunchConfirmingNotice` re-runs recovery. Markee and Relayr findings 2-4 are queued for the SDK engine migration (coordinator ruling).
+
+### Review
+`npm run check` green: 2914 unit tests, 144 browser tests, bundle 2744.1 of 2746 KiB.
