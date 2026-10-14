@@ -11,6 +11,7 @@ import {
   type WriteHoldGate,
   type WriteHoldHandle,
 } from "@bananapus/nana-sdk-core/review";
+import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
 import { keccak256, stringToHex, type Hex } from "viem";
 
 /** The one write hold for every ordinary wallet write in this app. */
@@ -33,6 +34,38 @@ export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): Wri
       : {}),
     call: { to: first.to, data: first.data, value: BigInt(first.value) },
   });
+}
+
+/**
+ * Gives the hold a write the app's own journal saved with `hash`: a proposal saved before the hold
+ * held it, or a lost wallet reply the user recovered and the app authenticated for this exact call.
+ * A Safe proposal's `proposal` (the transaction it hashes to) carries its nonce. A hold that holds
+ * the call with no hash takes the hash in place of that reservation; one that holds anything else
+ * keeps it. True once the hold holds the call.
+ */
+export async function adoptIntoHold(
+  hold: WriteHoldHandle,
+  client: WriteHoldClient,
+  hash: Hex,
+  proposal?: SafeQueuedTransaction,
+): Promise<boolean> {
+  const now = hold.peek();
+  if (now.status !== "clear") {
+    if (now.status !== "held-no-hash") return true;
+    // ponytail: the reservation is released and taken again with the hash under two locks; a
+    // send of this exact call from another tab between them would be refused by neither.
+    const { released } = await hold.exit(now, { checkedWallet: true }, client);
+    if (!released) return hold.peek().status !== "clear";
+  }
+  try {
+    await hold.send(client, async (gate) => {
+      await gate.beforeSend();
+      gate.afterSubmit(hash, proposal);
+    });
+    return true;
+  } catch {
+    return hold.peek().status !== "clear";
+  }
 }
 
 /**

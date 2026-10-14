@@ -306,9 +306,13 @@ describe("one Safe proposal for a whole flow", () => {
       first!,
       { ...second!, dependsOnPrior: true },
     ]);
-    // Only the standalone approval runs alone; the dependent call is left to Safe.
-    expect(mocks.request).toHaveBeenCalledTimes(1);
-    expect(mocks.request.mock.calls[0]![0]).toMatchObject({
+    // Only the standalone approval runs alone; the dependent call is left to Safe. (The other
+    // call reads the Safe's nonce for the hold.)
+    const simulated = mocks.request.mock.calls.filter(
+      ([args]) => (args as { params: [{ to: string }] }).params[0].to === TOKEN,
+    );
+    expect(simulated).toHaveLength(1);
+    expect(simulated[0]![0]).toMatchObject({
       method: "eth_call",
       params: [{ from: ACCOUNT, to: TOKEN }, "latest"],
     });

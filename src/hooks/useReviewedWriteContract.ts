@@ -3,7 +3,11 @@
 import { useWriteHoldWatch } from "@/hooks/useWriteHoldWatch";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
-import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
+import {
+  safeProposalAt,
+  safeTransactionRunsCalls,
+  type ReviewedSafeProposal,
+} from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
   dismissTransactionActivity,
@@ -13,6 +17,7 @@ import {
   transactionActivitySnapshot,
   updateTransactionActivity,
   useTransactionActivities,
+  type TransactionActivity,
 } from "@/lib/transaction-activity";
 import {
   requireContractTransactionReview,
@@ -25,7 +30,14 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
-import { holdOfHash, rememberHold, safeHoldOf, sendUnderHold, writeHolds } from "@/lib/write-hold";
+import {
+  adoptIntoHold,
+  holdOfHash,
+  rememberHold,
+  safeHoldOf,
+  sendUnderHold,
+  writeHolds,
+} from "@/lib/write-hold";
 import {
   browserLocks,
   gasWithHeadroom,
@@ -47,11 +59,8 @@ import {
   provenSafeProposalEnd,
   readSafeTransaction,
   SAFE_NONCE_GUIDANCE,
-  safeBatchProposalFor,
   safeExecutionResult,
   safeExecutionRunsCalls,
-  safeProposalFor,
-  safeTransactionHash,
   safeTransactionMessage,
   usableSafeConfirmations,
   type SafeQueuedTransaction,
@@ -189,6 +198,8 @@ async function watchSafeProposal(
     if (!proposal || !client) return;
     void report(safeHoldOf(chainId, proposal), client).catch(() => undefined);
   };
+  /** The reply is the Safe's execution of the reviewed calls: the hold keeps it until it settles. */
+  const ranAtOnce = () => tellHold((hold, chain) => hold.onExecuted(chain, hash));
   /**
    * Whether a Safe transaction runs exactly what this proposal was reviewed to run. A proposal
    * journaled without reviewed calls is held to its authenticated hash and the Safe's own event
@@ -266,7 +277,7 @@ async function watchSafeProposal(
             safeResultUnconfirmed: true,
           }),
           // The hold offers its warned exit at once, through reloads; later evidence still settles it.
-          tellHold((hold, chain) => hold.onUnproven(chain, hash)));
+          tellHold((hold, chain) => reportUnproven(hold, chain, hash)));
   /** The chain proved the proposal executed: it is followed until its receipt settles it. */
   const proven = () => tracked()?.safeExecutionProven !== undefined;
   /** The proposal's nonce once a look saw the Safe pass it, for chain checks the service can't block. */
@@ -291,29 +302,15 @@ async function watchSafeProposal(
     if (savedNonce() !== undefined || !proposal?.calls.length) return;
     const live = await liveNonce(safe);
     if (live === null) return;
-    const calls = proposal.calls.map((call) => ({ ...call, value: BigInt(call.value) }));
     const from = live > BigInt(NONCE_SEARCH_BEHIND) ? live - BigInt(NONCE_SEARCH_BEHIND) : 0n;
-    for (let nonce = from; nonce <= live + BigInt(NONCE_SEARCH_AHEAD); nonce += 1n) {
-      try {
-        const tx = proposal.batch
-          ? safeBatchProposalFor(calls, Number(nonce))
-          : safeProposalFor(calls[0]!, Number(nonce));
-        const candidates = proposal.safeTxGas
-          ? [tx, { ...tx, safeTxGas: proposal.safeTxGas }]
-          : [tx];
-        if (
-          candidates.some(
-            (candidate) =>
-              safeTransactionHash(chainId, safe, candidate).toLowerCase() === hash.toLowerCase(),
-          )
-        ) {
-          saveNonce(nonce);
-          return;
-        }
-      } catch {
-        return;
-      }
-    }
+    const found = safeProposalAt(
+      chainId,
+      { ...proposal, safe },
+      hash,
+      from,
+      live + BigInt(NONCE_SEARCH_AHEAD),
+    );
+    if (found) saveNonce(BigInt(found.nonce));
   });
   /**
    * What the canonical chain shows at the nonce the Safe passed, read without the Safe service
@@ -449,8 +446,10 @@ async function watchSafeProposal(
     const execution =
       answer === "unchecked" ? (client ? await findExecution(client) : null) : answer;
     if (execution === undefined) return false;
-    if (execution && executesReviewed(execution)) await settle(hash, false);
-    else unconfirmed();
+    if (execution && executesReviewed(execution)) {
+      ranAtOnce();
+      await settle(hash, false);
+    } else unconfirmed();
     return true;
   };
   /** The service's record of this proposal runs other calls, so the app can never follow it. */
@@ -609,8 +608,10 @@ async function watchSafeProposal(
           ? await findExecution(client)
           : "unchecked";
       if (execution && execution !== "unchecked") {
-        if (executesReviewed(execution)) await settle(hash, false);
-        else unconfirmed();
+        if (executesReviewed(execution)) {
+          ranAtOnce();
+          await settle(hash, false);
+        } else unconfirmed();
         return;
       }
       const safe = safeOf();
@@ -651,6 +652,63 @@ async function watchSafeProposal(
 }
 
 /**
+ * The Safe transaction a new proposal's reply hashes to, found from the Safe's nonce read right
+ * before the wallet: the hold keeps its nonce, so the chain can prove its end without the Safe
+ * service.
+ */
+function proposedAt(
+  chainId: number,
+  proposal: ReviewedSafeProposal,
+  hash: Hex,
+  nonceBefore: bigint | null,
+) {
+  return nonceBefore === null
+    ? undefined
+    : safeProposalAt(
+        chainId,
+        proposal,
+        hash,
+        nonceBefore,
+        nonceBefore + BigInt(NONCE_SEARCH_AHEAD),
+      );
+}
+
+/**
+ * Tells the hold its Safe follower ended unproven, unless the chain knows the proposal's hash as a
+ * transaction still pending (an execution Safe{Wallet} sent at once): that one keeps no exit. A
+ * node that can't say leaves it for the next ask.
+ */
+async function reportUnproven(hold: WriteHoldHandle, client: WriteHoldClient, hash: Hex) {
+  const seen = await client
+    .getTransaction({ hash })
+    .catch((error: unknown) => (error instanceof TransactionNotFoundError ? null : undefined));
+  if (seen === undefined || (seen && seen.blockNumber == null)) return;
+  await hold.onUnproven(client, hash);
+}
+
+/**
+ * Moves a Safe proposal journaled before the SDK's hold held it into that hold, with its saved
+ * hash and nonce, so the hold settles it and only its exit sends it again: one still followed, one
+ * the app can't confirm, or one another transaction replaced.
+ */
+async function holdLegacySafeProposal(row: TransactionActivity, client: WriteHoldClient) {
+  const { hash, chainId, safeProposal } = row;
+  if (row.kind !== "safe" || row.sdkHeld || !hash || !chainId || !safeProposal) return;
+  const replaced = row.status === "failed" && row.message === SAFE_PROPOSAL_REPLACED_LINE;
+  if (row.status !== "safe-proposed" && !replaced) return;
+  const nonce =
+    row.safeProposalNonce && /^\d+$/.test(row.safeProposalNonce)
+      ? BigInt(row.safeProposalNonce)
+      : undefined;
+  const hold = safeHoldOf(chainId, safeProposal);
+  const proposal =
+    nonce === undefined ? undefined : safeProposalAt(chainId, safeProposal, hash, nonce, nonce);
+  if (!(await adoptIntoHold(hold, client, hash, proposal))) return;
+  updateTransactionActivity(row.id, { sdkHeld: true });
+  if (row.safeResultUnconfirmed) await reportUnproven(hold, client, hash).catch(() => undefined);
+}
+
+/**
  * Whether the SDK's hold, which held this call before the send, decides over a journaled Safe
  * proposal of it that the app can't confirm: the hold offers that proposal's warned exit, so the
  * journal's own refusal (dismiss it first) gives way to it.
@@ -671,11 +729,15 @@ function holdDecides(
  * it offers the exit. Returns whether the hold held the call.
  */
 async function refuseUnheldSafeDuplicate(
-  duplicate: ReturnType<typeof transactionActivityForHash>,
+  callKey: string,
+  duplicateOf: () => ReturnType<typeof transactionActivityForHash>,
   hold: WriteHoldHandle,
   client: WriteHoldClient,
   action: string,
 ): Promise<boolean> {
+  for (const row of refreshTransactionActivities().filter((row) => row.callKey === callKey))
+    await holdLegacySafeProposal(row, client);
+  const duplicate = duplicateOf();
   let held: boolean;
   try {
     held = hold.peek().status !== "clear";
@@ -687,7 +749,7 @@ async function refuseUnheldSafeDuplicate(
   if (!holdDecides(duplicate, held)) {
     throw new SafeProposalPendingError(duplicate.hash, action, duplicate.safeResultUnconfirmed);
   }
-  await hold.onUnproven(client, duplicate.hash).catch(() => undefined);
+  await reportUnproven(hold, client, duplicate.hash).catch(() => undefined);
   return held;
 }
 
@@ -746,7 +808,13 @@ export async function proposeSafeBatch(
           activity.status === "pending" ||
           activity.status === "safe-proposed"),
     );
-  const heldBefore = await refuseUnheldSafeDuplicate(duplicateOf(), hold, publicClient, title);
+  const heldBefore = await refuseUnheldSafeDuplicate(
+    callKey,
+    duplicateOf,
+    hold,
+    publicClient,
+    title,
+  );
   const submit = async (gate: WriteHoldGate) => {
     const duplicate = duplicateOf();
     if (duplicate?.hash && holdDecides(duplicate, heldBefore)) {
@@ -791,6 +859,7 @@ export async function proposeSafeBatch(
       await switchChain(config, { chainId } as Parameters<typeof switchChain>[1]);
     }
     requireWalletContext(chainId);
+    const nonceBefore = await readBoundedSafeNonce(publicClient, account).catch(() => null);
     await gate.beforeSend();
     let id: string;
     try {
@@ -801,7 +870,7 @@ export async function proposeSafeBatch(
       throw error;
     }
     const hash = id as Hex;
-    gate.afterSubmit(hash);
+    gate.afterSubmit(hash, proposedAt(chainId, proposal, hash, nonceBefore));
     followSubmission(config, hash, chainId, title, account, callKey, proposal, false);
     return hash;
   };
@@ -809,6 +878,11 @@ export async function proposeSafeBatch(
 }
 
 export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
+  // Proposals journaled before the hold held them move into it first.
+  for (const row of transactionActivitySnapshot()) {
+    const client = row.chainId ? getPublicClient(config, { chainId: row.chainId }) : undefined;
+    if (client) void holdLegacySafeProposal(row, client).catch(() => undefined);
+  }
   transactionActivitySnapshot()
     .filter(
       (activity) =>
@@ -861,6 +935,8 @@ export function followSubmission(
     hash,
     safeProposalHash: safe ? hash : undefined,
     safeProposal: safe || undefined,
+    // Held by the SDK's write hold from the send; an unmarked one is moved into it on load.
+    sdkHeld: safe ? true : undefined,
     callKey,
     manualVerificationRequired: manualReceiptVerification || undefined,
   });
@@ -1013,6 +1089,8 @@ export function useWriteContract(
         );
       /** Whether the hold held this call before the send: its own answer then decides. */
       let heldBefore = false;
+      /** The Safe's nonce read right before the wallet, where a new proposal's own nonce starts. */
+      let safeNonceBefore: bigint | null = null;
       const submitReviewedCall = async (gate?: WriteHoldGate) => {
         const duplicate = duplicateOf();
         if (duplicate?.hash && holdDecides(duplicate, heldBefore)) {
@@ -1143,6 +1221,11 @@ export function useWriteContract(
             return prepared;
           },
           beforeWrite: async () => {
+            if (safeProposal && holdClient)
+              safeNonceBefore = await readBoundedSafeNonce(
+                holdClient as PublicClient,
+                initialAddress,
+              ).catch(() => null);
             await gate?.beforeSend();
             try {
               await beforeSubmission?.();
@@ -1159,7 +1242,11 @@ export function useWriteContract(
             gate?.onRejected();
             await onSubmissionRejected?.();
           },
-          onWriteSubmitted: (sent: Hex) => gate?.afterSubmit(sent),
+          onWriteSubmitted: (sent: Hex) =>
+            gate?.afterSubmit(
+              sent,
+              safeProposal ? proposedAt(chainId, safeProposal, sent, safeNonceBefore) : undefined,
+            ),
           beforeSend: assertWalletContext,
           write: (prepared) =>
             mutation.writeContractAsync(
@@ -1189,7 +1276,13 @@ export function useWriteContract(
       // review or waiting for its Safe proposal hash.
       // Without a client for the chain the simulation refuses before any wallet opens.
       if (hold && holdClient) {
-        heldBefore = await refuseUnheldSafeDuplicate(duplicateOf(), hold, holdClient, functionName);
+        heldBefore = await refuseUnheldSafeDuplicate(
+          callKey,
+          duplicateOf,
+          hold,
+          holdClient,
+          functionName,
+        );
         return sendUnderHold(hold, holdClient, submitReviewedCall);
       }
       return browserLocks().request(
@@ -1287,6 +1380,14 @@ export function useWaitForTransactionReceipt(
   // It may still land: the hold it was sent under is watched from here, so its line shows, an
   // exit that becomes due with time appears, and a receipt it finds settles it.
   const sentUnder = watchGaveUp ? holdOfHash(hash) : undefined;
+  /** A settlement of this observer's own hash: another attempt of the same call settles itself. */
+  const settlesThis = (
+    state: WriteHoldState,
+  ): state is { status: "clear"; settled: { result: "success" | "failed"; hash: Hex } } =>
+    state.status === "clear" &&
+    !!state.settled &&
+    "hash" in state.settled &&
+    state.settled.hash.toLowerCase() === hash?.toLowerCase();
   const watchedHold = sentUnder?.hold;
   const [shown, setShown] = useState<{ hold: WriteHoldHandle; state: WriteHoldState }>();
   const heldState = watchedHold && shown?.hold === watchedHold ? shown.state : undefined;
@@ -1296,7 +1397,7 @@ export function useWaitForTransactionReceipt(
     (state) => {
       if (!watchedHold) return;
       setShown({ hold: watchedHold, state });
-      if (state.status === "clear" && state.settled && "hash" in state.settled && tracked) {
+      if (settlesThis(state) && tracked) {
         updateTransactionActivity(tracked.id, {
           status: state.settled.result === "success" ? "success" : "failed",
           message:
@@ -1306,7 +1407,7 @@ export function useWaitForTransactionReceipt(
     },
     { checkNow: true },
   );
-  const settled = heldState?.status === "clear" ? heldState.settled : undefined;
+  const settled = heldState && settlesThis(heldState) ? heldState.settled : undefined;
   const held = heldState && heldState.status !== "clear" ? heldState : undefined;
   const heldFailed = settled?.result === "failed";
   const isError = watchedIsError || heldFailed;

@@ -58,6 +58,8 @@ export type TransactionActivity = {
    * identical call until its account dismisses it.
    */
   safeResultUnconfirmed?: boolean;
+  /** A Safe proposal the SDK's write hold holds (from its send, or moved into it on load). */
+  sdkHeld?: true;
   /**
    * The chain proved this proposal executed: the Safe's execution event for its safeTxHash at
    * the block that used `nonce` (decimal), in transaction `executionHash`. That receipt alone
