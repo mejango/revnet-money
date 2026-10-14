@@ -92,7 +92,7 @@ export function heldViewOf(hash: Hex | undefined): HeldWriteViewController | und
   return hash ? sent.get(hash.toLowerCase()) : undefined;
 }
 
-/** What each view does once it told a settlement: a follower stops, a send in flight refuses. */
+/** What each view does once it told a settlement: its follower stops. */
 const onTold = new WeakMap<HeldWriteViewController, Set<(settled: WriteHoldSettled) => void>>();
 
 function whenTold(
@@ -106,8 +106,8 @@ function whenTold(
 
 /**
  * One held write's SDK view. Its screens show each result from the receipt; a settlement is told
- * once its receipt is read, so one that lands during a send's own check refuses that send before
- * the wallet. `evidence`: a write the app saved before the hold held it, adopted first.
+ * once its receipt is read. `evidence`: a write the app saved before the hold held it, adopted
+ * first.
  */
 export function heldView(
   handle: WriteHoldHandle,
@@ -196,41 +196,6 @@ export async function sendHeld(
   onView?: (hash: Hex, view: HeldWriteView) => void,
 ): Promise<Hex> {
   const view = heldView(handle, client);
-  // The view tells a settlement it first sees during this send's own check, and its gate then
-  // lets the send through: a success that lands before the wallet opens is never sent again.
-  let landed: WriteHoldSettled | undefined;
-  const untold = whenTold(view, (settled) => {
-    if (settled.result === "success") landed ??= settled;
-  });
-  const refuseLanded = () => {
-    if (landed) throw new Error(settledLine(landed));
-  };
-  const guarded = (gate: WriteHoldGate) =>
-    run({
-      ...gate,
-      async beforeSend(actualCall) {
-        refuseLanded();
-        await gate.beforeSend(actualCall);
-        try {
-          refuseLanded();
-        } catch (error) {
-          gate.onRejected();
-          throw error;
-        }
-      },
-    });
-  try {
-    return await sendThrough(view, guarded, onView);
-  } finally {
-    untold();
-  }
-}
-
-async function sendThrough(
-  view: HeldWriteViewController,
-  run: (gate: WriteHoldGate) => Promise<Hex>,
-  onView?: (hash: Hex, view: HeldWriteView) => void,
-): Promise<Hex> {
   for (;;) {
     try {
       const hash = await view.send(run);

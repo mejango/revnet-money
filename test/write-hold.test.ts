@@ -200,13 +200,4 @@ describe("sendHeld: one SDK held-write view per send", () => {
     });
     await expect(send()).rejects.toThrow(HELD_SUCCESS_LINE);
   });
-
-  it("never sends again a success the view tells during this send's own check", async () => {
-    const { send } = await load();
-    // The earlier attempt settles while this send checks it: the view tells it, and its own
-    // gate would let the send through.
-    sdk.sends.push(() => sdk.view.onSettled?.({ result: "success", hash: HASH }));
-    await expect(send()).rejects.toThrow(HELD_SUCCESS_LINE);
-    expect(gate.beforeSend).not.toHaveBeenCalled();
-  });
 });

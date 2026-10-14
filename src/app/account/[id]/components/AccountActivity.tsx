@@ -25,6 +25,8 @@ import {
   type TransactionActivity,
 } from "@/lib/transaction-activity";
 import { formatTransactionMessage } from "@/lib/utils";
+import { SUPPORTED_CHAINS } from "@/lib/wagmiTransports";
+import { writeHolds } from "@/lib/write-hold";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import {
   checkedItLabel,
@@ -32,8 +34,10 @@ import {
   SAVED_ATTEMPT_UNREADABLE_LINE,
   type SavedAttemptCheck,
 } from "@bananapus/nana-sdk-core/review";
+import { HeldWritesNotice, useHeldWrites } from "@bananapus/nana-sdk-core/review/react";
 import { useMemo, useState } from "react";
 import type { Address } from "viem";
+import { usePublicClient } from "wagmi";
 
 const INITIAL_ITEMS = 25;
 const LOAD_MORE_COUNT = 25;
@@ -52,6 +56,18 @@ function useInFlightActivities(address: Address, enabled: boolean): TransactionA
     if (!enabled) return [];
     return all.filter((activity) => activity.account?.toLowerCase() === address.toLowerCase());
   }, [all, address, enabled]);
+}
+
+/** Every write the SDK holds for this account on one chain, with its line and its release. */
+function HeldWritesOn({ chainId, account }: { chainId: number; account: Address }) {
+  const client = usePublicClient({ chainId });
+  const items = useHeldWrites({ hold: writeHolds, chainId, account, client });
+  return (
+    <HeldWritesNotice
+      items={items}
+      className="space-y-2 border border-melon-200 bg-melon-50 p-3 text-xs text-zinc-700 [&_button]:font-medium [&_button]:text-teal-700 [&_button]:underline"
+    />
+  );
 }
 
 function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isSelf: boolean }) {
@@ -238,6 +254,13 @@ export function AccountActivity({ address }: { address: Address }) {
   return (
     <section>
       <h2 className="mb-2 text-base font-semibold text-zinc-700">Activity</h2>
+      {isSelf ? (
+        <div className="mb-4 space-y-2 empty:hidden">
+          {SUPPORTED_CHAINS.map((chain) => (
+            <HeldWritesOn key={chain.id} chainId={chain.id} account={address} />
+          ))}
+        </div>
+      ) : null}
       {inFlight.length > 0 ? (
         <div className="mb-4 space-y-2">
           {inFlight.map((activity) => (

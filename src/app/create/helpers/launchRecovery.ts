@@ -1,10 +1,10 @@
 import { savedAttempts } from "@/lib/write-hold";
-import {
-  createHeldWriteView,
-  type HeldWriteViewController,
-  type SavedAttemptCheck,
-  type WriteHeldState,
-  type WriteHoldClient,
+import type {
+  SavedAttemptCheck,
+  SavedAttemptOutcome,
+  SavedAttemptRecovery,
+  WriteHeldState,
+  WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
 import type { Hex, PublicClient } from "viem";
 import {
@@ -20,24 +20,54 @@ export type LaunchShown =
   /** The chain shows it launched this revnet: nothing is sent again. */
   | { kind: "launched"; chainId: number; revnetId: bigint }
   /** It went through, but its revnet can't be read yet: only looked at again, never resent. */
-  | { kind: "confirming"; attempt: LaunchAttempt; client: PublicClient }
+  | { kind: "confirming"; attempt: LaunchAttempt }
   /** The hold still holds it: its own line, and its exit when due. */
-  | {
-      kind: "held";
-      attempt: LaunchAttempt;
-      client: PublicClient;
-      view: HeldWriteViewController;
-      /** What the hold showed recovery, until the view reads it again. */
-      state: WriteHeldState;
-    }
+  | { kind: "held"; attempt: LaunchAttempt; state: WriteHeldState }
   /** What became of it can't be shown here: the user checks it. */
-  | { kind: "check"; attempt: LaunchAttempt; client: PublicClient; outcome: SavedAttemptCheck };
+  | { kind: "check"; attempt: LaunchAttempt; outcome: SavedAttemptCheck };
 
 /**
- * The SDK's one recovery of the launch journaled at `key`, run before anything else is prepared.
- * A success is journaled first and only followed; one shown as this launch, or the hold's final
- * revert, retires it as followed; anything the SDK can't show is a check. The journal goes only
- * once the SDK lets it.
+ * What the SDK's recovery of a journaled launch means for the page: a success is journaled first
+ * and only followed; one shown as this launch, or the hold's final revert, retires it as followed;
+ * anything the SDK can't show is a check. The journal goes only once the SDK lets it.
+ */
+export async function followLaunch(
+  attempt: LaunchAttempt,
+  outcome: SavedAttemptOutcome<bigint>,
+  retire: (reason: Parameters<SavedAttemptRecovery["retire"]>[1]) => Promise<unknown>,
+): Promise<LaunchShown | undefined> {
+  if (outcome.status === "none") {
+    discardLaunch(attempt);
+    return undefined;
+  }
+  if (outcome.status === "held") return { kind: "held", attempt, state: outcome.state };
+  // A success the journal recorded is only followed: never a check, a discard or a send.
+  if (outcome.status === "check" && attempt.saved?.hash) return { kind: "confirming", attempt };
+  if (outcome.status === "check") return { kind: "check", attempt, outcome };
+  if (outcome.result === "failed") {
+    await retire({ by: "settled", hash: outcome.hash });
+    discardLaunch(attempt, outcome.hash);
+    return undefined;
+  }
+  if (outcome.hash) journalLaunchSuccess(attempt, outcome.hash);
+  if (!outcome.authenticated) return { kind: "confirming", attempt };
+  await retire({ by: "settled", hash: outcome.hash });
+  discardLaunch(attempt, outcome.hash);
+  return { kind: "launched", chainId: attempt.chainId, revnetId: outcome.value };
+}
+
+/** Whether a launch is journaled at `key`; one that won't read counts. */
+export function launchJournaled(key: string): boolean {
+  try {
+    return savedLaunchAt(key) !== undefined;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The SDK's recovery of the launch journaled at `key`, outside any view: the page's own follow of
+ * a launch it just sent, and the tests. No journal: nothing was handed to the wallet from here.
  */
 export async function recoverLaunchAt(
   key: string,
@@ -46,39 +76,8 @@ export async function recoverLaunchAt(
   namespaces?: readonly string[],
   forceUnreadable?: () => boolean,
 ): Promise<LaunchShown | undefined> {
-  // No journal: nothing was handed to the wallet from here (the hold still holds any send). One
-  // that won't read is still an attempt.
-  try {
-    if (!savedLaunchAt(key)) return undefined;
-  } catch {
-    // Unreadable: recovered below, as a check at most.
-  }
+  if (!launchJournaled(key)) return undefined;
   const attempt = launchAttemptOf(key, account, client, namespaces, forceUnreadable);
   const outcome = await savedAttempts.recover(attempt, client as unknown as WriteHoldClient);
-  if (outcome.status === "none") {
-    discardLaunch(attempt);
-    return undefined;
-  }
-  if (outcome.status === "held")
-    return {
-      kind: "held",
-      attempt,
-      client,
-      view: createHeldWriteView(outcome.handle, { client: client as unknown as WriteHoldClient }),
-      state: outcome.state,
-    };
-  // A success the journal recorded is only followed: never a check, a discard or a send.
-  if (outcome.status === "check" && attempt.saved?.hash)
-    return { kind: "confirming", attempt, client };
-  if (outcome.status === "check") return { kind: "check", attempt, client, outcome };
-  if (outcome.result === "failed") {
-    await savedAttempts.retire(attempt, { by: "settled", hash: outcome.hash });
-    discardLaunch(attempt, outcome.hash);
-    return undefined;
-  }
-  if (outcome.hash) journalLaunchSuccess(attempt, outcome.hash);
-  if (!outcome.authenticated) return { kind: "confirming", attempt, client };
-  await savedAttempts.retire(attempt, { by: "settled", hash: outcome.hash });
-  discardLaunch(attempt, outcome.hash);
-  return { kind: "launched", chainId: attempt.chainId, revnetId: outcome.value };
+  return followLaunch(attempt, outcome, (reason) => savedAttempts.retire(attempt, reason));
 }

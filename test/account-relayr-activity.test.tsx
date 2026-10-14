@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   checkRelayrSession: vi.fn(async () => undefined),
   discardRelayrSession: vi.fn(),
   relayrSessionCheck: vi.fn(),
+  client: undefined as unknown,
   retireCheckedRelayrSession: vi.fn(),
   dismiss: vi.fn(),
 }));
@@ -32,6 +33,7 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   relayrSessionCheck: mocks.relayrSessionCheck,
   retireCheckedRelayrSession: mocks.retireCheckedRelayrSession,
 }));
+vi.mock("wagmi", () => ({ usePublicClient: () => mocks.client }));
 vi.mock("@/hooks/useViewedAccount", () => ({ useViewedAccount: () => ({ address: ACCOUNT }) }));
 vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
   useCompleteAccountActivity: () => ({ data: {}, isLoading: false, isError: false }),
@@ -72,6 +74,7 @@ function activity(overrides: Partial<TransactionActivity> = {}): TransactionActi
 }
 
 beforeEach(() => {
+  mocks.client = undefined;
   mocks.activities = [];
   mocks.indexed = [];
   mocks.checkRelayrSession.mockClear();
@@ -331,4 +334,41 @@ describe("a Safe proposal whose result can't be confirmed here", () => {
       expect(mocks.dismiss).toHaveBeenCalledExactlyOnceWith("safe:unconfirmed");
     },
   );
+});
+
+describe("the account's held writes", () => {
+  it("shows every write the SDK holds for the account, with its line", async () => {
+    const node = {
+      getChainId: async () => 8453,
+      getBlockNumber: async () => 100n,
+      getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
+      getTransactionCount: async () => 3,
+      getTransaction: async () => {
+        throw new Error("not found");
+      },
+      getTransactionReceipt: async () => {
+        throw new Error("not found");
+      },
+      request: async () => null,
+    };
+    const { writeHolds } = await import("@/lib/write-hold");
+    // The wallet never answered: the hold keeps the write, with no hash.
+    await writeHolds
+      .open({
+        chainId: 8453,
+        account: ACCOUNT,
+        safe: false,
+        call: { to: ACCOUNT, data: "0x1234", value: 0n },
+      })
+      .send(node as never, async (gate) => {
+        await gate.beforeSend();
+        throw new Error("Wallet transport timed out");
+      })
+      .catch(() => undefined);
+    mocks.client = node;
+    render(<AccountActivity address={ACCOUNT} />);
+    expect(
+      await screen.findByText("Your earlier transaction hasn't confirmed yet. Check your wallet."),
+    ).toBeVisible();
+  });
 });

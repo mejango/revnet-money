@@ -1304,4 +1304,8 @@ Rulings: nana-sdk-react 53.0.0 is not added (it can't build against wagmi 3: `us
 
 - [x] (2) The Safe approvals count stays revnet's ("Waiting for your Safe's approvals: 1 of 2."), read from Safe's service and the Safe's current owners at most once a minute while a proposal awaits its signers; the SDK's copy is used only for hold states. Test red first.
 - [x] (4) A proposal journaled without its reviewed calls settles from the chain as on main (its execution via the SDK's waitForSafeExecutionHash, then the Safe's execution event in its receipt); unproven stays Unconfirmed with Dismiss. Main's test restored, red first.
-- [ ] (1)/(5) On SDK 2.40.0: bump, delete sendHeld's own mid-send refusal, swap the bindings for `@bananapus/nana-sdk-core/review/react`, drop any pre-2.39 "Send it again" workaround.
+- [x] (1)/(5) SDK 2.40.0: core bumped (nana-sdk-react not added); sendHeld's own mid-send refusal deleted (the view's gate refuses it now); the launch page binds `useSavedAttempt` and its held notice `useHeldWrite` from `@bananapus/nana-sdk-core/review/react`; the account page shows `HeldWritesNotice` over `useHeldWrites` per supported chain. No pre-2.39 workaround existed. The generic `useWriteContract` keeps `createHeldWriteView` per send (its call is only known at send time, which a hook's fixed options can't take), and the receipt hook reads that send's view. Markee and the Relayr account check stay on the core recovery calls (imperative, one button each).
+
+#### SDK 2.40.0 review
+
+`npm run check` green: 2,885 unit tests, 144 browser tests, bundle 2,747.6 KiB under the aggregate ceiling raised from 2,746 to 2,750 KiB (route limits unchanged). A per-render `getPublicClient` restarted `useSavedAttempt`'s recovery in a loop under the test mock (heap exhaustion under coverage); the page now memoizes one client per attempt.

@@ -1627,9 +1627,9 @@ describe("held wallet writes", () => {
     });
     // The page lost its completion; the earlier attempt confirms while the retry checks it.
     chainMines();
-    await expect(launch()).rejects.toThrow(HELD_SUCCESS_LINE);
+    await expect(launch()).rejects.toThrow(HELD_AWAY_SUCCESS_LINE);
     expect(mocks.submit).toHaveBeenCalledOnce();
-    // A deliberate later send, after that settlement was shown, goes through.
+    // That settlement was shown: a deliberate later send goes through.
     await act(async () => {
       await launch();
     });

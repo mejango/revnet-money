@@ -448,6 +448,8 @@ describe("a saved single-chain launch", () => {
     mocks.pinMetadata.mockResolvedValue("bafy-metadata");
     await submitFixture();
     fireEvent.click(await screen.findByRole("button", { name: CHECK_LABEL }));
+    // Retired, the form reopens.
+    await waitFor(() => expect(screen.queryByRole("button", { name: CHECK_LABEL })).toBeNull());
     mocks.setSubmitting.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
     await waitFor(() => expect(mocks.setSubmitting).toHaveBeenLastCalledWith(false));

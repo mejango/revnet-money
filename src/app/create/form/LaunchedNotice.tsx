@@ -1,17 +1,18 @@
+import type { LaunchAttempt } from "@/app/create/helpers/launchIntent";
 import type { JBChainId } from "@/lib/nana/types";
-import { heldLineOf } from "@/lib/write-hold";
+import { heldLineOf, writeHolds } from "@/lib/write-hold";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import {
   checkedItLabel,
-  HELD_EXIT_LABEL,
   SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
   SAVED_ATTEMPT_UNREADABLE_LINE,
-  type HeldWriteViewController,
   type SavedAttemptCheck,
   type WriteHeldState,
+  type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
+import { useHeldWrite } from "@bananapus/nana-sdk-core/review/react";
 import Link from "next/link";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 
 const NOTICE = "grid gap-2 border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700";
 
@@ -64,56 +65,51 @@ export function LaunchCheckNotice({
 }
 
 /**
- * A saved launch the hold still holds: the SDK view's own line, and its exit when the hold offers
- * one. Once released (`onReleased`) or ended (`onEnded`), the page recovers it again.
+ * A saved launch the hold still holds: the SDK's held write, its own line and its exit when the
+ * hold offers one. Once released (`onReleased`) or ended (`onEnded`), the page recovers it again.
  */
 export function LaunchHeldNotice({
-  view,
+  attempt,
+  client,
   state,
   onReleased,
   onEnded,
 }: {
-  view: HeldWriteViewController;
-  /** What the hold showed recovery, until the view reads it again. */
+  attempt: LaunchAttempt;
+  client: WriteHoldClient;
+  /** What the hold showed recovery, until the held write reads it again. */
   state: WriteHeldState;
   onReleased: () => void;
   onEnded: () => void;
 }) {
-  const shown = useSyncExternalStore(view.subscribe, view.get, view.get);
-  const [busy, setBusy] = useState(false);
-  const ending = useRef(onEnded);
-  useEffect(() => {
-    ending.current = onEnded;
+  const [namespace, ...legacy] = attempt.namespaces;
+  const held = useHeldWrite({
+    hold: writeHolds,
+    chainId: attempt.chainId,
+    account: attempt.account,
+    namespace,
+    legacy,
+    client,
+    onSettled: onEnded,
+    onReleased: (by) => (by === "user" ? onReleased() : onEnded()),
   });
-  useEffect(() => view.start(), [view]);
-  // Settled, or let go by another window: recovered again, once.
-  const ended =
-    !!shown.state &&
-    (shown.phase === "settled" ||
-      shown.phase === "clear" ||
-      (shown.phase === "released" && shown.releasedBy === "other-tab"));
-  useEffect(() => {
-    if (ended) ending.current();
-  }, [ended]);
-  const line = heldLineOf(shown.state ? shown : state);
+  const [busy, setBusy] = useState(false);
+  const line = heldLineOf(held.state ? held : state);
   return (
     <div role="status" className={NOTICE}>
       <p>{line}</p>
-      {shown.warning ? <p>{shown.warning}</p> : null}
-      {shown.exit ? (
+      {held.warning ? <p>{held.warning}</p> : null}
+      {held.exitAction ? (
         <button
           type="button"
           className="w-fit underline"
           disabled={busy}
           onClick={() => {
             setBusy(true);
-            void view
-              .exit()
-              .then((released) => (released ? onReleased() : undefined))
-              .finally(() => setBusy(false));
+            void held.exitAction?.run().finally(() => setBusy(false));
           }}
         >
-          {HELD_EXIT_LABEL}
+          {held.exitAction.label}
         </button>
       ) : null}
     </div>
