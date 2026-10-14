@@ -3,6 +3,7 @@
 import { confirmHeldWriteExit } from "@/lib/flow-choice";
 import {
   createWriteHold,
+  WRITE_HOLD_REVERTED_LINE,
   WriteHeldError,
   type WriteHeldState,
   type WriteHoldClient,
@@ -38,25 +39,35 @@ async function askExit(
         });
       });
       if (open.signal.aborted) return;
+      // A poll in flight when the user answers is still kept: a settlement it returns decides.
       const now = await hold.state(client).catch(() => null);
-      if (now && !open.signal.aborted && (now.status === "clear" || !now.exit)) {
-        closedBy = now;
+      if (now && (now.status === "clear" || !now.exit)) {
+        closedBy ??= now;
         open.abort();
       }
     }
   })();
+  let accepted = false;
   try {
-    return { accepted: await confirmHeldWriteExit(shown, open.signal), closedBy };
+    accepted = await confirmHeldWriteExit(shown, open.signal);
   } finally {
     open.abort();
     await recheck;
   }
+  return { accepted, closedBy };
+}
+
+/** The line for a hold the chain ended while the exit was open, or the state that closed it. */
+function endedLine(state: Awaited<ReturnType<WriteHoldHandle["state"]>>): string {
+  if (state.status !== "clear") return state.line;
+  return state.settled?.result === "failed" ? WRITE_HOLD_REVERTED_LINE : WENT_THROUGH;
 }
 
 /**
  * Sends under the hold. A call that is held shows the SDK's line: with no exit it ends the send;
- * with one, the flow asks the user, and a release sends again. Every exit names the state the
- * user saw.
+ * with one, the flow asks the user. A send happens only after the user accepts the exit on a state
+ * that is still held and `exit` reports it released. A hold the chain clears while the exit is open
+ * ends the attempt without sending.
  */
 export async function sendUnderHold<T>(
   hold: WriteHoldHandle,
@@ -71,18 +82,10 @@ export async function sendUnderHold<T>(
       const shown = error.state;
       if (!shown.exit) throw new Error(shown.line);
       const { accepted, closedBy } = await askExit(hold, client, shown);
-      if (closedBy) {
-        if (closedBy.status === "clear") {
-          if (closedBy.settled?.result === "success") throw new Error(WENT_THROUGH);
-          continue;
-        }
-        throw new Error(closedBy.line);
-      }
+      if (closedBy) throw new Error(endedLine(closedBy));
       if (!accepted) throw new Error(shown.line);
       const { released, state } = await hold.exit(shown, { checkedWallet: true }, client);
-      if (released) continue;
-      if (state.status !== "clear") throw new Error(state.line);
-      if (state.settled?.result === "success") throw new Error(WENT_THROUGH);
+      if (!released) throw new Error(endedLine(state));
     }
   }
 }

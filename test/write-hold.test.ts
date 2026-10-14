@@ -1,6 +1,10 @@
 import { registerFlowChoiceHandler } from "@/lib/flow-choice";
 import { sendUnderHold, WENT_THROUGH } from "@/lib/write-hold";
-import { WriteHeldError, type WriteHeldState } from "@bananapus/nana-sdk-core/review";
+import {
+  WRITE_HOLD_REVERTED_LINE,
+  WriteHeldError,
+  type WriteHeldState,
+} from "@bananapus/nana-sdk-core/review";
 import { describe, expect, it, vi } from "vitest";
 
 const RECORD = { call: { to: "0x1", data: "0x", value: "0" } };
@@ -80,13 +84,14 @@ describe("sendUnderHold", () => {
     expect(hold.send).toHaveBeenCalledOnce();
   });
 
-  it("sends again when the exit finds the hold already gone", async () => {
+  it("does not send when the exit finds the hold already gone", async () => {
     registerFlowChoiceHandler(vi.fn().mockResolvedValue(true));
     const hold = holdThat({
       held: [exitState()],
       exit: { released: false, state: { status: "clear" } },
     });
-    await expect(sendUnderHold(hold as never, client, run)).resolves.toBe("0xsent");
+    await expect(sendUnderHold(hold as never, client, run)).rejects.toThrow(WENT_THROUGH);
+    expect(hold.send).toHaveBeenCalledOnce();
   });
 
   it("passes other errors through", async () => {
@@ -124,15 +129,52 @@ describe("sendUnderHold", () => {
     await sent;
   });
 
-  it("sends again when the recheck finds the hold cleared without a success", async () => {
+  it("does not send when the recheck finds the hold cleared without a settled result", async () => {
     vi.useFakeTimers();
     registerFlowChoiceHandler(
       (_choice, signal) =>
         new Promise<boolean>((resolve) => signal?.addEventListener("abort", () => resolve(false))),
     );
     const hold = holdThat({ held: [exitState()], state: { status: "clear" } });
-    const sent = sendUnderHold(hold as never, client, run);
+    const sent = expect(sendUnderHold(hold as never, client, run)).rejects.toThrow(WENT_THROUGH);
     await vi.advanceTimersByTimeAsync(3_100);
-    await expect(sent).resolves.toBe("0xsent");
+    await sent;
+    expect(hold.send).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a settlement an in-flight poll returns after the user accepts, and sends nothing", async () => {
+    vi.useFakeTimers();
+    let answer: (accepted: boolean) => void = () => {};
+    registerFlowChoiceHandler(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    const hold = holdThat({ held: [exitState()] });
+    let finish: (state: unknown) => void = () => {};
+    hold.state.mockImplementation(() => new Promise((resolve) => (finish = resolve)) as never);
+    const sent = expect(sendUnderHold(hold as never, client, run)).rejects.toThrow(WENT_THROUGH);
+    // The poll is in flight when the user accepts, and settles after.
+    await vi.advanceTimersByTimeAsync(3_100);
+    answer(true);
+    await vi.advanceTimersByTimeAsync(0);
+    finish({ status: "clear", settled: { result: "success" } });
+    await sent;
+    expect(hold.send).toHaveBeenCalledOnce();
+    expect(hold.exit).not.toHaveBeenCalled();
+  });
+
+  it("shows a reverted settlement as failed, and sends nothing", async () => {
+    vi.useFakeTimers();
+    registerFlowChoiceHandler(
+      (_choice, signal) =>
+        new Promise<boolean>((resolve) => signal?.addEventListener("abort", () => resolve(false))),
+    );
+    const hold = holdThat({
+      held: [exitState()],
+      state: { status: "clear", settled: { result: "failed" } },
+    });
+    const sent = expect(sendUnderHold(hold as never, client, run)).rejects.toThrow(
+      WRITE_HOLD_REVERTED_LINE,
+    );
+    await vi.advanceTimersByTimeAsync(3_100);
+    await sent;
+    expect(hold.send).toHaveBeenCalledOnce();
   });
 });
