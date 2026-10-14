@@ -7,7 +7,7 @@ import {
   writeIntentOf,
 } from "@/lib/write-hold";
 import { intent, writeIntentKey, type IntentValue } from "@bananapus/nana-sdk-core/review";
-import { parseAbi } from "viem";
+import { encodeAbiParameters, parseAbi, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
 
 /** The intent `params` give a write. */
@@ -44,6 +44,11 @@ describe("a payment's intent", () => {
       items: [],
       ...overrides,
     });
+
+  it("keys a pay token the app defaulted to as that default, whatever token it resolved to", () => {
+    expect(key(pay({ token: "auto:token" }))).toBe(key(pay({ token: "auto:token" })));
+    expect(key(pay({ token: "auto:token" }))).not.toBe(key(pay()));
+  });
 
   it("keys an ordinary payment by its typed amount", () => {
     expect(key(pay())).not.toBe(key(pay({ amount: 11n })));
@@ -110,17 +115,71 @@ describe("approval intents", () => {
   });
 });
 
-describe("an amount the user filled with a share button", () => {
-  const cashOut = (amount: bigint, share?: number) =>
-    key(cashOutIntent({ projectId: 7, token: TOKEN, amount, beneficiary: TOKEN, share }));
+describe("an amount keyed by where it came from", () => {
+  const cashOut = (amount: IntentValue) =>
+    key(cashOutIntent({ projectId: 7, token: TOKEN, amount, beneficiary: TOKEN }));
 
-  it("is keyed as that share, so a balance that moved meanwhile is the same intent", () => {
-    expect(cashOut(10n, 100)).toBe(cashOut(12n, 100));
-    expect(cashOut(10n, 100)).not.toBe(cashOut(10n, 50));
+  it("keys an option the user picked by its name, so a balance that moved is the same intent", () => {
+    expect(cashOut("policy:max")).toBe(cashOut("policy:max"));
+    expect(cashOut("policy:max")).not.toBe(cashOut("policy:25%"));
+    expect(cashOut("policy:max")).not.toBe(cashOut(10n));
   });
 
-  it("keeps a typed amount as typed", () => {
+  it("keeps a typed amount as its parsed value", () => {
     expect(cashOut(10n)).not.toBe(cashOut(12n));
-    expect(cashOut(10n)).not.toBe(cashOut(10n, 100));
+    expect(cashOut(10n)).toBe(cashOut(10n));
+  });
+});
+
+describe("a liquidity write's intent", () => {
+  const POOL = {
+    currency0: TOKEN,
+    currency1: HOOK,
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: "0x0000000000000000000000000000000000000000",
+  } as const;
+  const encode = (actions: Hex, params: Hex[]) =>
+    encodeAbiParameters([{ type: "bytes" }, { type: "bytes[]" }], [actions, params]);
+  const onToken = (tokenId: bigint, amount: bigint) =>
+    encodeAbiParameters(
+      [{ type: "uint256" }, { type: "uint256" }, { type: "uint128" }],
+      [tokenId, amount, amount],
+    );
+  const mint = (lower: number) =>
+    encodeAbiParameters(
+      [
+        {
+          type: "tuple",
+          components: [
+            { type: "address" },
+            { type: "address" },
+            { type: "uint24" },
+            { type: "int24" },
+            { type: "address" },
+          ],
+        },
+        { type: "int24" },
+        { type: "int24" },
+      ],
+      [[POOL.currency0, POOL.currency1, POOL.fee, POOL.tickSpacing, POOL.hooks], lower, lower + 60],
+    );
+  const settle = encodeAbiParameters([{ type: "address" }], [TOKEN]);
+  const lp = (unlockData: Hex) =>
+    writeIntentOf({ address: HOOK, functionName: "modifyLiquidities", args: [unlockData, 1n] });
+
+  it("is one intent per position, whether the app builds an increase or a decrease", () => {
+    expect(lp(encode("0x0012", [onToken(5n, 1n), settle]))).toBe(
+      lp(encode("0x0111", [onToken(5n, 2n), settle])),
+    );
+    expect(lp(encode("0x0012", [onToken(5n, 1n), settle]))).not.toBe(
+      lp(encode("0x0012", [onToken(6n, 1n), settle])),
+    );
+  });
+
+  it("is one intent per pool for a mint, however many positions the app mints", () => {
+    expect(lp(encode("0x0212", [mint(0), settle]))).toBe(
+      lp(encode("0x020212", [mint(0), mint(120), settle])),
+    );
   });
 });

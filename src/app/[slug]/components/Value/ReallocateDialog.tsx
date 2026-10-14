@@ -100,7 +100,7 @@ export function ReallocateDialog({
   useEffect(() => {
     const isOpen = open !== undefined ? open : isDialogOpen;
     if (isOpen && Number(borrowableAmountFormatted) > 0) {
-      setCollateralAmount("0");
+      setCollateralAmount("0", "auto");
     }
   }, [open, isDialogOpen, borrowableAmountFormatted, setCollateralAmount]);
 
@@ -254,7 +254,7 @@ export function ReallocateDialog({
 
                     // Prevent entering more than available balance
                     if (numValue > maxValue) {
-                      setCollateralAmount(maxValue.toFixed(6), 100);
+                      setCollateralAmount(maxValue.toFixed(6), "max");
                     } else {
                       setCollateralAmount(value);
                     }
@@ -272,7 +272,7 @@ export function ReallocateDialog({
                   <button
                     type="button"
                     onClick={() => {
-                      setCollateralAmount("0");
+                      setCollateralAmount("0", "none");
                     }}
                     className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100 w-16"
                   >
@@ -284,7 +284,7 @@ export function ReallocateDialog({
                       type="button"
                       onClick={() => {
                         const value = Number(borrowableAmountFormatted) * (pct / 100);
-                        setCollateralAmount(value.toString().replace(/\.?0+$/, ""), pct);
+                        setCollateralAmount(value.toString().replace(/\.?0+$/, ""), `${pct}%`);
                       }}
                       className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100 w-16"
                     >
@@ -294,7 +294,7 @@ export function ReallocateDialog({
                   <button
                     type="button"
                     onClick={() => {
-                      setCollateralAmount(borrowableAmountFormatted, 100);
+                      setCollateralAmount(borrowableAmountFormatted, "max");
                     }}
                     className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100 w-16"
                   >

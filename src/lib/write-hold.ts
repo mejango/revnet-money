@@ -278,12 +278,13 @@ const POOL_KEY = [
 ] as const;
 
 /**
- * A `modifyLiquidities` unlockData's actions and the positions they act on: each action's code
- * with its tokenId, or a mint's pool key. The amounts, limits and a mint's range are left out,
- * since a retry re-quotes them from the live price; the currency actions (settle, take, close, sweep) keep their params. An
- * unlockData that can't be read is one action on the whole position manager.
+ * What a `modifyLiquidities` write acts on: the positions (tokenIds) it touches and the pools it
+ * mints in, each once, in order. The actions themselves are left out, with their counts, amounts,
+ * limits, a mint's range and the settlement actions: the app generates them from the live price
+ * (an increase at one price is a decrease at another, a market mints more positions at a corridor
+ * edge). An unlockData that can't be read is one write on the whole position manager.
  */
-function liquidityActions(unlockData: unknown): IntentValue {
+function liquidityTargets(unlockData: unknown): IntentValue {
   try {
     const [actions, params] = decodeAbiParameters(
       [{ type: "bytes" }, { type: "bytes[]" }],
@@ -291,13 +292,20 @@ function liquidityActions(unlockData: unknown): IntentValue {
     );
     const codes = actions.slice(2).match(/../g) ?? [];
     if (codes.length !== params.length) return "unread";
-    return codes.map((hex, index) => {
+    const positions = new Set<string>();
+    const pools = new Set<string>();
+    codes.forEach((hex, index) => {
       const code = parseInt(hex, 16);
       const param = params[index]!;
-      if (ON_TOKEN.has(code)) return [code, decodeAbiParameters([{ type: "uint256" }], param)[0]];
-      if (MINTS.has(code)) return [code, abiIntent(decodeAbiParameters(POOL_KEY, param))];
-      return [code, intent.hex(param)];
+      if (ON_TOKEN.has(code))
+        positions.add(decodeAbiParameters([{ type: "uint256" }], param)[0].toString());
+      else if (MINTS.has(code))
+        pools.add(JSON.stringify(abiIntent(decodeAbiParameters(POOL_KEY, param)[0])));
     });
+    return {
+      positions: [...positions].sort().map((id) => BigInt(id)),
+      pools: [...pools].sort(),
+    };
   } catch {
     return "unread";
   }
@@ -335,7 +343,7 @@ export function writeIntentOf(write: Write): string | undefined {
       spender: abiIntent(args[1]),
     });
   if (write.functionName === "modifyLiquidities")
-    return writeIntentKey("lp", { to, actions: liquidityActions(args[0]) });
+    return writeIntentKey("lp", { to, targets: liquidityTargets(args[0]) });
   if (write.functionName === "execTransaction" && args.length === 10)
     return writeIntentKey("safe-exec", { to, transaction: abiIntent(args.slice(0, 9)) });
   return undefined;
@@ -370,6 +378,7 @@ export function batchIntentOf(calls: readonly (Write & { abi: Abi; value?: bigin
 export function payIntent(payment: {
   mode: string;
   projectId: number | bigint;
+  /** The pay token, or a marker when the app picked it (`auto:token`). */
   token: string;
   amount: bigint;
   memo: string;
@@ -379,7 +388,7 @@ export function payIntent(payment: {
 }): [string, { [name: string]: IntentValue }] {
   const common = {
     projectId: BigInt(payment.projectId),
-    token: intent.address(payment.token),
+    token: payment.token.startsWith("auto:") ? payment.token : intent.address(payment.token),
     memo: payment.memo,
     beneficiary: intent.address(payment.beneficiary),
   };
@@ -404,9 +413,8 @@ export function reallocateIntent(reallocation: {
   loanId: string | number | bigint;
   token: string;
   collateralCountToTransfer?: bigint;
-  collateralCountToAdd: bigint;
-  /** The share a share button filled the added collateral with, when one did. */
-  collateralShare?: number;
+  /** As the user chose it: its parsed value if typed, else its option or seed (useChosen). */
+  collateralCountToAdd: IntentValue;
   prepaidFeePercent: bigint;
 }): [string, { [name: string]: IntentValue }] {
   return [
@@ -414,10 +422,7 @@ export function reallocateIntent(reallocation: {
     {
       loanId: BigInt(reallocation.loanId),
       token: intent.address(reallocation.token),
-      collateralCountToAdd: amountChosen(
-        reallocation.collateralCountToAdd,
-        reallocation.collateralShare,
-      ),
+      collateralCountToAdd: reallocation.collateralCountToAdd,
       prepaidFeePercent: reallocation.prepaidFeePercent,
     },
   ];
@@ -430,30 +435,17 @@ export function reallocateIntent(reallocation: {
 export function cashOutIntent(cashOut: {
   projectId: number | bigint;
   token: string;
-  amount: bigint;
+  /** As the user chose it: its parsed value if typed, else its option or seed (useChosen). */
+  amount: IntentValue;
   beneficiary: string;
-  /** The share of the balance a share button filled in (100 for Max), when one did. */
-  share?: number;
 }): [string, { [name: string]: IntentValue }] {
   return [
     "cash-out",
     {
       projectId: BigInt(cashOut.projectId),
       token: intent.address(cashOut.token),
-      ...amountChosen(cashOut.amount, cashOut.share),
+      amount: cashOut.amount,
       beneficiary: intent.address(cashOut.beneficiary),
     },
   ];
-}
-
-/**
- * The amount as the user chose it: the share a share button (Max, or a percentage) filled in, or
- * the amount the user typed. A filled amount follows the balance, so a retry after it moved is
- * still the same choice.
- */
-export function amountChosen(
-  amount: bigint,
-  share: number | undefined,
-): { amount: bigint } | { share: number } {
-  return share === undefined ? { amount } : { share };
 }

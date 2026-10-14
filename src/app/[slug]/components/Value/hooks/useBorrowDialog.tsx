@@ -1,5 +1,6 @@
 import { useToast } from "@/components/ui/use-toast";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
+import { useChosen } from "@/hooks/useChosen";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalPendingError,
@@ -24,7 +25,7 @@ import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUt
 import { TransactionReviewCancelledError } from "@/lib/transaction-review";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { amountChosen, reallocateIntent, withWriteIntent } from "@/lib/write-hold";
+import { reallocateIntent, withWriteIntent } from "@/lib/write-hold";
 import {
   getRevnetLoanContract,
   JB_TOKEN_DECIMALS,
@@ -100,17 +101,22 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     if (borrowStatus === "granting-permission") setGrantsPermission(true);
     if (borrowStatus === "idle") setGrantsPermission(false);
   }, [borrowStatus]);
-  const [collateralAmount, setCollateralText] = useState("");
-  /**
-   * The share of the balance a share button (Max, a percentage, the full balance filled in on a
-   * network pick, or the clamp to the most allowed) filled in; undefined once the user types. The
-   * write's intent keeps the share, since the filled amount follows the balance.
-   */
-  const [collateralShare, setCollateralShare] = useState<number>();
-  const setCollateralAmount = useCallback((value: string, share?: number) => {
-    setCollateralText(value);
-    setCollateralShare(share);
-  }, []);
+  // Where the collateral came from: typed, an option the user picked (Max, a percentage) or the
+  // app's seed (the full balance on a network pick, a reset). The write's intent keys an option or
+  // a seed by its name, since the amount it fills follows the balance.
+  const chosenCollateral = useChosen("", "collateral");
+  const collateralAmount = chosenCollateral.value;
+  const { set: typeCollateral, choose: chooseCollateral, seed: seedCollateral } = chosenCollateral;
+  /** `policy`: the option the user picked, or "auto" for the app's own fill. */
+  const setCollateralAmount = useCallback(
+    (value: string, policy?: string) =>
+      policy === "auto"
+        ? seedCollateral(value)
+        : policy
+          ? chooseCollateral(policy, value)
+          : typeCollateral(value),
+    [typeCollateral, chooseCollateral, seedCollateral],
+  );
   const [selectedChainId, setSelectedChainId] = useState<number | undefined>(undefined);
   const [cashOutChainId, setCashOutChainId] = useState<string>();
   const [prepaidPercent, setPrepaidPercent] = useState("2.5");
@@ -422,7 +428,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         setSelectedTab(defaultTab ?? "borrow");
       } else {
         // Clear all form state
-        setCollateralAmount("");
+        setCollateralAmount("", "auto");
         setPrepaidPercent("2.5");
         setGrossBorrowedNative(0);
 
@@ -452,7 +458,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       const collateral = selected ? formatUnits(selected.balance.value, projectTokenDecimals) : "0";
       setSelectedChainId(chainId);
       setCashOutChainId(chainId.toString());
-      setCollateralAmount(collateral, 100);
+      setCollateralAmount(collateral, "auto");
       setInternalSelectedLoan(null);
     },
     [balances, projectTokenDecimals, setCollateralAmount],
@@ -662,8 +668,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           ...reallocateIntent({
             loanId: internalSelectedLoan.id,
             token: selectedChainTokenConfig.token,
-            collateralCountToAdd,
-            collateralShare,
+            collateralCountToAdd: chosenCollateral.key(collateralCountToAdd),
             prepaidFeePercent: feePercent,
           }),
         )({
@@ -729,7 +734,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           await withWriteIntent(writeContractAsync, "borrow", {
             revnetId: effectiveProjectId,
             token: intent.address(selectedChainTokenConfig.token),
-            collateral: amountChosen(collateralBigInt, collateralShare),
+            collateral: chosenCollateral.key(collateralBigInt),
             prepaidFeePercent: feeBasisPoints,
           })({
             ...buildProtectedBorrowTx({
@@ -764,7 +769,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       }
     }
   }, [
-    collateralShare,
+    chosenCollateral,
     internalSelectedLoan,
     collateralAmount,
     cashOutChainId,

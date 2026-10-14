@@ -22,6 +22,7 @@ import {
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
+import { useChosen } from "@/hooks/useChosen";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalUnconfirmedError,
@@ -66,7 +67,7 @@ import {
   uniswapV4Deployment,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { PropsWithChildren, useCallback, useEffect, useState } from "react";
+import { PropsWithChildren, useEffect, useState } from "react";
 import { erc20Abi, type Address, type PublicClient } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import { readPoolSnapshot } from "../v6/owners/market/lib";
@@ -82,16 +83,10 @@ const APPROVAL_UNCONFIRMED = "Couldn't confirm the approval yet.";
 
 export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, disabled, children } = props;
-  const [redeemAmount, setRedeemAmountText] = useState<string>();
-  /**
-   * The share of the balance a share button filled in (100 for Max); undefined once the user
-   * types. The write's intent keeps the share, since the filled amount follows the balance.
-   */
-  const [redeemShare, setRedeemShare] = useState<number>();
-  const setRedeemAmount = useCallback((value: string | undefined, share?: number) => {
-    setRedeemAmountText(value);
-    setRedeemShare(share);
-  }, []);
+  // Where the amount came from: typed, a share option (Max), or the app's seed. The write's
+  // intent keys an option by its name, since the amount it fills follows the balance.
+  const chosenAmount = useChosen<string | undefined>(undefined, "amount");
+  const redeemAmount = chosenAmount.value;
   // Max quote change tolerance in basis points; protects both routes (terminal
   // minimum on the treasury path, metadata minimum on the AMM path).
   const [slippageBps, setSlippageBps] = useState(100);
@@ -423,7 +418,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         // The dialog stays mounted: a finished cash out must not greet the next one.
         if (!open) {
           reset();
-          setRedeemAmount(undefined);
+          chosenAmount.seed(undefined);
           setReview(false);
           setError(null);
         }
@@ -499,7 +494,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                             id="amount"
                             name="amount"
                             value={redeemAmount ?? ""}
-                            onChange={(e) => setRedeemAmount(e.target.value?.trim())}
+                            onChange={(e) => chosenAmount.set(e.target.value?.trim())}
                           />
                           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 z-10">
                             <span className="text-zinc-500 sm:text-md">{tokenSymbol}</span>
@@ -517,11 +512,11 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                                     description: "Choose a network first.",
                                   });
                                 }
-                                setRedeemAmount(
+                                chosenAmount.choose(
+                                  pct === 100 ? "max" : `${pct}%`,
                                   pct === 100
                                     ? maxRedeemAmount
                                     : (Number(maxRedeemAmount) * (pct / 100)).toFixed(8),
-                                  pct,
                                 );
                               }}
                               className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
@@ -754,8 +749,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     ...cashOutIntent({
                       projectId: effectiveProjectId,
                       token: tokenToReceive,
-                      amount: redeemAmountBN,
-                      share: redeemShare,
+                      amount: chosenAmount.key(redeemAmountBN),
                       beneficiary: address,
                     }),
                   )({
@@ -793,8 +787,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   ...cashOutIntent({
                     projectId: effectiveProjectId,
                     token: tokenToReceive,
-                    amount: redeemAmountBN,
-                    share: redeemShare,
+                    amount: chosenAmount.key(redeemAmountBN),
                     beneficiary: address,
                   }),
                 )({ ...prepared.transaction, account: address });

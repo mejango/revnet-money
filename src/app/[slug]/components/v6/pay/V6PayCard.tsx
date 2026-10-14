@@ -1014,7 +1014,8 @@ export function V6PayCard() {
         ...payIntent({
           mode: prepared.mode,
           projectId,
-          token: prepared.token.token,
+          // A token the app defaulted to is keyed as that default, not the token it resolved to.
+          token: tokenTouched ? prepared.token.token : "auto:token",
           amount: prepared.amount,
           memo: prepared.memo,
           beneficiary: prepared.account,

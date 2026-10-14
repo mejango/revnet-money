@@ -763,6 +763,8 @@ async function refuseUnheldSafeDuplicate(
   if (!duplicate?.hash || duplicate.status !== "safe-proposed") return held;
   // The journal knows the proposal's Safe nonce and the hold doesn't (it took the proposal before
   // the nonce was found): only the journal can tell its nonce was used, so it still refuses.
+  // TODO(SDK 2.36): authenticate the nonce and give it to this exact held attempt with
+  // attachSafeNonce, then defer to the hold and remove this guard.
   if (held && duplicate.safeProposalNonce !== undefined && !holdKnowsNonce(hold))
     throw new SafeProposalPendingError(duplicate.hash, action, duplicate.safeResultUnconfirmed);
   if (!holdDecides(duplicate, held)) {
