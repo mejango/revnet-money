@@ -49,8 +49,11 @@ import {
   lookAtSafeProposal,
   readSafeTransaction,
   SAFE_NONCE_GUIDANCE,
+  safeBatchProposalFor,
   safeExecutionResult,
   safeExecutionRunsCalls,
+  safeProposalFor,
+  safeTransactionHash,
   safeTransactionMessage,
   usableSafeConfirmations,
   type SafeQueuedTransaction,
@@ -112,6 +115,11 @@ const RECEIPT_UNCONFIRMED =
   "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
 const SAFE_RESULT_UNCONFIRMED =
   "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
+/** The Safe used a proposal's nonce, and the canonical chain has not yet said what ran there. */
+const SAFE_NONCE_USED_LINE = "Your Safe used this transaction's nonce. Checking what ran.";
+/** How far around the Safe's nonce a proposal's own nonce is looked for by its hash. */
+const NONCE_SEARCH_BEHIND = 64;
+const NONCE_SEARCH_AHEAD = 16;
 const SAFE_REPORTED_EXECUTED_UNCONFIRMED =
   "Safe reports this proposal as executed, but its result can't be confirmed here. Check it in Safe before retrying.";
 /** A watch reads its Safe's state at most this often. */
@@ -228,20 +236,62 @@ async function watchSafeProposal(
    */
   const unconfirmed = (executionHash?: Hex, reported = reportedExecuted) =>
     // A proposal the chain proved executed never becomes dismissable: only its receipt ends it.
-    tracked()?.safeExecutionProven
+    // Nor does one whose nonce the Safe used before the canonical chain says what ran there.
+    nonceUsed && !tracked()?.safeExecutionProven
       ? updateTransactionActivity(id, {
           ...(executionHash ? { executionHash } : {}),
-          message: SAFE_PROPOSAL_EXECUTED_LINE,
+          message: SAFE_NONCE_USED_LINE,
         })
-      : updateTransactionActivity(id, {
-          ...(executionHash ? { executionHash } : {}),
-          message: reported ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
-          safeResultUnconfirmed: true,
-        });
+      : tracked()?.safeExecutionProven
+        ? updateTransactionActivity(id, {
+            ...(executionHash ? { executionHash } : {}),
+            message: SAFE_PROPOSAL_EXECUTED_LINE,
+          })
+        : updateTransactionActivity(id, {
+            ...(executionHash ? { executionHash } : {}),
+            message: reported ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
+            safeResultUnconfirmed: true,
+          });
   /** The chain proved the proposal executed: it is followed until its receipt settles it. */
   const proven = () => tracked()?.safeExecutionProven !== undefined;
   /** The proposal's nonce once a look saw the Safe pass it, for chain checks the service can't block. */
   let passedNonce: bigint | undefined;
+  /** The proposal's saved nonce, or undefined. */
+  const savedNonce = () => {
+    const saved = tracked()?.safeProposalNonce;
+    return saved && /^\d+$/.test(saved) ? BigInt(saved) : undefined;
+  };
+  /** The Safe's live nonce is past the saved one: only the canonical chain may end it now. */
+  let nonceUsed = false;
+  const saveNonce = (nonce: bigint) => {
+    if (tracked()?.safeProposalNonce === undefined)
+      updateTransactionActivity(id, { safeProposalNonce: nonce.toString() });
+  };
+  /**
+   * A proposal saved without its nonce (made before it was saved) finds it from its hash: the
+   * reviewed calls as this app proposes them, at each nonce around the Safe's.
+   */
+  const recoverNonce = rereadEveryMinute(async (safe) => {
+    const proposal = tracked()?.safeProposal;
+    if (savedNonce() !== undefined || !proposal?.calls.length) return;
+    const live = await liveNonce(safe);
+    if (live === null) return;
+    const calls = proposal.calls.map((call) => ({ ...call, value: BigInt(call.value) }));
+    const from = live > BigInt(NONCE_SEARCH_BEHIND) ? live - BigInt(NONCE_SEARCH_BEHIND) : 0n;
+    for (let nonce = from; nonce <= live + BigInt(NONCE_SEARCH_AHEAD); nonce += 1n) {
+      try {
+        const tx = proposal.batch
+          ? safeBatchProposalFor(calls, Number(nonce))
+          : safeProposalFor(calls[0]!, Number(nonce));
+        if (safeTransactionHash(chainId, safe, tx).toLowerCase() === hash.toLowerCase()) {
+          saveNonce(nonce);
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
+  });
   /**
    * What the canonical chain shows at the nonce the Safe passed, read without the Safe service
    * (from a saved proof, or from this watch's own look). Only the canonical execution log is a
@@ -253,7 +303,8 @@ async function watchSafeProposal(
   const canonicalEnd = rereadEveryMinute(async (safe): Promise<Hex | "done" | undefined> => {
     const proof = tracked()?.safeExecutionProven;
     if (proof?.executionHash) return proof.executionHash;
-    const nonce = proof && /^\d+$/.test(proof.nonce) ? BigInt(proof.nonce) : passedNonce;
+    const nonce =
+      proof && /^\d+$/.test(proof.nonce) ? BigInt(proof.nonce) : (savedNonce() ?? passedNonce);
     if (!client || nonce === undefined) return undefined;
     const found = await findSafeExecution(client, safe, hash, nonce);
     if (!found) return undefined;
@@ -388,6 +439,8 @@ async function watchSafeProposal(
         fetch: observed,
       })) as SafeQueuedTransaction & { transactionHash?: unknown };
       if (tracked()?.obsoleteSafeNonce !== undefined) return "done";
+      if (runsReviewed(safeTransactionMessage(proposal)))
+        saveNonce(safeTransactionMessage(proposal).nonce);
       const executionHash =
         typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)
           ? proposal.transactionHash
@@ -419,7 +472,9 @@ async function watchSafeProposal(
         status: "safe-proposed",
         message: proven()
           ? SAFE_PROPOSAL_EXECUTED_LINE
-          : `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
+          : nonceUsed
+            ? SAFE_NONCE_USED_LINE
+            : `Safe proposal is not executed${approvals}. It remains asynchronous; do not submit it again.`,
       });
       // A nonce the Safe has moved past was taken by another transaction, or by this proposal's
       // own execution that the service has yet to list. The chain's execution events decide
@@ -476,12 +531,20 @@ async function watchSafeProposal(
     const stuckFor = service ? SAFE_STUCK_LOOKS : SAFE_EXECUTION_CHECKS;
     for (let attempt = 0; attempt < SAFE_RESULT_HORIZON_MS / SAFE_LOOK_MS; attempt += 1) {
       if (tracked()?.obsoleteSafeNonce !== undefined) return;
-      // A proven execution, or a nonce this watch saw the Safe pass, is settled from the
+      // A proven execution, or a saved or seen nonce the Safe has used, is settled from the
       // canonical chain whatever the service says, at most once a minute.
       const chainSafe = tracked()?.safeExecutionProven?.safe ?? safeOf();
+      if (chainSafe) {
+        await recoverNonce(chainSafe);
+        const saved = savedNonce();
+        if (saved !== undefined) {
+          const live = await liveNonce(chainSafe);
+          nonceUsed = nonceUsed || (live !== null && live > saved);
+        }
+      }
       if (
         chainSafe &&
-        (tracked()?.safeExecutionProven || passedNonce !== undefined) &&
+        (tracked()?.safeExecutionProven || nonceUsed || passedNonce !== undefined) &&
         (await settledFromChain(chainSafe))
       )
         return;
@@ -516,7 +579,9 @@ async function watchSafeProposal(
       // check of the chain, or one more, and while the node can't answer, only the next chain
       // check asks again.
       const due =
-        !proven() && (unfollowable || (stuckLooks >= stuckFor && (!service || pastHorizon())));
+        !proven() &&
+        !nonceUsed &&
+        (unfollowable || (stuckLooks >= stuckFor && (!service || pastHorizon())));
       if (due && (execution !== "unchecked" || !awaitingChain)) {
         if (await endUnconfirmed(execution)) return;
         awaitingChain = true;
