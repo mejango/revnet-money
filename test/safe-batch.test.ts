@@ -266,7 +266,7 @@ describe("one Safe proposal for a whole flow", () => {
     await waitFor(() =>
       expect(transactionActivityForHash(proposal)).toMatchObject({
         status: "safe-proposed",
-        message: SAFE_PROPOSAL_AWAITING,
+        message: "Waiting for your Safe's approvals.",
       }),
     );
     expect(transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();

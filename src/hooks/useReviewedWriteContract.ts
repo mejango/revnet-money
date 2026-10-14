@@ -40,6 +40,7 @@ import {
   HELD_RELEASED_ELSEWHERE_LINE,
   HELD_RELEASED_LINE,
   isDefiniteWalletRejection,
+  SAFE_PROPOSAL_EXECUTED_LINE,
   SAFE_PROPOSAL_REPLACED_LINE,
   settledLine,
   simulateCallSequence,
@@ -49,8 +50,16 @@ import {
   type HeldWriteView,
   type WriteHoldGate,
 } from "@bananapus/nana-sdk-core/review";
-import { readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
-import { SAFE_NONCE_GUIDANCE, SAFE_PROPOSAL_AWAITING } from "@bananapus/nana-sdk-core/safe-service";
+import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
+import {
+  hasSafeService,
+  readSafeTransaction,
+  SAFE_NONCE_GUIDANCE,
+  SAFE_PROPOSAL_AWAITING,
+  safeExecutionResult,
+  usableSafeConfirmations,
+  waitForSafeExecutionHash,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
@@ -102,16 +111,18 @@ const NONCE_SEARCH_AHEAD = 16;
  * success the hold settled names the execution; one whose caller verifies its exact result waits
  * for that caller.
  */
-function showSafeView(id: string, view: HeldWriteView): void {
+function showSafeView(id: string, view: HeldWriteView, client?: PublicClient): void {
   const row = refreshTransactionActivities().find((activity) => activity.id === id);
   if (!row) return;
+  shownPhase.set(id, view.phase);
   if (view.phase === "awaiting" || view.phase === "confirming" || view.phase === "held") {
     updateTransactionActivity(id, {
       status: "safe-proposed",
       sdkHeld: true,
-      message: heldLineOf(view),
+      message: (view.phase === "awaiting" && approvalLines.get(id)) || heldLineOf(view),
       safeResultUnconfirmed: view.exit || undefined,
     });
+    if (view.phase === "awaiting" && client) void showApprovals(row, client);
     return;
   }
   if (view.phase === "settled" && view.settled) {
@@ -135,6 +146,69 @@ function showSafeView(id: string, view: HeldWriteView): void {
     });
 }
 
+/** The phase each Safe row last showed, and its approvals line while it awaits its signers. */
+const shownPhase = new Map<string, HeldWriteView["phase"]>();
+const approvalLines = new Map<string, string>();
+const approvalsReadAt = new Map<string, number>();
+/** A row's approvals are read from Safe's service at most this often. */
+const APPROVALS_REREAD_MS = 60_000;
+
+/**
+ * While a proposal awaits its signers, how many of the Safe's current owners approved it, from
+ * Safe's service: domain information the hold's own line doesn't carry. Only well-formed
+ * confirmations of current owners count.
+ */
+async function showApprovals(row: TransactionActivity, client: PublicClient): Promise<void> {
+  const { id, hash, chainId } = row;
+  const safe = row.safeProposal?.safe ?? row.account;
+  if (!hash || !chainId || !safe || !hasSafeService(chainId)) return;
+  if (Date.now() - (approvalsReadAt.get(id) ?? 0) < APPROVALS_REREAD_MS) return;
+  approvalsReadAt.set(id, Date.now());
+  try {
+    const [proposal, identity] = await Promise.all([
+      readSafeTransaction(chainId, safe, hash),
+      readAuthorityIdentity(client, safe).catch(() => null),
+    ]);
+    if (proposal.isExecuted) return;
+    const approvals =
+      identity?.kind === "safe"
+        ? `: ${usableSafeConfirmations(proposal, identity.owners).length} of ${identity.threshold}`
+        : "";
+    const line = `Waiting for your Safe's approvals${approvals}.`;
+    approvalLines.set(id, line);
+    if (shownPhase.get(id) === "awaiting") updateTransactionActivity(id, { message: line });
+  } catch {
+    // Safe's service can't say: the hold's own line stays.
+  }
+}
+
+/**
+ * A proposal journaled without its reviewed calls, which no hold can hold, settles from the chain
+ * as on main: its execution (Safe's reply when it executed at once, or Safe's service's record),
+ * then the Safe's own execution event in that receipt. Anything it can't prove leaves it
+ * unconfirmed, for its account to dismiss.
+ */
+async function settleUnheldProposal(row: TransactionActivity, client: PublicClient) {
+  const { id, hash, chainId } = row;
+  const safe = row.account;
+  if (!hash || !chainId || !safe) return;
+  try {
+    const executionHash = await waitForSafeExecutionHash(chainId, hash, { client });
+    const receipt = await waitForReceiptWithRetry(client, executionHash);
+    if (receipt.transactionHash?.toLowerCase() !== executionHash.toLowerCase()) return;
+    const result = safeExecutionResult(receipt, safe, hash);
+    if (result.status === "unproven") return;
+    updateTransactionActivity(id, {
+      status: result.status === "success" ? "success" : "failed",
+      executionHash,
+      safeResultUnconfirmed: undefined,
+      message: result.status === "success" ? SAFE_PROPOSAL_EXECUTED_LINE : WRITE_HOLD_REVERTED_LINE,
+    });
+  } catch {
+    // Not proven: it stays unconfirmed.
+  }
+}
+
 /**
  * Follows a Safe proposal's row through the hold. One the hold doesn't hold (proposed through
  * Safe's service, or journaled by an earlier build) is adopted into it first, by its safeTxHash;
@@ -147,6 +221,7 @@ function followSafeRow(row: TransactionActivity, client: PublicClient | undefine
       message: WRITE_HOLD_SAFE_UNPROVEN_LINE,
       safeResultUnconfirmed: true,
     });
+    if (client) void settleUnheldProposal(row, client);
     return;
   }
   const handle = safeHoldOf(row.chainId, row.safeProposal);
@@ -176,7 +251,7 @@ function followSafeRow(row: TransactionActivity, client: PublicClient | undefine
         phase: now.settled ? "settled" : "released",
         line: now.settled ? null : HELD_RELEASED_ELSEWHERE_LINE,
       });
-    else showSafeView(row.id, now);
+    else showSafeView(row.id, now, client);
   });
 }
 
@@ -287,9 +362,9 @@ function retireEarlierRows(callKey: string): void {
 }
 
 /** What a hold-following send shows of its Safe proposal: its row, by the hash it sent. */
-function showSentSafeView(chainId: number) {
+function showSentSafeView(chainId: number, client?: PublicClient) {
   return (hash: Hex, view: HeldWriteView) =>
-    showSafeView(`tx:${chainId}:${hash.toLowerCase()}`, view);
+    showSafeView(`tx:${chainId}:${hash.toLowerCase()}`, view, client);
 }
 
 /**
@@ -438,7 +513,7 @@ export async function proposeSafeBatch(
     );
     return hash;
   };
-  return sendHeld(hold, publicClient, submit, showSentSafeView(chainId));
+  return sendHeld(hold, publicClient, submit, showSentSafeView(chainId, publicClient));
 }
 
 type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] & {
@@ -767,7 +842,7 @@ export function useWriteContract(
           hold,
           holdClient,
           submitReviewedCall,
-          safeProposal ? showSentSafeView(chainId) : undefined,
+          safeProposal ? showSentSafeView(chainId, holdClient as PublicClient) : undefined,
         );
       return browserLocks().request(
         `revnet:transaction:${keccak256(stringToHex(callKey))}`,

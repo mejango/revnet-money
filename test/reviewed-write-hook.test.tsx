@@ -68,6 +68,9 @@ const mocks = vi.hoisted(() => ({
   provenSafeProposalEnd: vi.fn(),
   // A Safe connection's wallet_sendCalls.
   sendCalls: vi.fn(),
+  // Safe's service record of a proposal, and the confirmations of it that count; unset, the SDK's.
+  readSafeTransaction: undefined as undefined | ((...args: never[]) => Promise<unknown>),
+  usableSafeConfirmations: undefined as undefined | ((...args: never[]) => unknown[]),
 }));
 
 vi.mock("@wagmi/core", async (importOriginal) => ({
@@ -81,11 +84,26 @@ vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => ({
   simulateCallSequence: async () => undefined,
 }));
 
-vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe-service")>()),
-  lookAtSafeProposal: mocks.lookAtSafeProposal,
-  provenSafeProposalEnd: mocks.provenSafeProposalEnd,
-}));
+vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@bananapus/nana-sdk-core/safe-service")>();
+  return {
+    ...original,
+    lookAtSafeProposal: mocks.lookAtSafeProposal,
+    provenSafeProposalEnd: mocks.provenSafeProposalEnd,
+    readSafeTransaction: (...args: Parameters<typeof original.readSafeTransaction>) =>
+      mocks.readSafeTransaction
+        ? (mocks.readSafeTransaction(...(args as unknown as never[])) as ReturnType<
+            typeof original.readSafeTransaction
+          >)
+        : original.readSafeTransaction(...args),
+    usableSafeConfirmations: (...args: Parameters<typeof original.usableSafeConfirmations>) =>
+      mocks.usableSafeConfirmations
+        ? (mocks.usableSafeConfirmations(...(args as unknown as never[])) as ReturnType<
+            typeof original.usableSafeConfirmations
+          >)
+        : original.usableSafeConfirmations(...args),
+  };
+});
 
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
@@ -300,6 +318,8 @@ async function freshHarness() {
 }
 
 beforeEach(() => {
+  mocks.readSafeTransaction = undefined;
+  mocks.usableSafeConfirmations = undefined;
   window.localStorage.clear();
   Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
   mocks.account = {
@@ -1323,9 +1343,33 @@ describe("reviewed write hook", () => {
     expect(activity.transactionActivityForHash(HASH)?.executionHash).toBeUndefined();
   });
 
-  it("leaves a proposal journaled without reviewed calls to its account to dismiss", async () => {
+  it("settles a reply journaled without reviewed calls by its Safe's one execution, as on main", async () => {
     const { activity, hooks } = await freshHarness();
     savedProposal(activity, HASH, 11155420, null);
+    mocks.getTransaction.mockResolvedValue(executionOf(TRANSFER_7));
+    mocks.waitForTransactionReceipt.mockResolvedValue({
+      status: "success",
+      transactionHash: HASH,
+      logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
+    });
+
+    hooks.resumeSafeProposalTracking(mocks.config as never);
+
+    await waitFor(() =>
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+        status: "success",
+        executionHash: HASH,
+      }),
+    );
+  });
+
+  it("leaves a proposal journaled without reviewed calls that the chain can't show to its account to dismiss", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => undefined)),
+    );
+    const { activity, hooks } = await freshHarness();
+    savedProposal(activity, HASH, 11155111, null);
 
     hooks.resumeSafeProposalTracking(mocks.config as never);
 
@@ -1335,6 +1379,35 @@ describe("reviewed write hook", () => {
       message: WRITE_HOLD_SAFE_UNPROVEN_LINE,
       safeResultUnconfirmed: true,
     });
+  });
+
+  it("shows how many of the Safe's owners approved a proposal while it awaits them", async () => {
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: { id: "safe", name: "Safe" },
+    };
+    mocks.safeReads = safeChain(ACCOUNT);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => undefined)),
+    );
+    mocks.readSafeTransaction = vi.fn(async () => ({ isExecuted: false, confirmations: [] }));
+    mocks.usableSafeConfirmations = vi.fn(() => [{ owner: SAFE_OWNER_A }]);
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+
+    await waitFor(() =>
+      expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+        status: "safe-proposed",
+        message: "Waiting for your Safe's approvals: 1 of 2.",
+      }),
+    );
   });
 
   it.each([
