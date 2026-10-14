@@ -1208,3 +1208,13 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 
 ### Review
 `npm run check` green: 2904 unit tests, 144 browser tests, bundle 2743.8 of 2746 KiB (no budget change).
+
+## Joint round 3: launch recovery invariants A-D (2026-10-14)
+
+- [x] Red first (26 helper + 4 page tests): settled success with empty/mismatched logs, with and without fromBlock, never clear; no-record/no-fromBlock is check; recovery and its held exit run before upload, fee, token and feed preparation; the mount scan shows a check on discovery failure; the check alone retires, then a fresh salt.
+- [x] The journal is written at the hook's `beforeSubmission` (the hold reserved the wallet) with salt, fromBlock, hold namespaces and the settlements already there (`before`), and removed only where the SDK drops the reservation (definite rejection, abort before the wallet). So a journal always means "may have reached the wallet".
+- [x] `recoverLaunch(key)` (never throws): held (asked of the chain first; the SDK exit is offered before preparation and, once taken, retires the attempt); any success not in `before` wins and must show its own DeployRevnet event with the saved salt, else check; a final revert retires; no record scans the salt, else check.
+- [x] `takeHeldExit` extracted unchanged from `sendUnderHold` so the page offers the same exit.
+
+### Review
+`npm run check` green: 2911 unit tests, 144 browser tests, bundle 2743.9 of 2746 KiB (no budget change). Audited: Relayr multichain launch keeps its own signature-window gate (unchanged); legacy Safe proposal adoption refusal keeps the journal refusing, never permits a send.

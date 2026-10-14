@@ -262,19 +262,32 @@ export async function sendUnderHold<T>(
       if (error instanceof WriteHoldStaleReviewError)
         throw new Error(error.settled ? settledLine(error.settled) : WRITE_HOLD_STALE_REVIEW_LINE);
       if (!(error instanceof WriteHeldError)) throw error;
-      const shown = error.state as WriteHeldState & { notice?: string };
-      if (!shown.exit) throw new Error(withNotice(shown));
-      const { accepted, closedBy } = await askExit(hold, client, shown);
-      if (closedBy) throw new Error(endedLine(closedBy));
-      if (!accepted) throw new Error(withNotice(shown));
-      // The exit never waits: a contended answer keeps the exit the user saw, to take again.
-      const ended = await hold.exit(shown, { checkedWallet: true }, client);
-      if (!ended.released)
-        throw new Error(
-          hidesShownExit(shown, ended.state) ? withNotice(shown) : endedLine(ended.state),
-        );
+      await takeHeldExit(hold, client, error.state);
     }
   }
+}
+
+/**
+ * Offers the exit of a held write the user is shown, while the chain is asked again. Returns once
+ * the user took it and the hold released the write; otherwise throws the line to show: the hold's
+ * own (no exit due, declined, contended) or how the chain ended it meanwhile.
+ */
+export async function takeHeldExit(
+  hold: WriteHoldHandle,
+  client: WriteHoldClient,
+  state: WriteHeldState,
+): Promise<void> {
+  const shown = state as WriteHeldState & { notice?: string };
+  if (!shown.exit) throw new Error(withNotice(shown));
+  const { accepted, closedBy } = await askExit(hold, client, shown);
+  if (closedBy) throw new Error(endedLine(closedBy));
+  if (!accepted) throw new Error(withNotice(shown));
+  // The exit never waits: a contended answer keeps the exit the user saw, to take again.
+  const ended = await hold.exit(shown, { checkedWallet: true }, client);
+  if (!ended.released)
+    throw new Error(
+      hidesShownExit(shown, ended.state) ? withNotice(shown) : endedLine(ended.state),
+    );
 }
 
 const INTENT = Symbol.for("revnet:write-intent");

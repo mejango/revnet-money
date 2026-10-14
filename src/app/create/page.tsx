@@ -14,15 +14,14 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
-import { legacyIntents } from "@/lib/legacy-intents";
 import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { settledSuccessOf, withWriteIntent } from "@/lib/write-hold";
+import { takeHeldExit, withWriteIntent } from "@/lib/write-hold";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
-import { gasWithHeadroom, launchIntent } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { useEffect, useRef, useState } from "react";
 import { encodeFunctionData, PublicClient } from "viem";
@@ -35,16 +34,17 @@ import { createSchema } from "./helpers/createSchema";
 import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
 import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
 import {
-  checkSavedLaunches,
-  launchConfigHash,
-  launchConfigOf,
   launchHoldsOf,
   launchInputOf,
-  launchSalt,
-  noteLaunchSent,
-  recoverSavedLaunch,
-  savedLaunchOf,
-  settleLaunchSalt,
+  launchKeyOf,
+  launchNamespacesOf,
+  recoverLaunch,
+  retireLaunch,
+  savedLaunchAt,
+  savedLaunchKeys,
+  saveLaunchAttempt,
+  settlementsOf,
+  type LaunchRecovery,
 } from "./helpers/launchIntent";
 import { parseDeployData } from "./helpers/parseDeployData";
 import { pinProjectMetadata } from "./helpers/pinProjectMetaData";
@@ -56,26 +56,48 @@ export default function Page() {
   const { toast } = useToast();
   const { address, chainId: connectedChainId, isConnected, connector } = useAccount();
   const { switchChainAsync } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
+  /** The launch the hold is about to hand the wallet: journaled only once it is reserved. */
+  const reserving = useRef<{ key: string; save: () => void }>(undefined);
+  const { writeContractAsync } = useWriteContract({
+    beforeSubmission: async () => reserving.current?.save(),
+    // Nothing reached the wallet: the hold drops its reservation, and the journal goes with it.
+    onBeforeSubmissionAborted: async () => unreserve(),
+    onSubmissionRejected: async () => unreserve(),
+  });
+  const unreserve = () => {
+    if (reserving.current) retireLaunch(reserving.current.key);
+  };
 
   const { getRelayrTxQuote, data, reset } = useGetRelayrTxQuote();
   const [directDeployment, setDirectDeployment] = useState<DirectDeployment | null>(null);
   /** A saved launch the chain shows already happened: shown, and never sent again. */
   const [launched, setLaunched] = useState<{ chainId: number; revnetId: bigint }>();
-  /** A saved launch whose result the chain can't show: nothing is sent until the user checks. */
-  const [mustCheck, setMustCheck] = useState<() => void>();
+  /** The saved launch whose result the chain can't show: nothing is sent until the user checks. */
+  const [mustCheck, setMustCheck] = useState<string>();
+  /** Recovers the launch journaled at `key`, before anything else; undefined with no client. */
+  const recover = (key: string, account: string, chainId: number) => {
+    const client = getPublicClient(wagmiConfig, { chainId: chainId as JBChainId });
+    return client
+      ? recoverLaunch(key, account, client as PublicClient)
+      : Promise.resolve<LaunchRecovery>({ status: "check" });
+  };
+  /** Shows what recovery found; true when it ends the launch here. */
+  const shown = (found: LaunchRecovery, key: string, chainId: number) => {
+    if (found.status === "launched") setLaunched({ chainId, revnetId: found.revnetId });
+    if (found.status === "check") setMustCheck(key);
+    return found.status === "launched" || found.status === "check";
+  };
+  // Every launch this account journaled is recovered on load: found, or checked by the user.
   useEffect(() => {
     if (!address) return;
     let live = true;
-    void checkSavedLaunches(
-      (chainId) =>
-        getPublicClient(wagmiConfig, { chainId: chainId as JBChainId }) as PublicClient | undefined,
-      address,
-    )
-      .then((found) => {
-        if (live && found) setLaunched(found);
-      })
-      .catch(() => undefined);
+    void (async () => {
+      for (const key of savedLaunchKeys(address)) {
+        const chainId = Number(key.split(":").at(-2));
+        const found = await recover(key, address, chainId);
+        if (live && shown(found, key, chainId)) return;
+      }
+    })();
     return () => {
       live = false;
     };
@@ -96,13 +118,37 @@ export default function Page() {
     if (formData.chainIds.length > 1 && !areRelayrChainsCompatible(formData.chainIds)) {
       throw new Error("Choose either live chains or test chains, not a mix.");
     }
-    // A launch waits while an earlier one's signature can still run, saying until when.
-    await requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
     setDirectDeployment(null);
     setMustCheck(undefined);
-    // The one copy of what the user submitted: the launch's intent, salt, saved-launch lookup and
-    // settlement are all built from it, never from refreshed metadata.
+    // The one copy of what the user submitted: the launch's intent, journal and settlement are all
+    // built from it, never from refreshed metadata.
     const launchInput = launchInputOf(formData);
+    const singleChainId = formData.chainIds.length === 1 ? formData.chainIds[0]! : undefined;
+    const launchKey =
+      singleChainId === undefined ? undefined : launchKeyOf(address, singleChainId, launchInput);
+    // A journaled attempt of this launch is recovered first, before anything is prepared.
+    if (launchKey && singleChainId !== undefined && savedLaunchAt(launchKey)) {
+      const found = await recover(launchKey, address, singleChainId);
+      if (shown(found, launchKey, singleChainId)) return;
+      if (found.status === "held") {
+        try {
+          await takeHeldExit(
+            found.hold,
+            getPublicClient(wagmiConfig, { chainId: singleChainId })!,
+            found.state,
+          );
+        } catch (error) {
+          // A settlement that landed while the exit was open is the launch's result.
+          if (shown(await recover(launchKey, address, singleChainId), launchKey, singleChainId))
+            return;
+          throw error;
+        }
+        // The user took the exit: that attempt is retired, and this launch is a new one.
+        retireLaunch(launchKey);
+      }
+    }
+    // A launch waits while an earlier one's signature can still run, saying until when.
+    await requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
 
     let deploymentFormData = formData;
     if (formData.reserveAsset === "CUSTOM") {
@@ -144,18 +190,11 @@ export default function Page() {
       };
     }
 
-    // A single-chain launch is sent from this page: its salt stays the same across retries and
-    // reloads until it confirms, so a reload can find a launch whose reply was lost (the
-    // DeployRevnet event carries the salt). The write hold, keyed by the config, is what stops a
-    // second launch: the stage starts are fresh, so the chain would take a retry. A multichain
-    // launch has its own recovery through Relayr.
-    const singleChain = deploymentFormData.chainIds.length === 1 && address;
-    // An attempt saved before this one: it is recovered before anything is sent.
-    const resumed =
-      singleChain && !!savedLaunchOf(address, deploymentFormData.chainIds[0]!, launchInput);
-    const salt = singleChain
-      ? launchSalt(address, deploymentFormData.chainIds[0]!, launchInput, createSalt)
-      : createSalt();
+    // Every attempt has a fresh salt. A single-chain launch is journaled with it once the hold
+    // reserves the wallet, so a reload can find a launch whose reply was lost (the DeployRevnet
+    // event carries the salt); the write hold, keyed by the config, is what stops a second launch.
+    // A multichain launch has its own recovery through Relayr.
+    const salt = createSalt();
     const timestamp = Math.floor(Date.now() / 1000);
 
     const relayrTransactions = [];
@@ -249,37 +288,25 @@ export default function Page() {
     if (directRequest && address) {
       const chainId = deploymentFormData.chainIds[0];
       const client = getPublicClient(wagmiConfig, { chainId }) as PublicClient | undefined;
-      const holds = launchHoldsOf(chainId, address, launchInput);
-      /** Ends the launch on what recovery found; true when nothing more may be done. */
-      const ended = (found: Awaited<ReturnType<typeof recoverSavedLaunch>>) => {
-        if (found.status === "launched") setLaunched({ chainId, revnetId: found.revnetId });
-        if (found.status === "check")
-          setMustCheck(() => () => {
-            // The user checked it: that saved launch is retired, and the next one is new.
-            settleLaunchSalt(address, chainId, launchInput);
-            setMustCheck(undefined);
-          });
-        return found.status === "launched" || found.status === "check";
-      };
-      // A saved attempt is recovered first: settled, held, found or checked, never sent twice.
-      if (resumed) {
-        if (!client) throw new Error("Could not connect to the chain. Try again.");
-        if (ended(await recoverSavedLaunch(holds, client, chainId, address, launchInput))) return;
-      }
-      const settledBefore = holds.map(settledSuccessOf).find(Boolean);
+      const namespaces = launchNamespacesOf(chainId, address, launchInput);
+      const key = launchKey!;
       if (connectedChainId !== chainId) await switchChainAsync({ chainId });
       // The first block its DeployRevnet event can be in; a read that fails only skips the note.
       const fromBlock = await Promise.resolve()
         .then(() => client?.getBlockNumber())
         .catch(() => undefined);
-      if (fromBlock !== undefined) noteLaunchSent(address, chainId, launchInput, fromBlock);
+      const before = settlementsOf(launchHoldsOf(chainId, address, namespaces));
+      reserving.current = {
+        key,
+        save: () => saveLaunchAttempt(key, { salt, fromBlock, namespaces, before }),
+      };
       // Held by the user's launch config: the salt, stage start and pin are the page's own.
       let hash: Awaited<ReturnType<typeof writeContractAsync>>;
       try {
         hash = await withWriteIntent(
           writeContractAsync,
-          launchIntent({ chainId, account: address, config: launchConfigOf(launchInput) }),
-          legacyIntents.launch(launchConfigHash(launchInput)),
+          namespaces[0]!,
+          namespaces.slice(1),
         )({
           chainId,
           address: directRequest.address,
@@ -289,17 +316,11 @@ export default function Page() {
           value: directRequest.value,
         } as unknown as Parameters<typeof writeContractAsync>[0]);
       } catch (error) {
-        // A settlement the send or its exit found is this launch's result; with nothing held,
-        // nothing of the saved attempt reached the wallet, so it is retired.
-        const found = client
-          ? await recoverSavedLaunch(holds, client, chainId, address, launchInput, {
-              scan: false,
-              ignore: settledBefore,
-            })
-          : undefined;
-        if (found && ended(found)) return;
-        if (found?.status === "clear") settleLaunchSalt(address, chainId, launchInput);
+        // A settlement the send or its exit found is this launch's result.
+        if (savedLaunchAt(key) && shown(await recover(key, address, chainId), key, chainId)) return;
         throw error;
+      } finally {
+        reserving.current = undefined;
       }
       if (submittedViaSafe(hash)) {
         toast({
@@ -314,7 +335,7 @@ export default function Page() {
         void waitForReceiptWithRetry(client as PublicClient, hash)
           .then((receipt) => {
             // Launched: the next launch of this config is a new revnet, with a new salt.
-            if (receipt.status === "success") settleLaunchSalt(address, chainId, launchInput);
+            if (receipt.status === "success") retireLaunch(key);
           })
           .catch(() => undefined);
       toast({
@@ -385,7 +406,13 @@ export default function Page() {
         {launched ? (
           <LaunchedNotice chainId={launched.chainId} revnetId={launched.revnetId} />
         ) : mustCheck ? (
-          <LaunchCheckNotice onChecked={mustCheck} />
+          <LaunchCheckNotice
+            onChecked={() => {
+              // The user checked it: that saved launch is retired, and the next one is new.
+              retireLaunch(mustCheck);
+              setMustCheck(undefined);
+            }}
+          />
         ) : null}
         <DeployRevnetForm
           relayrResponse={data}

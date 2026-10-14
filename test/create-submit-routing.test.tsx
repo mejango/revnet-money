@@ -234,3 +234,102 @@ describe("creation submit routing", () => {
     );
   });
 });
+
+describe("a saved single-chain launch", () => {
+  /** The journal an earlier visit's send left: reserved for the wallet, then the page closed. */
+  async function savedEarlierLaunch() {
+    const { launchKeyOf, launchNamespacesOf, saveLaunchAttempt } =
+      await import("@/app/create/helpers/launchIntent");
+    const { launchInputOf } = await import("@/app/create/helpers/launchIntent");
+    const input = launchInputOf(mocks.form);
+    saveLaunchAttempt(launchKeyOf(TEST_ACCOUNT, 11155111, input), {
+      salt: `0x${"07".repeat(32)}`,
+      fromBlock: 1_000n,
+      namespaces: launchNamespacesOf(11155111, TEST_ACCOUNT, input),
+      before: [],
+    });
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    mocks.form = { ...validRevnetForm(), chainIds: [11155111] };
+  });
+
+  it("is recovered before any preparation, so a failing upload can't hide its check", async () => {
+    await savedEarlierLaunch();
+    mocks.pinMetadata.mockRejectedValue(new Error("Pinning is down."));
+    await submitFixture();
+
+    // The chain can't show what became of it: the one explicit action, and nothing prepared.
+    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(mocks.recoveryGuard).not.toHaveBeenCalled();
+    expect(mocks.pinMetadata).not.toHaveBeenCalled();
+    expect(mocks.creationFee).not.toHaveBeenCalled();
+    expect(mocks.feeds).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("shows a held attempt's own line before any preparation, and sends nothing", async () => {
+    await savedEarlierLaunch();
+    const { launchInputOf, launchNamespacesOf } = await import("@/app/create/helpers/launchIntent");
+    const { writeHolds } = await import("@/lib/write-hold");
+    const node = {
+      getChainId: async () => 11155111,
+      getBlockNumber: async () => 100n,
+      getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
+      getTransactionCount: async () => 3,
+      getTransaction: async () => ({ hash: DEPLOYMENT_HASH, nonce: 3, blockNumber: null }),
+      getTransactionReceipt: async () => {
+        throw new Error("not found");
+      },
+      request: async () => null,
+    };
+    // The wallet returned a hash, and the chain still has it pending.
+    await writeHolds
+      .open({
+        chainId: 11155111,
+        account: TEST_ACCOUNT,
+        safe: false,
+        namespace: launchNamespacesOf(11155111, TEST_ACCOUNT, launchInputOf(mocks.form))[0]!,
+        call: {
+          to: PROTOCOL_DEPLOYMENTS[11155111].revDeployer.address as `0x${string}`,
+          data: "0x1234",
+          value: 0n,
+        },
+      })
+      .send(node as never, async (gate) => {
+        await gate.beforeSend();
+        gate.afterSubmit(DEPLOYMENT_HASH as `0x${string}`);
+      });
+    await submitFixture();
+
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({ variant: "destructive", description: expect.any(String) }),
+    );
+    expect(screen.queryByRole("button", { name: "I checked it. Launch again" })).toBeNull();
+    expect(mocks.pinMetadata).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("shows the check when the mount scan can't read the chain", async () => {
+    await savedEarlierLaunch();
+    render(<Page />);
+    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+  });
+
+  it("launches anew, with a fresh salt, only after the user's check", async () => {
+    await savedEarlierLaunch();
+    mocks.pinMetadata.mockResolvedValue("bafy-metadata");
+    await submitFixture();
+    fireEvent.click(await screen.findByRole("button", { name: "I checked it. Launch again" }));
+    mocks.setSubmitting.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
+    await waitFor(() => expect(mocks.setSubmitting).toHaveBeenLastCalledWith(false));
+
+    expect(mocks.write).toHaveBeenCalledOnce();
+    const [{ args }] = mocks.write.mock.calls[0] as [{ args: readonly unknown[] }];
+    expect(JSON.stringify(args, (_k, v) => (typeof v === "bigint" ? `${v}` : v))).not.toContain(
+      "07".repeat(32),
+    );
+  });
+});
