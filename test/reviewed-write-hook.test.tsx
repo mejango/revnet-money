@@ -2820,3 +2820,80 @@ describe("held wallet writes: fix round 1", () => {
     expect(mocks.submit).toHaveBeenCalledOnce();
   }, 15_000);
 });
+
+describe("a send whose receipt watch gives up", () => {
+  /** wagmi's watch ended at its timeout with no receipt. */
+  const watchGaveUp = () =>
+    mocks.wagmiReceipt.mockReturnValue({
+      data: undefined,
+      error: new WaitForTransactionReceiptTimeoutError({ hash: HASH }),
+      isError: true,
+      isLoading: false,
+      isSuccess: false,
+    });
+  /** Let the hold's reads answer (only interval timers and the clock are faked here). */
+  const flush = () =>
+    act(async () => {
+      for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+  it("shows the hold's line and keeps watching it, so the exit appears without reopening and sends exactly once more", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(true);
+    held.registerFlowChoiceHandler(prompt);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    watchGaveUp();
+
+    const receipt = renderHook(() =>
+      hooks.useWaitForTransactionReceipt({ hash: HASH, chainId: 11155111, timeout: 120_000 }),
+    );
+    await flush();
+    expect(receipt.result.current.heldLine).toBe(WRITE_HOLD_PENDING_LINE);
+    expect(receipt.result.current.isUnconfirmed).toBe(true);
+
+    // Half an hour with the hash unknown to the node: the next minute's look offers the exit.
+    vi.setSystemTime(Date.now() + 31 * 60_000);
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    await flush();
+    expect(receipt.result.current.heldLine).toBe(WRITE_HOLD_UNCHECKED_LINE);
+    expect(receipt.result.current.isUnconfirmed).toBe(false);
+
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+  });
+
+  it("settles from the hold when the receipt lands after the watch gave up", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    watchGaveUp();
+    const receipt = renderHook(() =>
+      hooks.useWaitForTransactionReceipt({ hash: HASH, chainId: 11155111, timeout: 120_000 }),
+    );
+    await flush();
+    expect(receipt.result.current.isUnconfirmed).toBe(true);
+
+    chainMines();
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    await flush();
+    expect(receipt.result.current.isSuccess).toBe(true);
+    expect(receipt.result.current).toMatchObject({ isUnconfirmed: false, heldLine: undefined });
+    expect(activity.transactionActivityForHash(HASH)).toMatchObject({ status: "success" });
+  });
+});

@@ -13,6 +13,10 @@ import type {
 import { MarketEditPanel } from "@/app/[slug]/components/v6/owners/market/MarketEditPanel";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import {
+  WRITE_HOLD_PENDING_LINE,
+  WRITE_HOLD_UNCHECKED_LINE,
+} from "@bananapus/nana-sdk-core/review";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState, type ReactNode } from "react";
@@ -39,7 +43,14 @@ const mocks = vi.hoisted(() => ({
    * What the receipt watcher reports for a sent hash: still loading, a Safe
    * proposal, a receipt that never lands, or a reverted one.
    */
-  receipt: { pending: false, safe: false, neverLands: false, reverted: false },
+  receipt: { pending: false, safe: false, neverLands: false, reverted: false } as {
+    pending: boolean;
+    safe: boolean;
+    neverLands: boolean;
+    reverted: boolean;
+    /** What the write hold says once a bounded watch ends: its line, and whether it has an exit. */
+    held?: { line: string; exit: boolean };
+  },
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -105,7 +116,8 @@ vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
         !safeResultUnconfirmed &&
         (mocks.receipt.pending || mocks.receipt.safe || mocks.receipt.neverLands),
       isSafeProposal: sent && mocks.receipt.safe,
-      isUnconfirmed: watchEnded,
+      isUnconfirmed: watchEnded && !mocks.receipt.held?.exit,
+      heldLine: watchEnded ? mocks.receipt.held?.line : undefined,
       isSafeResultUnconfirmed: safeResultUnconfirmed,
     };
   },
@@ -520,6 +532,34 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     // The removal may still land: the position cannot be sent again from here.
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
     expect(screen.getByText("Couldn't confirm the removal yet.")).toBeInTheDocument();
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("remove, a receipt that never lands: the hold's line shows, and the action stays locked while it has no exit", async () => {
+    mocks.write.mockResolvedValue(HASH);
+    mocks.receipt.neverLands = true;
+    mocks.receipt.held = { line: WRITE_HOLD_PENDING_LINE, exit: false };
+    const { confirm } = await removePosition();
+
+    const done = await within(confirm).findByRole("button", { name: "Done" });
+    expect(confirm).toHaveTextContent(WRITE_HOLD_PENDING_LINE);
+    fireEvent.click(done);
+    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    expect(screen.getByText(WRITE_HOLD_PENDING_LINE)).toBeInTheDocument();
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("remove, a receipt that never lands: once its hold offers the exit, the line says so and the action opens", async () => {
+    mocks.write.mockResolvedValue(HASH);
+    mocks.receipt.neverLands = true;
+    mocks.receipt.held = { line: WRITE_HOLD_UNCHECKED_LINE, exit: true };
+    const { confirm } = await removePosition();
+
+    await waitFor(() => expect(confirm).toHaveTextContent(WRITE_HOLD_UNCHECKED_LINE));
+    expect(
+      within(confirm).getByRole("button", { name: "Remove the position" }),
+    ).toBeInTheDocument();
     expect(mocks.write).toHaveBeenCalledTimes(1);
   });
 

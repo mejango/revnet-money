@@ -1,5 +1,6 @@
 "use client";
 
+import { useWriteHoldWatch } from "@/hooks/useWriteHoldWatch";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
@@ -23,7 +24,7 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
-import { sendUnderHold, writeHolds } from "@/lib/write-hold";
+import { holdOfHash, rememberHold, sendUnderHold, writeHolds } from "@/lib/write-hold";
 import {
   browserLocks,
   gasWithHeadroom,
@@ -31,7 +32,10 @@ import {
   SAFE_PROPOSAL_REPLACED_LINE,
   simulateCallSequence,
   submitReviewedContractWrite,
+  WRITE_HOLD_REVERTED_LINE,
   type WriteHoldGate,
+  type WriteHoldHandle,
+  type WriteHoldState,
 } from "@bananapus/nana-sdk-core/review";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
@@ -51,7 +55,7 @@ import {
 } from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   encodeFunctionData,
   isHash,
@@ -1073,6 +1077,7 @@ export function useWriteContract(
               prepared as Parameters<typeof mutation.writeContractAsync>[0],
             ),
         });
+        if (hold && holdClient) rememberHold(hash, hold, holdClient);
         followSubmission(
           config,
           hash,
@@ -1183,21 +1188,51 @@ export function useWaitForTransactionReceipt(
   const isSuccess = isSafeSubmission
     ? tracked?.status === "success"
     : trackedDirectSuccess || (query.isSuccess && receipt?.status === "success");
-  const isError = isSafeSubmission
+  const watchedIsError = isSafeSubmission
     ? tracked?.status === "failed"
     : trackedDirectFailure || reverted || (!tracked && query.isError);
+  // The watch ended, at its timeout or on a node failure, with no receipt and no tracked outcome.
+  const watchGaveUp =
+    Boolean(hash) && !isSafeSubmission && query.isError && !isSuccess && !watchedIsError;
+  // It may still land: the hold it was sent under is watched from here, so its line shows, an
+  // exit that becomes due with time appears, and a receipt it finds settles it.
+  const sentUnder = watchGaveUp ? holdOfHash(hash) : undefined;
+  const watchedHold = sentUnder?.hold;
+  const [shown, setShown] = useState<{ hold: WriteHoldHandle; state: WriteHoldState }>();
+  const heldState = watchedHold && shown?.hold === watchedHold ? shown.state : undefined;
+  useWriteHoldWatch(
+    watchedHold,
+    sentUnder?.client,
+    (state) => {
+      if (!watchedHold) return;
+      setShown({ hold: watchedHold, state });
+      if (state.status === "clear" && state.settled && "hash" in state.settled && tracked) {
+        updateTransactionActivity(tracked.id, {
+          status: state.settled.result === "success" ? "success" : "failed",
+          message:
+            state.settled.result === "success" ? "Confirmed onchain." : WRITE_HOLD_REVERTED_LINE,
+        });
+      }
+    },
+    { checkNow: true },
+  );
+  const settled = heldState?.status === "clear" ? heldState.settled : undefined;
+  const held = heldState && heldState.status !== "clear" ? heldState : undefined;
+  const heldFailed = settled?.result === "failed";
+  const isError = watchedIsError || heldFailed;
   return {
     ...query,
     isLoading: isSafeSubmission ? isSafeProposal && !isSafeResultUnconfirmed : query.isLoading,
-    isSuccess,
+    isSuccess: isSuccess || settled?.result === "success",
     isError,
     /**
-     * A direct send whose watch ended, at its timeout or on a node failure, with
-     * no receipt and no tracked outcome. It may still land, so its action stays
-     * locked. (A Safe proposal whose result can't be confirmed is
-     * `isSafeResultUnconfirmed`.)
+     * A direct send whose watch ended with no receipt and no tracked outcome. It may still land,
+     * so its action stays locked, until its hold offers the exit or ends. (A Safe proposal whose
+     * result can't be confirmed is `isSafeResultUnconfirmed`.)
      */
-    isUnconfirmed: Boolean(hash) && !isSafeSubmission && query.isError && !isSuccess && !isError,
+    isUnconfirmed: watchGaveUp && heldState?.status !== "clear" && !held?.exit,
+    /** The line of the hold that send is held by, while its watch has given up. */
+    heldLine: held?.line,
     error:
       isSafeSubmission && tracked?.status === "failed"
         ? new Error(tracked.message)
@@ -1205,9 +1240,11 @@ export function useWaitForTransactionReceipt(
           ? new Error(tracked.message)
           : reverted
             ? new Error(`Transaction ${hash} reverted onchain.`)
-            : !tracked
-              ? query.error
-              : undefined,
+            : heldFailed
+              ? new Error(WRITE_HOLD_REVERTED_LINE)
+              : !tracked
+                ? query.error
+                : undefined,
     isSafeProposal,
     isSafeResultUnconfirmed,
     statusMessage: tracked?.message,

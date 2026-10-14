@@ -10,9 +10,28 @@ import {
   type WriteHoldGate,
   type WriteHoldHandle,
 } from "@bananapus/nana-sdk-core/review";
+import type { Hex } from "viem";
 
 /** The one write hold for every ordinary wallet write in this app. */
 export const writeHolds = createWriteHold();
+
+/**
+ * The hold each hash this tab sent was sent under, with the client it was sent through, so a
+ * screen that shows the hash can watch it.
+ */
+const holdsByHash = new Map<string, { hold: WriteHoldHandle; client: WriteHoldClient }>();
+
+/** Remember the hold `hash` was sent under. */
+export function rememberHold(hash: Hex, hold: WriteHoldHandle, client: WriteHoldClient): void {
+  holdsByHash.set(hash.toLowerCase(), { hold, client });
+}
+
+/** The hold `hash` was sent under in this tab, if any. */
+export function holdOfHash(
+  hash: Hex | undefined,
+): { hold: WriteHoldHandle; client: WriteHoldClient } | undefined {
+  return hash ? holdsByHash.get(hash.toLowerCase()) : undefined;
+}
 
 /** The held write confirmed while the user was deciding: nothing is sent again. */
 export const WENT_THROUGH = "Your earlier transaction went through.";

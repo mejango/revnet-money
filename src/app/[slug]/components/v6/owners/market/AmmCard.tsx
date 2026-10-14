@@ -1805,11 +1805,13 @@ function ChainPositionRows({
                 ? SAFE_PROPOSAL_UNCONFIRMED_LINE
                 : removalProposed
                   ? "The removal was proposed to Safe and awaits approvals and execution."
-                  : removalUnconfirmed
-                    ? "Couldn't confirm the removal yet."
-                    : removalSettling
-                      ? "Waiting for confirmation…"
-                      : null
+                  : removal.heldLine
+                    ? removal.heldLine
+                    : removalUnconfirmed
+                      ? "Couldn't confirm the removal yet."
+                      : removalSettling
+                        ? "Waiting for confirmation…"
+                        : null
           }
           steps={[
             {
@@ -1897,8 +1899,10 @@ function ChainPositionRows({
               {receipt.isSafeResultUnconfirmed ? (
                 <p className="mt-2 text-xs text-zinc-600">{SAFE_PROPOSAL_UNCONFIRMED_LINE}</p>
               ) : null}
-              {!reviewed && removalUnconfirmed ? (
-                <p className="mt-2 text-xs text-zinc-600">Couldn&apos;t confirm the removal yet.</p>
+              {!reviewed && (removal.heldLine || removalUnconfirmed) ? (
+                <p className="mt-2 text-xs text-zinc-600">
+                  {removal.heldLine ?? "Couldn't confirm the removal yet."}
+                </p>
               ) : null}
               {!reviewed && removalProposed && !removalSafeUnconfirmed ? (
                 <p className="mt-2 text-xs text-zinc-600">

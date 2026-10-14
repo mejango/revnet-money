@@ -170,6 +170,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     isSafeProposal: approvalProposed,
     isSafeResultUnconfirmed: approvalSafeUnconfirmed,
     isUnconfirmed: approvalUnconfirmed,
+    heldLine: approvalHeldLine,
   } = useWaitForTransactionReceipt({
     hash: approvalHash,
     chainId: selectedChainId,
@@ -187,9 +188,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     ? SAFE_PROPOSAL_UNCONFIRMED_LINE
     : approvalProposed
       ? APPROVAL_PROPOSED
-      : approvalUnconfirmed
-        ? APPROVAL_UNCONFIRMED
-        : null;
+      : (approvalHeldLine ?? (approvalUnconfirmed ? APPROVAL_UNCONFIRMED : null));
   // const { data: redeemQuote } = useTokenCashOutQuoteEth(redeemAmountBN, {
   //   chainId: selectedSucker?.peerChainId as JBChainId,
   // });
