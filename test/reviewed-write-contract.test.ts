@@ -22,15 +22,14 @@ describe("Safe proposal execution boundary", () => {
       hash: SAFE_HASH,
     });
 
-    expect(() => requireOnchainExecution(SAFE_HASH, "Token approval")).toThrow(
-      SafeProposalPendingError,
-    );
+    expect(() => requireOnchainExecution(SAFE_HASH)).toThrow(SafeProposalPendingError);
     try {
-      requireOnchainExecution(SAFE_HASH, "Token approval");
+      requireOnchainExecution(SAFE_HASH);
     } catch (error) {
       expect(isSafeProposalPendingError(error)).toBe(true);
-      expect((error as Error).message).toContain("has not executed");
-      expect((error as Error).message).toContain("do not submit it again");
+      expect((error as Error).message).toBe(
+        "This proposal is waiting in your Safe. Finish it there first.",
+      );
     }
   });
 
@@ -47,14 +46,14 @@ describe("Safe proposal execution boundary", () => {
 
     let refused: unknown;
     try {
-      requireOnchainExecution(UNCONFIRMED_HASH, "Token approval");
+      requireOnchainExecution(UNCONFIRMED_HASH);
     } catch (error) {
       refused = error;
     }
 
     expect(refused).toBeInstanceOf(SafeProposalPendingError);
     expect((refused as Error).message).toBe(
-      `Token approval was proposed to Safe as ${UNCONFIRMED_HASH}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
+      "Check this proposal in your Safe before sending it again.",
     );
     // Nothing awaits the Safe, so a caller shows it as it shows any refusal.
     expect(isSafeProposalPendingError(refused)).toBe(false);
@@ -70,6 +69,6 @@ describe("Safe proposal execution boundary", () => {
       hash: CONFIRMED_HASH,
     });
 
-    expect(() => requireOnchainExecution(CONFIRMED_HASH, "Token approval")).not.toThrow();
+    expect(() => requireOnchainExecution(CONFIRMED_HASH)).not.toThrow();
   });
 });

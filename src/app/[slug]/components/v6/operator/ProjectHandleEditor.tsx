@@ -592,7 +592,7 @@ export function ProjectHandleEditor({
         functionName: "createProxyWithNonce",
         args: deployment.call.args,
       });
-      requireOnchainExecution(hash, "Deploy operator Safe on Ethereum");
+      requireOnchainExecution(hash);
       setStatus("Waiting for the Ethereum Safe deployment to confirm…");
       const receipt = await waitForReceiptWithRetry(mainnetClient, hash);
       if (receipt.status !== "success")
@@ -663,7 +663,7 @@ export function ProjectHandleEditor({
         args: [namehash(parsed.handle.ensName), PROJECT_HANDLE_TEXT_KEY, expectedRecord],
         gas: PROJECT_HANDLE_TEXT_WRITE_SIMULATION_GAS,
       });
-      requireOnchainExecution(hash, "Set ENS project record");
+      requireOnchainExecution(hash);
       setStatus("Step 1 of 2: waiting for the ENS juicebox text record to confirm…");
       const receipt = await waitForReceiptWithRetry(client, hash);
       if (receipt.status !== "success")
@@ -756,7 +756,7 @@ export function ProjectHandleEditor({
         functionName: "setEnsNamePartsFor",
         args: [BigInt(project.chainId), BigInt(project.projectId), parsed.handle.parts],
       });
-      requireOnchainExecution(hash, "Publish project handle");
+      requireOnchainExecution(hash);
       setStatus("Step 2 of 2: waiting for the JBProjectHandles reverse claim to confirm…");
       const receipt = await waitForReceiptWithRetry(client, hash);
       if (receipt.status !== "success") throw new Error("The project-handle transaction reverted.");

@@ -37,6 +37,7 @@ import {
 import {
   createSafeRelayrController,
   requireSafeRelayrExecution,
+  SAFE_RELAYR_FUNDING_EXIT_LINE,
   safeRelayrPreconditions,
   safeRelayrReservationKey,
   type SafeRelayrExecution,
@@ -375,7 +376,7 @@ export function safeRelayrController(
                   : session.paymentStatus === "confirmed"
                     ? "Payment confirmed. Destination transactions are pending."
                     : fundingObserved
-                      ? "Funding or execution was reported. Check the existing bundle before paying again."
+                      ? SAFE_RELAYR_FUNDING_EXIT_LINE
                       : session.quote
                         ? "The Safe execution quote is ready. Review the current transactions before paying."
                         : "Review the current Safe transactions to request a new quote. No funding payment has been started.",

@@ -166,8 +166,6 @@ describe("a burn left open over its own Safe proposal the app can't confirm", ()
     fireEvent.click(within(confirm).getByRole("button", { name: "Burn permanently" }));
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
-    await screen.findByText(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
-    );
+    await screen.findByText("Check this proposal in your Safe before sending it again.");
   });
 });

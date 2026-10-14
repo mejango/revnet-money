@@ -194,7 +194,7 @@ describe("a payment bound to the account it was prepared for", () => {
 
   it("says to check an identical payment's unconfirmed Safe proposal in Safe instead of reporting it proposed", async () => {
     // The identical payment's Safe proposal ended where the app can't confirm its result.
-    mocks.write.mockRejectedValue(new SafeProposalPendingError(HASH, "pay", true));
+    mocks.write.mockRejectedValue(new SafeProposalPendingError(HASH, true));
     render(
       <QueryClientProvider client={queryClient()}>
         <V6PayCard />
@@ -209,9 +209,7 @@ describe("a payment bound to the account it was prepared for", () => {
 
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
 
-    await within(confirm).findByText(
-      `pay was proposed to Safe as ${HASH}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
-    );
+    await within(confirm).findByText("Check this proposal in your Safe before sending it again.");
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
     // Once its account dismisses the proposal, the payment can be sent again.
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeEnabled();
@@ -260,7 +258,7 @@ describe("a payment bound to the account it was prepared for", () => {
       title: "pay",
       status: "safe-proposed",
       message:
-        "Safe proposal is not executed | 1/2 approvals. It remains asynchronous; do not submit it again.",
+        "Safe proposal is not executed : 1 of 2. It remains asynchronous; do not submit it again.",
       chainId: 1,
       hash: proposal,
       safeProposalHash: proposal,
@@ -332,8 +330,8 @@ describe("a payment bound to the account it was prepared for", () => {
 
 describe("the payment's intent", () => {
   it("is the project and beneficiary alone, so a checkout an emptied cart turned into a pay is the same intent", async () => {
-    const { payIntent, writeIntentOf } = await import("@/lib/write-hold");
-    const { writeIntentKey } = await import("@bananapus/nana-sdk-core/review");
+    const { writeIntentOf } = await import("@/lib/write-hold");
+    const { payIntent } = await import("@bananapus/nana-sdk-core/review");
     render(
       <QueryClientProvider client={queryClient()}>
         <V6PayCard />
@@ -351,13 +349,7 @@ describe("the payment's intent", () => {
 
     // The checkout it was, with a lost reply, had the same intent.
     expect(writeIntentOf(mocks.write.mock.calls[0]![0])).toBe(
-      writeIntentKey(
-        ...payIntent({
-          projectId: 7n,
-          beneficiary: A,
-          items: [{ tierId: 1, quantity: 2 }],
-        }),
-      ),
+      payIntent({ chainId: 1, project: 7n, beneficiary: A }),
     );
   });
 });

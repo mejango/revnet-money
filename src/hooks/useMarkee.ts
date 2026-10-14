@@ -258,7 +258,7 @@ export function useMarkee(initialBoardAddress?: Address) {
       );
     const activity = transactionActivityForHash(step.hash);
     if (activity?.kind === "safe" && !activity.executionHash) {
-      requireOnchainExecution(step.hash, "Markee Rent");
+      requireOnchainExecution(step.hash);
       throw new Error("The Safe proposal has no verified execution receipt yet.");
     }
     const receipt = await waitForReceiptWithRetry(client, activity?.executionHash ?? step.hash);

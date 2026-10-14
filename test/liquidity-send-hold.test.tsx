@@ -168,7 +168,7 @@ const pool = {
   chainId: 8453 as JBChainId,
   projectId: 6,
   price: 0.00001,
-  poolId: "0xpool",
+  poolId: `0x${"7a".repeat(32)}`,
   key: { tickSpacing: 60 },
   pair: { addr: zeroAddress, decimals: 18, symbol: "ETH", currency: 1n },
   pairIsC0: true,
@@ -499,9 +499,7 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     const { seen, confirm } = await removePosition();
 
     const done = await within(confirm).findByRole("button", { name: "Done" });
-    expect(confirm).toHaveTextContent(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
-    );
+    expect(confirm).toHaveTextContent("Check this proposal in your Safe before sending it again.");
     expect(confirm).not.toHaveTextContent("awaits approvals");
     expect(within(confirm).queryByRole("button", { name: "Remove the position" })).toBeNull();
     fireEvent.click(done);
@@ -510,9 +508,7 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     // The proposal may still execute: the position cannot be sent again from here.
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
     expect(
-      screen.getByText(
-        "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
-      ),
+      screen.getByText("Check this proposal in your Safe before sending it again."),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Removal proposed to Safe/)).toBeNull();
     expect(mocks.write).toHaveBeenCalledTimes(1);
@@ -586,8 +582,6 @@ describe("liquidity removal left open over its own Safe proposal the app can't c
       <LiquidityManager states={[state]} tokenSymbol="ART" heading={null} />,
     );
 
-    await screen.findByText(
-      "This step's Safe proposal can't be confirmed here. Check it in Safe, then dismiss it in your account activity.",
-    );
+    await screen.findByText("Check this proposal in your Safe before sending it again.");
   });
 });

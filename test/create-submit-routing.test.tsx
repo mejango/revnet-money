@@ -234,3 +234,219 @@ describe("creation submit routing", () => {
     );
   });
 });
+
+describe("a saved single-chain launch", () => {
+  /** The journal an earlier visit's send left: reserved for the wallet, then the page closed. */
+  async function savedEarlierLaunch() {
+    const { launchKeyOf, launchNamespacesOf, saveLaunchAttempt } =
+      await import("@/app/create/helpers/launchIntent");
+    const { launchInputOf } = await import("@/app/create/helpers/launchIntent");
+    const input = launchInputOf(mocks.form);
+    saveLaunchAttempt(launchKeyOf(TEST_ACCOUNT, 11155111, input), {
+      salt: `0x${"07".repeat(32)}`,
+      fromBlock: 1_000n,
+      namespaces: launchNamespacesOf(11155111, TEST_ACCOUNT, input),
+      before: [],
+    });
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    mocks.form = { ...validRevnetForm(), chainIds: [11155111] };
+  });
+
+  it("is recovered before any preparation, so a failing upload can't hide its check", async () => {
+    await savedEarlierLaunch();
+    mocks.pinMetadata.mockRejectedValue(new Error("Pinning is down."));
+    await submitFixture();
+
+    // The chain can't show what became of it: the one explicit action, and nothing prepared.
+    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(mocks.recoveryGuard).not.toHaveBeenCalled();
+    expect(mocks.pinMetadata).not.toHaveBeenCalled();
+    expect(mocks.creationFee).not.toHaveBeenCalled();
+    expect(mocks.feeds).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("shows a held attempt's own line before any preparation, and sends nothing", async () => {
+    await savedEarlierLaunch();
+    const { launchInputOf, launchNamespacesOf } = await import("@/app/create/helpers/launchIntent");
+    const { writeHolds } = await import("@/lib/write-hold");
+    const node = {
+      getChainId: async () => 11155111,
+      getBlockNumber: async () => 100n,
+      getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
+      getTransactionCount: async () => 3,
+      getTransaction: async () => ({ hash: DEPLOYMENT_HASH, nonce: 3, blockNumber: null }),
+      getTransactionReceipt: async () => {
+        throw new Error("not found");
+      },
+      request: async () => null,
+    };
+    // The wallet returned a hash, and the chain still has it pending.
+    await writeHolds
+      .open({
+        chainId: 11155111,
+        account: TEST_ACCOUNT,
+        safe: false,
+        namespace: launchNamespacesOf(11155111, TEST_ACCOUNT, launchInputOf(mocks.form))[0]!,
+        call: {
+          to: PROTOCOL_DEPLOYMENTS[11155111].revDeployer.address as `0x${string}`,
+          data: "0x1234",
+          value: 0n,
+        },
+      })
+      .send(node as never, async (gate) => {
+        await gate.beforeSend();
+        gate.afterSubmit(DEPLOYMENT_HASH as `0x${string}`);
+      });
+    await submitFixture();
+
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({ variant: "destructive", description: expect.any(String) }),
+    );
+    expect(screen.queryByRole("button", { name: "I checked it. Launch again" })).toBeNull();
+    expect(mocks.pinMetadata).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("keeps following a launch that went through: only a fresh look, never a discard or a resend", async () => {
+    const { launchKeyOf, launchInputOf } = await import("@/app/create/helpers/launchIntent");
+    window.localStorage.setItem(
+      launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form)),
+      JSON.stringify({
+        salt: `0x${"07".repeat(32)}`,
+        fromBlock: "1000",
+        namespaces: [],
+        before: [],
+        settled: { result: "success", hash: DEPLOYMENT_HASH },
+      }),
+    );
+    await submitFixture();
+
+    expect(await screen.findByRole("button", { name: "Check again" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /I checked it/ })).toBeNull();
+    expect(mocks.pinMetadata).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("never lets a stale check retire a success another tab saved meanwhile", async () => {
+    await savedEarlierLaunch();
+    const { launchKeyOf, launchInputOf, savedLaunchAt } =
+      await import("@/app/create/helpers/launchIntent");
+    const key = launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form));
+    render(<Page />);
+    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    // Another tab's recovery journals the earlier attempt's success while this check is shown.
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({
+        ...savedLaunchAt(key),
+        settled: { result: "success", hash: DEPLOYMENT_HASH },
+      }),
+    );
+    fireEvent.click(check);
+
+    expect(await screen.findByRole("button", { name: "Check again" })).toBeVisible();
+    expect(savedLaunchAt(key)).toMatchObject({
+      settled: { result: "success", hash: DEPLOYMENT_HASH },
+    });
+  });
+
+  it("keeps the check and its button when the journal can't be read at the check", async () => {
+    await savedEarlierLaunch();
+    render(<Page />);
+    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("SecurityError");
+    });
+    const removed = vi.spyOn(Storage.prototype, "removeItem");
+    fireEvent.click(check);
+
+    expect(await screen.findByText("Couldn't check this transaction. Try again.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(removed).not.toHaveBeenCalled();
+    read.mockRestore();
+    removed.mockRestore();
+  });
+
+  it("offers the warned continue only after the check failed unreadable, and it launches anew", async () => {
+    const { launchKeyOf, launchInputOf } = await import("@/app/create/helpers/launchIntent");
+    window.localStorage.setItem(
+      launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form)),
+      "{not json",
+    );
+    render(<Page />);
+    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    expect(
+      screen.queryByRole("button", { name: "I checked my wallet. Continue anyway" }),
+    ).toBeNull();
+    fireEvent.click(check);
+    expect(
+      await screen.findByText(
+        "This browser can't read its saved transactions. Check your wallet before sending again.",
+      ),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "I checked my wallet. Continue anyway" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "I checked it. Launch again" })).toBeNull(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
+  });
+
+  it("sends nothing and prepares nothing when the journal can't be read on submit", async () => {
+    window.localStorage.setItem(
+      (await import("@/app/create/helpers/launchIntent")).launchKeyOf(
+        TEST_ACCOUNT,
+        11155111,
+        (await import("@/app/create/helpers/launchIntent")).launchInputOf(mocks.form),
+      ),
+      "{not json",
+    );
+    await submitFixture();
+
+    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(mocks.pinMetadata).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("never lets a stale check delete a newer attempt another tab journaled", async () => {
+    await savedEarlierLaunch();
+    const { launchKeyOf, launchInputOf, savedLaunchAt } =
+      await import("@/app/create/helpers/launchIntent");
+    const key = launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form));
+    render(<Page />);
+    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    // Another tab checked it too, relaunched with a fresh salt, and its wallet has it now.
+    const newer = { salt: `0x${"08".repeat(32)}`, fromBlock: "2000", namespaces: [], before: [] };
+    window.localStorage.setItem(key, JSON.stringify(newer));
+    fireEvent.click(check);
+
+    await waitFor(() => expect(savedLaunchAt(key)).toMatchObject({ salt: newer.salt }));
+    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+  });
+
+  it("shows the check when the mount scan can't read the chain", async () => {
+    await savedEarlierLaunch();
+    render(<Page />);
+    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+  });
+
+  it("launches anew, with a fresh salt, only after the user's check", async () => {
+    await savedEarlierLaunch();
+    mocks.pinMetadata.mockResolvedValue("bafy-metadata");
+    await submitFixture();
+    fireEvent.click(await screen.findByRole("button", { name: "I checked it. Launch again" }));
+    mocks.setSubmitting.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
+    await waitFor(() => expect(mocks.setSubmitting).toHaveBeenLastCalledWith(false));
+
+    expect(mocks.write).toHaveBeenCalledOnce();
+    const [{ args }] = mocks.write.mock.calls[0] as [{ args: readonly unknown[] }];
+    expect(JSON.stringify(args, (_k, v) => (typeof v === "bigint" ? `${v}` : v))).not.toContain(
+      "07".repeat(32),
+    );
+  });
+});

@@ -27,6 +27,7 @@ import {
   UNIVERSAL_ROUTER_BY_CHAIN,
 } from "@/lib/directPaySwap";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
+import { legacyIntents } from "@/lib/legacy-intents";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
@@ -44,7 +45,7 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
-import { payIntent, withWriteIntent } from "@/lib/write-hold";
+import { withWriteIntent } from "@/lib/write-hold";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
   JB_CHAINS,
@@ -54,6 +55,7 @@ import {
   jbMultiTerminalAbi,
   jbRouterTerminalRegistryAbi,
 } from "@bananapus/nana-sdk-core";
+import { approvalIntent, payIntent } from "@bananapus/nana-sdk-core/review";
 import {
   build721PayMetadata,
   buildPayTx,
@@ -860,10 +862,19 @@ export function V6PayCard() {
         // the resolved terminal.
         setPhase("approving-token");
         await nextUiPaint();
+        const spender = prepared.directSwapRoute ? PERMIT2_ADDRESS : prepared.request.address;
         const approvalHash = await ensureAllowance(
           prepared.token.token,
-          prepared.directSwapRoute ? PERMIT2_ADDRESS : prepared.request.address,
+          spender,
           prepared.amount,
+          approvalIntent(
+            payIntent({
+              chainId: prepared.chainId,
+              project: projectId,
+              beneficiary: prepared.account,
+            }),
+            { step: "erc20", token: prepared.token.token, spender },
+          ),
         );
         const approvalReceipt = getApprovalReceipt(approvalHash);
         if (approvalReceipt?.blockNumber !== undefined) {
@@ -957,12 +968,22 @@ export function V6PayCard() {
         const router = routerApproval.request.args[1] as Address;
         setPhase("approving-router");
         await nextUiPaint();
-        const approvalHash = await writeContractAsync({
+        const approvalHash = await withWriteIntent(
+          writeContractAsync,
+          approvalIntent(
+            payIntent({
+              chainId: prepared.chainId,
+              project: projectId,
+              beneficiary: prepared.account,
+            }),
+            { step: "permit2", token: prepared.token.token, spender: router },
+          ),
+        )({
           chainId: prepared.chainId,
           ...routerApproval.request,
           account: prepared.account,
         });
-        requireOnchainExecution(approvalHash, "Swap authorization");
+        requireOnchainExecution(approvalHash);
         const approvalReceipt = await waitForReceiptWithRetry(
           publicClient as PublicClient,
           approvalHash,
@@ -1011,7 +1032,8 @@ export function V6PayCard() {
       // the cart, token, route, amount or memo.
       const hash = await withWriteIntent(
         writeContractAsync,
-        ...payIntent({ projectId, beneficiary: prepared.account }),
+        payIntent({ chainId: prepared.chainId, project: projectId, beneficiary: prepared.account }),
+        legacyIntents.pay(projectId, prepared.account),
       )({
         chainId: prepared.chainId,
         address: paymentRequest.address,
@@ -1027,7 +1049,7 @@ export function V6PayCard() {
         setPhase("safe-proposed");
         return;
       }
-      requireOnchainExecution(hash, prepared.mode === "pay" ? "Payment" : "Balance addition");
+      requireOnchainExecution(hash);
       const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
       if (receipt.status !== "success") {
         throw new Error(`Transaction ${hash} reverted onchain.`);

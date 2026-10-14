@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExecutionIntent, withWriteIntent } from "@/lib/write-hold";
 import {
   sameSafeRelayrIntents,
   type SafeRelayrPhase,
@@ -1002,14 +1003,18 @@ export function SafeQueueCard({
         handleBinding,
       };
       try {
-        const hash = await writeContractAsync({
+        // Held by the Safe transaction it runs, not by the signatures collected so far.
+        const hash = await withWriteIntent(
+          writeContractAsync,
+          safeExecutionIntent(row.chainId, row.safe, expectedSafeTxHash),
+        )({
           chainId: row.chainId,
           address: row.safe,
           abi: SAFE_EXEC_ABI,
           functionName: "execTransaction",
           args,
         });
-        requireOnchainExecution(hash, `Execute Safe transaction #${tx.nonce}`);
+        requireOnchainExecution(hash);
         await confirmSafeExecution({
           client: publicClientFor(row.chainId),
           hash,

@@ -5,7 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const CONFIG_HASH = `0x${"ab".repeat(32)}`;
 
-const mocks = vi.hoisted(() => ({ runWrites: vi.fn(), read: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  runWrites: vi.fn(),
+  read: vi.fn(),
+  salt: vi.fn(),
+  discard: vi.fn(),
+}));
 
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
 vi.mock("wagmi", async (importOriginal) => ({
@@ -33,8 +38,9 @@ vi.mock("@/app/[slug]/components/v6/operator/suckerExtensionLib", async (importO
   buildSuckerExtensionWrites: () => [{ chainId: 1, label: "Deploy suckers" }],
 }));
 vi.mock("@/lib/suckerExtensionSalt", () => ({
-  saltForExtension: () => `0x${"11".repeat(32)}`,
+  saltForExtension: () => mocks.salt(),
   clearExtensionSalt: vi.fn(),
+  discardUnreadableSalts: () => mocks.discard(),
 }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   isSafeProposalPendingError: (error: unknown) =>
@@ -87,6 +93,8 @@ beforeEach(() => {
     functionName === "hashedEncodedConfigurationOf" ? CONFIG_HASH : [],
   );
   mocks.runWrites.mockResolvedValue({ chains: 2, safeQueued: 0, safeConfirmed: 0 });
+  mocks.salt.mockReset().mockReturnValue(`0x${"11".repeat(32)}`);
+  mocks.discard.mockReset();
 });
 
 describe("extend to another chain confirm", () => {
@@ -130,6 +138,31 @@ describe("extend to another chain confirm", () => {
     // Landed on every chain: the confirm and the form close.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("button", { name: "Extend to another chain" })).toBeEnabled();
+  });
+
+  it("offers the warned continue only once the saved salts can't be read, and sends nothing until then", async () => {
+    mocks.salt.mockImplementationOnce(() => {
+      throw new Error("Couldn't check this transaction. Try again.");
+    });
+    const confirm = await openConfirm();
+    expect(
+      within(confirm).queryByRole("button", { name: "I checked my wallet. Continue anyway" }),
+    ).toBeNull();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Deploy suckers" }));
+
+    expect(
+      await within(confirm).findByText(
+        "This browser can't read its saved transactions. Check your wallet before sending again.",
+      ),
+    ).toBeVisible();
+    expect(mocks.runWrites).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(confirm).getByRole("button", { name: "I checked my wallet. Continue anyway" }),
+    );
+    expect(mocks.discard).toHaveBeenCalledOnce();
+    expect(
+      within(confirm).queryByRole("button", { name: "I checked my wallet. Continue anyway" }),
+    ).toBeNull();
   });
 
   it("ends on Done when the deployment went to the Safe as a proposal", async () => {

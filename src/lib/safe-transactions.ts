@@ -37,6 +37,8 @@ export type ReviewedSafeProposal = {
   safeTxGas?: string;
   /** The write-hold namespace of the user's intent, when the proposal is held by it. */
   holdNamespace?: string;
+  /** The namespaces the build before SDK 2.38's builders held it by. REMOVE with legacy-intents.ts. */
+  legacyNamespaces?: string[];
 };
 
 /**

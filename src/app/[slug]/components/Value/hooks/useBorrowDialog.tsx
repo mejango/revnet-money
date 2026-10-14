@@ -1,6 +1,5 @@
 import { useToast } from "@/components/ui/use-toast";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
-import { useChosen } from "@/hooks/useChosen";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalPendingError,
@@ -12,6 +11,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { generateFeeData } from "@/lib/feeHelpers";
+import { legacyIntents } from "@/lib/legacy-intents";
 import {
   buildProtectedBorrowTx,
   buildProtectedReallocateCollateralTx,
@@ -25,7 +25,7 @@ import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUt
 import { TransactionReviewCancelledError } from "@/lib/transaction-review";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { reallocateIntent, withWriteIntent } from "@/lib/write-hold";
+import { withWriteIntent } from "@/lib/write-hold";
 import {
   getRevnetLoanContract,
   JB_TOKEN_DECIMALS,
@@ -34,7 +34,7 @@ import {
   revLoansAbi,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
-import { intent } from "@bananapus/nana-sdk-core/review";
+import { borrowIntent, loanIntent } from "@bananapus/nana-sdk-core/review";
 import { hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
@@ -101,21 +101,11 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     if (borrowStatus === "granting-permission") setGrantsPermission(true);
     if (borrowStatus === "idle") setGrantsPermission(false);
   }, [borrowStatus]);
-  // Where the collateral came from: typed, an option the user picked (Max, a percentage) or the
-  // app's seed (the full balance on a network pick, a reset). The write's intent keys an option or
-  // a seed by its name, since the amount it fills follows the balance.
-  const chosenCollateral = useChosen("", "collateral");
-  const collateralAmount = chosenCollateral.value;
-  const { set: typeCollateral, choose: chooseCollateral, seed: seedCollateral } = chosenCollateral;
-  /** `policy`: the option the user picked, or "auto" for the app's own fill. */
+  const [collateralAmount, setCollateralText] = useState("");
+  /** The second argument (an option's name, or "auto") is kept for callers; keys don't read it. */
   const setCollateralAmount = useCallback(
-    (value: string, policy?: string) =>
-      policy === "auto"
-        ? seedCollateral(value)
-        : policy
-          ? chooseCollateral(policy, value)
-          : typeCollateral(value),
-    [typeCollateral, chooseCollateral, seedCollateral],
+    (value: string, _policy?: string) => setCollateralText(value),
+    [],
   );
   const [selectedChainId, setSelectedChainId] = useState<number | undefined>(undefined);
   const [cashOutChainId, setCashOutChainId] = useState<string>();
@@ -539,7 +529,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             },
           ],
         });
-        requireOnchainExecution(txHash, "Borrow permission grant");
+        requireOnchainExecution(txHash);
         const permissionReceipt = await waitForReceiptWithRetry(publicClient, txHash);
         if (permissionReceipt.status !== "success") {
           throw new Error(`Permission grant ${txHash} reverted onchain.`);
@@ -661,11 +651,14 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
         setBorrowStatus("waiting-signature");
 
-        // Held by what the user asked for: the borrowable amount and the collateral moved follow
-        // the loan's current capacity.
+        // Held by the loan alone: the borrowable amount and the collateral moved follow its capacity.
         await withWriteIntent(
           reallocateCollateralAsync,
-          ...reallocateIntent({ loanId: internalSelectedLoan.id }),
+          loanIntent({
+            chainId: Number(cashOutChainId),
+            loanId: BigInt(internalSelectedLoan.id),
+          }),
+          legacyIntents.reallocate(internalSelectedLoan.id),
         )({
           ...buildProtectedReallocateCollateralTx({
             chainId: Number(cashOutChainId) as JBChainId,
@@ -725,13 +718,21 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           });
 
           setBorrowStatus("waiting-signature");
-          // Held by what the user asked for: the borrowable amount is quoted again on a retry.
-          await withWriteIntent(writeContractAsync, "borrow", {
-            revnetId: effectiveProjectId,
-            token: intent.address(selectedChainTokenConfig.token),
-            collateral: chosenCollateral.key(collateralBigInt),
-            prepaidFeePercent: feeBasisPoints,
-          })({
+          // Held by the project and holder: the amount and collateral are not part of it.
+          await withWriteIntent(
+            writeContractAsync,
+            borrowIntent({
+              chainId: Number(cashOutChainId),
+              project: effectiveProjectId,
+              holder: address,
+            }),
+            legacyIntents.borrow({
+              revnetId: effectiveProjectId,
+              token: selectedChainTokenConfig.token,
+              collateral: collateralBigInt,
+              prepaidFeePercent: feeBasisPoints,
+            }),
+          )({
             ...buildProtectedBorrowTx({
               chainId: Number(cashOutChainId) as JBChainId,
               revnetId: effectiveProjectId,
@@ -764,7 +765,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       }
     }
   }, [
-    chosenCollateral,
     internalSelectedLoan,
     collateralAmount,
     cashOutChainId,

@@ -32,6 +32,8 @@ import {
 import { cachedQuery } from "@/lib/query-persist";
 import { explorerBaseUrl } from "@/lib/utils";
 import { RECEIPT_WAIT_TIMEOUT_MS, waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-hold";
+import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import {
   uniswapV4AmountsForLiquidity,
   uniswapV4DefaultPriceRange,
@@ -66,8 +68,6 @@ import {
   groupMarketPositions,
   lpBandPrices,
   lpDeadline,
-  PERMIT2_ABI,
-  PERMIT2_ADDRESS,
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
   prepareAddLiquidity,
@@ -92,6 +92,7 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
+  heldLiquidityApprovals,
   liquidityBatchCalls,
   runApprovalStep,
   safeBatchIntro,
@@ -848,6 +849,8 @@ export function AddLiquidityForm({
       return;
     }
     const plan = built.plan;
+    // One liquidity action in this pool: its approvals are its steps, its batch is it.
+    const lpIntent = liquidityIntent({ chainId, pool: pool.poolId, positions: [] });
     setBusy(true);
     setStatus(null);
     try {
@@ -866,6 +869,7 @@ export function AddLiquidityForm({
             value: plan.value,
           }),
           account,
+          lpIntent,
         );
         setStatus(
           "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity.",
@@ -880,16 +884,12 @@ export function AddLiquidityForm({
             chainId: state.chainId,
             address: account,
             publicClient: publicClient as PublicClient,
-            ensureAllowance,
-            approvePermit2: (args) =>
-              writeContractAsync({
-                chainId,
-                address: PERMIT2_ADDRESS,
-                abi: PERMIT2_ABI,
-                functionName: "approve",
-                args,
-                account,
-              }),
+            ...heldLiquidityApprovals(lpIntent, {
+              chainId,
+              account,
+              ensureAllowance,
+              writeContractAsync: writeContractAsync as never,
+            }),
           });
           if (outcome === "safe-proposed") {
             setStatus(
@@ -902,7 +902,10 @@ export function AddLiquidityForm({
         }
         if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
         else await reverifyAddLiquidity(pool, built.plan);
-        const hash = await writeContractAsync({
+        const hash = await withWriteIntent(
+          writeContractAsync,
+          lpIntent,
+        )({
           chainId,
           address: POSITION_MANAGER_BY_CHAIN[chainId]!,
           abi: POSITION_MANAGER_ABI,
@@ -1440,7 +1443,14 @@ function ChainPositionRows({
               positions.map((position) => position.tokenId),
               address,
             ).unlockData;
-      await writeContractAsync({
+      await withWriteIntent(
+        writeContractAsync,
+        liquidityIntent({
+          chainId,
+          pool: pool.poolId,
+          positions: positions.map((position) => position.tokenId),
+        }),
+      )({
         chainId,
         address: positionManager,
         abi: POSITION_MANAGER_ABI,
@@ -1470,7 +1480,14 @@ function ChainPositionRows({
       if (fresh.liquidity < reviewed.position.liquidity) {
         throw new Error("This position changed. Review its current return before removing it.");
       }
-      const sent = await writeContractAsync({
+      const sent = await withWriteIntent(
+        writeContractAsync,
+        liquidityIntent({
+          chainId,
+          pool: pool.poolId,
+          positions: [reviewed.position.tokenId],
+        }),
+      )({
         chainId,
         address: positionManager,
         abi: POSITION_MANAGER_ABI,

@@ -228,8 +228,8 @@ describe("one Safe proposal for a whole flow", () => {
       safe: ACCOUNT,
       calls: expected.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
       batch: true,
-      // The hold it is kept in: the batch's intent.
-      holdNamespace: expect.stringMatching(/^intent:batch:[0-9a-f]{40}$/),
+      // A batch no SDK builder names keeps the previous build's batch namespace (legacy-intents).
+      holdNamespace: expect.stringMatching(/^intent:batch:/),
     });
 
     // The same batch again is the pending proposal, not a second one: its hold refuses it.
@@ -247,8 +247,7 @@ describe("one Safe proposal for a whole flow", () => {
     await waitFor(() =>
       expect(transactionActivityForHash(proposal)).toMatchObject({
         status: "safe-proposed",
-        message:
-          "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+        message: WRITE_HOLD_SAFE_UNPROVEN_LINE,
         safeResultUnconfirmed: true,
       }),
     );
@@ -287,7 +286,7 @@ describe("one Safe proposal for a whole flow", () => {
     await waitFor(() =>
       expect(transactionActivityForHash(proposal)).toMatchObject({
         status: "safe-proposed",
-        message: "Safe proposal is not executed. It remains asynchronous; do not submit it again.",
+        message: "Waiting for your Safe's approvals.",
       }),
     );
     expect(transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();

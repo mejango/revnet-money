@@ -158,7 +158,7 @@ export function MintItemModal({
         setPhase("safe-proposed");
         return;
       }
-      requireOnchainExecution(hash, "Free shop item mint");
+      requireOnchainExecution(hash);
       const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
       if (receipt.status !== "success") throw new Error("The mint failed.");
 

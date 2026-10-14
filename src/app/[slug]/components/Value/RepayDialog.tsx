@@ -18,15 +18,16 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
+import { legacyIntents } from "@/lib/legacy-intents";
 import { repayCeilingFor, repayPrincipalFor } from "@/lib/loanFees";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { repayIntent, withWriteIntent } from "@/lib/write-hold";
+import { withWriteIntent } from "@/lib/write-hold";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
-import { intent } from "@bananapus/nana-sdk-core/review";
+import { approvalIntent, loanIntent } from "@bananapus/nana-sdk-core/review";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
 import {
@@ -468,10 +469,14 @@ export function RepayDialog({
       const revLoansContractAddress = getRevnetLoanContract(6, chainId);
 
       // Held by the loan it repays: the accrued amount grows between attempts.
-      const approveHash = await withWriteIntent(repayLoanAsync, "repay-approve", {
-        loanId,
-        token: intent.address(baseTokenAddress),
-      })({
+      const approveHash = await withWriteIntent(
+        repayLoanAsync,
+        approvalIntent(loanIntent({ chainId, loanId: BigInt(loanId) }), {
+          step: "repay",
+          token: baseTokenAddress,
+          spender: revLoansContractAddress,
+        }),
+      )({
         chainId,
         address: baseTokenAddress,
         abi: erc20ApproveAbi,
@@ -480,7 +485,7 @@ export function RepayDialog({
         args: [revLoansContractAddress as Address, finalRepayAmount],
       });
 
-      requireOnchainExecution(approveHash, "Token approval");
+      requireOnchainExecution(approveHash);
       const approvalReceipt = await waitForReceiptWithRetry(publicClient, approveHash);
       if (approvalReceipt.status !== "success") {
         throw new Error(`Token approval ${approveHash} reverted onchain.`);
@@ -559,10 +564,14 @@ export function RepayDialog({
             throw new Error("Wallet client not available");
           }
 
-          const approveHash = await withWriteIntent(repayLoanAsync, "repay-approve", {
-            loanId,
-            token: intent.address(baseTokenAddress),
-          })({
+          const approveHash = await withWriteIntent(
+            repayLoanAsync,
+            approvalIntent(loanIntent({ chainId, loanId: BigInt(loanId) }), {
+              step: "repay",
+              token: baseTokenAddress,
+              spender: revLoansContractAddress,
+            }),
+          )({
             chainId,
             address: baseTokenAddress,
             abi: erc20ApproveAbi,
@@ -570,7 +579,7 @@ export function RepayDialog({
             args: [revLoansContractAddress as Address, maxRepayBorrowAmount],
           });
 
-          requireOnchainExecution(approveHash, "Token approval");
+          requireOnchainExecution(approveHash);
           const approvalReceipt = await waitForReceiptWithRetry(publicClient, approveHash);
           if (approvalReceipt.status !== "success") {
             throw new Error(`Token approval ${approveHash} reverted onchain.`);
@@ -584,7 +593,8 @@ export function RepayDialog({
       // attempts (accrual, a reopen's fresh default).
       const txHash = await withWriteIntent(
         repayLoanAsync,
-        ...repayIntent(loanId),
+        loanIntent({ chainId, loanId: BigInt(loanId) }),
+        legacyIntents.repay(loanId),
       )({
         abi: revLoansAbi,
         functionName: "repayLoan",

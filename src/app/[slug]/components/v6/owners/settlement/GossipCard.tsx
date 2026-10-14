@@ -7,15 +7,17 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { legacyIntents } from "@/lib/legacy-intents";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { syncIntent, withWriteIntent } from "@/lib/write-hold";
+import { withWriteIntent } from "@/lib/write-hold";
 import { JBChainId } from "@bananapus/nana-sdk-core";
+import { bridgeIntent } from "@bananapus/nana-sdk-core/review";
 import { buildSyncAccountingDataTx } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Address } from "viem";
+import { Address, zeroAddress } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import {
   chainName,
@@ -137,10 +139,17 @@ function SyncButton({
                 account: address,
                 ...request,
               });
-              // Held by the sucker alone: the bridge fee is simulated again on a reopen.
+              // Held by the sucker and account (a sync moves no one token: the zero address
+              // names the whole sucker); the bridge fee is simulated again on a reopen.
               const hash = await withWriteIntent(
                 writeContractAsync,
-                ...syncIntent(syncSucker),
+                bridgeIntent({
+                  chainId: peerChainId,
+                  sucker: syncSucker,
+                  token: zeroAddress,
+                  account: address!,
+                }),
+                legacyIntents.sync(syncSucker),
               )(request);
               if (submittedViaSafe(hash)) {
                 setState("sent");

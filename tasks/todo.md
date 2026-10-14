@@ -1196,3 +1196,65 @@ Responsive verification passes after the icon-only change: at 768px the row/deta
 - [x] Verify current creation guards and report confidence plus wallet matching fields.
 
 Creation preflight review: fresh Base block52559580 (2026-10-13T16:21:47Z) verified the same streaming implementation, host/token and zero-value exact creation calldata. Ethereum team.rev.eth still resolves to the reviewed Base Safe; selected admin has no contract code. eth_call succeeds and gas estimation succeeds (1,000,437 gas units, not a total fee quote). Factory split currently62% beneficiary/38% platform and remains a mutable factory setting. Current app final-send guard repeats ENS/recipient and factory identity/settings checks, reviewed wallet owner binds account, and canonical creation receipt validates resulting admin/beneficiary. 52 focused core/hook/recovery tests pass. Evidence tasks/markee-creation-preflight.json; publicBroadcast=false and walletPayloadObserved=false. This is scoped transaction qualification, not a whole-protocol security audit or an unseen-wallet guarantee.
+
+## Launch resume never deploys a second revnet (joint2 finding 2, 2026-10-14)
+
+Shared rule: one recovery order on all four sites (held, settled success, no hold record, check required).
+
+- [x] Red first: settled-before-resume, settlement during send/exit, unauthenticatable recovery reaching "I checked it. Launch again", hash saved by the SDK but not the page, main-era namespace hold (13 failing before the fix).
+- [x] `recoverSavedLaunch` (launchIntent.ts) runs before any send of a resumed saved launch: held holds are asked of the chain first; a settled success is reconciled against its exact receipt (DeployRevnet in that transaction, saved salt); no record scans the salt; any read failure or empty scan is CHECK-REQUIRED, never a send.
+- [x] `sendUnderHold` refuses at the gate's beforeSend when the send's own check settles an earlier success (also for the previous build's namespaces): nothing is sent again, and the page reconciles it.
+- [x] After a failed send, the page recovers again (settlement found during the exit is the result); with nothing held, the saved attempt is retired so a wallet rejection never demands a check. Only the check action otherwise retires it; the next launch gets a fresh salt.
+
+### Review
+`npm run check` green: 2904 unit tests, 144 browser tests, bundle 2743.8 of 2746 KiB (no budget change).
+
+## Joint round 3: launch recovery invariants A-D (2026-10-14)
+
+- [x] Red first (26 helper + 4 page tests): settled success with empty/mismatched logs, with and without fromBlock, never clear; no-record/no-fromBlock is check; recovery and its held exit run before upload, fee, token and feed preparation; the mount scan shows a check on discovery failure; the check alone retires, then a fresh salt.
+- [x] The journal is written at the hook's `beforeSubmission` (the hold reserved the wallet) with salt, fromBlock, hold namespaces and the settlements already there (`before`), and removed only where the SDK drops the reservation (definite rejection, abort before the wallet). So a journal always means "may have reached the wallet".
+- [x] `recoverLaunch(key)` (never throws): held (asked of the chain first; the SDK exit is offered before preparation and, once taken, retires the attempt); any success not in `before` wins and must show its own DeployRevnet event with the saved salt, else check; a final revert retires; no record scans the salt, else check.
+- [x] `takeHeldExit` extracted unchanged from `sendUnderHold` so the page offers the same exit.
+
+### Review
+`npm run check` green: 2911 unit tests, 144 browser tests, bundle 2743.9 of 2746 KiB (no budget change). Audited: Relayr multichain launch keeps its own signature-window gate (unchanged); legacy Safe proposal adoption refusal keeps the journal refusing, never permits a send.
+
+## Joint round 4, finding 1: a known success is never discarded (2026-10-14)
+
+- [x] Red first (8 tests): a settled success with an unreadable receipt, empty logs, another salt or another transaction's event is journaled (`settled`) before any read and stays `confirming`; it is still followed once the hold forgets it; a later failed settlement never downgrades it; the page offers only "Check again", never "I checked it" or a resend.
+- [x] `recoverLaunch` follows a journaled settlement first; `LaunchConfirmingNotice` re-runs recovery. Markee and Relayr findings 2-4 are queued for the SDK engine migration (coordinator ruling).
+
+### Review
+`npm run check` green: 2914 unit tests, 144 browser tests, bundle 2744.1 of 2746 KiB.
+
+## Joint round 5, findings 2 and 3 (2026-10-14)
+
+- [x] Red first: main-era cash outs and bridges keyed by the 10%, 25% and 50% buttons (`policy:10%` etc., origin/main 71c24286 BridgeDialog/RedeemDialog) are rebuilt; a cash out retried on the other venue is refused while the 25% one is unresolved. `AMOUNT_OPTIONS` is the one list for cash out, bridge and borrow.
+- [x] Red first: a stale "I checked it" in one tab after another tab journaled the success keeps it and follows it ("Check again"). `releaseLaunch` re-reads the journal and refuses a saved success; the check, the SDK exit and a dropped reservation all release through it.
+
+### Review
+`npm run check`: 2921 unit tests and every step green except one unrelated browser timing flake (project-shape alias tab, tablet-768); `npm run test:browser` rerun alone passed 144/144. Bundle 2744.2 of 2746 KiB.
+
+## Joint round 6, finding 2: an unreadable journal is never released (2026-10-14)
+
+- [x] Red first (6 tests): a launch journal storage won't read, or a malformed record, throws `JOURNAL_UNREADABLE_LINE` ("Couldn't check this transaction. Try again.") instead of reading as absent; release refuses and deletes nothing; recovery returns check, never none; the page keeps the check and its button with the line, and a submit prepares and sends nothing.
+- [x] Audit of writes/deletes after forgiving reads: the sucker-extension salt store read a malformed store as `{}` and the next write replaced it, dropping salts deployed peers need; it now refuses and never writes or clears over it. Multichain batch journal already throws; transaction activity already stops writing after a failed read; the Safe batch tray is a convenience queue (no recovery); Markee is queued for the SDK engine migration.
+
+### Review
+`npm run check` green in one pass: 2928 unit tests, 144 browser tests, bundle 2744.3 of 2746 KiB.
+
+## The warned continue past an unreadable journal (SDK engine parity, 2026-10-14)
+
+- [x] Red first (5 tests): after "I checked it" fails with the unreadable line (and only then), "This browser can't read its saved transactions. Check your wallet before sending again." sits above "I checked my wallet. Continue anyway"; it discards the record and reopens the flow, which launches with a fresh salt. Storage that won't read or delete lets the discarded key read as absent in this tab until it reads again.
+- [x] The sucker salt store blocks every extension while unreadable, so it gets the same warned continue in its confirm dialog after an extension failed on it. Strings next to JOURNAL_UNREADABLE_LINE; one `UnreadableJournalExit` component for both.
+
+### Review
+`npm run check` green: 2933 unit tests, 144 browser tests, bundle 2744.6 of 2746 KiB.
+
+## Final joint round, item 2: a stale retirement never deletes a newer attempt (2026-10-14)
+
+- [x] Red first (4 tests): tab A's reverted retirement, salt-scan retirement, and stale check all keep tab B's newer salt2 journal.
+- [x] `releaseLaunch(key, snapshot)` is the one guard: a strict re-read, kept when the journal is now another salt or holds a success other than the snapshot's. Every retirement (recovery's reverted/launched, receipt success, check, exit, dropped reservation) goes through it; the warned discard re-reads and recovers instead when the record reads again.
+
+### Review
+`npm run check` green: 2937 unit tests, 144 browser tests, bundle 2744.8 of 2746 KiB.

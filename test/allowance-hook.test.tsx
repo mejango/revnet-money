@@ -31,6 +31,8 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
 const TOKEN = "0x0000000000000000000000000000000000001000" as Address;
 const SPENDER = "0x0000000000000000000000000000000000002000" as Address;
 const HASH = `0x${"34".repeat(32)}` as Hex;
+/** The approval's intent, which its caller names. */
+const APPROVAL = "approval-intent";
 
 async function freshHook() {
   vi.resetModules();
@@ -53,7 +55,7 @@ describe("allowance hook", () => {
     let hash: Hex | null | undefined;
 
     await act(async () => {
-      hash = await result.current.ensureAllowance(TOKEN, SPENDER, 50n);
+      hash = await result.current.ensureAllowance(TOKEN, SPENDER, 50n, APPROVAL);
     });
 
     expect(hash).toBeNull();
@@ -84,7 +86,7 @@ describe("allowance hook", () => {
     let hash: Hex | null | undefined;
 
     await act(async () => {
-      hash = await result.current.ensureAllowance(TOKEN, SPENDER, 75n);
+      hash = await result.current.ensureAllowance(TOKEN, SPENDER, 75n, APPROVAL);
     });
 
     expect(hash).toBe(HASH);
@@ -98,6 +100,9 @@ describe("allowance hook", () => {
         args: [SPENDER, 75n],
       }),
     );
+    // Held by the approval's intent, whatever amount the plan calculated.
+    const { writeIntentOf } = await import("@/lib/write-hold");
+    expect(writeIntentOf(mocks.writeContractAsync.mock.calls[0][0])).toBe(APPROVAL);
     expect(order).toEqual(["write", "execution-boundary", "receipt"]);
     expect(result.current.getApprovalReceipt(hash)).toEqual(receipt);
     expect(result.current.getApprovalReceipt(null)).toBeUndefined();
@@ -114,7 +119,7 @@ describe("allowance hook", () => {
     const { result } = renderHook(() => hooks.useAllowance(11155111));
 
     await act(async () => {
-      await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n)).rejects.toThrow(
+      await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n, APPROVAL)).rejects.toThrow(
         /has not executed/i,
       );
     });
@@ -128,7 +133,7 @@ describe("allowance hook", () => {
     const { result } = renderHook(() => hooks.useAllowance(11155111));
 
     await act(async () => {
-      await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n)).rejects.toThrow(
+      await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n, APPROVAL)).rejects.toThrow(
         `Token approval ${HASH} reverted onchain`,
       );
     });
@@ -140,7 +145,7 @@ describe("allowance hook", () => {
     const hooks = await freshHook();
     const { result } = renderHook(() => hooks.useAllowance(11155111));
 
-    await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n)).rejects.toThrow(
+    await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n, APPROVAL)).rejects.toThrow(
       "Wallet not connected",
     );
     expect(mocks.readContract).not.toHaveBeenCalled();
@@ -151,7 +156,7 @@ describe("allowance hook", () => {
     const hooks = await freshHook();
     const { result } = renderHook(() => hooks.useAllowance(11155111));
 
-    await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n)).rejects.toThrow(
+    await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n, APPROVAL)).rejects.toThrow(
       "Please try again",
     );
     expect(mocks.readContract).not.toHaveBeenCalled();
@@ -163,7 +168,7 @@ describe("allowance hook", () => {
     const { result } = renderHook(() => hooks.useAllowance(11155111));
 
     await act(async () => {
-      await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n)).rejects.toThrow(
+      await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n, APPROVAL)).rejects.toThrow(
         `Token approval ${HASH} was submitted, but confirmation is unavailable`,
       );
     });

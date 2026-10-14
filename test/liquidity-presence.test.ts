@@ -12,7 +12,7 @@ import {
 // reference-price quotes. These tests pin the probe's shape and its fail-soft
 // behavior via injected readers.
 
-const fakePool = { poolId: "0xpool", price: 0.00001 } as unknown as PoolSnapshot;
+const fakePool = { poolId: `0x${"7a".repeat(32)}`, price: 0.00001 } as unknown as PoolSnapshot;
 const HOOK = "0x0000000000000000000000000000000000000001" as const;
 
 const chains = [

@@ -112,9 +112,7 @@ describe("a closed permission review", () => {
 describe("a permission step refused by a Safe proposal the app can't confirm", () => {
   it("wallet-action:loans says to check the proposal in Safe, and neither that permission was denied nor that it failed", async () => {
     const proposal = `0x${"ab".repeat(32)}` as Hex;
-    mocks.write.mockRejectedValue(
-      new SafeProposalPendingError(proposal, "setPermissionsFor", true),
-    );
+    mocks.write.mockRejectedValue(new SafeProposalPendingError(proposal, true));
     const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }));
 
     act(() => result.current.handleChainSelection(1));
@@ -123,7 +121,7 @@ describe("a permission step refused by a Safe proposal the app can't confirm", (
     expect(result.current.borrowStatus).toBe("safe-unconfirmed");
     expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
       title: "Safe proposal unconfirmed",
-      description: `setPermissionsFor was proposed to Safe as ${proposal}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
+      description: "Check this proposal in your Safe before sending it again.",
     });
   });
 });

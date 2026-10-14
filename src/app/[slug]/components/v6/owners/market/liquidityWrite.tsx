@@ -3,7 +3,9 @@
 import { submittedViaSafe, type proposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-hold";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { approvalIntent } from "@bananapus/nana-sdk-core/review";
 import { erc20Abi, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 import {
   lpDeadline,
@@ -161,6 +163,53 @@ export function liquidityBatchCalls({
             dependsOnPrior: true,
           },
   );
+}
+
+/**
+ * The approvals of one liquidity action, each held as a step of its intent (the SDK's
+ * approvalIntent of `parent`): the ERC-20 allowance to Permit2, and Permit2's to the position
+ * manager. Their amounts, the plan's calculated maxima, are not part of it.
+ */
+export function heldLiquidityApprovals(
+  parent: string,
+  {
+    chainId,
+    account,
+    ensureAllowance,
+    writeContractAsync,
+  }: {
+    chainId: number;
+    account: Address;
+    ensureAllowance: (
+      token: Address,
+      spender: Address,
+      amount: bigint,
+      namespace: string,
+    ) => Promise<unknown>;
+    writeContractAsync: (variables: never) => Promise<Hex>;
+  },
+): Pick<ApprovalContext, "ensureAllowance" | "approvePermit2"> {
+  return {
+    ensureAllowance: (token, spender, amount) =>
+      ensureAllowance(
+        token,
+        spender,
+        amount,
+        approvalIntent(parent, { step: "erc20", token, spender }),
+      ),
+    approvePermit2: (args) =>
+      withWriteIntent(
+        writeContractAsync,
+        approvalIntent(parent, { step: "permit2", token: args[0], spender: args[1] }),
+      )({
+        chainId,
+        address: PERMIT2_ADDRESS,
+        abi: PERMIT2_ABI,
+        functionName: "approve",
+        args,
+        account,
+      } as never),
+  };
 }
 
 /** The confirm's intro line when the whole step list goes to a Safe at once. */

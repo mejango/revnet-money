@@ -191,7 +191,7 @@ export async function runSequentialWrites({
       args: write.args as unknown[],
     });
     onProgress(`Waiting for confirmation on ${name}…`);
-    requireOnchainExecution(hash, `${write.functionName} on ${name}`);
+    requireOnchainExecution(hash);
     const receipt = await waitForReceiptWithRetry(client, hash);
     if (receipt.status !== "success") {
       throw new Error(`${write.functionName} reverted on ${name} (${hash}).`);

@@ -12,6 +12,7 @@ import { composeBatch, type BatchCall, type BatchStep } from "@/lib/safe-batch";
 import { confirmSafeExecution, SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
 import { requireTransactionReview } from "@/lib/transaction-review";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { safeExecutionIntent, withWriteIntent } from "@/lib/write-hold";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { simulateCallSequence } from "@bananapus/nana-sdk-core/review";
 import {
@@ -390,14 +391,18 @@ export function useSafeBatchSubmit() {
         throw new Error("Wallet connection changed. Review the batch again.");
       }
       onProgress(`Confirm the ${write.functionName} transaction on ${name} in your wallet…`);
-      const hash = await writeReviewedAsync({
+      // Held by the Safe transaction it approves or runs, not by the signatures collected so far.
+      const hash = await withWriteIntent(
+        writeReviewedAsync,
+        safeExecutionIntent(chainId, safe, safeTxHash),
+      )({
         chainId,
         address: safe,
         abi: write.abi,
         functionName: write.functionName,
         args: write.args,
       } as Parameters<typeof writeReviewedAsync>[0]);
-      requireOnchainExecution(hash, `${write.functionName} on ${name}`);
+      requireOnchainExecution(hash);
       onProgress(`Waiting for confirmation on ${name}…`);
       if (next.kind === "execute") {
         await confirmSafeExecution({ client, hash, safe, safeTxHash });

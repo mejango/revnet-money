@@ -45,7 +45,7 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
 const pool = {
   chainId: 8453 as JBChainId,
   price: 0.00001,
-  poolId: "0xpool",
+  poolId: `0x${"7a".repeat(32)}`,
   pair: {
     addr: "0x0000000000000000000000000000000000000000",
     decimals: 18,

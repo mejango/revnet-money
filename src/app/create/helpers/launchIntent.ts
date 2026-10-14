@@ -1,10 +1,19 @@
+import { legacyIntents } from "@/lib/legacy-intents";
+import { JOURNAL_UNREADABLE_LINE, writeHolds } from "@/lib/write-hold";
 import {
   getJBContractAddress,
   revDeployerAbi,
   RevnetCoreContracts,
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
-import { intent, type IntentValue } from "@bananapus/nana-sdk-core/review";
+import {
+  intent,
+  launchIntent,
+  type IntentValue,
+  type WriteHeldState,
+  type WriteHoldClient,
+  type WriteHoldHandle,
+} from "@bananapus/nana-sdk-core/review";
 import { getAbiItem, keccak256, stringToHex, type Hex, type PublicClient } from "viem";
 
 /** The user's launch config as stable text: object keys sorted, bigints in decimal. */
@@ -17,6 +26,11 @@ function canonical(config: unknown): string {
       );
     return item;
   });
+}
+
+/** The hash of the user's launch config, as stable text. */
+export function launchConfigHash(config: unknown): Hex {
+  return keccak256(stringToHex(canonical(config)));
 }
 
 /**
@@ -38,86 +52,117 @@ export function launchInputOf<T>(form: T): T {
 }
 
 /**
- * A single-chain launch's intent: a hash of the launch config the user filled in. What the page
- * generates for each attempt (the salt, the default stage start, the metadata pin) is left out;
- * the chain and account are the hold's own scope.
+ * The launch input as the SDK's launchIntent reads it: addresses and bytes tagged, numbers that
+ * aren't whole as text, undefined fields left out. What the page generates for each attempt (the
+ * salt, the default stage start, the metadata pin) is never in it.
  */
-export function launchIntent(config: unknown): [string, { [name: string]: IntentValue }] {
-  return ["launch", { config: intent.hex(keccak256(stringToHex(canonical(config)))) }];
+export function launchConfigOf(input: unknown): IntentValue {
+  if (typeof input === "string")
+    return /^0x[0-9a-fA-F]{40}$/.test(input)
+      ? intent.address(input)
+      : /^0x([0-9a-fA-F]{2})*$/.test(input)
+        ? intent.hex(input)
+        : input;
+  if (typeof input === "number") return Number.isSafeInteger(input) ? input : String(input);
+  if (typeof input === "bigint" || typeof input === "boolean" || input === null) return input;
+  if (Array.isArray(input)) return input.map((item) => launchConfigOf(item ?? null));
+  if (input && typeof input === "object")
+    return Object.fromEntries(
+      Object.entries(input)
+        .filter(([, item]) => item !== undefined && typeof item !== "function")
+        .map(([key, item]) => [key, launchConfigOf(item)]),
+    );
+  return null;
 }
 
-const saltKey = (account: string, chainId: number, config: unknown) =>
-  `revnet:launch-salt:${account.toLowerCase()}:${chainId}:${keccak256(stringToHex(canonical(config)))}`;
+const PREFIX = "revnet:launch-salt:";
+const accountPrefix = (account: string) => `${PREFIX}${account.toLowerCase()}:`;
 
-/** A single-chain launch saved before it confirmed: its salt and the block it was sent after. */
-type SavedLaunch = { salt: Hex; fromBlock?: string };
-
-/** The saved launch of `config` from `account` on `chainId`, if one is kept. */
-export function savedLaunchOf(
-  account: string,
-  chainId: number,
-  config: unknown,
-): SavedLaunch | undefined {
-  return savedAt(saltKey(account, chainId, config));
-}
-
-function savedAt(key: string): SavedLaunch | undefined {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return undefined;
-    const saved = JSON.parse(raw) as SavedLaunch;
-    return /^0x[0-9a-f]{64}$/i.test(saved?.salt ?? "") ? saved : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function saveLaunch(account: string, chainId: number, config: unknown, saved: SavedLaunch) {
-  try {
-    window.localStorage.setItem(saltKey(account, chainId, config), JSON.stringify(saved));
-  } catch {
-    // Storage refused: the write hold, in this tab's memory, still holds the attempt.
-  }
+/** Where the single-chain launch of `config` from `account` on `chainId` is journaled. */
+export function launchKeyOf(account: string, chainId: number, config: unknown): string {
+  return `${accountPrefix(account)}${chainId}:${launchConfigHash(config)}`;
 }
 
 /**
- * The salt for launching `config` from `account` on `chainId`: the one an earlier, unsettled
- * attempt used, kept across retries and reloads, else a new one. It names that attempt on chain
- * (the DeployRevnet event carries it), so a reload can find a launch whose reply was lost. It does
- * not make the chain refuse a retry: the stage starts are fresh, and so is the configuration's
- * hash. The write hold, keyed by the config, is what stops a second launch.
+ * A single-chain launch the hold reserved for the wallet: its salt (the DeployRevnet event carries
+ * it), the block it was sent after, the holds it is held by and the settlements they already showed
+ * before it. The main-era build saved only the salt and the block.
  */
-export function launchSalt(
-  account: string,
-  chainId: number,
-  config: unknown,
-  create: () => Hex,
-): Hex {
-  const saved = savedLaunchOf(account, chainId, config);
-  if (saved) return saved.salt;
-  const salt = create();
-  saveLaunch(account, chainId, config, { salt });
-  return salt;
+type SavedLaunch = {
+  salt: Hex;
+  fromBlock?: string;
+  namespaces?: string[];
+  before?: string[];
+  /** The success a hold settled for it, journaled before anything about it was read. */
+  settled?: { result: "success"; hash: Hex };
+};
+
+/**
+ * The launch journaled at `key`: undefined only when none is kept. A journal storage won't read,
+ * or a malformed record, throws JOURNAL_UNREADABLE_LINE: it is never taken for an absent one.
+ */
+export function savedLaunchAt(key: string): SavedLaunch | undefined {
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(key);
+  } catch {
+    // Storage won't read: only the user's warned continue lets it read as absent.
+    if (discarded.has(key)) return undefined;
+    throw new Error(JOURNAL_UNREADABLE_LINE);
+  }
+  discarded.delete(key);
+  if (raw === null) return undefined;
+  let saved: SavedLaunch | undefined;
+  try {
+    saved = JSON.parse(raw) as SavedLaunch;
+  } catch {
+    throw new Error(JOURNAL_UNREADABLE_LINE);
+  }
+  if (!/^0x[0-9a-f]{64}$/i.test(saved?.salt ?? "")) throw new Error(JOURNAL_UNREADABLE_LINE);
+  return saved;
 }
 
-/** The launch is about to be sent: the first block its DeployRevnet event can be in. */
-export function noteLaunchSent(
-  account: string,
-  chainId: number,
-  config: unknown,
-  fromBlock: bigint,
+/** Journals the user's warned continue let read as absent while storage won't read them. */
+const discarded = new Set<string>();
+
+/**
+ * The user's warned continue over a journal that won't read (JOURNAL_DISCARD_ACTION): the record
+ * goes, and the launch reopens with a fresh salt. Called only after a check just failed on it.
+ */
+export function discardUnreadableLaunch(key: string): boolean {
+  try {
+    // It reads now: it is recovered again, never discarded unread.
+    savedLaunchAt(key);
+    return false;
+  } catch {
+    discarded.add(key);
+    removeLaunch(key);
+    return true;
+  }
+}
+
+function persist(key: string, saved: SavedLaunch): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(saved));
+  } catch {
+    // Storage refused: the hold still carries the settlement this pass followed.
+  }
+}
+
+/** Journal the attempt the hold just reserved for the wallet. */
+export function saveLaunchAttempt(
+  key: string,
+  attempt: { salt: Hex; fromBlock?: bigint; namespaces: string[]; before: Hex[] },
 ): void {
-  const saved = savedLaunchOf(account, chainId, config);
-  if (saved && saved.fromBlock === undefined)
-    saveLaunch(account, chainId, config, { ...saved, fromBlock: fromBlock.toString() });
+  persist(key, {
+    salt: attempt.salt,
+    namespaces: attempt.namespaces,
+    before: attempt.before,
+    ...(attempt.fromBlock !== undefined ? { fromBlock: attempt.fromBlock.toString() } : {}),
+  });
 }
 
-/** The launch confirmed: the next launch of the same config is a new one, with a new salt. */
-export function settleLaunchSalt(account: string, chainId: number, config: unknown): void {
-  removeSaved(saltKey(account, chainId, config));
-}
-
-function removeSaved(key: string): void {
+function removeLaunch(key: string): void {
   try {
     window.localStorage.removeItem(key);
   } catch {
@@ -125,88 +170,239 @@ function removeSaved(key: string): void {
   }
 }
 
-/** The Center RPC's getLogs window, and the most blocks a reload scans for a saved launch. */
+/**
+ * Every retirement of a journaled launch goes through here: its settlement was shown, the hold
+ * proved it reverted or never reached the wallet, or the user took its exit or checked it. The
+ * journal is read again right here, strictly: it is kept (false) when it is now another attempt
+ * than `snapshot`, the one the caller decided on (another tab relaunched it with a new salt), or
+ * holds a success other than the `snapshot`'s, which is followed instead. One that can't be read
+ * throws JOURNAL_UNREADABLE_LINE and is kept. The next launch is a new one.
+ */
+export function releaseLaunch(key: string, snapshot?: { salt: Hex; settled?: Hex }): boolean {
+  const now = savedLaunchAt(key);
+  if (!now) return true;
+  if (snapshot && now.salt.toLowerCase() !== snapshot.salt.toLowerCase()) return false;
+  if (now.settled && now.settled.hash.toLowerCase() !== snapshot?.settled?.toLowerCase())
+    return false;
+  removeLaunch(key);
+  return true;
+}
+
+/** Retires the journal recovery decided on, guarded; one another tab changed meanwhile is kept. */
+function settleLaunch(key: string, snapshot: { salt: Hex; settled?: Hex }): void {
+  try {
+    releaseLaunch(key, snapshot);
+  } catch {
+    // Unreadable: kept, and recovered as a check next time.
+  }
+}
+
+/** The keys of every launch `account` has journaled, on any chain. */
+export function savedLaunchKeys(account: string): string[] {
+  try {
+    return Object.keys(window.localStorage).filter((key) => key.startsWith(accountPrefix(account)));
+  } catch {
+    return [];
+  }
+}
+
+/** The Center RPC's getLogs window, and the most blocks recovery scans for a saved launch. */
 const SCAN_WINDOW = 500n;
 const SCAN_RANGE = 50_000n;
 
 /**
- * Whether the saved launch of `config` already happened: REVDeployer's DeployRevnet event from
- * `account` with its salt, scanned in 500-block windows from the block it was sent after, at most
- * 50,000 blocks, stopping at the first match. A match clears the salt and names the revnet. A scan
- * that finds none, or fails, proves nothing (a node may answer [] for a window with logs): the salt
- * stays for a retry. It never releases the write hold; only the SDK's evidence or the user's exit
- * does.
+ * The revnet the saved launch's salt made: REVDeployer's DeployRevnet event from `account` with its
+ * salt, scanned in 500-block windows from the block it was sent after, at most 50,000 blocks,
+ * stopping at the first match. None found (a node may answer [] for a window with logs) is
+ * undefined: it proves nothing.
  */
-export async function checkSavedLaunch(
+async function scanForLaunch(
   client: Pick<PublicClient, "getBlockNumber" | "getLogs">,
   chainId: number,
   account: string,
-  config: unknown,
-): Promise<{ launched: bigint | "unknown" }> {
-  return checkSavedAt(client, chainId, account, saltKey(account, chainId, config));
-}
-
-/**
- * The account's saved launches, from any config: the first one a scan finds already launched,
- * with its chain. Reads each saved launch's own chain; a launch it can't find stays saved.
- */
-export async function checkSavedLaunches(
-  clientFor: (chainId: number) => Pick<PublicClient, "getBlockNumber" | "getLogs"> | undefined,
-  account: string,
-): Promise<{ chainId: number; revnetId: bigint } | undefined> {
-  const prefix = `revnet:launch-salt:${account.toLowerCase()}:`;
-  let keys: string[] = [];
-  try {
-    keys = Object.keys(window.localStorage).filter((key) => key.startsWith(prefix));
-  } catch {
-    return undefined;
-  }
-  for (const key of keys) {
-    const chainId = Number(key.slice(prefix.length).split(":")[0]);
-    const client = Number.isSafeInteger(chainId) ? clientFor(chainId) : undefined;
-    if (!client) continue;
-    const { launched } = await checkSavedAt(client, chainId, account, key);
-    if (launched !== "unknown") return { chainId, revnetId: launched };
+  saved: SavedLaunch & { fromBlock: string },
+): Promise<bigint | undefined> {
+  const deployer = deployerOf(chainId);
+  const head = await client.getBlockNumber();
+  const start = BigInt(saved.fromBlock);
+  const end = head - start + 1n > SCAN_RANGE ? start + SCAN_RANGE - 1n : head;
+  for (let from = start; from <= end; from += SCAN_WINDOW) {
+    const to = from + SCAN_WINDOW - 1n > end ? end : from + SCAN_WINDOW - 1n;
+    const logs = await client.getLogs({
+      address: deployer,
+      event: DEPLOY_REVNET,
+      fromBlock: from,
+      toBlock: to,
+    });
+    const match = logs.find((log) => !log.removed && sameLaunch(log.args, account, saved.salt));
+    if (match?.args.revnetId !== undefined) return match.args.revnetId;
   }
   return undefined;
 }
 
-async function checkSavedAt(
-  client: Pick<PublicClient, "getBlockNumber" | "getLogs">,
-  chainId: number,
-  account: string,
-  key: string,
-): Promise<{ launched: bigint | "unknown" }> {
-  const saved = savedAt(key);
-  if (!saved?.fromBlock || !/^\d+$/.test(saved.fromBlock)) return { launched: "unknown" };
-  try {
-    const deployer = getJBContractAddress(RevnetCoreContracts.REVDeployer, 6, chainId as JBChainId);
-    const head = await client.getBlockNumber();
-    const start = BigInt(saved.fromBlock);
-    const end = head - start + 1n > SCAN_RANGE ? start + SCAN_RANGE - 1n : head;
-    for (let from = start; from <= end; from += SCAN_WINDOW) {
-      const to = from + SCAN_WINDOW - 1n > end ? end : from + SCAN_WINDOW - 1n;
-      const logs = await client.getLogs({
-        address: deployer,
-        event: DEPLOY_REVNET,
-        fromBlock: from,
-        toBlock: to,
-      });
-      const match = logs.find(
-        (log) =>
-          !log.removed &&
-          log.args.caller?.toLowerCase() === account.toLowerCase() &&
-          log.args.configuration?.description.salt?.toLowerCase() === saved.salt.toLowerCase(),
-      );
-      if (match?.args.revnetId !== undefined) {
-        removeSaved(key);
-        return { launched: match.args.revnetId };
-      }
-    }
-  } catch {
-    // A chain read that fails is unknown.
-  }
-  return { launched: "unknown" };
+const DEPLOY_REVNET = getAbiItem({ abi: revDeployerAbi, name: "DeployRevnet" });
+const deployerOf = (chainId: number) =>
+  getJBContractAddress(RevnetCoreContracts.REVDeployer, 6, chainId as JBChainId);
+
+/** The namespaces a single-chain launch of `config` is held by: its SDK intent, then the main era's. */
+export function launchNamespacesOf(chainId: number, account: Hex, config: unknown): string[] {
+  return [
+    launchIntent({ chainId, account, config: launchConfigOf(config) }),
+    ...legacyIntents.launch(launchConfigHash(config)),
+  ];
 }
 
-const DEPLOY_REVNET = getAbiItem({ abi: revDeployerAbi, name: "DeployRevnet" });
+/** Every hold a launch held by `namespaces` can be held by, from either kind of wallet. */
+export function launchHoldsOf(
+  chainId: number,
+  account: string,
+  namespaces: readonly string[],
+): WriteHoldHandle[] {
+  const to = deployerOf(chainId);
+  return [false, true].flatMap((safe) =>
+    namespaces.map((namespace) =>
+      writeHolds.open({
+        chainId,
+        account: account as Hex,
+        safe,
+        namespace,
+        call: { to, data: "0x" },
+      }),
+    ),
+  );
+}
+
+/** Every settlement `holds` show now: what a new attempt journals as already there before it. */
+export function settlementsOf(holds: readonly Pick<WriteHoldHandle, "peek">[]): Hex[] {
+  return holds.flatMap((hold) => {
+    const now = hold.peek();
+    return now.status === "clear" && now.settled && "hash" in now.settled ? [now.settled.hash] : [];
+  });
+}
+
+/** How recovering a saved launch ended. */
+export type LaunchRecovery =
+  /** No launch is journaled: a new one may be prepared. */
+  | { status: "none" }
+  /** Its hold holds it: nothing is counted; `state` is what the hold's exit is offered on. */
+  | { status: "held"; hold: WriteHoldHandle; state: WriteHeldState; salt: Hex }
+  /** The chain shows it launched this revnet: nothing is sent again. */
+  | { status: "launched"; revnetId: bigint }
+  /** It went through (`hash`), but its revnet can't be read yet: looked at again, never resent. */
+  | { status: "confirming"; hash: Hex }
+  /** What became of it can't be shown: the user checks it (`salt`, when it reads) before anything. */
+  | { status: "check"; salt?: Hex }
+  /** The hold proved it reverted at a final block: retired, a new one may be prepared. */
+  | { status: "clear" };
+
+type LaunchClient = Pick<PublicClient, "getBlockNumber" | "getLogs" | "getTransactionReceipt"> &
+  WriteHoldClient;
+
+/**
+ * The one recovery rule for the launch journaled at `key`, run before anything else is prepared:
+ * a hold that still holds it decides (asked of the chain first). A success a hold settled after it
+ * was journaled always wins: it is journaled before anything about it is read, and from then on is
+ * followed: its own DeployRevnet event with the saved salt names the revnet, and anything less (a
+ * read that fails, empty logs, another salt) is `confirming`, never a check, discard or send. With no
+ * hold record, the saved salt is scanned for; nothing found, no sent block, or any failure is
+ * `check`. Only a shown settlement or a final revert retires it here; never throws.
+ */
+export async function recoverLaunch(
+  key: string,
+  account: string,
+  client: LaunchClient,
+  open: typeof launchHoldsOf = launchHoldsOf,
+): Promise<LaunchRecovery> {
+  let read: SavedLaunch | undefined;
+  try {
+    read = savedLaunchAt(key);
+  } catch {
+    // Unreadable is not absent: the user checks it, and its release is refused until it reads.
+    return { status: "check" };
+  }
+  if (!read) return { status: "none" };
+  const saved = read;
+  const [chainText, configHash] = key.slice(accountPrefix(account).length).split(":");
+  const chainId = Number(chainText);
+  /** Follows a success that went through: the revnet, or still confirming. */
+  const follow = async (hash: Hex): Promise<LaunchRecovery> => {
+    const revnetId = await launchOfTransaction(client, chainId, account, saved.salt, hash).catch(
+      () => undefined,
+    );
+    if (revnetId === undefined) return { status: "confirming", hash };
+    settleLaunch(key, { salt: saved.salt, settled: hash });
+    return { status: "launched", revnetId };
+  };
+  const check = { status: "check", salt: saved.salt } as const;
+  if (saved.settled) return follow(saved.settled.hash);
+  try {
+    const namespaces = saved.namespaces ?? legacyIntents.launch(configHash as Hex);
+    const before = new Set((saved.before ?? []).map((hash) => hash.toLowerCase()));
+    let success: Hex | undefined;
+    let reverted = false;
+    for (const hold of open(chainId, account, namespaces)) {
+      let now = hold.peek();
+      if (now.status !== "clear") now = await hold.state(client).catch(() => now);
+      if (now.status !== "clear") return { status: "held", hold, state: now, salt: saved.salt };
+      const settled = now.settled;
+      if (!settled || !("hash" in settled) || before.has(settled.hash.toLowerCase())) continue;
+      if (settled.result === "success") success ??= settled.hash;
+      else reverted = true;
+    }
+    if (success) {
+      // Journaled first: whatever the reads below say, this success is never discarded.
+      persist(key, { ...saved, settled: { result: "success", hash: success } });
+      return follow(success);
+    }
+    if (reverted) {
+      // Kept when another tab's newer attempt took the key meanwhile: that one is recovered next.
+      if (!releaseLaunch(key, { salt: saved.salt })) return check;
+      return { status: "clear" };
+    }
+    if (!saved.fromBlock || !/^\d+$/.test(saved.fromBlock)) return check;
+    const revnetId = await scanForLaunch(client, chainId, account, {
+      ...saved,
+      fromBlock: saved.fromBlock,
+    });
+    if (revnetId === undefined) return check;
+    settleLaunch(key, { salt: saved.salt });
+    return { status: "launched", revnetId };
+  } catch {
+    return check;
+  }
+}
+
+/** The revnet `hash` launched for `account` with `salt`: its own DeployRevnet event, if found. */
+async function launchOfTransaction(
+  client: Pick<PublicClient, "getLogs" | "getTransactionReceipt">,
+  chainId: number,
+  account: string,
+  salt: Hex,
+  hash: Hex,
+): Promise<bigint | undefined> {
+  const receipt = await client.getTransactionReceipt({ hash });
+  if (receipt.status !== "success") return undefined;
+  const logs = await client.getLogs({
+    address: deployerOf(chainId),
+    event: DEPLOY_REVNET,
+    blockHash: receipt.blockHash,
+  });
+  return logs.find(
+    (log) =>
+      !log.removed &&
+      log.transactionHash?.toLowerCase() === hash.toLowerCase() &&
+      sameLaunch(log.args, account, salt),
+  )?.args.revnetId;
+}
+
+/** Whether a DeployRevnet event's arguments are `account`'s launch with `salt`. */
+function sameLaunch(
+  args: { caller?: string; configuration?: { description: { salt?: string } } },
+  account: string,
+  salt: Hex,
+): boolean {
+  return (
+    args.caller?.toLowerCase() === account.toLowerCase() &&
+    args.configuration?.description.salt?.toLowerCase() === salt.toLowerCase()
+  );
+}
