@@ -1,10 +1,18 @@
+import { legacyIntents } from "@/lib/legacy-intents";
+import { writeHolds } from "@/lib/write-hold";
 import {
   getJBContractAddress,
   revDeployerAbi,
   RevnetCoreContracts,
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
-import { intent, type IntentValue } from "@bananapus/nana-sdk-core/review";
+import {
+  intent,
+  launchIntent,
+  type IntentValue,
+  type WriteHoldClient,
+  type WriteHoldHandle,
+} from "@bananapus/nana-sdk-core/review";
 import { getAbiItem, keccak256, stringToHex, type Hex, type PublicClient } from "viem";
 
 /** The user's launch config as stable text: object keys sorted, bigints in decimal. */
@@ -132,7 +140,10 @@ export function noteLaunchSent(
     saveLaunch(account, chainId, config, { ...saved, fromBlock: fromBlock.toString() });
 }
 
-/** The launch confirmed: the next launch of the same config is a new one, with a new salt. */
+/**
+ * The saved launch is done: it confirmed, nothing of it reached the wallet, or the user checked it
+ * and chose to launch again. The next launch of the same config is a new one, with a new salt.
+ */
 export function settleLaunchSalt(account: string, chainId: number, config: unknown): void {
   removeSaved(saltKey(account, chainId, config));
 }
@@ -212,12 +223,7 @@ async function checkSavedAt(
         fromBlock: from,
         toBlock: to,
       });
-      const match = logs.find(
-        (log) =>
-          !log.removed &&
-          log.args.caller?.toLowerCase() === account.toLowerCase() &&
-          log.args.configuration?.description.salt?.toLowerCase() === saved.salt.toLowerCase(),
-      );
+      const match = logs.find((log) => !log.removed && sameLaunch(log.args, account, saved.salt));
       if (match?.args.revnetId !== undefined) {
         removeSaved(key);
         return { launched: match.args.revnetId };
@@ -230,3 +236,112 @@ async function checkSavedAt(
 }
 
 const DEPLOY_REVNET = getAbiItem({ abi: revDeployerAbi, name: "DeployRevnet" });
+
+/**
+ * Every hold a single-chain launch of `config` can be held by, from either kind of wallet: its SDK
+ * intent, and the namespace the build before SDK 2.38's builders held it by.
+ */
+export function launchHoldsOf(chainId: number, account: Hex, config: unknown): WriteHoldHandle[] {
+  const namespaces = [
+    launchIntent({ chainId, account, config: launchConfigOf(config) }),
+    ...legacyIntents.launch(launchConfigHash(config)),
+  ];
+  const to = getJBContractAddress(RevnetCoreContracts.REVDeployer, 6, chainId as JBChainId);
+  return [false, true].flatMap((safe) =>
+    namespaces.map((namespace) =>
+      writeHolds.open({ chainId, account, safe, namespace, call: { to, data: "0x" } }),
+    ),
+  );
+}
+
+/** How recovering a saved launch ended. */
+export type LaunchRecovery =
+  /** Its hold holds it: nothing is counted, and only the hold's exit sends again. */
+  | { status: "held" }
+  /** The chain shows it launched this revnet: nothing is sent again. */
+  | { status: "launched"; revnetId: bigint }
+  /** Whether it launched can't be shown: the user checks before anything is sent. */
+  | { status: "check" }
+  /** Nothing of it can have launched: the launch may be sent. */
+  | { status: "clear" };
+
+/**
+ * The one recovery rule for a saved single-chain launch, before anything is sent. A hold that holds
+ * it decides (`held`). A success a hold settled is reconciled against its exact transaction: its
+ * DeployRevnet event with the saved salt names the revnet. With no hold record, the saved salt is
+ * scanned for. A settled transaction that can't be read, or a scan that finds nothing or fails,
+ * is `check`: never a send. `scan: false` (after a send failed) never scans, and `ignore` is the
+ * settlement already there before that send.
+ */
+export async function recoverSavedLaunch(
+  holds: readonly Pick<WriteHoldHandle, "peek" | "state">[],
+  client: Pick<PublicClient, "getBlockNumber" | "getLogs" | "getTransactionReceipt"> &
+    WriteHoldClient,
+  chainId: number,
+  account: string,
+  config: unknown,
+  { scan = true, ignore }: { scan?: boolean; ignore?: Hex } = {},
+): Promise<LaunchRecovery> {
+  const saved = savedLaunchOf(account, chainId, config);
+  if (!saved) return { status: "clear" };
+  let settled: Hex | undefined;
+  let reverted = false;
+  for (const hold of holds) {
+    let now = hold.peek();
+    // A held attempt is asked of the chain first: one that went through settles here.
+    if (now.status !== "clear") now = await hold.state(client).catch(() => now);
+    if (now.status !== "clear") return { status: "held" };
+    if (now.settled?.result === "failed") reverted = true;
+    if (
+      now.settled?.result === "success" &&
+      now.settled.hash.toLowerCase() !== ignore?.toLowerCase()
+    )
+      settled ??= now.settled.hash;
+  }
+  if (settled) {
+    try {
+      const receipt = await client.getTransactionReceipt({ hash: settled });
+      const logs =
+        receipt.status === "success"
+          ? await client.getLogs({
+              address: getJBContractAddress(
+                RevnetCoreContracts.REVDeployer,
+                6,
+                chainId as JBChainId,
+              ),
+              event: DEPLOY_REVNET,
+              blockHash: receipt.blockHash,
+            })
+          : [];
+      const revnetId = logs.find(
+        (log) =>
+          !log.removed &&
+          log.transactionHash?.toLowerCase() === settled.toLowerCase() &&
+          sameLaunch(log.args, account, saved.salt),
+      )?.args.revnetId;
+      if (revnetId !== undefined) {
+        settleLaunchSalt(account, chainId, config);
+        return { status: "launched", revnetId };
+      }
+      // Its transaction launched with another salt: an earlier launch, already shown.
+    } catch {
+      return { status: "check" };
+    }
+  }
+  // Its last attempt reverted (final), or nothing of it was ever sent or reached the wallet.
+  if (reverted || !scan || !saved.fromBlock) return { status: "clear" };
+  const { launched } = await checkSavedLaunch(client, chainId, account, config);
+  return launched === "unknown" ? { status: "check" } : { status: "launched", revnetId: launched };
+}
+
+/** Whether a DeployRevnet event's arguments are `account`'s launch with `salt`. */
+function sameLaunch(
+  args: { caller?: string; configuration?: { description: { salt?: string } } },
+  account: string,
+  salt: Hex,
+): boolean {
+  return (
+    args.caller?.toLowerCase() === account.toLowerCase() &&
+    args.configuration?.description.salt?.toLowerCase() === salt.toLowerCase()
+  );
+}

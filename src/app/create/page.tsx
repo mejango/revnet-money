@@ -20,7 +20,7 @@ import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { settledSuccessOf, withWriteIntent } from "@/lib/write-hold";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom, launchIntent } from "@bananapus/nana-sdk-core/review";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
@@ -30,18 +30,19 @@ import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { DEFAULT_FORM_DATA } from "./constants";
 import { DeployRevnetForm, type DirectDeployment } from "./form/DeployRevnetForm";
-import { LaunchedNotice } from "./form/LaunchedNotice";
+import { LaunchCheckNotice, LaunchedNotice } from "./form/LaunchedNotice";
 import { createSchema } from "./helpers/createSchema";
 import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
 import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
 import {
-  checkSavedLaunch,
   checkSavedLaunches,
   launchConfigHash,
   launchConfigOf,
+  launchHoldsOf,
   launchInputOf,
   launchSalt,
   noteLaunchSent,
+  recoverSavedLaunch,
   savedLaunchOf,
   settleLaunchSalt,
 } from "./helpers/launchIntent";
@@ -61,6 +62,8 @@ export default function Page() {
   const [directDeployment, setDirectDeployment] = useState<DirectDeployment | null>(null);
   /** A saved launch the chain shows already happened: shown, and never sent again. */
   const [launched, setLaunched] = useState<{ chainId: number; revnetId: bigint }>();
+  /** A saved launch whose result the chain can't show: nothing is sent until the user checks. */
+  const [mustCheck, setMustCheck] = useState<() => void>();
   useEffect(() => {
     if (!address) return;
     let live = true;
@@ -96,6 +99,7 @@ export default function Page() {
     // A launch waits while an earlier one's signature can still run, saying until when.
     await requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
     setDirectDeployment(null);
+    setMustCheck(undefined);
     // The one copy of what the user submitted: the launch's intent, salt, saved-launch lookup and
     // settlement are all built from it, never from refreshed metadata.
     const launchInput = launchInputOf(formData);
@@ -146,6 +150,9 @@ export default function Page() {
     // second launch: the stage starts are fresh, so the chain would take a retry. A multichain
     // launch has its own recovery through Relayr.
     const singleChain = deploymentFormData.chainIds.length === 1 && address;
+    // An attempt saved before this one: it is recovered before anything is sent.
+    const resumed =
+      singleChain && !!savedLaunchOf(address, deploymentFormData.chainIds[0]!, launchInput);
     const salt = singleChain
       ? launchSalt(address, deploymentFormData.chainIds[0]!, launchInput, createSalt)
       : createSalt();
@@ -242,38 +249,58 @@ export default function Page() {
     if (directRequest && address) {
       const chainId = deploymentFormData.chainIds[0];
       const client = getPublicClient(wagmiConfig, { chainId }) as PublicClient | undefined;
-      // A saved attempt of this launch the chain shows already happened: nothing is sent.
-      if (client && savedLaunchOf(address, chainId, launchInput)?.fromBlock) {
-        const { launched: revnetId } = await checkSavedLaunch(
-          client,
-          chainId,
-          address,
-          launchInput,
-        );
-        if (revnetId !== "unknown") {
-          setLaunched({ chainId, revnetId });
-          return;
-        }
+      const holds = launchHoldsOf(chainId, address, launchInput);
+      /** Ends the launch on what recovery found; true when nothing more may be done. */
+      const ended = (found: Awaited<ReturnType<typeof recoverSavedLaunch>>) => {
+        if (found.status === "launched") setLaunched({ chainId, revnetId: found.revnetId });
+        if (found.status === "check")
+          setMustCheck(() => () => {
+            // The user checked it: that saved launch is retired, and the next one is new.
+            settleLaunchSalt(address, chainId, launchInput);
+            setMustCheck(undefined);
+          });
+        return found.status === "launched" || found.status === "check";
+      };
+      // A saved attempt is recovered first: settled, held, found or checked, never sent twice.
+      if (resumed) {
+        if (!client) throw new Error("Could not connect to the chain. Try again.");
+        if (ended(await recoverSavedLaunch(holds, client, chainId, address, launchInput))) return;
       }
+      const settledBefore = holds.map(settledSuccessOf).find(Boolean);
+      if (connectedChainId !== chainId) await switchChainAsync({ chainId });
       // The first block its DeployRevnet event can be in; a read that fails only skips the note.
       const fromBlock = await Promise.resolve()
         .then(() => client?.getBlockNumber())
         .catch(() => undefined);
       if (fromBlock !== undefined) noteLaunchSent(address, chainId, launchInput, fromBlock);
-      if (connectedChainId !== chainId) await switchChainAsync({ chainId });
       // Held by the user's launch config: the salt, stage start and pin are the page's own.
-      const hash = await withWriteIntent(
-        writeContractAsync,
-        launchIntent({ chainId, account: address, config: launchConfigOf(launchInput) }),
-        legacyIntents.launch(launchConfigHash(launchInput)),
-      )({
-        chainId,
-        address: directRequest.address,
-        abi: directRequest.abi,
-        functionName: directRequest.functionName,
-        args: directRequest.args,
-        value: directRequest.value,
-      } as unknown as Parameters<typeof writeContractAsync>[0]);
+      let hash: Awaited<ReturnType<typeof writeContractAsync>>;
+      try {
+        hash = await withWriteIntent(
+          writeContractAsync,
+          launchIntent({ chainId, account: address, config: launchConfigOf(launchInput) }),
+          legacyIntents.launch(launchConfigHash(launchInput)),
+        )({
+          chainId,
+          address: directRequest.address,
+          abi: directRequest.abi,
+          functionName: directRequest.functionName,
+          args: directRequest.args,
+          value: directRequest.value,
+        } as unknown as Parameters<typeof writeContractAsync>[0]);
+      } catch (error) {
+        // A settlement the send or its exit found is this launch's result; with nothing held,
+        // nothing of the saved attempt reached the wallet, so it is retired.
+        const found = client
+          ? await recoverSavedLaunch(holds, client, chainId, address, launchInput, {
+              scan: false,
+              ignore: settledBefore,
+            })
+          : undefined;
+        if (found && ended(found)) return;
+        if (found?.status === "clear") settleLaunchSalt(address, chainId, launchInput);
+        throw error;
+      }
       if (submittedViaSafe(hash)) {
         toast({
           title: "Safe proposal submitted",
@@ -357,6 +384,8 @@ export default function Page() {
       >
         {launched ? (
           <LaunchedNotice chainId={launched.chainId} revnetId={launched.revnetId} />
+        ) : mustCheck ? (
+          <LaunchCheckNotice onChecked={mustCheck} />
         ) : null}
         <DeployRevnetForm
           relayrResponse={data}

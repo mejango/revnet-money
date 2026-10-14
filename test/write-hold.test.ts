@@ -32,6 +32,7 @@ function holdThat(options: { held: WriteHeldState[]; exit?: unknown; state?: unk
     }),
     exit: vi.fn(async () => options.exit ?? { released: true, state: { status: "clear" } }),
     state: vi.fn(async () => options.state ?? exitState()),
+    peek: vi.fn(() => ({ status: "clear" })),
   };
 }
 

@@ -221,20 +221,42 @@ export function withNotice(state: { line: string; notice?: string }): string {
   return state.notice ? `${state.line} ${state.notice}` : state.line;
 }
 
+/** The hash of the success a hold last settled, if any. */
+export function settledSuccessOf(hold: Pick<WriteHoldHandle, "peek">): Hex | undefined {
+  const now = hold.peek();
+  return now.status === "clear" && now.settled?.result === "success"
+    ? (now.settled.hash.toLowerCase() as Hex)
+    : undefined;
+}
+
 /**
  * Sends under the hold. A call that is held shows the SDK's line: with no exit it ends the send;
  * with one, the flow asks the user. A send happens only after the user accepts the exit on a state
  * that is still held and `exit` reports it released. A hold the chain clears while the exit is open
- * ends the attempt without sending.
+ * ends the attempt without sending, and so does an earlier attempt the send's own check finds went
+ * through: a success any of `watched` (the hold and the holds it answers for) settles after the
+ * send began is never sent again.
  */
 export async function sendUnderHold<T>(
   hold: WriteHoldHandle,
   client: WriteHoldClient,
   run: (gate: WriteHoldGate) => Promise<T>,
+  watched: readonly Pick<WriteHoldHandle, "peek">[] = [hold],
 ): Promise<T> {
+  const before = watched.map(settledSuccessOf);
+  // Checked right before the hold reserves the wallet: the caller's own refusals come first.
+  const unlessWentThrough = (gate: WriteHoldGate) =>
+    run({
+      ...gate,
+      async beforeSend(actualCall) {
+        if (watched.some((handle, i) => (settledSuccessOf(handle) ?? before[i]) !== before[i]))
+          throw new Error(WENT_THROUGH);
+        return gate.beforeSend(actualCall);
+      },
+    });
   for (;;) {
     try {
-      return await hold.send(client, run);
+      return await hold.send(client, unlessWentThrough);
     } catch (error) {
       // Another window sent this write while its review was open: review it again.
       if (error instanceof WriteHoldStaleReviewError)

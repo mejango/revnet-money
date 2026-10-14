@@ -1196,3 +1196,15 @@ Responsive verification passes after the icon-only change: at 768px the row/deta
 - [x] Verify current creation guards and report confidence plus wallet matching fields.
 
 Creation preflight review: fresh Base block52559580 (2026-10-13T16:21:47Z) verified the same streaming implementation, host/token and zero-value exact creation calldata. Ethereum team.rev.eth still resolves to the reviewed Base Safe; selected admin has no contract code. eth_call succeeds and gas estimation succeeds (1,000,437 gas units, not a total fee quote). Factory split currently62% beneficiary/38% platform and remains a mutable factory setting. Current app final-send guard repeats ENS/recipient and factory identity/settings checks, reviewed wallet owner binds account, and canonical creation receipt validates resulting admin/beneficiary. 52 focused core/hook/recovery tests pass. Evidence tasks/markee-creation-preflight.json; publicBroadcast=false and walletPayloadObserved=false. This is scoped transaction qualification, not a whole-protocol security audit or an unseen-wallet guarantee.
+
+## Launch resume never deploys a second revnet (joint2 finding 2, 2026-10-14)
+
+Shared rule: one recovery order on all four sites (held, settled success, no hold record, check required).
+
+- [x] Red first: settled-before-resume, settlement during send/exit, unauthenticatable recovery reaching "I checked it. Launch again", hash saved by the SDK but not the page, main-era namespace hold (13 failing before the fix).
+- [x] `recoverSavedLaunch` (launchIntent.ts) runs before any send of a resumed saved launch: held holds are asked of the chain first; a settled success is reconciled against its exact receipt (DeployRevnet in that transaction, saved salt); no record scans the salt; any read failure or empty scan is CHECK-REQUIRED, never a send.
+- [x] `sendUnderHold` refuses at the gate's beforeSend when the send's own check settles an earlier success (also for the previous build's namespaces): nothing is sent again, and the page reconciles it.
+- [x] After a failed send, the page recovers again (settlement found during the exit is the result); with nothing held, the saved attempt is retired so a wallet rejection never demands a check. Only the check action otherwise retires it; the next launch gets a fresh salt.
+
+### Review
+`npm run check` green: 2904 unit tests, 144 browser tests, bundle 2743.8 of 2746 KiB (no budget change).

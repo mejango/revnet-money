@@ -1462,7 +1462,17 @@ export function useWriteContract(
       // Without a client for the chain the simulation refuses before any wallet opens.
       if (hold && holdClient) {
         heldBefore = await refuseUnheldSafeDuplicate(callKey, duplicateOf, hold, holdClient);
-        return sendUnderHold(hold, holdClient, submitReviewedCall);
+        // A settlement an earlier build's hold for it makes during this send is never sent again.
+        const previousHolds = legacyNamespaces.map((legacy) =>
+          writeHolds.open({
+            chainId,
+            account: initialAddress,
+            safe: !!safe,
+            namespace: legacy,
+            call: { to: variables.address, data, value: variables.value ?? 0n },
+          }),
+        );
+        return sendUnderHold(hold, holdClient, submitReviewedCall, [hold, ...previousHolds]);
       }
       return browserLocks().request(
         `revnet:transaction:${keccak256(stringToHex(callKey))}`,

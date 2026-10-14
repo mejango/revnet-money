@@ -2759,6 +2759,30 @@ describe("held wallet writes", () => {
     expect(mocks.submit).toHaveBeenCalledTimes(2);
   });
 
+  it("sends nothing again when the send itself finds the earlier attempt went through", async () => {
+    const { review, hooks, held } = await freshHarness();
+    const { withWriteIntent, WENT_THROUGH } = await import("@/lib/write-hold");
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    const launch = () =>
+      withWriteIntent(result.current.writeContractAsync, "intent:launch:test")(CALL as never);
+
+    await act(async () => {
+      await launch();
+    });
+    // The page lost its completion; the earlier attempt confirms while the retry checks it.
+    chainMines();
+    await expect(launch()).rejects.toThrow(WENT_THROUGH);
+    expect(mocks.submit).toHaveBeenCalledOnce();
+    // A deliberate later send, after that settlement was shown, goes through.
+    await act(async () => {
+      await launch();
+    });
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+  });
+
   it("leaves a write whose caller owns its recovery to that caller", async () => {
     const { review, hooks, held } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
