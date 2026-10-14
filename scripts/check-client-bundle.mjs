@@ -128,7 +128,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // the confirmation that closes an open exit, and settling a proven Safe execution from its
 // own transaction (the nonce search and execution-log read) measure 2717.4 KiB. Raise the
 // aggregate ceiling to 2720 KiB for a small margin; route and lazy-load limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2720);
+// The SDK's write hold controller (its storage fallback, states and exit rules) replaces the
+// app's copies and measures 2729.2 KiB, with the largest route at 718.0 KiB. Raise the
+// aggregate ceiling to 2735 KiB; route and lazy-load limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2735);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
