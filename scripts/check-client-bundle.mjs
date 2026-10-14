@@ -134,7 +134,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // SDK 2.35.0's intent keys and legacy-hold delegation, with Safe proposals, retried writes
 // and Markee recovery under the write hold, measure 2736.3 KiB on the same locked Node 26.7
 // tree. Raise only the aggregate ceiling to 2740 KiB; route and lazy-load limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2740);
+// SDK 2.38.0's shared intent builders, Safe batch identity, and the Safe follower handing every
+// unproven end to the hold measure 2742.1 KiB, with the largest route at 728.5 KiB. Raise only
+// the aggregate ceiling to 2746 KiB; route and lazy-load limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2746);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;

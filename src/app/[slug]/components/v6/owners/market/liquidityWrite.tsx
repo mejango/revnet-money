@@ -1,11 +1,11 @@
 "use client";
 
-import { withWriteIntent } from "@/lib/write-hold";
-import { approvalIntent } from "@bananapus/nana-sdk-core/review";
 import { submittedViaSafe, type proposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-hold";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { approvalIntent } from "@bananapus/nana-sdk-core/review";
 import { erc20Abi, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 import {
   lpDeadline,
@@ -184,7 +184,7 @@ export function heldLiquidityApprovals(
       token: Address,
       spender: Address,
       amount: bigint,
-      namespace?: string,
+      namespace: string,
     ) => Promise<unknown>;
     writeContractAsync: (variables: never) => Promise<Hex>;
   },

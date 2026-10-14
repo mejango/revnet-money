@@ -194,7 +194,7 @@ function safeExecuted(id: string, isSuccessful: boolean, transactionHash: Hex | 
 }
 
 /** What a proposal shows while its hold checks its result and no exit is due. */
-export const SAFE_CONFIRMING_LINE = "Confirming your Safe transaction.";
+const SAFE_CONFIRMING_LINE = "Confirming your Safe transaction.";
 /** What a proposal the hold proved expired before it ran shows. */
 const SAFE_EXPIRED_LINE = "This Safe transaction expired before it ran.";
 /** Looks a hold loop takes a few seconds apart, before it asks once a minute. */

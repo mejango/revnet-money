@@ -25,7 +25,6 @@ import { TransactionReviewCancelledError } from "@/lib/transaction-review";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { withWriteIntent } from "@/lib/write-hold";
-import { borrowIntent, loanIntent } from "@bananapus/nana-sdk-core/review";
 import {
   getRevnetLoanContract,
   JB_TOKEN_DECIMALS,
@@ -34,6 +33,7 @@ import {
   revLoansAbi,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
+import { borrowIntent, loanIntent } from "@bananapus/nana-sdk-core/review";
 import { hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";

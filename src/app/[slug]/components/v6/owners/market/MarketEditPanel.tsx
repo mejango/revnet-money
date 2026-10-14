@@ -1,7 +1,5 @@
 "use client";
 
-import { withWriteIntent } from "@/lib/write-hold";
-import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
@@ -14,6 +12,8 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-hold";
+import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import {
@@ -360,7 +360,10 @@ export function MarketEditPanel({
         }
         activePlan.current = { pool: current.pool, plan };
         review.current.description = describeMarketEdit(current.pool, plan, tokenSymbol);
-        const hash = await withWriteIntent(writeContractAsync, lpIntent)({
+        const hash = await withWriteIntent(
+          writeContractAsync,
+          lpIntent,
+        )({
           chainId,
           address: positionManager,
           abi: POSITION_MANAGER_ABI,

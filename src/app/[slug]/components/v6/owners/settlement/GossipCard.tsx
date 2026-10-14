@@ -11,13 +11,12 @@ import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { withWriteIntent } from "@/lib/write-hold";
-import { zeroAddress } from "viem";
-import { bridgeIntent } from "@bananapus/nana-sdk-core/review";
 import { JBChainId } from "@bananapus/nana-sdk-core";
+import { bridgeIntent } from "@bananapus/nana-sdk-core/review";
 import { buildSyncAccountingDataTx } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Address } from "viem";
+import { Address, zeroAddress } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import {
   chainName,

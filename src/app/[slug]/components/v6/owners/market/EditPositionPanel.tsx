@@ -1,7 +1,5 @@
 "use client";
 
-import { withWriteIntent } from "@/lib/write-hold";
-import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
@@ -14,6 +12,8 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-hold";
+import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import {
@@ -328,7 +328,11 @@ export function EditPositionPanel({
       return;
     }
     // One liquidity action in this pool: its approvals are its steps, its batch is it.
-    const lpIntent = liquidityIntent({ chainId, pool: current.pool.poolId, positions: [position.tokenId] });
+    const lpIntent = liquidityIntent({
+      chainId,
+      pool: current.pool.poolId,
+      positions: [position.tokenId],
+    });
     setBusy(true);
     setStatus(null);
     try {
@@ -380,7 +384,10 @@ export function EditPositionPanel({
         }
         activePlan.current = { pool: current.pool, plan };
         review.current.description = planCopy(current.pool, plan, tokenSymbol).join("\n\n");
-        const hash = await withWriteIntent(writeContractAsync, lpIntent)({
+        const hash = await withWriteIntent(
+          writeContractAsync,
+          lpIntent,
+        )({
           chainId,
           address: positionManager,
           abi: POSITION_MANAGER_ABI,

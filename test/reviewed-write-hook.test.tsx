@@ -152,6 +152,8 @@ const CALL = {
 const PROPOSED = safeProposalFor({ to: TARGET, data: "0x1234" }, 7);
 const PROPOSAL = safeTransactionHash(11155111, ACCOUNT, PROPOSED);
 const OTHER_PROPOSAL = `0x${"56".repeat(32)}` as Hex;
+/** What a proposal shows while its hold checks its result and no exit is due. */
+const CONFIRMING = "Confirming your Safe transaction.";
 /** What a proposal its follower couldn't confirm shows: the hold's own line, with its exit. */
 const UNCONFIRMED = WRITE_HOLD_SAFE_UNPROVEN_LINE;
 const SIGNATURE = `0x${"12".repeat(64)}1b` as Hex;
@@ -1340,7 +1342,7 @@ describe("reviewed write hook", () => {
     await waitFor(() =>
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         status: "safe-proposed",
-        message: hooks.SAFE_CONFIRMING_LINE,
+        message: CONFIRMING,
         holdFollows: true,
       }),
     );
@@ -1390,7 +1392,7 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         status: "safe-proposed",
         executionHash: HASH,
-        message: hooks.SAFE_CONFIRMING_LINE,
+        message: CONFIRMING,
       }),
     );
     expect(activity.transactionActivityForHash(HASH)?.safeResultUnconfirmed).toBeUndefined();
@@ -3059,7 +3061,7 @@ describe("Safe proposals under the write hold", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
       status: "safe-proposed",
-      message: hooks.SAFE_CONFIRMING_LINE,
+      message: CONFIRMING,
       holdFollows: true,
     });
 
@@ -3067,7 +3069,7 @@ describe("Safe proposals under the write hold", () => {
     await freshHarness();
     hooks.resumeSafeProposalTracking(mocks.config as never);
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(activity.transactionActivityForHash(PROPOSAL)?.message).toBe(hooks.SAFE_CONFIRMING_LINE);
+    expect(activity.transactionActivityForHash(PROPOSAL)?.message).toBe(CONFIRMING);
     mocks.getTransactionReceipt.mockResolvedValue(receipt);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({

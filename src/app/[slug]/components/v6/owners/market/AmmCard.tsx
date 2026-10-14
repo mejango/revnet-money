@@ -1,7 +1,5 @@
 "use client";
 
-import { withWriteIntent } from "@/lib/write-hold";
-import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
@@ -34,6 +32,8 @@ import {
 import { cachedQuery } from "@/lib/query-persist";
 import { explorerBaseUrl } from "@/lib/utils";
 import { RECEIPT_WAIT_TIMEOUT_MS, waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-hold";
+import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import {
   uniswapV4AmountsForLiquidity,
   uniswapV4DefaultPriceRange,
@@ -902,7 +902,10 @@ export function AddLiquidityForm({
         }
         if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
         else await reverifyAddLiquidity(pool, built.plan);
-        const hash = await withWriteIntent(writeContractAsync, lpIntent)({
+        const hash = await withWriteIntent(
+          writeContractAsync,
+          lpIntent,
+        )({
           chainId,
           address: POSITION_MANAGER_BY_CHAIN[chainId]!,
           abi: POSITION_MANAGER_ABI,

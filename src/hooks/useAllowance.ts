@@ -2,8 +2,8 @@
 
 import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
-import { withWriteIntent } from "@/lib/write-hold";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-hold";
 import { useCallback, useRef, useState } from "react";
 import { erc20Abi, type Hex, type TransactionReceipt } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
@@ -23,7 +23,7 @@ export function useAllowance(chainId: number, options?: { reviewedInParent?: boo
       tokenAddress: `0x${string}`,
       spender: `0x${string}`,
       value: bigint,
-      namespace?: string,
+      namespace: string,
     ) => {
       if (!address) throw new Error("Wallet not connected");
       if (!publicClient) throw new Error("Please try again");
@@ -39,8 +39,10 @@ export function useAllowance(chainId: number, options?: { reviewedInParent?: boo
 
       setIsApproving(true);
       try {
-        const write = namespace ? withWriteIntent(writeContractAsync, namespace) : writeContractAsync;
-        const hash = await write({
+        const hash = await withWriteIntent(
+          writeContractAsync,
+          namespace,
+        )({
           chainId,
           address: tokenAddress,
           abi: erc20ApproveAbi,

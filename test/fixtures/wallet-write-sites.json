@@ -331,13 +331,6 @@
           1
         ],
         [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-          "approvePermit2",
-          "writeContractAsync",
-          1
-        ],
-        [
           "reviewed-write-hook",
           "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
           "ChainPositionRows",
@@ -366,13 +359,6 @@
           1
         ],
         [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
-          "approvePermit2",
-          "writeContractAsync",
-          1
-        ],
-        [
           "reviewed-write-hook",
           "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
           "EditPositionPanel",
@@ -389,14 +375,14 @@
         [
           "reviewed-write",
           "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
-          "approvePermit2",
+          "execute",
           "writeContractAsync",
           1
         ],
         [
           "reviewed-write",
-          "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
-          "execute",
+          "src/app/[slug]/components/v6/owners/market/liquidityWrite.tsx",
+          "approvePermit2",
           "writeContractAsync",
           1
         ],
