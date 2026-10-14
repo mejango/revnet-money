@@ -2,15 +2,20 @@ import { LaunchedNotice } from "@/app/create/form/LaunchedNotice";
 import {
   checkSavedLaunch,
   checkSavedLaunches,
+  launchConfigOf,
   launchInputOf,
-  launchIntent,
   launchSalt,
   noteLaunchSent,
   savedLaunchOf,
   settleLaunchSalt,
 } from "@/app/create/helpers/launchIntent";
+import { launchIntent as sdkLaunchIntent } from "@bananapus/nana-sdk-core/review";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+/** The launch's SDK intent, from the form as the page builds it. */
+const launchIntent = (form: unknown) =>
+  sdkLaunchIntent({ chainId: 1, account: ACCOUNT, config: launchConfigOf(form) });
 
 const ACCOUNT = "0x000000000000000000000000000000000000dEaD";
 const salt = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as const;

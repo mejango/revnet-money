@@ -1,5 +1,7 @@
 "use client";
 
+import { withWriteIntent } from "@/lib/write-hold";
+import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
@@ -27,8 +29,6 @@ import { chainName, fmtUnits } from "../settlement/lib";
 import {
   lpBandPrices,
   lpDeadline,
-  PERMIT2_ABI,
-  PERMIT2_ADDRESS,
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
   prepareMarketEdit,
@@ -44,6 +44,7 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
+  heldLiquidityApprovals,
   liquidityBatchCalls,
   parseAmountText,
   runApprovalStep,
@@ -306,6 +307,8 @@ export function MarketEditPanel({
       setStatus(ACCOUNT_CHANGED);
       return;
     }
+    // One liquidity action in this pool: its approvals are its steps, its batch is it.
+    const lpIntent = liquidityIntent({ chainId, pool: current.pool.poolId, positions: [] });
     setBusy(true);
     setStatus(null);
     try {
@@ -323,6 +326,7 @@ export function MarketEditPanel({
             value: plan.value,
           }),
           account,
+          lpIntent,
         );
         setStatus(
           "Proposed to Safe as one batch. Both sides show their new state under Your liquidity once it executes.",
@@ -338,16 +342,12 @@ export function MarketEditPanel({
             chainId: state.chainId,
             address: account,
             publicClient: publicClient as PublicClient,
-            ensureAllowance,
-            approvePermit2: (args) =>
-              writeContractAsync({
-                chainId,
-                address: PERMIT2_ADDRESS,
-                abi: PERMIT2_ABI,
-                functionName: "approve",
-                args,
-                account,
-              }),
+            ...heldLiquidityApprovals(lpIntent, {
+              chainId,
+              account,
+              ensureAllowance,
+              writeContractAsync: writeContractAsync as never,
+            }),
           });
           if (outcome === "safe-proposed") {
             setStatus(
@@ -360,7 +360,7 @@ export function MarketEditPanel({
         }
         activePlan.current = { pool: current.pool, plan };
         review.current.description = describeMarketEdit(current.pool, plan, tokenSymbol);
-        const hash = await writeContractAsync({
+        const hash = await withWriteIntent(writeContractAsync, lpIntent)({
           chainId,
           address: positionManager,
           abi: POSITION_MANAGER_ABI,

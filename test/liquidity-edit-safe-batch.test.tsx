@@ -111,7 +111,7 @@ const pool = {
   chainId: 8453 as JBChainId,
   projectId: 6,
   price: 0.5,
-  poolId: "0xpool",
+  poolId: `0x${"7a".repeat(32)}`,
   pair: { addr: USDC, decimals: 6, symbol: "USDC", currency: 1n },
   pairIsC0: false,
   projectToken: PROJECT_TOKEN,

@@ -38,12 +38,27 @@ export function launchInputOf<T>(form: T): T {
 }
 
 /**
- * A single-chain launch's intent: a hash of the launch config the user filled in. What the page
- * generates for each attempt (the salt, the default stage start, the metadata pin) is left out;
- * the chain and account are the hold's own scope.
+ * The launch input as the SDK's launchIntent reads it: addresses and bytes tagged, numbers that
+ * aren't whole as text, undefined fields left out. What the page generates for each attempt (the
+ * salt, the default stage start, the metadata pin) is never in it.
  */
-export function launchIntent(config: unknown): [string, { [name: string]: IntentValue }] {
-  return ["launch", { config: intent.hex(keccak256(stringToHex(canonical(config)))) }];
+export function launchConfigOf(input: unknown): IntentValue {
+  if (typeof input === "string")
+    return /^0x[0-9a-fA-F]{40}$/.test(input)
+      ? intent.address(input)
+      : /^0x([0-9a-fA-F]{2})*$/.test(input)
+        ? intent.hex(input)
+        : input;
+  if (typeof input === "number") return Number.isSafeInteger(input) ? input : String(input);
+  if (typeof input === "bigint" || typeof input === "boolean" || input === null) return input;
+  if (Array.isArray(input)) return input.map((item) => launchConfigOf(item ?? null));
+  if (input && typeof input === "object")
+    return Object.fromEntries(
+      Object.entries(input)
+        .filter(([, item]) => item !== undefined && typeof item !== "function")
+        .map(([key, item]) => [key, launchConfigOf(item)]),
+    );
+  return null;
 }
 
 const saltKey = (account: string, chainId: number, config: unknown) =>

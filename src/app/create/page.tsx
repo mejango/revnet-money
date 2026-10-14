@@ -20,6 +20,7 @@ import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { withWriteIntent } from "@/lib/write-hold";
+import { launchIntent } from "@bananapus/nana-sdk-core/review";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
@@ -36,8 +37,8 @@ import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
 import {
   checkSavedLaunch,
   checkSavedLaunches,
+  launchConfigOf,
   launchInputOf,
-  launchIntent,
   launchSalt,
   noteLaunchSent,
   savedLaunchOf,
@@ -262,7 +263,7 @@ export default function Page() {
       // Held by the user's launch config: the salt, stage start and pin are the page's own.
       const hash = await withWriteIntent(
         writeContractAsync,
-        ...launchIntent(launchInput),
+        launchIntent({ chainId, account: address, config: launchConfigOf(launchInput) }),
       )({
         chainId,
         address: directRequest.address,

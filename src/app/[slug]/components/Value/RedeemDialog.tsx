@@ -22,7 +22,6 @@ import {
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
-import { useChosen } from "@/hooks/useChosen";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalUnconfirmedError,
@@ -51,7 +50,7 @@ import { formatDecimals } from "@/lib/number";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
-import { cashOutIntent, withWriteIntent } from "@/lib/write-hold";
+import { withWriteIntent } from "@/lib/write-hold";
 import {
   formatUnits,
   getJBContractAddress,
@@ -61,6 +60,7 @@ import {
   JBProjectToken,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
+import { approvalIntent, cashOutIntent } from "@bananapus/nana-sdk-core/review";
 import {
   getTokenAddress,
   prepareHookAwareCashOut,
@@ -85,8 +85,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, disabled, children } = props;
   // Where the amount came from: typed, a share option (Max), or the app's seed. The write's
   // intent keys an option by its name, since the amount it fills follows the balance.
-  const chosenAmount = useChosen<string | undefined>(undefined, "amount");
-  const redeemAmount = chosenAmount.value;
+  const [redeemAmount, setRedeemAmount] = useState<string>();
   // Max quote change tolerance in basis points; protects both routes (terminal
   // minimum on the treasury path, metadata minimum on the AMM path).
   const [slippageBps, setSlippageBps] = useState(100);
@@ -418,7 +417,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         // The dialog stays mounted: a finished cash out must not greet the next one.
         if (!open) {
           reset();
-          chosenAmount.seed(undefined);
+          setRedeemAmount(undefined);
           setReview(false);
           setError(null);
         }
@@ -494,7 +493,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                             id="amount"
                             name="amount"
                             value={redeemAmount ?? ""}
-                            onChange={(e) => chosenAmount.set(e.target.value?.trim())}
+                            onChange={(e) => setRedeemAmount(e.target.value?.trim())}
                           />
                           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 z-10">
                             <span className="text-zinc-500 sm:text-md">{tokenSymbol}</span>
@@ -512,8 +511,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                                     description: "Choose a network first.",
                                   });
                                 }
-                                chosenAmount.choose(
-                                  pct === 100 ? "max" : `${pct}%`,
+                                setRedeemAmount(
                                   pct === 100
                                     ? maxRedeemAmount
                                     : (Number(maxRedeemAmount) * (pct / 100)).toFixed(8),
@@ -691,7 +689,18 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 if (directSell && projectTokenAddress && selectedChainId && deployment) {
                   setIsApproving(needsErc20Approval || needsRouterApproval);
                   if (needsErc20Approval) {
-                    await writeApprovalAsync({
+                    await withWriteIntent(
+                      writeApprovalAsync,
+                      approvalIntent(
+                        cashOutIntent({
+                          chainId: selectedChainId,
+                          project: effectiveProjectId,
+                          holder: address,
+                          beneficiary: address,
+                        }),
+                        { step: "erc20", token: projectTokenAddress, spender: PERMIT2_ADDRESS },
+                      ),
+                    )({
                       abi: erc20ApproveAbi,
                       functionName: "approve",
                       chainId: selectedChainId,
@@ -701,7 +710,22 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     return;
                   }
                   if (needsRouterApproval) {
-                    await writeApprovalAsync({
+                    await withWriteIntent(
+                      writeApprovalAsync,
+                      approvalIntent(
+                        cashOutIntent({
+                          chainId: selectedChainId,
+                          project: effectiveProjectId,
+                          holder: address,
+                          beneficiary: address,
+                        }),
+                        {
+                          step: "permit2",
+                          token: projectTokenAddress,
+                          spender: deployment.universalRouter!,
+                        },
+                      ),
+                    )({
                       abi: permit2Abi,
                       functionName: "approve",
                       chainId: selectedChainId,
@@ -746,10 +770,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   // One cash-out intent, whichever venue the app picks.
                   await withWriteIntent(
                     writeContractAsync,
-                    ...cashOutIntent({
-                      projectId: effectiveProjectId,
-                      token: tokenToReceive,
-                      amount: chosenAmount.key(redeemAmountBN),
+                    cashOutIntent({
+                      chainId: selectedChainId,
+                      project: effectiveProjectId,
+                      holder: address,
                       beneficiary: address,
                     }),
                   )({
@@ -784,10 +808,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 // Held by what the user asked for: the quoted minimum is read again on a retry.
                 await withWriteIntent(
                   writeContractAsync,
-                  ...cashOutIntent({
-                    projectId: effectiveProjectId,
-                    token: tokenToReceive,
-                    amount: chosenAmount.key(redeemAmountBN),
+                  cashOutIntent({
+                    chainId: selectedChainId!,
+                    project: effectiveProjectId,
+                    holder: address,
                     beneficiary: address,
                   }),
                 )({ ...prepared.transaction, account: address });

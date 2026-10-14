@@ -168,7 +168,7 @@ const pool = {
   chainId: 8453 as JBChainId,
   projectId: 6,
   price: 0.00001,
-  poolId: "0xpool",
+  poolId: `0x${"7a".repeat(32)}`,
   key: { tickSpacing: 60 },
   pair: { addr: zeroAddress, decimals: 18, symbol: "ETH", currency: 1n },
   pairIsC0: true,

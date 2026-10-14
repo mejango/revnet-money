@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
 import { useAllowance } from "@/hooks/useAllowance";
-import { useChosen } from "@/hooks/useChosen";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalPendingError,
@@ -48,7 +47,7 @@ import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { withWriteIntent } from "@/lib/write-hold";
 import { JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
-import { intent } from "@bananapus/nana-sdk-core/review";
+import { approvalIntent, bridgeIntent } from "@bananapus/nana-sdk-core/review";
 import { suckerBytes32ToAddress } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -67,8 +66,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const [targetChainId, setTargetChainId] = useState<JBChainId>();
   // Where the amount came from: typed, a share option (Max), or the app's seed. The write's
   // intent keys an option by its name, since the amount it fills follows the balance.
-  const chosenAmount = useChosen<string | undefined>(undefined, "amount");
-  const amount = chosenAmount.value;
+  const [amount, setAmount] = useState<string>();
   const [slippagePercent, setSlippagePercent] = useState("1");
   const { token } = useJBTokenContext();
   const baseToken = useProjectBaseToken();
@@ -306,7 +304,20 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         args: [address, suckerPair.local],
       });
       setNeedsApproval(allowance < amountValue);
-      await ensureAllowance(tokenAddress, suckerPair.local, amountValue);
+      await ensureAllowance(
+        tokenAddress,
+        suckerPair.local,
+        amountValue,
+        approvalIntent(
+          bridgeIntent({
+            chainId: sourceChainId,
+            sucker: suckerPair.local,
+            token: terminalToken,
+            account: address,
+          }),
+          { step: "erc20", token: tokenAddress, spender: suckerPair.local },
+        ),
+      );
 
       // An approval can leave the dialog open for minutes. Re-read immediately
       // before the write and preserve the minimum the user actually reviewed.
@@ -326,12 +337,16 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         minTokensReclaimed: reviewedQuote.minTokensReclaimed,
         token: terminalToken,
       });
-      // Held by what the user asked for: the quoted minimum is read again on a retry.
-      await withWriteIntent(writeContractAsync, "bridge", {
-        sucker: intent.address(suckerPair.local),
-        token: intent.address(terminalToken),
-        amount: chosenAmount.key(amountValue),
-      })({ ...request, chainId: sourceChainId, account: address });
+      // Held by the sucker, token and account: the quoted minimum is read again on a retry.
+      await withWriteIntent(
+        writeContractAsync,
+        bridgeIntent({
+          chainId: sourceChainId,
+          sucker: suckerPair.local,
+          token: terminalToken,
+          account: address,
+        }),
+      )({ ...request, chainId: sourceChainId, account: address });
     } catch (error) {
       console.error(error);
       if (isSafeProposalPendingError(error)) {
@@ -346,7 +361,6 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     }
   }, [
     amount,
-    chosenAmount,
     amountValue,
     balance.value,
     prepareQuote,
@@ -365,7 +379,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       onOpenChange={(open) => {
         if (!open) {
           reset();
-          chosenAmount.seed(undefined);
+          setAmount(undefined);
           setSlippagePercent("1");
           setSourceChainId(sourceChains[0]);
           setTargetChainId(undefined);
@@ -488,7 +502,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                   id="amount"
                   name="amount"
                   value={amount}
-                  onChange={(e) => chosenAmount.set(e.target.value?.trim())}
+                  onChange={(e) => setAmount(e.target.value?.trim())}
                   disabled={isDisabled}
                   autoComplete="off"
                   type="text"
@@ -504,8 +518,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                     type="button"
                     disabled={isBalanceLoading || isDisabled}
                     onClick={() => {
-                      chosenAmount.choose(
-                        pct === 100 ? "max" : `${pct}%`,
+                      setAmount(
                         pct === 100 ? maxAmount : (Number(maxAmount) * (pct / 100)).toFixed(8),
                       );
                     }}

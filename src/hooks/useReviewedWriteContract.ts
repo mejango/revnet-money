@@ -32,8 +32,8 @@ import {
 } from "@/lib/waitForReceipt";
 import {
   adoptIntoHold,
-  batchIntentOf,
   holdOfHash,
+  legacyOf,
   rememberHold,
   safeHoldOf,
   sendUnderHold,
@@ -290,8 +290,12 @@ async function watchSafeProposal(
   /** The Safe's live nonce is past the saved one: only the canonical chain may end it now. */
   let nonceUsed = false;
   const saveNonce = (nonce: bigint) => {
-    if (tracked()?.safeProposalNonce === undefined)
-      updateTransactionActivity(id, { safeProposalNonce: nonce.toString() });
+    if (tracked()?.safeProposalNonce !== undefined) return;
+    updateTransactionActivity(id, { safeProposalNonce: nonce.toString() });
+    // The hold authenticates the nonce and takes it, so it can tell when that nonce is used.
+    tellHold((hold, chain) =>
+      hold.attachSafeNonce(chain, { safeTxHash: hash, nonce: Number(nonce) }),
+    );
   };
   /**
    * A proposal saved without its nonce (made before it was saved) finds it from its hash: the
@@ -713,16 +717,6 @@ function holdDecides(duplicate: { status: string }, heldBefore: boolean) {
   return heldBefore && duplicate.status === "safe-proposed";
 }
 
-/** Whether the hold's record carries its Safe proposal's nonce. */
-function holdKnowsNonce(hold: WriteHoldHandle): boolean {
-  try {
-    const now = hold.peek();
-    return now.status !== "clear" && now.record.safeNonce !== undefined;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The hold let this send through, on the user's exit or on authenticated evidence: the journaled
  * proposal it replaces stops refusing. One the app can't confirm leaves the journal; one still
@@ -761,12 +755,19 @@ async function refuseUnheldSafeDuplicate(
     held = true;
   }
   if (!duplicate?.hash || duplicate.status !== "safe-proposed") return held;
-  // The journal knows the proposal's Safe nonce and the hold doesn't (it took the proposal before
-  // the nonce was found): only the journal can tell its nonce was used, so it still refuses.
-  // TODO(SDK 2.36): authenticate the nonce and give it to this exact held attempt with
-  // attachSafeNonce, then defer to the hold and remove this guard.
-  if (held && duplicate.safeProposalNonce !== undefined && !holdKnowsNonce(hold))
-    throw new SafeProposalPendingError(duplicate.hash, action, duplicate.safeResultUnconfirmed);
+  // The journal knows the proposal's Safe nonce: the hold, which authenticates it, takes it too,
+  // so it can tell when that nonce is used.
+  if (
+    held &&
+    duplicate.safeProposalNonce !== undefined &&
+    /^\d+$/.test(duplicate.safeProposalNonce)
+  )
+    await hold
+      .attachSafeNonce(client, {
+        safeTxHash: duplicate.hash,
+        nonce: Number(duplicate.safeProposalNonce),
+      })
+      .catch(() => undefined);
   if (!holdDecides(duplicate, held)) {
     throw new SafeProposalPendingError(duplicate.hash, action, duplicate.safeResultUnconfirmed);
   }
@@ -792,6 +793,8 @@ export async function proposeSafeBatch(
   })[],
   /** The account the calls were built for, when they name one (a mint's recipient). */
   plannedAccount?: Address,
+  /** The user action the batch is, as an SDK intent; without one it's held by its exact calls. */
+  intent?: string,
 ): Promise<Hex> {
   requireNoViewAs();
   const account = getAccount(config).address;
@@ -817,7 +820,7 @@ export async function proposeSafeBatch(
     safe: account,
     calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
     batch: true,
-    holdNamespace: batchIntentOf(calls),
+    ...(intent ? { holdNamespace: intent } : {}),
   };
   const publicClient = getPublicClient(config, { chainId });
   if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
@@ -1106,14 +1109,15 @@ export function useWriteContract(
                   ...(namespace ? { namespace } : {}),
                   call: { to: variables.address, data, value: variables.value ?? 0n },
                 },
-                // A write held by intent is held, through the SDK, by the exact-calldata hold an
-                // earlier build left (#79). An attempt whose calldata a retry regenerates needs the
-                // SDK's legacy matcher by target and selector, still to come.
+                // A write held by intent is held, through the SDK, by the exact-calldata holds an
+                // earlier build left (#79), whatever calldata a retry regenerates.
                 namespace
                   ? {
-                      legacy: [
-                        { call: { to: variables.address, data, value: variables.value ?? 0n } },
-                      ],
+                      legacy: legacyOf({
+                        to: variables.address,
+                        data,
+                        value: variables.value ?? 0n,
+                      }),
                     }
                   : undefined,
               );

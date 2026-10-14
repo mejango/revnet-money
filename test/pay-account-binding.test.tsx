@@ -332,8 +332,8 @@ describe("a payment bound to the account it was prepared for", () => {
 
 describe("the payment's intent", () => {
   it("is the project and beneficiary alone, so a checkout an emptied cart turned into a pay is the same intent", async () => {
-    const { payIntent, writeIntentOf } = await import("@/lib/write-hold");
-    const { writeIntentKey } = await import("@bananapus/nana-sdk-core/review");
+    const { writeIntentOf } = await import("@/lib/write-hold");
+    const { payIntent } = await import("@bananapus/nana-sdk-core/review");
     render(
       <QueryClientProvider client={queryClient()}>
         <V6PayCard />
@@ -351,13 +351,7 @@ describe("the payment's intent", () => {
 
     // The checkout it was, with a lost reply, had the same intent.
     expect(writeIntentOf(mocks.write.mock.calls[0]![0])).toBe(
-      writeIntentKey(
-        ...payIntent({
-          projectId: 7n,
-          beneficiary: A,
-          items: [{ tierId: 1, quantity: 2 }],
-        }),
-      ),
+      payIntent({ chainId: 1, project: 7n, beneficiary: A }),
     );
   });
 });

@@ -10,7 +10,9 @@ import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteCont
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { syncIntent, withWriteIntent } from "@/lib/write-hold";
+import { withWriteIntent } from "@/lib/write-hold";
+import { zeroAddress } from "viem";
+import { bridgeIntent } from "@bananapus/nana-sdk-core/review";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { buildSyncAccountingDataTx } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
@@ -137,10 +139,16 @@ function SyncButton({
                 account: address,
                 ...request,
               });
-              // Held by the sucker alone: the bridge fee is simulated again on a reopen.
+              // Held by the sucker and account (a sync moves no one token: the zero address
+              // names the whole sucker); the bridge fee is simulated again on a reopen.
               const hash = await withWriteIntent(
                 writeContractAsync,
-                ...syncIntent(syncSucker),
+                bridgeIntent({
+                  chainId: peerChainId,
+                  sucker: syncSucker,
+                  token: zeroAddress,
+                  account: address!,
+                }),
               )(request);
               if (submittedViaSafe(hash)) {
                 setState("sent");

@@ -1,5 +1,7 @@
 "use client";
 
+import { withWriteIntent } from "@/lib/write-hold";
+import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useAllowance } from "@/hooks/useAllowance";
@@ -28,8 +30,6 @@ import { describeEditLiquidityPlan } from "./formView";
 import {
   lpBandPrices,
   lpDeadline,
-  PERMIT2_ABI,
-  PERMIT2_ADDRESS,
   POSITION_MANAGER_ABI,
   POSITION_MANAGER_BY_CHAIN,
   prepareEditLiquidity,
@@ -44,6 +44,7 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
+  heldLiquidityApprovals,
   liquidityBatchCalls,
   parseAmountText,
   runApprovalStep,
@@ -326,6 +327,8 @@ export function EditPositionPanel({
       setStatus(ACCOUNT_CHANGED);
       return;
     }
+    // One liquidity action in this pool: its approvals are its steps, its batch is it.
+    const lpIntent = liquidityIntent({ chainId, pool: current.pool.poolId, positions: [position.tokenId] });
     setBusy(true);
     setStatus(null);
     try {
@@ -343,6 +346,7 @@ export function EditPositionPanel({
             value: plan.value,
           }),
           account,
+          lpIntent,
         );
         setStatus(
           "Proposed to Safe as one batch. The position shows its new state under Your liquidity once it executes.",
@@ -358,16 +362,12 @@ export function EditPositionPanel({
             chainId: state.chainId,
             address: account,
             publicClient: publicClient as PublicClient,
-            ensureAllowance,
-            approvePermit2: (args) =>
-              writeContractAsync({
-                chainId,
-                address: PERMIT2_ADDRESS,
-                abi: PERMIT2_ABI,
-                functionName: "approve",
-                args,
-                account,
-              }),
+            ...heldLiquidityApprovals(lpIntent, {
+              chainId,
+              account,
+              ensureAllowance,
+              writeContractAsync: writeContractAsync as never,
+            }),
           });
           if (outcome === "safe-proposed") {
             setStatus(
@@ -380,7 +380,7 @@ export function EditPositionPanel({
         }
         activePlan.current = { pool: current.pool, plan };
         review.current.description = planCopy(current.pool, plan, tokenSymbol).join("\n\n");
-        const hash = await writeContractAsync({
+        const hash = await withWriteIntent(writeContractAsync, lpIntent)({
           chainId,
           address: positionManager,
           abi: POSITION_MANAGER_ABI,
