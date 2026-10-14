@@ -3427,15 +3427,15 @@ describe("holds keyed by the SDK's intents", () => {
     expect(mocks.submit).toHaveBeenCalledTimes(2);
   });
 
-  // Pending SDK: its legacy matcher (target and selector) counts another intent's mirror as a
-  // legacy hold, so another position's change waits too. Turn on when the matcher skips mirrors.
-  it.skip("holds another position's liquidity change apart from this one", async () => {
+  // The legacy matcher (target and selector) skips other intents' mirrors (SDK 2.38.1).
+  it("holds another position's liquidity change apart from this one", async () => {
     const { holds, prompt, write } = await lostOnce();
+    // Each position's change is its own calldata.
     const change = (positions: bigint[]) =>
       holds.withWriteIntent(
         write,
         liquidityIntent({ chainId: 11155111, pool: POOL, positions }),
-      )({ ...CALL } as never);
+      )({ ...CALL, args: [RECIPIENT, positions[0]] } as never);
     await expect(change([2n])).rejects.toThrow("timed out");
     await act(async () => {
       await change([1n]);
