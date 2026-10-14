@@ -3058,7 +3058,12 @@ describe("Safe proposals under the write hold", () => {
     });
 
     await freshHarness();
-    expect((await holdOfTransfer()).peek()).toMatchObject({
+    // Only the hold's gate offers the exit (SDK 2.34.1): the saved record says what is held.
+    const hold = await holdOfTransfer();
+    expect(hold.peek()).toMatchObject({ status: "safe-unproven", exit: false });
+    const { getPublicClient } = await import("wagmi/actions");
+    const chain = getPublicClient(mocks.config as never, { chainId: 11155111 } as never);
+    expect(await hold.state(chain as never)).toMatchObject({
       status: "safe-unproven",
       exit: true,
       line: WRITE_HOLD_SAFE_UNPROVEN_LINE,

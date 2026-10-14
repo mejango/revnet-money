@@ -1399,25 +1399,15 @@ export function useWaitForTransactionReceipt(
     "hash" in state.settled &&
     state.settled.hash.toLowerCase() === hash?.toLowerCase();
   const watchedHold = sentUnder?.hold;
-  const [shown, setShown] = useState<{
-    hold: WriteHoldHandle;
-    state: WriteHoldState;
-    gated: boolean;
-  }>();
+  const [shown, setShown] = useState<{ hold: WriteHoldHandle; state: WriteHoldState }>();
   const heldState = watchedHold && shown?.hold === watchedHold ? shown.state : undefined;
   useWriteHoldWatch(
     watchedHold,
     sentUnder?.client,
-    (state, gated) => {
+    (state) => {
       if (!watchedHold) return;
-      // An exit is offered only from the hold's gate, its own state(); a replay of the same state
-      // keeps what the gate said.
-      setShown((prev) => ({
-        hold: watchedHold,
-        state,
-        gated:
-          gated || (prev?.hold === watchedHold && prev.gated && prev.state.status === state.status),
-      }));
+      // Only the hold's gate, its own state(), offers an exit (SDK 2.34.1).
+      setShown({ hold: watchedHold, state });
       if (settlesThis(state) && tracked) {
         updateTransactionActivity(tracked.id, {
           status: state.settled.result === "success" ? "success" : "failed",
@@ -1442,7 +1432,7 @@ export function useWaitForTransactionReceipt(
      * so its action stays locked, until its hold offers the exit or ends. (A Safe proposal whose
      * result can't be confirmed is `isSafeResultUnconfirmed`.)
      */
-    isUnconfirmed: watchGaveUp && heldState?.status !== "clear" && !(held?.exit && shown?.gated),
+    isUnconfirmed: watchGaveUp && heldState?.status !== "clear" && !held?.exit,
     /** The line of the hold that send is held by, while its watch has given up. */
     heldLine: held?.line,
     error:
