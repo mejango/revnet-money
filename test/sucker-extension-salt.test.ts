@@ -1,4 +1,8 @@
-import { clearExtensionSalt, saltForExtension } from "@/lib/suckerExtensionSalt";
+import {
+  clearExtensionSalt,
+  discardUnreadableSalts,
+  saltForExtension,
+} from "@/lib/suckerExtensionSalt";
 import { JOURNAL_UNREADABLE_LINE } from "@/lib/write-hold";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,5 +35,14 @@ describe("the sucker extension's saved salts", () => {
     expect(written).not.toHaveBeenCalled();
     read.mockRestore();
     written.mockRestore();
+  });
+
+  it("start fresh only after the user's warned continue over an unreadable store", () => {
+    window.localStorage.setItem("revnet-sucker-extension-salt-v1", "garbage");
+    expect(() => saltForExtension(OPERATOR, 7n, 10)).toThrow(JOURNAL_UNREADABLE_LINE);
+    discardUnreadableSalts();
+    const salt = saltForExtension(OPERATOR, 7n, 10);
+    expect(salt).toMatch(/^0x[0-9a-f]{64}$/i);
+    expect(saltForExtension(OPERATOR, 7n, 10)).toBe(salt);
   });
 });

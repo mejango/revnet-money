@@ -102,16 +102,36 @@ type SavedLaunch = {
  * or a malformed record, throws JOURNAL_UNREADABLE_LINE: it is never taken for an absent one.
  */
 export function savedLaunchAt(key: string): SavedLaunch | undefined {
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(key);
+  } catch {
+    // Storage won't read: only the user's warned continue lets it read as absent.
+    if (discarded.has(key)) return undefined;
+    throw new Error(JOURNAL_UNREADABLE_LINE);
+  }
+  discarded.delete(key);
+  if (raw === null) return undefined;
   let saved: SavedLaunch | undefined;
   try {
-    const raw = window.localStorage.getItem(key);
-    if (raw === null) return undefined;
     saved = JSON.parse(raw) as SavedLaunch;
   } catch {
     throw new Error(JOURNAL_UNREADABLE_LINE);
   }
   if (!/^0x[0-9a-f]{64}$/i.test(saved?.salt ?? "")) throw new Error(JOURNAL_UNREADABLE_LINE);
   return saved;
+}
+
+/** Journals the user's warned continue let read as absent while storage won't read them. */
+const discarded = new Set<string>();
+
+/**
+ * The user's warned continue over a journal that won't read (JOURNAL_DISCARD_ACTION): the record
+ * goes, and the launch reopens with a fresh salt. Called only after a check just failed on it.
+ */
+export function discardUnreadableLaunch(key: string): void {
+  discarded.add(key);
+  retireLaunch(key);
 }
 
 function persist(key: string, saved: SavedLaunch): void {

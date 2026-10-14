@@ -4,6 +4,7 @@ import {
   LaunchedNotice,
 } from "@/app/create/form/LaunchedNotice";
 import {
+  discardUnreadableLaunch,
   launchConfigHash,
   launchConfigOf,
   launchInputOf,
@@ -17,7 +18,11 @@ import {
   savedLaunchKeys,
 } from "@/app/create/helpers/launchIntent";
 import { legacyIntents } from "@/lib/legacy-intents";
-import { JOURNAL_UNREADABLE_LINE } from "@/lib/write-hold";
+import {
+  JOURNAL_DISCARD_ACTION,
+  JOURNAL_UNREADABLE_LINE,
+  JOURNAL_UNREADABLE_WARNING,
+} from "@/lib/write-hold";
 import { launchIntent as sdkLaunchIntent } from "@bananapus/nana-sdk-core/review";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -355,6 +360,40 @@ describe("the launch notices", () => {
       window.localStorage.setItem(key(), "{not json");
       expect(() => releaseLaunch(key())).toThrow(JOURNAL_UNREADABLE_LINE);
       expect(window.localStorage.getItem(key())).toBe("{not json");
+    });
+
+    it("is discarded only by the explicit continue, and reads as absent after it", () => {
+      window.localStorage.setItem(key(), "{not json");
+      discardUnreadableLaunch(key());
+      expect(savedLaunchAt(key())).toBeUndefined();
+      save();
+      const read = unreadable();
+      const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+        throw new Error("SecurityError");
+      });
+      expect(() => savedLaunchAt(key())).toThrow(JOURNAL_UNREADABLE_LINE);
+      // Storage won't read or delete: the continue holds for this key until it reads again.
+      discardUnreadableLaunch(key());
+      expect(savedLaunchAt(key())).toBeUndefined();
+      read.mockRestore();
+      remove.mockRestore();
+      expect(savedLaunchAt(key())).toMatchObject({ salt: salt(7) });
+    });
+
+    it("offers the warned continue only after a check failed on it", () => {
+      const onDiscard = vi.fn();
+      const view = render(<LaunchCheckNotice onChecked={vi.fn()} onDiscard={onDiscard} />);
+      expect(screen.queryByRole("button", { name: JOURNAL_DISCARD_ACTION })).toBeNull();
+      view.rerender(
+        <LaunchCheckNotice
+          onChecked={vi.fn()}
+          refused={JOURNAL_UNREADABLE_LINE}
+          onDiscard={onDiscard}
+        />,
+      );
+      expect(screen.getByText(JOURNAL_UNREADABLE_WARNING)).toBeVisible();
+      screen.getByRole("button", { name: JOURNAL_DISCARD_ACTION }).click();
+      expect(onDiscard).toHaveBeenCalledOnce();
     });
 
     it("is recovered as check, never as nothing to recover", async () => {

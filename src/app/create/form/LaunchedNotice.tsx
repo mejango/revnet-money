@@ -1,4 +1,6 @@
+import { UnreadableJournalExit } from "@/components/ui/UnreadableJournalExit";
 import type { JBChainId } from "@/lib/nana/types";
+import { JOURNAL_UNREADABLE_LINE } from "@/lib/write-hold";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 
@@ -22,10 +24,13 @@ export function LaunchedNotice({ chainId, revnetId }: { chainId: number; revnetI
 export function LaunchCheckNotice({
   onChecked,
   refused,
+  onDiscard,
 }: {
   onChecked: () => void;
   /** Why the last check couldn't release it: shown, and the action stays. */
   refused?: string;
+  /** Discards a record that won't read: offered only once a check just failed on it. */
+  onDiscard?: () => void;
 }) {
   return (
     <div
@@ -40,6 +45,9 @@ export function LaunchCheckNotice({
         I checked it. Launch again
       </button>
       {refused ? <p>{refused}</p> : null}
+      {refused === JOURNAL_UNREADABLE_LINE && onDiscard ? (
+        <UnreadableJournalExit onContinue={onDiscard} />
+      ) : null}
     </div>
   );
 }

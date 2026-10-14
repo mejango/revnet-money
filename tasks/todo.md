@@ -1242,3 +1242,11 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 
 ### Review
 `npm run check` green in one pass: 2928 unit tests, 144 browser tests, bundle 2744.3 of 2746 KiB.
+
+## The warned continue past an unreadable journal (SDK engine parity, 2026-10-14)
+
+- [x] Red first (5 tests): after "I checked it" fails with the unreadable line (and only then), "This browser can't read its saved transactions. Check your wallet before sending again." sits above "I checked my wallet. Continue anyway"; it discards the record and reopens the flow, which launches with a fresh salt. Storage that won't read or delete lets the discarded key read as absent in this tab until it reads again.
+- [x] The sucker salt store blocks every extension while unreadable, so it gets the same warned continue in its confirm dialog after an extension failed on it. Strings next to JOURNAL_UNREADABLE_LINE; one `UnreadableJournalExit` component for both.
+
+### Review
+`npm run check` green: 2933 unit tests, 144 browser tests, bundle 2744.6 of 2746 KiB.

@@ -34,6 +34,7 @@ import { createSchema } from "./helpers/createSchema";
 import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
 import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
 import {
+  discardUnreadableLaunch,
   launchHoldsOf,
   launchInputOf,
   launchKeyOf,
@@ -435,6 +436,12 @@ export default function Page() {
         ) : mustCheck ? (
           <LaunchCheckNotice
             refused={checkRefused}
+            onDiscard={() => {
+              // The user's warned continue: the record that won't read goes, the flow reopens.
+              discardUnreadableLaunch(mustCheck);
+              setCheckRefused(undefined);
+              setMustCheck(undefined);
+            }}
             onChecked={() => {
               const key = mustCheck;
               // The user checked it: that saved launch is retired, and the next one is new, unless

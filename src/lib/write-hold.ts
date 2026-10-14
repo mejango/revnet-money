@@ -135,6 +135,13 @@ export function holdOfHash(
 
 /** A recovery journal that can't be read: nothing it holds is released, cleared or replaced. */
 export const JOURNAL_UNREADABLE_LINE = "Couldn't check this transaction. Try again.";
+/**
+ * Above the one way past a journal that still won't read, offered only right after an action failed
+ * with JOURNAL_UNREADABLE_LINE, never first: it discards the record and reopens the flow.
+ */
+export const JOURNAL_UNREADABLE_WARNING =
+  "This browser can't read its saved transactions. Check your wallet before sending again.";
+export const JOURNAL_DISCARD_ACTION = "I checked my wallet. Continue anyway";
 
 /** The held write confirmed while the user was deciding: nothing is sent again. */
 export const WENT_THROUGH = "Your earlier transaction went through.";

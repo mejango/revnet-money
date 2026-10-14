@@ -371,6 +371,31 @@ describe("a saved single-chain launch", () => {
     removed.mockRestore();
   });
 
+  it("offers the warned continue only after the check failed unreadable, and it launches anew", async () => {
+    const { launchKeyOf, launchInputOf } = await import("@/app/create/helpers/launchIntent");
+    window.localStorage.setItem(
+      launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form)),
+      "{not json",
+    );
+    render(<Page />);
+    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    expect(
+      screen.queryByRole("button", { name: "I checked my wallet. Continue anyway" }),
+    ).toBeNull();
+    fireEvent.click(check);
+    expect(
+      await screen.findByText(
+        "This browser can't read its saved transactions. Check your wallet before sending again.",
+      ),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "I checked my wallet. Continue anyway" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "I checked it. Launch again" })).toBeNull(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
+  });
+
   it("sends nothing and prepares nothing when the journal can't be read on submit", async () => {
     window.localStorage.setItem(
       (await import("@/app/create/helpers/launchIntent")).launchKeyOf(

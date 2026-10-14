@@ -35,15 +35,41 @@ function attemptKey(sender: Address, projectId: bigint | number, targetChainId: 
  */
 function read(): SaltStore {
   if (typeof window === "undefined") return {};
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(STORAGE_KEY);
+  } catch {
+    // Storage won't read: only the user's warned continue lets the attempt start afresh.
+    if (discarded) return {};
+    throw new Error(JOURNAL_UNREADABLE_LINE);
+  }
+  discarded = false;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}");
+    parsed = JSON.parse(raw ?? "{}");
   } catch {
     throw new Error(JOURNAL_UNREADABLE_LINE);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
     throw new Error(JOURNAL_UNREADABLE_LINE);
   return parsed as SaltStore;
+}
+
+/** The user's warned continue over a store that won't read, while storage still refuses it. */
+let discarded = false;
+
+/**
+ * The user's warned continue over saved salts that won't read (JOURNAL_DISCARD_ACTION): they go,
+ * and the next extension starts with a fresh salt. Called only after an extension just failed on it.
+ */
+export function discardUnreadableSalts(): void {
+  discarded = true;
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage refuses: `discarded` lets this tab start afresh.
+  }
 }
 
 function write(store: SaltStore): void {
