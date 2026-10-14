@@ -476,7 +476,6 @@ export function RepayDialog({
           token: baseTokenAddress,
           spender: revLoansContractAddress,
         }),
-        legacyIntents.repayApprove(loanId, baseTokenAddress),
       )({
         chainId,
         address: baseTokenAddress,
@@ -572,7 +571,6 @@ export function RepayDialog({
               token: baseTokenAddress,
               spender: revLoansContractAddress,
             }),
-            legacyIntents.repayApprove(loanId, baseTokenAddress),
           )({
             chainId,
             address: baseTokenAddress,

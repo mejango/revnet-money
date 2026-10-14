@@ -1228,7 +1228,10 @@ export function useWriteContract(
       // write no SDK builder names keeps the one it had.
       const previous = [
         ...legacyIntentsOf(variables),
-        legacyCallNamespace(variables as Parameters<typeof legacyCallNamespace>[0]),
+        // An approval only sets an allowance, so no old key holds it.
+        functionName === "approve"
+          ? undefined
+          : legacyCallNamespace(variables as Parameters<typeof legacyCallNamespace>[0]),
       ].filter((name): name is string => !!name);
       const namespace = writeIntentOf(variables) ?? previous[0];
       const legacyNamespaces = previous.filter((name) => name !== namespace);

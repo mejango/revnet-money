@@ -3608,7 +3608,7 @@ describe("attempts held under the previous build's intent namespaces", () => {
     expect(mocks.submit).toHaveBeenCalledOnce();
   });
 
-  it("refuses an approval held by its call's old namespace, with a new amount, until the exit", async () => {
+  it("does not hold an approval by its call's old namespace: a new amount goes through", async () => {
     const { review, hooks, held } = await freshHarness();
     const { legacyCallNamespace } = await import("@/lib/legacy-intents");
     const { withWriteIntent } = await import("@/lib/write-hold");
@@ -3642,8 +3642,11 @@ describe("attempts held under the previous build's intent namespaces", () => {
         }),
       )(approve(6n) as never);
 
-    await expect(send()).rejects.toThrow(/hasn't confirmed yet/);
-    expect(mocks.submit).not.toHaveBeenCalled();
+    await act(async () => {
+      await send();
+    });
+    expect(prompt).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledOnce();
   });
 
   it("refuses a Safe batch held by the old batch namespace, with stamped-again calldata, until the exit", async () => {

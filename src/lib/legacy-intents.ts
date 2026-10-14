@@ -148,10 +148,6 @@ export const legacyIntents = {
   ],
   sync: (sucker: string) => [key("sucker-sync", { sucker: intent.address(sucker) })],
   repay: (loanId: string | number | bigint) => [key("repay", { loanId: BigInt(loanId) })],
-  /** That build passed the loan ID as the page held it (a string). */
-  repayApprove: (loanId: string, token: string) => [
-    key("repay-approve", { loanId, token: intent.address(token) }),
-  ],
   reallocate: (loanId: string | number | bigint) => [key("reallocate", { loanId: BigInt(loanId) })],
   borrow: (b: {
     revnetId: number | bigint;
