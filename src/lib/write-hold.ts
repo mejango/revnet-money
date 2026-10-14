@@ -1,6 +1,7 @@
 "use client";
 
 import { confirmHeldWriteExit } from "@/lib/flow-choice";
+import type { ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   createWriteHold,
   WRITE_HOLD_REVERTED_LINE,
@@ -10,10 +11,29 @@ import {
   type WriteHoldGate,
   type WriteHoldHandle,
 } from "@bananapus/nana-sdk-core/review";
-import type { Hex } from "viem";
+import { keccak256, stringToHex, type Hex } from "viem";
 
 /** The one write hold for every ordinary wallet write in this app. */
 export const writeHolds = createWriteHold();
+
+/**
+ * The hold of a Safe proposal, by what it was reviewed to run: one call, or a batch, held by its
+ * first call within the batch's own scope.
+ */
+export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): WriteHoldHandle {
+  const [first] = proposal.calls;
+  if (!first) throw new Error("A Safe proposal runs at least one call.");
+  const batch = proposal.calls.map((call) => `${call.to}:${BigInt(call.value)}:${call.data}`);
+  return writeHolds.open({
+    chainId,
+    account: proposal.safe,
+    safe: true,
+    ...(proposal.batch
+      ? { namespace: `batch:${keccak256(stringToHex(batch.join("|"))).slice(2)}` }
+      : {}),
+    call: { to: first.to, data: first.data, value: BigInt(first.value) },
+  });
+}
 
 /**
  * The hold each hash this tab sent was sent under, with the client it was sent through, so a

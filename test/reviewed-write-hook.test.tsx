@@ -1,6 +1,7 @@
 import {
   WRITE_HOLD_HASHED_EXIT_LINE,
   WRITE_HOLD_PENDING_LINE,
+  WRITE_HOLD_SAFE_UNPROVEN_LINE,
   WRITE_HOLD_UNCHECKED_LINE,
 } from "@bananapus/nana-sdk-core/review";
 import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@bananapus/nana-sdk-core/safe";
@@ -52,6 +53,19 @@ const mocks = vi.hoisted(() => ({
   lookAtSafeProposal: vi.fn(),
   // The execution transaction a proven proposal's Safe event names (the SDK's canonical proof).
   provenSafeProposalEnd: vi.fn(),
+  // A Safe connection's wallet_sendCalls.
+  sendCalls: vi.fn(),
+}));
+
+vi.mock("@wagmi/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@wagmi/core")>()),
+  sendCalls: mocks.sendCalls,
+}));
+
+vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>()),
+  // A batch's sequence simulation runs on the node, which these tests don't model.
+  simulateCallSequence: async () => undefined,
 }));
 
 vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
@@ -258,6 +272,7 @@ beforeEach(() => {
   mocks.noClient = false;
   mocks.lookAtSafeProposal.mockReset().mockResolvedValue("live");
   mocks.provenSafeProposalEnd.mockReset().mockResolvedValue(null);
+  mocks.sendCalls.mockReset().mockResolvedValue({ id: HASH });
   mocks.wagmiReceipt.mockReturnValue({
     data: undefined,
     error: null,
@@ -1104,39 +1119,6 @@ describe("reviewed write hook", () => {
       reloadedHook.result.current.writeContractAsync(CALL as never),
     ).rejects.toBeInstanceOf(reloaded.hooks.SafeProposalPendingError);
     expect(mocks.waitForTransactionReceipt).not.toHaveBeenCalled();
-  });
-
-  it("refuses the identical call while its proposal's result can't be confirmed, saying to check it in Safe and dismiss it", async () => {
-    mocks.account = {
-      address: ACCOUNT,
-      chainId: 11155111,
-      connector: { id: "safe", name: "Safe" },
-    };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => new Promise(() => undefined)),
-    );
-    const { review, activity, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
-    const { result } = renderHook(() => hooks.useWriteContract());
-    await act(async () => {
-      await result.current.writeContractAsync(CALL as never);
-    });
-    // Its watch ended without a result the app can confirm.
-    activity.updateTransactionActivity(`tx:11155111:${HASH}`, {
-      message: UNCONFIRMED,
-      safeResultUnconfirmed: true,
-    });
-
-    const refused = await result.current
-      .writeContractAsync(CALL as never)
-      .catch((cause: unknown) => cause);
-
-    expect(refused).toBeInstanceOf(hooks.SafeProposalPendingError);
-    expect((refused as Error).message).toBe(
-      `transfer was proposed to Safe as ${HASH}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
-    );
-    expect(mocks.submit).toHaveBeenCalledTimes(1);
   });
 
   it("fails closed before review when no wallet account or chain is available", async () => {
@@ -2895,5 +2877,164 @@ describe("a send whose receipt watch gives up", () => {
     expect(receipt.result.current.isSuccess).toBe(true);
     expect(receipt.result.current).toMatchObject({ isUnconfirmed: false, heldLine: undefined });
     expect(activity.transactionActivityForHash(HASH)).toMatchObject({ status: "success" });
+  });
+});
+
+describe("Safe proposals under the write hold", () => {
+  const OTHER_HASH = `0x${"78".repeat(32)}` as Hex;
+  beforeEach(() => {
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: { id: "safe", name: "Safe" },
+    };
+  });
+  /** The SDK's hold of the reviewed single call proposed to the connected Safe. */
+  const holdOfTransfer = async () =>
+    (await import("@/lib/write-hold")).writeHolds.open({
+      chainId: 11155111,
+      account: ACCOUNT,
+      safe: true,
+      call: { to: TARGET, data: TRANSFER_7.data, value: 0n },
+    });
+
+  it("holds a proposal the Safe gave no hash for, and asks for the exit before proposing again", async () => {
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    mocks.submit.mockRejectedValueOnce(new Error("Safe app transport timed out"));
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow("timed out");
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      "Your earlier transaction hasn't confirmed yet. Check your wallet.",
+    );
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+
+    prompt.mockResolvedValue(true);
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers the SDK's warned exit at once for a proposal its watch ended unproven, and proposes once more only on it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Not found", { status: 404 })),
+    );
+    const { review, activity, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    // Its watch ended without a result the app can confirm.
+    activity.updateTransactionActivity(`tx:11155111:${HASH}`, {
+      message: UNCONFIRMED,
+      safeResultUnconfirmed: true,
+    });
+
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      WRITE_HOLD_SAFE_UNPROVEN_LINE,
+    );
+    expect(prompt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        lines: expect.arrayContaining([WRITE_HOLD_SAFE_UNPROVEN_LINE, WRITE_HOLD_HASHED_EXIT_LINE]),
+      }),
+      expect.any(AbortSignal),
+    );
+    expect(mocks.submit).toHaveBeenCalledOnce();
+
+    prompt.mockResolvedValue(true);
+    mocks.submit.mockResolvedValue(OTHER_HASH);
+    await act(async () => {
+      await expect(result.current.writeContractAsync(CALL as never)).resolves.toBe(OTHER_HASH);
+    });
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+    // The exit replaced the unconfirmed proposal: it no longer waits to be dismissed.
+    expect(activity.transactionActivityForHash(HASH)).toBeUndefined();
+    expect(activity.transactionActivityForHash(OTHER_HASH)).toMatchObject({
+      status: "safe-proposed",
+    });
+  });
+
+  it("tells the hold when the watch ends a proposal unproven, so the exit survives a reload", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Not found", { status: 404 })),
+    );
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    await vi.advanceTimersByTimeAsync(HOUR + 2 * 60_000);
+    expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+      safeResultUnconfirmed: true,
+    });
+
+    await freshHarness();
+    expect((await holdOfTransfer()).peek()).toMatchObject({
+      status: "safe-unproven",
+      exit: true,
+      line: WRITE_HOLD_SAFE_UNPROVEN_LINE,
+    });
+  });
+
+  it("still refuses with the dismissal line for an unconfirmed proposal saved before the hold held it", async () => {
+    const { review, activity, hooks } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    savedProposal(activity, HASH, 11155111, TRANSFER_7);
+    activity.updateTransactionActivity(`tx:11155111:${HASH}`, {
+      safeResultUnconfirmed: true,
+      callKey: activity.contractTransactionKey(ACCOUNT, 11155111, {
+        ...CALL,
+        data: TRANSFER_7.data,
+      }),
+    });
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    const refused = await result.current
+      .writeContractAsync(CALL as never)
+      .catch((cause: unknown) => cause);
+
+    expect(refused).toBeInstanceOf(hooks.SafeProposalPendingError);
+    expect((refused as Error).message).toBe(
+      `transfer was proposed to Safe as ${HASH}, and its result can't be confirmed here. Check it in Safe, then dismiss it in your account activity.`,
+    );
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it("holds a batch the Safe gave no answer for, and asks for the exit before proposing it again", async () => {
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    mocks.sendCalls.mockRejectedValueOnce(new Error("Safe app transport timed out"));
+    const calls = [
+      { address: TARGET, abi: ABI, functionName: "transfer", args: [RECIPIENT, 7n] },
+      { address: TARGET, abi: ABI, functionName: "transfer", args: [RECIPIENT, 8n] },
+    ] as const;
+    const propose = () =>
+      hooks.proposeSafeBatch(mocks.config as never, 11155111, "Two transfers", calls as never);
+
+    await expect(propose()).rejects.toThrow("timed out");
+    await expect(propose()).rejects.toThrow(
+      "Your earlier transaction hasn't confirmed yet. Check your wallet.",
+    );
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.sendCalls).toHaveBeenCalledOnce();
+
+    prompt.mockResolvedValue(true);
+    mocks.sendCalls.mockResolvedValue({ id: OTHER_HASH });
+    await expect(propose()).resolves.toBe(OTHER_HASH);
+    expect(mocks.sendCalls).toHaveBeenCalledTimes(2);
   });
 });

@@ -6,6 +6,7 @@ import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls, type ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
+  dismissTransactionActivity,
   recordTransactionActivity,
   refreshTransactionActivities,
   transactionActivityForHash,
@@ -24,15 +25,17 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
-import { holdOfHash, rememberHold, sendUnderHold, writeHolds } from "@/lib/write-hold";
+import { holdOfHash, rememberHold, safeHoldOf, sendUnderHold, writeHolds } from "@/lib/write-hold";
 import {
   browserLocks,
   gasWithHeadroom,
+  isDefiniteWalletRejection,
   SAFE_PROPOSAL_EXECUTED_LINE,
   SAFE_PROPOSAL_REPLACED_LINE,
   simulateCallSequence,
   submitReviewedContractWrite,
   WRITE_HOLD_REVERTED_LINE,
+  type WriteHoldClient,
   type WriteHoldGate,
   type WriteHoldHandle,
   type WriteHoldState,
@@ -175,6 +178,18 @@ async function watchSafeProposal(
   // A proposal journaled without its Safe was made by the Safe it names as its account.
   const safeOf = () => tracked()?.safeProposal?.safe ?? tracked()?.account;
   /**
+   * Tells the SDK's write hold, which holds the proposal by what it was reviewed to run, how this
+   * watch saw it end; the hold decides what it releases. A proposal journaled without reviewed
+   * calls has no hold.
+   */
+  const tellHold = (
+    report: (hold: WriteHoldHandle, chain: WriteHoldClient) => Promise<unknown>,
+  ) => {
+    const proposal = tracked()?.safeProposal;
+    if (!proposal || !client) return;
+    void report(safeHoldOf(chainId, proposal), client).catch(() => undefined);
+  };
+  /**
    * Whether a Safe transaction runs exactly what this proposal was reviewed to run. A proposal
    * journaled without reviewed calls is held to its authenticated hash and the Safe's own event
    * for it alone.
@@ -245,11 +260,13 @@ async function watchSafeProposal(
             ...(executionHash ? { executionHash } : {}),
             message: SAFE_PROPOSAL_EXECUTED_LINE,
           })
-        : updateTransactionActivity(id, {
+        : (updateTransactionActivity(id, {
             ...(executionHash ? { executionHash } : {}),
             message: reported ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
             safeResultUnconfirmed: true,
-          });
+          }),
+          // The hold offers its warned exit at once, through reloads; later evidence still settles it.
+          tellHold((hold, chain) => hold.onUnproven(chain, hash)));
   /** The chain proved the proposal executed: it is followed until its receipt settles it. */
   const proven = () => tracked()?.safeExecutionProven !== undefined;
   /** The proposal's nonce once a look saw the Safe pass it, for chain checks the service can't block. */
@@ -320,6 +337,8 @@ async function watchSafeProposal(
         message: SAFE_PROPOSAL_REPLACED_LINE,
         safeExecutionProven: undefined,
       });
+      // The hold never releases a replaced proposal on its own: it offers the exit.
+      tellHold((hold, chain) => hold.state(chain));
       return "done";
     }
     // An execution proven without its transaction names nothing to settle from.
@@ -333,7 +352,9 @@ async function watchSafeProposal(
       },
       safeResultUnconfirmed: undefined,
     });
-    return found.execution.executionHash;
+    const executionHash = found.execution.executionHash;
+    tellHold((hold, chain) => hold.onExecuted(chain, executionHash));
+    return executionHash;
   });
   /** Settles from the canonical chain: true once the proposal ended. */
   const settledFromChain = async (safe: Address): Promise<boolean> => {
@@ -402,6 +423,12 @@ async function watchSafeProposal(
       return;
     }
     executed(result.status === "success", executionHash);
+    const proposal = tracked()?.safeProposal;
+    const settledBy = receipt;
+    if (proposal)
+      tellHold((hold, chain) =>
+        hold.onReceipt(settledBy, chain, { calls: proposal.calls, batch: proposal.batch }),
+      );
   };
   /**
    * The chain's transaction with the proposal's hash: null when the chain has none, and undefined
@@ -507,6 +534,7 @@ async function watchSafeProposal(
         const look = await chainLook(safe);
         if (look === "replaced") {
           updateTransactionActivity(id, { status: "failed", message: SAFE_PROPOSAL_REPLACED_LINE });
+          tellHold((hold, chain) => hold.state(chain));
           return "done";
         }
         if (look === "executed") {
@@ -623,6 +651,47 @@ async function watchSafeProposal(
 }
 
 /**
+ * Whether the SDK's hold, which held this call before the send, decides over a journaled Safe
+ * proposal of it that the app can't confirm: the hold offers that proposal's warned exit, so the
+ * journal's own refusal (dismiss it first) gives way to it.
+ */
+function holdDecides(
+  duplicate: { status: string; safeResultUnconfirmed?: boolean },
+  heldBefore: boolean,
+) {
+  return (
+    heldBefore && duplicate.status === "safe-proposed" && duplicate.safeResultUnconfirmed === true
+  );
+}
+
+/**
+ * Before a Safe send under its hold: a journaled proposal of the call that still awaits the Safe
+ * refuses it, as before. One the app can't confirm refuses it too when the hold never held it (a
+ * proposal saved before the hold did); when it does, the hold is told its watch ended unproven, so
+ * it offers the exit. Returns whether the hold held the call.
+ */
+async function refuseUnheldSafeDuplicate(
+  duplicate: ReturnType<typeof transactionActivityForHash>,
+  hold: WriteHoldHandle,
+  client: WriteHoldClient,
+  action: string,
+): Promise<boolean> {
+  let held: boolean;
+  try {
+    held = hold.peek().status !== "clear";
+  } catch {
+    // A record that can't be read is the hold's to answer.
+    held = true;
+  }
+  if (!duplicate?.hash || duplicate.status !== "safe-proposed") return held;
+  if (!holdDecides(duplicate, held)) {
+    throw new SafeProposalPendingError(duplicate.hash, action, duplicate.safeResultUnconfirmed);
+  }
+  await hold.onUnproven(client, duplicate.hash).catch(() => undefined);
+  return held;
+}
+
+/**
  * A Safe connection can take a whole flow as ONE proposal: the Safe app folds
  * `wallet_sendCalls` into a MultiSend, so signers approve once and the calls
  * execute together, in order. Reviewed as one request; tracked like any other
@@ -659,15 +728,30 @@ export async function proposeSafeBatch(
   const callKey = `batch:${account.toLowerCase()}:${chainId}:${keccak256(
     stringToHex(encoded.map((call) => `${call.to}:${call.value ?? 0n}:${call.data}`).join("|")),
   )}`;
-  const submit = async () => {
-    const duplicate = refreshTransactionActivities().find(
+  const proposal: ReviewedSafeProposal = {
+    safe: account,
+    calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
+    batch: true,
+  };
+  const publicClient = getPublicClient(config, { chainId });
+  if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
+  // The batch is held by the SDK's write hold, as one proposal, until its watch or the chain
+  // shows how it ended, or the user takes the hold's exit.
+  const hold = safeHoldOf(chainId, proposal);
+  const duplicateOf = () =>
+    refreshTransactionActivities().find(
       (activity) =>
         activity.callKey === callKey &&
         (activity.status === "submitted" ||
           activity.status === "pending" ||
           activity.status === "safe-proposed"),
     );
-    if (duplicate?.hash) {
+  const heldBefore = await refuseUnheldSafeDuplicate(duplicateOf(), hold, publicClient, title);
+  const submit = async (gate: WriteHoldGate) => {
+    const duplicate = duplicateOf();
+    if (duplicate?.hash && holdDecides(duplicate, heldBefore)) {
+      dismissTransactionActivity(duplicate.id);
+    } else if (duplicate?.hash) {
       throw new SafeProposalPendingError(duplicate.hash, title, duplicate.safeResultUnconfirmed);
     }
 
@@ -676,8 +760,6 @@ export async function proposeSafeBatch(
     // and otherwise each standalone call on its own, leaving a dependent one to
     // Safe's batch simulation before signing. Only a node that lacks the method
     // takes the fallback; a revert or a lagging node stops the proposal.
-    const publicClient = getPublicClient(config, { chainId });
-    if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
     await simulateCallSequence(publicClient, {
       from: account,
       chainName: publicClient.chain?.name ?? `chain ${chainId}`,
@@ -709,29 +791,21 @@ export async function proposeSafeBatch(
       await switchChain(config, { chainId } as Parameters<typeof switchChain>[1]);
     }
     requireWalletContext(chainId);
-    const { id } = await sendCalls(config, { chainId, calls: encoded });
+    await gate.beforeSend();
+    let id: string;
+    try {
+      ({ id } = await sendCalls(config, { chainId, calls: encoded }));
+    } catch (error) {
+      // Only the wallet's explicit refusal proves nothing was proposed.
+      if (isDefiniteWalletRejection(error)) gate.onRejected();
+      throw error;
+    }
     const hash = id as Hex;
-    followSubmission(
-      config,
-      hash,
-      chainId,
-      title,
-      account,
-      callKey,
-      {
-        safe: account,
-        calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
-        batch: true,
-      },
-      false,
-    );
+    gate.afterSubmit(hash);
+    followSubmission(config, hash, chainId, title, account, callKey, proposal, false);
     return hash;
   };
-  return browserLocks().request(
-    `revnet:transaction:${keccak256(stringToHex(callKey))}`,
-    { mode: "exclusive" },
-    submit,
-  );
+  return sendUnderHold(hold, publicClient, submit);
 }
 
 export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
@@ -910,26 +984,41 @@ export function useWriteContract(
       });
       const callKey = contractTransactionKey(initialAddress, chainId, { ...variables, data });
       const safe = isSafeConnection(config);
-      // An ordinary wallet write holds its exact call in the SDK's write hold until the chain
-      // shows what happened to it, or the user says they checked their wallet. A Safe
-      // proposal is held by its own watch, and a caller with its own journal holds its own.
+      const safeProposal: ReviewedSafeProposal | false = safe && {
+        safe: initialAddress,
+        calls: [{ to: variables.address, value: String(variables.value ?? 0n), data }],
+        batch: false,
+      };
+      // A wallet write holds its exact call in the SDK's write hold until the chain shows what
+      // happened to it, or the user says they checked their wallet; a Safe proposal is held by
+      // what it was reviewed to run, and its watch tells the hold how it ended. A caller with its
+      // own journal holds its own.
       const hold =
-        safe || recovery === "caller"
+        recovery === "caller"
           ? undefined
-          : writeHolds.open({
-              chainId,
-              account: initialAddress,
-              safe: false,
-              call: { to: variables.address, data, value: variables.value ?? 0n },
-            });
+          : safeProposal
+            ? safeHoldOf(chainId, safeProposal)
+            : writeHolds.open({
+                chainId,
+                account: initialAddress,
+                safe: false,
+                call: { to: variables.address, data, value: variables.value ?? 0n },
+              });
       const holdClient = hold ? getPublicClient(config, { chainId }) : undefined;
-      const submitReviewedCall = async (gate?: WriteHoldGate) => {
-        const duplicate = refreshTransactionActivities().find(
+      const duplicateOf = () =>
+        refreshTransactionActivities().find(
           (activity) =>
             activity.callKey === callKey &&
             (activity.manualVerificationRequired === true || activity.status === "safe-proposed"),
         );
-        if (duplicate?.hash) {
+      /** Whether the hold held this call before the send: its own answer then decides. */
+      let heldBefore = false;
+      const submitReviewedCall = async (gate?: WriteHoldGate) => {
+        const duplicate = duplicateOf();
+        if (duplicate?.hash && holdDecides(duplicate, heldBefore)) {
+          // The hold released it on the user's exit: the proposal it replaces is not kept.
+          dismissTransactionActivity(duplicate.id);
+        } else if (duplicate?.hash) {
           if (duplicate.status === "safe-proposed") {
             throw new SafeProposalPendingError(
               duplicate.hash,
@@ -1077,7 +1166,7 @@ export function useWriteContract(
               prepared as Parameters<typeof mutation.writeContractAsync>[0],
             ),
         });
-        if (hold && holdClient) rememberHold(hash, hold, holdClient);
+        if (hold && holdClient && !safe) rememberHold(hash, hold, holdClient);
         followSubmission(
           config,
           hash,
@@ -1085,13 +1174,11 @@ export function useWriteContract(
           functionName,
           initialAddress,
           callKey,
-          safe && {
-            safe: initialAddress,
-            calls: [{ to: variables.address, value: String(variables.value ?? 0n), data }],
-            batch: false,
-          },
+          safeProposal,
           ownsReceiptLifecycle,
-          hold && holdClient ? (receipt) => hold.onReceipt(receipt, holdClient) : undefined,
+          hold && holdClient && !safe
+            ? (receipt) => hold.onReceipt(receipt, holdClient)
+            : undefined,
         );
         return hash;
       };
@@ -1101,7 +1188,10 @@ export function useWriteContract(
       // so a second tab cannot open another wallet prompt while the first is in
       // review or waiting for its Safe proposal hash.
       // Without a client for the chain the simulation refuses before any wallet opens.
-      if (hold && holdClient) return sendUnderHold(hold, holdClient, submitReviewedCall);
+      if (hold && holdClient) {
+        heldBefore = await refuseUnheldSafeDuplicate(duplicateOf(), hold, holdClient, functionName);
+        return sendUnderHold(hold, holdClient, submitReviewedCall);
+      }
       return browserLocks().request(
         `revnet:transaction:${keccak256(stringToHex(callKey))}`,
         { mode: "exclusive" },
