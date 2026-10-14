@@ -3451,6 +3451,59 @@ describe("holds keyed by the user's intent", () => {
       expect(mocks.submit).toHaveBeenCalledOnce();
     });
 
+    it("a repay retried after Max, a reopen and an accrued ceiling", async () => {
+      const { holds, prompt, write } = await lostOnce();
+      const repay = holds.withWriteIntent(write, ...holds.repayIntent(5n));
+      await expect(repay({ ...CALL, args: [RECIPIENT, 7n] } as never)).rejects.toThrow("timed out");
+      // Reopened: the full collateral seeded again, and the ceiling has accrued.
+      await expect(repay({ ...CALL, args: [RECIPIENT, 9n] } as never)).rejects.toThrow(
+        /hasn't confirmed yet/,
+      );
+      expect(prompt).toHaveBeenCalledOnce();
+      expect(mocks.submit).toHaveBeenCalledOnce();
+    });
+
+    it("a checkout whose currency the app switched, or whose quantities inventory clamped", async () => {
+      const { holds, prompt, write } = await lostOnce();
+      const checkout = (token: Address, quantity: number) =>
+        holds.withWriteIntent(
+          write,
+          ...holds.payIntent({
+            mode: "pay",
+            projectId: 7,
+            token,
+            amount: 10n,
+            memo: "",
+            beneficiary: ACCOUNT,
+            hook: TARGET,
+            items: [{ tierId: 1, quantity }],
+          }),
+        )({ ...CALL, args: [RECIPIENT, BigInt(quantity)] } as never);
+      await expect(checkout(TARGET, 3)).rejects.toThrow("timed out");
+      await expect(checkout(RECIPIENT, 3)).rejects.toThrow(/hasn't confirmed yet/);
+      await expect(checkout(TARGET, 2)).rejects.toThrow(/hasn't confirmed yet/);
+      expect(mocks.submit).toHaveBeenCalledOnce();
+      expect(prompt).toHaveBeenCalledTimes(2);
+    });
+
+    it("a single-chain launch retried with a fresh salt and stage start", async () => {
+      const { holds, prompt, write } = await lostOnce();
+      const { launchIntent } = await import("@/app/create/helpers/launchIntent");
+      const form = { name: "Rev", stages: [{ price: "0.01" }] };
+      const launch = (salt: bigint) =>
+        holds.withWriteIntent(
+          write,
+          ...launchIntent(form),
+        )({
+          ...CALL,
+          args: [RECIPIENT, salt],
+        } as never);
+      await expect(launch(1n)).rejects.toThrow("timed out");
+      await expect(launch(2n)).rejects.toThrow(/hasn't confirmed yet/);
+      expect(prompt).toHaveBeenCalledOnce();
+      expect(mocks.submit).toHaveBeenCalledOnce();
+    });
+
     it("an ERC-20 approval whose calculated amount changed", async () => {
       const { prompt, write } = await lostOnce();
       const APPROVE = parseAbi(["function approve(address spender, uint256 amount)"]);

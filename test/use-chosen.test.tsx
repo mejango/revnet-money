@@ -59,3 +59,14 @@ describe("useChosen when the user types what the app filled", () => {
     expect(result.current.key(4n)).toBe(4n);
   });
 });
+
+describe("useChosen when the app refills what it holds", () => {
+  it("keeps a typed value's key when the app fills the same number", () => {
+    const { result } = renderHook(() => useChosen("", "amount"));
+    act(() => result.current.set("7"));
+    act(() => result.current.fill("7.0"));
+    expect(result.current.key(7n)).toBe(7n);
+    act(() => result.current.fill("6"));
+    expect(result.current.key(6n)).toBe("auto:amount");
+  });
+});

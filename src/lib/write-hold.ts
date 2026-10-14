@@ -370,10 +370,11 @@ export function batchIntentOf(calls: readonly (Write & { abi: Abi; value?: bigin
 }
 
 /**
- * A payment's intent. A checkout is its project, collection, token, memo, beneficiary and tiers
- * with their quantities, in tier order: its amount follows the price feed, discounts and credits,
- * and tier names are display text. An ordinary payment is its project, token, memo, beneficiary
- * and typed amount. The route the app picks (a direct pay or a swap) is never in it.
+ * A payment's intent. A checkout is its project, collection, memo, beneficiary and the set of
+ * tiers bought: its amount follows the price feed, discounts and credits, its currency may be the
+ * app's fallback, inventory may clamp its quantities, and tier names are display text. An ordinary
+ * payment is its project, token, memo, beneficiary and typed amount. The route the app picks (a
+ * direct pay or a swap) is never in it.
  */
 export function payIntent(payment: {
   mode: string;
@@ -388,19 +389,24 @@ export function payIntent(payment: {
 }): [string, { [name: string]: IntentValue }] {
   const common = {
     projectId: BigInt(payment.projectId),
-    token: payment.token.startsWith("auto:") ? payment.token : intent.address(payment.token),
     memo: payment.memo,
     beneficiary: intent.address(payment.beneficiary),
   };
-  if (!payment.items.length) return [payment.mode, { ...common, amount: payment.amount }];
+  if (!payment.items.length)
+    return [
+      payment.mode,
+      {
+        ...common,
+        token: payment.token.startsWith("auto:") ? payment.token : intent.address(payment.token),
+        amount: payment.amount,
+      },
+    ];
   return [
     `${payment.mode}-checkout`,
     {
       ...common,
       collection: payment.hook ? intent.address(payment.hook) : null,
-      tiers: [...payment.items]
-        .sort((a, b) => a.tierId - b.tierId)
-        .map((item) => [item.tierId, item.quantity]),
+      tiers: [...new Set(payment.items.map((item) => item.tierId))].sort((a, b) => a - b),
     },
   ];
 }
@@ -448,4 +454,15 @@ export function cashOutIntent(cashOut: {
       beneficiary: intent.address(cashOut.beneficiary),
     },
   ];
+}
+
+/**
+ * A repay's intent: its loan alone. The collateral returned and the ceiling paid follow the
+ * loan's accrual and the form's provenance, so neither is in it; a different repay of the same
+ * loan waits for the unresolved one.
+ */
+export function repayIntent(
+  loanId: string | number | bigint,
+): [string, { [name: string]: IntentValue }] {
+  return ["repay", { loanId: BigInt(loanId) }];
 }

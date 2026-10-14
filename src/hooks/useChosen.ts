@@ -46,10 +46,16 @@ export function useChosen<T>(initial: T, field: string) {
     (policy: string, value: T) => update(() => ({ value, from: `policy:${policy}` })),
     [update],
   );
-  /** The app adjusted it: a policy stays the user's, a typed value no longer is. */
+  /**
+   * The app adjusted it: a policy stays the user's, a typed value no longer is. A fill of the
+   * value it already holds changes nothing, so its key stays.
+   */
   const fill = useCallback(
     (value: T) =>
-      update((current) => ({ value, from: current.from === "typed" ? "auto" : current.from })),
+      update((current) => ({
+        value,
+        from: current.from === "typed" && !sameValue(value, current.value) ? "auto" : current.from,
+      })),
     [update],
   );
   /** The app seeded it afresh (a reset, a new position). */

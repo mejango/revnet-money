@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
-import { useChosen } from "@/hooks/useChosen";
 import {
   isSafeProposalPendingError,
   isSafeProposalUnconfirmedError,
@@ -25,7 +24,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { repayIntent, withWriteIntent } from "@/lib/write-hold";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
 import { intent } from "@bananapus/nana-sdk-core/review";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -68,22 +67,7 @@ export function RepayDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   // ===== STATE =====
-  // Where the collateral to return came from: typed, an option the user picked (Max, a
-  // percentage) or the app's seed (the full collateral on open). The repay's intent keys an option
-  // or a seed by its name.
-  const chosenCollateral = useChosen("", "collateral");
-  const collateralToReturn = chosenCollateral.value;
-  const { set: typeCollateral, choose: chooseCollateral, seed: seedCollateral } = chosenCollateral;
-  /** `policy`: the option the user picked, or "auto" for the app's own fill. */
-  const setCollateralToReturn = useCallback(
-    (value: string, policy?: string) =>
-      policy === "auto"
-        ? seedCollateral(value)
-        : policy
-          ? chooseCollateral(policy, value)
-          : typeCollateral(value),
-    [typeCollateral, chooseCollateral, seedCollateral],
-  );
+  const [collateralToReturn, setCollateralToReturn] = useState("");
   const [repayStatus, setRepayStatus] = useState("idle");
   const [repayTxHash, setRepayTxHash] = useState<`0x${string}` | undefined>();
   const [collateralError, setCollateralError] = useState<string>("");
@@ -190,15 +174,6 @@ export function RepayDialog({
     },
     [projectTokenDecimals],
   );
-
-  /** Typed collateral as its parsed amount, so "1" and "1.0" are one choice. */
-  const typedCollateral = (input: string): bigint | string => {
-    try {
-      return parseUnits(input, projectTokenDecimals);
-    } catch {
-      return input;
-    }
-  };
 
   const calculateCollateralAmount = (input: string, maxCollateral: bigint): bigint => {
     try {
@@ -447,16 +422,16 @@ export function RepayDialog({
   useEffect(() => {
     if (open && loanData && projectTokenDecimals) {
       const maxCollateralDisplay = formatUnits(loanData.collateral, projectTokenDecimals);
-      setCollateralToReturn(maxCollateralDisplay, "auto");
+      setCollateralToReturn(maxCollateralDisplay);
     }
     if (!open) {
-      setCollateralToReturn("", "auto");
+      setCollateralToReturn("");
       setRepayStatus("idle");
       setRepayTxHash(undefined);
       setCollateralError("");
       setReview(null);
     }
-  }, [open, loanData, projectTokenDecimals, setCollateralToReturn]);
+  }, [open, loanData, projectTokenDecimals]);
 
   useEffect(() => {
     if (repayStatus === "pending" || repayStatus === "success") setReview(null);
@@ -605,12 +580,12 @@ export function RepayDialog({
       }
 
       // Held by the loan and the collateral the user returns: the repay ceiling accrues.
-      const txHash = await withWriteIntent(repayLoanAsync, "repay", {
-        loanId,
-        // As the user chose it, typed as its parsed amount ("1" and "1.0" are one choice); the
-        // count it gives follows the loan's collateral.
-        collateral: chosenCollateral.key(typedCollateral(collateralToReturn)),
-      })({
+      // Held by the loan alone: the collateral returned and the ceiling paid change between
+      // attempts (accrual, a reopen's fresh default).
+      const txHash = await withWriteIntent(
+        repayLoanAsync,
+        ...repayIntent(loanId),
+      )({
         abi: revLoansAbi,
         functionName: "repayLoan",
         address: getRevnetLoanContract(6, chainId),
@@ -670,7 +645,6 @@ export function RepayDialog({
               const portion = collateralInTokens * (pct / 100);
               setCollateralToReturn(
                 portion < 0.000001 ? "0" : portion.toFixed(6).replace(/\.?0+$/, ""),
-                `${pct}%`,
               );
             }}
             className="h-8 px-3 text-xs text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
@@ -682,7 +656,7 @@ export function RepayDialog({
           type="button"
           onClick={() => {
             const maxCollateralDisplay = formatUnits(loanData.collateral, projectTokenDecimals);
-            setCollateralToReturn(maxCollateralDisplay, "max");
+            setCollateralToReturn(maxCollateralDisplay);
           }}
           className="h-8 px-3 text-xs text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
         >
@@ -781,7 +755,7 @@ export function RepayDialog({
                   if (!isNaN(numValue)) {
                     // Prevent entering more than available collateral
                     if (numValue > maxValue) {
-                      setCollateralToReturn(maxValue.toFixed(6), "max");
+                      setCollateralToReturn(maxValue.toFixed(6));
                     } else {
                       setCollateralToReturn(value);
                     }

@@ -54,7 +54,7 @@ describe("a payment's intent", () => {
     expect(key(pay())).not.toBe(key(pay({ amount: 11n })));
   });
 
-  it("keys a checkout by its tiers and quantities, never by a price-derived amount or a name", () => {
+  it("keys a checkout by its set of tiers, never by quantities, a price-derived amount or a name", () => {
     const cart = [
       { tierId: 2, quantity: 1, name: "B" },
       { tierId: 1, quantity: 3, name: "A" },
@@ -71,9 +71,9 @@ describe("a payment's intent", () => {
         }),
       ),
     ).toBe(checkout);
-    expect(key(pay({ items: [{ tierId: 1, quantity: 2, name: "A" }, cart[0]!] }))).not.toBe(
-      checkout,
-    );
+    // Inventory may clamp quantities: the same tiers are the same checkout (merge-gate ruling).
+    expect(key(pay({ items: [{ tierId: 1, quantity: 2, name: "A" }, cart[0]!] }))).toBe(checkout);
+    expect(key(pay({ items: [{ tierId: 3, quantity: 1, name: "C" }] }))).not.toBe(checkout);
   });
 });
 

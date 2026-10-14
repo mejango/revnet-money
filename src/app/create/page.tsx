@@ -18,6 +18,8 @@ import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-hold";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
@@ -30,6 +32,7 @@ import { DeployRevnetForm, type DirectDeployment } from "./form/DeployRevnetForm
 import { createSchema } from "./helpers/createSchema";
 import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
 import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
+import { launchIntent, launchSalt, settleLaunchSalt } from "./helpers/launchIntent";
 import { parseDeployData } from "./helpers/parseDeployData";
 import { pinProjectMetadata } from "./helpers/pinProjectMetaData";
 import { calculateFinalStageStarts } from "./helpers/recalculateStageStarts";
@@ -104,7 +107,13 @@ export default function Page() {
       };
     }
 
-    const salt = createSalt();
+    // A single-chain launch is sent from this page: its salt stays the same across retries and
+    // reloads until it confirms, so a retry can only deploy the same revnet, which the chain
+    // refuses twice. A multichain launch has its own recovery through Relayr.
+    const singleChain = deploymentFormData.chainIds.length === 1 && address;
+    const salt = singleChain
+      ? launchSalt(address, deploymentFormData.chainIds[0]!, deploymentFormData, createSalt)
+      : createSalt();
     const timestamp = Math.floor(Date.now() / 1000);
 
     const relayrTransactions = [];
@@ -198,7 +207,11 @@ export default function Page() {
     if (directRequest) {
       const chainId = deploymentFormData.chainIds[0];
       if (connectedChainId !== chainId) await switchChainAsync({ chainId });
-      const hash = await writeContractAsync({
+      // Held by the user's launch config: the salt, stage start and pin are the page's own.
+      const hash = await withWriteIntent(
+        writeContractAsync,
+        ...launchIntent(deploymentFormData),
+      )({
         chainId,
         address: directRequest.address,
         abi: directRequest.abi,
@@ -215,6 +228,15 @@ export default function Page() {
         return;
       }
       setDirectDeployment({ chainId, hash });
+      const client = getPublicClient(wagmiConfig, { chainId });
+      if (client && address)
+        void waitForReceiptWithRetry(client as PublicClient, hash)
+          .then((receipt) => {
+            // Launched: the next launch of this config is a new revnet, with a new salt.
+            if (receipt.status === "success")
+              settleLaunchSalt(address, chainId, deploymentFormData);
+          })
+          .catch(() => undefined);
       toast({
         title: "Revnet deployment submitted",
         description:
