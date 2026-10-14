@@ -1,5 +1,6 @@
 import {
   WRITE_HOLD_HASHED_EXIT_LINE,
+  WRITE_HOLD_NONCE_LINE,
   WRITE_HOLD_PENDING_LINE,
   WRITE_HOLD_SAFE_UNPROVEN_LINE,
   WRITE_HOLD_UNCHECKED_LINE,
@@ -2648,6 +2649,26 @@ describe("held wallet writes", () => {
     });
     expect(prompt).not.toHaveBeenCalled();
     expect(mocks.submit).toHaveBeenCalledTimes(2);
+  });
+
+  it("holds nothing when the account's nonce can't be read before the wallet opens", async () => {
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    mocks.getTransactionCount.mockRejectedValueOnce(new Error("RPC down"));
+    mocks.getTransactionCount.mockRejectedValueOnce(new Error("RPC down"));
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
+      WRITE_HOLD_NONCE_LINE,
+    );
+    expect(mocks.submit).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    expect(prompt).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledOnce();
   });
 
   it("holds nothing after the wallet definitely rejected", async () => {

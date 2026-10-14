@@ -908,7 +908,7 @@ type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] 
   reviewedInParent?: boolean;
   /**
    * "caller": the caller's own journal holds this write's unknown results (a
-   * batch or Markee), so the SDK's ordinary write hold is not added.
+   * multichain batch), so the SDK's ordinary write hold is not added.
    */
   recovery?: "caller";
   /** Persist caller-specific recovery immediately before the wallet broadcast boundary. */

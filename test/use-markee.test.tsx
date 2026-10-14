@@ -1,6 +1,13 @@
 import { useMarkee } from "@/hooks/useMarkee";
+import { registerFlowChoiceHandler } from "@/lib/flow-choice";
+import { writeHolds } from "@/lib/write-hold";
+import {
+  WRITE_HOLD_HASHED_EXIT_LINE,
+  WRITE_HOLD_UNCHECKED_LINE,
+  writeHeldMessage,
+} from "@bananapus/nana-sdk-core/review";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { zeroAddress, type Address, type Hex } from "viem";
+import { TransactionNotFoundError, zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -40,6 +47,16 @@ const client = {
   getEnsAddress: mocks.getEnsAddress,
   getCode: mocks.getCode,
   getChainId: mocks.getChainId,
+  // The reads the SDK's write hold makes.
+  getTransactionReceipt: async () => {
+    throw new Error("Receipt not found");
+  },
+  getTransactionCount: async () => 3,
+  getBlockNumber: async () => 100n,
+  getBlock: async ({ blockNumber }: { blockNumber?: bigint } = {}) => ({
+    number: blockNumber ?? 100n,
+    hash: `0x${"bb".repeat(32)}`,
+  }),
 };
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   useWriteContract: (options: typeof mocks.options) => {
@@ -643,4 +660,87 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
       }
     },
   );
+});
+
+describe("a saved Markee submission the chain can't settle", () => {
+  const saveHashless = () =>
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        pending: { kind: "stop", id: "saved", target: boardAddress, data: "0x1234", value: "0" },
+      }),
+    );
+
+  it("offers the warned exit for a submission the wallet gave no hash for, and frees the board only on it", async () => {
+    const prompt = vi.fn().mockResolvedValue(false);
+    registerFlowChoiceHandler(prompt);
+    saveHashless();
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+
+    await act(() => result.current.recover());
+    expect(prompt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ lines: expect.arrayContaining([writeHeldMessage()]) }),
+    );
+    expect(result.current.error).toContain("submission result is unknown");
+    expect(result.current.pending).toBe(true);
+
+    prompt.mockResolvedValue(true);
+    await act(() => result.current.recover());
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.pending).toBe(false);
+    expect(
+      JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending,
+    ).toBeUndefined();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("offers the hold's warned exit for a sent hash the node hasn't seen for 30 minutes", async () => {
+    const prompt = vi.fn().mockResolvedValue(true);
+    registerFlowChoiceHandler(prompt);
+    // The SDK's write hold took the exact call and the wallet's hash.
+    const hold = writeHolds.open({
+      chainId: 8453,
+      account: mocks.account,
+      safe: false,
+      call: { to: boardAddress, data: "0x1234", value: 0n },
+    });
+    await hold.send(client as never, async (gate) => {
+      await gate.beforeSend();
+      gate.afterSubmit(hash);
+    });
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        pending: {
+          kind: "stop",
+          id: "saved",
+          target: boardAddress,
+          data: "0x1234",
+          value: "0",
+          hash,
+        },
+      }),
+    );
+    // The node never learns of it.
+    mocks.getTransaction.mockRejectedValue(new TransactionNotFoundError({ hash }));
+    mocks.receipt.mockRejectedValue(new Error("Receipt not found"));
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 31 * 60_000);
+    await act(() => result.current.recover());
+    expect(prompt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        lines: expect.arrayContaining([WRITE_HOLD_UNCHECKED_LINE, WRITE_HOLD_HASHED_EXIT_LINE]),
+      }),
+    );
+    expect(result.current.pending).toBe(false);
+    expect(hold.peek()).toEqual({ status: "clear" });
+  });
 });
