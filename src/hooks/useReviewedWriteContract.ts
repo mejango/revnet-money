@@ -32,11 +32,14 @@ import {
 } from "@/lib/waitForReceipt";
 import {
   adoptIntoHold,
+  hidesShownExit,
   holdOfHash,
   legacyOf,
+  offersExit,
   rememberHold,
   safeHoldOf,
   sendUnderHold,
+  withNotice,
   writeHolds,
   writeIntentOf,
 } from "@/lib/write-hold";
@@ -49,6 +52,7 @@ import {
   simulateCallSequence,
   submitReviewedContractWrite,
   WRITE_HOLD_REVERTED_LINE,
+  WRITE_HOLD_SAFE_UNPROVEN_LINE,
   type WriteHoldClient,
   type WriteHoldGate,
   type WriteHoldHandle,
@@ -122,8 +126,6 @@ const SAFE_LOOK_MS = 5_000;
 const SAFE_EXECUTION_CHECKS = 12;
 const RECEIPT_UNCONFIRMED =
   "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
-const SAFE_RESULT_UNCONFIRMED =
-  "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
 /** The Safe used a proposal's nonce, and the canonical chain has not yet said what ran there. */
 const SAFE_NONCE_USED_LINE = "Your Safe used this transaction's nonce. Checking what ran.";
 /** The transaction reported for a proposal holds no event for it. */
@@ -132,8 +134,6 @@ const SAFE_OTHER_RECEIPT_LINE =
 /** How far around the Safe's nonce a proposal's own nonce is looked for by its hash. */
 const NONCE_SEARCH_BEHIND = 64;
 const NONCE_SEARCH_AHEAD = 16;
-const SAFE_REPORTED_EXECUTED_UNCONFIRMED =
-  "Safe reports this proposal as executed, but its result can't be confirmed here. Check it in Safe before retrying.";
 /** A watch reads its Safe's state at most this often. */
 const SAFE_REREAD_MS = 60_000;
 /**
@@ -174,6 +174,137 @@ function rereadEveryMinute<T>(read: (safe: Address) => Promise<T>): (safe: Addre
     }
     return last.value;
   };
+}
+
+/** A Safe proposal's execution settled `success` or not: its row shows that result. */
+function safeExecuted(id: string, isSuccessful: boolean, transactionHash: Hex | undefined) {
+  const tracked = refreshTransactionActivities().find((activity) => activity.id === id);
+  const needsReceiptVerification = tracked?.manualVerificationRequired === true;
+  updateTransactionActivity(id, {
+    status: needsReceiptVerification ? "pending" : isSuccessful ? "success" : "failed",
+    executionHash: transactionHash,
+    holdFollows: undefined,
+    safeResultUnconfirmed: undefined,
+    message: needsReceiptVerification
+      ? "Safe execution was reported. Its exact transaction and recipient results still require verification; resume the saved batch."
+      : !isSuccessful
+        ? "Safe executed this proposal, but the onchain transaction failed."
+        : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
+  });
+}
+
+/** What a proposal shows while its hold checks its result and no exit is due. */
+export const SAFE_CONFIRMING_LINE = "Confirming your Safe transaction.";
+/** What a proposal the hold proved expired before it ran shows. */
+const SAFE_EXPIRED_LINE = "This Safe transaction expired before it ran.";
+/** Looks a hold loop takes a few seconds apart, before it asks once a minute. */
+const HOLD_FAST_LOOKS = 12;
+const HOLD_SLOW_MS = 60_000;
+/** Each proposal's hold loop, by generation: a newer one ends the older. */
+const holdLoops = new Map<string, number>();
+
+/**
+ * The Safe follower's one end besides the user's: the proposal's write hold decides. The hold
+ * gets the evidence (a receipt, or an execution named without one), is told an unproven end, then
+ * is asked until it clears. The row shows a confirming line until the hold offers its exit, and
+ * never goes back to awaiting; a contended answer (`checked: false`) never hides an exit already
+ * shown. It ends with the hold: success only on its authenticated settlement, or a failure, an
+ * expiry or a release; or once the user dismissed the row or took the exit. A proposal the hold
+ * can't hold (journaled without its reviewed calls, or no client) ends unconfirmed: its account
+ * dismisses it.
+ */
+async function holdUntilResolved(
+  id: string,
+  chainId: number,
+  client: PublicClient | undefined,
+  evidence: { unproven: boolean; executionHash?: Hex; receipt?: TransactionReceipt },
+): Promise<void> {
+  const row = refreshTransactionActivities().find((activity) => activity.id === id);
+  if (!row?.hash) return;
+  const generation = (holdLoops.get(id) ?? 0) + 1;
+  holdLoops.set(id, generation);
+  const executionHash = evidence.receipt?.transactionHash ?? evidence.executionHash;
+  updateTransactionActivity(id, {
+    status: "safe-proposed",
+    holdFollows: true,
+    ...(executionHash ? { executionHash } : {}),
+  });
+  if (client && heldBeforeTheHold(row))
+    await holdLegacySafeProposal(row, client).catch(() => undefined);
+  const held = refreshTransactionActivities().find((activity) => activity.id === id);
+  if (!client || !held?.safeProposal || !held.sdkHeld) {
+    updateTransactionActivity(id, {
+      message: WRITE_HOLD_SAFE_UNPROVEN_LINE,
+      safeResultUnconfirmed: true,
+    });
+    return;
+  }
+  const { safeProposal, hash } = held;
+  const followed = () => {
+    const current = refreshTransactionActivities().find((activity) => activity.id === id);
+    return (
+      holdLoops.get(id) === generation &&
+      current?.createdAt === row.createdAt &&
+      current.status === "safe-proposed" &&
+      current.obsoleteSafeNonce === undefined
+    );
+  };
+  const hold = safeHoldOf(chainId, safeProposal);
+  // The evidence goes to the hold first; its own answer, read below, decides.
+  if (evidence.receipt)
+    await hold
+      .onReceipt(evidence.receipt, client, {
+        calls: safeProposal.calls,
+        batch: safeProposal.batch,
+      })
+      .catch(() => undefined);
+  else if (evidence.executionHash)
+    await hold.onExecuted(client, evidence.executionHash).catch(() => undefined);
+  let state: WriteHoldState | null = await hold.state(client).catch(() => null);
+  // An end the hold doesn't already decide (a clear, or an exit such as a replaced nonce) is
+  // unproven: the hold offers its exit, and later evidence still settles it.
+  if (evidence.unproven && (!state || (state.status !== "clear" && !state.exit))) {
+    await hold.onUnproven(client, hash).catch(() => undefined);
+    state = null;
+  }
+  let shown: WriteHoldState | null = null;
+  for (let attempt = 0; followed(); attempt += 1) {
+    state ??= await hold.state(client).catch(() => hold.peek());
+    if (!followed()) return;
+    if (state.status === "clear") {
+      const settled = state.settled;
+      const own = executionHash?.toLowerCase();
+      if (settled?.result === "expired")
+        updateTransactionActivity(id, {
+          status: "failed",
+          message: SAFE_EXPIRED_LINE,
+          holdFollows: undefined,
+        });
+      else if (settled && (!own || settled.hash.toLowerCase() === own))
+        safeExecuted(id, settled.result === "success", settled.hash);
+      else {
+        const current = refreshTransactionActivities().find((activity) => activity.id === id);
+        if (current) releaseJournaledProposal(current);
+      }
+      return;
+    }
+    if (offersExit(shown, state)) {
+      shown = state;
+      updateTransactionActivity(id, { message: withNotice(state), safeResultUnconfirmed: true });
+    } else if (!state.exit && !hidesShownExit(shown, state)) {
+      shown = null;
+      const current = refreshTransactionActivities().find((activity) => activity.id === id);
+      if (current?.message !== SAFE_CONFIRMING_LINE || current.safeResultUnconfirmed)
+        updateTransactionActivity(id, {
+          message: SAFE_CONFIRMING_LINE,
+          safeResultUnconfirmed: undefined,
+        });
+    }
+    state = null;
+    await new Promise((resolve) =>
+      window.setTimeout(resolve, attempt < HOLD_FAST_LOOKS ? SAFE_LOOK_MS : HOLD_SLOW_MS),
+    );
+  }
 }
 
 async function watchSafeProposal(
@@ -238,48 +369,42 @@ async function watchSafeProposal(
       ? await lookAtSafeProposal(client, chainId, safe, hash).catch(() => "live" as const)
       : ("live" as const),
   );
-  const executed = (isSuccessful: boolean, transactionHash: Hex | undefined) => {
-    const needsReceiptVerification = tracked()?.manualVerificationRequired === true;
-    updateTransactionActivity(id, {
-      status: needsReceiptVerification ? "pending" : isSuccessful ? "success" : "failed",
-      executionHash: transactionHash,
-      message: needsReceiptVerification
-        ? "Safe execution was reported. Its exact transaction and recipient results still require verification; resume the saved batch."
-        : !isSuccessful
-          ? "Safe executed this proposal, but the onchain transaction failed."
-          : `Safe approvals completed and the proposal executed onchain${transactionHash ? ` as ${transactionHash}` : ""}.`,
-    });
-  };
-  /** The service's latest record reports the proposal executed without its transaction. */
-  let reportedExecuted = false;
+  /** Whether the SDK's hold can hold this proposal: it has its reviewed calls and a client. */
+  const holdable = () => !!client && !!tracked()?.safeProposal;
+  /** Hands the proposal to its hold, which decides from here on (see holdUntilResolved). */
+  const toHold = (evidence: Parameters<typeof holdUntilResolved>[3]) =>
+    void holdUntilResolved(id, chainId, client, evidence);
   /**
-   * The app can't confirm this proposal's result: the watch ends, and its account may dismiss it.
-   * Each caller has just read the chain (the execution's receipt, or the transaction with this
-   * hash) or has no client to read it with. `reported`: the Safe service reported the proposal
-   * executed, which the line keeps for its account.
+   * The watch can't confirm this proposal's result. Each caller has just read the chain (the
+   * execution's receipt, or the transaction with this hash) or has no client to read it with. The
+   * hold decides from here, an unproven end.
    */
-  const unconfirmed = (executionHash?: Hex, reported = reportedExecuted) =>
-    // A proposal the chain proved executed never becomes dismissable: only its receipt ends it.
-    // Nor does one whose nonce the Safe used before the canonical chain says what ran there.
-    nonceUsed && !tracked()?.safeExecutionProven
-      ? updateTransactionActivity(id, {
-          ...(executionHash ? { executionHash } : {}),
-          message: SAFE_NONCE_USED_LINE,
-        })
-      : tracked()?.safeExecutionProven
-        ? updateTransactionActivity(id, {
-            ...(executionHash ? { executionHash } : {}),
-            message: SAFE_PROPOSAL_EXECUTED_LINE,
-          })
-        : (updateTransactionActivity(id, {
-            ...(executionHash ? { executionHash } : {}),
-            message: reported ? SAFE_REPORTED_EXECUTED_UNCONFIRMED : SAFE_RESULT_UNCONFIRMED,
-            safeResultUnconfirmed: true,
-          }),
-          // The hold offers its warned exit at once, through reloads; later evidence still settles it.
-          tellHold((hold, chain) => hold.onUnproven(chain, hash)));
+  const unconfirmed = (executionHash?: Hex) => {
+    const proof = tracked()?.safeExecutionProven;
+    // Not an end: a proposal the chain proved executed, or whose nonce the Safe used, is followed
+    // on until the canonical chain says what ran, on the next load too.
+    if (nonceUsed || proof)
+      updateTransactionActivity(id, {
+        ...(executionHash ? { executionHash } : {}),
+        message: proof ? SAFE_PROPOSAL_EXECUTED_LINE : SAFE_NONCE_USED_LINE,
+      });
+    else toHold({ unproven: true, executionHash });
+  };
+  /**
+   * Another Safe transaction took the proposal's nonce. The hold never releases it on its own: it
+   * offers the exit. A proposal no hold holds ends replaced.
+   */
+  const replaced = () => {
+    if (holdable()) toHold({ unproven: true });
+    else updateTransactionActivity(id, { status: "failed", message: SAFE_PROPOSAL_REPLACED_LINE });
+  };
   /** The chain proved the proposal executed: it is followed until its receipt settles it. */
   const proven = () => tracked()?.safeExecutionProven !== undefined;
+  /**
+   * An end of the follower is unproven unless the chain proved the proposal executed or the Safe
+   * used its nonce: only the canonical chain, which the hold reads, decides those.
+   */
+  const unprovenEnd = () => !nonceUsed && !proven();
   /** The proposal's nonce once a look saw the Safe pass it, for chain checks the service can't block. */
   let passedNonce: bigint | undefined;
   /** The proposal's saved nonce, or undefined. */
@@ -333,13 +458,8 @@ async function watchSafeProposal(
     const found = await provenSafeProposalEnd(client, safe, hash, nonce);
     if (!found) return undefined;
     if (found.look === "replaced") {
-      updateTransactionActivity(id, {
-        status: "failed",
-        message: SAFE_PROPOSAL_REPLACED_LINE,
-        safeExecutionProven: undefined,
-      });
-      // The hold never releases a replaced proposal on its own: it offers the exit.
-      tellHold((hold, chain) => hold.state(chain));
+      updateTransactionActivity(id, { safeExecutionProven: undefined });
+      replaced();
       return "done";
     }
     // An execution proven without its transaction names nothing to settle from.
@@ -362,9 +482,7 @@ async function watchSafeProposal(
     const end = await canonicalEnd(safe);
     if (end === "done") return true;
     if (!end) return false;
-    await settle(end, false);
-    const status = tracked()?.status;
-    return status === "success" || status === "failed";
+    return settle(end);
   };
   /** Whether the hour after the proposal was made has passed. */
   const pastHorizon = () =>
@@ -372,10 +490,11 @@ async function watchSafeProposal(
   /**
    * Settles the proposal from its execution's receipt: only the Safe's own
    * event for this proposal decides, never the receipt's status alone or
-   * another proposal's event in the same receipt. `reported`: the Safe service
-   * reported this execution.
+   * another proposal's event in the same receipt. A proposal the hold holds is
+   * the hold's from here, receipt or not: success only on its settlement.
+   * True once the watch has ended.
    */
-  const settle = async (executionHash: Hex, reported: boolean) => {
+  const settle = async (executionHash: Hex): Promise<boolean> => {
     // The hold keeps every execution this watch follows as a candidate, before any receipt read
     // or unproven end: its exit stays closed while that transaction is pending.
     tellHold((hold, chain) => hold.onExecuted(chain, executionHash));
@@ -396,10 +515,15 @@ async function watchSafeProposal(
       }
     }
     const safe = safeOf();
+    // No receipt to read yet: the named execution is the hold's candidate, and the hold decides.
+    if ((!receipt || !safe) && holdable()) {
+      toHold({ unproven: unprovenEnd(), executionHash });
+      return true;
+    }
     if (!receipt && !noReceipt) {
       // The proposal stays held for the next look.
       updateTransactionActivity(id, { executionHash, message: RECEIPT_UNCONFIRMED });
-      return;
+      return false;
     }
     if (!receipt || !safe) {
       // A receipt the chain still doesn't hold an hour after it first said so is not coming.
@@ -409,30 +533,39 @@ async function watchSafeProposal(
           ? (seen.executionSeenAt ?? Date.now())
           : Date.now();
       if (Date.now() - seenAt >= SAFE_RESULT_HORIZON_MS) {
-        unconfirmed(executionHash, reported);
-        return;
+        unconfirmed(executionHash);
+        return true;
       }
       updateTransactionActivity(id, {
         executionHash,
         executionSeenAt: seenAt,
         message: RECEIPT_UNCONFIRMED,
       });
-      return;
+      return false;
     }
     const result = safeExecutionResult(receipt, safe, hash);
     if (result.status === "unproven") {
-      // A receipt without this proposal's own event says nothing about it: it stays followed,
-      // and only a canonical execution or replacement of this exact proposal ends it.
+      // A receipt without this proposal's own event says nothing about it: the hold decides.
+      if (holdable()) {
+        toHold({ unproven: unprovenEnd(), receipt });
+        return true;
+      }
       updateTransactionActivity(id, { executionHash, message: SAFE_OTHER_RECEIPT_LINE });
-      return;
+      return false;
     }
-    executed(result.status === "success", executionHash);
+    // The Safe's own failure event is the result; a success is the hold's settlement of it.
+    if (result.status === "success" && holdable()) {
+      toHold({ unproven: false, receipt });
+      return true;
+    }
+    safeExecuted(id, result.status === "success", executionHash);
     const proposal = tracked()?.safeProposal;
     const settledBy = receipt;
     if (proposal)
       tellHold((hold, chain) =>
         hold.onReceipt(settledBy, chain, { calls: proposal.calls, batch: proposal.batch }),
       );
+    return true;
   };
   /**
    * The chain's transaction with the proposal's hash: null when the chain has none, and undefined
@@ -452,9 +585,10 @@ async function watchSafeProposal(
   const endUnconfirmed = async (answer: ChainAnswer | "unchecked"): Promise<boolean> => {
     const execution =
       answer === "unchecked" ? (client ? await findExecution(client) : null) : answer;
-    if (execution === undefined) return false;
+    // A node that can't answer is unknown evidence: the hold decides, with no wait before it.
+    if (execution === undefined && !holdable()) return false;
     if (execution && executesReviewed(execution)) {
-      await settle(hash, false);
+      await settle(hash);
     } else unconfirmed();
     return true;
   };
@@ -497,7 +631,6 @@ async function watchSafeProposal(
         typeof proposal.transactionHash === "string" && isHash(proposal.transactionHash)
           ? proposal.transactionHash
           : undefined;
-      reportedExecuted = proposal.isExecuted === true && !executionHash;
       const message = safeTransactionMessage(proposal);
       if (!runsReviewed(message)) {
         unfollowable = true;
@@ -507,7 +640,7 @@ async function watchSafeProposal(
         if (executionHash) {
           // The watch ends here either way; a proposal its receipt didn't settle stays held and
           // is followed again on the next load.
-          await settle(executionHash, true);
+          await settle(executionHash);
           return "done";
         }
         updateTransactionActivity(id, {
@@ -538,8 +671,7 @@ async function watchSafeProposal(
       if (nonce !== null && nonce > message.nonce) {
         const look = await chainLook(safe);
         if (look === "replaced") {
-          updateTransactionActivity(id, { status: "failed", message: SAFE_PROPOSAL_REPLACED_LINE });
-          tellHold((hold, chain) => hold.state(chain));
+          replaced();
           return "done";
         }
         if (look === "executed") {
@@ -557,7 +689,6 @@ async function watchSafeProposal(
       return nonce > message.nonce ? "stuck" : "live";
     } catch {
       if (status === 404 || (status >= 200 && status < 300 && json)) {
-        reportedExecuted = false;
         return "stuck";
       }
       updateTransactionActivity(id, {
@@ -618,7 +749,7 @@ async function watchSafeProposal(
           : "unchecked";
       if (execution && execution !== "unchecked") {
         if (executesReviewed(execution)) {
-          await settle(hash, false);
+          await settle(hash);
         } else unconfirmed();
         return;
       }
@@ -919,7 +1050,13 @@ export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>)
       watchSafeProposal(row.id, row.hash!, row.chainId!, client as PublicClient | undefined);
     const watched =
       row.status === "safe-proposed" && !row.safeResultUnconfirmed && row.hash && row.chainId;
-    if (client && heldBeforeTheHold(row)) {
+    // One its follower handed to the hold is the hold's to decide, through reloads.
+    if (row.holdFollows && row.status === "safe-proposed" && row.hash && row.chainId)
+      void holdUntilResolved(row.id, row.chainId, client as PublicClient | undefined, {
+        unproven: false,
+        executionHash: row.executionHash,
+      });
+    else if (client && heldBeforeTheHold(row)) {
       const adopted = holdLegacySafeProposal(row, client).catch(() => undefined);
       if (watched) void adopted.then(watch);
     } else if (watched) void watch();

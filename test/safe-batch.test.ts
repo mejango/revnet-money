@@ -245,8 +245,7 @@ describe("one Safe proposal for a whole flow", () => {
     await waitFor(() =>
       expect(transactionActivityForHash(proposal)).toMatchObject({
         status: "safe-proposed",
-        message:
-          "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
+        message: WRITE_HOLD_SAFE_UNPROVEN_LINE,
         safeResultUnconfirmed: true,
       }),
     );

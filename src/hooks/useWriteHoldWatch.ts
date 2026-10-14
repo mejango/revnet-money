@@ -1,5 +1,6 @@
 "use client";
 
+import { hidesShownExit } from "@/lib/write-hold";
 import type {
   WriteHoldClient,
   WriteHoldHandle,
@@ -31,7 +32,13 @@ export function useWriteHoldWatch(
   const recheckRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (!hold) return;
-    const stop = hold.subscribe((state) => onStateRef.current(state));
+    // A contended answer never hides an exit already shown.
+    let shown: WriteHoldState | undefined;
+    const stop = hold.subscribe((state) => {
+      if (hidesShownExit(shown, state)) return;
+      shown = state;
+      onStateRef.current(state);
+    });
     const check = () => {
       const current = clientRef.current;
       if (current) void hold.state(current).catch(() => {});

@@ -58,6 +58,11 @@ export type TransactionActivity = {
    * identical call until its account dismisses it.
    */
   safeResultUnconfirmed?: boolean;
+  /**
+   * The proposal's follower ended and handed it to the SDK's write hold: the hold's state is what
+   * it shows, through reloads, until the hold clears or the user dismisses it or takes the exit.
+   */
+  holdFollows?: true;
   /** A Safe proposal the SDK's write hold holds (from its send, or moved into it on load). */
   sdkHeld?: true;
   /**

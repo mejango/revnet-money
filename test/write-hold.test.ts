@@ -12,10 +12,12 @@ import { describe, expect, it, vi } from "vitest";
 const RECORD = { call: { to: "0x1", data: "0x", value: "0" } };
 const exitState = (line = "Check your wallet.") =>
   ({ status: "held-no-hash", record: RECORD, exit: true, line }) as unknown as WriteHeldState;
+/** A checked answer with no exit: the chain was read under the call's lock. */
 const noExitState = {
   status: "pending-known-hash",
   record: RECORD,
   exit: false,
+  checked: true,
   line: "Still pending in your wallet. Speed it up or cancel it there.",
 } as unknown as WriteHeldState;
 
@@ -211,5 +213,43 @@ describe("sendUnderHold with SDK 2.35", () => {
       expect.objectContaining({ lines: expect.arrayContaining(["Held line.", notice]) }),
       expect.any(AbortSignal),
     );
+  });
+});
+
+describe("sendUnderHold with a contended hold (checked: false)", () => {
+  /** What the hold answers when another tab or flow holds the call's lock: its exit hidden. */
+  const contended = { ...exitState("Held line."), exit: false, checked: false };
+
+  it("keeps an open exit when a recheck is contended", async () => {
+    vi.useFakeTimers();
+    let answer: (accepted: boolean) => void = () => undefined;
+    const prompt = vi.fn(
+      (_choice: unknown, signal?: AbortSignal) =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+          signal?.addEventListener("abort", () => resolve(false));
+        }),
+    );
+    registerFlowChoiceHandler(prompt);
+    const hold = holdThat({ held: [exitState("Held line.")], state: contended });
+    const sent = sendUnderHold(hold as never, client, run);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(hold.state).toHaveBeenCalled();
+    // Still open: the user's answer is the one that counts.
+    answer(true);
+    await expect(sent).resolves.toBe("0xsent");
+    vi.useRealTimers();
+  });
+
+  it("keeps the exit the user saw when the exit itself is contended, and sends nothing", async () => {
+    registerFlowChoiceHandler(vi.fn().mockResolvedValue(true));
+    const hold = holdThat({
+      held: [exitState("Held line.")],
+      exit: { released: false, state: contended },
+    });
+    await expect(sendUnderHold(hold as never, client, run)).rejects.toThrow("Held line.");
+    // Asked once, with no wait or retry of its own; the exit stays to take again.
+    expect(hold.exit).toHaveBeenCalledOnce();
+    expect(hold.send).toHaveBeenCalledOnce();
   });
 });

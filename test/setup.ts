@@ -1,3 +1,4 @@
+import { resetSafeRelayrForTests, resetWriteHoldsForTests } from "@bananapus/nana-sdk-core/testing";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
@@ -44,9 +45,8 @@ afterEach(() => {
   }
   vi.useRealTimers();
   vi.unstubAllGlobals();
-  // The SDK keeps held writes in one tab-wide memory, which the module reset between tests
-  // does not reach.
-  const tab = globalThis as Record<symbol, unknown>;
-  (tab[Symbol.for("nana-sdk:held-writes")] as Map<string, string> | undefined)?.clear();
-  delete tab[Symbol.for("nana-sdk:held-writes-seen")];
+  // The SDK keeps holds, their followers and Safe Relayr watches tab-wide, which the module
+  // reset between tests does not reach.
+  resetWriteHoldsForTests();
+  resetSafeRelayrForTests();
 });

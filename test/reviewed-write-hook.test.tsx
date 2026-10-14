@@ -87,12 +87,12 @@ vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
 
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
-  getPublicClient: () =>
+  getPublicClient: (_config: unknown, { chainId = 11155111 }: { chainId?: number } = {}) =>
     mocks.noClient
       ? undefined
       : {
-          chain: { id: 11155111 },
-          getChainId: async () => 11155111,
+          chain: { id: chainId },
+          getChainId: async () => chainId,
           estimateContractGas: mocks.estimateContractGas,
           waitForTransactionReceipt: mocks.waitForTransactionReceipt,
           getTransactionReceipt: mocks.getTransactionReceipt,
@@ -152,12 +152,8 @@ const CALL = {
 const PROPOSED = safeProposalFor({ to: TARGET, data: "0x1234" }, 7);
 const PROPOSAL = safeTransactionHash(11155111, ACCOUNT, PROPOSED);
 const OTHER_PROPOSAL = `0x${"56".repeat(32)}` as Hex;
-const UNCONFIRMED =
-  "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
-const OTHER_RECEIPT =
-  "The reported Safe transaction doesn't show this proposal. Checking what ran.";
-const RECEIPT_UNCONFIRMED =
-  "Submitted, but this RPC could not confirm the receipt. Check the transaction before retrying.";
+/** What a proposal its follower couldn't confirm shows: the hold's own line, with its exit. */
+const UNCONFIRMED = WRITE_HOLD_SAFE_UNPROVEN_LINE;
 const SIGNATURE = `0x${"12".repeat(64)}1b` as Hex;
 
 /**
@@ -235,6 +231,54 @@ const MINED_RECEIPT = {
   transactionIndex: 0,
   logs: [],
 };
+
+/**
+ * The chain holds `hash` as an owner's execTransaction of `call` on the Safe, its receipt carrying
+ * `logs`, as every reader (the watch and the hold) sees it, final. Any other hash is unknown.
+ */
+function safeExecutionMined(
+  hash: Hex,
+  logs: readonly unknown[],
+  {
+    call = TRANSFER_7,
+    status = "success",
+    chainId = 11155111,
+  }: { call?: typeof TRANSFER_7; status?: "success" | "reverted"; chainId?: number } = {},
+) {
+  const mined = { blockNumber: 9n, blockHash: BLOCK_HASH, transactionIndex: 0 };
+  const transaction = {
+    ...executionOf(call),
+    ...mined,
+    hash,
+    from: SAFE_OWNER_A,
+    value: 0n,
+    nonce: 3,
+    chainId,
+  };
+  const receipt = {
+    ...mined,
+    status,
+    transactionHash: hash,
+    from: SAFE_OWNER_A,
+    to: ACCOUNT,
+    logs: logs.map((log) => ({
+      ...(log as object),
+      ...mined,
+      removed: false,
+      transactionHash: hash,
+    })),
+  };
+  const known =
+    <T,>(value: T) =>
+    async ({ hash: asked }: { hash: Hex }) => {
+      if (asked.toLowerCase() === hash.toLowerCase()) return value;
+      throw new TransactionNotFoundError({ hash: asked });
+    };
+  mocks.getTransaction.mockImplementation(known(transaction));
+  mocks.getTransactionReceipt.mockImplementation(known(receipt));
+  mocks.waitForTransactionReceipt.mockImplementation(known(receipt));
+  return { receipt, transaction };
+}
 
 /** The chain mines the wallet's transaction: the node knows it and holds its receipt. */
 function chainMines() {
@@ -1214,12 +1258,7 @@ describe("reviewed write hook", () => {
       vi.stubGlobal("fetch", service);
       // Safe{Wallet} replied with the execution's own hash: the chain knows it,
       // and it runs exactly the reviewed call from this Safe.
-      mocks.getTransaction.mockResolvedValue(executionOf(TRANSFER_7));
-      mocks.waitForTransactionReceipt.mockResolvedValue({
-        status: "success",
-        transactionHash: HASH,
-        logs,
-      });
+      safeExecutionMined(HASH, logs);
       const { review, activity, hooks } = await freshHarness();
       review.registerTransactionReviewHandler(async () => true);
       const { result } = renderHook(() => hooks.useWriteContract());
@@ -1274,7 +1313,7 @@ describe("reviewed write hook", () => {
       },
     ],
     ["no execTransaction", { hash: HASH, to: ACCOUNT, input: TRANSFER_7.data }],
-  ])("leaves a reply unconfirmed that executes %s", async (_case, execution) => {
+  ])("leaves a reply that executes %s to the hold, never a success", async (_case, execution) => {
     mocks.account = {
       address: ACCOUNT,
       chainId: 11155111,
@@ -1296,11 +1335,13 @@ describe("reviewed write hook", () => {
       await result.current.writeContractAsync(CALL as never);
     });
 
+    // The hold decides a reply the chain knows as some other transaction: until it offers its
+    // exit, the proposal shows it is being confirmed.
     await waitFor(() =>
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         status: "safe-proposed",
-        message: UNCONFIRMED,
-        safeResultUnconfirmed: true,
+        message: hooks.SAFE_CONFIRMING_LINE,
+        holdFollows: true,
       }),
     );
     expect(activity.transactionActivityForHash(HASH)?.executionHash).toBeUndefined();
@@ -1344,11 +1385,12 @@ describe("reviewed write hook", () => {
 
     hooks.resumeSafeProposalTracking(mocks.config as never);
 
+    // The hold decides: it shows the proposal being confirmed, with no exit while it may still run.
     await waitFor(() =>
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         status: "safe-proposed",
         executionHash: HASH,
-        message: OTHER_RECEIPT,
+        message: hooks.SAFE_CONFIRMING_LINE,
       }),
     );
     expect(activity.transactionActivityForHash(HASH)?.safeResultUnconfirmed).toBeUndefined();
@@ -1364,11 +1406,9 @@ describe("reviewed write hook", () => {
       savedProposal(activity, HASH, chainId);
       const service = vi.fn();
       vi.stubGlobal("fetch", service);
-      mocks.getTransaction.mockResolvedValue(executionOf({ to: TARGET, data: "0x1234" }));
-      mocks.waitForTransactionReceipt.mockResolvedValue({
-        status: "success",
-        transactionHash: HASH,
-        logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
+      safeExecutionMined(HASH, [executionLog(ACCOUNT, OTHER_PROPOSAL)], {
+        call: { to: TARGET, data: "0x1234" },
+        chainId,
       });
 
       hooks.resumeSafeProposalTracking(mocks.config as never);
@@ -1415,11 +1455,7 @@ describe("reviewed write hook", () => {
         const { activity, hooks } = await freshHarness();
         savedProposal(activity, PROPOSAL, 11155111);
         executedRecord(PROPOSED);
-        mocks.waitForTransactionReceipt.mockResolvedValue({
-          status: "success",
-          transactionHash: EXECUTION,
-          logs: [log],
-        });
+        safeExecutionMined(EXECUTION, [log], { call: { to: TARGET, data: "0x1234" } });
 
         hooks.resumeSafeProposalTracking(mocks.config as never);
 
@@ -1435,7 +1471,7 @@ describe("reviewed write hook", () => {
       },
     );
 
-    it("is neither confirmed nor ended by another proposal's success in the same receipt", async () => {
+    it("leaves a proposal to the hold, never a success, when its receipt shows only another proposal's success", async () => {
       const { activity, hooks } = await freshHarness();
       savedProposal(activity, PROPOSAL, 11155111);
       executedRecord(PROPOSED);
@@ -1447,14 +1483,15 @@ describe("reviewed write hook", () => {
 
       hooks.resumeSafeProposalTracking(mocks.config as never);
 
+      // That receipt doesn't show this proposal's end: the hold decides, with its exit.
       await waitFor(() =>
         expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
           status: "safe-proposed",
           executionHash: EXECUTION,
-          message: OTHER_RECEIPT,
+          message: UNCONFIRMED,
+          holdFollows: true,
         }),
       );
-      expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });
 
     it("settles a proposal journaled without reviewed calls from its Safe's event for this proposal", async () => {
@@ -1498,11 +1535,16 @@ describe("reviewed write hook", () => {
       );
       expect(mocks.waitForTransactionReceipt).not.toHaveBeenCalled();
 
-      // Its result can't be confirmed here, so a reload does not ask Safe again.
-      const asked = service.mock.calls.length;
+      // A reload keeps the hold's answer, its exit included, and never goes back to awaiting.
+      expect(service).toHaveBeenCalled();
+      await freshHarness();
       hooks.resumeSafeProposalTracking(mocks.config as never);
       await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(service).toHaveBeenCalledTimes(asked);
+      expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+        status: "safe-proposed",
+        message: UNCONFIRMED,
+        safeResultUnconfirmed: true,
+      });
     });
 
     it("never trusts a record whose fields are another proposal's", async () => {
@@ -1552,10 +1594,11 @@ describe("reviewed write hook", () => {
     await vi.advanceTimersByTimeAsync(20 * 5_000);
 
     // An execution sent at once reaches the chain within a minute of the reply, so the chain is
-    // checked on every look of that minute and then once a minute. Without a service, the twelfth
-    // check's answer ends the proposal, and one more check tells the hold it isn't pending. The
-    // hold reads the proposal once more when it takes the proposal's nonce.
-    expect(mocks.getTransaction).toHaveBeenCalledTimes(14);
+    // checked on every look of that minute and then once a minute. The hold reads the proposal
+    // once more when it takes the proposal's nonce. Without a service, the twelfth check's answer
+    // ends the follower, and the hold, which decides from then on, keeps checking behind it.
+    if (chainId === 11155111) expect(mocks.getTransaction).toHaveBeenCalledTimes(14);
+    else expect(mocks.getTransaction.mock.calls.length).toBeGreaterThan(12);
     if (chainId === 11155420) expect(service).not.toHaveBeenCalled();
     else expect(service.mock.calls.length).toBeGreaterThan(12);
     expect(activity.transactionActivityForHash(proposal)).toMatchObject(
@@ -1673,8 +1716,7 @@ describe("reviewed write hook", () => {
       [
         "Safe reports executed without its transaction",
         () => new Response(JSON.stringify({ ...PROPOSED, safe: ACCOUNT, isExecuted: true })),
-        // What its account needs to know before it dismisses the proposal.
-        "Safe reports this proposal as executed, but its result can't be confirmed here. Check it in Safe before retrying.",
+        UNCONFIRMED,
       ],
     ])(
       "ends unconfirmed, an hour after it was made, after ten minutes of looks in a row when %s",
@@ -1737,7 +1779,7 @@ describe("reviewed write hook", () => {
       expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });
 
-    it("releases a proposal at once when the chain proves another transaction took its nonce", async () => {
+    it("hands a proposal to the hold at once when the chain proves another transaction took its nonce, which offers the exit", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
       mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
@@ -1757,10 +1799,10 @@ describe("reviewed write hook", () => {
         PROPOSAL,
       );
       expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
-        status: "failed",
-        message: "Another Safe transaction used this nonce. Propose it again to run it.",
+        status: "safe-proposed",
+        message: UNCONFIRMED,
+        safeResultUnconfirmed: true,
       });
-      expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });
 
     it("says the Safe ran a proposal the chain shows executed, and keeps following it for its result", async () => {
@@ -1803,15 +1845,9 @@ describe("reviewed write hook", () => {
           look: "executed",
           execution: { executionHash: EXECUTION, status: "success" },
         });
-        mocks.waitForTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) =>
-          hash === EXECUTION
-            ? {
-                status: "success",
-                transactionHash: EXECUTION,
-                logs: [executionLog(ACCOUNT, PROPOSAL, eventName)],
-              }
-            : new Promise(() => undefined),
-        );
+        safeExecutionMined(EXECUTION, [executionLog(ACCOUNT, PROPOSAL, eventName)], {
+          call: { to: TARGET, data: "0x1234" },
+        });
         savedProposal(activity, PROPOSAL, 11155111);
         // The service never lists the execution.
         serviceAnswering(
@@ -1851,15 +1887,9 @@ describe("reviewed write hook", () => {
           ? { look: "executed", execution: { executionHash: EXECUTION, status: "success" } }
           : null,
       );
-      mocks.waitForTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) =>
-        hash === EXECUTION
-          ? {
-              status: "success",
-              transactionHash: EXECUTION,
-              logs: [executionLog(ACCOUNT, PROPOSAL)],
-            }
-          : new Promise(() => undefined),
-      );
+      safeExecutionMined(EXECUTION, [executionLog(ACCOUNT, PROPOSAL)], {
+        call: { to: TARGET, data: "0x1234" },
+      });
       savedProposal(activity, PROPOSAL, 11155111, undefined, Date.now() - HOUR);
       activity.updateTransactionActivity(`tx:11155111:${PROPOSAL}`, {
         safeExecutionProven: { safe: ACCOUNT, nonce: "7" },
@@ -1886,7 +1916,7 @@ describe("reviewed write hook", () => {
       });
     });
 
-    it("saves no proof from an orphaned execution log, and releases on the canonical replacement while the service 404s", async () => {
+    it("saves no proof from an orphaned execution log, and hands it to the hold on the canonical replacement while the service 404s", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
       mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
@@ -1909,17 +1939,19 @@ describe("reviewed write hook", () => {
       mocks.provenSafeProposalEnd.mockResolvedValue({ look: "replaced" });
       listed = false;
       await vi.advanceTimersByTimeAsync(3 * 60_000);
+      // The hold decides, with its exit; its account may dismiss it.
       const row = activity.transactionActivityForHash(PROPOSAL)!;
       expect(row).toMatchObject({
-        status: "failed",
-        message: "Another Safe transaction used this nonce. Propose it again to run it.",
+        status: "safe-proposed",
+        message: UNCONFIRMED,
+        safeResultUnconfirmed: true,
       });
       expect(row.safeExecutionProven).toBeUndefined();
       activity.dismissTransactionActivity(row.id);
       expect(activity.transactionActivityForHash(PROPOSAL)).toBeUndefined();
     });
 
-    it("releases an older proof saved without a hash when the canonical chain shows a replacement", async () => {
+    it("drops an older proof saved without a hash when the canonical chain shows a replacement, and hands it to the hold", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
       mocks.safeReads = safeChain(ACCOUNT, { nonce: 8n });
@@ -1940,8 +1972,9 @@ describe("reviewed write hook", () => {
         7n,
       );
       expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
-        status: "failed",
-        message: "Another Safe transaction used this nonce. Propose it again to run it.",
+        status: "safe-proposed",
+        message: UNCONFIRMED,
+        safeResultUnconfirmed: true,
       });
       expect(activity.transactionActivityForHash(PROPOSAL)?.safeExecutionProven).toBeUndefined();
     });
@@ -2315,10 +2348,8 @@ describe("reviewed write hook", () => {
             }),
           );
         });
-        mocks.waitForTransactionReceipt.mockResolvedValue({
-          status: "success",
-          transactionHash: EXECUTION,
-          logs: [executionLog(ACCOUNT, PROPOSAL)],
+        safeExecutionMined(EXECUTION, [executionLog(ACCOUNT, PROPOSAL)], {
+          call: { to: TARGET, data: "0x1234" },
         });
 
         hooks.resumeSafeProposalTracking(mocks.config as never);
@@ -2340,16 +2371,14 @@ describe("reviewed write hook", () => {
       savedProposal(activity, HASH, 11155111, undefined, Date.now() - HOUR);
       // The reply was the execution's own hash, which the service never lists.
       serviceAnswering(() => new Response("Not found", { status: 404 }));
+      const { transaction } = safeExecutionMined(HASH, [executionLog(ACCOUNT, OTHER_PROPOSAL)], {
+        call: { to: TARGET, data: "0x1234" },
+      });
       let checks = 0;
       mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => {
         checks += 1;
         if (checks <= 12) throw new TransactionNotFoundError({ hash });
-        return executionOf({ to: TARGET, data: "0x1234" });
-      });
-      mocks.waitForTransactionReceipt.mockResolvedValue({
-        status: "success",
-        transactionHash: HASH,
-        logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
+        return transaction;
       });
 
       hooks.resumeSafeProposalTracking(mocks.config as never);
@@ -2368,14 +2397,12 @@ describe("reviewed write hook", () => {
       serviceAnswering(() => new Response("Not found", { status: 404 }));
       // The node shows the execution only as the watch's run of looks completes.
       const visibleFrom = Date.now() + 590_000;
+      const { transaction } = safeExecutionMined(HASH, [executionLog(ACCOUNT, OTHER_PROPOSAL)], {
+        call: { to: TARGET, data: "0x1234" },
+      });
       mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => {
         if (Date.now() < visibleFrom) throw new TransactionNotFoundError({ hash });
-        return executionOf({ to: TARGET, data: "0x1234" });
-      });
-      mocks.waitForTransactionReceipt.mockResolvedValue({
-        status: "success",
-        transactionHash: HASH,
-        logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
+        return transaction;
       });
 
       hooks.resumeSafeProposalTracking(mocks.config as never);
@@ -2394,7 +2421,7 @@ describe("reviewed write hook", () => {
         (elapsed: number) => elapsed >= 590_000,
       ],
       ["never answers", () => true],
-    ])("is followed again on the next load when the node %s", async (_case, down) => {
+    ])("hands a proposal to the hold, with no wait, when the node %s", async (_case, down) => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
       savedProposal(activity, HASH, 11155111, undefined, Date.now() - HOUR);
@@ -2409,21 +2436,23 @@ describe("reviewed write hook", () => {
 
       hooks.resumeSafeProposalTracking(mocks.config as never);
       await vi.advanceTimersByTimeAsync(11 * 60_000);
-      // The node is asked again at the watch's once-a-minute chain checks, not on every look.
-      expect(mocks.getTransaction.mock.calls.length).toBeLessThanOrEqual(24);
-      await vi.advanceTimersByTimeAsync(HOUR);
 
+      // An answer the node can't give is unknown evidence: the hold decides from the end of the
+      // run of looks, and the proposal is never a success on it.
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         status: "safe-proposed",
+        holdFollows: true,
       });
-      expect(activity.transactionActivityForHash(HASH)?.safeResultUnconfirmed).toBeUndefined();
     });
 
-    it("settles when a node that can't answer as the run completes shows the execution at its next chain check", async () => {
+    it("settles from the hold when a node that can't answer as the run completes shows the execution later", async () => {
       vi.useFakeTimers();
       const { activity, hooks } = await freshHarness();
       savedProposal(activity, HASH, 11155111, undefined, Date.now() - HOUR);
       serviceAnswering(() => new Response("Not found", { status: 404 }));
+      const { transaction } = safeExecutionMined(HASH, [executionLog(ACCOUNT, OTHER_PROPOSAL)], {
+        call: { to: TARGET, data: "0x1234" },
+      });
       const start = Date.now();
       mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) => {
         const elapsed = Date.now() - start;
@@ -2431,12 +2460,7 @@ describe("reviewed write hook", () => {
         if (elapsed < 600_000) {
           throw new HttpRequestError({ url: "https://rpc.example", details: "fetch failed" });
         }
-        return executionOf({ to: TARGET, data: "0x1234" });
-      });
-      mocks.waitForTransactionReceipt.mockResolvedValue({
-        status: "success",
-        transactionHash: HASH,
-        logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
+        return transaction;
       });
 
       hooks.resumeSafeProposalTracking(mocks.config as never);
@@ -2480,8 +2504,6 @@ describe("reviewed write hook", () => {
           transactionHash: EXECUTION,
         }),
       );
-    const REPORTED_EXECUTED_UNCONFIRMED =
-      "Safe reports this proposal as executed, but its result can't be confirmed here. Check it in Safe before retrying.";
     const nodeDown = () =>
       new HttpRequestError({ url: "https://rpc.example", details: "fetch failed" });
 
@@ -2508,7 +2530,7 @@ describe("reviewed write hook", () => {
         },
       ],
     ])(
-      "ends unconfirmed when the chain still %s an hour after it first did",
+      "hands the execution to the hold at once when the chain %s, which offers its exit",
       async (_case, chainAnswers) => {
         vi.useFakeTimers();
         const { activity, hooks } = await freshHarness();
@@ -2519,17 +2541,13 @@ describe("reviewed write hook", () => {
 
         hooks.resumeSafeProposalTracking(mocks.config as never);
         await vi.advanceTimersByTimeAsync(5 * 60_000);
-        // Its execution is minutes old, so its receipt may still come.
         expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
           status: "safe-proposed",
           executionHash: EXECUTION,
-          message: RECEIPT_UNCONFIRMED,
+          holdFollows: true,
         });
-        expect(
-          activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed,
-        ).toBeUndefined();
 
-        // A load an hour later still gets the same answer.
+        // A load an hour later keeps the hold's answer: never a success, never awaiting.
         await vi.advanceTimersByTimeAsync(HOUR);
         hooks.resumeSafeProposalTracking(mocks.config as never);
         await vi.advanceTimersByTimeAsync(5 * 60_000);
@@ -2537,7 +2555,7 @@ describe("reviewed write hook", () => {
         expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
           status: "safe-proposed",
           executionHash: EXECUTION,
-          message: REPORTED_EXECUTED_UNCONFIRMED,
+          message: UNCONFIRMED,
           safeResultUnconfirmed: true,
         });
       },
@@ -2557,12 +2575,12 @@ describe("reviewed write hook", () => {
       hooks.resumeSafeProposalTracking(mocks.config as never);
       await vi.advanceTimersByTimeAsync(5 * 60_000);
 
+      // The hold holds it, never a success, and never back to awaiting.
       expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
         status: "safe-proposed",
         executionHash: EXECUTION,
-        message: RECEIPT_UNCONFIRMED,
+        holdFollows: true,
       });
-      expect(activity.transactionActivityForHash(PROPOSAL)?.safeResultUnconfirmed).toBeUndefined();
     });
 
     it("settles when its execution's receipt arrives after the node's outage", async () => {
@@ -2580,13 +2598,11 @@ describe("reviewed write hook", () => {
       hooks.resumeSafeProposalTracking(mocks.config as never);
       await vi.advanceTimersByTimeAsync(5 * 60_000);
       // The node answers again.
-      mocks.waitForTransactionReceipt.mockResolvedValue({
-        status: "success",
-        transactionHash: EXECUTION,
-        logs: [executionLog(ACCOUNT, PROPOSAL)],
+      safeExecutionMined(EXECUTION, [executionLog(ACCOUNT, PROPOSAL)], {
+        call: { to: TARGET, data: "0x1234" },
       });
       hooks.resumeSafeProposalTracking(mocks.config as never);
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(15_000);
 
       expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
         status: "success",
@@ -3010,6 +3026,56 @@ describe("Safe proposals under the write hold", () => {
       call: { to: TARGET, data: TRANSFER_7.data, value: 0n },
     });
 
+  // The Safe flow rule: only the hold's authenticated settlement, or the user's exit, ends the
+  // follower; until the hold offers its exit, the proposal shows it is being confirmed.
+  it("shows a Safe execution's success only once the hold settles it, confirming until then", async () => {
+    vi.useFakeTimers();
+    const EXECUTION = `0x${"56".repeat(32)}` as Hex;
+    const { activity, hooks } = await freshHarness();
+    savedProposal(activity, PROPOSAL, 11155111);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              ...PROPOSED,
+              safe: ACCOUNT,
+              isExecuted: true,
+              transactionHash: EXECUTION,
+            }),
+          ),
+      ),
+    );
+    // The follower reads the Safe's success event, but the chain can't yet show the hold the
+    // execution's transaction.
+    const { receipt } = safeExecutionMined(EXECUTION, [executionLog(ACCOUNT, PROPOSAL)], {
+      call: { to: TARGET, data: "0x1234" },
+    });
+    mocks.getTransactionReceipt.mockRejectedValue(new Error("Receipt not found"));
+    mocks.waitForTransactionReceipt.mockResolvedValue(receipt);
+
+    hooks.resumeSafeProposalTracking(mocks.config as never);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+      status: "safe-proposed",
+      message: hooks.SAFE_CONFIRMING_LINE,
+      holdFollows: true,
+    });
+
+    // A reload never goes back to awaiting: the hold keeps deciding, and settles it.
+    await freshHarness();
+    hooks.resumeSafeProposalTracking(mocks.config as never);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(activity.transactionActivityForHash(PROPOSAL)?.message).toBe(hooks.SAFE_CONFIRMING_LINE);
+    mocks.getTransactionReceipt.mockResolvedValue(receipt);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(activity.transactionActivityForHash(PROPOSAL)).toMatchObject({
+      status: "success",
+      executionHash: EXECUTION,
+    });
+  });
+
   it("holds a proposal the Safe gave no hash for, and asks for the exit before proposing again", async () => {
     const { review, hooks, held } = await freshHarness();
     review.registerTransactionReviewHandler(async () => true);
@@ -3127,16 +3193,12 @@ describe("Safe proposals under the write hold", () => {
     });
 
     await freshHarness();
-    // Only the hold's gate offers the exit (SDK 2.34.1): the saved record says what is held.
+    // Only the hold's gate offers the exit (SDK 2.34.1): after a reload it still does.
     const hold = await holdOfTransfer();
-    expect(hold.peek()).toMatchObject({ status: "safe-unproven", exit: false });
+    expect(hold.peek()).toMatchObject({ exit: false });
     const { getPublicClient } = await import("wagmi/actions");
     const chain = getPublicClient(mocks.config as never, { chainId: 11155111 } as never);
-    expect(await hold.state(chain as never)).toMatchObject({
-      status: "safe-unproven",
-      exit: true,
-      line: WRITE_HOLD_SAFE_UNPROVEN_LINE,
-    });
+    expect(await hold.state(chain as never)).toMatchObject({ exit: true });
     // An hour of the watch on fake timers: give a loaded machine room.
   }, 30_000);
 

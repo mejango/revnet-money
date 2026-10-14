@@ -14,6 +14,7 @@ import {
   type WriteHoldClient,
   type WriteHoldGate,
   type WriteHoldHandle,
+  type WriteHoldState,
 } from "@bananapus/nana-sdk-core/review";
 import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@bananapus/nana-sdk-core/safe";
 import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
@@ -152,7 +153,7 @@ async function askExit(
       if (open.signal.aborted) return;
       // A poll in flight when the user answers is still kept: a settlement it returns decides.
       const now = await hold.state(client).catch(() => null);
-      if (now && (now.status === "clear" || !now.exit)) {
+      if (now && !hidesShownExit(shown, now) && (now.status === "clear" || !now.exit)) {
         closedBy ??= now;
         open.abort();
       }
@@ -179,14 +180,39 @@ function settledLine(settled: { result: string } | undefined): string {
   return settled?.result === "failed" ? WRITE_HOLD_REVERTED_LINE : WENT_THROUGH;
 }
 
-/** A held state's line, with the hold's notice when holds last only in this tab. */
-function withNotice(state: { line: string; notice?: string }): string {
-  return state.notice ? `${state.line} ${state.notice}` : state.line;
+/**
+ * Whether `next` would hide the exit `shown` offers without the chain having been checked: a
+ * contended answer (`checked: false`) or a replay. Only a checked answer hides it.
+ */
+export function hidesShownExit(
+  shown: WriteHoldState | null | undefined,
+  next: WriteHoldState,
+): boolean {
+  return (
+    !!shown &&
+    shown.status !== "clear" &&
+    shown.exit &&
+    next.status !== "clear" &&
+    !next.exit &&
+    next.checked !== true
+  );
 }
 
-/** How long a contended exit waits between asks, and how many it makes. */
-const EXIT_RETRY_MS = 250;
-const EXIT_TRIES = 8;
+/**
+ * Whether a hold's answer is one to show now: held, with its exit, and not exactly what `shown`
+ * already offers. Every flow, direct or Safe, moves to it and keeps checking behind it.
+ */
+export function offersExit(
+  shown: WriteHoldState | null | undefined,
+  next: WriteHoldState,
+): boolean {
+  return next.status !== "clear" && next.exit && JSON.stringify(shown) !== JSON.stringify(next);
+}
+
+/** A held state's line, with the hold's notice when holds last only in this tab. */
+export function withNotice(state: { line: string; notice?: string }): string {
+  return state.notice ? `${state.line} ${state.notice}` : state.line;
+}
 
 /**
  * Sends under the hold. A call that is held shows the SDK's line: with no exit it ends the send;
@@ -212,21 +238,12 @@ export async function sendUnderHold<T>(
       const { accepted, closedBy } = await askExit(hold, client, shown);
       if (closedBy) throw new Error(endedLine(closedBy));
       if (!accepted) throw new Error(withNotice(shown));
-      // The exit never waits: on contention it answers with the state as it is, asked again.
-      let ended = await hold.exit(shown, { checkedWallet: true }, client);
-      for (
-        let tries = 1;
-        !ended.released &&
-        tries < EXIT_TRIES &&
-        ended.state.status === shown.status &&
-        "exit" in ended.state &&
-        ended.state.exit;
-        tries += 1
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, EXIT_RETRY_MS));
-        ended = await hold.exit(shown, { checkedWallet: true }, client);
-      }
-      if (!ended.released) throw new Error(endedLine(ended.state));
+      // The exit never waits: a contended answer keeps the exit the user saw, to take again.
+      const ended = await hold.exit(shown, { checkedWallet: true }, client);
+      if (!ended.released)
+        throw new Error(
+          hidesShownExit(shown, ended.state) ? withNotice(shown) : endedLine(ended.state),
+        );
     }
   }
 }
