@@ -1,10 +1,15 @@
-import { safeBatchProposalFor, safeTransactionHash } from "@bananapus/nana-sdk-core/safe-service";
+import {
+  SAFE_PROPOSAL_AWAITING,
+  safeBatchProposalFor,
+  safeTransactionHash,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { waitFor } from "@testing-library/react";
 import {
   encodeFunctionData,
   getAddress,
   parseAbi,
   TransactionNotFoundError,
+  TransactionReceiptNotFoundError,
   type Address,
   type Hex,
 } from "viem";
@@ -30,6 +35,11 @@ vi.mock("wagmi/actions", () => ({
   getPublicClient: () => ({
     simulateCalls: mocks.simulateCalls,
     request: mocks.request,
+    getChainId: async () => 8453,
+    // The node has no receipt for a safeTxHash.
+    getTransactionReceipt: async ({ hash }: { hash: Hex }) => {
+      throw new TransactionReceiptNotFoundError({ hash });
+    },
     // A safeTxHash is never a transaction, so tracking polls the Safe service.
     getTransaction: async ({ hash }: { hash: Hex }) => {
       throw new TransactionNotFoundError({ hash });
@@ -45,7 +55,8 @@ vi.mock("wagmi", () => ({
   useWriteContract: vi.fn(),
 }));
 
-import { proposeSafeBatch, SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { proposeSafeBatch } from "@/hooks/useReviewedWriteContract";
+import { registerFlowChoiceHandler } from "@/lib/flow-choice";
 import {
   dismissTransactionActivity,
   transactionActivityForHash,
@@ -56,6 +67,10 @@ import {
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
+import {
+  WRITE_HOLD_HASHED_EXIT_LINE,
+  WRITE_HOLD_SAFE_UNPROVEN_LINE,
+} from "@bananapus/nana-sdk-core/review";
 
 const ACCOUNT = "0x000000000000000000000000000000000000dEaD" as Address;
 const TOKEN = "0x0000000000000000000000000000000000001000" as Address;
@@ -115,6 +130,8 @@ describe("one Safe proposal for a whole flow", () => {
   let seen: TransactionReviewRequest | null;
   let approve: boolean;
   beforeEach(() => {
+    // Each test's batch is the same intent (approvals keyed by spender): start without holds.
+    window.localStorage.clear();
     seen = null;
     approve = true;
     clearViewAs();
@@ -211,16 +228,18 @@ describe("one Safe proposal for a whole flow", () => {
       safe: ACCOUNT,
       calls: expected.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
       batch: true,
+      // The hold it is kept in: the batch's intent.
+      holdNamespace: expect.stringMatching(/^intent:batch:[0-9a-f]{40}$/),
     });
 
-    // The same batch again is the pending proposal, not a second one.
+    // The same batch again is the pending proposal, not a second one: its hold refuses it.
     await expect(
       proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
-    ).rejects.toBeInstanceOf(SafeProposalPendingError);
+    ).rejects.toThrow(SAFE_PROPOSAL_AWAITING);
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses the same batch while a proposal it can't confirm is listed, and takes it once dismissed", async () => {
+  it("holds the same batch while a proposal it can't confirm is listed, and proposes it again only on the hold's warned exit", async () => {
     const CALLS = calls();
     const proposal = listBatchThrough(CALLS, UNLISTED_MULTI_SEND);
 
@@ -234,19 +253,27 @@ describe("one Safe proposal for a whole flow", () => {
       }),
     );
 
-    const refused = await proposeSafeBatch(
-      mocks.config as never,
-      8453,
-      "Make the market",
-      CALLS,
-    ).catch((cause: unknown) => cause);
-    expect(refused).toBeInstanceOf(SafeProposalPendingError);
-    expect((refused as Error).message).toContain(
-      "Check it in Safe, then dismiss it in your account activity.",
+    const prompt = vi.fn().mockResolvedValue(false);
+    registerFlowChoiceHandler(prompt);
+    await expect(
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
+    ).rejects.toThrow(WRITE_HOLD_SAFE_UNPROVEN_LINE);
+    expect(prompt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        lines: expect.arrayContaining([WRITE_HOLD_SAFE_UNPROVEN_LINE, WRITE_HOLD_HASHED_EXIT_LINE]),
+      }),
+      expect.any(AbortSignal),
     );
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
 
+    // Dismissing the listed proposal alone proposes nothing: only the exit does.
     dismissTransactionActivity(transactionActivityForHash(proposal)!.id);
+    await expect(
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
+    ).rejects.toThrow(WRITE_HOLD_SAFE_UNPROVEN_LINE);
+    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
+
+    prompt.mockResolvedValue(true);
     mocks.sendCalls.mockResolvedValue({ id: SAFE_TX_HASH });
     await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
     expect(mocks.sendCalls).toHaveBeenCalledTimes(2);
@@ -287,17 +314,26 @@ describe("one Safe proposal for a whole flow", () => {
       first!,
       { ...second!, dependsOnPrior: true },
     ]);
-    // Only the standalone approval runs alone; the dependent call is left to Safe.
-    expect(mocks.request).toHaveBeenCalledTimes(1);
-    expect(mocks.request.mock.calls[0]![0]).toMatchObject({
+    // Only the standalone approval runs alone; the dependent call is left to Safe. (The other
+    // call reads the Safe's nonce for the hold.)
+    const simulated = mocks.request.mock.calls.filter(
+      ([args]) => (args as { params: [{ to: string }] }).params[0].to === TOKEN,
+    );
+    expect(simulated).toHaveLength(1);
+    expect(simulated[0]![0]).toMatchObject({
       method: "eth_call",
       params: [{ from: ACCOUNT, to: TOKEN }, "latest"],
     });
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
 
     mocks.request.mockRejectedValueOnce(new Error("allowance"));
+    // Another batch: its approval names another spender.
+    const [other, rest] = calls();
     await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", [
+        { ...other!, args: [ACCOUNT, other!.args[1]] as const },
+        rest!,
+      ]),
     ).rejects.toThrow("step 1");
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });

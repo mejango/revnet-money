@@ -6,8 +6,18 @@ export const TARGET = "0x0000000000000000000000000000000000001000" as Address;
 export const PAYMENT_TARGET = "0x1c05f7841379d4393574c0ffa17908ec40ffd97d" as Address;
 export const HASH = `0x${"ab".repeat(32)}` as Hex;
 export const BLOCK_HASH = `0x${"cd".repeat(32)}` as Hex;
-export const BUNDLE_UUID = "01234567-89ab-cdef-0123-456789abcdef";
-export const OTHER_BUNDLE_UUID = "fedcba98-7654-3210-fedc-ba9876543210";
+export let BUNDLE_UUID = "01234567-89ab-cdef-0123-456789abcdef";
+export let OTHER_BUNDLE_UUID = "fedcba98-7654-3210-fedc-ba9876543210";
+
+/**
+ * Gives the next test bundles of its own. A test that leaves a bundle's background status watch
+ * running (an uncertain payment keeps being proven for minutes) then can't write to a later
+ * test's bundle of the same UUID.
+ */
+export function rotateBundleUuids(): void {
+  BUNDLE_UUID = crypto.randomUUID();
+  OTHER_BUNDLE_UUID = crypto.randomUUID();
+}
 /** The IDs Relayr assigns to a bundle's transactions, in posted order. */
 export const TX_UUIDS = [
   "11111111-1111-4111-8111-111111111111",

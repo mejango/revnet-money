@@ -121,6 +121,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
     isSafeProposal,
     isTxUnconfirmed,
     isTxReceiptUnconfirmed,
+    txHeldLine,
     relayrAvailable,
   } = useSetSplitGroups({
     onSuccess: (txHash) => {
@@ -294,9 +295,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
               ? SAFE_PROPOSAL_UNCONFIRMED_LINE
               : proposed
                 ? "Proposed to Safe. Approve and execute it there."
-                : unconfirmed
-                  ? "Couldn't confirm the change yet."
-                  : null)
+                : (txHeldLine ?? (unconfirmed ? "Couldn't confirm the change yet." : null)))
           }
         >
           <SummaryRow label="Stage">{stageIdx + 1}</SummaryRow>

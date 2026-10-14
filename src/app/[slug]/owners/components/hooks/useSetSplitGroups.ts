@@ -68,6 +68,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
     isSafeProposal,
     isSafeResultUnconfirmed: isTxUnconfirmed,
     isUnconfirmed: isTxReceiptUnconfirmed,
+    heldLine: txHeldLine,
   } = useWaitForTransactionReceipt({
     hash: singleTxHash,
     chainId: singleTx?.chainId,
@@ -252,6 +253,8 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
     isSafeProposal,
     /** The single-chain write's watch ended with no receipt; it may still land. */
     isTxReceiptUnconfirmed,
+    /** The hold's line for that write, while its watch has given up. */
+    txHeldLine,
     relayrAvailable: !viaSafe,
   };
 }

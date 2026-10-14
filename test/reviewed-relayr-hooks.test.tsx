@@ -41,6 +41,7 @@ import {
   PAYMENT_RUNTIME,
   PAYMENT_TARGET,
   relayrApi,
+  rotateBundleUuids,
   TARGET,
   TX_UUIDS,
 } from "./relayr-fixtures";
@@ -180,6 +181,8 @@ describe("saved unpaid quote release evidence", () => {
 
 beforeEach(() => {
   window.localStorage.clear();
+  // A test that leaves a bundle's status watch running can't reach a later test's bundle.
+  rotateBundleUuids();
   vi.setSystemTime(new Date(NOW * 1_000));
   mocks.hookAddress = ACCOUNT;
   mocks.account = {

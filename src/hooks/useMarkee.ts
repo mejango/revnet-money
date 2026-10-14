@@ -1,19 +1,26 @@
 "use client";
 
 import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { confirmHeldWriteExit } from "@/lib/flow-choice";
 import * as markee from "@/lib/markee";
-import { recoverMarkeeSubmission } from "@/lib/markee-recovery";
+import { markeeSettlementIsSaved, recoverMarkeeSubmission } from "@/lib/markee-recovery";
 import {
   contractTransactionKey,
   recordTransactionActivity,
   refreshTransactionActivities,
   releaseTransactionActivityVerification,
   requireTransactionActivityPersistence,
+  settleTransactionActivityFailure,
   transactionActivityForHash,
   updateTransactionActivity,
 } from "@/lib/transaction-activity";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { browserLocks } from "@bananapus/nana-sdk-core/review";
+import { adoptIntoHold, holdsHash, safeHoldOf, writeHolds } from "@/lib/write-hold";
+import {
+  browserLocks,
+  WRITE_HOLD_HASHED_EXIT_LINE,
+  writeHeldMessage,
+} from "@bananapus/nana-sdk-core/review";
 import { safeExecutionResult, safeExecutionRunsCalls } from "@bananapus/nana-sdk-core/safe-service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -49,6 +56,14 @@ type Recovery = {
   pending?: Pending;
 };
 const RECOVERY_KEY = "revnet:markee-rent:recovery:v1";
+/** A supplied hash the hold can't tell apart from an earlier identical call. */
+const RECOVERED_UNMATCHED =
+  "That transaction can't be confirmed as this submission, so it wasn't saved. Check your wallet.";
+/** A saved submission the user released after checking their wallet. */
+const RELEASED = "Released after you checked your wallet.";
+/** A saved submission that went through, whose Markee result still can't be verified. */
+const SETTLED_UNVERIFIED =
+  "This transaction went through, but its Markee result couldn't be verified. Check the board before sending again.";
 const BOARD_KEY = "revnet:markee-rent:board:v1";
 function configurationKey(value: unknown) {
   return JSON.stringify(value, (_, item) => (typeof item === "bigint" ? item.toString() : item));
@@ -173,8 +188,8 @@ export function useMarkee(initialBoardAddress?: Address) {
   }, [refresh]);
 
   const { writeContractAsync } = useWriteContract({
-    // Markee's own journal holds its unknown results.
-    recovery: "caller",
+    // The SDK's write hold holds each exact call, as for any wallet write; Markee's journal adds
+    // the exact result it verifies.
     manualReceiptVerification: () => true,
     allowSafeManualReceiptVerification: true,
     reverify: async () => {
@@ -395,7 +410,7 @@ export function useMarkee(initialBoardAddress?: Address) {
     setStatus("Verifying onchain result");
     await verifyPending(recovery);
   };
-  const act = async (run: () => Promise<void>) => {
+  const act = async (run: () => Promise<string | void>) => {
     if (running.current) return;
     running.current = true;
     setBusy(true);
@@ -406,8 +421,7 @@ export function useMarkee(initialBoardAddress?: Address) {
           throw new Error(
             "Another tab is handling a Markee action. Finish or check that action first.",
           );
-        await run();
-        setStatus("Verified");
+        setStatus((await run()) ?? "Verified");
         await refresh();
       });
     } catch (cause) {
@@ -800,6 +814,69 @@ export function useMarkee(initialBoardAddress?: Address) {
         },
       );
     });
+  /** The SDK's write hold of a saved submission's exact call, a Safe's when it went to one. */
+  const holdOfStep = (account: Address, step: Pending, safe: boolean) => {
+    const call = { to: step.target, data: step.data, value: step.value };
+    return safe
+      ? safeHoldOf(markee.MARKEE_CHAIN_ID, { safe: account, calls: [call], batch: false })
+      : writeHolds.open({
+          chainId: markee.MARKEE_CHAIN_ID,
+          account,
+          safe: false,
+          call: { ...call, value: BigInt(call.value) },
+        });
+  };
+  /**
+   * A saved submission whose result can't be verified: its saved hash moves into the write hold
+   * for its exact call (one saved before the hold held it), and the hold says whether its exit is
+   * due. It is taken only on the user's explicit, warned choice. One saved with no hash before the
+   * hold held it gets the hold's hashless exit, and one the hold saw settle whose Markee result
+   * still can't be verified gets the journal's own. True once released.
+   */
+  const exitSaved = async (recovery: Recovery): Promise<boolean> => {
+    const step = recovery.pending;
+    if (!client || !step) return false;
+    const call = { to: step.target, data: step.data, value: step.value };
+    const hold = holdOfStep(
+      recovery.account,
+      step,
+      !!step.hash && transactionActivityForHash(step.hash)?.kind === "safe",
+    );
+    if (step.hash) await adoptIntoHold(hold, client, step.hash);
+    const state = await hold.state(client).catch(() => null);
+    if (!state) return false;
+    let shown: Parameters<typeof confirmHeldWriteExit>[0];
+    if (state.status !== "clear") {
+      if (!state.exit) return false;
+      shown = state;
+    } else if (!step.hash) {
+      shown = { line: writeHeldMessage(), record: { call } };
+    } else if (
+      markeeSettlementIsSaved(state.settled, step.hash, transactionActivityForHash(step.hash))
+    ) {
+      shown = { line: SETTLED_UNVERIFIED, warning: WRITE_HOLD_HASHED_EXIT_LINE, record: { call } };
+    } else return false;
+    if (!(await confirmHeldWriteExit(shown))) return false;
+    if (
+      state.status !== "clear" &&
+      !(await hold.exit(state, { checkedWallet: true }, client)).released
+    )
+      return false;
+    const current = loadRecovery();
+    if (!current?.pending || configurationKey(current.pending) !== configurationKey(step))
+      return false;
+    delete current.pending;
+    saveRecovery(current);
+    updateTransactionActivity(step.id, {
+      status: "failed",
+      manualVerificationRequired: false,
+      message: RELEASED,
+    });
+    // Its own transaction row stops waiting for verification too.
+    if (step.hash) settleTransactionActivityFailure(step.hash, RELEASED);
+    setPending(false);
+    return true;
+  };
   const recover = (providedHash?: string) =>
     act(async () => {
       const saved = loadRecovery();
@@ -823,6 +900,15 @@ export function useMarkee(initialBoardAddress?: Address) {
           current.account.toLowerCase() !== saved.account.toLowerCase()
         )
           throw new Error("The saved submission changed during hash verification.");
+        // The hold takes the hash first, once the chain shows it is this attempt: a pending one
+        // keeps no exit. One it can't tell from an earlier identical call is never saved, and
+        // the hashless recovery keeps its exit.
+        const hold = holdOfStep(saved.account, original, associated.kind === "safe");
+        await adoptIntoHold(hold, client, providedHash);
+        if (!holdsHash(hold, providedHash)) {
+          if (await exitSaved(saved)) return "Released. Check your wallet before sending again.";
+          throw new Error(RECOVERED_UNMATCHED);
+        }
         saved.pending.hash = providedHash;
         saveRecovery(saved);
         updateTransactionActivity(original.id, {
@@ -832,7 +918,12 @@ export function useMarkee(initialBoardAddress?: Address) {
         });
       }
       refreshTransactionActivities();
-      await verifyPending(saved);
+      try {
+        await verifyPending(saved);
+      } catch (cause) {
+        if (!(await exitSaved(saved))) throw cause;
+        return "Released. Check your wallet before sending again.";
+      }
     });
   const quoteFunding = (monthlyInput: string) => {
     if (!wallet || !board) return undefined;

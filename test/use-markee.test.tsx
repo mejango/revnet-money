@@ -1,6 +1,13 @@
 import { useMarkee } from "@/hooks/useMarkee";
+import { registerFlowChoiceHandler } from "@/lib/flow-choice";
+import { writeHolds } from "@/lib/write-hold";
+import {
+  WRITE_HOLD_HASHED_EXIT_LINE,
+  WRITE_HOLD_UNCHECKED_LINE,
+  writeHeldMessage,
+} from "@bananapus/nana-sdk-core/review";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { zeroAddress, type Address, type Hex } from "viem";
+import { TransactionNotFoundError, zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -25,6 +32,8 @@ const mocks = vi.hoisted(() => ({
   getEnsAddress: vi.fn(),
   getCode: vi.fn(),
   getChainId: vi.fn(),
+  chainReceipt: vi.fn(),
+  settleFailure: vi.fn(),
 }));
 const boardAddress = "0x1111111111111111111111111111111111111111" as Address;
 const messageAddress = "0x2222222222222222222222222222222222222222" as Address;
@@ -40,6 +49,14 @@ const client = {
   getEnsAddress: mocks.getEnsAddress,
   getCode: mocks.getCode,
   getChainId: mocks.getChainId,
+  // The reads the SDK's write hold makes.
+  getTransactionReceipt: mocks.chainReceipt,
+  getTransactionCount: vi.fn(async () => 3),
+  getBlockNumber: async () => 100n,
+  getBlock: async ({ blockNumber }: { blockNumber?: bigint } = {}) => ({
+    number: blockNumber ?? 100n,
+    hash: `0x${"bb".repeat(32)}`,
+  }),
 };
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   useWriteContract: (options: typeof mocks.options) => {
@@ -71,6 +88,7 @@ vi.mock("@/lib/transaction-activity", () => ({
   refreshTransactionActivities: vi.fn(() => []),
   requireTransactionActivityPersistence: vi.fn(),
   releaseTransactionActivityVerification: vi.fn(),
+  settleTransactionActivityFailure: mocks.settleFailure,
   transactionActivityForHash: mocks.activity,
 }));
 const walletState = {
@@ -129,6 +147,8 @@ beforeEach(() => {
     };
   });
   mocks.activity.mockReturnValue(undefined);
+  mocks.chainReceipt.mockReset().mockRejectedValue(new Error("Receipt not found"));
+  mocks.settleFailure.mockReset();
   mocks.receipt.mockResolvedValue({ transactionHash: hash, status: "success", logs: [] });
   mocks.write.mockImplementation(async () => {
     await mocks.options!.reverify();
@@ -643,4 +663,270 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
       }
     },
   );
+});
+
+describe("a saved Markee submission the chain can't settle", () => {
+  const saveHashless = () =>
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        pending: { kind: "stop", id: "saved", target: boardAddress, data: "0x1234", value: "0" },
+      }),
+    );
+
+  it("offers the warned exit for a submission the wallet gave no hash for, and frees the board only on it", async () => {
+    const prompt = vi.fn().mockResolvedValue(false);
+    registerFlowChoiceHandler(prompt);
+    saveHashless();
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+
+    await act(() => result.current.recover());
+    expect(prompt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ lines: expect.arrayContaining([writeHeldMessage()]) }),
+    );
+    expect(result.current.error).toContain("submission result is unknown");
+    expect(result.current.pending).toBe(true);
+
+    prompt.mockResolvedValue(true);
+    await act(() => result.current.recover());
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.pending).toBe(false);
+    expect(
+      JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending,
+    ).toBeUndefined();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("offers the hold's warned exit for a sent hash the node hasn't seen for 30 minutes", async () => {
+    const prompt = vi.fn().mockResolvedValue(true);
+    registerFlowChoiceHandler(prompt);
+    // The SDK's write hold took the exact call and the wallet's hash.
+    const hold = writeHolds.open({
+      chainId: 8453,
+      account: mocks.account,
+      safe: false,
+      call: { to: boardAddress, data: "0x1234", value: 0n },
+    });
+    await hold.send(client as never, async (gate) => {
+      await gate.beforeSend();
+      gate.afterSubmit(hash);
+    });
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        pending: {
+          kind: "stop",
+          id: "saved",
+          target: boardAddress,
+          data: "0x1234",
+          value: "0",
+          hash,
+        },
+      }),
+    );
+    // The node never learns of it.
+    mocks.getTransaction.mockRejectedValue(new TransactionNotFoundError({ hash }));
+    mocks.receipt.mockRejectedValue(new Error("Receipt not found"));
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 31 * 60_000);
+    await act(() => result.current.recover());
+    expect(prompt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        lines: expect.arrayContaining([WRITE_HOLD_UNCHECKED_LINE, WRITE_HOLD_HASHED_EXIT_LINE]),
+      }),
+    );
+    expect(result.current.pending).toBe(false);
+    expect(hold.peek()).toMatchObject({ status: "clear" });
+    // Its own transaction row no longer waits for verification either.
+    expect(mocks.settleFailure).toHaveBeenCalledWith(hash, expect.any(String));
+  });
+
+  /** The SDK's hold of the saved stop call. */
+  const stopHold = () =>
+    writeHolds.open({
+      chainId: 8453,
+      account: mocks.account,
+      safe: false,
+      call: { to: boardAddress, data: "0x1234", value: 0n },
+    });
+  const saveHashed = () =>
+    localStorage.setItem(
+      "revnet:markee-rent:recovery:v1",
+      JSON.stringify({
+        account: mocks.account,
+        board: boardAddress,
+        pending: {
+          kind: "stop",
+          id: "saved",
+          target: boardAddress,
+          data: "0x1234",
+          value: "0",
+          hash,
+        },
+      }),
+    );
+
+  it("attaches a recovered hash under the hold's lock, so an identical send from another tab during recovery is refused", async () => {
+    const prompt = vi.fn().mockResolvedValue(true);
+    registerFlowChoiceHandler(prompt);
+    await stopHold()
+      .send(client as never, async (gate) => {
+        await gate.beforeSend();
+        throw new Error("Wallet transport lost");
+      })
+      .catch(() => undefined);
+    saveHashless();
+    // The recovered hash is the exact call, sent at the reserved nonce and still pending.
+    mocks.getTransaction.mockResolvedValue({
+      hash,
+      from: mocks.account,
+      to: boardAddress,
+      input: "0x1234",
+      value: 0n,
+      nonce: 3,
+      blockNumber: null,
+    });
+    mocks.receipt.mockRejectedValue(new Error("Receipt not found"));
+    // Another tab's controller tries the identical call whenever this one reads the chain.
+    const { createWriteHold } = await import("@bananapus/nana-sdk-core/review");
+    const otherTab = createWriteHold().open({
+      chainId: 8453,
+      account: mocks.account,
+      safe: false,
+      call: { to: boardAddress, data: "0x1234", value: 0n },
+    });
+    let trying = false;
+    const sentByOtherTab: Hex[] = [];
+    const attempt = async () => {
+      if (trying) return;
+      trying = true;
+      await otherTab
+        .send(client as never, async (gate) => {
+          await gate.beforeSend();
+          gate.afterSubmit(`0x${"cd".repeat(32)}`);
+          sentByOtherTab.push(`0x${"cd".repeat(32)}`);
+        })
+        .catch(() => undefined);
+      trying = false;
+    };
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    const reads = [client.getTransactionCount, mocks.getTransaction, mocks.getChainId];
+    for (const read of reads) {
+      const original = read.getMockImplementation()!;
+      read.mockImplementation(async (...args: never[]) => {
+        await attempt();
+        return original(...args);
+      });
+    }
+
+    await act(() => result.current.recover(hash));
+    expect(sentByOtherTab).toEqual([]);
+    expect(prompt).not.toHaveBeenCalled();
+    expect(stopHold().peek()).toMatchObject({ status: "pending-known-hash", hash });
+  });
+
+  it("keeps the hashless recovery and its exit when the hold refuses a supplied hash as an earlier attempt's", async () => {
+    await stopHold()
+      .send(client as never, async (gate) => {
+        await gate.beforeSend();
+        throw new Error("Wallet transport lost");
+      })
+      .catch(() => undefined);
+    saveHashless();
+    // An earlier identical transaction: below the reserved nonce, mined before the reservation.
+    mocks.getTransaction.mockResolvedValue({
+      hash,
+      from: mocks.account,
+      to: boardAddress,
+      input: "0x1234",
+      value: 0n,
+      nonce: 2,
+      blockNumber: 90n,
+    });
+    const prompt = vi.fn().mockResolvedValue(false);
+    registerFlowChoiceHandler(prompt);
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+
+    await act(() => result.current.recover(hash));
+    expect(
+      JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending.hash,
+    ).toBeUndefined();
+    expect(mocks.receipt).not.toHaveBeenCalled();
+    expect(stopHold().peek()).toMatchObject({ status: "held-no-hash" });
+    expect(result.current.pending).toBe(true);
+  });
+
+  it("moves a hash saved before the hold held it into the hold, which offers its exit once it goes unseen", async () => {
+    const prompt = vi.fn().mockResolvedValue(true);
+    registerFlowChoiceHandler(prompt);
+    saveHashed();
+    mocks.getTransaction.mockRejectedValue(new TransactionNotFoundError({ hash }));
+    mocks.receipt.mockRejectedValue(new Error("Receipt not found"));
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+
+    await act(() => result.current.recover());
+    expect(prompt).not.toHaveBeenCalled();
+    expect(stopHold().peek()).toMatchObject({ hash });
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 31 * 60_000);
+    await act(() => result.current.recover());
+    expect(prompt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ lines: expect.arrayContaining([WRITE_HOLD_UNCHECKED_LINE]) }),
+    );
+    expect(result.current.pending).toBe(false);
+  });
+
+  it("offers a warned exit when the transaction settled but its Markee result can't be verified", async () => {
+    const prompt = vi.fn().mockResolvedValue(false);
+    registerFlowChoiceHandler(prompt);
+    saveHashed();
+    const mined = {
+      hash,
+      from: mocks.account,
+      to: boardAddress,
+      input: "0x1234",
+      value: 0n,
+      nonce: 3,
+      blockNumber: 9n,
+      blockHash: `0x${"bb".repeat(32)}`,
+      transactionIndex: 0,
+    };
+    mocks.getTransaction.mockResolvedValue(mined);
+    const receipt = {
+      status: "success",
+      transactionHash: hash,
+      from: mocks.account,
+      to: boardAddress,
+      blockNumber: 9n,
+      blockHash: mined.blockHash,
+      transactionIndex: 0,
+      logs: [],
+    };
+    mocks.chainReceipt.mockResolvedValue(receipt);
+    mocks.receipt.mockResolvedValue(receipt);
+    // The stream still runs: the stop's result can't be verified.
+    mocks.readWallet.mockResolvedValue({ ...walletState, flowRate: 10n });
+    const { result } = renderHook(() => useMarkee(boardAddress));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+
+    await act(() => result.current.recover());
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(result.current.pending).toBe(true);
+
+    prompt.mockResolvedValue(true);
+    await act(() => result.current.recover());
+    expect(result.current.pending).toBe(false);
+  });
 });

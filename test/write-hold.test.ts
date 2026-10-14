@@ -2,7 +2,9 @@ import { registerFlowChoiceHandler } from "@/lib/flow-choice";
 import { sendUnderHold, WENT_THROUGH } from "@/lib/write-hold";
 import {
   WRITE_HOLD_REVERTED_LINE,
+  WRITE_HOLD_STALE_REVIEW_LINE,
   WriteHeldError,
+  WriteHoldStaleReviewError,
   type WriteHeldState,
 } from "@bananapus/nana-sdk-core/review";
 import { describe, expect, it, vi } from "vitest";
@@ -176,5 +178,38 @@ describe("sendUnderHold", () => {
     await vi.advanceTimersByTimeAsync(3_100);
     await sent;
     expect(hold.send).toHaveBeenCalledOnce();
+  });
+});
+
+describe("sendUnderHold with SDK 2.35", () => {
+  it("asks for a fresh review when another window sent the same write while this review was open", async () => {
+    const hold = holdThat({ held: [] });
+    hold.send.mockRejectedValueOnce(new WriteHoldStaleReviewError());
+    await expect(sendUnderHold(hold as never, client, run)).rejects.toThrow(
+      WRITE_HOLD_STALE_REVIEW_LINE,
+    );
+  });
+
+  it("says how the other window's write ended when the stale review carries it", async () => {
+    const hold = holdThat({ held: [] });
+    hold.send.mockRejectedValueOnce(
+      new WriteHoldStaleReviewError({ result: "success", hash: `0x${"12".repeat(32)}` }),
+    );
+    await expect(sendUnderHold(hold as never, client, run)).rejects.toThrow(WENT_THROUGH);
+  });
+
+  it("shows the hold's notice with its line, in the refusal and in the exit", async () => {
+    const prompt = vi.fn().mockResolvedValue(false);
+    registerFlowChoiceHandler(prompt);
+    const notice =
+      "This browser can't remember pending transactions. Check your wallet before repeating one.";
+    const refused = holdThat({ held: [{ ...noExitState, notice } as never] });
+    await expect(sendUnderHold(refused as never, client, run)).rejects.toThrow(notice);
+    const offered = holdThat({ held: [{ ...exitState("Held line."), notice } as never] });
+    await expect(sendUnderHold(offered as never, client, run)).rejects.toThrow("Held line.");
+    expect(prompt).toHaveBeenCalledWith(
+      expect.objectContaining({ lines: expect.arrayContaining(["Held line.", notice]) }),
+      expect.any(AbortSignal),
+    );
   });
 });

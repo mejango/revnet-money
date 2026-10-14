@@ -39,7 +39,12 @@ async function chooseInFlow(choice: FlowChoice, signal?: AbortSignal): Promise<b
  * wallet and chose to send again.
  */
 export function confirmHeldWriteExit(
-  held: { line: string; warning?: string; record: { call: { value?: bigint | string } } },
+  held: {
+    line: string;
+    warning?: string;
+    notice?: string;
+    record: { call: { value?: bigint | string } };
+  },
   signal?: AbortSignal,
 ): Promise<boolean> {
   return chooseInFlow(
@@ -49,6 +54,7 @@ export function confirmHeldWriteExit(
         held.line,
         writeExitMessage(held.record.call),
         ...(held.warning ? [held.warning] : []),
+        ...(held.notice ? [held.notice] : []),
       ],
       confirmLabel: WRITE_EXIT_LABEL,
     },

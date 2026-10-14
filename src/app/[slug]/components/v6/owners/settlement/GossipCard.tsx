@@ -10,6 +10,7 @@ import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteCont
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { syncIntent, withWriteIntent } from "@/lib/write-hold";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { buildSyncAccountingDataTx } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
@@ -136,7 +137,11 @@ function SyncButton({
                 account: address,
                 ...request,
               });
-              const hash = await writeContractAsync(request);
+              // Held by the sucker alone: the bridge fee is simulated again on a reopen.
+              const hash = await withWriteIntent(
+                writeContractAsync,
+                ...syncIntent(syncSucker),
+              )(request);
               if (submittedViaSafe(hash)) {
                 setState("sent");
                 setReview(null);

@@ -14,22 +14,35 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
-import type { RelayrPostBundleResponse } from "@/lib/nana/types";
+import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
+import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
+import { withWriteIntent } from "@/lib/write-hold";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { encodeFunctionData, PublicClient } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { DEFAULT_FORM_DATA } from "./constants";
 import { DeployRevnetForm, type DirectDeployment } from "./form/DeployRevnetForm";
+import { LaunchedNotice } from "./form/LaunchedNotice";
 import { createSchema } from "./helpers/createSchema";
 import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
 import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
+import {
+  checkSavedLaunch,
+  checkSavedLaunches,
+  launchInputOf,
+  launchIntent,
+  launchSalt,
+  noteLaunchSent,
+  savedLaunchOf,
+  settleLaunchSalt,
+} from "./helpers/launchIntent";
 import { parseDeployData } from "./helpers/parseDeployData";
 import { pinProjectMetadata } from "./helpers/pinProjectMetaData";
 import { calculateFinalStageStarts } from "./helpers/recalculateStageStarts";
@@ -44,6 +57,24 @@ export default function Page() {
 
   const { getRelayrTxQuote, data, reset } = useGetRelayrTxQuote();
   const [directDeployment, setDirectDeployment] = useState<DirectDeployment | null>(null);
+  /** A saved launch the chain shows already happened: shown, and never sent again. */
+  const [launched, setLaunched] = useState<{ chainId: number; revnetId: bigint }>();
+  useEffect(() => {
+    if (!address) return;
+    let live = true;
+    void checkSavedLaunches(
+      (chainId) =>
+        getPublicClient(wagmiConfig, { chainId: chainId as JBChainId }) as PublicClient | undefined,
+      address,
+    )
+      .then((found) => {
+        if (live && found) setLaunched(found);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [address]);
   const [quotedStageStart, setQuotedStageStart] = useState<QuotedStageStart>();
   const [paymentChainId, setPaymentChainId] = useState<number>();
   const quotedFormData = useRef<RevnetFormData | null>(null);
@@ -63,6 +94,9 @@ export default function Page() {
     // A launch waits while an earlier one's signature can still run, saying until when.
     await requireRelayrRecoveryScopeAvailable(address, "revnet-launch");
     setDirectDeployment(null);
+    // The one copy of what the user submitted: the launch's intent, salt, saved-launch lookup and
+    // settlement are all built from it, never from refreshed metadata.
+    const launchInput = launchInputOf(formData);
 
     let deploymentFormData = formData;
     if (formData.reserveAsset === "CUSTOM") {
@@ -104,7 +138,15 @@ export default function Page() {
       };
     }
 
-    const salt = createSalt();
+    // A single-chain launch is sent from this page: its salt stays the same across retries and
+    // reloads until it confirms, so a reload can find a launch whose reply was lost (the
+    // DeployRevnet event carries the salt). The write hold, keyed by the config, is what stops a
+    // second launch: the stage starts are fresh, so the chain would take a retry. A multichain
+    // launch has its own recovery through Relayr.
+    const singleChain = deploymentFormData.chainIds.length === 1 && address;
+    const salt = singleChain
+      ? launchSalt(address, deploymentFormData.chainIds[0]!, launchInput, createSalt)
+      : createSalt();
     const timestamp = Math.floor(Date.now() / 1000);
 
     const relayrTransactions = [];
@@ -195,10 +237,33 @@ export default function Page() {
       });
     }
 
-    if (directRequest) {
+    if (directRequest && address) {
       const chainId = deploymentFormData.chainIds[0];
+      const client = getPublicClient(wagmiConfig, { chainId }) as PublicClient | undefined;
+      // A saved attempt of this launch the chain shows already happened: nothing is sent.
+      if (client && savedLaunchOf(address, chainId, launchInput)?.fromBlock) {
+        const { launched: revnetId } = await checkSavedLaunch(
+          client,
+          chainId,
+          address,
+          launchInput,
+        );
+        if (revnetId !== "unknown") {
+          setLaunched({ chainId, revnetId });
+          return;
+        }
+      }
+      // The first block its DeployRevnet event can be in; a read that fails only skips the note.
+      const fromBlock = await Promise.resolve()
+        .then(() => client?.getBlockNumber())
+        .catch(() => undefined);
+      if (fromBlock !== undefined) noteLaunchSent(address, chainId, launchInput, fromBlock);
       if (connectedChainId !== chainId) await switchChainAsync({ chainId });
-      const hash = await writeContractAsync({
+      // Held by the user's launch config: the salt, stage start and pin are the page's own.
+      const hash = await withWriteIntent(
+        writeContractAsync,
+        ...launchIntent(launchInput),
+      )({
         chainId,
         address: directRequest.address,
         abi: directRequest.abi,
@@ -215,6 +280,13 @@ export default function Page() {
         return;
       }
       setDirectDeployment({ chainId, hash });
+      if (client)
+        void waitForReceiptWithRetry(client as PublicClient, hash)
+          .then((receipt) => {
+            // Launched: the next launch of this config is a new revnet, with a new salt.
+            if (receipt.status === "success") settleLaunchSalt(address, chainId, launchInput);
+          })
+          .catch(() => undefined);
       toast({
         title: "Revnet deployment submitted",
         description:
@@ -280,6 +352,9 @@ export default function Page() {
           }
         }}
       >
+        {launched ? (
+          <LaunchedNotice chainId={launched.chainId} revnetId={launched.revnetId} />
+        ) : null}
         <DeployRevnetForm
           relayrResponse={data}
           resetRelayrResponse={reset}

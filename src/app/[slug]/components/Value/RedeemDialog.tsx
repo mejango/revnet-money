@@ -22,6 +22,7 @@ import {
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
+import { useChosen } from "@/hooks/useChosen";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   isSafeProposalUnconfirmedError,
@@ -50,6 +51,7 @@ import { formatDecimals } from "@/lib/number";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
+import { cashOutIntent, withWriteIntent } from "@/lib/write-hold";
 import {
   formatUnits,
   getJBContractAddress,
@@ -81,7 +83,10 @@ const APPROVAL_UNCONFIRMED = "Couldn't confirm the approval yet.";
 
 export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, disabled, children } = props;
-  const [redeemAmount, setRedeemAmount] = useState<string>();
+  // Where the amount came from: typed, a share option (Max), or the app's seed. The write's
+  // intent keys an option by its name, since the amount it fills follows the balance.
+  const chosenAmount = useChosen<string | undefined>(undefined, "amount");
+  const redeemAmount = chosenAmount.value;
   // Max quote change tolerance in basis points; protects both routes (terminal
   // minimum on the treasury path, metadata minimum on the AMM path).
   const [slippageBps, setSlippageBps] = useState(100);
@@ -170,6 +175,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     isSafeProposal: approvalProposed,
     isSafeResultUnconfirmed: approvalSafeUnconfirmed,
     isUnconfirmed: approvalUnconfirmed,
+    heldLine: approvalHeldLine,
   } = useWaitForTransactionReceipt({
     hash: approvalHash,
     chainId: selectedChainId,
@@ -187,9 +193,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     ? SAFE_PROPOSAL_UNCONFIRMED_LINE
     : approvalProposed
       ? APPROVAL_PROPOSED
-      : approvalUnconfirmed
-        ? APPROVAL_UNCONFIRMED
-        : null;
+      : (approvalHeldLine ?? (approvalUnconfirmed ? APPROVAL_UNCONFIRMED : null));
   // const { data: redeemQuote } = useTokenCashOutQuoteEth(redeemAmountBN, {
   //   chainId: selectedSucker?.peerChainId as JBChainId,
   // });
@@ -414,7 +418,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         // The dialog stays mounted: a finished cash out must not greet the next one.
         if (!open) {
           reset();
-          setRedeemAmount(undefined);
+          chosenAmount.seed(undefined);
           setReview(false);
           setError(null);
         }
@@ -490,7 +494,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                             id="amount"
                             name="amount"
                             value={redeemAmount ?? ""}
-                            onChange={(e) => setRedeemAmount(e.target.value?.trim())}
+                            onChange={(e) => chosenAmount.set(e.target.value?.trim())}
                           />
                           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 z-10">
                             <span className="text-zinc-500 sm:text-md">{tokenSymbol}</span>
@@ -508,7 +512,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                                     description: "Choose a network first.",
                                   });
                                 }
-                                setRedeemAmount(
+                                chosenAmount.choose(
+                                  pct === 100 ? "max" : `${pct}%`,
                                   pct === 100
                                     ? maxRedeemAmount
                                     : (Number(maxRedeemAmount) * (pct / 100)).toFixed(8),
@@ -737,7 +742,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     );
                   }
                   // The sale pays `address`: only `address` may send it.
-                  await writeContractAsync({
+                  // Held by what the user asked for: the quote and deadline are stamped again.
+                  // One cash-out intent, whichever venue the app picks.
+                  await withWriteIntent(
+                    writeContractAsync,
+                    ...cashOutIntent({
+                      projectId: effectiveProjectId,
+                      token: tokenToReceive,
+                      amount: chosenAmount.key(redeemAmountBN),
+                      beneficiary: address,
+                    }),
+                  )({
                     ...buildDirectSellSwapTx({
                       chainId: selectedChainId,
                       quote: fresh,
@@ -766,7 +781,16 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   );
                 }
 
-                await writeContractAsync({ ...prepared.transaction, account: address });
+                // Held by what the user asked for: the quoted minimum is read again on a retry.
+                await withWriteIntent(
+                  writeContractAsync,
+                  ...cashOutIntent({
+                    projectId: effectiveProjectId,
+                    token: tokenToReceive,
+                    amount: chosenAmount.key(redeemAmountBN),
+                    beneficiary: address,
+                  }),
+                )({ ...prepared.transaction, account: address });
               } catch (err) {
                 setIsApproving(false);
                 if (isSafeProposalUnconfirmedError(err)) {

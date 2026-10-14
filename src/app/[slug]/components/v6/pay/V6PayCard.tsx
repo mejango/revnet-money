@@ -44,6 +44,7 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
+import { payIntent, withWriteIntent } from "@/lib/write-hold";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
   JB_CHAINS,
@@ -1006,7 +1007,12 @@ export function V6PayCard() {
         blockNumber: approvalBlock,
       } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
       setPhase("signing");
-      const hash = await writeContractAsync({
+      // Held by the project and beneficiary alone: one payment to a project at a time, whatever
+      // the cart, token, route, amount or memo.
+      const hash = await withWriteIntent(
+        writeContractAsync,
+        ...payIntent({ projectId, beneficiary: prepared.account }),
+      )({
         chainId: prepared.chainId,
         address: paymentRequest.address,
         abi: paymentRequest.abi,
