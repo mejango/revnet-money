@@ -67,7 +67,17 @@ export function RepayDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   // ===== STATE =====
-  const [collateralToReturn, setCollateralToReturn] = useState("");
+  const [collateralToReturn, setCollateralText] = useState("");
+  /**
+   * The share of the loan's collateral a share button (a percentage, Max, the full collateral
+   * filled in on open, or the clamp) filled in; undefined once the user types. The repay's intent
+   * keeps the share.
+   */
+  const [collateralShare, setCollateralShare] = useState<number>();
+  const setCollateralToReturn = useCallback((value: string, share?: number) => {
+    setCollateralText(value);
+    setCollateralShare(share);
+  }, []);
   const [repayStatus, setRepayStatus] = useState("idle");
   const [repayTxHash, setRepayTxHash] = useState<`0x${string}` | undefined>();
   const [collateralError, setCollateralError] = useState<string>("");
@@ -422,7 +432,7 @@ export function RepayDialog({
   useEffect(() => {
     if (open && loanData && projectTokenDecimals) {
       const maxCollateralDisplay = formatUnits(loanData.collateral, projectTokenDecimals);
-      setCollateralToReturn(maxCollateralDisplay);
+      setCollateralToReturn(maxCollateralDisplay, 100);
     }
     if (!open) {
       setCollateralToReturn("");
@@ -431,7 +441,7 @@ export function RepayDialog({
       setCollateralError("");
       setReview(null);
     }
-  }, [open, loanData, projectTokenDecimals]);
+  }, [open, loanData, projectTokenDecimals, setCollateralToReturn]);
 
   useEffect(() => {
     if (repayStatus === "pending" || repayStatus === "success") setReview(null);
@@ -582,7 +592,8 @@ export function RepayDialog({
       // Held by the loan and the collateral the user returns: the repay ceiling accrues.
       const txHash = await withWriteIntent(repayLoanAsync, "repay", {
         loanId,
-        collateralCountToReturn,
+        // As the user chose it: the count it gives follows the loan's collateral.
+        ...(collateralShare === undefined ? { collateralToReturn } : { share: collateralShare }),
       })({
         abi: revLoansAbi,
         functionName: "repayLoan",
@@ -643,6 +654,7 @@ export function RepayDialog({
               const portion = collateralInTokens * (pct / 100);
               setCollateralToReturn(
                 portion < 0.000001 ? "0" : portion.toFixed(6).replace(/\.?0+$/, ""),
+                pct,
               );
             }}
             className="h-8 px-3 text-xs text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
@@ -654,7 +666,7 @@ export function RepayDialog({
           type="button"
           onClick={() => {
             const maxCollateralDisplay = formatUnits(loanData.collateral, projectTokenDecimals);
-            setCollateralToReturn(maxCollateralDisplay);
+            setCollateralToReturn(maxCollateralDisplay, 100);
           }}
           className="h-8 px-3 text-xs text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
         >
@@ -753,7 +765,7 @@ export function RepayDialog({
                   if (!isNaN(numValue)) {
                     // Prevent entering more than available collateral
                     if (numValue > maxValue) {
-                      setCollateralToReturn(maxValue.toFixed(6));
+                      setCollateralToReturn(maxValue.toFixed(6), 100);
                     } else {
                       setCollateralToReturn(value);
                     }

@@ -262,9 +262,9 @@ function abiIntent(value: unknown): IntentValue {
 
 /** Uniswap v4 position actions whose params lead with the position's tokenId. */
 const ON_TOKEN = new Set([0x00, 0x01, 0x03, 0x04]);
-/** Uniswap v4 mints, whose params lead with the pool key and the range. */
+/** Uniswap v4 mints, whose params lead with the pool key. */
 const MINTS = new Set([0x02, 0x05]);
-const POOL_KEY_AND_RANGE = [
+const POOL_KEY = [
   {
     type: "tuple",
     components: [
@@ -275,14 +275,12 @@ const POOL_KEY_AND_RANGE = [
       { type: "address" },
     ],
   },
-  { type: "int24" },
-  { type: "int24" },
 ] as const;
 
 /**
  * A `modifyLiquidities` unlockData's actions and the positions they act on: each action's code
- * with its tokenId, or a mint's pool key and range. The amounts and limits are left out, since a
- * retry re-quotes them; the currency actions (settle, take, close, sweep) keep their params. An
+ * with its tokenId, or a mint's pool key. The amounts, limits and a mint's range are left out,
+ * since a retry re-quotes them from the live price; the currency actions (settle, take, close, sweep) keep their params. An
  * unlockData that can't be read is one action on the whole position manager.
  */
 function liquidityActions(unlockData: unknown): IntentValue {
@@ -297,7 +295,7 @@ function liquidityActions(unlockData: unknown): IntentValue {
       const code = parseInt(hex, 16);
       const param = params[index]!;
       if (ON_TOKEN.has(code)) return [code, decodeAbiParameters([{ type: "uint256" }], param)[0]];
-      if (MINTS.has(code)) return [code, abiIntent(decodeAbiParameters(POOL_KEY_AND_RANGE, param))];
+      if (MINTS.has(code)) return [code, abiIntent(decodeAbiParameters(POOL_KEY, param))];
       return [code, intent.hex(param)];
     });
   } catch {
@@ -325,12 +323,16 @@ export function writeIntentOf(write: Write): string | undefined {
   if (typeof named === "string") return named;
   const to = write.address ? intent.address(write.address) : null;
   const args = write.args ?? [];
+  // One approval per token and spender: its amount may be calculated (a flow's max, a funding
+  // amount) and change on a retry.
+  if (write.functionName === "approve" && args.length === 2)
+    return writeIntentKey("approve", { to, spender: abiIntent(args[0]) });
+  // One Permit2 approval per token and spender: its amount may come from a quote.
   if (write.functionName === "approve" && args.length === 4)
     return writeIntentKey("permit2-approve", {
       to,
       token: abiIntent(args[0]),
       spender: abiIntent(args[1]),
-      amount: BigInt(args[2] as bigint),
     });
   if (write.functionName === "modifyLiquidities")
     return writeIntentKey("lp", { to, actions: liquidityActions(args[0]) });
@@ -357,4 +359,101 @@ export function batchIntentOf(calls: readonly (Write & { abi: Abi; value?: bigin
         },
     ),
   });
+}
+
+/**
+ * A payment's intent. A checkout is its project, collection, token, memo, beneficiary and tiers
+ * with their quantities, in tier order: its amount follows the price feed, discounts and credits,
+ * and tier names are display text. An ordinary payment is its project, token, memo, beneficiary
+ * and typed amount. The route the app picks (a direct pay or a swap) is never in it.
+ */
+export function payIntent(payment: {
+  mode: string;
+  projectId: number | bigint;
+  token: string;
+  amount: bigint;
+  memo: string;
+  beneficiary: string;
+  hook?: string;
+  items: readonly { tierId: number; quantity: number; name?: string }[];
+}): [string, { [name: string]: IntentValue }] {
+  const common = {
+    projectId: BigInt(payment.projectId),
+    token: intent.address(payment.token),
+    memo: payment.memo,
+    beneficiary: intent.address(payment.beneficiary),
+  };
+  if (!payment.items.length) return [payment.mode, { ...common, amount: payment.amount }];
+  return [
+    `${payment.mode}-checkout`,
+    {
+      ...common,
+      collection: payment.hook ? intent.address(payment.hook) : null,
+      tiers: [...payment.items]
+        .sort((a, b) => a.tierId - b.tierId)
+        .map((item) => [item.tierId, item.quantity]),
+    },
+  ];
+}
+
+/**
+ * A collateral reallocation's intent: its loan, destination token, the collateral the user adds
+ * and the fee chosen. The collateral moved follows the loan's current capacity, so it is left out.
+ */
+export function reallocateIntent(reallocation: {
+  loanId: string | number | bigint;
+  token: string;
+  collateralCountToTransfer?: bigint;
+  collateralCountToAdd: bigint;
+  /** The share a share button filled the added collateral with, when one did. */
+  collateralShare?: number;
+  prepaidFeePercent: bigint;
+}): [string, { [name: string]: IntentValue }] {
+  return [
+    "reallocate",
+    {
+      loanId: BigInt(reallocation.loanId),
+      token: intent.address(reallocation.token),
+      collateralCountToAdd: amountChosen(
+        reallocation.collateralCountToAdd,
+        reallocation.collateralShare,
+      ),
+      prepaidFeePercent: reallocation.prepaidFeePercent,
+    },
+  ];
+}
+
+/**
+ * A cash out's intent: its project, the token reclaimed, the typed amount and the beneficiary.
+ * The venue the app picks (a pool sale or a terminal cash out) is never in it.
+ */
+export function cashOutIntent(cashOut: {
+  projectId: number | bigint;
+  token: string;
+  amount: bigint;
+  beneficiary: string;
+  /** The share of the balance a share button filled in (100 for Max), when one did. */
+  share?: number;
+}): [string, { [name: string]: IntentValue }] {
+  return [
+    "cash-out",
+    {
+      projectId: BigInt(cashOut.projectId),
+      token: intent.address(cashOut.token),
+      ...amountChosen(cashOut.amount, cashOut.share),
+      beneficiary: intent.address(cashOut.beneficiary),
+    },
+  ];
+}
+
+/**
+ * The amount as the user chose it: the share a share button (Max, or a percentage) filled in, or
+ * the amount the user typed. A filled amount follows the balance, so a retry after it moved is
+ * still the same choice.
+ */
+export function amountChosen(
+  amount: bigint,
+  share: number | undefined,
+): { amount: bigint } | { share: number } {
+  return share === undefined ? { amount } : { share };
 }

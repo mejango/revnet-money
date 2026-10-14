@@ -299,7 +299,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                         description: "Choose a network first.",
                       });
                     }
-                    setCollateralAmount((maxCollateralAmount * (pct / 100)).toFixed(8));
+                    setCollateralAmount((maxCollateralAmount * (pct / 100)).toFixed(8), pct);
                   }}
                   className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
                 >

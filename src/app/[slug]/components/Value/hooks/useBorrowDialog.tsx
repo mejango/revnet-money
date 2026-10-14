@@ -24,7 +24,7 @@ import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUt
 import { TransactionReviewCancelledError } from "@/lib/transaction-review";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { amountChosen, reallocateIntent, withWriteIntent } from "@/lib/write-hold";
 import {
   getRevnetLoanContract,
   JB_TOKEN_DECIMALS,
@@ -100,7 +100,17 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     if (borrowStatus === "granting-permission") setGrantsPermission(true);
     if (borrowStatus === "idle") setGrantsPermission(false);
   }, [borrowStatus]);
-  const [collateralAmount, setCollateralAmount] = useState("");
+  const [collateralAmount, setCollateralText] = useState("");
+  /**
+   * The share of the balance a share button (Max, a percentage, the full balance filled in on a
+   * network pick, or the clamp to the most allowed) filled in; undefined once the user types. The
+   * write's intent keeps the share, since the filled amount follows the balance.
+   */
+  const [collateralShare, setCollateralShare] = useState<number>();
+  const setCollateralAmount = useCallback((value: string, share?: number) => {
+    setCollateralText(value);
+    setCollateralShare(share);
+  }, []);
   const [selectedChainId, setSelectedChainId] = useState<number | undefined>(undefined);
   const [cashOutChainId, setCashOutChainId] = useState<string>();
   const [prepaidPercent, setPrepaidPercent] = useState("2.5");
@@ -433,7 +443,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         setShowingWaitingMessage(false);
       }
     },
-    [defaultTab],
+    [defaultTab, setCollateralAmount],
   );
 
   const handleChainSelection = useCallback(
@@ -442,10 +452,10 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       const collateral = selected ? formatUnits(selected.balance.value, projectTokenDecimals) : "0";
       setSelectedChainId(chainId);
       setCashOutChainId(chainId.toString());
-      setCollateralAmount(collateral);
+      setCollateralAmount(collateral, 100);
       setInternalSelectedLoan(null);
     },
-    [balances, projectTokenDecimals],
+    [balances, projectTokenDecimals, setCollateralAmount],
   );
 
   const handleLoanSelection = useCallback((_loanId: string, loanData: SelectedLoan) => {
@@ -645,13 +655,18 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
         setBorrowStatus("waiting-signature");
 
-        // Held by what the user asked for: the borrowable amount is quoted again on a retry.
-        await withWriteIntent(reallocateCollateralAsync, "reallocate", {
-          loanId: internalSelectedLoan.id,
-          collateralCountToTransfer,
-          collateralCountToAdd,
-          prepaidFeePercent: feePercent,
-        })({
+        // Held by what the user asked for: the borrowable amount and the collateral moved follow
+        // the loan's current capacity.
+        await withWriteIntent(
+          reallocateCollateralAsync,
+          ...reallocateIntent({
+            loanId: internalSelectedLoan.id,
+            token: selectedChainTokenConfig.token,
+            collateralCountToAdd,
+            collateralShare,
+            prepaidFeePercent: feePercent,
+          }),
+        )({
           ...buildProtectedReallocateCollateralTx({
             chainId: Number(cashOutChainId) as JBChainId,
             loanId: BigInt(internalSelectedLoan.id),
@@ -714,7 +729,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           await withWriteIntent(writeContractAsync, "borrow", {
             revnetId: effectiveProjectId,
             token: intent.address(selectedChainTokenConfig.token),
-            collateral: collateralBigInt,
+            collateral: amountChosen(collateralBigInt, collateralShare),
             prepaidFeePercent: feeBasisPoints,
           })({
             ...buildProtectedBorrowTx({
@@ -749,6 +764,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       }
     }
   }, [
+    collateralShare,
     internalSelectedLoan,
     collateralAmount,
     cashOutChainId,

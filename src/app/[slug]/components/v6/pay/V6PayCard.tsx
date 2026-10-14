@@ -44,7 +44,7 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { payIntent, withWriteIntent } from "@/lib/write-hold";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
   JB_CHAINS,
@@ -54,7 +54,6 @@ import {
   jbMultiTerminalAbi,
   jbRouterTerminalRegistryAbi,
 } from "@bananapus/nana-sdk-core";
-import { intent } from "@bananapus/nana-sdk-core/review";
 import {
   build721PayMetadata,
   buildPayTx,
@@ -1009,14 +1008,20 @@ export function V6PayCard() {
       } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
       setPhase("signing");
       // Held by what the user asked for: the quote's minimum, a swap's deadline and a Permit2
-      // signature are stamped again on a retry.
-      const hash = await withWriteIntent(writeContractAsync, prepared.mode, {
-        projectId,
-        token: intent.address(prepared.token.token),
-        amount: prepared.amount,
-        memo: prepared.memo,
-        items: prepared.cartRows,
-      })({
+      // signature are stamped again on a retry, and a checkout's amount follows its prices.
+      const hash = await withWriteIntent(
+        writeContractAsync,
+        ...payIntent({
+          mode: prepared.mode,
+          projectId,
+          token: prepared.token.token,
+          amount: prepared.amount,
+          memo: prepared.memo,
+          beneficiary: prepared.account,
+          hook: shop?.hook,
+          items: prepared.cartRows,
+        }),
+      )({
         chainId: prepared.chainId,
         address: paymentRequest.address,
         abi: paymentRequest.abi,

@@ -1,4 +1,8 @@
-import { safeBatchProposalFor, safeTransactionHash } from "@bananapus/nana-sdk-core/safe-service";
+import {
+  SAFE_PROPOSAL_AWAITING,
+  safeBatchProposalFor,
+  safeTransactionHash,
+} from "@bananapus/nana-sdk-core/safe-service";
 import { waitFor } from "@testing-library/react";
 import {
   encodeFunctionData,
@@ -51,7 +55,7 @@ vi.mock("wagmi", () => ({
   useWriteContract: vi.fn(),
 }));
 
-import { proposeSafeBatch, SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { proposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { registerFlowChoiceHandler } from "@/lib/flow-choice";
 import {
   dismissTransactionActivity,
@@ -126,6 +130,8 @@ describe("one Safe proposal for a whole flow", () => {
   let seen: TransactionReviewRequest | null;
   let approve: boolean;
   beforeEach(() => {
+    // Each test's batch is the same intent (approvals keyed by spender): start without holds.
+    window.localStorage.clear();
     seen = null;
     approve = true;
     clearViewAs();
@@ -226,10 +232,10 @@ describe("one Safe proposal for a whole flow", () => {
       holdNamespace: expect.stringMatching(/^intent:batch:[0-9a-f]{40}$/),
     });
 
-    // The same batch again is the pending proposal, not a second one.
+    // The same batch again is the pending proposal, not a second one: its hold refuses it.
     await expect(
       proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
-    ).rejects.toBeInstanceOf(SafeProposalPendingError);
+    ).rejects.toThrow(SAFE_PROPOSAL_AWAITING);
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 
@@ -321,8 +327,13 @@ describe("one Safe proposal for a whole flow", () => {
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
 
     mocks.request.mockRejectedValueOnce(new Error("allowance"));
+    // Another batch: its approval names another spender.
+    const [other, rest] = calls();
     await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
+      proposeSafeBatch(mocks.config as never, 8453, "Make the market", [
+        { ...other!, args: [ACCOUNT, other!.args[1]] as const },
+        rest!,
+      ]),
     ).rejects.toThrow("step 1");
     expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });

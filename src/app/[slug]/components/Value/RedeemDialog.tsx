@@ -50,7 +50,7 @@ import { formatDecimals } from "@/lib/number";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { cashOutIntent, withWriteIntent } from "@/lib/write-hold";
 import {
   formatUnits,
   getJBContractAddress,
@@ -60,14 +60,13 @@ import {
   JBProjectToken,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
-import { intent } from "@bananapus/nana-sdk-core/review";
 import {
   getTokenAddress,
   prepareHookAwareCashOut,
   uniswapV4Deployment,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { PropsWithChildren, useEffect, useState } from "react";
+import { PropsWithChildren, useCallback, useEffect, useState } from "react";
 import { erc20Abi, type Address, type PublicClient } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import { readPoolSnapshot } from "../v6/owners/market/lib";
@@ -83,7 +82,16 @@ const APPROVAL_UNCONFIRMED = "Couldn't confirm the approval yet.";
 
 export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, disabled, children } = props;
-  const [redeemAmount, setRedeemAmount] = useState<string>();
+  const [redeemAmount, setRedeemAmountText] = useState<string>();
+  /**
+   * The share of the balance a share button filled in (100 for Max); undefined once the user
+   * types. The write's intent keeps the share, since the filled amount follows the balance.
+   */
+  const [redeemShare, setRedeemShare] = useState<number>();
+  const setRedeemAmount = useCallback((value: string | undefined, share?: number) => {
+    setRedeemAmountText(value);
+    setRedeemShare(share);
+  }, []);
   // Max quote change tolerance in basis points; protects both routes (terminal
   // minimum on the treasury path, metadata minimum on the AMM path).
   const [slippageBps, setSlippageBps] = useState(100);
@@ -513,6 +521,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                                   pct === 100
                                     ? maxRedeemAmount
                                     : (Number(maxRedeemAmount) * (pct / 100)).toFixed(8),
+                                  pct,
                                 );
                               }}
                               className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
@@ -739,11 +748,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   }
                   // The sale pays `address`: only `address` may send it.
                   // Held by what the user asked for: the quote and deadline are stamped again.
-                  await withWriteIntent(writeContractAsync, "sell", {
-                    projectId: effectiveProjectId,
-                    token: intent.address(tokenToReceive),
-                    amount: redeemAmountBN,
-                  })({
+                  // One cash-out intent, whichever venue the app picks.
+                  await withWriteIntent(
+                    writeContractAsync,
+                    ...cashOutIntent({
+                      projectId: effectiveProjectId,
+                      token: tokenToReceive,
+                      amount: redeemAmountBN,
+                      share: redeemShare,
+                      beneficiary: address,
+                    }),
+                  )({
                     ...buildDirectSellSwapTx({
                       chainId: selectedChainId,
                       quote: fresh,
@@ -773,11 +788,16 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 }
 
                 // Held by what the user asked for: the quoted minimum is read again on a retry.
-                await withWriteIntent(writeContractAsync, "cash-out", {
-                  projectId: effectiveProjectId,
-                  token: intent.address(tokenToReceive),
-                  amount: redeemAmountBN,
-                })({ ...prepared.transaction, account: address });
+                await withWriteIntent(
+                  writeContractAsync,
+                  ...cashOutIntent({
+                    projectId: effectiveProjectId,
+                    token: tokenToReceive,
+                    amount: redeemAmountBN,
+                    share: redeemShare,
+                    beneficiary: address,
+                  }),
+                )({ ...prepared.transaction, account: address });
               } catch (err) {
                 setIsApproving(false);
                 if (isSafeProposalUnconfirmedError(err)) {

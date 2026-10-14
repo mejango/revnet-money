@@ -706,16 +706,35 @@ async function holdLegacySafeProposal(row: TransactionActivity, client: WriteHol
 
 /**
  * Whether the SDK's hold, which held this call before the send, decides over a journaled Safe
- * proposal of it that the app can't confirm: the hold offers that proposal's warned exit, so the
- * journal's own refusal (dismiss it first) gives way to it.
+ * proposal of it: the journal never refuses on its own while the hold holds the call. The hold
+ * refuses while the proposal may still run and offers its warned exit when one is due.
  */
-function holdDecides(
-  duplicate: { status: string; safeResultUnconfirmed?: boolean },
-  heldBefore: boolean,
-) {
-  return (
-    heldBefore && duplicate.status === "safe-proposed" && duplicate.safeResultUnconfirmed === true
-  );
+function holdDecides(duplicate: { status: string }, heldBefore: boolean) {
+  return heldBefore && duplicate.status === "safe-proposed";
+}
+
+/** Whether the hold's record carries its Safe proposal's nonce. */
+function holdKnowsNonce(hold: WriteHoldHandle): boolean {
+  try {
+    const now = hold.peek();
+    return now.status !== "clear" && now.record.safeNonce !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The hold let this send through, on the user's exit or on authenticated evidence: the journaled
+ * proposal it replaces stops refusing. One the app can't confirm leaves the journal; one still
+ * followed stays as history, released, and its watch may still settle it.
+ */
+function releaseJournaledProposal(duplicate: TransactionActivity) {
+  if (duplicate.safeResultUnconfirmed) dismissTransactionActivity(duplicate.id);
+  else
+    updateTransactionActivity(duplicate.id, {
+      status: "failed",
+      message: "Released when you checked your Safe and sent this again.",
+    });
 }
 
 /**
@@ -742,10 +761,16 @@ async function refuseUnheldSafeDuplicate(
     held = true;
   }
   if (!duplicate?.hash || duplicate.status !== "safe-proposed") return held;
+  // The journal knows the proposal's Safe nonce and the hold doesn't (it took the proposal before
+  // the nonce was found): only the journal can tell its nonce was used, so it still refuses.
+  if (held && duplicate.safeProposalNonce !== undefined && !holdKnowsNonce(hold))
+    throw new SafeProposalPendingError(duplicate.hash, action, duplicate.safeResultUnconfirmed);
   if (!holdDecides(duplicate, held)) {
     throw new SafeProposalPendingError(duplicate.hash, action, duplicate.safeResultUnconfirmed);
   }
-  await hold.onUnproven(client, duplicate.hash).catch(() => undefined);
+  // A proposal its watch ended unproven: the hold offers the exit at once.
+  if (duplicate.safeResultUnconfirmed)
+    await hold.onUnproven(client, duplicate.hash).catch(() => undefined);
   return held;
 }
 
@@ -815,7 +840,7 @@ export async function proposeSafeBatch(
   const submit = async (gate: WriteHoldGate) => {
     const duplicate = duplicateOf();
     if (duplicate?.hash && holdDecides(duplicate, heldBefore)) {
-      dismissTransactionActivity(duplicate.id);
+      releaseJournaledProposal(duplicate);
     } else if (duplicate?.hash) {
       throw new SafeProposalPendingError(duplicate.hash, title, duplicate.safeResultUnconfirmed);
     }
@@ -1104,8 +1129,7 @@ export function useWriteContract(
       const submitReviewedCall = async (gate?: WriteHoldGate) => {
         const duplicate = duplicateOf();
         if (duplicate?.hash && holdDecides(duplicate, heldBefore)) {
-          // The hold released it on the user's exit: the proposal it replaces is not kept.
-          dismissTransactionActivity(duplicate.id);
+          releaseJournaledProposal(duplicate);
         } else if (duplicate?.hash) {
           if (duplicate.status === "safe-proposed") {
             throw new SafeProposalPendingError(

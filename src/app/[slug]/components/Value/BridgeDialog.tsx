@@ -45,7 +45,7 @@ import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { getTokenAddress } from "@/lib/token";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
-import { withWriteIntent } from "@/lib/write-hold";
+import { amountChosen, withWriteIntent } from "@/lib/write-hold";
 import { JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
 import { intent } from "@bananapus/nana-sdk-core/review";
 import { suckerBytes32ToAddress } from "@bananapus/nana-sdk-core/v6";
@@ -64,7 +64,16 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const sourceChains = useMemo(() => projects.map((p) => p.chainId as JBChainId), [projects]);
   const [sourceChainId, setSourceChainId] = useState<JBChainId>(sourceChains[0]);
   const [targetChainId, setTargetChainId] = useState<JBChainId>();
-  const [amount, setAmount] = useState<string>();
+  const [amount, setAmountText] = useState<string>();
+  /**
+   * The share of the balance a share button filled in (100 for Max); undefined once the user
+   * types. The write's intent keeps the share, since the filled amount follows the balance.
+   */
+  const [amountShare, setAmountShare] = useState<number>();
+  const setAmount = useCallback((value: string | undefined, share?: number) => {
+    setAmountText(value);
+    setAmountShare(share);
+  }, []);
   const [slippagePercent, setSlippagePercent] = useState("1");
   const { token } = useJBTokenContext();
   const baseToken = useProjectBaseToken();
@@ -326,7 +335,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       await withWriteIntent(writeContractAsync, "bridge", {
         sucker: intent.address(suckerPair.local),
         token: intent.address(terminalToken),
-        amount: amountValue,
+        ...amountChosen(amountValue, amountShare),
       })({ ...request, chainId: sourceChainId, account: address });
     } catch (error) {
       console.error(error);
@@ -342,6 +351,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     }
   }, [
     amount,
+    amountShare,
     amountValue,
     balance.value,
     prepareQuote,
@@ -501,6 +511,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                     onClick={() => {
                       setAmount(
                         pct === 100 ? maxAmount : (Number(maxAmount) * (pct / 100)).toFixed(8),
+                        pct,
                       );
                     }}
                     className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
