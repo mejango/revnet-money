@@ -49,7 +49,7 @@ export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): Wri
       ...(proposal.holdNamespace ? { namespace: proposal.holdNamespace } : {}),
       call,
     },
-    proposal.holdNamespace ? { legacy: legacyOf(call) } : undefined,
+    proposal.holdNamespace ? { legacy: legacyOf(call, proposal.legacyNamespaces) } : undefined,
   );
 }
 
@@ -58,8 +58,15 @@ export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): Wri
  * for an earlier attempt whose calldata a retry regenerates, any call of the same function on the
  * same target (the SDK's matcher).
  */
-export function legacyOf(call: { to: Address; data: Hex; value?: bigint }) {
-  return [{ call }, { match: { to: call.to, selector: call.data.slice(0, 10) as Hex } }];
+export function legacyOf(
+  call: { to: Address; data: Hex; value?: bigint },
+  namespaces: readonly string[] = [],
+) {
+  return [
+    ...namespaces,
+    { call },
+    { match: { to: call.to, selector: call.data.slice(0, 10) as Hex } },
+  ];
 }
 
 /**
@@ -249,6 +256,7 @@ export async function sendUnderHold<T>(
 }
 
 const INTENT = Symbol.for("revnet:write-intent");
+const LEGACY = Symbol.for("revnet:write-intent-legacy");
 
 /**
  * `write`, sending its variables held by `namespace`: the user action's intent, from one of the
@@ -260,9 +268,20 @@ const INTENT = Symbol.for("revnet:write-intent");
 export function withWriteIntent<F extends (variables: never, ...rest: never[]) => unknown>(
   write: F,
   namespace: string,
+  /** The namespaces the build before SDK 2.38's builders held it by (legacy-intents.ts). */
+  legacy: readonly string[] = [],
 ): F {
   return ((variables: object, ...rest: never[]) =>
-    write({ ...variables, [INTENT]: namespace } as never, ...rest)) as unknown as F;
+    write(
+      { ...variables, [INTENT]: namespace, [LEGACY]: legacy } as never,
+      ...rest,
+    )) as unknown as F;
+}
+
+/** The previous build's namespaces a write's caller named. REMOVE with legacy-intents.ts. */
+export function legacyIntentsOf(write: object): readonly string[] {
+  const named = (write as Record<symbol, unknown>)[LEGACY];
+  return Array.isArray(named) ? named : [];
 }
 
 /** The intent a write's caller held it by, if any; a write without one is held by its call. */

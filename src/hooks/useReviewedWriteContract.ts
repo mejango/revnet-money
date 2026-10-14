@@ -1,6 +1,7 @@
 "use client";
 
 import { useWriteHoldWatch } from "@/hooks/useWriteHoldWatch";
+import { legacyBatchNamespace, legacyCallNamespace } from "@/lib/legacy-intents";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import {
@@ -34,6 +35,7 @@ import {
   adoptIntoHold,
   hidesShownExit,
   holdOfHash,
+  legacyIntentsOf,
   legacyOf,
   offersExit,
   rememberHold,
@@ -854,12 +856,12 @@ function holdDecides(duplicate: { status: string }, heldBefore: boolean) {
  */
 function releaseJournaledProposal(duplicate: TransactionActivity) {
   if (duplicate.safeResultUnconfirmed) dismissTransactionActivity(duplicate.id);
-  else
-    updateTransactionActivity(duplicate.id, {
-      status: "failed",
-      message: "Released. You sent this again.",
-    });
+  else updateTransactionActivity(duplicate.id, { status: "failed", message: RELEASED_LINE });
 }
+
+/** A released proposal: nothing is sent until a new submission exists (see followSubmission). */
+const RELEASED_LINE = "Released.";
+const RESENT_LINE = "Released. You sent this again.";
 
 /**
  * Before a Safe send under its hold: a journaled proposal of the call that still awaits the Safe
@@ -945,11 +947,15 @@ export async function proposeSafeBatch(
   const callKey = `batch:${account.toLowerCase()}:${chainId}:${keccak256(
     stringToHex(encoded.map((call) => `${call.to}:${call.value ?? 0n}:${call.data}`).join("|")),
   )}`;
+  // REMOVE with legacy-intents.ts: the previous build held every batch by its batch namespace;
+  // an intent's batch is held by it too, and a batch with none keeps it.
+  const previous = legacyBatchNamespace(calls);
   const proposal: ReviewedSafeProposal = {
     safe: account,
     calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
     batch: true,
-    ...(intent ? { holdNamespace: intent } : {}),
+    holdNamespace: intent ?? previous,
+    ...(intent ? { legacyNamespaces: [previous] } : {}),
   };
   const publicClient = getPublicClient(config, { chainId });
   if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
@@ -1075,6 +1081,10 @@ export function followSubmission(
   onReceipt?: (receipt: TransactionReceipt) => Promise<unknown>,
 ): void {
   const id = `tx:${chainId}:${hash.toLowerCase()}`;
+  // Only now, with a new submission, was a released proposal of this call sent again.
+  for (const row of refreshTransactionActivities())
+    if (row.callKey === callKey && row.message === RELEASED_LINE)
+      updateTransactionActivity(row.id, { message: RESENT_LINE });
   recordTransactionActivity({
     id,
     kind: safe ? "safe" : "direct",
@@ -1214,12 +1224,20 @@ export function useWriteContract(
       const callKey = contractTransactionKey(initialAddress, chainId, { ...variables, data });
       const safe = isSafeConnection(config);
       // Held by the user's intent where a retry stamps its calldata again, else by its exact call.
-      const namespace = writeIntentOf(variables as Parameters<typeof writeIntentOf>[0]);
+      // REMOVE with legacy-intents.ts: the previous build's namespaces for it hold it too, and a
+      // write no SDK builder names keeps the one it had.
+      const previous = [
+        ...legacyIntentsOf(variables),
+        legacyCallNamespace(variables as Parameters<typeof legacyCallNamespace>[0]),
+      ].filter((name): name is string => !!name);
+      const namespace = writeIntentOf(variables) ?? previous[0];
+      const legacyNamespaces = previous.filter((name) => name !== namespace);
       const safeProposal: ReviewedSafeProposal | false = safe && {
         safe: initialAddress,
         calls: [{ to: variables.address, value: String(variables.value ?? 0n), data }],
         batch: false,
         ...(namespace ? { holdNamespace: namespace } : {}),
+        ...(legacyNamespaces.length ? { legacyNamespaces } : {}),
       };
       // A wallet write holds its exact call in the SDK's write hold until the chain shows what
       // happened to it, or the user says they checked their wallet; a Safe proposal is held by
@@ -1242,11 +1260,10 @@ export function useWriteContract(
                 // earlier build left (#79), whatever calldata a retry regenerates.
                 namespace
                   ? {
-                      legacy: legacyOf({
-                        to: variables.address,
-                        data,
-                        value: variables.value ?? 0n,
-                      }),
+                      legacy: legacyOf(
+                        { to: variables.address, data, value: variables.value ?? 0n },
+                        legacyNamespaces,
+                      ),
                     }
                   : undefined,
               );

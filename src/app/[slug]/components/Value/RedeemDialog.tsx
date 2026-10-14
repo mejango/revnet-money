@@ -43,6 +43,7 @@ import {
   quoteDirectSellSwap,
 } from "@/lib/directPaySwap";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
+import { legacyIntents } from "@/lib/legacy-intents";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
@@ -776,6 +777,12 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                       holder: address,
                       beneficiary: address,
                     }),
+                    legacyIntents.cashOut({
+                      projectId: effectiveProjectId,
+                      token: tokenToReceive,
+                      amount: redeemAmountBN,
+                      beneficiary: address,
+                    }),
                   )({
                     ...buildDirectSellSwapTx({
                       chainId: selectedChainId,
@@ -812,6 +819,12 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     chainId: selectedChainId!,
                     project: effectiveProjectId,
                     holder: address,
+                    beneficiary: address,
+                  }),
+                  legacyIntents.cashOut({
+                    projectId: effectiveProjectId,
+                    token: tokenToReceive,
+                    amount: redeemAmountBN,
                     beneficiary: address,
                   }),
                 )({ ...prepared.transaction, account: address });

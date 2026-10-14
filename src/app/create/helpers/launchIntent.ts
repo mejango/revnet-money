@@ -19,6 +19,11 @@ function canonical(config: unknown): string {
   });
 }
 
+/** The hash of the user's launch config, as stable text. */
+export function launchConfigHash(config: unknown): Hex {
+  return keccak256(stringToHex(canonical(config)));
+}
+
 /**
  * The launch input every launch key is built from: the form exactly as the user submitted it,
  * copied, so metadata the page refreshes later (a token's symbol) never changes the intent, the
@@ -62,7 +67,7 @@ export function launchConfigOf(input: unknown): IntentValue {
 }
 
 const saltKey = (account: string, chainId: number, config: unknown) =>
-  `revnet:launch-salt:${account.toLowerCase()}:${chainId}:${keccak256(stringToHex(canonical(config)))}`;
+  `revnet:launch-salt:${account.toLowerCase()}:${chainId}:${launchConfigHash(config)}`;
 
 /** A single-chain launch saved before it confirmed: its salt and the block it was sent after. */
 type SavedLaunch = { salt: Hex; fromBlock?: string };

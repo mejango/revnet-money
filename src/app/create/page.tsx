@@ -14,6 +14,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
+import { legacyIntents } from "@/lib/legacy-intents";
 import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { formatWalletError } from "@/lib/utils";
@@ -36,6 +37,7 @@ import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
 import {
   checkSavedLaunch,
   checkSavedLaunches,
+  launchConfigHash,
   launchConfigOf,
   launchInputOf,
   launchSalt,
@@ -263,6 +265,7 @@ export default function Page() {
       const hash = await withWriteIntent(
         writeContractAsync,
         launchIntent({ chainId, account: address, config: launchConfigOf(launchInput) }),
+        legacyIntents.launch(launchConfigHash(launchInput)),
       )({
         chainId,
         address: directRequest.address,

@@ -32,21 +32,25 @@ export function useWriteHoldWatch(
   const recheckRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (!hold) return;
-    // A contended answer never hides an exit already shown.
+    // A contended answer never hides an exit already shown; a checked one does. The SDK emits a
+    // state before it returns it with `checked`, so the returned answer goes through here too.
     let shown: WriteHoldState | undefined;
-    const stop = hold.subscribe((state) => {
-      if (hidesShownExit(shown, state)) return;
+    let live = true;
+    const show = (state: WriteHoldState) => {
+      if (!live || hidesShownExit(shown, state)) return;
       shown = state;
       onStateRef.current(state);
-    });
+    };
+    const stop = hold.subscribe(show);
     const check = () => {
       const current = clientRef.current;
-      if (current) void hold.state(current).catch(() => {});
+      if (current) void hold.state(current).then(show, () => {});
     };
     recheckRef.current = check;
     if (checkNow) check();
     const timer = setInterval(check, HOLD_RECHECK_MS);
     return () => {
+      live = false;
       stop();
       clearInterval(timer);
       recheckRef.current = () => {};

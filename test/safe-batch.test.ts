@@ -228,6 +228,8 @@ describe("one Safe proposal for a whole flow", () => {
       safe: ACCOUNT,
       calls: expected.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
       batch: true,
+      // A batch no SDK builder names keeps the previous build's batch namespace (legacy-intents).
+      holdNamespace: expect.stringMatching(/^intent:batch:/),
     });
 
     // The same batch again is the pending proposal, not a second one: its hold refuses it.

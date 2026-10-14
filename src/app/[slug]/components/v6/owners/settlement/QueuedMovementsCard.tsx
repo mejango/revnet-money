@@ -8,6 +8,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { legacyIntents } from "@/lib/legacy-intents";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -254,6 +255,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
                   token: row.token,
                   account: address!,
                 }),
+                legacyIntents.toRemote(row.sourceSucker, row.token),
               )({
                 chainId: row.chainId,
                 address: row.sourceSucker,

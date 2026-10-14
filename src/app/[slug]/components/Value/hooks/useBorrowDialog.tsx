@@ -11,6 +11,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { generateFeeData } from "@/lib/feeHelpers";
+import { legacyIntents } from "@/lib/legacy-intents";
 import {
   buildProtectedBorrowTx,
   buildProtectedReallocateCollateralTx,
@@ -657,6 +658,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             chainId: Number(cashOutChainId),
             loanId: BigInt(internalSelectedLoan.id),
           }),
+          legacyIntents.reallocate(internalSelectedLoan.id),
         )({
           ...buildProtectedReallocateCollateralTx({
             chainId: Number(cashOutChainId) as JBChainId,
@@ -723,6 +725,12 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
               chainId: Number(cashOutChainId),
               project: effectiveProjectId,
               holder: address,
+            }),
+            legacyIntents.borrow({
+              revnetId: effectiveProjectId,
+              token: selectedChainTokenConfig.token,
+              collateral: collateralBigInt,
+              prepaidFeePercent: feeBasisPoints,
             }),
           )({
             ...buildProtectedBorrowTx({

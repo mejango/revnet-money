@@ -40,6 +40,7 @@ import {
   verifyBridgePrepareDestination,
 } from "@/lib/bridgePrepare";
 import { revalidateCacheTag } from "@/lib/cache";
+import { legacyIntents } from "@/lib/legacy-intents";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { getTokenAddress } from "@/lib/token";
@@ -345,6 +346,11 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
           sucker: suckerPair.local,
           token: terminalToken,
           account: address,
+        }),
+        legacyIntents.bridge({
+          sucker: suckerPair.local,
+          token: terminalToken,
+          amount: amountValue,
         }),
       )({ ...request, chainId: sourceChainId, account: address });
     } catch (error) {

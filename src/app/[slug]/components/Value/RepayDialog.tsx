@@ -18,6 +18,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
+import { legacyIntents } from "@/lib/legacy-intents";
 import { repayCeilingFor, repayPrincipalFor } from "@/lib/loanFees";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
@@ -475,6 +476,7 @@ export function RepayDialog({
           token: baseTokenAddress,
           spender: revLoansContractAddress,
         }),
+        legacyIntents.repayApprove(loanId, baseTokenAddress),
       )({
         chainId,
         address: baseTokenAddress,
@@ -570,6 +572,7 @@ export function RepayDialog({
               token: baseTokenAddress,
               spender: revLoansContractAddress,
             }),
+            legacyIntents.repayApprove(loanId, baseTokenAddress),
           )({
             chainId,
             address: baseTokenAddress,
@@ -593,6 +596,7 @@ export function RepayDialog({
       const txHash = await withWriteIntent(
         repayLoanAsync,
         loanIntent({ chainId, loanId: BigInt(loanId) }),
+        legacyIntents.repay(loanId),
       )({
         abi: revLoansAbi,
         functionName: "repayLoan",

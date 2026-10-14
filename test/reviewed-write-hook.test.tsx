@@ -3177,6 +3177,40 @@ describe("Safe proposals under the write hold", () => {
     expect(activity.transactionActivityForHash(HASH)?.status).not.toBe("safe-proposed");
   });
 
+  it("says a proposal the exit released was sent again only once the new one is submitted", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Not found", { status: 404 })),
+    );
+    const { review, activity, hooks, held } = await freshHarness();
+    const reviewer = vi.fn().mockResolvedValue(true);
+    review.registerTransactionReviewHandler(reviewer);
+    held.registerFlowChoiceHandler(vi.fn().mockResolvedValue(true));
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 31 * 60_000);
+
+    // The user takes the exit, then closes the review: nothing is sent.
+    reviewer.mockResolvedValueOnce(false);
+    await act(async () => {
+      await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow();
+    });
+    expect(mocks.submit).toHaveBeenCalledOnce();
+    expect(activity.transactionActivityForHash(HASH)?.message).toBe("Released.");
+
+    const OTHER = `0x${"9c".repeat(32)}` as Hex;
+    mocks.submit.mockResolvedValue(OTHER);
+    await act(async () => {
+      await expect(result.current.writeContractAsync(CALL as never)).resolves.toBe(OTHER);
+    });
+    expect(activity.transactionActivityForHash(HASH)?.message).toBe(
+      "Released. You sent this again.",
+    );
+  });
+
   it("tells the hold when the watch ends a proposal unproven, so the exit survives a reload", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(
@@ -3528,6 +3562,128 @@ describe("holds keyed by the SDK's intents", () => {
     await expect(propose(2_000n)).rejects.toThrow(/hasn't confirmed yet/);
     expect(prompt).toHaveBeenCalledOnce();
     expect(mocks.sendCalls).toHaveBeenCalledOnce();
+  });
+});
+
+// REMOVE WITH src/lib/legacy-intents.ts: attempts the build before SDK 2.38's builders saved.
+describe("attempts held under the previous build's intent namespaces", () => {
+  /** Leave a write held the way origin/main did: under `namespace`, with no wallet answer. */
+  async function heldByMain(namespace: string, call: { to: Address; data: Hex }, safe = false) {
+    const { writeHolds } = await import("@/lib/write-hold");
+    const { getPublicClient } = await import("wagmi/actions");
+    const chain = getPublicClient(mocks.config as never, { chainId: 11155111 } as never);
+    await writeHolds
+      .open({ chainId: 11155111, account: ACCOUNT, safe, namespace, call: { ...call, value: 0n } })
+      .send(chain as never, async (gate) => {
+        await gate.beforeSend();
+        throw new Error("Wallet transport timed out");
+      })
+      .catch(() => undefined);
+  }
+
+  it("refuses a retry under the new intent, with regenerated calldata, until the exit", async () => {
+    const { review, hooks, held } = await freshHarness();
+    const { legacyIntents } = await import("@/lib/legacy-intents");
+    const { withWriteIntent } = await import("@/lib/write-hold");
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    const legacy = legacyIntents.repay("5");
+    await heldByMain(legacy[0]!, TRANSFER_7);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    const repay = () =>
+      withWriteIntent(
+        result.current.writeContractAsync,
+        loanIntent({ chainId: 11155111, loanId: 5n }),
+        legacy,
+      )({ ...CALL, args: [RECIPIENT, 8n] as const } as never);
+
+    await expect(repay()).rejects.toThrow(/hasn't confirmed yet/);
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.submit).not.toHaveBeenCalled();
+    prompt.mockResolvedValue(true);
+    await act(async () => {
+      await repay();
+    });
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it("refuses an approval held by its call's old namespace, with a new amount, until the exit", async () => {
+    const { review, hooks, held } = await freshHarness();
+    const { legacyCallNamespace } = await import("@/lib/legacy-intents");
+    const { withWriteIntent } = await import("@/lib/write-hold");
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    const APPROVE_ABI = parseAbi(["function approve(address spender, uint256 amount)"]);
+    const approve = (amount: bigint) => ({
+      chainId: 11155111,
+      address: TARGET,
+      abi: APPROVE_ABI,
+      functionName: "approve",
+      args: [RECIPIENT, amount] as const,
+    });
+    await heldByMain(legacyCallNamespace(approve(5n))!, {
+      to: TARGET,
+      data: encodeFunctionData({
+        abi: APPROVE_ABI,
+        functionName: "approve",
+        args: [RECIPIENT, 5n],
+      }),
+    });
+    const { result } = renderHook(() => hooks.useWriteContract());
+    const send = () =>
+      withWriteIntent(
+        result.current.writeContractAsync,
+        approvalIntent(payIntent({ chainId: 11155111, project: 7n, beneficiary: ACCOUNT }), {
+          step: "erc20",
+          token: TARGET,
+          spender: RECIPIENT,
+        }),
+      )(approve(6n) as never);
+
+    await expect(send()).rejects.toThrow(/hasn't confirmed yet/);
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a Safe batch held by the old batch namespace, with stamped-again calldata, until the exit", async () => {
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: { id: "safe", name: "Safe" },
+    };
+    const { review, hooks, held } = await freshHarness();
+    const { legacyBatchNamespace } = await import("@/lib/legacy-intents");
+    review.registerTransactionReviewHandler(async () => true);
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    const LP = parseAbi(["function modifyLiquidities(bytes unlockData, uint256 deadline) payable"]);
+    const batch = (at: bigint) => [
+      { address: TARGET, abi: LP, functionName: "modifyLiquidities", args: ["0x1234", at] },
+    ];
+    const data = (at: bigint) =>
+      encodeFunctionData({ abi: LP, functionName: "modifyLiquidities", args: ["0x1234", at] });
+    await heldByMain(
+      legacyBatchNamespace(batch(1_000n) as never),
+      {
+        to: MULTI_SEND_CALL_ONLY,
+        data: encodeMultiSend([{ to: TARGET, value: 0n, data: data(1_000n) }]),
+      },
+      true,
+    );
+
+    await expect(
+      hooks.proposeSafeBatch(
+        mocks.config as never,
+        11155111,
+        "Edit liquidity",
+        batch(2_000n) as never,
+        undefined,
+        liquidityIntent({ chainId: 11155111, pool: `0x${"7a".repeat(32)}`, positions: [] }),
+      ),
+    ).rejects.toThrow(/hasn't confirmed yet/);
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(mocks.sendCalls).not.toHaveBeenCalled();
   });
 });
 

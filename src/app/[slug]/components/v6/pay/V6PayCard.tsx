@@ -27,6 +27,7 @@ import {
   UNIVERSAL_ROUTER_BY_CHAIN,
 } from "@/lib/directPaySwap";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
+import { legacyIntents } from "@/lib/legacy-intents";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { useSuckers } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
@@ -1032,6 +1033,7 @@ export function V6PayCard() {
       const hash = await withWriteIntent(
         writeContractAsync,
         payIntent({ chainId: prepared.chainId, project: projectId, beneficiary: prepared.account }),
+        legacyIntents.pay(projectId, prepared.account),
       )({
         chainId: prepared.chainId,
         address: paymentRequest.address,
