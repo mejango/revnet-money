@@ -4,15 +4,28 @@ import { confirmHeldWriteExit } from "@/lib/flow-choice";
 import type { ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   createWriteHold,
+  intent,
   WRITE_HOLD_REVERTED_LINE,
+  WRITE_HOLD_STALE_REVIEW_LINE,
   WriteHeldError,
+  WriteHoldStaleReviewError,
+  writeIntentKey,
+  type IntentValue,
   type WriteHeldState,
   type WriteHoldClient,
   type WriteHoldGate,
   type WriteHoldHandle,
 } from "@bananapus/nana-sdk-core/review";
 import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
-import { keccak256, stringToHex, type Address, type Hex } from "viem";
+import {
+  decodeAbiParameters,
+  encodeFunctionData,
+  keccak256,
+  stringToHex,
+  type Abi,
+  type Address,
+  type Hex,
+} from "viem";
 
 /** The one write hold for every ordinary wallet write in this app. */
 export const writeHolds = createWriteHold();
@@ -73,46 +86,6 @@ export async function adoptIntoHold(
   }
 }
 
-/**
- * The holds this account saved by exact calldata, before writes were held by intent, for a call
- * of `selector` on `to`: an earlier attempt of an action now held by intent, with calldata a
- * retry no longer repeats. The SDK can't move a hold to another key without releasing it, so a
- * send under an intent asks each of these first, and only their own exits release them.
- */
-export function exactCalldataHoldsOf(
-  chainId: number,
-  account: Address,
-  to: Address,
-  selector: Hex,
-): WriteHoldHandle[] {
-  // The SDK's key for a write held by its exact call: v2:chain:account:to:value:calldata hash.
-  const prefix = `nana-sdk:reviewed-write:v2:${chainId}:${account}:${to}:`.toLowerCase();
-  const holds: WriteHoldHandle[] = [];
-  try {
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = localStorage.key(index);
-      if (!key || !key.toLowerCase().startsWith(prefix) || key.split(":").length !== 8) continue;
-      const record = JSON.parse(localStorage.getItem(key) ?? "null") as {
-        safe?: boolean;
-        call?: { to: Address; data: Hex; value?: string };
-      } | null;
-      const call = record?.call;
-      if (!call || call.data.slice(0, 10).toLowerCase() !== selector.toLowerCase()) continue;
-      holds.push(
-        writeHolds.open({
-          chainId,
-          account,
-          safe: record.safe === true,
-          call: { to: call.to, data: call.data, value: BigInt(call.value ?? 0) },
-        }),
-      );
-    }
-  } catch {
-    // Storage refused: holds then live in this tab's memory, keyed as they were sent.
-  }
-  return holds;
-}
-
 /** Whether the hold holds `hash` for its call, or settled it. */
 export function holdsHash(hold: WriteHoldHandle, hash: Hex): boolean {
   const now = hold.peek();
@@ -124,17 +97,21 @@ export function holdsHash(hold: WriteHoldHandle, hash: Hex): boolean {
  * The hold each hash this tab sent was sent under, with the client it was sent through, so a
  * screen that shows the hash can watch it.
  */
-const holdsByHash = new Map<string, { hold: WriteHoldHandle; client: WriteHoldClient }>();
+const holdsByHash = new Map<
+  string,
+  { hold: WriteHoldHandle; client: WriteHoldClient; reservation?: string }
+>();
 
 /** Remember the hold `hash` was sent under. */
 export function rememberHold(hash: Hex, hold: WriteHoldHandle, client: WriteHoldClient): void {
-  holdsByHash.set(hash.toLowerCase(), { hold, client });
+  // The reservation the send made: an observer of this hash ignores any other one's states.
+  holdsByHash.set(hash.toLowerCase(), { hold, client, reservation: hold.peek().reservation });
 }
 
 /** The hold `hash` was sent under in this tab, if any. */
 export function holdOfHash(
   hash: Hex | undefined,
-): { hold: WriteHoldHandle; client: WriteHoldClient } | undefined {
+): { hold: WriteHoldHandle; client: WriteHoldClient; reservation?: string } | undefined {
   return hash ? holdsByHash.get(hash.toLowerCase()) : undefined;
 }
 
@@ -183,9 +160,23 @@ async function askExit(
 
 /** The line for a hold the chain ended while the exit was open, or the state that closed it. */
 function endedLine(state: Awaited<ReturnType<WriteHoldHandle["state"]>>): string {
-  if (state.status !== "clear") return state.line;
-  return state.settled?.result === "failed" ? WRITE_HOLD_REVERTED_LINE : WENT_THROUGH;
+  if (state.status !== "clear") return withNotice(state);
+  return settledLine(state.settled);
 }
+
+/** The line for a write another attempt settled. */
+function settledLine(settled: { result: string } | undefined): string {
+  return settled?.result === "failed" ? WRITE_HOLD_REVERTED_LINE : WENT_THROUGH;
+}
+
+/** A held state's line, with the hold's notice when holds last only in this tab. */
+function withNotice(state: { line: string; notice?: string }): string {
+  return state.notice ? `${state.line} ${state.notice}` : state.line;
+}
+
+/** How long a contended exit waits between asks, and how many it makes. */
+const EXIT_RETRY_MS = 250;
+const EXIT_TRIES = 8;
 
 /**
  * Sends under the hold. A call that is held shows the SDK's line: with no exit it ends the send;
@@ -202,14 +193,168 @@ export async function sendUnderHold<T>(
     try {
       return await hold.send(client, run);
     } catch (error) {
+      // Another window sent this write while its review was open: review it again.
+      if (error instanceof WriteHoldStaleReviewError)
+        throw new Error(error.settled ? settledLine(error.settled) : WRITE_HOLD_STALE_REVIEW_LINE);
       if (!(error instanceof WriteHeldError)) throw error;
-      const shown = error.state;
-      if (!shown.exit) throw new Error(shown.line);
+      const shown = error.state as WriteHeldState & { notice?: string };
+      if (!shown.exit) throw new Error(withNotice(shown));
       const { accepted, closedBy } = await askExit(hold, client, shown);
       if (closedBy) throw new Error(endedLine(closedBy));
-      if (!accepted) throw new Error(shown.line);
-      const { released, state } = await hold.exit(shown, { checkedWallet: true }, client);
-      if (!released) throw new Error(endedLine(state));
+      if (!accepted) throw new Error(withNotice(shown));
+      // The exit never waits: on contention it answers with the state as it is, asked again.
+      let ended = await hold.exit(shown, { checkedWallet: true }, client);
+      for (
+        let tries = 1;
+        !ended.released &&
+        tries < EXIT_TRIES &&
+        ended.state.status === shown.status &&
+        "exit" in ended.state &&
+        ended.state.exit;
+        tries += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, EXIT_RETRY_MS));
+        ended = await hold.exit(shown, { checkedWallet: true }, client);
+      }
+      if (!ended.released) throw new Error(endedLine(ended.state));
     }
   }
+}
+
+/**
+ * A write's intent: what the user asked for, without the fields a retry stamps again (a deadline,
+ * a Permit2 expiration, collected signatures, a quoted minimum). The write hold is keyed by the
+ * SDK's writeIntentKey of it, so a retry of the same action finds the attempt it may repeat and
+ * asks for that hold's exit; the exact sent call stays in the hold's record.
+ */
+const INTENT = Symbol.for("revnet:write-intent");
+
+/**
+ * `write`, sending its variables named by the user's intent: `action` and the parameters the user
+ * chose (addresses and hex tagged with the SDK's `intent`, amounts as bigint), with no field a
+ * retry stamps again.
+ */
+export function withWriteIntent<F extends (variables: never, ...rest: never[]) => unknown>(
+  write: F,
+  action: string,
+  params: { readonly [name: string]: IntentValue | undefined },
+): F {
+  const namespace = writeIntentKey(action, params);
+  return ((variables: object, ...rest: never[]) =>
+    write({ ...variables, [INTENT]: namespace } as never, ...rest)) as unknown as F;
+}
+
+/** A decoded ABI value as an intent value: addresses and bytes tagged, numbers kept. */
+function abiIntent(value: unknown): IntentValue {
+  if (typeof value === "string")
+    return /^0x[0-9a-fA-F]{40}$/.test(value)
+      ? intent.address(value)
+      : /^0x[0-9a-fA-F]*$/.test(value)
+        ? intent.hex(value)
+        : value;
+  if (typeof value === "bigint" || typeof value === "number" || typeof value === "boolean")
+    return value;
+  if (Array.isArray(value)) return value.map(abiIntent);
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, abiIntent(item)]));
+  return null;
+}
+
+/** Uniswap v4 position actions whose params lead with the position's tokenId. */
+const ON_TOKEN = new Set([0x00, 0x01, 0x03, 0x04]);
+/** Uniswap v4 mints, whose params lead with the pool key and the range. */
+const MINTS = new Set([0x02, 0x05]);
+const POOL_KEY_AND_RANGE = [
+  {
+    type: "tuple",
+    components: [
+      { type: "address" },
+      { type: "address" },
+      { type: "uint24" },
+      { type: "int24" },
+      { type: "address" },
+    ],
+  },
+  { type: "int24" },
+  { type: "int24" },
+] as const;
+
+/**
+ * A `modifyLiquidities` unlockData's actions and the positions they act on: each action's code
+ * with its tokenId, or a mint's pool key and range. The amounts and limits are left out, since a
+ * retry re-quotes them; the currency actions (settle, take, close, sweep) keep their params. An
+ * unlockData that can't be read is one action on the whole position manager.
+ */
+function liquidityActions(unlockData: unknown): IntentValue {
+  try {
+    const [actions, params] = decodeAbiParameters(
+      [{ type: "bytes" }, { type: "bytes[]" }],
+      unlockData as Hex,
+    );
+    const codes = actions.slice(2).match(/../g) ?? [];
+    if (codes.length !== params.length) return "unread";
+    return codes.map((hex, index) => {
+      const code = parseInt(hex, 16);
+      const param = params[index]!;
+      if (ON_TOKEN.has(code)) return [code, decodeAbiParameters([{ type: "uint256" }], param)[0]];
+      if (MINTS.has(code)) return [code, abiIntent(decodeAbiParameters(POOL_KEY_AND_RANGE, param))];
+      return [code, intent.hex(param)];
+    });
+  } catch {
+    return "unread";
+  }
+}
+
+type Write = {
+  address?: Address;
+  functionName?: unknown;
+  args?: readonly unknown[];
+};
+
+/**
+ * The intent a write is held by: the one its caller named, or one these calls always carry, whose
+ * calldata a retry stamps again. Undefined for a write held by its exact call.
+ *
+ * - Permit2 `approve(token, spender, amount, expiration)`: the expiration is stamped at send time.
+ * - Uniswap v4 `modifyLiquidities(unlockData, deadline)`: the deadline is stamped at send time,
+ *   and a reviewed plan's quoted limits change with a fresh review.
+ * - Safe `execTransaction(…, signatures)`: the collected signatures grow between attempts.
+ */
+export function writeIntentOf(write: Write): string | undefined {
+  const named = (write as Record<symbol, unknown>)[INTENT];
+  if (typeof named === "string") return named;
+  const to = write.address ? intent.address(write.address) : null;
+  const args = write.args ?? [];
+  if (write.functionName === "approve" && args.length === 4)
+    return writeIntentKey("permit2-approve", {
+      to,
+      token: abiIntent(args[0]),
+      spender: abiIntent(args[1]),
+      amount: BigInt(args[2] as bigint),
+    });
+  if (write.functionName === "modifyLiquidities")
+    return writeIntentKey("lp", { to, actions: liquidityActions(args[0]) });
+  if (write.functionName === "execTransaction" && args.length === 10)
+    return writeIntentKey("safe-exec", { to, transaction: abiIntent(args.slice(0, 9)) });
+  return undefined;
+}
+
+/** The intent of a Safe batch: each call's own intent, or its exact call. */
+export function batchIntentOf(calls: readonly (Write & { abi: Abi; value?: bigint })[]): string {
+  return writeIntentKey("batch", {
+    calls: calls.map(
+      (call) =>
+        writeIntentOf(call) ?? {
+          to: call.address ? intent.address(call.address) : null,
+          value: call.value ?? 0n,
+          data: intent.hex(
+            encodeFunctionData({
+              abi: call.abi,
+              functionName: call.functionName as string,
+              args: call.args as unknown[],
+            }),
+          ),
+        },
+    ),
+  });
 }

@@ -44,7 +44,7 @@ import {
   isTransactionReceiptUnavailableError,
   waitForReceiptWithRetry,
 } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-intent";
+import { withWriteIntent } from "@/lib/write-hold";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
   JB_CHAINS,
@@ -54,6 +54,7 @@ import {
   jbMultiTerminalAbi,
   jbRouterTerminalRegistryAbi,
 } from "@bananapus/nana-sdk-core";
+import { intent } from "@bananapus/nana-sdk-core/review";
 import {
   build721PayMetadata,
   buildPayTx,
@@ -1011,7 +1012,7 @@ export function V6PayCard() {
       // signature are stamped again on a retry.
       const hash = await withWriteIntent(writeContractAsync, prepared.mode, {
         projectId,
-        token: prepared.token.token,
+        token: intent.address(prepared.token.token),
         amount: prepared.amount,
         memo: prepared.memo,
         items: prepared.cartRows,

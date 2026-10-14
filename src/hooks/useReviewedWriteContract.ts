@@ -32,14 +32,14 @@ import {
 } from "@/lib/waitForReceipt";
 import {
   adoptIntoHold,
-  exactCalldataHoldsOf,
+  batchIntentOf,
   holdOfHash,
   rememberHold,
   safeHoldOf,
   sendUnderHold,
   writeHolds,
+  writeIntentOf,
 } from "@/lib/write-hold";
-import { batchIntentOf, writeIntentOf } from "@/lib/write-intent";
 import {
   browserLocks,
   gasWithHeadroom,
@@ -682,11 +682,16 @@ function proposedAt(
  * hash and nonce, so the hold settles it and only its exit sends it again: one still followed, one
  * the app can't confirm, or one another transaction replaced.
  */
+function heldBeforeTheHold(row: TransactionActivity): boolean {
+  if (row.kind !== "safe" || row.sdkHeld || !row.hash || !row.chainId || !row.safeProposal)
+    return false;
+  const replaced = row.status === "failed" && row.message === SAFE_PROPOSAL_REPLACED_LINE;
+  return row.status === "safe-proposed" || replaced;
+}
+
 async function holdLegacySafeProposal(row: TransactionActivity, client: WriteHoldClient) {
   const { hash, chainId, safeProposal } = row;
-  if (row.kind !== "safe" || row.sdkHeld || !hash || !chainId || !safeProposal) return;
-  const replaced = row.status === "failed" && row.message === SAFE_PROPOSAL_REPLACED_LINE;
-  if (row.status !== "safe-proposed" && !replaced) return;
+  if (!heldBeforeTheHold(row) || !hash || !chainId || !safeProposal) return;
   const nonce =
     row.safeProposalNonce && /^\d+$/.test(row.safeProposalNonce)
       ? BigInt(row.safeProposalNonce)
@@ -844,7 +849,13 @@ export async function proposeSafeBatch(
       })),
       title,
       confirmLabel: "Agree & propose to Safe",
-      description: `These ${calls.length} calls go to Safe as one batch that executes together, in this order, once the Safe's approvals are in.\n\n${SAFE_NONCE_GUIDANCE}`,
+      description: [
+        `These ${calls.length} calls go to Safe as one batch that executes together, in this order, once the Safe's approvals are in.`,
+        SAFE_NONCE_GUIDANCE,
+        writeHolds.reviewLine(),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     });
     requireWalletContext();
     if (getAccount(config).chainId !== chainId) {
@@ -870,28 +881,19 @@ export async function proposeSafeBatch(
 }
 
 export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
-  // Proposals journaled before the hold held them move into it first.
   for (const row of transactionActivitySnapshot()) {
     const client = row.chainId ? getPublicClient(config, { chainId: row.chainId }) : undefined;
-    if (client) void holdLegacySafeProposal(row, client).catch(() => undefined);
+    // A proposal journaled before the hold held it moves into the hold first; only then does its
+    // watch report to the hold, so the two never contend for its lock.
+    const watch = () =>
+      watchSafeProposal(row.id, row.hash!, row.chainId!, client as PublicClient | undefined);
+    const watched =
+      row.status === "safe-proposed" && !row.safeResultUnconfirmed && row.hash && row.chainId;
+    if (client && heldBeforeTheHold(row)) {
+      const adopted = holdLegacySafeProposal(row, client).catch(() => undefined);
+      if (watched) void adopted.then(watch);
+    } else if (watched) void watch();
   }
-  transactionActivitySnapshot()
-    .filter(
-      (activity) =>
-        activity.status === "safe-proposed" &&
-        !activity.safeResultUnconfirmed &&
-        activity.hash &&
-        activity.chainId,
-    )
-    .forEach(
-      (activity) =>
-        void watchSafeProposal(
-          activity.id,
-          activity.hash!,
-          activity.chainId!,
-          getPublicClient(config, { chainId: activity.chainId! }),
-        ),
-    );
 }
 
 /**
@@ -1069,13 +1071,25 @@ export function useWriteContract(
           ? undefined
           : safeProposal
             ? safeHoldOf(chainId, safeProposal)
-            : writeHolds.open({
-                chainId,
-                account: initialAddress,
-                safe: false,
-                ...(namespace ? { namespace } : {}),
-                call: { to: variables.address, data, value: variables.value ?? 0n },
-              });
+            : writeHolds.open(
+                {
+                  chainId,
+                  account: initialAddress,
+                  safe: false,
+                  ...(namespace ? { namespace } : {}),
+                  call: { to: variables.address, data, value: variables.value ?? 0n },
+                },
+                // A write held by intent is held, through the SDK, by the exact-calldata hold an
+                // earlier build left (#79). An attempt whose calldata a retry regenerates needs the
+                // SDK's legacy matcher by target and selector, still to come.
+                namespace
+                  ? {
+                      legacy: [
+                        { call: { to: variables.address, data, value: variables.value ?? 0n } },
+                      ],
+                    }
+                  : undefined,
+              );
       const holdClient = hold ? getPublicClient(config, { chainId }) : undefined;
       const duplicateOf = () =>
         refreshTransactionActivities().find(
@@ -1279,21 +1293,7 @@ export function useWriteContract(
           holdClient,
           functionName,
         );
-        const send = () => sendUnderHold(hold, holdClient, submitReviewedCall);
-        // A write held by intent first asks every hold an earlier attempt left under its exact
-        // calldata: each one's own exit releases it, and nothing is reserved there.
-        const earlier = namespace
-          ? exactCalldataHoldsOf(
-              chainId,
-              initialAddress,
-              variables.address,
-              data.slice(0, 10) as Hex,
-            )
-          : [];
-        return earlier.reduceRight<() => Promise<Hex>>(
-          (next, old) => () => sendUnderHold(old, holdClient, () => next()),
-          send,
-        )();
+        return sendUnderHold(hold, holdClient, submitReviewedCall);
       }
       return browserLocks().request(
         `revnet:transaction:${keccak256(stringToHex(callKey))}`,
@@ -1390,11 +1390,15 @@ export function useWaitForTransactionReceipt(
   // It may still land: the hold it was sent under is watched from here, so its line shows, an
   // exit that becomes due with time appears, and a receipt it finds settles it.
   const sentUnder = watchGaveUp ? holdOfHash(hash) : undefined;
+  /** A state of the reservation this hash was sent under, not a later attempt's. */
+  const ownReservation = (state: WriteHoldState) =>
+    !state.reservation || !sentUnder?.reservation || state.reservation === sentUnder.reservation;
   /** A settlement of this observer's own hash: another attempt of the same call settles itself. */
   const settlesThis = (
     state: WriteHoldState,
   ): state is { status: "clear"; settled: { result: "success" | "failed"; hash: Hex } } =>
     state.status === "clear" &&
+    ownReservation(state) &&
     !!state.settled &&
     "hash" in state.settled &&
     state.settled.hash.toLowerCase() === hash?.toLowerCase();
@@ -1405,8 +1409,9 @@ export function useWaitForTransactionReceipt(
     watchedHold,
     sentUnder?.client,
     (state) => {
-      if (!watchedHold) return;
-      // Only the hold's gate, its own state(), offers an exit (SDK 2.34.1).
+      // Only the hold's gate, its own state(), offers an exit (SDK 2.34.1); another attempt's
+      // reservation is not this hash's.
+      if (!watchedHold || (state.status !== "clear" && !ownReservation(state))) return;
       setShown({ hold: watchedHold, state });
       if (settlesThis(state) && tracked) {
         updateTransactionActivity(tracked.id, {
@@ -1434,7 +1439,7 @@ export function useWaitForTransactionReceipt(
      */
     isUnconfirmed: watchGaveUp && heldState?.status !== "clear" && !held?.exit,
     /** The line of the hold that send is held by, while its watch has given up. */
-    heldLine: held?.line,
+    heldLine: held ? [held.line, heldState?.notice].filter(Boolean).join(" ") : undefined,
     error:
       isSafeSubmission && tracked?.status === "failed"
         ? new Error(tracked.message)

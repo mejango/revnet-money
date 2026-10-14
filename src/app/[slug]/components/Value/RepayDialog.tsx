@@ -24,8 +24,9 @@ import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-intent";
+import { withWriteIntent } from "@/lib/write-hold";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
+import { intent } from "@bananapus/nana-sdk-core/review";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
 import {
@@ -469,7 +470,7 @@ export function RepayDialog({
       // Held by the loan it repays: the accrued amount grows between attempts.
       const approveHash = await withWriteIntent(repayLoanAsync, "repay-approve", {
         loanId,
-        token: baseTokenAddress,
+        token: intent.address(baseTokenAddress),
       })({
         chainId,
         address: baseTokenAddress,
@@ -560,7 +561,7 @@ export function RepayDialog({
 
           const approveHash = await withWriteIntent(repayLoanAsync, "repay-approve", {
             loanId,
-            token: baseTokenAddress,
+            token: intent.address(baseTokenAddress),
           })({
             chainId,
             address: baseTokenAddress,

@@ -24,7 +24,7 @@ import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUt
 import { TransactionReviewCancelledError } from "@/lib/transaction-review";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-intent";
+import { withWriteIntent } from "@/lib/write-hold";
 import {
   getRevnetLoanContract,
   JB_TOKEN_DECIMALS,
@@ -33,6 +33,7 @@ import {
   revLoansAbi,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
+import { intent } from "@bananapus/nana-sdk-core/review";
 import { hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
@@ -712,7 +713,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           // Held by what the user asked for: the borrowable amount is quoted again on a retry.
           await withWriteIntent(writeContractAsync, "borrow", {
             revnetId: effectiveProjectId,
-            token: selectedChainTokenConfig.token,
+            token: intent.address(selectedChainTokenConfig.token),
             collateral: collateralBigInt,
             prepaidFeePercent: feeBasisPoints,
           })({

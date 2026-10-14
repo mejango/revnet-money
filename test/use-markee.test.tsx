@@ -744,7 +744,7 @@ describe("a saved Markee submission the chain can't settle", () => {
       }),
     );
     expect(result.current.pending).toBe(false);
-    expect(hold.peek()).toEqual({ status: "clear" });
+    expect(hold.peek()).toMatchObject({ status: "clear" });
     // Its own transaction row no longer waits for verification either.
     expect(mocks.settleFailure).toHaveBeenCalledWith(hash, expect.any(String));
   });

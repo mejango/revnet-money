@@ -50,7 +50,7 @@ import { formatDecimals } from "@/lib/number";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-intent";
+import { withWriteIntent } from "@/lib/write-hold";
 import {
   formatUnits,
   getJBContractAddress,
@@ -60,6 +60,7 @@ import {
   JBProjectToken,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
+import { intent } from "@bananapus/nana-sdk-core/review";
 import {
   getTokenAddress,
   prepareHookAwareCashOut,
@@ -740,7 +741,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   // Held by what the user asked for: the quote and deadline are stamped again.
                   await withWriteIntent(writeContractAsync, "sell", {
                     projectId: effectiveProjectId,
-                    token: tokenToReceive,
+                    token: intent.address(tokenToReceive),
                     amount: redeemAmountBN,
                   })({
                     ...buildDirectSellSwapTx({
@@ -774,7 +775,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 // Held by what the user asked for: the quoted minimum is read again on a retry.
                 await withWriteIntent(writeContractAsync, "cash-out", {
                   projectId: effectiveProjectId,
-                  token: tokenToReceive,
+                  token: intent.address(tokenToReceive),
                   amount: redeemAmountBN,
                 })({ ...prepared.transaction, account: address });
               } catch (err) {

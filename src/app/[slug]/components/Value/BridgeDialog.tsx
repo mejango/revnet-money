@@ -45,8 +45,9 @@ import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { getTokenAddress } from "@/lib/token";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
-import { withWriteIntent } from "@/lib/write-intent";
+import { withWriteIntent } from "@/lib/write-hold";
 import { JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
+import { intent } from "@bananapus/nana-sdk-core/review";
 import { suckerBytes32ToAddress } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -323,8 +324,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       });
       // Held by what the user asked for: the quoted minimum is read again on a retry.
       await withWriteIntent(writeContractAsync, "bridge", {
-        sucker: suckerPair.local,
-        token: terminalToken,
+        sucker: intent.address(suckerPair.local),
+        token: intent.address(terminalToken),
         amount: amountValue,
       })({ ...request, chainId: sourceChainId, account: address });
     } catch (error) {
