@@ -1226,7 +1226,8 @@ describe("reviewed write hook", () => {
         }),
       );
       expect(mocks.getTransaction).toHaveBeenCalledWith({ hash: HASH });
-      expect(service).not.toHaveBeenCalled();
+      // Settled from the chain alone; only the SDK's hold asks Safe's service, for the proposal.
+      expect(service.mock.calls.every(([url]) => String(url).includes(HASH))).toBe(true);
     },
   );
 
@@ -1368,7 +1369,8 @@ describe("reviewed write hook", () => {
           executionHash: HASH,
         }),
       );
-      expect(service).not.toHaveBeenCalled();
+      // Settled from the chain alone; only the SDK's hold asks Safe's service, for the proposal.
+      expect(service.mock.calls.every(([url]) => String(url).includes(HASH))).toBe(true);
     },
   );
 
@@ -2703,10 +2705,19 @@ describe("held wallet writes", () => {
     await waitFor(() =>
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({ status: "success" }),
     );
+    // The settlement stays readable until the next reservation of the call.
+    const { writeHolds } = await import("@/lib/write-hold");
     await waitFor(() =>
       expect(
-        Object.keys(window.localStorage).filter((key) => key.includes("reviewed-write")),
-      ).toEqual([]),
+        writeHolds
+          .open({
+            chainId: 11155111,
+            account: ACCOUNT,
+            safe: false,
+            call: { to: TARGET, data: TRANSFER_7.data, value: 0n },
+          })
+          .peek(),
+      ).toMatchObject({ status: "clear", settled: { result: "success" } }),
     );
     await act(async () => {
       await result.current.writeContractAsync(CALL as never);
@@ -3164,7 +3175,11 @@ describe("Safe proposals under the write hold", () => {
     });
     await vi.advanceTimersByTimeAsync(5 * 60_000);
 
-    expect((await holdOfTransfer()).peek()).toMatchObject({ exit: false });
+    const { getPublicClient } = await import("wagmi/actions");
+    const chain = getPublicClient(mocks.config as never, { chainId: 11155111 } as never);
+    // The SDK's one exit gate asks the chain: a pending execution keeps no exit.
+    const now = await (await holdOfTransfer()).state(chain as never);
+    expect(now).toMatchObject({ exit: false });
   });
   it("holds a batch the Safe gave no answer for, and asks for the exit before proposing it again", async () => {
     const { review, hooks, held } = await freshHarness();

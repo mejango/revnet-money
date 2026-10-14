@@ -277,7 +277,7 @@ async function watchSafeProposal(
             safeResultUnconfirmed: true,
           }),
           // The hold offers its warned exit at once, through reloads; later evidence still settles it.
-          tellHold((hold, chain) => reportUnproven(hold, chain, hash)));
+          tellHold((hold, chain) => hold.onUnproven(chain, hash)));
   /** The chain proved the proposal executed: it is followed until its receipt settles it. */
   const proven = () => tracked()?.safeExecutionProven !== undefined;
   /** The proposal's nonce once a look saw the Safe pass it, for chain checks the service can't block. */
@@ -674,19 +674,6 @@ function proposedAt(
 }
 
 /**
- * Tells the hold its Safe follower ended unproven, unless the chain knows the proposal's hash as a
- * transaction still pending (an execution Safe{Wallet} sent at once): that one keeps no exit. A
- * node that can't say leaves it for the next ask.
- */
-async function reportUnproven(hold: WriteHoldHandle, client: WriteHoldClient, hash: Hex) {
-  const seen = await client
-    .getTransaction({ hash })
-    .catch((error: unknown) => (error instanceof TransactionNotFoundError ? null : undefined));
-  if (seen === undefined || (seen && seen.blockNumber == null)) return;
-  await hold.onUnproven(client, hash);
-}
-
-/**
  * Moves a Safe proposal journaled before the SDK's hold held it into that hold, with its saved
  * hash and nonce, so the hold settles it and only its exit sends it again: one still followed, one
  * the app can't confirm, or one another transaction replaced.
@@ -705,7 +692,7 @@ async function holdLegacySafeProposal(row: TransactionActivity, client: WriteHol
     nonce === undefined ? undefined : safeProposalAt(chainId, safeProposal, hash, nonce, nonce);
   if (!(await adoptIntoHold(hold, client, hash, proposal))) return;
   updateTransactionActivity(row.id, { sdkHeld: true });
-  if (row.safeResultUnconfirmed) await reportUnproven(hold, client, hash).catch(() => undefined);
+  if (row.safeResultUnconfirmed) await hold.onUnproven(client, hash).catch(() => undefined);
 }
 
 /**
@@ -749,7 +736,7 @@ async function refuseUnheldSafeDuplicate(
   if (!holdDecides(duplicate, held)) {
     throw new SafeProposalPendingError(duplicate.hash, action, duplicate.safeResultUnconfirmed);
   }
-  await reportUnproven(hold, client, duplicate.hash).catch(() => undefined);
+  await hold.onUnproven(client, duplicate.hash).catch(() => undefined);
   return held;
 }
 

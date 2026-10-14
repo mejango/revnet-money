@@ -51,7 +51,7 @@ const client = {
   getChainId: mocks.getChainId,
   // The reads the SDK's write hold makes.
   getTransactionReceipt: mocks.chainReceipt,
-  getTransactionCount: async () => 3,
+  getTransactionCount: vi.fn(async () => 3),
   getBlockNumber: async () => 100n,
   getBlock: async ({ blockNumber }: { blockNumber?: bigint } = {}) => ({
     number: blockNumber ?? 100n,
@@ -774,10 +774,9 @@ describe("a saved Markee submission the chain can't settle", () => {
       }),
     );
 
-  it("binds a recovered hash to the hold, so a pending one gets no exit", async () => {
+  it("attaches a recovered hash under the hold's lock, so an identical send from another tab during recovery is refused", async () => {
     const prompt = vi.fn().mockResolvedValue(true);
     registerFlowChoiceHandler(prompt);
-    // The hold reserved the call; the wallet's reply was lost.
     await stopHold()
       .send(client as never, async (gate) => {
         await gate.beforeSend();
@@ -785,14 +784,53 @@ describe("a saved Markee submission the chain can't settle", () => {
       })
       .catch(() => undefined);
     saveHashless();
-    // The recovered hash is the exact call, still pending.
+    // The recovered hash is the exact call, sent at the reserved nonce and still pending.
+    mocks.getTransaction.mockResolvedValue({
+      hash,
+      from: mocks.account,
+      to: boardAddress,
+      input: "0x1234",
+      value: 0n,
+      nonce: 3,
+      blockNumber: null,
+    });
     mocks.receipt.mockRejectedValue(new Error("Receipt not found"));
+    // Another tab's controller tries the identical call whenever this one reads the chain.
+    const { createWriteHold } = await import("@bananapus/nana-sdk-core/review");
+    const otherTab = createWriteHold().open({
+      chainId: 8453,
+      account: mocks.account,
+      safe: false,
+      call: { to: boardAddress, data: "0x1234", value: 0n },
+    });
+    let trying = false;
+    const sentByOtherTab: Hex[] = [];
+    const attempt = async () => {
+      if (trying) return;
+      trying = true;
+      await otherTab
+        .send(client as never, async (gate) => {
+          await gate.beforeSend();
+          gate.afterSubmit(`0x${"cd".repeat(32)}`);
+          sentByOtherTab.push(`0x${"cd".repeat(32)}`);
+        })
+        .catch(() => undefined);
+      trying = false;
+    };
     const { result } = renderHook(() => useMarkee(boardAddress));
     await waitFor(() => expect(result.current.pending).toBe(true));
+    const reads = [client.getTransactionCount, mocks.getTransaction, mocks.getChainId];
+    for (const read of reads) {
+      const original = read.getMockImplementation()!;
+      read.mockImplementation(async (...args: never[]) => {
+        await attempt();
+        return original(...args);
+      });
+    }
 
     await act(() => result.current.recover(hash));
+    expect(sentByOtherTab).toEqual([]);
     expect(prompt).not.toHaveBeenCalled();
-    expect(result.current.pending).toBe(true);
     expect(stopHold().peek()).toMatchObject({ status: "pending-known-hash", hash });
   });
 

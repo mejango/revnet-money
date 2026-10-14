@@ -38,10 +38,11 @@ export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): Wri
 
 /**
  * Gives the hold a write the app's own journal saved with `hash`: a proposal saved before the hold
- * held it, or a lost wallet reply the user recovered and the app authenticated for this exact call.
- * A Safe proposal's `proposal` (the transaction it hashes to) carries its nonce. A hold that holds
- * the call with no hash takes the hash in place of that reservation; one that holds anything else
- * keeps it. True once the hold holds the call.
+ * held it, or a lost wallet reply the user recovered for this exact call. A Safe proposal's
+ * `proposal` (the transaction it hashes to) carries its nonce. A hold that holds an ordinary write
+ * with no hash attaches the hash under its lock, once the chain authenticates it as this attempt;
+ * one it refuses keeps its explicit exit. A hold that holds anything else, or already settled
+ * this hash, keeps it. True once the hold holds or settled the call.
  */
 export async function adoptIntoHold(
   hold: WriteHoldHandle,
@@ -50,13 +51,15 @@ export async function adoptIntoHold(
   proposal?: SafeQueuedTransaction,
 ): Promise<boolean> {
   const now = hold.peek();
-  if (now.status !== "clear") {
-    if (now.status !== "held-no-hash") return true;
-    // ponytail: the reservation is released and taken again with the hash under two locks; a
-    // send of this exact call from another tab between them would be refused by neither.
-    const { released } = await hold.exit(now, { checkedWallet: true }, client);
-    if (!released) return hold.peek().status !== "clear";
+  if (now.status === "held-no-hash") {
+    if (!now.record.safe) await hold.attachHash(client, hash).catch(() => undefined);
+    return true;
   }
+  if (
+    now.status !== "clear" ||
+    (now.settled && "hash" in now.settled && now.settled.hash.toLowerCase() === hash.toLowerCase())
+  )
+    return true;
   try {
     await hold.send(client, async (gate) => {
       await gate.beforeSend();
