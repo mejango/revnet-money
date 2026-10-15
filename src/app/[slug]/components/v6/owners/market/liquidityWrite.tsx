@@ -1,6 +1,6 @@
 "use client";
 
-import { submittedViaSafe, type proposeSafeBatch } from "@/hooks/useReviewedWriteContract";
+import { submittedViaSafe, type ProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { withWriteIntent } from "@/lib/write-hold";
@@ -119,7 +119,7 @@ export async function runApprovalStep(
   return "done";
 }
 
-export type LiquidityBatchCall = Parameters<typeof proposeSafeBatch>[3][number];
+export type LiquidityBatchCall = Parameters<ProposeSafeBatch>[3][number];
 
 /**
  * The reviewed step list as ONE Safe batch: each approval becomes its call,

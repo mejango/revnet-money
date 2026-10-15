@@ -14,6 +14,7 @@ import {
   payIntent,
   WRITE_HOLD_HASHED_EXIT_LINE,
   WRITE_HOLD_NONCE_LINE,
+  WRITE_HOLD_PENDING_LINE,
   WRITE_HOLD_SAFE_UNPROVEN_LINE,
   WRITE_HOLD_UNCHECKED_LINE,
 } from "@bananapus/nana-sdk-core/review";
@@ -25,7 +26,7 @@ import {
   safeProposalFor,
   safeTransactionHash,
 } from "@bananapus/nana-sdk-core/safe-service";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
 import {
   encodeFunctionData,
   parseAbi,
@@ -105,28 +106,35 @@ vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => {
   };
 });
 
+/** One client per chain, as wagmi keeps them. */
+const clients = new Map<number, unknown>();
+function clientOf(chainId: number) {
+  if (mocks.noClient) return undefined;
+  if (!clients.has(chainId))
+    clients.set(chainId, {
+      chain: { id: chainId },
+      getChainId: async () => chainId,
+      estimateContractGas: mocks.estimateContractGas,
+      waitForTransactionReceipt: mocks.waitForTransactionReceipt,
+      getTransactionReceipt: mocks.getTransactionReceipt,
+      getTransaction: mocks.getTransaction,
+      getBlockNumber: async () => 100n,
+      getBlock: async ({ blockNumber }: { blockNumber?: bigint } = {}) => ({
+        number: blockNumber ?? 100n,
+        hash: `0x${"bb".repeat(32)}`,
+      }),
+      getTransactionCount: mocks.getTransactionCount,
+      getCode: (args: never) => mocks.safeReads.getCode(args),
+      getStorageAt: (args: never) => mocks.safeReads.getStorageAt(args),
+      request: (args: never) => mocks.safeReads.request(args),
+    });
+  return clients.get(chainId);
+}
+
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
   getPublicClient: (_config: unknown, { chainId = 11155111 }: { chainId?: number } = {}) =>
-    mocks.noClient
-      ? undefined
-      : {
-          chain: { id: chainId },
-          getChainId: async () => chainId,
-          estimateContractGas: mocks.estimateContractGas,
-          waitForTransactionReceipt: mocks.waitForTransactionReceipt,
-          getTransactionReceipt: mocks.getTransactionReceipt,
-          getTransaction: mocks.getTransaction,
-          getBlockNumber: async () => 100n,
-          getBlock: async ({ blockNumber }: { blockNumber?: bigint } = {}) => ({
-            number: blockNumber ?? 100n,
-            hash: `0x${"bb".repeat(32)}`,
-          }),
-          getTransactionCount: mocks.getTransactionCount,
-          getCode: (args: never) => mocks.safeReads.getCode(args),
-          getStorageAt: (args: never) => mocks.safeReads.getStorageAt(args),
-          request: (args: never) => mocks.safeReads.request(args),
-        },
+    clientOf(chainId),
   simulateContract: mocks.simulateContract,
   switchChain: mocks.switchChain,
   watchAccount: () => () => undefined,
@@ -138,6 +146,7 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("wagmi", () => ({
   useConfig: () => mocks.config,
+  usePublicClient: ({ chainId = 11155111 }: { chainId?: number } = {}) => clientOf(chainId),
   useWaitForTransactionReceipt: mocks.wagmiReceipt,
   useWriteContract: () => ({
     data: undefined,
@@ -295,6 +304,29 @@ function safeExecutionMined(
 }
 
 /** The chain mines the wallet's transaction: the node knows it and holds its receipt. */
+/**
+ * The send's receipt: mined and returned `at once` (while the send is still under way), or landing
+ * `after the send` returned. Call what this returns once the send is over.
+ */
+function receiptLands(timing: "at once" | "after the send"): () => void {
+  if (timing === "at once") {
+    chainMines();
+    mocks.waitForTransactionReceipt.mockResolvedValue(MINED_RECEIPT);
+    return () => undefined;
+  }
+  let mine: () => void = () => undefined;
+  mocks.waitForTransactionReceipt.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        mine = () => resolve(MINED_RECEIPT);
+      }),
+  );
+  return () => {
+    chainMines();
+    mine();
+  };
+}
+
 function chainMines() {
   mocks.getTransaction.mockResolvedValue(MINED_TX);
   mocks.getTransactionReceipt.mockResolvedValue(MINED_RECEIPT);
@@ -314,6 +346,9 @@ async function freshHarness() {
     import("@/hooks/useReviewedWriteContract"),
     import("@/lib/flow-choice"),
   ]);
+  // The followers the app mounts for every Safe proposal.
+  const { HeldRowFollowers } = await import("@/components/HeldRowFollowers");
+  render(<HeldRowFollowers />);
   return { review, activity, hooks, held };
 }
 
@@ -1444,16 +1479,15 @@ describe("reviewed write hook", () => {
   ])(
     "resumes a saved proposal on a chain %s a Safe service through the chain's client",
     async (_service, chainId) => {
-      const { activity, hooks } = await freshHarness();
-      savedProposal(activity, HASH, chainId);
+      const { activity } = await freshHarness();
       const service = vi.fn();
       vi.stubGlobal("fetch", service);
       safeExecutionMined(HASH, [executionLog(ACCOUNT, OTHER_PROPOSAL)], {
         call: { to: TARGET, data: "0x1234" },
         chainId,
       });
-
-      hooks.resumeSafeProposalTracking(mocks.config as never);
+      // Found in the journal on load: its hold follows it from there.
+      await act(async () => savedProposal(activity, HASH, chainId));
 
       await waitFor(() =>
         expect(activity.transactionActivityForHash(HASH)).toMatchObject({
@@ -1576,41 +1610,32 @@ describe("held wallet writes", () => {
     expect(mocks.submit).toHaveBeenCalledTimes(2);
   });
 
-  it("releases the hold once the earlier send's receipt lands", async () => {
-    const { review, activity, hooks, held } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
-    const prompt = vi.fn().mockResolvedValue(false);
-    held.registerFlowChoiceHandler(prompt);
-    chainMines();
-    mocks.waitForTransactionReceipt.mockResolvedValue(MINED_RECEIPT);
-    const { result } = renderHook(() => hooks.useWriteContract());
+  // The receipt reaches the send's own view at once (the SDK's handles of one key share its
+  // events), so the next send of the same call goes straight on, however fast the chain is.
+  it.each(["at once", "after the send"] as const)(
+    "releases the hold once the earlier send's receipt lands (%s)",
+    async (timing) => {
+      const { review, activity, hooks, held } = await freshHarness();
+      review.registerTransactionReviewHandler(async () => true);
+      const prompt = vi.fn().mockResolvedValue(false);
+      held.registerFlowChoiceHandler(prompt);
+      const lands = receiptLands(timing);
+      const { result } = renderHook(() => hooks.useWriteContract());
 
-    await act(async () => {
-      await result.current.writeContractAsync(CALL as never);
-    });
-    await waitFor(() =>
-      expect(activity.transactionActivityForHash(HASH)).toMatchObject({ status: "success" }),
-    );
-    // The settlement stays readable until the next reservation of the call.
-    const { writeHolds } = await import("@/lib/write-hold");
-    await waitFor(() =>
-      expect(
-        writeHolds
-          .open({
-            chainId: 11155111,
-            account: ACCOUNT,
-            safe: false,
-            call: { to: TARGET, data: TRANSFER_7.data, value: 0n },
-          })
-          .peek(),
-      ).toMatchObject({ status: "clear", settled: { result: "success" } }),
-    );
-    await act(async () => {
-      await result.current.writeContractAsync(CALL as never);
-    });
-    expect(prompt).not.toHaveBeenCalled();
-    expect(mocks.submit).toHaveBeenCalledTimes(2);
-  });
+      await act(async () => {
+        await result.current.writeContractAsync(CALL as never);
+      });
+      await act(async () => lands());
+      await waitFor(() =>
+        expect(activity.transactionActivityForHash(HASH)).toMatchObject({ status: "success" }),
+      );
+      await act(async () => {
+        await result.current.writeContractAsync(CALL as never);
+      });
+      expect(prompt).not.toHaveBeenCalled();
+      expect(mocks.submit).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("sends nothing again when the send itself finds the earlier attempt went through", async () => {
     const { review, hooks, held } = await freshHarness();
@@ -1643,11 +1668,9 @@ describe("held wallet writes", () => {
     await act(async () => {
       await first.result.current.writeContractAsync(CALL as never);
     });
-    first.unmount();
-
-    // A reload, after which the chain shows it went through and the SDK saves that.
-    const { review, hooks, held } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    // The page closes; while no page is open, the chain shows it went through and another
+    // window's SDK saves that.
+    cleanup();
     chainMines();
     const { writeHolds } = await import("@/lib/write-hold");
     const { getPublicClient } = await import("wagmi/actions");
@@ -1660,6 +1683,10 @@ describe("held wallet writes", () => {
         call: { to: TARGET, data: TRANSFER_7.data, value: 0n },
       })
       .state(chain as never);
+
+    // A reload.
+    const { review, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
     const prompt = vi.fn().mockResolvedValue(false);
     held.registerFlowChoiceHandler(prompt);
     const { result } = renderHook(() => hooks.useWriteContract());
@@ -1681,6 +1708,37 @@ describe("held wallet writes", () => {
     });
     expect(mocks.submit).toHaveBeenCalledTimes(2);
   });
+
+  it("tells a write that settles after a reload in its row, so the next send goes straight on", async () => {
+    const before = await freshHarness();
+    before.review.registerTransactionReviewHandler(async () => true);
+    const first = renderHook(() => before.hooks.useWriteContract());
+    await act(async () => {
+      await first.result.current.writeContractAsync(CALL as never);
+    });
+    cleanup();
+
+    // A reload, after which the chain shows it went through: the row says so.
+    const { review, activity, hooks, held } = await freshHarness();
+    review.registerTransactionReviewHandler(async () => true);
+    chainMines();
+    await waitFor(
+      () =>
+        expect(activity.transactionActivityForHash(HASH)).toMatchObject({
+          status: "success",
+          message: "Confirmed onchain.",
+        }),
+      { timeout: 8_000 },
+    );
+    const prompt = vi.fn().mockResolvedValue(false);
+    held.registerFlowChoiceHandler(prompt);
+    const { result } = renderHook(() => hooks.useWriteContract());
+    await act(async () => {
+      await result.current.writeContractAsync(CALL as never);
+    });
+    expect(prompt).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+  }, 15_000);
 
   it("leaves a write whose caller owns its recovery to that caller", async () => {
     const { review, hooks, held } = await freshHarness();
@@ -1741,7 +1799,7 @@ describe("held wallet writes: fix round 1", () => {
     mocks.getTransaction.mockResolvedValue({ ...MINED_TX, blockNumber: null, blockHash: null });
 
     await expect(result.current.writeContractAsync(CALL as never)).rejects.toThrow(
-      HELD_CONFIRMING_LINE,
+      WRITE_HOLD_PENDING_LINE,
     );
     expect(prompt).not.toHaveBeenCalled();
     expect(mocks.submit).toHaveBeenCalledOnce();
@@ -2113,13 +2171,20 @@ describe("Safe proposals under the write hold", () => {
       safeResultUnconfirmed: true,
     });
 
+    // A reload: this page's followers go with it.
+    cleanup();
     await freshHarness();
+    cleanup();
     // Only the hold's gate offers the exit (SDK 2.34.1): after a reload it still does.
     const hold = await holdOfTransfer();
     expect(hold.peek()).toMatchObject({ exit: false });
     const { getPublicClient } = await import("wagmi/actions");
     const chain = getPublicClient(mocks.config as never, { chainId: 11155111 } as never);
-    expect(await hold.state(chain as never)).toMatchObject({ exit: true });
+    // Asked once any read the closed page left has let go of the call's lock.
+    vi.useRealTimers();
+    await waitFor(async () =>
+      expect(await hold.state(chain as never)).toMatchObject({ exit: true }),
+    );
     // An hour of the watch on fake timers: give a loaded machine room.
   }, 30_000);
 
@@ -2200,7 +2265,12 @@ describe("Safe proposals under the write hold", () => {
     mocks.sendCalls.mockResolvedValue({
       id: safeTransactionHash(11155111, ACCOUNT, safeBatchProposalFor(encoded, 7)),
     });
-    await hooks.proposeSafeBatch(mocks.config as never, 11155111, "Two", calls as never);
+    await renderHook(() => hooks.useProposeSafeBatch()).result.current(
+      mocks.config as never,
+      11155111,
+      "Two",
+      calls as never,
+    );
     // The batch is held as its one MultiSend call, the SDK's batch identity.
     const { safeHoldOf } = await import("@/lib/write-hold");
     expect(
@@ -2260,7 +2330,12 @@ describe("Safe proposals under the write hold", () => {
       { address: TARGET, abi: ABI, functionName: "transfer", args: [RECIPIENT, 8n] },
     ] as const;
     const propose = () =>
-      hooks.proposeSafeBatch(mocks.config as never, 11155111, "Two transfers", calls as never);
+      renderHook(() => hooks.useProposeSafeBatch()).result.current(
+        mocks.config as never,
+        11155111,
+        "Two transfers",
+        calls as never,
+      );
 
     await expect(propose()).rejects.toThrow("timed out");
     await expect(propose()).rejects.toThrow(
@@ -2439,7 +2514,7 @@ describe("holds keyed by the SDK's intents", () => {
       },
     ];
     const propose = (at: bigint) =>
-      hooks.proposeSafeBatch(
+      renderHook(() => hooks.useProposeSafeBatch()).result.current(
         mocks.config as never,
         11155111,
         "Add liquidity",
@@ -2597,7 +2672,7 @@ describe("attempts held under the previous build's intent namespaces", () => {
     );
 
     await expect(
-      hooks.proposeSafeBatch(
+      renderHook(() => hooks.useProposeSafeBatch()).result.current(
         mocks.config as never,
         11155111,
         "Edit liquidity",
@@ -2673,14 +2748,22 @@ describe("the normal path adds no step", () => {
     ],
     ["a launch", launchIntent({ chainId: 11155111, account: ACCOUNT, config: { name: "Rev" } })],
   ])("%s: one review and one wallet prompt, twice in a row", async (_action, namespace) => {
+    for (const timing of ["at once", "after the send"] as const)
+      await twiceInARow(namespace, timing);
+  });
+});
+
+async function twiceInARow(namespace: string, timing: "at once" | "after the send") {
+  {
+    window.localStorage.clear();
+    mocks.submit.mockReset().mockResolvedValue(HASH);
     const { review, activity, hooks, held } = await freshHarness();
     const { withWriteIntent } = await import("@/lib/write-hold");
     const reviewer = vi.fn().mockResolvedValue(true);
     review.registerTransactionReviewHandler(reviewer);
     const choice = vi.fn().mockResolvedValue(false);
     held.registerFlowChoiceHandler(choice);
-    chainMines();
-    mocks.waitForTransactionReceipt.mockResolvedValue(MINED_RECEIPT);
+    const lands = receiptLands(timing);
     const { result } = renderHook(() => hooks.useWriteContract());
     const send = (amount: bigint) =>
       withWriteIntent(
@@ -2693,6 +2776,7 @@ describe("the normal path adds no step", () => {
     });
     expect(reviewer).toHaveBeenCalledOnce();
     expect(mocks.submit).toHaveBeenCalledOnce();
+    await act(async () => lands());
     await waitFor(() =>
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         status: "success",
@@ -2709,5 +2793,5 @@ describe("the normal path adds no step", () => {
     expect(reviewer).toHaveBeenCalledTimes(2);
     expect(mocks.submit).toHaveBeenCalledTimes(2);
     expect(choice).not.toHaveBeenCalled();
-  });
-});
+  }
+}

@@ -443,7 +443,7 @@ describe("a saved single-chain launch", () => {
     expect(await screen.findByRole("button", { name: CHECK_LABEL })).toBeVisible();
   });
 
-  it("launches anew, with a fresh salt, only after the user's check", async () => {
+  it("launches again only after the user's check, keeping the checked attempt's salt", async () => {
     await savedEarlierLaunch();
     mocks.pinMetadata.mockResolvedValue("bafy-metadata");
     await submitFixture();
@@ -454,6 +454,17 @@ describe("a saved single-chain launch", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
     await waitFor(() => expect(mocks.setSubmitting).toHaveBeenLastCalledWith(false));
 
+    expect(mocks.write).toHaveBeenCalledOnce();
+    // If the checked attempt landed after all, this retry reverts instead of launching twice.
+    const [{ args }] = mocks.write.mock.calls[0] as [{ args: readonly unknown[] }];
+    expect(JSON.stringify(args, (_k, v) => (typeof v === "bigint" ? `${v}` : v))).toContain(
+      "07".repeat(32),
+    );
+  });
+
+  it("launches a new attempt with a fresh salt", async () => {
+    mocks.pinMetadata.mockResolvedValue("bafy-metadata");
+    await submitFixture();
     expect(mocks.write).toHaveBeenCalledOnce();
     const [{ args }] = mocks.write.mock.calls[0] as [{ args: readonly unknown[] }];
     expect(JSON.stringify(args, (_k, v) => (typeof v === "bigint" ? `${v}` : v))).not.toContain(

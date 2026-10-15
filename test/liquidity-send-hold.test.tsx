@@ -85,7 +85,7 @@ vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
     await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>()
   ).SAFE_PROPOSAL_UNCONFIRMED_LINE,
   isSafeConnection: () => false,
-  proposeSafeBatch: vi.fn(),
+  useProposeSafeBatch: () => vi.fn(),
   submittedViaSafe: () => false,
   useSafeConnection: () => false,
   // The reviewed receipt hook: a sent hash exists only on Base, the position's

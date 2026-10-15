@@ -1,5 +1,6 @@
 "use client";
 
+import { HeldRowFollowers } from "@/components/HeldRowFollowers";
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { resumePendingRelayrBundles } from "@/hooks/useReviewedRelayr";
@@ -98,7 +99,7 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
   React.useEffect(() => watchSafeWalletPeer(wagmiConfig), []);
 
   // Every page load follows the paid Relayr bundles and Safe proposals the
-  // transaction journal still has in flight.
+  // transaction journal still has in flight (HeldRowFollowers follows held proposals).
   React.useEffect(() => resumePendingRelayrBundles(), []);
   React.useEffect(() => resumeSafeProposalTracking(wagmiConfig), []);
 
@@ -168,6 +169,7 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
           <TooltipProvider delayDuration={200} skipDelayDuration={100}>
             <TransactionReviewProvider>{children}</TransactionReviewProvider>
           </TooltipProvider>
+          <HeldRowFollowers />
           {paraConnectionError ? (
             <ParaConnectionNotice
               onDismiss={clearParaConnectionError}

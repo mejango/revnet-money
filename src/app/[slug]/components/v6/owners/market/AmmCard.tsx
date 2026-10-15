@@ -22,9 +22,9 @@ import { useHydrated } from "@/hooks/useHydrated";
 import {
   ACCOUNT_CHANGED,
   isSafeConnection,
-  proposeSafeBatch,
   SAFE_PROPOSAL_UNCONFIRMED_LINE,
   submittedViaSafe,
+  useProposeSafeBatch,
   useSafeConnection,
   useWaitForTransactionReceipt,
   useWriteContract,
@@ -621,6 +621,7 @@ export function AddLiquidityForm({
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
+  const proposeSafeBatch = useProposeSafeBatch();
   const viaSafe = useSafeConnection(wagmiConfig);
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });

@@ -66,7 +66,7 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
   isSafeConnection: () => true,
   submittedViaSafe: () => false,
   useSafeConnection: () => true,
-  proposeSafeBatch: mocks.proposeSafeBatch,
+  useProposeSafeBatch: () => mocks.proposeSafeBatch,
   useWriteContract: () => ({ writeContractAsync: mocks.writeContractAsync, isPending: false }),
 }));
 vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => {

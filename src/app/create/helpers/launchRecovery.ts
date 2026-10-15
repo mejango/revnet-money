@@ -10,6 +10,7 @@ import type { Hex, PublicClient } from "viem";
 import {
   discardLaunch,
   journalLaunchSuccess,
+  keepSaltForRetry,
   launchAttemptOf,
   savedLaunchAt,
   type LaunchAttempt,
@@ -37,6 +38,8 @@ export async function followLaunch(
   retire: (reason: Parameters<SavedAttemptRecovery["retire"]>[1]) => Promise<unknown>,
 ): Promise<LaunchShown | undefined> {
   if (outcome.status === "none") {
+    // The user's check or exit retired it: its retry keeps the salt.
+    if (outcome.retired === "check" || outcome.retired === "exit") keepSaltForRetry(attempt);
     discardLaunch(attempt);
     return undefined;
   }

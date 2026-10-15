@@ -1,9 +1,10 @@
+import { safeBatchIntent } from "@bananapus/nana-sdk-core/review";
 import {
   SAFE_PROPOSAL_AWAITING,
   safeBatchProposalFor,
   safeTransactionHash,
 } from "@bananapus/nana-sdk-core/safe-service";
-import { waitFor } from "@testing-library/react";
+import { render, renderHook, waitFor } from "@testing-library/react";
 import {
   encodeFunctionData,
   getAddress,
@@ -51,11 +52,13 @@ vi.mock("wagmi/actions", () => ({
 vi.mock("@wagmi/core", () => ({ sendCalls: mocks.sendCalls }));
 vi.mock("wagmi", () => ({
   useConfig: () => mocks.config,
+  usePublicClient: () => undefined,
   useWaitForTransactionReceipt: vi.fn(),
   useWriteContract: vi.fn(),
 }));
 
-import { proposeSafeBatch } from "@/hooks/useReviewedWriteContract";
+import { HeldRowFollowers } from "@/components/HeldRowFollowers";
+import { useProposeSafeBatch, type ProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { registerFlowChoiceHandler } from "@/lib/flow-choice";
 import {
   dismissTransactionActivity,
@@ -125,7 +128,11 @@ function listBatchThrough(batch: ReturnType<typeof calls>, multiSend: Address): 
 describe("one Safe proposal for a whole flow", () => {
   let seen: TransactionReviewRequest | null;
   let approve: boolean;
+  /** The app's Safe batch proposer, with the followers the app mounts for every proposal. */
+  let proposeSafeBatch: ProposeSafeBatch;
   beforeEach(() => {
+    proposeSafeBatch = renderHook(() => useProposeSafeBatch()).result.current;
+    render(<HeldRowFollowers />);
     // Each test's batch is the same intent (approvals keyed by spender): start without holds.
     window.localStorage.clear();
     seen = null;
@@ -224,8 +231,10 @@ describe("one Safe proposal for a whole flow", () => {
       safe: ACCOUNT,
       calls: expected.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
       batch: true,
-      // A batch no SDK builder names keeps the previous build's batch namespace (legacy-intents).
-      holdNamespace: expect.stringMatching(/^intent:batch:/),
+      // A batch with no action's intent is held by the SDK's safeBatchIntent of its calls, and by
+      // the batch namespace the previous build held it by (legacy-intents).
+      holdNamespace: safeBatchIntent({ chainId: 8453, safe: ACCOUNT, calls: expected }),
+      legacyNamespaces: [expect.stringMatching(/^intent:batch:/)],
     });
 
     // The same batch again is the pending proposal, not a second one: its hold refuses it.

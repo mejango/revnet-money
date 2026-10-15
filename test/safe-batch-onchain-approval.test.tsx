@@ -44,7 +44,7 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   followSubmission: vi.fn(),
   isSafeConnection: () => mocks.safe,
-  proposeSafeBatch: vi.fn(),
+  useProposeSafeBatch: () => vi.fn(),
   requireOnchainExecution: mocks.onchain,
   useWriteContract: (options?: {
     manualReceiptVerification?: typeof mocks.manualReceiptVerification;

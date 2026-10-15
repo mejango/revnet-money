@@ -133,12 +133,45 @@ export function saveLaunchAttempt(
   key: string,
   attempt: { salt: Hex; fromBlock?: bigint; namespaces: string[]; before: Hex[] },
 ): void {
+  // The retry is journaled now: the salt it kept is its journal's.
+  try {
+    window.localStorage.removeItem(`${RETRY_PREFIX}${key}`);
+  } catch {
+    // Kept: the same salt again.
+  }
   persist(key, {
     salt: attempt.salt,
     namespaces: attempt.namespaces,
     before: attempt.before,
     ...(attempt.fromBlock !== undefined ? { fromBlock: attempt.fromBlock.toString() } : {}),
   });
+}
+
+/** Where the salt of a launch the user checked is kept for its retry. */
+const RETRY_PREFIX = "revnet:launch-retry-salt:";
+
+/**
+ * The user checked a launch whose result can't be shown (or took its exit): its retry keeps the
+ * same salt, so if the earlier attempt landed after all, the retry reverts instead of launching a
+ * second revnet.
+ */
+export function keepSaltForRetry(attempt: { key: string; salt?: Hex }): void {
+  if (!attempt.salt) return;
+  try {
+    window.localStorage.setItem(`${RETRY_PREFIX}${attempt.key}`, attempt.salt);
+  } catch {
+    // Unsaved: the retry takes a fresh salt.
+  }
+}
+
+/** The salt a retry of the launch at `key` keeps, if the user checked an earlier attempt. */
+export function retrySaltOf(key: string): Hex | undefined {
+  try {
+    const salt = window.localStorage.getItem(`${RETRY_PREFIX}${key}`);
+    return salt && /^0x[0-9a-f]{64}$/i.test(salt) ? (salt as Hex) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function removeLaunch(key: string): void {
