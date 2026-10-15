@@ -685,6 +685,7 @@ export function useWriteContract(
                 ...(namespace ? { namespace, legacy: legacyOf(call, legacyNamespaces) } : {}),
               };
       const hold = !!holdInput;
+      const handle = holdInput && holdOf(holdInput);
       const holdClient = hold ? getPublicClient(config, { chainId }) : undefined;
       const duplicateOf = () =>
         refreshTransactionActivities().find(
@@ -861,9 +862,8 @@ export function useWriteContract(
           callKey,
           safeProposal,
           ownsReceiptLifecycle,
-          hold && holdClient && !safe
-            ? // The receipt landed: the send's held view asks the chain now, and tells it.
-              async () => heldSends(chainId).check()
+          handle && holdClient && !safe
+            ? (receipt) => handle.onReceipt(receipt, holdClient as unknown as WriteHoldClient)
             : undefined,
           !!hold,
           holdInput,

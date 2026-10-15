@@ -1,10 +1,15 @@
 "use client";
 
 import { followedRow, showSafeView } from "@/hooks/useReviewedWriteContract";
-import { useTransactionActivities, type TransactionActivity } from "@/lib/transaction-activity";
+import {
+  updateTransactionActivity,
+  useTransactionActivities,
+  type TransactionActivity,
+} from "@/lib/transaction-activity";
 import { holdInputOf, writeHolds } from "@/lib/write-hold";
 import {
   HELD_RELEASED_ELSEWHERE_LINE,
+  WRITE_HOLD_REVERTED_LINE,
   type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
 import { useHeldWrite } from "@bananapus/nana-sdk-core/review/react";
@@ -56,7 +61,21 @@ function HeldRowFollower({ row }: { row: TransactionActivity }) {
   const seenHeld = useRef(false);
   const { phase, line, exit, settled, state, adopting, handle } = held;
   useEffect(() => {
-    if (row.kind !== "safe") return;
+    // A direct write's row says how its hold settled it, which tells the user.
+    if (row.kind === "direct") {
+      // Only its own transaction's settlement: a later attempt of the same call settles itself.
+      if (
+        phase === "settled" &&
+        settled &&
+        "hash" in settled &&
+        settled.hash.toLowerCase() === row.hash?.toLowerCase()
+      )
+        updateTransactionActivity(row.id, {
+          status: settled.result === "success" ? "success" : "failed",
+          message: settled.result === "success" ? "Confirmed onchain." : WRITE_HOLD_REVERTED_LINE,
+        });
+      return;
+    }
     if (phase === "awaiting" || phase === "confirming" || phase === "held") {
       if (!seenHeld.current && nonce !== undefined && handle && client)
         void handle
@@ -64,11 +83,10 @@ function HeldRowFollower({ row }: { row: TransactionActivity }) {
           .catch(() => undefined);
       seenHeld.current = true;
     }
-    // A success the hold settled before this view saw it held (one an earlier load or another
-    // window followed, or this proposal's adoption): its row shows it, which tells it.
-    if (phase === "succeeded" && settled && "hash" in settled) {
+    // A success the hold settled before this view saw it held (an earlier load's, another
+    // window's, or this proposal's adoption): its row shows it.
+    if (phase === "succeeded" && settled) {
       showSafeView(row.id, { ...held, phase: "settled" });
-      void handle?.acknowledge(settled).catch(() => undefined);
       return;
     }
     // A row the hold no longer holds (another window's exit, or a settlement no view here saw)
