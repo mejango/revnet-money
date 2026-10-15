@@ -145,6 +145,8 @@ export function HomepageDiscovery() {
           <DashboardColumn
             title="Top"
             headingClassName="hidden xl:flex"
+            // Shares its column with the ad above, so it takes the room left, not the column's height.
+            sectionClassName="xl:min-h-0 xl:flex-1"
             panelClassName="xl:h-auto xl:min-h-0 xl:flex-1"
           >
             <Suspense fallback={<ProjectRowsSkeleton rows={9} />}>
@@ -254,15 +256,18 @@ function DashboardColumn({
   children,
   headingClassName,
   panelClassName = "",
+  sectionClassName = "xl:h-full",
 }: {
   title: string;
   children: ReactNode;
   headingClassName: string;
   panelClassName?: string;
+  /** How the section takes its height on wide screens: the column's (default), or the room a stack leaves it. */
+  sectionClassName?: string;
 }) {
   const id = `home-${title.replaceAll(" ", "-").toLowerCase()}`;
   return (
-    <section className="flex min-w-0 flex-col xl:h-full" aria-labelledby={id}>
+    <section className={`flex min-w-0 flex-col ${sectionClassName}`} aria-labelledby={id}>
       <h2
         id={id}
         className={`mb-4 min-h-11 items-center text-xl font-semibold md:text-2xl ${headingClassName}`}
