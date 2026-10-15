@@ -295,7 +295,7 @@ describe("project diagnostics", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not refresh project data");
     expect(mocks.refresh).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
     await waitFor(() => expect(mocks.refresh).toHaveBeenCalledOnce());
   });
   it("validates optional operators and only switches the report after an explicit check", async () => {

@@ -26,6 +26,11 @@ import {
   safeProposalFor,
   safeTransactionHash,
 } from "@bananapus/nana-sdk-core/safe-service";
+import {
+  resetSafeRelayrForTests,
+  resetWriteHoldsForTests,
+  resetWriteRecoveryForTests,
+} from "@bananapus/nana-sdk-core/testing";
 import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
 import {
   encodeFunctionData,
@@ -37,7 +42,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionLog, SAFE_OWNER_A, safeChain } from "./fixtures/safe-chain";
 
 const mocks = vi.hoisted(() => ({
@@ -338,7 +343,7 @@ function unseenForThirtyMinutes() {
   vi.setSystemTime(Date.now() + 31 * 60_000);
 }
 
-async function freshHarness() {
+async function freshHarness({ followers = false }: { followers?: boolean } = {}) {
   vi.resetModules();
   const [review, activity, hooks, held] = await Promise.all([
     import("@/lib/transaction-review"),
@@ -346,11 +351,20 @@ async function freshHarness() {
     import("@/hooks/useReviewedWriteContract"),
     import("@/lib/flow-choice"),
   ]);
-  // The followers the app mounts for every Safe proposal.
-  const { HeldRowFollowers } = await import("@/components/HeldRowFollowers");
-  render(<HeldRowFollowers />);
+  // The followers the app mounts for every held write.
+  if (followers) {
+    const { HeldRowFollowers } = await import("@/components/HeldRowFollowers");
+    render(<HeldRowFollowers />);
+  }
   return { review, activity, hooks, held };
 }
+
+afterEach(() => {
+  cleanup();
+  resetWriteHoldsForTests();
+  resetWriteRecoveryForTests();
+  resetSafeRelayrForTests();
+});
 
 beforeEach(() => {
   mocks.readSafeTransaction = undefined;
@@ -1265,7 +1279,7 @@ describe("reviewed write hook", () => {
       // Safe{Wallet} replied with the execution's own hash: the chain knows it,
       // and it runs exactly the reviewed call from this Safe.
       safeExecutionMined(HASH, logs);
-      const { review, activity, hooks } = await freshHarness();
+      const { review, activity, hooks } = await freshHarness({ followers: true });
       review.registerTransactionReviewHandler(async () => true);
       const { result } = renderHook(() => hooks.useWriteContract());
 
@@ -1294,7 +1308,7 @@ describe("reviewed write hook", () => {
     };
     vi.stubGlobal("fetch", vi.fn());
     safeExecutionMined(HASH, [executionLog(ACCOUNT, OTHER_PROPOSAL, "ExecutionFailure")]);
-    const { review, activity, hooks } = await freshHarness();
+    const { review, activity, hooks } = await freshHarness({ followers: true });
     review.registerTransactionReviewHandler(async () => true);
     const { result } = renderHook(() => hooks.useWriteContract());
 
@@ -1359,7 +1373,7 @@ describe("reviewed write hook", () => {
       transactionHash: HASH,
       logs: [executionLog(ACCOUNT, OTHER_PROPOSAL)],
     });
-    const { review, activity, hooks } = await freshHarness();
+    const { review, activity, hooks } = await freshHarness({ followers: true });
     review.registerTransactionReviewHandler(async () => true);
     const { result } = renderHook(() => hooks.useWriteContract());
 
@@ -1429,7 +1443,7 @@ describe("reviewed write hook", () => {
     );
     mocks.readSafeTransaction = vi.fn(async () => ({ isExecuted: false, confirmations: [] }));
     mocks.usableSafeConfirmations = vi.fn(() => [{ owner: SAFE_OWNER_A }]);
-    const { review, activity, hooks } = await freshHarness();
+    const { review, activity, hooks } = await freshHarness({ followers: true });
     review.registerTransactionReviewHandler(async () => true);
     const { result } = renderHook(() => hooks.useWriteContract());
 
@@ -1452,7 +1466,7 @@ describe("reviewed write hook", () => {
       [executionLog(ACCOUNT, OTHER_PROPOSAL), executionLog(ACCOUNT, PROPOSAL)],
     ],
   ])("keeps an execution held, never unconfirmed, whose receipt has %s", async (_case, logs) => {
-    const { activity, hooks } = await freshHarness();
+    const { activity, hooks } = await freshHarness({ followers: true });
     savedProposal(activity, HASH, 11155420);
     mocks.getTransaction.mockResolvedValue(executionOf({ to: TARGET, data: "0x1234" }));
     mocks.waitForTransactionReceipt.mockResolvedValue({
@@ -1479,7 +1493,7 @@ describe("reviewed write hook", () => {
   ])(
     "resumes a saved proposal on a chain %s a Safe service through the chain's client",
     async (_service, chainId) => {
-      const { activity } = await freshHarness();
+      const { activity } = await freshHarness({ followers: true });
       const service = vi.fn();
       vi.stubGlobal("fetch", service);
       safeExecutionMined(HASH, [executionLog(ACCOUNT, OTHER_PROPOSAL)], {
@@ -1710,7 +1724,7 @@ describe("held wallet writes", () => {
   });
 
   it("tells a write that settles after a reload in its row, so the next send goes straight on", async () => {
-    const before = await freshHarness();
+    const before = await freshHarness({ followers: true });
     before.review.registerTransactionReviewHandler(async () => true);
     const first = renderHook(() => before.hooks.useWriteContract());
     await act(async () => {
@@ -1719,7 +1733,7 @@ describe("held wallet writes", () => {
     cleanup();
 
     // A reload, after which the chain shows it went through: the row says so.
-    const { review, activity, hooks, held } = await freshHarness();
+    const { review, activity, hooks, held } = await freshHarness({ followers: true });
     review.registerTransactionReviewHandler(async () => true);
     chainMines();
     await waitFor(
@@ -2018,7 +2032,7 @@ describe("Safe proposals under the write hold", () => {
   it("shows a Safe execution's success only once the hold settles it, confirming until then", async () => {
     vi.useFakeTimers();
     const EXECUTION = `0x${"56".repeat(32)}` as Hex;
-    const { activity, hooks } = await freshHarness();
+    const { activity, hooks } = await freshHarness({ followers: true });
     savedProposal(activity, PROPOSAL, 11155111);
     vi.stubGlobal(
       "fetch",
@@ -2123,7 +2137,7 @@ describe("Safe proposals under the write hold", () => {
       "fetch",
       vi.fn(async () => new Response("Not found", { status: 404 })),
     );
-    const { review, activity, hooks, held } = await freshHarness();
+    const { review, activity, hooks, held } = await freshHarness({ followers: true });
     const reviewer = vi.fn().mockResolvedValue(true);
     review.registerTransactionReviewHandler(reviewer);
     held.registerFlowChoiceHandler(vi.fn().mockResolvedValue(true));
@@ -2160,7 +2174,7 @@ describe("Safe proposals under the write hold", () => {
       "fetch",
       vi.fn(async () => new Response("Not found", { status: 404 })),
     );
-    const { review, activity, hooks } = await freshHarness();
+    const { review, activity, hooks } = await freshHarness({ followers: true });
     review.registerTransactionReviewHandler(async () => true);
     const { result } = renderHook(() => hooks.useWriteContract());
     await act(async () => {
@@ -2193,7 +2207,7 @@ describe("Safe proposals under the write hold", () => {
       "fetch",
       vi.fn(async () => new Response("Not found", { status: 404 })),
     );
-    const { review, activity, hooks, held } = await freshHarness();
+    const { review, activity, hooks, held } = await freshHarness({ followers: true });
     review.registerTransactionReviewHandler(async () => true);
     const prompt = vi.fn().mockResolvedValue(false);
     held.registerFlowChoiceHandler(prompt);
@@ -2217,7 +2231,7 @@ describe("Safe proposals under the write hold", () => {
       "fetch",
       vi.fn(async () => new Response("Not found", { status: 404 })),
     );
-    const { review, activity, hooks, held } = await freshHarness();
+    const { review, activity, hooks, held } = await freshHarness({ followers: true });
     review.registerTransactionReviewHandler(async () => true);
     const prompt = vi.fn().mockResolvedValue(false);
     held.registerFlowChoiceHandler(prompt);
@@ -2690,7 +2704,7 @@ describe("an execution the Safe service reports", () => {
   it("is given to the hold, so its pending transaction keeps the exit closed", async () => {
     vi.useFakeTimers();
     const EXECUTION = `0x${"34".repeat(32)}` as Hex;
-    const { activity, hooks } = await freshHarness();
+    const { activity, hooks } = await freshHarness({ followers: true });
     savedProposal(activity, PROPOSAL, 11155111);
     // An earlier load saw the reported execution with no receipt an hour ago.
     activity.updateTransactionActivity(`tx:11155111:${PROPOSAL}`, {
