@@ -1309,3 +1309,26 @@ Rulings: nana-sdk-react 53.0.0 is not added (it can't build against wagmi 3: `us
 #### SDK 2.40.0 review
 
 `npm run check` green: 2,885 unit tests, 144 browser tests, bundle 2,747.6 KiB under the aggregate ceiling raised from 2,746 to 2,750 KiB (route limits unchanged). A per-render `getPublicClient` restarted `useSavedAttempt`'s recovery in a loop under the test mock (heap exhaustion under coverage); the page now memoizes one client per attempt.
+
+# SDK 2.41.0: held sends through useHeldSend (2026-10-15)
+
+## Plan refinement
+
+- **Objective:** Take core 2.41.0; every held send goes through the SDK's `useHeldSend` and every followed proposal or write through `useHeldWrite`, so no app code makes a held-write view (gate enforced); a retry after "I checked it" keeps the launch's salt (Homerun parity); burn and generic Safe batches use the 2.41 builders with the old keys as `legacy`.
+- **System fit:** Sends: `useWriteContract` and `useProposeSafeBatch` pick the chain's `useHeldSend` at send time; the flow dialogs (exit, "Send it again") act on the hold handle. Following: `HeldRowFollowers` (mounted at the app root) follows every Safe proposal and every direct write until told, whatever screen sent it; the receipt hook reads a direct write's hold through `useHeldWrite` from the row's saved hold. Launch, Markee and Relayr recovery are unchanged apart from the salt and Markee's exit on the handle.
+- **Reuse and simplicity:** SDK hooks own views and followers; the app keeps only its row display (Safe approvals count, settled lines) and dialogs. Redeem, allowance and sync have no app-keyed writes in revnet, so nothing to switch.
+- **Evidence and unknowns:** 2.41.0 dist read (useHeldSend, intents). Homerun reported three 2.41.0 view bugs (lost subscription after a send, no checked read after it, self-withdrawn reservation read as another window's release); 2.41.1 fixes them, no app shims. Tests that relied on instant settlement now land the receipt after the send, as on a real chain.
+- **Verification:** Full `npm run check`; the gate test refuses `createHeldWriteView`/`followHeldWrite`; salt retry tests (page and journal); burn and batch keys; happy path twice in a row.
+- **Resource budget:** One worktree, no subagents; bump to 2.41.1 in this PR when the coordinator says it's out.
+
+## Checklist
+
+- [x] Core 2.41.0.
+- [x] `useHeldSend` per supported chain in `useWriteContract`; `useProposeSafeBatch`; `HeldRowFollowers` with `useHeldWrite`; receipt hook on `useHeldWrite`; Markee exit on the hold handle; gate forbids app-made views.
+- [x] "I checked it" (or the held exit) keeps the salt for the retry; a new launch still gets a fresh one.
+- [x] `burnIntent` for burns; `safeBatchIntent` for batches without an action intent, the old batch namespace as legacy.
+- [ ] Bump to 2.41.1 when published.
+
+### Review
+
+`npm run check` green: 2,887 unit tests, 144 browser tests, bundle 2,739.1 KiB (down from 2,747.6). No app code makes a held-write view (gate and its test). Waiting on 2.41.1 for the three view fixes Homerun reported.

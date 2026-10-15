@@ -19,6 +19,7 @@ import {
 } from "@/hooks/useReviewedWriteContract";
 import { buildBurnTokensRequest } from "@/lib/burnTokens";
 import { formatWalletError } from "@/lib/utils";
+import { withWriteIntent } from "@/lib/write-hold";
 import {
   formatUnits,
   JB_CHAINS,
@@ -29,6 +30,7 @@ import {
   jbDirectoryAbi,
   jbTokensAbi,
 } from "@bananapus/nana-sdk-core";
+import { burnIntent } from "@bananapus/nana-sdk-core/review";
 import { PropsWithChildren, useEffect, useState } from "react";
 import type { Address } from "viem";
 import { parseUnits, zeroAddress } from "viem";
@@ -156,7 +158,12 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
         args: [row.projectId],
       });
       if (controller === zeroAddress) throw new Error("The project has no active controller.");
-      const txHash = await writeContractAsync({
+      // Held by the holder's burn of this project (the SDK's burnIntent); the exact call an
+      // earlier build held it by holds it too.
+      const txHash = await withWriteIntent(
+        writeContractAsync,
+        burnIntent({ chainId: row.chainId, project: row.projectId, holder: address }),
+      )({
         ...buildBurnTokensRequest({
           chainId: row.chainId,
           controller: controller as Address,

@@ -40,6 +40,7 @@ vi.mock("@/hooks/useReviewedWriteContract", () => ({
   useSafeConnection: () => false,
   useWaitForTransactionReceipt: () => ({}),
   useWriteContract: () => ({ writeContractAsync: vi.fn(), isPending: false }),
+  useProposeSafeBatch: () => vi.fn(),
 }));
 
 const pool = {

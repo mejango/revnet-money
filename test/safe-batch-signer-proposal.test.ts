@@ -39,7 +39,7 @@ vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   followSubmission: vi.fn(),
   isSafeConnection: () => false,
-  proposeSafeBatch: vi.fn(),
+  useProposeSafeBatch: () => vi.fn(),
   requireOnchainExecution: vi.fn(),
   useWriteContract: () => ({ writeContractAsync: vi.fn() }),
 }));

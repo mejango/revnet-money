@@ -21,35 +21,43 @@ import {
   type TransactionReviewOptions,
 } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
+import { SUPPORTED_CHAINS } from "@/lib/wagmiTransports";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
-  followHeld,
   heldLineOf,
-  heldView,
-  heldViewOf,
+  holdInputOf,
+  holdOf,
   legacyIntentsOf,
   legacyOf,
-  safeHoldOf,
+  safeHoldInputOf,
   sendHeld,
+  storedHoldOf,
   writeHolds,
   writeIntentOf,
+  type HoldInput,
 } from "@/lib/write-hold";
 import {
   browserLocks,
   gasWithHeadroom,
-  HELD_RELEASED_ELSEWHERE_LINE,
   HELD_RELEASED_LINE,
   isDefiniteWalletRejection,
   SAFE_PROPOSAL_EXECUTED_LINE,
   SAFE_PROPOSAL_REPLACED_LINE,
+  safeBatchIntent,
   settledLine,
   simulateCallSequence,
   submitReviewedContractWrite,
   WRITE_HOLD_REVERTED_LINE,
   WRITE_HOLD_SAFE_UNPROVEN_LINE,
   type HeldWriteView,
+  type WriteHoldClient,
   type WriteHoldGate,
 } from "@bananapus/nana-sdk-core/review";
+import {
+  useHeldSend,
+  useHeldWrite,
+  type UseHeldSendResult,
+} from "@bananapus/nana-sdk-core/review/react";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   hasSafeService,
@@ -62,11 +70,12 @@ import {
 } from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendCalls } from "@wagmi/core";
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   encodeFunctionData,
   keccak256,
   stringToHex,
+  zeroAddress,
   type Abi,
   type Address,
   type Hex,
@@ -75,6 +84,7 @@ import {
 } from "viem";
 import {
   useConfig,
+  usePublicClient,
   useWaitForTransactionReceipt as useWagmiWaitForTransactionReceipt,
   useWriteContract as useWagmiWriteContract,
 } from "wagmi";
@@ -111,7 +121,7 @@ const NONCE_SEARCH_AHEAD = 16;
  * success the hold settled names the execution; one whose caller verifies its exact result waits
  * for that caller.
  */
-function showSafeView(id: string, view: HeldWriteView, client?: PublicClient): void {
+export function showSafeView(id: string, view: HeldWriteView, client?: PublicClient): void {
   const row = refreshTransactionActivities().find((activity) => activity.id === id);
   if (!row) return;
   shownPhase.set(id, view.phase);
@@ -210,65 +220,55 @@ async function settleUnheldProposal(row: TransactionActivity, client: PublicClie
 }
 
 /**
- * Follows a Safe proposal's row through the hold. One the hold doesn't hold (proposed through
- * Safe's service, or journaled by an earlier build) is adopted into it first, by its safeTxHash;
- * one journaled without its reviewed calls can't be held, and its account dismisses it.
+ * Whether the hold follows `row` (HeldRowFollowers): a Safe proposal with its reviewed calls that
+ * may still run, and an earlier build's proposal another transaction replaced, which may have run.
  */
-function followSafeRow(row: TransactionActivity, client: PublicClient | undefined): void {
-  if (!row.hash || !row.chainId) return;
-  if (!client || !row.safeProposal) {
+export function followedRow(row: TransactionActivity): boolean {
+  return followedSafeRow(row) || followedDirectRow(row);
+}
+
+/**
+ * A direct write sent under the hold, followed until its held write told its result (so the next
+ * send of the same action goes straight on), whatever screen sent it.
+ */
+function followedDirectRow(row: TransactionActivity): boolean {
+  if (row.kind !== "direct" || !row.directHold || !row.hash) return false;
+  if (row.status === "submitted" || row.status === "pending") return true;
+  const input = holdInputOf(row);
+  if (!input) return false;
+  const now = holdOf(input).peek();
+  return (
+    now.status !== "clear" ||
+    (!!now.settled &&
+      "hash" in now.settled &&
+      !now.settled.acknowledged &&
+      now.settled.hash.toLowerCase() === row.hash.toLowerCase())
+  );
+}
+
+function followedSafeRow(row: TransactionActivity): boolean {
+  if (row.kind !== "safe" || !row.hash || !row.chainId || !row.safeProposal) return false;
+  const replaced =
+    !row.sdkHeld && row.status === "failed" && row.message === SAFE_PROPOSAL_REPLACED_LINE;
+  return row.status === "safe-proposed" || replaced;
+}
+
+/**
+ * On load, a proposal journaled without its reviewed calls, which no hold can hold, shows it can't
+ * be confirmed here and settles from the chain as on main. Every other proposal is the hold's
+ * (HeldRowFollowers).
+ */
+export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
+  for (const row of transactionActivitySnapshot()) {
+    if (row.kind !== "safe" || row.status !== "safe-proposed" || !row.hash || !row.chainId)
+      continue;
+    if (row.safeProposal) continue;
     updateTransactionActivity(row.id, {
       message: WRITE_HOLD_SAFE_UNPROVEN_LINE,
       safeResultUnconfirmed: true,
     });
+    const client = getPublicClient(config, { chainId: row.chainId }) as PublicClient | undefined;
     if (client) void settleUnheldProposal(row, client);
-    return;
-  }
-  const handle = safeHoldOf(row.chainId, row.safeProposal);
-  const view = heldView(
-    handle,
-    client,
-    row.sdkHeld ? undefined : { safe: { safeTxHash: row.hash } },
-  );
-  const { hash } = row;
-  // A nonce the earlier build saved for it lets the hold prove what used that nonce.
-  const nonce =
-    !row.sdkHeld && row.safeProposalNonce && /^\d+$/.test(row.safeProposalNonce)
-      ? Number(row.safeProposalNonce)
-      : undefined;
-  let seenHeld = false;
-  followHeld(view, (now) => {
-    if (now.phase === "awaiting" || now.phase === "confirming" || now.phase === "held") {
-      if (!seenHeld && nonce !== undefined)
-        void handle.attachSafeNonce(client, { safeTxHash: hash, nonce }).catch(() => undefined);
-      seenHeld = true;
-    }
-    // A row the hold no longer holds (another window's exit, or a settlement no view here saw)
-    // shows what the hold kept of it.
-    if (now.phase === "clear" && !now.adopting && !seenHeld && now.state)
-      showSafeView(row.id, {
-        ...now,
-        phase: now.settled ? "settled" : "released",
-        line: now.settled ? null : HELD_RELEASED_ELSEWHERE_LINE,
-      });
-    else showSafeView(row.id, now, client);
-  });
-}
-
-export function resumeSafeProposalTracking(config: ReturnType<typeof useConfig>): void {
-  for (const row of transactionActivitySnapshot()) {
-    // An earlier build's proposal another transaction replaced may still have run: it is held too.
-    const replaced =
-      !row.sdkHeld &&
-      !!row.safeProposal &&
-      row.status === "failed" &&
-      row.message === SAFE_PROPOSAL_REPLACED_LINE;
-    if (row.kind !== "safe" || (row.status !== "safe-proposed" && !replaced)) continue;
-    if (!row.hash || !row.chainId) continue;
-    followSafeRow(
-      row,
-      getPublicClient(config, { chainId: row.chainId }) as PublicClient | undefined,
-    );
   }
 }
 
@@ -291,7 +291,10 @@ export function followSubmission(
    * receipt is released on its next send instead, once the chain shows it mined.
    */
   onReceipt?: (receipt: TransactionReceipt) => Promise<unknown>,
+  /** Sent under the hold: a Safe proposal's row is the hold's from its send. */
   held = false,
+  /** A direct write's hold, so its screens can show it. */
+  hold?: HoldInput,
 ): void {
   const id = `tx:${chainId}:${hash.toLowerCase()}`;
   recordTransactionActivity({
@@ -308,6 +311,7 @@ export function followSubmission(
     safeProposalHash: safe ? hash : undefined,
     safeProposal: safe || undefined,
     sdkHeld: held || undefined,
+    ...(hold && !safe ? { directHold: storedHoldOf(hold) } : {}),
     callKey,
     manualVerificationRequired: manualReceiptVerification || undefined,
   });
@@ -319,18 +323,15 @@ export function followSubmission(
     return;
   }
   const publicClient = getPublicClient(config, { chainId });
-  if (safe) {
-    if (!held) {
-      const row = refreshTransactionActivities().find((activity) => activity.id === id);
-      if (row) followSafeRow(row, publicClient as PublicClient | undefined);
-    }
-    return;
-  }
+  // A proposal is followed by its hold (HeldRowFollowers), adopted first when it wasn't sent
+  // under it.
+  if (safe) return;
   updateTransactionActivity(id, { status: "pending", message: "Pending onchain confirmation." });
   if (!publicClient) return;
   void waitForReceiptWithRetry(publicClient, hash)
-    .then((receipt) => {
-      void onReceipt?.(receipt).catch(() => undefined);
+    .then(async (receipt) => {
+      // The hold learns it first: by the time the row says so, the next send goes straight on.
+      await onReceipt?.(receipt).catch(() => undefined);
       updateTransactionActivity(id, {
         status: receipt.status === "success" ? "success" : "failed",
         message:
@@ -361,12 +362,6 @@ function retireEarlierRows(callKey: string): void {
       });
 }
 
-/** What a hold-following send shows of its Safe proposal: its row, by the hash it sent. */
-function showSentSafeView(chainId: number, client?: PublicClient) {
-  return (hash: Hex, view: HeldWriteView) =>
-    showSafeView(`tx:${chainId}:${hash.toLowerCase()}`, view, client);
-}
-
 /**
  * The Safe transaction a new proposal's reply hashes to, found from the Safe's nonce read right
  * before the wallet: the hold keeps its nonce, so the chain can prove its end without the Safe
@@ -395,7 +390,21 @@ function proposedAt(
  * execute together, in order. Reviewed as one request; tracked like any other
  * Safe proposal.
  */
-export async function proposeSafeBatch(
+/** Proposes one Safe batch through the SDK's held send (useProposeSafeBatch). */
+export type ProposeSafeBatch = ReturnType<typeof useProposeSafeBatch>;
+
+export function useProposeSafeBatch() {
+  const heldSends = useHeldSends();
+  return useCallback(
+    (
+      ...args: Parameters<typeof proposeSafeBatch> extends [unknown, ...infer Rest] ? Rest : never
+    ) => proposeSafeBatch(heldSends, ...args),
+    [heldSends],
+  );
+}
+
+async function proposeSafeBatch(
+  heldSends: (chainId: number) => UseHeldSendResult,
   config: ReturnType<typeof useConfig>,
   chainId: number,
   title: string,
@@ -428,21 +437,20 @@ export async function proposeSafeBatch(
   const callKey = `batch:${account.toLowerCase()}:${chainId}:${keccak256(
     stringToHex(encoded.map((call) => `${call.to}:${call.value ?? 0n}:${call.data}`).join("|")),
   )}`;
-  // REMOVE with legacy-intents.ts: the previous build held every batch by its batch namespace;
-  // an intent's batch is held by it too, and a batch with none keeps it.
-  const previous = legacyBatchNamespace(calls);
+  // A batch is held by its action's intent, or else by the SDK's safeBatchIntent of its exact
+  // calls. REMOVE with legacy-intents.ts: the batch namespace the previous build held every
+  // batch by holds it too.
   const proposal: ReviewedSafeProposal = {
     safe: account,
     calls: encoded.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
     batch: true,
-    holdNamespace: intent ?? previous,
-    ...(intent ? { legacyNamespaces: [previous] } : {}),
+    holdNamespace: intent ?? safeBatchIntent({ chainId, safe: account, calls: encoded }),
+    legacyNamespaces: [legacyBatchNamespace(calls)],
   };
   const publicClient = getPublicClient(config, { chainId });
   if (!publicClient) throw new Error(`No RPC client is configured for chain ${chainId}.`);
   // The batch is held by the SDK's write hold, as one proposal, until its watch or the chain
   // shows how it ended, or the user takes the hold's exit.
-  const hold = safeHoldOf(chainId, proposal);
   const submit = async (gate: WriteHoldGate) => {
     // The calls depend on each other (an allowance, then the spend), so the
     // SDK simulates them as one sequence where the RPC offers eth_simulateV1,
@@ -513,7 +521,12 @@ export async function proposeSafeBatch(
     );
     return hash;
   };
-  return sendHeld(hold, publicClient, submit, showSentSafeView(chainId, publicClient));
+  return sendHeld(
+    heldSends(chainId).send,
+    safeHoldInputOf(chainId, proposal),
+    publicClient as unknown as WriteHoldClient,
+    submit,
+  );
 }
 
 type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] & {
@@ -556,6 +569,35 @@ type ReviewedWriteContractOptions = Parameters<typeof useWagmiWriteContract>[0] 
   ) => boolean;
 };
 
+/**
+ * The SDK's held send for each chain this app writes to, with that chain's client: a write's call
+ * is known only at send time, so each send picks its chain's.
+ */
+function useHeldSends(): (chainId: number) => UseHeldSendResult {
+  const config = useConfig();
+  const clients = useMemo(
+    () =>
+      SUPPORTED_CHAINS.map(
+        (chain) =>
+          getPublicClient(config, { chainId: chain.id } as never) as unknown as
+            WriteHoldClient | undefined,
+      ),
+    [config],
+  );
+  const byChain = new Map<number, UseHeldSendResult>();
+  for (const [index, chain] of SUPPORTED_CHAINS.entries())
+    // A module constant: the same hooks run in the same order on every render.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    byChain.set(chain.id, useHeldSend({ hold: writeHolds, client: clients[index] }));
+  const latest = useRef(byChain);
+  latest.current = byChain;
+  return useCallback((chainId: number) => {
+    const held = latest.current.get(chainId);
+    if (!held) throw new Error(`No RPC client is configured for chain ${chainId}.`);
+    return held;
+  }, []);
+}
+
 export function useWriteContract(
   options?: ReviewedWriteContractOptions,
 ): ReturnType<typeof useWagmiWriteContract> {
@@ -575,6 +617,7 @@ export function useWriteContract(
     ...wagmiOptions
   } = options ?? {};
   const mutation = useWagmiWriteContract(wagmiOptions);
+  const heldSends = useHeldSends();
 
   const writeContractAsync = useCallback(
     async (variables: Parameters<typeof mutation.writeContractAsync>[0]) => {
@@ -626,30 +669,22 @@ export function useWriteContract(
       // happened to it, or the user says they checked their wallet; a Safe proposal is held by
       // what it was reviewed to run, and its watch tells the hold how it ended. A caller with its
       // own journal holds its own.
-      const hold =
+      const call = { to: variables.address, data, value: variables.value ?? 0n };
+      const holdInput: HoldInput | undefined =
         recovery === "caller"
           ? undefined
           : safeProposal
-            ? safeHoldOf(chainId, safeProposal)
-            : writeHolds.open(
-                {
-                  chainId,
-                  account: initialAddress,
-                  safe: false,
-                  ...(namespace ? { namespace } : {}),
-                  call: { to: variables.address, data, value: variables.value ?? 0n },
-                },
+            ? safeHoldInputOf(chainId, safeProposal)
+            : {
+                chainId,
+                account: initialAddress,
+                safe: false,
+                call,
                 // A write held by intent is held, through the SDK, by the exact-calldata holds an
                 // earlier build left (#79), whatever calldata a retry regenerates.
-                namespace
-                  ? {
-                      legacy: legacyOf(
-                        { to: variables.address, data, value: variables.value ?? 0n },
-                        legacyNamespaces,
-                      ),
-                    }
-                  : undefined,
-              );
+                ...(namespace ? { namespace, legacy: legacyOf(call, legacyNamespaces) } : {}),
+              };
+      const hold = !!holdInput;
       const holdClient = hold ? getPublicClient(config, { chainId }) : undefined;
       const duplicateOf = () =>
         refreshTransactionActivities().find(
@@ -827,9 +862,11 @@ export function useWriteContract(
           safeProposal,
           ownsReceiptLifecycle,
           hold && holdClient && !safe
-            ? (receipt) => hold.onReceipt(receipt, holdClient)
+            ? // The receipt landed: the send's held view asks the chain now, and tells it.
+              async () => heldSends(chainId).check()
             : undefined,
           !!hold,
+          holdInput,
         );
         return hash;
       };
@@ -837,12 +874,12 @@ export function useWriteContract(
       // The hold serializes the call across tabs and decides what is sent. A write its caller
       // journals is serialized here, and its journal is checked under the lock.
       // Without a client for the chain the simulation refuses before any wallet opens.
-      if (hold && holdClient)
+      if (holdInput && holdClient)
         return sendHeld(
-          hold,
-          holdClient,
+          heldSends(chainId).send,
+          holdInput,
+          holdClient as unknown as WriteHoldClient,
           submitReviewedCall,
-          safeProposal ? showSentSafeView(chainId, holdClient as PublicClient) : undefined,
         );
       return browserLocks().request(
         `revnet:transaction:${keccak256(stringToHex(callKey))}`,
@@ -852,6 +889,7 @@ export function useWriteContract(
     },
     [
       config,
+      heldSends,
       recovery,
       manualReceiptVerification,
       mutation,
@@ -895,9 +933,6 @@ export function useWriteContract(
   >;
 }
 
-const noView = () => () => {};
-const idleView = () => undefined;
-
 export function useWaitForTransactionReceipt(
   parameters: Parameters<typeof useWagmiWaitForTransactionReceipt>[0] = {},
 ) {
@@ -939,14 +974,21 @@ export function useWaitForTransactionReceipt(
   // The watch ended, at its timeout or on a node failure, with no receipt and no tracked outcome.
   const watchGaveUp =
     Boolean(hash) && !isSafeSubmission && query.isError && !isSuccess && !watchedIsError;
-  // It may still land: the SDK view it was sent under shows it from here, its line, an exit that
-  // becomes due with time, and the hold's settlement.
-  const sentUnder = watchGaveUp ? heldViewOf(hash) : undefined;
-  const view = useSyncExternalStore(
-    sentUnder?.subscribe ?? noView,
-    sentUnder?.get ?? idleView,
-    idleView,
-  );
+  // It may still land: the SDK's held write of its hold shows it from here, its line, an exit
+  // that becomes due with time, and the hold's settlement.
+  const stored = watchGaveUp ? tracked?.directHold : undefined;
+  const input = stored && tracked?.chainId && tracked.account ? holdInputOf(tracked) : undefined;
+  const chainClient = usePublicClient({ chainId: input?.chainId } as never);
+  const client = input ? (chainClient as unknown as WriteHoldClient | undefined) : undefined;
+  const view = useHeldWrite({
+    hold: writeHolds,
+    chainId: input?.chainId ?? 0,
+    account: input?.account ?? zeroAddress,
+    namespace: input?.namespace,
+    legacy: input?.legacy,
+    call: input?.call,
+    client,
+  });
   const settled =
     view?.phase === "settled" &&
     view.settled &&

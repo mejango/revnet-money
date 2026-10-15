@@ -65,7 +65,7 @@ vi.mock("@/hooks/useAllowance", () => ({
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   ACCOUNT_CHANGED: "The connected account changed. Review again.",
   isSafeConnection: () => false,
-  proposeSafeBatch: vi.fn(),
+  useProposeSafeBatch: () => vi.fn(),
   submittedViaSafe: () => false,
   useSafeConnection: () => false,
   useWaitForTransactionReceipt: () => ({ isSuccess: false }),

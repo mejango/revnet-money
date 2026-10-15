@@ -15,6 +15,7 @@ import type {
 } from "./multichain-guards";
 import type { RouterPendingReceiptGuard } from "./pending-router-calls";
 import type { ReviewedSafeProposal } from "./safe-transactions";
+import type { StoredHold } from "./write-hold";
 
 export type TransactionActivityStatus =
   "submitted" | "pending" | "safe-proposed" | "success" | "failed";
@@ -51,6 +52,8 @@ export type TransactionActivity = {
   safeProposalHash?: Hex;
   /** The Safe a proposal was made to and the calls it was reviewed to run, values as strings. */
   safeProposal?: ReviewedSafeProposal;
+  /** A direct write's hold, so its screens can show it. */
+  directHold?: StoredHold;
   /** Its authenticated call became permanently obsolete; keep nonce cancellation guidance. */
   obsoleteSafeNonce?: number;
   /**

@@ -4,8 +4,8 @@ import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import {
   followSubmission,
   isSafeConnection,
-  proposeSafeBatch,
   requireOnchainExecution,
+  useProposeSafeBatch,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { composeBatch, type BatchCall, type BatchStep } from "@/lib/safe-batch";
@@ -140,6 +140,7 @@ async function simulateFromSafe(
 
 export function useSafeBatchSubmit() {
   const config = useConfig();
+  const proposeSafeBatch = useProposeSafeBatch();
   const queryClient = useQueryClient();
   const { writeContractAsync } = useWriteContract();
   const { signSafeTransactionAsync } = useReviewedSafeSignature();

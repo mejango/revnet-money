@@ -18,13 +18,13 @@ import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { savedAttempts, withWriteIntent } from "@/lib/write-hold";
 import {
   browserLocks,
-  createHeldWriteView,
+  HELD_RELEASED_ELSEWHERE_LINE,
   HELD_RELEASED_LINE,
   intent,
+  settledLine,
   writeIntentKey,
   type SavedAttempt,
   type SavedAttemptOutcome,
-  type WriteHeldState,
 } from "@bananapus/nana-sdk-core/review";
 import { safeExecutionResult, safeExecutionRunsCalls } from "@bananapus/nana-sdk-core/safe-service";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -917,12 +917,18 @@ export function useMarkee(initialBoardAddress?: Address) {
       return HELD_RELEASED_LINE;
     }
     if (outcome.status === "held") {
-      const view = createHeldWriteView(outcome.handle, { client });
-      await view.check();
-      const shown = view.get();
-      if (!shown.exit || !(await confirmHeldWriteExit(shown.state as WriteHeldState)))
-        throw new Error(shown.line ?? outcome.state.line);
-      if (!(await view.exit())) throw new Error(view.get().line ?? outcome.state.line);
+      // The state recovery read under the hold's lock: its exit, when the hold offers one.
+      const shown = outcome.state;
+      if (!shown.exit || !(await confirmHeldWriteExit(shown))) throw new Error(shown.line);
+      const ended = await outcome.handle.exit(shown, { checkedWallet: true }, client);
+      if (!ended.released)
+        throw new Error(
+          ended.state.status !== "clear"
+            ? ended.state.line
+            : ended.state.settled
+              ? settledLine(ended.state.settled)
+              : HELD_RELEASED_ELSEWHERE_LINE,
+        );
       await savedAttempts.retire(attempt, { by: "exit" });
       letGo(step, HELD_RELEASED_LINE);
       return HELD_RELEASED_LINE;

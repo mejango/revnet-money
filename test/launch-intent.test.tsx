@@ -11,6 +11,7 @@ import {
   launchInputOf,
   launchKeyOf,
   launchNamespacesOf,
+  retrySaltOf,
   saveLaunchAttempt,
   savedLaunchAt,
   savedLaunchKeys,
@@ -251,6 +252,11 @@ describe("recovering a saved launch through the SDK: held, done, check or none",
     // Retired for every reload: nothing more to recover, and the journal goes.
     await expect(recover(chain({ scan: [] }))).resolves.toBeUndefined();
     expect(savedLaunchAt(key())).toBeUndefined();
+    // Its retry keeps the salt, so if it landed after all the retry reverts; journaling the
+    // retry hands the salt to its journal.
+    expect(retrySaltOf(key())).toBe(salt(7));
+    save();
+    expect(retrySaltOf(key())).toBeUndefined();
   });
 
   it("refuses a stale check once another tab's newer attempt took the journal", async () => {

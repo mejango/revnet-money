@@ -3,11 +3,12 @@
 import { confirmHeldWriteExit, confirmSendAgain } from "@/lib/flow-choice";
 import type { ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
-  createHeldWriteView,
   createSavedAttemptRecovery,
   createWriteHold,
   HELD_AWAY_SUCCESS_LINE,
   HELD_POLL_MS,
+  HELD_RELEASED_ELSEWHERE_LINE,
+  hidesShownExit,
   intent,
   settledLine,
   WRITE_HOLD_STALE_REVIEW_LINE,
@@ -15,15 +16,13 @@ import {
   WriteHoldBusyError,
   WriteHoldStaleReviewError,
   writeIntentKey,
-  type HeldWriteEvidence,
-  type HeldWriteView,
-  type HeldWriteViewController,
   type WriteHeldState,
   type WriteHoldClient,
   type WriteHoldGate,
   type WriteHoldHandle,
-  type WriteHoldSettled,
+  type WriteHoldState,
 } from "@bananapus/nana-sdk-core/review";
+import type { HeldSendInput, UseHeldSendResult } from "@bananapus/nana-sdk-core/review/react";
 import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@bananapus/nana-sdk-core/safe";
 import { type Address, type Hex } from "viem";
 
@@ -33,13 +32,16 @@ export const writeHolds = createWriteHold();
 /** The one recovery of saved attempts (launches, Markee steps, Relayr sessions) over it. */
 export const savedAttempts = createSavedAttemptRecovery({ hold: writeHolds });
 
+/** One held write's hold, as the SDK's held send and held write take it. */
+export type HoldInput = HeldSendInput;
+
 /**
  * The hold of a Safe proposal, by what it was reviewed to run: one call, or a batch as the one
  * MultiSend call the Safe runs by DELEGATECALL (the SDK's batch identity). A proposal held by an
  * intent also answers for the exact-call holds an earlier build left: its call, and any call of
  * the same function on the same target.
  */
-export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): WriteHoldHandle {
+export function safeHoldInputOf(chainId: number, proposal: ReviewedSafeProposal): HoldInput {
   const [first] = proposal.calls;
   if (!first) throw new Error("A Safe proposal runs at least one call.");
   const call = proposal.batch
@@ -51,16 +53,75 @@ export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): Wri
         value: 0n,
       }
     : { to: first.to, data: first.data, value: BigInt(first.value) };
-  return writeHolds.open(
-    {
-      chainId,
-      account: proposal.safe,
-      safe: true,
-      ...(proposal.holdNamespace ? { namespace: proposal.holdNamespace } : {}),
-      call,
-    },
-    proposal.holdNamespace ? { legacy: legacyOf(call, proposal.legacyNamespaces) } : undefined,
+  return {
+    chainId,
+    account: proposal.safe,
+    safe: true,
+    call,
+    ...(proposal.holdNamespace
+      ? {
+          namespace: proposal.holdNamespace,
+          legacy: legacyOf(call, proposal.legacyNamespaces),
+        }
+      : {}),
+  };
+}
+
+/** A direct write's hold as its activity row keeps it: JSON, its value in decimal. */
+export type StoredHold = {
+  namespace?: string;
+  /** The namespaces an earlier build held it by. REMOVE with legacy-intents.ts. */
+  legacyNamespaces?: string[];
+  call: { to: Address; data: Hex; value: string };
+};
+
+/** What a direct write's row keeps of its hold. */
+export function storedHoldOf(input: HoldInput): StoredHold {
+  const legacyNamespaces = (input.legacy ?? []).filter(
+    (key): key is string => typeof key === "string",
   );
+  return {
+    ...(input.namespace ? { namespace: input.namespace } : {}),
+    ...(legacyNamespaces.length ? { legacyNamespaces } : {}),
+    call: { to: input.call.to, data: input.call.data, value: String(input.call.value ?? 0n) },
+  };
+}
+
+/** A row's hold: its Safe proposal's, or the direct write's it kept. */
+export function holdInputOf(row: {
+  chainId?: number;
+  account?: Address;
+  safeProposal?: ReviewedSafeProposal;
+  directHold?: StoredHold;
+}): HoldInput | undefined {
+  if (!row.chainId) return undefined;
+  if (row.safeProposal) return safeHoldInputOf(row.chainId, row.safeProposal);
+  const stored = row.directHold;
+  if (!stored || !row.account) return undefined;
+  const call = { ...stored.call, value: BigInt(stored.call.value) };
+  return {
+    chainId: row.chainId,
+    account: row.account,
+    safe: false,
+    call,
+    ...(stored.namespace
+      ? { namespace: stored.namespace, legacy: legacyOf(call, stored.legacyNamespaces) }
+      : {}),
+  };
+}
+
+/** The hold handle of `input`, as the SDK's views open it. */
+export function holdOf(input: HoldInput): WriteHoldHandle {
+  const { chainId, account, safe = false, namespace, legacy, call } = input;
+  return writeHolds.open(
+    { chainId, account, safe, call, ...(namespace ? { namespace } : {}) },
+    legacy ? { legacy } : undefined,
+  );
+}
+
+/** The hold handle of a Safe proposal. */
+export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): WriteHoldHandle {
+  return holdOf(safeHoldInputOf(chainId, proposal));
 }
 
 /**
@@ -79,87 +140,23 @@ export function legacyOf(
   ];
 }
 
-/** A view's line, with the hold's notice when holds last only in this tab. */
-export function heldLineOf(view: Pick<HeldWriteView, "line" | "notice">): string | undefined {
+/** A held state's or view's line, with the hold's notice when holds last only in this tab. */
+export function heldLineOf(view: { line: string | null; notice?: string }): string | undefined {
   return [view.line, view.notice].filter(Boolean).join(" ") || undefined;
 }
 
-/** Every send's SDK view in this tab, by the hash it sent: what its screens show of it. */
-const sent = new Map<string, HeldWriteViewController>();
-
-/** The SDK view `hash` was sent under in this tab, if any. */
-export function heldViewOf(hash: Hex | undefined): HeldWriteViewController | undefined {
-  return hash ? sent.get(hash.toLowerCase()) : undefined;
-}
-
-/** What each view does once it told a settlement: its follower stops. */
-const onTold = new WeakMap<HeldWriteViewController, Set<(settled: WriteHoldSettled) => void>>();
-
-function whenTold(
-  view: HeldWriteViewController,
-  listener: (settled: WriteHoldSettled) => void,
-): () => void {
-  const listeners = onTold.get(view) ?? new Set();
-  onTold.set(view, listeners.add(listener));
-  return () => void listeners.delete(listener);
-}
-
 /**
- * One held write's SDK view. Its screens show each result from the receipt; a settlement is told
- * once its receipt is read. `evidence`: a write the app saved before the hold held it, adopted
- * first.
+ * The exit of a held write, offered in the flow's dialog while the hold is asked again at the
+ * SDK's poll: an answer that takes the exit away closes it. True once the user took it and the
+ * hold released the exact state they saw.
  */
-export function heldView(
+async function takeExit(
   handle: WriteHoldHandle,
   client: WriteHoldClient,
-  evidence?: HeldWriteEvidence,
-): HeldWriteViewController {
-  const view: HeldWriteViewController = createHeldWriteView(handle, {
-    client,
-    onSettled: (settled) => onTold.get(view)?.forEach((listener) => listener(settled)),
-    ...(evidence ? { adopt: async () => evidence } : {}),
-  });
-  return view;
-}
-
-/**
- * Follow a held write through its SDK view until the hold settles it (once told, so the success is
- * acknowledged and the next send of the same action goes straight on) or it is released: the
- * view's watch and its shared follower (a Safe proposal's service and chain included) decide.
- * `onView` sees every view it shows. Returns the stop.
- */
-export function followHeld(
-  view: HeldWriteViewController,
-  onView?: (view: HeldWriteView) => void,
-): () => void {
-  let stop: (() => void) | undefined = view.start();
-  const end = () => {
-    unsubscribe();
-    untold();
-    stop?.();
-    stop = undefined;
-  };
-  const untold = whenTold(view, () => queueMicrotask(end));
-  const unsubscribe = view.subscribe(() => {
-    const now = view.get();
-    onView?.(now);
-    // Released, or nothing held once any adoption is done.
-    if (now.phase === "released" || (now.phase === "clear" && now.state && !now.adopting)) end();
-  });
-  onView?.(view.get());
-  return end;
-}
-
-/**
- * The exit of a held write, offered in the flow's dialog while the view asks the chain again at the
- * SDK's poll: an answer that takes the exit away closes it. True once the user took it and the hold
- * released the write. Every read ends before the exit or a resend takes the call's lock.
- */
-async function takeExit(view: HeldWriteViewController): Promise<boolean> {
+  shown: WriteHeldState,
+): Promise<{ released: boolean; state?: WriteHoldState }> {
   const open = new AbortController();
-  const unsubscribe = view.subscribe(() => {
-    if (!view.get().exit) open.abort();
-  });
+  let closedBy: WriteHoldState | undefined;
   const watching = (async () => {
     while (!open.signal.aborted) {
       await new Promise<void>((resolve) => {
@@ -168,58 +165,70 @@ async function takeExit(view: HeldWriteViewController): Promise<boolean> {
           once: true,
         });
       });
-      if (!open.signal.aborted) await view.check();
+      if (open.signal.aborted) return;
+      const now = await handle.state(client).catch(() => null);
+      // Only a checked answer takes an exit away.
+      if (now && !hidesShownExit(shown, now) && (now.status === "clear" || !now.exit)) {
+        closedBy = now;
+        open.abort();
+      }
     }
   })();
   try {
-    const accepted = await confirmHeldWriteExit(view.get().state as WriteHeldState, open.signal);
+    const accepted = await confirmHeldWriteExit(shown, open.signal);
     open.abort();
     await watching;
-    return accepted && view.get().exit && (await view.exit());
+    if (closedBy) return { released: false, state: closedBy };
+    if (!accepted) return { released: false };
+    return await handle.exit(shown, { checkedWallet: true }, client);
   } finally {
     open.abort();
-    unsubscribe();
     await watching;
   }
 }
 
+/** The line a refused send ends with: the hold's own, or how the chain ended it meanwhile. */
+function endedLine(state: WriteHoldState): string | undefined {
+  if (state.status !== "clear") return heldLineOf(state);
+  return state.settled ? settledLine(state.settled) : HELD_RELEASED_ELSEWHERE_LINE;
+}
+
 /**
- * Sends under the hold through one SDK held-write view, which owns the send gate: a held write
- * offers its exit in the flow's dialog (the review reopens after the hold releases it); a success
- * that settled while the user was away asks before sending it again; anything else ends the send
- * with the view's line. A sent write is followed until the hold settles it.
+ * One send through the SDK's held send (`send`, from useHeldSend), with the flow's dialogs on its
+ * refusals: a held write offers the hold's exit (the review reopens after the hold releases it); a
+ * success that settled while the user was away asks before sending it again; anything else ends
+ * the send with the hold's line.
  */
 export async function sendHeld(
-  handle: WriteHoldHandle,
+  send: UseHeldSendResult["send"],
+  input: HoldInput,
   client: WriteHoldClient,
   run: (gate: WriteHoldGate) => Promise<Hex>,
-  onView?: (hash: Hex, view: HeldWriteView) => void,
 ): Promise<Hex> {
-  const view = heldView(handle, client);
   for (;;) {
     try {
-      const hash = await view.send(run);
-      sent.set(hash.toLowerCase(), view);
-      followHeld(view, onView && ((now) => onView(hash, now)));
-      return hash;
+      return await send(input, run);
     } catch (error) {
-      // The view refuses a success it never showed before reading it: read, it shows it.
-      if (error instanceof Error && error.message === HELD_AWAY_SUCCESS_LINE) await view.check();
-      if (view.get().phase === "succeeded") {
-        if (!(await confirmSendAgain())) throw new Error(HELD_AWAY_SUCCESS_LINE);
-        await view.acknowledge();
+      const handle = holdOf(input);
+      if (error instanceof Error && error.message === HELD_AWAY_SUCCESS_LINE) {
+        const success = handle.unacknowledgedSuccess();
+        if (!success || !(await confirmSendAgain())) throw error;
+        await handle.acknowledge(success);
         continue;
       }
       // Another window sent this write while its review was open: review it again.
       if (error instanceof WriteHoldStaleReviewError)
         throw new Error(error.settled ? settledLine(error.settled) : WRITE_HOLD_STALE_REVIEW_LINE);
-      // Busy with this tab's own read of the same write (its follower): its line says why.
-      if (error instanceof WriteHoldBusyError && heldLineOf(view.get()) && view.get().state)
-        throw new Error(heldLineOf(view.get()));
+      // Busy with this tab's own read of the same write: the hold's line says why.
+      if (error instanceof WriteHoldBusyError) {
+        const now = handle.peek();
+        if (now.status !== "clear") throw new Error(heldLineOf(now));
+      }
       if (!(error instanceof WriteHeldError)) throw error;
-      if (view.get().exit && (await takeExit(view))) continue;
-      const now = view.get();
-      throw new Error(heldLineOf(now) ?? (now.settled ? settledLine(now.settled) : error.message));
+      if (!error.state.exit) throw new Error(heldLineOf(error.state));
+      const ended = await takeExit(handle, client, error.state);
+      if (ended.released) continue;
+      throw new Error((ended.state && endedLine(ended.state)) ?? heldLineOf(error.state));
     }
   }
 }

@@ -50,6 +50,7 @@ import {
   launchInputOf,
   launchKeyOf,
   launchNamespacesOf,
+  retrySaltOf,
   savedLaunchKeys,
   saveLaunchAttempt,
   settlementsOf,
@@ -238,11 +239,13 @@ export default function Page() {
       };
     }
 
-    // Every attempt has a fresh salt. A single-chain launch is journaled with it once the hold
-    // reserves the wallet, so a reload can find a launch whose reply was lost (the DeployRevnet
-    // event carries the salt); the write hold, keyed by the config, is what stops a second launch.
-    // A multichain launch has its own recovery through Relayr.
-    const salt = createSalt();
+    // Every new attempt has a fresh salt; a retry after the user checked an earlier one keeps its
+    // salt, so that one landing after all makes the retry revert. A single-chain launch is
+    // journaled with it once the hold reserves the wallet, so a reload can find a launch whose
+    // reply was lost (the DeployRevnet event carries the salt); the write hold, keyed by the
+    // config, is what stops a second launch. A multichain launch has its own recovery through
+    // Relayr.
+    const salt = (launchKey && retrySaltOf(launchKey)) || createSalt();
     const timestamp = Math.floor(Date.now() / 1000);
 
     const relayrTransactions = [];

@@ -1025,7 +1025,7 @@
       "id": "safe-batch",
       "risk": "project-control",
       "files": ["src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts"],
-      "tests": ["test/safe-batch-signer-proposal.test.ts", "test/safe-batch.test.ts"]
+      "tests": ["test/safe-batch-signer-proposal.test.ts", "test/safe-batch.test.tsx"]
     },
     {
       "id": "settlement-sync",

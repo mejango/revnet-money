@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({ wagmiReceipt: vi.fn() }));
 
 vi.mock("wagmi", () => ({
   useConfig: () => ({}),
+  usePublicClient: () => undefined,
   useWaitForTransactionReceipt: mocks.wagmiReceipt,
   useWriteContract: () => ({}),
 }));

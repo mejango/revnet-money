@@ -7,6 +7,7 @@ const caught = (source: string) =>
 describe("the gate on app-local hold and recovery logic", () => {
   it.each([
     "export async function sendUnderHold() {}",
+    "const view = createHeldWriteView(handle, { client });",
     "await takeHeldExit(hold, client, state);",
     'export const WENT_THROUGH = "Your earlier transaction went through.";',
     "function hidesShownExit(shown, next) {}",

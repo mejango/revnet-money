@@ -6,8 +6,8 @@ import { useAllowance } from "@/hooks/useAllowance";
 import {
   ACCOUNT_CHANGED,
   isSafeConnection,
-  proposeSafeBatch,
   submittedViaSafe,
+  useProposeSafeBatch,
   useSafeConnection,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
@@ -114,6 +114,7 @@ export function EditPositionPanel({
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
+  const proposeSafeBatch = useProposeSafeBatch();
   const viaSafe = useSafeConnection(wagmiConfig);
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
