@@ -1328,6 +1328,7 @@ Rulings: nana-sdk-react 53.0.0 is not added (it can't build against wagmi 3: `us
 - [x] "I checked it" (or the held exit) keeps the salt for the retry; a new launch still gets a fresh one.
 - [x] `burnIntent` for burns; `safeBatchIntent` for batches without an action intent, the old batch namespace as legacy.
 - [ ] Bump to 2.41.1 when published.
+- [ ] On 2.41.2 (handles of one key share listeners in a tab): bump, delete the receipt-time `check()` of the sending view (followSubmission's onReceipt in useWriteContract) and the root follower's acknowledge of a Safe success it never saw held (HeldRowFollowers), and confirm the immediate second send ("releases the hold once the earlier send's receipt lands", the happy path twice in a row) through the SDK alone, with the receipt landing instantly as well as after the send.
 
 ### Review
 
